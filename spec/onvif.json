@@ -1,0 +1,179 @@
+{
+  "configId": 1,
+  "specVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "device": {
+    "deviceType": "urn:cdif-net:device:ONVIFCamera:1",
+    "friendlyName": "",
+    "manufacturer": "",
+    "modelName": "",
+    "userAuth": true,
+    "devicePresentation": true,
+    "serviceList": {
+      "urn:cdif-net:serviceID:ONVIFMediaService": {
+        "serviceType": "urn:cdif-net:service:ONVIFMedia:1",
+        "actionList": {
+          "getStreamUri": {
+            "argumentList": {
+              "streamType": {
+                "direction": "in",
+                "relatedStateVariable": "streamType"
+              },
+              "transport": {
+                "direction": "in",
+                "relatedStateVariable": "transport"
+              },
+              "streamUri": {
+                "direction": "out",
+                "retval": true,
+                "relatedStateVariable": "streamUri"
+              }
+            }
+          },
+          "getSnapshotUri": {
+            "argumentList": {
+              "snapshotUri": {
+                "direction": "out",
+                "retval": true,
+                "relatedStateVariable": "snapshotUri"
+              }
+            }
+          }
+        },
+        "serviceStateTable": {
+          "streamType": {
+            "sendEvents": false,
+            "dataType": "string",
+            "allowedValueList": [
+              "RTP-Unicast",
+              "RTP-Multicast",
+              "MPEG"
+            ],
+            "defaultValue": "MPEG"
+          },
+          "transport": {
+            "sendEvents": false,
+            "dataType": "string",
+            "allowedValueList": [
+              "UDP",
+              "TCP",
+              "RTSP",
+              "HTTP",
+              "WebSocket"
+            ],
+            "defaultValue": "WebSocket"
+          },
+          "streamUri": {
+            "sendEvents": false,
+            "dataType": "string"
+          },
+          "snapshotUri": {
+            "sendEvents": false,
+            "dataType": "string"
+          }
+        }
+      },
+      "urn:cdif-net:serviceID:ONVIFPTZService": {
+        "serviceType": "urn:cdif-net:service:ONVIFPTZ:1",
+        "actionList": {
+          "absoluteMove": {
+            "argumentList": {
+              "options": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_AbsoluteMove"
+              }
+            }
+          },
+          "relativeMove": {
+            "argumentList": {
+              "options": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_RelativeMove"
+              }
+            }
+          },
+          "continuousMove": {
+            "argumentList": {
+              "options": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_ContinuousMove"
+              }
+            }
+          },
+          "getPresets": {
+            "argumentList": {
+              "presets": {
+                "direction": "out",
+                "retval": true,
+                "relatedStateVariable": "A_ARG_TYPE_GetPresets"
+              }
+            }
+          },
+          "gotoPreset": {
+            "argumentList": {
+              "options": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_GotoPreset"
+              }
+            }
+          },
+          "getNodes": {
+            "argumentList": {
+              "nodes": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_GetNodes"
+              }
+            }
+          },
+          "stop": {
+            "argumentList": {
+              "options": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_Stop"
+              }
+            }
+          }
+        },
+        "serviceStateTable": {
+          "A_ARG_TYPE_AbsoluteMove": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/AbsoluteMoveArg"
+          },
+          "A_ARG_TYPE_RelativeMove": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/RelativeMoveArg"
+          },
+          "A_ARG_TYPE_ContinuousMove": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/ContinuousMoveArg"
+          },
+          "A_ARG_TYPE_Stop": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/StopArg"
+          },
+          "A_ARG_TYPE_GetPresets": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/GetPresetsArg"
+          },
+          "A_ARG_TYPE_GotoPreset": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/GotoPresetArg"
+          },
+          "A_ARG_TYPE_GetNodes": {
+            "sendEvents": false,
+            "dataType": "object",
+            "schema": "#ptz/GetNodesArg"
+          }
+        }
+      }
+    }
+  }
+}

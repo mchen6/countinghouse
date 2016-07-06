@@ -1,0 +1,72 @@
+{
+  "configId": 1,
+  "specVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "device": {
+    "deviceType": "urn:cdif-net:device:deviceType:1",
+    "friendlyName": "device friendly name",
+    "manufacturer": "manufacturer",
+    "manufacturerURL": "manufacturer url",
+    "modelDescription": "model desc",
+    "modelName": "model name",
+    "modelNumber": "model number",
+    "serialNumber": "serial number",
+    "UPC": "universal product code",
+    "userAuth": true,
+    "powerIndex": 40,
+    "devicePresentation": false,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": "80",
+        "height": "80",
+        "depth": "16",
+        "url": "icon URL"
+      }
+    ],
+    "serviceList": {
+      "urn:cdif-net:serviceID:serviceID": {
+        "serviceType": "urn:cdif-net:service:serviceType:1",
+        "actionList": {
+          "actionName": {
+            "argumentList": {
+              "argumentName": {
+                "direction": "in  | out",
+                "retval": false,
+                "relatedStateVariable": "state variable name"
+              }
+            }
+          }
+        },
+        "serviceStateTable": {
+          "state variable 1": {
+            "sendEvents": true,
+            "dataType": "number",
+            "allowedValueRange": {
+              "minimum": "1",
+              "maximum": "100",
+              "step": "1"
+            },
+            "defaultValue": 100
+          },
+          "state variable 2": {
+            "sendEvents": false,
+            "dataType": {
+              "type": "string",
+              "value": "custom data type"
+            },
+            "allowedValueList": [
+              "value1",
+              "value2"
+            ],
+            "defaultValue": "default value"
+          }
+        }
+      }
+    },
+    "deviceList": [
+    ]
+  }
+}
