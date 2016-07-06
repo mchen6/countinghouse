@@ -1,12 +1,12 @@
 var events = require('events');
-var util = require('util');
+var util   = require('util');
 var supported_modules = require('./modules.json');
 
 //var forever = require('forever-monitor');
 
-var modules = {};
-
 function ModuleManager() {
+  this.modules = {};
+
   this.on('moduleload', this.onModuleLoad.bind(this));
   this.on('moduleunload', this.onModuleUnload.bind(this));
 }
@@ -15,40 +15,48 @@ util.inherits(ModuleManager, events.EventEmitter);
 
 ModuleManager.prototype.onModuleLoad = function(name, module) {
   console.log('module: ' + name + ' loaded');
-  var m = modules[name];
+  var m = this.modules[name];
   if (m == null) {
-    modules[name] = {};
+    this.modules[name] = {};
   }
-  modules[name].module = module;
-  modules[name].state = 'loaded';
-  //module.discoverDevices();
+
+  this.modules[name].module = module;
+  this.modules[name].state = 'loaded';
 };
 
 ModuleManager.prototype.onModuleUnload = function(name) {
   console.log('module: ' + name + ' unloaded');
-  var m = modules[name];
+  var m = this.modules[name];
   if (m != null) {
-    modules[name].module = null;
-    modules[name].state = 'unloaded';
+    this.modules[name].module = null;
+    this.modules[name].state = 'unloaded';
   }
 };
 
 ModuleManager.prototype.discoverAllDevices = function() {
-  var map = modules;
+  var map = this.modules;
 
   for (var i in map) {
     if (map[i].state === 'loaded') {
-      map[i].module.discoverDevices();
+      if (map[i].module.discoverState === 'discovering') {
+        return;
+      }
+      map[i].module.emit('discover');
+      map[i].module.discoverState = 'discovering';
     }
   }
 };
 
 ModuleManager.prototype.stopDiscoverAllDevices = function() {
-  var map = modules;
+  var map = this.modules;
 
   for (var i in map) {
     if (map[i].state === 'loaded') {
-      map[i].module.stopDiscoverDevices();
+      if (map[i].module.discoverState === 'stopped') {
+        return;
+      }
+      map[i].module.emit('stopdiscover');
+      map[i].module.discoverState = 'stopped';
     }
   }
 };
@@ -61,22 +69,16 @@ ModuleManager.prototype.onDeviceOffline = function(device, module) {
   this.emit('deviceoffline', device, module);
 };
 
-function checkModuleExports(module) {
-  // TODO: check module actually inherits from EventEmitter
-  var proto = module.prototype;
-  return proto.hasOwnProperty('discoverDevices');
-}
-
 ModuleManager.prototype.loadModules = function() {
-  var _mm = this;
-
   supported_modules.forEach(function(item) {
     var mod = require(item);
+
     var m = new mod();
-    m.on('deviceonline', _mm.onDeviceOnline.bind(_mm));
-    m.on('deviceoffline', _mm.onDeviceOffline.bind(_mm));
-    _mm.emit('moduleload', item, m);
-  });
+
+    m.on('deviceonline',  this.onDeviceOnline.bind(this));
+    m.on('deviceoffline', this.onDeviceOffline.bind(this));
+    this.emit('moduleload', item, m);
+  }.bind(this));
 }
 
 module.exports = ModuleManager;
