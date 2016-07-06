@@ -4,8 +4,9 @@ var supported_modules = require('./modules.json');
 
 //var forever = require('forever-monitor');
 
-function ModuleManager() {
+function ModuleManager(allowDiscover) {
   this.modules = {};
+  this.allowDiscover = allowDiscover;
 
   this.on('moduleload', this.onModuleLoad.bind(this));
   this.on('moduleunload', this.onModuleUnload.bind(this));
@@ -15,49 +16,53 @@ util.inherits(ModuleManager, events.EventEmitter);
 
 ModuleManager.prototype.onModuleLoad = function(name, module) {
   console.log('module: ' + name + ' loaded');
-  var m = this.modules[name];
-  if (m == null) {
-    this.modules[name] = {};
-  }
 
-  this.modules[name].module = module;
-  this.modules[name].state = 'loaded';
+  module.discoverState = 'stopped';
+
+  var m = this.modules[name];
+  if (m != null) {
+    // module reloaded
+    if (m.discoverState === 'discovering') {
+      m.discoverState = 'stopped';
+    }
+  }
+  this.modules[name] = module;
+
+  if (this.allowDiscover === false) {
+    module.emit('discover');
+    setTimeout(function() {
+      this.emit('stopdiscover');
+    }.bind(module), 5000); // in this case no need to set discovering flag?
+  }
 };
 
 ModuleManager.prototype.onModuleUnload = function(name) {
   console.log('module: ' + name + ' unloaded');
-  var m = this.modules[name];
-  if (m != null) {
-    this.modules[name].module = null;
-    this.modules[name].state = 'unloaded';
+  var module = this.modules[name];
+  if (module != null) {
+    this.modules[name] = null;
   }
 };
 
 ModuleManager.prototype.discoverAllDevices = function() {
-  var map = this.modules;
-
-  for (var i in map) {
-    if (map[i].state === 'loaded') {
-      if (map[i].module.discoverState === 'discovering') {
-        return;
-      }
-      map[i].module.emit('discover');
-      map[i].module.discoverState = 'discovering';
+  for (var m in this.modules) {
+    var module = this.modules[m];
+    if (module.discoverState === 'discovering') {
+      return;
     }
+    module.emit('discover');
+    module.discoverState = 'discovering';
   }
 };
 
 ModuleManager.prototype.stopDiscoverAllDevices = function() {
-  var map = this.modules;
-
-  for (var i in map) {
-    if (map[i].state === 'loaded') {
-      if (map[i].module.discoverState === 'stopped') {
-        return;
-      }
-      map[i].module.emit('stopdiscover');
-      map[i].module.discoverState = 'stopped';
+  for (var m in this.modules) {
+    var module = this.modules[m];
+    if (module.discoverState === 'stopped') {
+      return;
     }
+    module.emit('stopdiscover');
+    module.discoverState = 'stopped';
   }
 };
 

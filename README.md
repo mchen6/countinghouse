@@ -114,9 +114,9 @@ How to run
 ```sh
     cd cdif
     npm install
-    npm start
+    npm run start / npm run start-allow-discover
 ```
-It may require root privilege to access Bluetooth interface
+With ```start-allow-discover``` argument the framework enables external discovery interface, or it will automatically do discovery after startup
 
 Summary of framework API interface:
 -----------------------------------
