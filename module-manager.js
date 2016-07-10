@@ -32,7 +32,7 @@ ModuleManager.prototype.onModuleLoad = function(name, module) {
     module.emit('discover');
     setTimeout(function() {
       this.emit('stopdiscover');
-    }.bind(module), 5000); // in this case no need to set discovering flag?
+    }.bind(module), 5000);
   }
 };
 
