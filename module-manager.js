@@ -1,12 +1,13 @@
-var events = require('events');
-var util   = require('util');
+var events  = require('events');
+var util    = require('util');
+var options = require('./lib/cli-options')
 var supported_modules = require('./modules.json');
 
 //var forever = require('forever-monitor');
 
-function ModuleManager(allowDiscover) {
+function ModuleManager() {
   this.modules = {};
-  this.allowDiscover = allowDiscover;
+  this.allowDiscover = options.allowDiscover;
 
   this.on('moduleload', this.onModuleLoad.bind(this));
   this.on('moduleunload', this.onModuleUnload.bind(this));

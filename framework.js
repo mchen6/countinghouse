@@ -1,11 +1,12 @@
 var ModuleManager = require('./module-manager');
-var RouteManager = require('./lib/route-manager');
-var argv = require('minimist')(process.argv.slice(1));
+var RouteManager  = require('./lib/route-manager');
+var argv          = require('minimist')(process.argv.slice(1));
+var options       = require('./lib/cli-options');
 
-var allowDiscover = (argv.allowDiscover === true) ? true : false;
+options.setOptions(argv);
 
-var mm = new ModuleManager(allowDiscover);
-var routeManager = new RouteManager(mm, allowDiscover);
+var mm = new ModuleManager();
+var routeManager = new RouteManager(mm);
 
 
 routeManager.installRoutes();
