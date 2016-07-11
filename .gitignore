@@ -1,4 +1,5 @@
 .framework.js.swp
+*.heapsnapshot
 device_addr.db
 node_modules/*
 npm-debug.log

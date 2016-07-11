@@ -6,6 +6,7 @@
   "scripts": {
     "start": "NODE_PATH=./lib node ./framework.js",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
+    "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
     "test": "mocha"
   },
   "repository": {
@@ -30,6 +31,7 @@
     "cdif-oauth-manager": "latest",
     "cdif-paypal": "latest",
     "express": "~4.13.3",
+    "heapdump": "^0.3.7",
     "is-my-json-valid": "^2.12.3",
     "json-schema-ref-parser": "^1.4.0",
     "jsonwebtoken": "~5.4.0",

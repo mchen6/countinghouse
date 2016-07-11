@@ -1,6 +1,6 @@
 var events  = require('events');
 var util    = require('util');
-var options = require('./lib/cli-options')
+var options = require('./lib/cli-options');
 var supported_modules = require('./modules.json');
 
 //var forever = require('forever-monitor');
