@@ -25,7 +25,6 @@
   ],
   "author": "out4b",
   "license": "Apache-2.0",
-  "private": true,
   "publishConfig":{
     "registry": "http://121.43.107.95:4873/"
   },
