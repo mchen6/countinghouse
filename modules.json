@@ -1,4 +1,5 @@
 [
   "cdif-oauth-manager",
-  "cdif-paypal"
+  "cdif-paypal",
+  "cdif-qunar-train-service"
 ]
