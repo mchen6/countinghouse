@@ -11,7 +11,7 @@ At the lower level, CDIF provides a set of uniformed device abstraction interfac
 
 Theoriotically, in this design vendor's non-standard, proprietary implementations may also be plugged-in into CDIF framework as modules, and present to client side this JSON based device model. However, to avoid the risk of unmanaged I/O which could be exposed by arbitrary implementations, proprietary implementation are encouraged to implement their device modules as sub-modules to the standard protocol modules such as ```cdif-ble-manager```, and left all I/O being managed by it.
 
-CDIF would collect device information from the device driver modules which are managed by it, and take care the processes of device / service discovery, registration, and management etc. Client applications of CDIF may retrieve this model language from CDIF's RESTful interface, analyze it to create client side model or UI elements. Then API calls made to the web service or IoT smart devices, which are managed by CDIF, can be done through CDIF's RESTful interface in uniformed JSON payload format. With event subscription support, client may also receive event updates from smart device or web services from CDIF, thus creates bi-directional data channel for CDIF's client applications.
+CDIF would collect device information from the device driver modules which are managed by it, and take care the processes of device / service discovery, registration, management, and etc. Client applications of CDIF may retrieve this model language from CDIF's RESTful interface, analyze it to create client side model or UI elements. Then API calls made to the web service or IoT smart devices, which are managed by CDIF, can be done through CDIF's RESTful interface in uniformed JSON payload format. With event subscription support, client may also receive event updates from smart device or web services from CDIF, thus creates bi-directional data channel for CDIF's client applications.
 
 After device / service discovery process is done, this JSON based model language may be retrieved by client applications through CDIF's RESTful interface, thus clients web apps would know how to send action commands, get latest device states event update. By doing this, CDIF presents client side a top level device abstraction and application level profile for all IoT device device or web services. For more information about this JSON based device model, please refer to spec/ folder in the source repository.
 
@@ -287,14 +287,19 @@ Considering these facts, CDIF would take following approaches trying to offer a 
 ```
 http://server_host_name:3049/device-control/<deviceID>/schema
 ```
-* CDIF would internally resolve the schema definitions associated with this pointer, as either defined by CDIF or its submodules, and do data validations upon action calls or event notifications.
+* CDIF would internally dereference the schema definitions associated with this pointer, as either defined by CDIF or its submodules, and do data validations upon action calls or event notifications.
 
 CDIF and its [cdif-onvif-manager](https://github.com/out4b/cdif-onvif-manager) implementation contains an example of providing schema definitions, and do data validations to complex-typed arguments to ONVIF camera's PTZ action calls. For example, ONVIF PTZ ```absoluteMove``` action call through CDIF's API interface defines its argument with ```object``` type, and value of its ```schema``` keyword would be ```/onvif/ptz/AbsoluteMoveArg```, which is a JSON pointer refering to the sub-schema definitions inside ONVIF device's root schema document. In this case, the fully resolved sub-schema (with no ```$ref``` keyword inside) can be retrieved from this URL:
 ```
 http://server_host_name:3049/device-control/<deviceID>/schema/onvif/ptz/AbsoluteMoveArg
 ```
 
-Upon a ```absoluteMove``` action call, CDIF would internally resolve the sub-schema associated with this pointer, and validate the input data based on it.
+Upon a ```absoluteMove``` action call, CDIF would internally dereference the sub-schema associated with this pointer, and validate the input data and output result based on those sub-schema definitions.
+
+Unlike many of other API modelling language such as WSDL, CDIF separates API argument's schema definitions from the device model document. This design may have following benefits:
+* Saving network bandwidth when client is trying to retrieve the API information
+* Device model document may keep intact when existing APIs requires a update
+* Having Common device model even their arguments definition are different
 
 Eventing
 --------
