@@ -10,6 +10,6 @@ var routeManager = new RouteManager(mm);
 
 
 routeManager.installRoutes();
-mm.loadModules();
+mm.loadAllModules();
 
 // forever to restart on crash?

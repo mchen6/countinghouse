@@ -4,6 +4,7 @@ device_addr.db
 node_modules/*
 npm-debug.log
 OZW_Log.txt
+modules.db
 device_model.db
 device_store.db
 core

@@ -109,6 +109,10 @@ We added OAuth supported to CDIF because we believe the future of smart home sho
 
 For now the CDIF device models created for all above protocols or web services are considered third party extensions to CDIF's own device vocabularies, and thus taking their own URN namespace within ```deviceType``` or ```serviceType``` keywords. We didn't define CDIF's own vocabularies because it is not very helpful at this moment. If there is such need in the future, more information such as normalized error codes should be annotated to the formal specifications.
 
+Demo
+----
+A [demo app](https://github.com/out4b/react-schema-form) which is forked from [react-schema-form](https://github.com/networknt/react-schema-form) project shows an example of connect to a running CDIF instance, fetch web services APIs contracts which are managed by CDIF, auto-generate JSON schema based input forms on app UI, and invoke service API interface to return the desired result.
+
 How to run
 ----------
 ```sh
