@@ -40,8 +40,12 @@ ModuleManager.prototype.onModuleLoad = function(name, module) {
 
 ModuleManager.prototype.onModuleUnload = function(name) {
   console.log('module: ' + name + ' unloaded');
-  var module = this.modules[name];
-  if (module != null) {
+
+  var m = this.modules[name];
+  if (m != null) {
+    if (m.discoverState === 'discovering') {
+      m.discoverState = 'stopped';
+    }
     this.modules[name] = null;
   }
 };
@@ -104,11 +108,15 @@ ModuleManager.prototype.loadModule = function(name) {
   } catch (e) {
     return console.error(e);
   }
-
   var m = new mod();
   m.on('deviceonline',  this.onDeviceOnline.bind(this));
   m.on('deviceoffline', this.onDeviceOffline.bind(this));
   this.emit('moduleload', name, m);
+};
+
+ModuleManager.prototype.unloadModule = function(name) {
+  //TODO: how can we safely prune require cache?
+  this.emit('moduleunload', name);
 };
 
 //TODO: check module validness, e.g. name start with cdif
@@ -162,7 +170,38 @@ ModuleManager.prototype.installModule = function(registry, name, version, callba
 };
 
 ModuleManager.prototype.uninstallModule = function(name, callback) {
-  callback(null);
+  var _this = this;
+
+  if (name == null || typeof(name) !== 'string') {
+    return callback(new CdifError('invalid package name'));
+  }
+
+  npm.load({}, function(err) {
+    if (err) {
+      console.log(err);
+      return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
+    }
+
+    var args = [];
+    args.push(name);
+
+    try {
+      npm.commands.uninstall(args, function(err, data) {
+        if (err) {
+          console.error(err);
+          return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
+        }
+        _this.removeModuleInformation(name, function(e) {
+          if (e) {
+            return callback(new CdifError('remove module record failed: ' + name + ', error: ' + e.message), null);
+          }
+          return callback(null);
+        });
+      });
+    } catch (e) {
+      return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + e.message), null);
+    }
+  });
 };
 
 ModuleManager.prototype.addModuleInformation = function(name, version, callback) {
@@ -174,6 +213,17 @@ ModuleManager.prototype.addModuleInformation = function(name, version, callback)
     }
 
     this.loadModule(name);
+    return callback(null);
+  }.bind(this));
+};
+
+ModuleManager.prototype.removeModuleInformation = function(name, callback) {
+  deviceDB.removeModuleInfo(name, function(err) {
+    if (err) {
+      return callback(new Error('cannot remove module info in db: ' + err.message));
+    }
+
+    this.unloadModule(name);
     return callback(null);
   }.bind(this));
 };
