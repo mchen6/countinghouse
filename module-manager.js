@@ -28,6 +28,7 @@ ModuleManager.prototype.onModuleLoad = function(name, module) {
     if (m.discoverState === 'discovering') {
       m.discoverState = 'stopped';
     }
+    this.emit('purgedevice', m); // to be handled by device manager
   }
   this.modules[name] = module;
 
@@ -48,6 +49,7 @@ ModuleManager.prototype.onModuleUnload = function(name) {
       m.discoverState = 'stopped';
     }
     delete this.modules[name];
+    this.emit('purgedevice', m); // to be handled by device manager
   }
 };
 
