@@ -1,10 +1,11 @@
 var events      = require('events');
 var util        = require('util');
 var options     = require('./lib/cli-options');
-var npm         = require('npm');
+var exec        = require('child_process').exec;
 var deviceDB    = require('./lib/device-db');
 var CdifError   = require('./lib/error').CdifError;
 //var forever = require('forever-monitor');
+var freshy = require('freshy');
 
 function ModuleManager() {
   this.modules = {};
@@ -103,15 +104,26 @@ ModuleManager.prototype.loadAllModules = function() {
 
 ModuleManager.prototype.loadModule = function(name) {
   var mod = null;
-  try {
-    mod = require(name);
-  } catch (e) {
-    return console.error(e);
+
+  if (this.modules[name] != null) {
+    try {
+      freshy.reload(name);
+    } catch (e) {
+      return console.error('module reload failed: ' + name);
+    }
+    console.log(require.cache);
+    this.emit('moduleload', name, this.modules[name]);
+  } else {
+    try {
+      mod = require(name);
+    } catch (e) {
+      return console.error(e);
+    }
+    var m = new mod();
+    m.on('deviceonline',  this.onDeviceOnline.bind(this));
+    m.on('deviceoffline', this.onDeviceOffline.bind(this));
+    this.emit('moduleload', name, m);
   }
-  var m = new mod();
-  m.on('deviceonline',  this.onDeviceOnline.bind(this));
-  m.on('deviceoffline', this.onDeviceOffline.bind(this));
-  this.emit('moduleload', name, m);
 };
 
 ModuleManager.prototype.unloadModule = function(name) {
@@ -137,36 +149,31 @@ ModuleManager.prototype.installModule = function(registry, name, version, callba
     return callback(new CdifError('invalid package version'));
   }
 
-  npm.load({}, function(err) {
-    if (err) {
-      console.log(err);
-      return callback(new CdifError('module install failed: ' + name + ', error: ' + err.message), null);
-    }
+  var command = null;
+  if (registry == null) {
+    command = 'npm install ' + name + '@' + version;
+  } else {
+    command = 'npm install ' + '--registry=' + registry + ' ' + name + '@' + version;
+  }
 
-    if (registry != null) {
-      npm.config.set('registry', registry);
-    }
+  try {
+    exec(command, {timeout: 60000}, function(err, stdout, stderr) {
+      if (err) {
+        console.error('module install failed: ' + name + ', error: ' + err.message);
+        return callback(new CdifError('module install failed: ' + name + ', error: ' + err.message), null);
+      }
 
-    var args = [];
-    args.push(name + '@' + version);
-
-    try {
-      npm.commands.install(args, function(err, data) {
-        if (err) {
-          console.error(err);
-          return callback(new CdifError('module install failed: ' + name + ', error: ' + err.message), null);
+      this.addModuleInformation(name, version, function(e) {
+        if (e) {
+          return callback(new CdifError('add module record failed: ' + name + ', error: ' + e.message), null);
         }
-        _this.addModuleInformation(name, version, function(e) {
-          if (e) {
-            return callback(new CdifError('add module record failed: ' + name + ', error: ' + e.message), null);
-          }
-          return callback(null);
-        });
-      });
-    } catch (e) {
-      return callback(new CdifError('module install failed: ' + name + ', error: ' + e.message), null);
-    }
-  });
+        this.loadModule(name);
+        return callback(null);
+      }.bind(this));
+    }.bind(this));
+  } catch (e) {
+    return callback(new CdifError('module install failed: ' + name + ', error: ' + e.message), null);
+  }
 };
 
 ModuleManager.prototype.uninstallModule = function(name, callback) {
@@ -176,32 +183,25 @@ ModuleManager.prototype.uninstallModule = function(name, callback) {
     return callback(new CdifError('invalid package name'));
   }
 
-  npm.load({}, function(err) {
-    if (err) {
-      console.log(err);
-      return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
-    }
+  var command = 'npm uninstall ' + name;
 
-    var args = [];
-    args.push(name);
+  try {
+    exec(command, {timeout: 60000}, function(err, stdout, stderr) {
+      if (err) {
+        console.error('module uninstall failed: ' + name + ', error: ' + err.message);
+        return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
+      }
 
-    try {
-      npm.commands.uninstall(args, function(err, data) {
-        if (err) {
-          console.error(err);
-          return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
+      _this.removeModuleInformation(name, function(e) {
+        if (e) {
+          return callback(new CdifError('remove module record failed: ' + name + ', error: ' + e.message), null);
         }
-        _this.removeModuleInformation(name, function(e) {
-          if (e) {
-            return callback(new CdifError('remove module record failed: ' + name + ', error: ' + e.message), null);
-          }
-          return callback(null);
-        });
+        return callback(null);
       });
-    } catch (e) {
-      return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + e.message), null);
-    }
-  });
+    });
+  } catch (e) {
+    return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + e.message), null);
+  }
 };
 
 ModuleManager.prototype.addModuleInformation = function(name, version, callback) {
@@ -211,8 +211,6 @@ ModuleManager.prototype.addModuleInformation = function(name, version, callback)
     if (err) {
       return callback(new Error('cannot set module info in db: ' + err.message));
     }
-
-    this.loadModule(name);
     return callback(null);
   }.bind(this));
 };

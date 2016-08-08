@@ -8,4 +8,5 @@ modules.db
 device_model.db
 device_store.db
 core
+output
 examples/
