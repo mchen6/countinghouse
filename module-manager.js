@@ -6,10 +6,10 @@ var deviceDB    = require('./lib/device-db');
 var CdifError   = require('./lib/error').CdifError;
 //var forever = require('forever-monitor');
 var freshy = require('freshy');
+var rewire      = require('rewire');
 
 function ModuleManager() {
   this.modules = {};
-  this.allowDiscover = options.allowDiscover;
 
   this.on('moduleload', this.onModuleLoad.bind(this));
   this.on('moduleunload', this.onModuleUnload.bind(this));
@@ -31,7 +31,7 @@ ModuleManager.prototype.onModuleLoad = function(name, module) {
   }
   this.modules[name] = module;
 
-  if (this.allowDiscover === false) {
+  if (options.allowDiscover === false) {
     module.emit('discover');
     setTimeout(function() {
       this.emit('stopdiscover');
@@ -47,7 +47,7 @@ ModuleManager.prototype.onModuleUnload = function(name) {
     if (m.discoverState === 'discovering') {
       m.discoverState = 'stopped';
     }
-    this.modules[name] = null;
+    delete this.modules[name];
   }
 };
 
@@ -89,7 +89,7 @@ ModuleManager.prototype.loadAllModules = function() {
     data.forEach(function(item) {
       var mod = null;
       try {
-        mod = require(item.name);
+        mod = rewire(item.name);
       } catch (e) {
         return console.error(e);
       }
@@ -104,37 +104,23 @@ ModuleManager.prototype.loadAllModules = function() {
 
 ModuleManager.prototype.loadModule = function(name) {
   var mod = null;
-
-  if (this.modules[name] != null) {
-    try {
-      freshy.reload(name);
-    } catch (e) {
-      return console.error('module reload failed: ' + name);
-    }
-    console.log(require.cache);
-    this.emit('moduleload', name, this.modules[name]);
-  } else {
-    try {
-      mod = require(name);
-    } catch (e) {
-      return console.error(e);
-    }
-    var m = new mod();
-    m.on('deviceonline',  this.onDeviceOnline.bind(this));
-    m.on('deviceoffline', this.onDeviceOffline.bind(this));
-    this.emit('moduleload', name, m);
+  try {
+    mod = rewire(name);
+  } catch (e) {
+    return console.error(e);
   }
+  var m = new mod();
+  m.on('deviceonline',  this.onDeviceOnline.bind(this));
+  m.on('deviceoffline', this.onDeviceOffline.bind(this));
+  this.emit('moduleload', name, m);
 };
 
 ModuleManager.prototype.unloadModule = function(name) {
-  //TODO: how can we safely prune require cache?
   this.emit('moduleunload', name);
 };
 
 //TODO: check module validness, e.g. name start with cdif
 ModuleManager.prototype.installModule = function(registry, name, version, callback) {
-  var _this = this;
-
   if ((registry != null) && (typeof(registry) !== 'string' ||
     ((/^http:\/\/.{1,256}$/.test(registry) ||
      /^https:\/\/.{1,256}$/.test(registry)) === false))) {
@@ -177,8 +163,6 @@ ModuleManager.prototype.installModule = function(registry, name, version, callba
 };
 
 ModuleManager.prototype.uninstallModule = function(name, callback) {
-  var _this = this;
-
   if (name == null || typeof(name) !== 'string') {
     return callback(new CdifError('invalid package name'));
   }
@@ -192,13 +176,14 @@ ModuleManager.prototype.uninstallModule = function(name, callback) {
         return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
       }
 
-      _this.removeModuleInformation(name, function(e) {
+      this.removeModuleInformation(name, function(e) {
         if (e) {
           return callback(new CdifError('remove module record failed: ' + name + ', error: ' + e.message), null);
         }
+        this.unloadModule(name);
         return callback(null);
-      });
-    });
+      }.bind(this));
+    }.bind(this));
   } catch (e) {
     return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + e.message), null);
   }
@@ -220,8 +205,6 @@ ModuleManager.prototype.removeModuleInformation = function(name, callback) {
     if (err) {
       return callback(new Error('cannot remove module info in db: ' + err.message));
     }
-
-    this.unloadModule(name);
     return callback(null);
   }.bind(this));
 };
