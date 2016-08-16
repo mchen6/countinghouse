@@ -4,9 +4,8 @@ var options     = require('./lib/cli-options');
 var exec        = require('child_process').exec;
 var deviceDB    = require('./lib/device-db');
 var CdifError   = require('./lib/error').CdifError;
-//var forever = require('forever-monitor');
-var freshy = require('freshy');
 var rewire      = require('rewire');
+//var forever = require('forever-monitor');
 
 function ModuleManager() {
   this.modules = {};
