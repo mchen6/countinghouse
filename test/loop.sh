@@ -4,3 +4,4 @@ while true; do
 	sleep 1
 done
 
+#curl -H "Content-Type: application/json" -X POST -d '{"registry":"http://121.43.107.95:5984/", "name":"cdif-qunar-train-service", "version":"0.0.5"}' http://121.43.107.95:3049/module-install

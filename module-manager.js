@@ -5,6 +5,7 @@ var exec        = require('child_process').exec;
 var deviceDB    = require('./lib/device-db');
 var CdifError   = require('./lib/error').CdifError;
 var rewire      = require('rewire');
+var semver      = require('semver');
 //var forever = require('forever-monitor');
 
 function ModuleManager() {
@@ -132,8 +133,8 @@ ModuleManager.prototype.installModule = function(registry, name, version, callba
     return callback(new CdifError('invalid package name'));
   }
 
-  if (typeof(version) !== 'string') {
-    return callback(new CdifError('invalid package version'));
+  if (typeof(version) !== 'string' || semver.valid(version) == null) {
+    return callback(new CdifError('invalid package version: ' + version));
   }
 
   var command = null;
