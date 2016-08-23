@@ -4,6 +4,7 @@ var options     = require('./lib/cli-options');
 var exec        = require('child_process').exec;
 var deviceDB    = require('./lib/device-db');
 var CdifError   = require('./lib/error').CdifError;
+var logger      = require('./lib/logger');
 var rewire      = require('rewire');
 var semver      = require('semver');
 //var forever = require('forever-monitor');
@@ -18,7 +19,7 @@ function ModuleManager() {
 util.inherits(ModuleManager, events.EventEmitter);
 
 ModuleManager.prototype.onModuleLoad = function(name, module) {
-  console.log('module: ' + name + ' loaded');
+  logger.info('module: ' + name + ' loaded');
 
   module.discoverState = 'stopped';
 
@@ -41,7 +42,7 @@ ModuleManager.prototype.onModuleLoad = function(name, module) {
 };
 
 ModuleManager.prototype.onModuleUnload = function(name) {
-  console.log('module: ' + name + ' unloaded');
+  logger.info('module: ' + name + ' unloaded');
 
   var m = this.modules[name];
   if (m != null) {
@@ -86,14 +87,14 @@ ModuleManager.prototype.onDeviceOffline = function(device, module) {
 ModuleManager.prototype.loadAllModules = function() {
   deviceDB.getAllModuleInfo(function(err, data) {
     if (err) {
-      return console.error(err);
+      return logger.error(err);
     }
     data.forEach(function(item) {
       var mod = null;
       try {
         mod = rewire(item.name);
       } catch (e) {
-        return console.error(e);
+        return logger.error(e);
       }
 
       var m = new mod();
@@ -105,16 +106,19 @@ ModuleManager.prototype.loadAllModules = function() {
 };
 
 ModuleManager.prototype.loadModule = function(name) {
-  var mod = null;
+  var moduleConstructor = null;
+  var moduleInstance    = null;
+
   try {
-    mod = rewire(name);
+    moduleConstructor = rewire(name);
+    moduleInstance    = new moduleConstructor();
   } catch (e) {
-    return console.error(e);
+    return logger.error(e);
   }
-  var m = new mod();
-  m.on('deviceonline',  this.onDeviceOnline.bind(this));
-  m.on('deviceoffline', this.onDeviceOffline.bind(this));
-  this.emit('moduleload', name, m);
+
+  moduleInstance.on('deviceonline',  this.onDeviceOnline.bind(this));
+  moduleInstance.on('deviceoffline', this.onDeviceOffline.bind(this));
+  this.emit('moduleload', name, moduleInstance);
 };
 
 ModuleManager.prototype.unloadModule = function(name) {
@@ -147,9 +151,11 @@ ModuleManager.prototype.installModule = function(registry, name, version, callba
   try {
     exec(command, {timeout: 60000}, function(err, stdout, stderr) {
       if (err) {
-        console.error('module install failed: ' + name + ', error: ' + err.message);
+        logger.error('module install failed: ' + name + ', error: ' + err.message);
         return callback(new CdifError('module install failed: ' + name + ', error: ' + err.message), null);
       }
+
+      logger.info('module installed: ' + name + '@' + version);
 
       this.addModuleInformation(name, version, function(e) {
         if (e) {
@@ -174,9 +180,11 @@ ModuleManager.prototype.uninstallModule = function(name, callback) {
   try {
     exec(command, {timeout: 60000}, function(err, stdout, stderr) {
       if (err) {
-        console.error('module uninstall failed: ' + name + ', error: ' + err.message);
+        logger.error('module uninstall failed: ' + name + ', error: ' + err.message);
         return callback(new CdifError('module uninstall failed: ' + name + ', error: ' + err.message), null);
       }
+
+      logger.info('module uninstalled: ' + name);
 
       this.removeModuleInformation(name, function(e) {
         if (e) {

@@ -9,4 +9,5 @@ device_model.db
 device_store.db
 core
 output
+*.log
 examples/
