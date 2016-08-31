@@ -17,7 +17,7 @@ After device / service discovery process is done, this JSON based model language
 
 Demo
 ----
-A [demo app](https://github.com/out4b/react-schema-form) which is forked from [react-schema-form](https://github.com/networknt/react-schema-form) project shows an example of connect to a running CDIF instance, fetch the common model CDIF created for web services, auto-generate JSON schema based input forms on app UI, and invoke CDIF's REST API interface to return the desired data from web services.
+A [demo app](https://github.com/out4b/react-schema-form) which is forked from [react-schema-form](https://github.com/networknt/react-schema-form) project shows an example of connect to a running CDIF instance, fetch the common model CDIF created for its managed REST services, auto-generate JSON schema based input forms on app UI, and invoke CDIF's REST API interface to return the API call data from it.
 
 
 CDIF's common device model in summary
