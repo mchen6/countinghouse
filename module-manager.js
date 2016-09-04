@@ -18,8 +18,8 @@ function ModuleManager() {
 
 util.inherits(ModuleManager, events.EventEmitter);
 
-ModuleManager.prototype.onModuleLoad = function(name, module) {
-  logger.info('module: ' + name + ' loaded');
+ModuleManager.prototype.onModuleLoad = function(name, module, version) {
+  logger.info('module: ' + name + '@' + version + ' loaded');
 
   module.discoverState = 'stopped';
 
@@ -100,12 +100,12 @@ ModuleManager.prototype.loadAllModules = function() {
       var m = new mod();
       m.on('deviceonline',  this.onDeviceOnline.bind(this));
       m.on('deviceoffline', this.onDeviceOffline.bind(this));
-      this.emit('moduleload', item.name, m);
+      this.emit('moduleload', item.name, m, item.version);
     }.bind(this));
   }.bind(this));
 };
 
-ModuleManager.prototype.loadModule = function(name) {
+ModuleManager.prototype.loadModule = function(name, version) {
   var moduleConstructor = null;
   var moduleInstance    = null;
 
@@ -118,7 +118,7 @@ ModuleManager.prototype.loadModule = function(name) {
 
   moduleInstance.on('deviceonline',  this.onDeviceOnline.bind(this));
   moduleInstance.on('deviceoffline', this.onDeviceOffline.bind(this));
-  this.emit('moduleload', name, moduleInstance);
+  this.emit('moduleload', name, moduleInstance, version);
 };
 
 ModuleManager.prototype.unloadModule = function(name) {
@@ -161,7 +161,7 @@ ModuleManager.prototype.installModule = function(registry, name, version, callba
         if (e) {
           return callback(new CdifError('add module record failed: ' + name + ', error: ' + e.message), null);
         }
-        this.loadModule(name);
+        this.loadModule(name, version);
         return callback(null);
       }.bind(this));
     }.bind(this));
