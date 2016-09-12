@@ -313,8 +313,7 @@
       "required": [
         "deviceType",
         "friendlyName",
-        "manufacturer",
-        "userAuth"
+        "manufacturer"
       ]
     }
   },

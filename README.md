@@ -143,7 +143,9 @@ Retrieve uuid of all discovered devices. To improve security, this API won't exp
     response: 200 OK
 
 ##### Connect to device:
-Connect to a single device. Optionally if a device requires auth (userAuth flag set to true in device description), user / pass pair needs to be contained in the request body in JSON format. And in this case, a JWT token would be returned in the response body indexed by ```device_access_token```. Client would need to provide this token in request body for subsequent device access.
+Connect to a single device. If a device requires auth (userAuth flag set to true in device description), username / password pair needs to be contained in the request body in JSON format. And in this case, a JWT token would be returned in the response body indexed by ```device_access_token```. Client would need to provide this token in request body for subsequent device access. In another case, if OAuth authorization needs to be applied to the device object, userAuth flag would be set to true in device description and this API must be called by client to start the OAuth authorization flow.
+
+This API call is optional if a device does not require auth (userAuth flag not set in device description). However underlying IoT protocol module may rely on this call to start the service discovery process.
 
     POST http://server_host_name:3049/device-control/<deviceID>/connect
     (optional) request body:
@@ -157,14 +159,14 @@ Connect to a single device. Optionally if a device requires auth (userAuth flag 
       "device_access_token": <token>
     }
 
-In order to handle OAuth authentication flow, a url redirect object may be returned from connect API call in following format:
+In order to handle OAuth authorization flow, a url redirect object may be returned from connect API call in following format:
 
 ``` {"url_redirect":{"href":"https://api.example.com","method":"GET"}} ```
 
 Client of CDIF may need to follow this URL to complete the OAuth authentication flow
 
 ##### Disconnect device:
-Disconnect a single device, only successful if device is connected
+Disconnect a single device, only successful if device is connected. This API call is optional if a device does not require auth (userAuth flag not set in device description).
 
     POST http://server_host_name:3049/device-control/<deviceID>/disconnect
     (optional) request body:
