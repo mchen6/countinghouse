@@ -2,9 +2,10 @@
   "name": "cdif",
   "version": "0.2.5",
   "description": "Common device interconnect framework",
-  "main": "framework.js",
+  "bin": "./bin/cdif",
+  "main": "./bin/framework.js",
   "scripts": {
-    "start": "NODE_PATH=./lib node ./framework.js",
+    "start": "./bin/cdif",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
     "test": "mocha"

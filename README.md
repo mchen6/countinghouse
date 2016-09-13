@@ -147,7 +147,7 @@ Connect to a single device. If a device requires auth (userAuth flag set to true
 
 This API call is optional if a device does not require auth (userAuth flag not set in device description). However underlying IoT protocol module may rely on this call to start the service discovery process.
 
-    POST http://server_host_name:3049/device-control/<deviceID>/connect
+    POST http://server_host_name:3049/devices/<deviceID>/connect
     (optional) request body:
     {
       "username": <name>,
@@ -168,7 +168,7 @@ Client of CDIF may need to follow this URL to complete the OAuth authentication 
 ##### Disconnect device:
 Disconnect a single device, only successful if device is connected. This API call is optional if a device does not require auth (userAuth flag not set in device description).
 
-    POST http://server_host_name:3049/device-control/<deviceID>/disconnect
+    POST http://server_host_name:3049/devices/<deviceID>/disconnect
     (optional) request body:
     {
       "device_access_token": <token>
@@ -178,7 +178,7 @@ Disconnect a single device, only successful if device is connected. This API cal
 ##### Get spec of a single device:
 Retrieve the spec of a single device, only successful if device is connected
 
-    GET http://server_host_name:3049/device-control/<deviceID>/get-spec
+    GET http://server_host_name:3049/devices/<deviceID>/get-spec
     (optional) request body:
     {
       "device_access_token": <token>
@@ -190,7 +190,7 @@ Retrieve the spec of a single device, only successful if device is connected
 Get current state of a service, only successful if device is connected
 Client may use this call to initialize or refresh its device model without calling into device modules
 
-    GET http://server_host_name:3049/device-control/<deviceID>/get-state
+    GET http://server_host_name:3049/devices/<deviceID>/get-state
     (optional) request body:
     {
       "serviceID": <id>,
@@ -203,7 +203,7 @@ Client may use this call to initialize or refresh its device model without calli
 ##### Device control
 Invoke a device control action, only successful if device is connected
 
-    POST http://server_host_name:3049/device-control/<deviceID>/invoke-action
+    POST http://server_host_name:3049/devices/<deviceID>/invoke-action
     request boy:
     {
       serviceID: <id>,
@@ -236,37 +236,37 @@ To discover, connect, and read sensor value from TI SensorTag CC2650:
 curl -H "Content-Type: application/json" -X POST http://localhost:3049/discover
 curl -H "Content-Type: application/json" -X GET http://localhost:3049/device-list
 curl -H "Content-Type: application/json" -X POST http://localhost:3049/stop-discover
-curl -H "Content-Type: application/json" -X POST http://localhost:3049/device-control/a540d490-c3ab-4a46-98a9-c4a0f074f4d7/connect
-curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:cdif-net:serviceID:Illuminance","actionName":"getIlluminanceData","argumentList":{"illuminance":0}} ' http://localhost:3049/device-control/a540d490-c3ab-4a46-98a9-c4a0f074f4d7/invoke-action
-curl -H "Content-Type: application/json" -X GET http://localhost:3049/device-control/a540d490-c3ab-4a46-98a9-c4a0f074f4d7/get-spec
+curl -H "Content-Type: application/json" -X POST http://localhost:3049/devices/a540d490-c3ab-4a46-98a9-c4a0f074f4d7/connect
+curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:cdif-net:serviceID:Illuminance","actionName":"getIlluminanceData","argumentList":{"illuminance":0}} ' http://localhost:3049/devices/a540d490-c3ab-4a46-98a9-c4a0f074f4d7/invoke-action
+curl -H "Content-Type: application/json" -X GET http://localhost:3049/devices/a540d490-c3ab-4a46-98a9-c4a0f074f4d7/get-spec
 ```
 
 To connect to, and issue a PTZ absoluteMove action call to ONVIF camera device:
 ```
-curl -H "Content-Type: application/json" -X POST -d '{"username": "admin", "password": "test"}' http://localhost:3049/device-control/b7f65ae1-1897-4f52-b1b7-9d5ecd0dd71e/connect
+curl -H "Content-Type: application/json" -X POST -d '{"username": "admin", "password": "test"}' http://localhost:3049/devices/b7f65ae1-1897-4f52-b1b7-9d5ecd0dd71e/connect
 
 device access token will be returned in following format:
 {"device_access_token":"***REDACTED-SECRET***"}
 
-curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:cdif-net:serviceID:ONVIFPTZService","actionName":"absoluteMove","argumentList":{"options":{"x":-1,"y":-1,"zoom":1,"speed":{"x":0.1,"y":0.1}}},"device_access_token":"***REDACTED-SECRET***"}' http://localhost:3049/device-control/b7f65ae1-1897-4f52-b1b7-9d5ecd0dd71e/invoke-action
+curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:cdif-net:serviceID:ONVIFPTZService","actionName":"absoluteMove","argumentList":{"options":{"x":-1,"y":-1,"zoom":1,"speed":{"x":0.1,"y":0.1}}},"device_access_token":"***REDACTED-SECRET***"}' http://localhost:3049/devices/b7f65ae1-1897-4f52-b1b7-9d5ecd0dd71e/invoke-action
 ```
 
 To connect to, and get the latest Twitter user timeline from Twitter virtual device:
 ```
-curl -H "Content-Type: application/json" -X POST http://localhost:3049/device-control/a9878d3e-4a6b-481b-b848-37c6a4c7b901/connect
+curl -H "Content-Type: application/json" -X POST http://localhost:3049/devices/a9878d3e-4a6b-481b-b848-37c6a4c7b901/connect
 
 (after user completed OAuth authentication flow)
 
-curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:twitter-com:serviceID:Statuses","actionName":"getUserTimeline", "argumentList":{"options":{"count":1}, "userTimeline":{}}}' http://localhost:3049/device-control/a9878d3e-4a6b-481b-b848-37c6a4c7b901/invoke-action
+curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:twitter-com:serviceID:Statuses","actionName":"getUserTimeline", "argumentList":{"options":{"count":1}, "userTimeline":{}}}' http://localhost:3049/devices/a9878d3e-4a6b-481b-b848-37c6a4c7b901/invoke-action
 ```
 
 To create and execute a PayPal payment:
 ```
-curl -H "Content-Type: application/json" -X POST -d '{"serviceID": "urn:paypal-com:serviceID:payment","actionName":"createWithPayPal", "argumentList":{"config":{"mode":"sandbox","client_id":"client_id","client_secret":"client_secret"},"intent":"authorize","payer":{"payment_method":"paypal"},"redirect_urls":{"return_url":"http://return.url","cancel_url":"http://cancel.url"},"transactions":[{"item_list":{"items":[{"name":"item","sku":"item","price":"19.00","currency":"USD","quantity":1}]},"amount":{"currency":"USD","total":"19.00"},"description":"This is the payment description."}], "result":{}}}' http://localhost:3049/device-control/9d0b29bd-b25f-4632-9a1a-d62e85d3ad4f/invoke-action
+curl -H "Content-Type: application/json" -X POST -d '{"serviceID": "urn:paypal-com:serviceID:payment","actionName":"createWithPayPal", "argumentList":{"config":{"mode":"sandbox","client_id":"client_id","client_secret":"client_secret"},"intent":"authorize","payer":{"payment_method":"paypal"},"redirect_urls":{"return_url":"http://return.url","cancel_url":"http://cancel.url"},"transactions":[{"item_list":{"items":[{"name":"item","sku":"item","price":"19.00","currency":"USD","quantity":1}]},"amount":{"currency":"USD","total":"19.00"},"description":"This is the payment description."}], "result":{}}}' http://localhost:3049/devices/9d0b29bd-b25f-4632-9a1a-d62e85d3ad4f/invoke-action
 
 (after user login to PayPal authorization page and authorized this payment, paymentID and payer_id will be carried back in query string parameters on the return URL)
 
-curl -H "Content-Type: application/json" -X POST -d '{"serviceID": "urn:paypal-com:serviceID:payment","actionName":"execute", "argumentList":{"config":{"mode":"sandbox","client_id":"client_id","client_secret":"client_secret"},"paymentID":"paymentID", "executeArgs":{"payer_id":"payer_id", "transactions":[{"amount":{"currency":"USD","total":"19.00"}}]}, "result":{}}}' http://localhost:3049/device-control/9d0b29bd-b25f-4632-9a1a-d62e85d3ad4f/invoke-action
+curl -H "Content-Type: application/json" -X POST -d '{"serviceID": "urn:paypal-com:serviceID:payment","actionName":"execute", "argumentList":{"config":{"mode":"sandbox","client_id":"client_id","client_secret":"client_secret"},"paymentID":"paymentID", "executeArgs":{"payer_id":"payer_id", "transactions":[{"amount":{"currency":"USD","total":"19.00"}}]}, "result":{}}}' http://localhost:3049/devices/9d0b29bd-b25f-4632-9a1a-d62e85d3ad4f/invoke-action
 ```
 
 Data types and validation
@@ -287,13 +287,13 @@ Considering these facts, CDIF would take following approaches trying to offer a 
 * If a state variable is in ```object``` tpye, a ```schema``` keyword must be annotated to the state variable definition. And its value would be used for validation purpose.
 * The value of ```schema``` keyword refer to the formal [JSON schema](http://json-schema.org/) definition to this data object. This value is a [JSON pointer](https://tools.ietf.org/html/rfc6901) refers to the variable's sub-schema definition inside device's root schema document. Authenticated clients, such as client web apps or third party web services may also retrieve the sub-schema definitions associated with this reference through CDIF's RESTful interface and do proper validations if needed. In this case, the device's root schema definitions, and variables' sub-schemas which are defined by ```schema``` keyword can be retrieved from below URL:
 ```
-http://server_host_name:3049/device-control/<deviceID>/schema
+http://server_host_name:3049/devices/<deviceID>/schema
 ```
 * CDIF would internally dereference the schema definitions associated with this pointer, as either defined by CDIF or its submodules, and do data validations upon action calls or event notifications.
 
 CDIF and its [cdif-onvif-manager](https://github.com/out4b/cdif-onvif-manager) implementation contains an example of providing schema definitions, and do data validations to complex-typed arguments to ONVIF camera's PTZ action calls. For example, ONVIF PTZ ```absoluteMove``` action call through CDIF's API interface defines its argument with ```object``` type, and value of its ```schema``` keyword would be ```/onvif/ptz/AbsoluteMoveArg```, which is a JSON pointer refering to the sub-schema definitions inside ONVIF device's root schema document. In this case, the fully resolved sub-schema (with no ```$ref``` keyword inside) can be retrieved from this URL:
 ```
-http://server_host_name:3049/device-control/<deviceID>/schema/onvif/ptz/AbsoluteMoveArg
+http://server_host_name:3049/devices/<deviceID>/schema/onvif/ptz/AbsoluteMoveArg
 ```
 
 Upon a ```absoluteMove``` action call, CDIF would internally dereference the sub-schema associated with this pointer, and validate the input data and output result based on those sub-schema definitions.
@@ -315,7 +315,7 @@ Device presentation
 -------------------
 Some kinds of IoT devices, such as IP cameras, may have their own device presentation URL for configuration and management purpose. To support this kind of usage, CDIF implemented a reverse proxy server to help redirect HTTP traffics to this URL. By doing this, the actual device presentation URL would be hidden from external network to help improve security. If the device has a presentation URL, its device description would have "devicePresentation" flag set to true. After the device is successfully connected through CDIF's connect API, its presentation URL is mounted on CDIF's RESTful interface and can be uniformly accessed from below URL:
 ```
-http://server_host_name:3049/device-control/<deviceID>/presentation
+http://server_host_name:3049/devices/<deviceID>/presentation
 ```
 
 For now only ONVIF devices support this kind of usage. But this concept should be extensible to any device or manufacturer modules who want to host their own presentation page, given they implemented the internal getDeviceRootUrl() interface which returns the reverse proxy server's root URL. Please refer to [cdif-onvif-manager](https://github.com/out4b/cdif-onvif-manager) module for more information.
