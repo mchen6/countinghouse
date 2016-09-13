@@ -292,7 +292,6 @@
                 }
               },
               "required": [
-                "serviceType",
                 "actionList",
                 "serviceStateTable"
               ]
