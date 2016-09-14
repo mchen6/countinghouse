@@ -1,7 +1,3 @@
-process.on('exit', function() {
-    process.exit(0);
-});
-
 var ModuleManager = require('./module-manager');
 var RouteManager  = require('../lib/route-manager');
 var argv          = require('minimist')(process.argv.slice(1));
