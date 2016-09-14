@@ -110,11 +110,18 @@ For now the CDIF device models created for all above protocols or web services a
 How to run
 ----------
 ```sh
-    cd cdif
-    npm install
-    npm run start / npm run start-allow-discover
+    npm install -g cdif
+    cdif
 ```
-With ```start-allow-discover``` argument the framework enables external discovery interface, or it will automatically do discovery after startup
+If the above npm install encounters any error, add ```--unsafe-perm``` option to npm install
+
+Command line options
+--------------------
+* --debug             Enable debug option
+* --allowDiscover     Enable discover route, if not specified, cdif would automatically call module's discover interface on startup
+* --heapDump          Enable heap profiling
+* --wsServer          Create WebSocket server on startup
+* --sioServer         Create Socket.IO server on startup
 
 Summary of framework API interface:
 -----------------------------------
