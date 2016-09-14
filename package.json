@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -27,7 +27,7 @@
   "author": "out4b",
   "license": "Apache-2.0",
   "publishConfig": {
-    "registry": "http://121.43.107.95:5984/"
+    "registry": "http://121.43.107.95:5984/packages"
   },
   "dependencies": {
     "bcrypt": "^0.8.5",
