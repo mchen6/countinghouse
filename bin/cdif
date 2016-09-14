@@ -3,7 +3,6 @@ basedir=`dirname "$0"`
 
 which bunyan
 OUT=$?
-echo $?
 
 if [ $OUT -eq 0 ];then
   NODE_PATH=$basedir/../lib node --expose-gc "$basedir/framework.js" "$@" | bunyan
