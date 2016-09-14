@@ -7,7 +7,7 @@ which bunyan
 OUT=$?
 
 if [ $OUT -eq 0 ];then
-  NODE_PATH=$basepath/../lib node --expose-gc "$basepath/framework.js" "$@" | bunyan
+  NODE_PATH=$basepath/../lib node --expose-gc "$basepath/../framework.js" "$@" | bunyan
 else
-  NODE_PATH=$basepath/../lib node --expose-gc "$basepath/framework.js" "$@"
+  NODE_PATH=$basepath/../lib node --expose-gc "$basepath/../framework.js" "$@"
 fi
