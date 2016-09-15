@@ -118,7 +118,7 @@ If the above npm install encounters any error, add ```--unsafe-perm``` option to
 Command line options
 --------------------
 * --debug             Enable debug option. In this case morgan logging on console would be activated.
-* --global            Enable global option. In this case, cdif would read the global device database. Or else it will read the local one.
+* --dbPath=<path>     Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it
 * --allowDiscover     Enable discover route, if not specified, cdif would automatically call module's discover interface on startup
 * --heapDump          Enable heap profiling
 * --wsServer          Create WebSocket server on startup
