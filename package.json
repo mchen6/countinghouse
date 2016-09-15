@@ -27,7 +27,7 @@
   "author": "out4b",
   "license": "Apache-2.0",
   "publishConfig": {
-    "registry": "http://121.43.107.95:5984/packages"
+    "registry": "http://apemesh.com:5984"
   },
   "dependencies": {
     "bcrypt": "^0.8.5",
