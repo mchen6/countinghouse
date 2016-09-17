@@ -123,6 +123,7 @@ Command line options
 * --heapDump          Enable heap profiling
 * --wsServer          Create WebSocket server on startup
 * --sioServer         Create Socket.IO server on startup
+* --loadModule <path> Load a local module from <path>
 
 Summary of framework API interface:
 -----------------------------------
