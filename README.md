@@ -113,12 +113,12 @@ How to run
     npm install -g cdif
     cdif
 ```
-If the above npm install encounters any error, add ```--unsafe-perm``` option to npm install
+If the above npm install encounters any error, add ```--unsafe-perm``` option to workaround bcrypt install permission issue
 
 Command line options
 --------------------
 * --debug             Enable debug option. In this case morgan logging on console would be activated.
-* --dbPath=<path>     Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it
+* --dbPath <path>     Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it
 * --allowDiscover     Enable discover route, if not specified, cdif would automatically call module's discover interface on startup
 * --heapDump          Enable heap profiling
 * --wsServer          Create WebSocket server on startup
@@ -218,7 +218,6 @@ Invoke a device control action, only successful if device is connected
       actionName: <name>,
       argumentList: {
         <input arg name>: <value>,
-        <output arg name>: <value>
       (optional)
       "device_access_token": <token>
     }
@@ -229,6 +228,29 @@ Invoke a device control action, only successful if device is connected
       <output arg2 name>: <value>
     }
 Argument names must conform to the device spec that sent to client
+
+##### Device module install
+Install a device module
+
+    POST http://server_host_name:3049/module-install
+    request boy:
+    {
+      (optional)
+      registry: "http://example.com/registry",
+      name: "module name",
+      version: "module version"
+    }
+    response: 200 OK / 500 internal error
+
+##### Device module uninstall
+Uninstall a device module
+
+    POST http://server_host_name:3049/module-uninstall
+    request boy:
+    {
+      name: "module name"
+    }
+    response: 200 OK / 500 internal error
 
 ##### Errors
 For now the above framework API interface would uniformly return 500 internal error if any error occurs. The error information is contained in response body with below JSON format:
