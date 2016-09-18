@@ -118,12 +118,12 @@ If the above npm install encounters any error, add ```--unsafe-perm``` option to
 Command line options
 --------------------
 * --debug             Enable debug option. In this case morgan logging on console would be activated.
-* --dbPath <path>     Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it
+* --dbPath <path>     Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it. CDIF uses a small device database to persistent device's UUID across framework restart. The device UUID is generated and persistent into a SQLite database, it is mapped to the device's virtual hardware address, which is specified by device object itself
 * --allowDiscover     Enable discover route, if not specified, cdif would automatically call module's discover interface on startup
 * --heapDump          Enable heap profiling
 * --wsServer          Create WebSocket server on startup
 * --sioServer         Create Socket.IO server on startup
-* --loadModule <path> Load a local device driver module from <path>
+* --loadModule <path> Load a local device driver module from <path>. If this option is enabled, all device database access will be disabled
 
 Summary of framework API interface:
 -----------------------------------
