@@ -218,7 +218,8 @@ Invoke a device control action, only successful if device is connected
       serviceID: <id>,
       actionName: <name>,
       argumentList: {
-        <input arg name>: <value>,
+        <input arg1 name>: <value>,
+        <input arg2 name>: <value>
       (optional)
       "device_access_token": <token>
     }
@@ -231,7 +232,7 @@ Invoke a device control action, only successful if device is connected
 Argument names must conform to the device spec that sent to client
 
 ##### Device module install
-Install a device module
+Install a device module. CDIF fork and exec npm to complete this request. So user might need to run ```npm login``` before launching CDIF.
 
     POST http://server_host_name:3049/module-install
     request boy:
@@ -331,8 +332,8 @@ Upon a ```absoluteMove``` action call, CDIF would internally dereference the sub
 
 Unlike many of other API modelling language such as WSDL or others, CDIF separates API argument's schema definitions from the its common description language. This design may have following benefits:
 * Simplify client application design such that applications won't need to explicitly extract schema info from the common description language
-* Saving network bandwidth that client do not need to retrieve the full schema document
-* Device description stored in http cache won't be invalidated when existing API contract requires a update
+* Saving network bandwidth that client do not need to retrieve the full schema document when access only one API
+* The description language stored in http cache won't be invalidated when existing API contract requires a update
 
 Eventing
 --------
