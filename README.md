@@ -234,11 +234,11 @@ Argument names must conform to the device spec that sent to client
 ##### Device module install
 Install a device module. CDIF fork and exec npm to complete this request. So user might need to run ```npm login``` before launching CDIF.
 
-    POST http://server_host_name:3049/module-install
+    POST http://server_host_name:3049/install-module
     request boy:
     {
       (optional)
-      registry: "http://example.com/registry",
+      registry: "http://registry.apemesh.com:5984/",
       name: "module name",
       version: "module version"
     }
@@ -247,7 +247,7 @@ Install a device module. CDIF fork and exec npm to complete this request. So use
 ##### Device module uninstall
 Uninstall a device module
 
-    POST http://server_host_name:3049/module-uninstall
+    POST http://server_host_name:3049/uninstall-module
     request boy:
     {
       name: "module name"
