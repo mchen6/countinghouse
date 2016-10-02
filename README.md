@@ -124,6 +124,7 @@ Command line options
 * --wsServer          Create WebSocket server on startup
 * --sioServer         Create Socket.IO server on startup
 * --loadModule <path> Load a local device driver module from <path>. If this option is enabled, all device database access will be disabled
+* --verifyModule      Enable the functionality to verify a module when receiving a verify-module request on framework's REST interface, see description of ```verify-module``` API below
 
 Summary of framework API interface:
 -----------------------------------
@@ -253,6 +254,32 @@ Uninstall a device module
       name: "module name"
     }
     response: 200 OK / 500 internal error
+
+##### Verify module
+Verify the validity of a local installed module, only enabled when ```---verifyModule``` CLI argument is specified
+
+    POST http://server_host_name:3049/verify-module
+    request boy:
+    {
+      path: <absolute path of the locally available module>
+    }
+    response: 200 OK / 500 internal error
+
+    response body would contain a JSON body with below structure:
+    {
+      "topic":   <optional error info header>
+      "message": <optional error message>
+      "name": <module name as specified in its package.json>
+      "version": <module version as specified in its package.json>
+      "deviceList": [
+        {
+          "spec": <device spec with schema information fully dereferenced>
+          "deviceErrorMessage": <error message generated from verification process will go here, null indicates successful verification>
+        }
+      ]
+    }
+
+    Successful verification would return 200 OK message. If there is any verificiation error, server would return 500 error, with above described JSON body wrapped in an optional "fault" object with same structure. If the "fault" object doesn't exists, then error message can be found in "message" which indicates the error information.
 
 ##### Errors
 For now the above framework API interface would uniformly return 500 internal error if any error occurs. The error information is contained in response body with below JSON format:
