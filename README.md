@@ -281,11 +281,36 @@ Verify the validity of a local installed module, only enabled when ```---verifyM
 
     Successful verification would return 200 OK message. If there is any verificiation error, server would return 500 error, with above described JSON body wrapped in an optional "fault" object with same structure. If the "fault" object doesn't exists, then error message can be found in "message" which indicates the error information.
 
+    Verification would only check the validity of a npm package, and would not check if it is a valid CDIF device module.This process would install the specified module under CDIF's node_modules folder
+
+##### Publish module
+Publish a module, only enabled when ```---verifyModule``` CLI argument is specified
+
+    POST http://server_host_name:3049/verify-module
+    request boy:
+    {
+      "username": <username whom submit a publish request>,
+      "password": <user password>,
+      "email":    <user's email address>,
+      "name":     <module name to be published>,
+      "registry": <registry url for publish, start with http:// or https://>
+    }
+    response: 200 OK / 500 internal error
+
+    response body would contain a JSON body with below structure if any error occurs:
+    {
+      "topic":   <optional error info header>
+      "message": <optional error message>
+    }
+
+    This API would uninstall the specified module, if present, under CDIF's node_modules folder
+
+
 ##### Errors
-For now the above framework API interface would uniformly return 500 internal error if any error occurs. The error information is contained in response body with below JSON format:
+For now all above framework API interface would uniformly return 500 internal error if any error occurs. The error information is contained in response body with below JSON format:
 {"topic": error class, "message": error message, "fault": faultObject}
 
-The optional fault object in the error information is set by device driver code to carry back detail information about the error itself.
+The optional fault object in the error information would be set by device driver code to carry back detail information about the error itself.
 
 Examples
 --------
