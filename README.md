@@ -261,7 +261,8 @@ Verify the validity of a local installed module, only enabled when ```---verifyM
     POST http://server_host_name:3049/verify-module
     request boy:
     {
-      path: <absolute path of the locally available module>
+      "registry": <registry url for the package, start with http:// or https://>
+      "name": <absolute path of the locally available module>
     }
     response: 200 OK / 500 internal error
 
