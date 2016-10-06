@@ -270,8 +270,7 @@ Verify the validity of a local installed module, only enabled when ```---verifyM
     {
       "topic":   <optional error info header>
       "message": <optional error message>
-      "name": <module name as specified in its package.json>
-      "version": <module version as specified in its package.json>
+      "packageInfo": <the parsed package.json file of the module being verified>
       "deviceList": [
         {
           "spec": <device spec with schema information fully dereferenced>
@@ -294,7 +293,8 @@ Publish a module, only enabled when ```---verifyModule``` CLI argument is specif
       "password": <user password>,
       "email":    <user's email address>,
       "name":     <module name to be published>,
-      "registry": <registry url for publish, start with http:// or https://>
+      "info":     <the parsed package.json contents of the module, which is returned from previous verify operation
+      "registry": <registry url for publish, e.g. http://localhost:5984/registry/_design/app/_rewrite/>
     }
     response: 200 OK / 500 internal error
 
