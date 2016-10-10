@@ -117,15 +117,15 @@ If the above npm install encounters any error, add ```--unsafe-perm``` option to
 
 Command line options
 --------------------
-* --debug             Enable debug option. In this case morgan logging on console would be activated.
-* --dbPath <path>     Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it. CDIF uses a small device database to persistent device's UUID across framework restart. The device UUID is generated and persistent into a SQLite database, it is mapped to the device's virtual hardware address, which is specified by device object itself
-* --allowDiscover     Enable discover route, if not specified, cdif would automatically call module's discover interface on startup
-* --heapDump          Enable heap profiling
-* --wsServer          Create WebSocket server on startup
-* --sioServer         Create Socket.IO server on startup
-* --loadModule <path> Load a local device driver module from <path>. If this option is enabled, all device database access will be disabled
-* --verifyModule      Enable the functionality to verify a module when receiving a verify-module request on framework's REST interface, see description of ```verify-module``` API below
-* --allowSimpleType   Enable simple type definition in ```dataType``` keyword. When we assume also web services must have object type, simple type would be still useful for IoT devices
+* --debug               Enable debug option. In this case morgan logging on console would be activated.
+* --localDBPath <path>  Specify the device database location. If not specified, CDIF will read the local one under its install directory. Note that <path> should not start with tilde symbol, CDIF won't expand it. CDIF uses a small device database to persistent device's UUID across framework restart. The device UUID is generated and persistent into a SQLite database, it is mapped to the device's virtual hardware address, which is specified by device object itself
+* --allowDiscover       Enable discover route, if not specified, cdif would automatically call module's discover interface on startup
+* --heapDump            Enable heap profiling
+* --wsServer            Create WebSocket server on startup
+* --sioServer           Create Socket.IO server on startup
+* --loadModule <path>   Load a local device driver module from <path>. If this option is enabled, all device database access will be disabled
+* --verifyModule        Enable the functionality to verify a module when receiving a verify-module request on framework's REST interface, see description of ```verify-module``` API below
+* --allowSimpleType     Enable simple type definition in ```dataType``` keyword. When we assume also web services must have object type, simple type would be still useful for IoT devices
 
 Summary of framework API interface:
 -----------------------------------
