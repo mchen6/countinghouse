@@ -309,7 +309,6 @@
         }
       },
       "required": [
-        "deviceType",
         "friendlyName",
         "manufacturer"
       ]
