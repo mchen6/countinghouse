@@ -1,4 +1,9 @@
-var request = require('request');
+'use strict'
+
+var request  = require('request');
+var UUID     = require('uuid-1345');
+var nano     = require('nano')('http://localhost:5984');
+var deviceDB = nano.db.use('devices');
 
 var verifyOptions = {
   url: 'http://localhost:3049/verify-module',
@@ -14,8 +19,13 @@ var verifyOptions = {
 
 
 request(verifyOptions, function(err, response, body) {
+  if (err) {
+    return console.log(err);
+  }
+
   console.log(body.packageInfo);
-  var info = body.packageInfo;
+  var packageInfo = body.packageInfo;
+  var deviceList  = body.deviceList;
 
   var publishOptions = {
     url: 'http://localhost:3049/publish-module',
@@ -30,13 +40,43 @@ request(verifyOptions, function(err, response, body) {
         email: 'seeds.c@gmail.com',
         registry: 'http://localhost:5984/registry/_design/app/_rewrite/',
         name: '/home/mchen6/tmp/cdif-weibo-0.0.21.tgz',
-        info: info
+        info: packageInfo
     }
   };
 
-  request(publishOptions, function(err, response, body) {
-    console.log(err);
-    console.log(body);
+  request(publishOptions, function(e, response, body) {
+    if (response.statusCode > 200) {
+      return console.log('publish failed: ' + body.message);
+    }
+
+    // publish done, add device info into devices db
+    for (var deviceID in deviceList) {
+      var device = deviceList[deviceID];
+      UUID.v5({
+          namespace: UUID.namespace.url,
+          name: 'https://registry.apemesh.com/packages/' + packageInfo.name + '@' + device.spec.device.friendlyName
+      }, function (err, result) {
+          console.log("Generated a fixed, name-based UUID using SHA1: %s\n", result);
+
+          var _id = device.spec.device.friendlyName;   // we use friendlyName as device document _id
+          deviceDB.get(_id, function(err, b) {
+            var deviceDocument = {};
+            deviceDocument.uuid        = result;
+            deviceDocument.packageInfo = packageInfo;
+            deviceDocument.spec        = device.spec;
+            deviceDocument._id         = _id;
+            deviceDocument.author      = 'out4b';    // TODO: change this to the real user name whom logged in
+
+            if (b && b._rev != null) {
+              deviceDocument._rev = b._rev;
+            }
+
+            deviceDB.insert(deviceDocument, function(e, body, header) {
+              console.log('nano returun body: ' + JSON.stringify(body));
+            });
+          });
+      });
+    }
   });
 });
 
