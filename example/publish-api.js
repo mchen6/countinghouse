@@ -50,6 +50,7 @@ request(verifyOptions, function(err, response, body) {
     }
 
     // publish done, add device info into devices db
+    // NOTICE: the uuid generation rule MUST be consistent in CDIF and web site
     for (var deviceID in deviceList) {
       var device = deviceList[deviceID];
       UUID.v5({
@@ -61,7 +62,7 @@ request(verifyOptions, function(err, response, body) {
           var _id = device.spec.device.friendlyName;   // we use friendlyName as device document _id
           deviceDB.get(_id, function(err, b) {
             var deviceDocument = {};
-            deviceDocument.uuid        = result;
+            deviceDocument.deviceID    = result;
             deviceDocument.packageInfo = packageInfo;
             deviceDocument.spec        = device.spec;
             deviceDocument._id         = _id;
