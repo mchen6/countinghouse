@@ -125,6 +125,7 @@ Command line options
 * --sioServer         Create Socket.IO server on startup
 * --loadModule <path> Load a local device driver module from <path>. If this option is enabled, all device database access will be disabled
 * --verifyModule      Enable the functionality to verify a module when receiving a verify-module request on framework's REST interface, see description of ```verify-module``` API below
+* --allowSimpleType   Enable simple type definition in ```dataType``` keyword. When we assume also web services must have object type, simple type would be still useful for IoT devices
 
 Summary of framework API interface:
 -----------------------------------
