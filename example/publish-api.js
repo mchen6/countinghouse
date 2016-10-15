@@ -23,6 +23,11 @@ request(verifyOptions, function(err, response, body) {
     return console.log(err);
   }
 
+  if (response.statusCode > 200) {
+    //add more error info here
+    return console.log('verify failed: ' + body.message);
+  }
+
   console.log(body.packageInfo);
   var packageInfo = body.packageInfo;
   var deviceList  = body.deviceList;
