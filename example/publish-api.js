@@ -51,31 +51,27 @@ request(verifyOptions, function(err, response, body) {
 
     // publish done, add device info into devices db
     // NOTICE: the uuid generation rule MUST be consistent in CDIF and web site
-    for (var deviceID in deviceList) {
-      var device = deviceList[deviceID];
-      UUID.v5({
-          namespace: UUID.namespace.url,
-          name: 'https://registry.apemesh.com/packages/' + packageInfo.name + '@' + device.spec.device.friendlyName
-      }, function (err, result) {
-          console.log("Generated a fixed, name-based UUID using SHA1: %s\n", result);
+    for (var id in deviceList) {
+      var device = deviceList[id];
+      var deviceID = device.spec.device.deviceID;
+      console.log(deviceID);
 
-          var _id = device.spec.device.friendlyName;   // we use friendlyName as device document _id
-          deviceDB.get(_id, function(err, b) {
-            var deviceDocument = {};
-            deviceDocument.deviceID    = result;
-            deviceDocument.packageInfo = packageInfo;
-            deviceDocument.spec        = device.spec;
-            deviceDocument._id         = _id;
-            deviceDocument.author      = 'out4b';    // TODO: change this to the real user name whom logged in
+      var _id = device.spec.device.friendlyName;   // we use friendlyName as device document _id
+      deviceDB.get(_id, function(err, b) {
+        var deviceDocument = {};
+        deviceDocument.deviceID    = deviceID;
+        deviceDocument.packageInfo = packageInfo;
+        deviceDocument.spec        = device.spec;
+        deviceDocument._id         = _id;
+        deviceDocument.author      = 'out4b';    // TODO: change this to the real user name whom logged in
 
-            if (b && b._rev != null) {
-              deviceDocument._rev = b._rev;
-            }
+        if (b && b._rev != null) {
+          deviceDocument._rev = b._rev;
+        }
 
-            deviceDB.insert(deviceDocument, function(e, body, header) {
-              console.log('nano returun body: ' + JSON.stringify(body));
-            });
-          });
+        deviceDB.insert(deviceDocument, function(e, body, header) {
+          console.log('nano returun body: ' + JSON.stringify(body));
+        });
       });
     }
   });
