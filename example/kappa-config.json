@@ -1,0 +1,17 @@
+{
+    "servers": [
+        {
+            "host": "0.0.0.0",
+            "port": 8000
+        }
+    ],
+    "plugins": {
+        "kappa": {
+            "paths": [
+                "http://localhost:5984/registry/_design/app/_rewrite/",
+		"https://r.cnpmjs.org/",
+                "https://registry.npmjs.org/"
+            ]
+        }
+    }
+}

@@ -1,0 +1,2 @@
+To commit a change for a running instance:
+docker commit `docker ps -l -q` ubuntu-with-file
