@@ -1,2 +1,17 @@
+Build:
+docker build -t cdif .
+
+Run once and destroy container instance:
+docker run -p 3049:3049 -it --rm cdif
+
 To commit a change for a running instance:
 docker commit `docker ps -l -q` ubuntu-with-file
+
+Cleanup all old containers:
+docker rm `docker ps --no-trunc -aq`
+
+Stop container by image name:
+docker stop $(docker ps -a -q --filter ancestor=<image-name>)
+
+Stop and remove container by image name:
+docker rm $(docker stop $(docker ps -a -q --filter ancestor=<image-name> --format="{{.ID}}"))
