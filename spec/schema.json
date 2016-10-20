@@ -316,7 +316,6 @@
   },
   "additionalProperties": false,
   "required": [
-    "configId",
     "specVersion",
     "device"
   ]
