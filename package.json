@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.2.18",
+  "version": "0.2.20",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -44,7 +44,7 @@
     "once": "^1.4.0",
     "rewire": "^2.5.2",
     "semver": "^5.3.0",
-    "socket.io": "~1.3.7",
+    "socket.io": "~1.5.0",
     "sqlite3": "~3.1.0",
     "tar": "^2.2.1",
     "uuid-1345": "^0.99.6",
