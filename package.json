@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -27,7 +27,7 @@
   "author": "out4b",
   "license": "Apache-2.0",
   "publishConfig": {
-    "registry": "http://localhost:8000/"
+    "registry": "http://apemesh.com:5984/registry/_design/app/_rewrite/"
   },
   "dependencies": {
     "body-parser": "~1.14.0",
