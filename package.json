@@ -30,10 +30,10 @@
     "registry": "http://apemesh.com:5984/registry/_design/app/_rewrite/"
   },
   "dependencies": {
+    "ajv": "^4.8.2",
     "body-parser": "~1.14.0",
     "bunyan": "^1.8.1",
     "express": "~4.13.3",
-    "is-my-json-valid": "^2.12.3",
     "json-schema-ref-parser": "^1.4.0",
     "jsonwebtoken": "~5.4.0",
     "minimist": "^1.2.0",
