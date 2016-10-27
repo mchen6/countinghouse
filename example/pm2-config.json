@@ -1,0 +1,9 @@
+[{
+    "name"       : "cdif",
+    "script"     : "/home/mchen6/cdif/framework.js",
+    env: {
+      "NODE_PATH": "/home/mchen6/cdif/lib",
+    },
+    "instances"  : "4",
+    "exec_mode"  : "cluster"
+}]
