@@ -1,6 +1,11 @@
 [{
     "name"       : "cdif",
     "script"     : "/home/mchen6/cdif/framework.js",
+    "cwd"        : "/home/mchen6/cdif",
+    "watch"      : true,
+    "watch_options" : {
+        "ignored" : "*.log*"
+    },
     env: {
       "NODE_PATH": "/home/mchen6/cdif/lib",
     },

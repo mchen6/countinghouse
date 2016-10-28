@@ -1,6 +1,6 @@
 #!/bin/sh
 while true; do
-	curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:qunar-com:serviceID:车站搜索","actionName":"车站搜索","argumentList":{"input":{"station": "漯河"}}}' http://localhost:3049/devices/f50e8254-c766-419c-af23-80e6eed1823b/invoke-action &
+	curl -H "Content-Type: application/json" -X POST -d '{"serviceID":"urn:apemesh-com:serviceID:db-request","actionName":"request","argumentList":{"input":{"db": "devices"}}}' http://localhost:3049/devices/3a509370-6db9-5fd0-9e98-4a912810d805/invoke-action&
 	sleep 1
 done
 
