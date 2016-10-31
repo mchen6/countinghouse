@@ -1,6 +1,6 @@
 Build:
 docker build -t cdif .
-docker build --build-arg CDIF_VERSION=0.2.20 --build-arg REGISTY=http://172.17.0.1 -t cdif:0.2.20 .
+docker build --build-arg CDIF_VERSION=0.2.20 --build-arg REGISTRY=http://172.17.0.1 -t cdif:0.2.20 .
 
 Run once and destroy container instance:
 docker run -p 3049:3049 -it --rm cdif
