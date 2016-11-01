@@ -27,7 +27,7 @@
   "author": "out4b",
   "license": "Apache-2.0",
   "publishConfig": {
-    "registry": "http://apemesh.com:5984/registry/_design/app/_rewrite/"
+    "registry": "http://registry.apemesh.com:8000/"
   },
   "dependencies": {
     "ajv": "^4.8.2",
