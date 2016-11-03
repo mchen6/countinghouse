@@ -21,7 +21,7 @@ RUN \
   && echo 'deb http://cn.archive.ubuntu.com/ubuntu/ xenial-security universe' >> /etc/apt/sources.list \
   &&echo 'deb-src http://cn.archive.ubuntu.com/ubuntu/ xenial-security universe' >> /etc/apt/sources.list \
   && apt-get update \
-  && apt-get install -y apt-utils dialog net-tools curl build-essential python \
+  && apt-get install -y apt-utils dialog net-tools curl build-essential python redis-server\
   && /root/node-v4.5.0-linux-x64/bin/npm config set registry ${REGISTRY} \
   && /root/node-v4.5.0-linux-x64/bin/npm install -g bunyan \
   && /root/node-v4.5.0-linux-x64/bin/npm install -g --registry ${REGISTRY} --unsafe-perm cdif@${CDIF_VERSION}
