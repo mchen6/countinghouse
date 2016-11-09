@@ -55,7 +55,7 @@
         },
         "modelDescription": {
           "type": "string",
-          "maxLength": 128,
+          "maxLength": 256,
           "minLength": 0
         },
         "modelName": {
@@ -72,6 +72,11 @@
           "type": "string",
           "maxLength": 128,
           "minLength": 0
+        },
+        "price": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
         },
         "UDN": {
           "title": "Schema for device UUID",
@@ -310,7 +315,8 @@
       },
       "required": [
         "friendlyName",
-        "manufacturer"
+        "manufacturer",
+        "modelDescription"
       ]
     }
   },
