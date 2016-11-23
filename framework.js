@@ -3,11 +3,23 @@ var RouteManager  = require('./lib/route-manager');
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
 var logger        = require('./lib/logger');
-var deviceDB      = require('./lib/device-db');
+var deviceDB      = require('cdif-device-db');
+var mkdirp        = require('mkdirp');
+var fs            = require('fs');
 
 logger.createLogger();
 options.setOptions(argv);
-deviceDB.init();
+
+try {
+  // create module folder
+  mkdirp.sync(options.modulePath);
+  fs.accessSync(options.modulePath, fs.W_OK);
+} catch (e) {
+  logger.E(new Error('cannot access module folder: ' + e.message));
+  process.exit(-1);
+}
+
+deviceDB.init(options.modulePath);
 
 var mm = new ModuleManager();
 var routeManager = new RouteManager(mm);
