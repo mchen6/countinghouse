@@ -3,6 +3,7 @@ var RouteManager  = require('./lib/route-manager');
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
 var logger        = require('./lib/logger');
+var monitor       = require('./lib/monitor');
 var deviceDB      = require('cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
@@ -22,8 +23,10 @@ try {
 deviceDB.init(options.modulePath);
 
 var mm = new ModuleManager();
-var routeManager = new RouteManager(mm);
 
+monitor.init(mm);
+
+var routeManager = new RouteManager(mm);
 
 routeManager.installRoutes();
 mm.loadAllModules();
