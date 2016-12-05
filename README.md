@@ -114,6 +114,7 @@ How to run
     cdif
 ```
 If the above npm install encounters any error, add ```--unsafe-perm``` option to workaround bcrypt install permission issue
+Use ```npm install --build-from-source=sqlite3``` if SQLite3 build is slow
 
 Command line options
 --------------------
