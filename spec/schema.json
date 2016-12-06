@@ -195,6 +195,9 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        "realPrice": {
+                          "type": "number"
                         }
                       },
                       "required": [
