@@ -198,6 +198,9 @@
                         },
                         "realPrice": {
                           "type": "number"
+                        },
+                        "freeCount": {
+                          "type": "integer"
                         }
                       },
                       "required": [
