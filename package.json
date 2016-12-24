@@ -34,6 +34,7 @@
     "body-parser": "~1.14.0",
     "bunyan": "^1.8.1",
     "cdif-device-db": "latest",
+    "cors": "^2.8.1",
     "express": "~4.13.3",
     "json-schema-ref-parser": "^1.4.0",
     "jsonwebtoken": "~5.4.0",
