@@ -1,0 +1,2 @@
+p=$(node -pe 'v=JSON.parse(process.argv[1]);v.a' "{\"a\":1}")
+echo $p
