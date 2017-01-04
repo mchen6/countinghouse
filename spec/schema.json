@@ -201,6 +201,9 @@
                         },
                         "freeCount": {
                           "type": "integer"
+                        },
+                        "apiCache": {
+                          "type": "number"
                         }
                       },
                       "required": [
