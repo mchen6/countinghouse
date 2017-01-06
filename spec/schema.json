@@ -204,6 +204,17 @@
                         },
                         "apiCache": {
                           "type": "number"
+                        },
+                        "fault": {
+                          "type": "object",
+                          "properties": {
+                            "schema": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "schema"
+                          ]
                         }
                       },
                       "required": [

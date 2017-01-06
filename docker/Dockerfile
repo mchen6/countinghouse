@@ -6,7 +6,7 @@ COPY './node-v4.5.0-linux-x64' '/root/node-v4.5.0-linux-x64'
 WORKDIR /root
 ENV PATH="/root/node-v4.5.0-linux-x64/bin:${PATH}"
 VOLUME ["/root/node_modules"]
-EXPOSE 3049
+EXPOSE 9527
 RUN \
   echo 'deb http://cn.archive.ubuntu.com/ubuntu/ xenial main restricted' > /etc/apt/sources.list \
   && echo 'deb-src http://cn.archive.ubuntu.com/ubuntu/ xenial main restricted' >> /etc/apt/sources.list \
