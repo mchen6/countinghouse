@@ -1,5 +1,3 @@
-var ModuleManager = require('./lib/module-manager');
-var RouteManager  = require('./lib/route-manager');
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
 var logger        = require('./lib/logger');
@@ -21,6 +19,9 @@ try {
 }
 
 deviceDB.init(options.modulePath);
+
+var ModuleManager = require('./lib/module-manager');
+var RouteManager  = require('./lib/route-manager');
 
 var mm = new ModuleManager();
 
