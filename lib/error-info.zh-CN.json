@@ -59,7 +59,7 @@
   "ARGUMENTS_INVALID": "调用参数非法",
   "MISSING_INPUT_ARGUMENT": "未找到输入参数",
   "MISSING_OUTPUT_ARGUMENT": "未找到输出参数",
-  "DATA_VALIDATION_FAIL": "数据校验失败",
+  "DATA_VALIDATION_FAIL": "数据校验错误",
   "ACTION_NOT_FOUND": "未找到action",
   "INPUT_NOT_FOUND": "未找到input对象",
   "ACTION_NOT_IMPLEMENTED": "action未实现",
@@ -78,5 +78,6 @@
   "WEBSOCKET_ERROR": "WebSocket错误",
   "REDIS_CLIENT_ERROR": "redis客户端错误",
   "SYSTEM_ERROR": "系统错误",
-  "DATA_ERROR": "数据错误"
+  "API_ERROR": "API调用错误",
+  "DATA_ERROR": "API数据错误"
 }
