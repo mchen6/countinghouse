@@ -78,6 +78,12 @@
   "WEBSOCKET_ERROR": "WebSocket错误",
   "REDIS_CLIENT_ERROR": "redis客户端错误",
   "SYSTEM_ERROR": "系统错误",
+  "SYSTEM_ERROR_NETWORK_ERROR": "网络访问错误",
+  "SYSTEM_ERROR_DATA_PARSE_ERROR": "数据解析错误",
+  "SYSTEM_ERROR_USERDB_NA": "用户数据库不可用",
+  "SYSTEM_ERROR_SMSTMPLDB_NA": "模板数据库不可用",
+  "SYSTEM_ERROR_USER_UNAUTHORIZED": "用户未经授权",
+  "SYSTEM_ERROR_UNKNOWN_USER": "未知用户",
   "API_ERROR": "API调用错误",
   "DATA_ERROR": "API数据错误"
 }
