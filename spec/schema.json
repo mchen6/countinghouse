@@ -205,6 +205,9 @@
                         "apiCache": {
                           "type": "number"
                         },
+                        "apiLog": {
+                          "type": "boolean"
+                        },
                         "fault": {
                           "type": "object",
                           "properties": {
