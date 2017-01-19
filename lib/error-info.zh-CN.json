@@ -60,6 +60,8 @@
   "MISSING_INPUT_ARGUMENT": "未找到输入参数",
   "MISSING_OUTPUT_ARGUMENT": "未找到输出参数",
   "DATA_VALIDATION_FAIL": "数据校验错误",
+  "INPUT_DATA_VALIDATION_FAIL": "输入数据校验错误",
+  "OUTPUT_DATA_VALIDATION_FAIL": "输出数据校验错误",
   "ACTION_NOT_FOUND": "未找到action",
   "INPUT_NOT_FOUND": "未找到input对象",
   "ACTION_NOT_IMPLEMENTED": "action未实现",
