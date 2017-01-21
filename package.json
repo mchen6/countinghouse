@@ -32,6 +32,7 @@
   "dependencies": {
     "ajv": "^4.8.2",
     "body-parser": "~1.14.0",
+    "body-parser-xml": "^1.1.0",
     "bunyan": "^1.8.1",
     "cdif-device-db": "latest",
     "cors": "^2.8.1",
