@@ -199,6 +199,24 @@
                         "realPrice": {
                           "type": "number"
                         },
+                        "priceInfo": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "price": {
+                                "type": "number"
+                              },
+                              "count": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "price",
+                              "count"
+                            ]
+                          }
+                        },
                         "freeCount": {
                           "type": "integer"
                         },
