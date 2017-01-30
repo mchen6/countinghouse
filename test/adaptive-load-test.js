@@ -25,6 +25,7 @@ var worker = function() {
   };
 
   request(options, function(err, response, body) {
+    //TODO: add null-check to header value
     var loadLevel = parseInt(response.headers['cache-control'].substring(8));
     // this means if we send 10 percent of request than original load
     // smaller dividend would result in lighter server load

@@ -1,7 +1,7 @@
 var request = require('request');
 var async   = require('async');
 
-var noofConcurrentClients = 10000;
+var noofConcurrentClients = 20000;
 var loadSaveFactor = 1;
 var workUrl = 'http://10.0.0.122:9527/devices/3a509370-6db9-5fd0-9e98-4a912810d805/invoke-action';
 
@@ -25,6 +25,7 @@ var worker = function() {
   };
 
   request(options, function(err, response, body) {
+    // TODO: add null-check to header value
     var loadLevel = parseInt(response.headers['cache-control'].substring(8));
     // this means if we send 10 percent of request than original load
     // smaller dividend would result in lighter server load
