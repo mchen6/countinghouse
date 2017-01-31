@@ -37,6 +37,7 @@
     "cdif-device-db": "latest",
     "cors": "^2.8.1",
     "express": "~4.13.3",
+    "express-ws": "^2.0.0",
     "json-pointer": "^0.6.0",
     "json-schema-ref-parser": "^1.4.0",
     "jsonwebtoken": "~5.4.0",

@@ -1,7 +1,7 @@
 <html>
     <head>
         <script>
-            var socket = new WebSocket('ws://localhost:3049');
+            var socket = new WebSocket('ws://aa@10.0.0.122:9527/devices/3a509370-6db9-5fd0-9e98-4a912810d805/wss', 'apemesh');
             socket.onopen = function(event) {
               console.log(event);
               sendText();
@@ -9,7 +9,7 @@
 
             socket.onmessage = function (event) {
               console.log(event);
-              document.getElementById("messages").innerHTML = event;
+              document.getElementById("messages").innerHTML = event.data;
             }
 
             function sendText() {
