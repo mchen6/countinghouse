@@ -16,16 +16,18 @@
               // Construct a msg object containing the data the server needs to process the message from the chat client.
               var msg = {
                 topic: "subscribe",
-                options: {
-                  deviceID: 'f76302c6-fa4a-4209-b5ad-72450d003435',
-                  serviceID: 'urn:cdif-net:serviceID:BinarySwitch'
-                },
-                date: Date.now()
+                serviceID: 'urn:cdif-net:serviceID:BinarySwitch',
+                actionName: 'TurnOn',
+                key: {
+                  input: {
+                    db: 'devices'
+                  }
+                }
               };
 
               // Send the msg object as a JSON-formatted string.
               socket.send(JSON.stringify(msg));
-              socket.send(JSON.stringify(msg));
+              // socket.send(JSON.stringify(msg));
               //socket.send(JSON.stringify(msg));
 
               // var msg = "ssss";
