@@ -16,8 +16,8 @@
               // Construct a msg object containing the data the server needs to process the message from the chat client.
               var msg = {
                 topic: "subscribe",
-                serviceID: 'urn:cdif-net:serviceID:BinarySwitch',
-                actionName: 'TurnOn',
+                serviceID: 'urn:apemesh-com:serviceID:db-request',
+                actionName: 'request',
                 key: {
                   input: {
                     db: 'devices'
