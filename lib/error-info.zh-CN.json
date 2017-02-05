@@ -88,6 +88,7 @@
   "SYSTEM_ERROR_SMSTMPLDB_NA": "模板数据库不可用",
   "SYSTEM_ERROR_USER_UNAUTHORIZED": "用户未经授权",
   "SYSTEM_ERROR_UNKNOWN_USER": "未知用户",
+  "SUBSCRIBER_TYPE_ERROR":"消息订阅者类型错误",
   "API_ERROR": "API调用错误",
   "DATA_ERROR": "API数据错误"
 }
