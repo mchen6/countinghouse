@@ -1,0 +1,57 @@
+private void makeRequest() throws Exception
+{
+    String url="https://api.apemesh.com:3049/devices/f5dc73f9-b739-5ee2-add7-e499da04c6ec/invoke-action";
+    URL object=new URL(url);
+
+    HttpURLConnection con = (HttpURLConnection) object.openConnection();
+    con.setDoOutput(true);
+    con.setDoInput(true);
+    con.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+    con.setRequestProperty("X-Apemesh-Key", "<用户appKey>");
+    con.setRequestMethod("POST");
+
+    // 这里展示的是发送短信验证码API的input JSON对象的构建方法
+    // 其他API的input JSON对象参数的构建方法请参照各自的API文档
+    JSONObject requestData = new JSONObject();
+    requestData.put("serviceID","urn:cdif-io:serviceID:短信服务");
+    requestData.put("actionName","发送验证码");
+
+    JSONObject input = new JSONObject();
+    input.put("phoneNum", "13910001000");
+    input.put("templateID", "<模板ID>");
+
+    JSONArray content = new JSONArray();
+    content.put("123456");
+    input.put("content", content);
+    requestData.put("input", input);
+
+    OutputStreamWriter wr = new OutputStreamWriter(con.getOutputStream());
+    wr.write(requestData.toString());
+    wr.flush();
+
+    //display what returns the POST request
+    StringBuilder sb = new StringBuilder();
+    int HttpResult = con.getResponseCode();
+    if (HttpResult == HttpURLConnection.HTTP_OK) {
+        BufferedReader br = new BufferedReader(
+                new InputStreamReader(con.getInputStream(), "utf-8"));
+        String line = null;
+        while ((line = br.readLine()) != null) {
+            sb.append(line + "\n");
+        }
+        br.close();
+        System.out.println("" + sb.toString());
+    } else {
+        BufferedReader br = new BufferedReader(
+                new InputStreamReader(con.getErrorStream(), "utf-8"));
+        String line = null;
+        while ((line = br.readLine()) != null) {
+            sb.append(line + "\n");
+        }
+        br.close();
+        JSONObject result = new JSONObject(sb.toString());
+        JSONObject fault = result.getJSONObject("fault");
+        String reason = fault.getString("reason");
+        System.out.println(reason);
+    }
+}
