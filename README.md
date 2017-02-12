@@ -426,3 +426,11 @@ Many thanks to the work contributed by following repositories that made this fra
 * [noble-device](https://github.com/sandeepmistry/noble-device), [yeelight-blue](https://github.com/sandeepmistry/node-yeelight-blue), and [node-sensortag](https://github.com/sandeepmistry/node-sensortag)
 * [onvif](https://github.com/agsh/onvif)
 * [openzwave-shared](https://www.npmjs.com/package/openzwave-shared)
+
+
+
+Currently we use following redis cache:
+DB 0: user key info and cache 
+DB 5: api key / value cache
+DB 6: input key pub / sub
+DB 7: sms callback
