@@ -149,7 +149,7 @@
           "maxProperties": 32,
           "minProperties": 0,
           "patternProperties": {
-            "^urn\\:[ \\S]{1,64}\\:serviceID\\:[ \\S]{1,64}$": {
+            "^urn\\:[\\S]{1,64}\\:serviceID\\:[\\S]{1,64}$": {
               "type": "object",
               "properties": {
                 "serviceType": {
@@ -161,7 +161,7 @@
                   "maxProperties": 64,
                   "minProperties": 0,
                   "patternProperties": {
-                    "^[ \\S]{1,128}$": {
+                    "^[\\S]{1,128}$": {
                       "type": "object",
                       "properties": {
                         "argumentList": {
@@ -169,7 +169,7 @@
                           "maxProperties": 32,
                           "minProperties": 1,
                           "patternProperties": {
-                            "^[ \\S]{1,128}$": {
+                            "^[\\S]{1,128}$": {
                               "type": "object",
                               "properties": {
                                 "direction": {
@@ -250,7 +250,7 @@
                   "maxProperties": 256,
                   "minProperties": 1,
                   "patternProperties": {
-                    "^[ \\S]{1,128}$": {
+                    "^[\\S]{1,128}$": {
                       "type": "object",
                       "properties": {
                         "sendEvents": {
