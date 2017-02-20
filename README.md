@@ -430,7 +430,7 @@ Many thanks to the work contributed by following repositories that made this fra
 
 
 Currently we use following redis cache:
-DB 0: user key info and cache 
+DB 0: user key with balance and device list info and api stats cache
 DB 5: api key / value cache
 DB 6: input key pub / sub
 DB 7: sms callback
