@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.2.33",
+  "version": "0.2.36",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
