@@ -16,3 +16,9 @@ docker stop $(docker ps -a -q --filter ancestor=<image-name>)
 
 Stop and remove container by image name:
 docker rm $(docker stop $(docker ps -a -q --filter ancestor=<image-name> --format="{{.ID}}"))
+
+Remove Running containers
+docker rm $(docker stop -t=1 $(docker ps -q))
+
+Remove All containers
+docker rm $(docker ps -a -q)
