@@ -18,70 +18,75 @@ describe('connect all devices', function() {
       if(err) throw err;
       deviceList = JSON.parse(JSON.stringify(res.body));
 
-      var list = Object.keys(deviceList);
       var cred = {"username": "admin", "password": "test"};
-      async.eachSeries(list, function(deviceID, callback) {
-        var device = deviceList[deviceID].device;
-        if (device.userAuth === true) {
-          request(url).post('/device-control/' + deviceID + '/connect')
-          .send(cred).expect(200, function(err, res) {
-            if (err) throw err;
-            var device_access_token = res.body.device_access_token;
-            deviceList[deviceID].device_access_token = device_access_token;
-            callback();
-          });
-        } else {
-          request(url).post('/device-control/' + deviceID + '/connect')
-          .expect(200, callback);
-        }
+      async.eachSeries(deviceList, function(deviceObj, callback) {
+        var device   = deviceObj.device;
+        var deviceID = device.deviceID;
+
+        // if (device.userAuth === true) {
+        //   request(url).post('/devices/' + deviceID + '/connect')
+        //   .send(cred).expect(200, function(err, res) {
+        //     if (err) throw err;
+        //     var device_access_token = res.body.device_access_token;
+        //     deviceList[deviceID].device_access_token = device_access_token;
+        //     callback();
+        //   });
+        // } else {
+        request(url).post('/devices/' + deviceID + '/connect')
+        .expect(200, callback);
+        // }
       }, done);
     });
   });
 });
 
-describe('subscribe events from all devices', function() {
-  this.timeout(0);
-  var sock = io.connect(url);
+// describe('subscribe events from all devices', function() {
+//   this.timeout(0);
+//   var sock = io.connect(url);
 
-  sock.on('event', function(data) {
-    console.log('socket client received: ' + JSON.stringify(data));
-  });
-  sock.on('error', function(data) {
-    console.log('socket client received error: ' + JSON.stringify(data));
-  });
+//   sock.on('event', function(data) {
+//     console.log('socket client received: ' + JSON.stringify(data));
+//   });
+//   sock.on('error', function(data) {
+//     console.log('socket client received error: ' + JSON.stringify(data));
+//   });
 
-  it('subscribe OK', function(done) {
-    var list = Object.keys(deviceList);
-    async.eachSeries(list, function(deviceID, callback) {
-      request(url).get('/device-control/' + deviceID + '/get-spec')
-      .send({"device_access_token": deviceList[deviceID].device_access_token})
-      .expect(200, function(err, res) {
-        if (err) throw err;
-        var device = res.body.device;
-        var serviceList = Object.keys(device.serviceList);
+//   it('subscribe OK', function(done) {
+//     async.eachSeries(deviceList, function(deviceObj, callback) {
+//       var device   = deviceObj.device;
+//       var deviceID = device.deviceID;
 
-        async.eachSeries(serviceList, function(serviceID, cb) {
-          var room = new Object();
-          room.deviceID  = deviceID;
-          room.serviceID = serviceID;
-          room.device_access_token = deviceList[deviceID].device_access_token;
-          room.onUpdate  = true;
-          sock.emit('subscribe', JSON.stringify(room));
-          cb();
-        }, callback);
-      });
-    }, done);
-  });
-});
+//       request(url).get('/devices/' + deviceID + '/get-spec')
+//       .send({"device_access_token": deviceList[deviceID].device_access_token})
+//       .expect(200, function(err, res) {
+//         if (err) throw err;
+//         var device = res.body.device;
+//         var serviceList = Object.keys(device.serviceList);
+
+//         async.eachSeries(serviceList, function(serviceID, cb) {
+//           var room = new Object();
+//           room.deviceID  = deviceID;
+//           room.serviceID = serviceID;
+//           room.device_access_token = deviceList[deviceID].device_access_token;
+//           room.onUpdate  = true;
+//           sock.emit('subscribe', JSON.stringify(room));
+//           cb();
+//         }, callback);
+//       });
+//     }, done);
+//   });
+// });
 
 describe('invoke all actions', function() {
   this.timeout(0);
 
   it('invoke OK', function(done) {
-    var list = Object.keys(deviceList);
-    async.eachSeries(list, function(deviceID, callback) {
-      request(url).get('/device-control/' + deviceID + '/get-spec')
-      .send({"device_access_token": deviceList[deviceID].device_access_token})
+    async.eachSeries(deviceList, function(deviceObj, callback) {
+      var device   = deviceObj.device;
+      var deviceID = device.deviceID;
+
+      request(url).get('/devices/' + deviceID + '/get-spec')
+      // .send({"device_access_token": deviceList[deviceID].device_access_token})
       .expect(200, function(err, res) {
         if (err) throw err;
         var device = res.body.device;
@@ -115,8 +120,8 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
       var argList = Object.keys(action.argumentList);
       var req = { serviceID: serviceID,
         actionName: name,
-        argumentList: {},
-        device_access_token: deviceList[deviceID].device_access_token
+        input: {}
+        // device_access_token: deviceList[deviceID].device_access_token
       };
       async.eachSeries(argList, function(arg, call_back) {
         arg.should.not.be.empty;
@@ -159,24 +164,28 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
           }
           call_back();
         } else if (stateVar.dataType === 'object') {
-          var schemaRef = stateVar.schema;
-          schemaRef.should.be.a.String;
-          request(url).get('/device-control/' + deviceID + '/schema' + schemaRef)
-          .send({"device_access_token": deviceList[deviceID].device_access_token})
-          .expect(200, function(err, res) {
-            if (err) throw err;
-            var variableSchema = res.body;
-            variableSchema.should.be.an.Object;
-            variableSchema.should.be.not.empty;
-            var fake_data = faker(variableSchema);
-            console.log(fake_data);
-            req.argumentList[arg] = fake_data;
+          if (arg === 'input') {
+            var schemaRef = stateVar.schema;
+            schemaRef.should.be.a.String;
+            request(url).get('/devices/' + deviceID + '/schema' + schemaRef)
+            // .send({"device_access_token": deviceList[deviceID].device_access_token})
+            .expect(200, function(err, res) {
+              if (err) throw err;
+              var variableSchema = res.body;
+              variableSchema.should.be.an.Object;
+              variableSchema.should.be.not.empty;
+              var fake_data = faker(variableSchema);
+              console.log('XXX:' + JSON.stringify(fake_data));
+              req.input = fake_data;
+              call_back();
+            });
+          } else {
             call_back();
-          });
+          }
         }
       }, function() {
         console.log('Request:' + JSON.stringify(req));
-        request(url).post('/device-control/' + deviceID + '/invoke-action')
+        request(url).post('/devices/' + deviceID + '/invoke-action')
         .send(req)
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {
