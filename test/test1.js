@@ -1,6 +1,6 @@
 var request = require('supertest');
 
-var url = 'http://localhost:3049';
+var url = 'http://10.0.0.122:9527';
 
 describe('discover all devices', function() {
   this.timeout(6000);

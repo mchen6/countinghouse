@@ -4,7 +4,7 @@ var async   = require('async');
 var io      = require('socket.io-client');
 var faker   = require('json-schema-faker');
 
-var url = 'http://localhost:3049';
+var url = 'http://10.0.0.122:9527';
 
 var deviceList;
 
