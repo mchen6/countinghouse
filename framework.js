@@ -5,6 +5,10 @@ var deviceDB      = require('cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
 
+process.on('uncaughtException', function(e) {
+    console.error('Error: ' + e);
+});
+
 logger.createLogger();
 options.setOptions(argv);
 
