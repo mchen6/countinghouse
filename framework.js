@@ -1,16 +1,17 @@
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
-var logger        = require('./lib/logger');
 var deviceDB      = require('cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
 
 process.on('uncaughtException', function(e) {
-    console.error('Error: ' + e);
+    console.error('Error: ' + e.stack);
 });
 
-logger.createLogger();
 options.setOptions(argv);
+
+var logger = require('./lib/logger');
+logger.createLogger(options.logStream);
 
 var monitor       = require('./lib/monitor');
 
