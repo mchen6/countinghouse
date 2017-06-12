@@ -22,3 +22,6 @@ docker rm $(docker stop -t=1 $(docker ps -q))
 
 Remove All containers
 docker rm $(docker ps -a -q)
+
+To attach to an existing docker instance:
+docker exec -ti [CONTAINER-ID] bash
