@@ -49,7 +49,7 @@ module.exports = {
       // },
       { test: require.resolve("./lib/cdif-util.js"), loader: "expose-loader?CdifUtil" },
       { test: require.resolve("./lib/cdif-device.js"), loader: "expose-loader?CdifDevice"},
-      { test: require.resolve("./lib/cdif-error.js").DeviceError, loader: "expose-loader?DeviceError" }
+      { test: require.resolve("./lib/cdif-error.js"), loader: "expose-loader?DeviceError" }
     ]
   },
   entry: './framework.js',
@@ -63,13 +63,13 @@ module.exports = {
   },
   externals: nodeModules,
   plugins: [
-    // new webpack.optimize.UglifyJsPlugin({
-    //     compress: {
-    //         warnings: false
-    //     }
-    // }),
-    // new JavaScriptObfuscator({
-    //     rotateUnicodeArray: true
-    // }, [])
+    new webpack.optimize.UglifyJsPlugin({
+        compress: {
+            warnings: false
+        }
+    }),
+    new JavaScriptObfuscator({
+        rotateUnicodeArray: true
+    }, [])
   ]
 }
