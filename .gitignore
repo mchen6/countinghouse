@@ -11,4 +11,5 @@ core
 output
 *.log*
 examples/
+build/
 nohup.out
