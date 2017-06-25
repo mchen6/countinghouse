@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.2.47",
+  "version": "0.3.1",
   "description": "Common device interconnect framework",
   "bin": "cdif",
   "main": "./app.js",
@@ -23,6 +23,9 @@
   ],
   "author": "out4b",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "http://121.43.107.95:8000/"
+  },
   "dependencies": {
     "ajv": "^4.8.2",
     "async": "^1.5.2",
