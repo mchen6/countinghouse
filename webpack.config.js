@@ -1,8 +1,10 @@
 var webpack = require('webpack');
 var path = require('path');
 var fs = require('fs');
+var CopyWebpackPlugin = require('copy-webpack-plugin');
 var StringReplacePlugin = require("string-replace-webpack-plugin");
 var JavaScriptObfuscator = require('webpack-obfuscator');
+var chmod = require('chmod');
 
 var nodeModules = {};
 fs.readdirSync('node_modules')
@@ -70,6 +72,13 @@ module.exports = {
     }),
     new JavaScriptObfuscator({
         rotateUnicodeArray: true
-    }, [])
+    }, []),
+    new CopyWebpackPlugin([
+        { from: 'wetty', to: 'wetty' },
+        { from: 'package-dist.json', to: 'package.json' },
+        { from: 'README.md', to: 'README.md' },
+        { from: 'example', to: 'example' },
+        { from: 'cdif-dist.sh', to: 'cdif', toType: 'file' }
+    ])
   ]
 }
