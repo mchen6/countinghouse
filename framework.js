@@ -12,7 +12,7 @@ options.setOptions(argv);
 
 var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
-
+console.log('PPP');
 var monitor       = require('./lib/monitor');
 
 try {

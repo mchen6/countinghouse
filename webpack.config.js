@@ -4,6 +4,8 @@ var fs = require('fs');
 var CopyWebpackPlugin = require('copy-webpack-plugin');
 var StringReplacePlugin = require("string-replace-webpack-plugin");
 var JavaScriptObfuscator = require('webpack-obfuscator');
+// var WebpackJsObfuscator = require('webpack-js-obfuscator');
+
 var chmod = require('chmod');
 
 var nodeModules = {};
@@ -67,12 +69,15 @@ module.exports = {
   plugins: [
     new webpack.optimize.UglifyJsPlugin({
         compress: {
-            warnings: false
+            warnings: false,
+            drop_console: false
         }
     }),
     new JavaScriptObfuscator({
-        rotateUnicodeArray: true
+        rotateUnicodeArray: true,
+        disableConsoleOutput: false
     }, []),
+    // new WebpackJsObfuscator({}, []),
     new CopyWebpackPlugin([
         { from: 'wetty', to: 'wetty' },
         { from: 'package-dist.json', to: 'package.json' },
