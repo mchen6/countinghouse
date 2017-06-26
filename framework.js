@@ -14,6 +14,8 @@ var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
 var monitor       = require('./lib/monitor');
 
+logger.I('cdif start with options:' + JSON.stringify(options));
+
 try {
   // create module folder
   mkdirp.sync(options.modulePath);
