@@ -1,15 +1,9 @@
-FROM node:0.10.38
-MAINTAINER Nathan LeClaire <nathan@docker.com>
-
-ADD . /app
+FROM node:boron-alpine
 WORKDIR /app
-RUN npm install
-RUN apt-get update
-RUN apt-get install -y vim
-RUN useradd -d /home/term -m -s /bin/bash term
-RUN echo 'term:term' | chpasswd
-
+RUN adduser -D -h /home/term -s /bin/sh term &&\
+      echo "term:term" | chpasswd
 EXPOSE 3000
-
-ENTRYPOINT ["node"]
-CMD ["app.js", "-p", "3000"]
+ADD . /app
+RUN apk add --update build-base python perl openssh &&\
+    yarn
+CMD yarn start
