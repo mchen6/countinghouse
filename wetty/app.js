@@ -4,10 +4,10 @@ var server = require('socket.io');
 var pty = require('pty.js');
 var fs = require('fs');
 
-let globalsshuser = process.env.SSHUSER || '';
-let sshhost = process.env.SSHHOST || 'localhost';
-let sshport = process.env.SSHPOST || 22;
-let sshauth = process.env.SSHAUTH || 'password';
+var globalsshuser = process.env.SSHUSER || '';
+var sshhost = process.env.SSHHOST || 'localhost';
+var sshport = process.env.SSHPOST || 22;
+var sshauth = process.env.SSHAUTH || 'password';
 
 // const opts = require('optimist')
 //   .options({
@@ -81,36 +81,36 @@ let sshauth = process.env.SSHAUTH || 'password';
 // });
 
 module.exports = function(httpserv, app) {
-  app.use(require('serve-favicon')(`${__dirname}/public/favicon.ico`));
+  app.use(require('serve-favicon')(__dirname + '/public/favicon.ico'));
   // For using wetty at /wetty on a vhost
-  app.get('/wetty/ssh/:user', (req, res) => {
-    res.sendfile(`${__dirname}/public/wetty/index.html`);
+  app.get('/wetty/ssh/:user', function(req, res) {
+    res.sendfile(__dirname + '/public/wetty/index.html');
   });
-  app.get('/wetty/', (req, res) => {
-    res.sendfile(`${__dirname}/public/wetty/index.html`);
+  app.get('/wetty/', function(req, res) {
+    res.sendfile(__dirname + '/public/wetty/index.html');
   });
   // For using wetty on a vhost by itself
-  app.get('/ssh/:user', (req, res) => {
-    res.sendfile(`${__dirname}/public/wetty/index.html`);
+  app.get('/ssh/:user', function(req, res) {
+    res.sendfile(__dirname + '/public/wetty/index.html');
   });
-  app.get('/', (req, res) => {
-    res.sendfile(`${__dirname}/public/wetty/index.html`);
+  app.get('/', function(req, res) {
+    res.sendfile(__dirname + '/public/wetty/index.html');
   });
   // For serving css and javascript
   app.use('/', express.static(path.join(__dirname, 'public')));
 
   const io = server(httpserv, { path: '/wetty/socket.io' });
-  io.on('connection', socket => {
-    let sshuser = '';
-    const request = socket.request;
-    console.log(`${new Date()} Connection accepted.`);
-    const match = request.headers.referer.match('.+/ssh/.+$');
+  io.on('connection', function(socket) {
+    var sshuser = '';
+    var request = socket.request;
+    // console.log(`${new Date()} Connection accepted.`);
+    var match = request.headers.referer.match('.+/ssh/.+$');
     if (match) {
-      sshuser = `${match[0].split('/ssh/').pop()}@`;
+      sshuser = match[0].split('/ssh/').pop() + '@';
     } else if (globalsshuser) {
-      sshuser = `${globalsshuser}@`;
+      sshuser = globalsshuser + '@';
     }
-    let term;
+    var term;
     if (process.getuid() === 0 && sshhost === 'localhost') {
       // this is the path when cdif running inside docker instance
       term = pty.spawn('/bin/login', ['-f', 'term'], {
@@ -119,35 +119,35 @@ module.exports = function(httpserv, app) {
         rows: 30,
       });
     } else if (sshuser) {
-      term = pty.spawn('ssh', [sshuser + sshhost, '-p', sshport, '-o', `PreferredAuthentications=${sshauth}`], {
+      term = pty.spawn('ssh', [sshuser + sshhost, '-p', sshport, '-o', 'PreferredAuthentications=' + sshauth], {
         name: 'xterm-256color',
         cols: 80,
         rows: 30,
       });
     } else {
       //this is the path when running in normal mode
-      term = pty.spawn('ssh', [sshhost, '-p', sshport, '-o', `PreferredAuthentications=${sshauth}`], {
+      term = pty.spawn('ssh', [sshhost, '-p', sshport, '-o', 'PreferredAuthentications=' + sshauth], {
         name: 'xterm-256color',
         cols: 80,
         rows: 30,
       });
     }
 
-    console.log(`${new Date()} PID=${term.pid} STARTED on behalf of user=${sshuser}`);
-    term.on('data', data => {
+    // console.log(`${new Date()} PID=${term.pid} STARTED on behalf of user=${sshuser}`);
+    term.on('data', function(data) {
       socket.emit('output', data);
     });
-    term.on('exit', code => {
-      console.log(`${new Date()} PID=${term.pid} ENDED`);
+    term.on('exit', function(code) {
+      // console.log(`${new Date()} PID=${term.pid} ENDED`);
       socket.emit('logout');
     });
-    socket.on('resize', ({ col, row }) => {
-      term.resize(col, row);
+    socket.on('resize', function(data) {
+      term.resize(data.col, data.row);
     });
-    socket.on('input', data => {
+    socket.on('input', function(data) {
       term.write(data);
     });
-    socket.on('disconnect', () => {
+    socket.on('disconnect', function() {
       term.end();
     });
   });
