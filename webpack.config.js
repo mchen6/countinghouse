@@ -59,7 +59,7 @@ module.exports = {
   entry: './framework.js',
   target: 'node',
   node: {
-    __dirname: true
+    __dirname: false
   },
   output: {
     path: path.join(__dirname, 'build'),

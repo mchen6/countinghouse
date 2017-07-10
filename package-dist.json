@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.22.0",
+  "version": "0.26.0",
   "description": "Common device interconnect framework",
   "bin": "cdif",
   "main": "./app.js",
@@ -58,6 +58,7 @@
     "socket.io": "~1.5.0",
     "string-hash": "^1.1.1",
     "tar": "^2.2.1",
+    "serve-favicon": "^2.4.3",
     "uuid-1345": "^0.99.6",
     "ws": "^1.0.1"
   },

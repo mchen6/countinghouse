@@ -81,23 +81,23 @@ var sshauth = process.env.SSHAUTH || 'password';
 // });
 
 module.exports = function(httpserv, app) {
-  app.use(require('serve-favicon')(__dirname + '/public/favicon.ico'));
+  app.use(require('serve-favicon')(__dirname + '/wetty/public/favicon.ico'));
   // For using wetty at /wetty on a vhost
   app.get('/wetty/ssh/:user', function(req, res) {
-    res.sendfile(__dirname + '/public/wetty/index.html');
+    res.sendfile(__dirname + '/wetty/public/wetty/index.html');
   });
   app.get('/wetty/', function(req, res) {
-    res.sendfile(__dirname + '/public/wetty/index.html');
+    res.sendfile(__dirname + '/wetty/public/wetty/index.html');
   });
   // For using wetty on a vhost by itself
   app.get('/ssh/:user', function(req, res) {
-    res.sendfile(__dirname + '/public/wetty/index.html');
+    res.sendfile(__dirname + '/wetty/public/wetty/index.html');
   });
   app.get('/', function(req, res) {
-    res.sendfile(__dirname + '/public/wetty/index.html');
+    res.sendfile(__dirname + '/wetty/public/wetty/index.html');
   });
   // For serving css and javascript
-  app.use('/', express.static(path.join(__dirname, 'public')));
+  app.use('/', express.static(path.join(__dirname, 'wetty/public')));
 
   const io = server(httpserv, { path: '/wetty/socket.io' });
   io.on('connection', function(socket) {
