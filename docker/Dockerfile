@@ -29,7 +29,7 @@ RUN \
   && apt-get install -y apt-utils dialog net-tools curl build-essential python vim nano \
   && /root/node-v6.5.0-linux-x64/bin/npm config set registry ${REGISTRY} \
   && /root/node-v6.5.0-linux-x64/bin/npm install -g bunyan \
-  && /root/node-v6.5.0-linux-x64/bin/npm install -g --unsafe-perm wetty \
+#  && /root/node-v6.5.0-linux-x64/bin/npm install -g --unsafe-perm wetty \
   && /root/node-v6.5.0-linux-x64/bin/npm install -g --registry ${REGISTRY} --unsafe-perm cdif@${CDIF_VERSION} \
   && rm -fr /tmp/*
 
