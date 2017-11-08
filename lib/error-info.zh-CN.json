@@ -50,6 +50,7 @@
   "MODULE_VERSION_INFO_INVALID": "模块版本信息不合法",
   "MODULE_INFO_CONTAINS_PUBLISHCONFIG": "模块信息包含publishConfig字段",
   "MODULE_INSTALL_FAIL": "模块安装失败",
+  "INVALID_MODULE_PATH": "模块路径名非法",
   "MODULE_INSTALL_PATH_PREFIX_INVALID":"非法模块安装路径",
   "MODULE_PATH_CHMOD_FAIL":"模块文件权限改变失败",
   "USERNAME_INVALID": "用户名非法",
