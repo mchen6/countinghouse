@@ -1,6 +1,6 @@
 {
   "name": "cdif",
-  "version": "0.50.3",
+  "version": "0.51.1",
   "description": "Common device interconnect framework",
   "bin": "cdif",
   "main": "./app.js",
@@ -24,7 +24,7 @@
   "author": "out4b",
   "license": "Apache-2.0",
   "publishConfig": {
-    "registry": "http://121.43.107.95:8000/"
+    "registry": "http://public-reg.apemesh.com:8080/"
   },
   "dependencies": {
     "ajv": "^4.8.2",
