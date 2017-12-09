@@ -1,6 +1,6 @@
 {
-  "name": "cdif",
-  "version": "0.51.2",
+  "name": "@apemesh/cdif",
+  "version": "0.51.3",
   "description": "Common device interconnect framework",
   "bin": "cdif",
   "main": "./app.js",
