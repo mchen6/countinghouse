@@ -36,7 +36,7 @@
     "body-parser": "~1.14.0",
     "body-parser-xml": "^1.1.0",
     "bunyan": "^1.8.1",
-    "cdif-device-db": "latest",
+    "@apemesh/cdif-device-db": "latest",
     "chmodr": "^1.0.2",
     "cors": "^2.8.1",
     "express": "~4.13.3",
