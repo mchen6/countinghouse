@@ -32,6 +32,7 @@
   "DEVICE_OFFLINE": "设备已下线",
   "MODULE_VERIFICATION_FAILED": "设备模块校验失败",
   "DEVICE_NOT_FOUND": "未找到设备",
+  "INVALID_DEVICE_ID":"设备ID非法",
   "MODULE_IN_DISCOVERING": "设备模块发现中",
   "OAUTH_ACCESS_TOKEN_NOT_AVAILABLE": "OAuth访问token不可用",
   "CANNOT_GENERATE_ACCESS_TOKEN": "无法生成访问token",
@@ -92,6 +93,10 @@
   "SYSTEM_ERROR_USER_UNAUTHORIZED": "用户未经授权",
   "SYSTEM_ERROR_UNKNOWN_USER": "未知用户",
   "SUBSCRIBER_TYPE_ERROR":"消息订阅者类型错误",
+  "USER_HAS_NO_DEVICE":"应用不在用户应用列表中，请从应用市场添加",
+  "INVALID_BALANCE_FORMAT":"用户余额数据格式非法",
+  "NO_PRICE_RECORD":"用户api计数格式非法",
+  "USER_DEVICE_RECORD_FORMAT_INVALID":"用户设备列表格式非法",
   "API_ERROR": "API调用错误",
   "DATA_ERROR": "API数据错误"
 }
