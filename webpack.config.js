@@ -4,18 +4,20 @@ var fs = require('fs');
 var CopyWebpackPlugin = require('copy-webpack-plugin');
 var StringReplacePlugin = require("string-replace-webpack-plugin");
 var JavaScriptObfuscator = require('webpack-obfuscator');
+var nodeExternals = require('webpack-node-externals');
 // var WebpackJsObfuscator = require('webpack-js-obfuscator');
-
 var chmod = require('chmod');
 
-var nodeModules = {};
-fs.readdirSync('node_modules')
-  .filter(function(x) {
-    return ['.bin'].indexOf(x) === -1;
-  })
-  .forEach(function(mod) {
-    nodeModules[mod] = 'commonjs ' + mod;
-  });
+var packageJson = JSON.parse(fs.readFileSync(__dirname + '/package.json').toString());
+packageJson.bin = 'cdif';
+delete packageJson.scripts;
+packageJson.devDependencies = {};
+packageJson.optionalDependencies = {};
+packageJson.repository = '';
+packageJson.license = 'apemesh';
+
+fs.writeFileSync('./package-dist.json', JSON.stringify(packageJson, null, 2), 'utf-8');
+
 
 module.exports = {
   module: {
@@ -58,6 +60,7 @@ module.exports = {
   },
   entry: './framework.js',
   target: 'node',
+  externals: [nodeExternals()],
   node: {
     __dirname: false
   },
@@ -65,7 +68,6 @@ module.exports = {
     path: path.join(__dirname, 'build'),
     filename: 'app.js'
   },
-  externals: nodeModules,
   plugins: [
     new webpack.optimize.UglifyJsPlugin({
         compress: {
@@ -79,10 +81,9 @@ module.exports = {
     }, []),
     // new WebpackJsObfuscator({}, []),
     new CopyWebpackPlugin([
-        { from: 'wetty', to: 'wetty' },
         { from: 'package-dist.json', to: 'package.json' },
         { from: 'README.md', to: 'README.md' },
-        { from: 'example', to: 'example' },
+//        { from: 'example', to: 'example' },
         { from: 'cdif-dist.sh', to: 'cdif', toType: 'file' }
     ])
   ]
