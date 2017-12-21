@@ -1,3 +1,4 @@
+package-dist.json
 .framework.js.swp
 *.heapsnapshot
 device_addr.db
