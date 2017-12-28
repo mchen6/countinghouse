@@ -3,6 +3,7 @@ var options       = require('./lib/cli-options');
 var deviceDB      = require('@apemesh/cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
+var packageJson   = require(__dirname + '/package.json');
 
 process.on('uncaughtException', function(e) {
     console.error('Error: ' + e.stack);
@@ -14,7 +15,7 @@ var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
 var monitor       = require('./lib/monitor');
 
-logger.I('cdif start with options:' + JSON.stringify(options));
+logger.I('cdif@' + packageJson.version + ' start with options:' + JSON.stringify(options));
 
 try {
   // create module folder
