@@ -42,6 +42,7 @@ RUN \
   && /root/node-v6.5.0-linux-x64/bin/npm config set registry ${REGISTRY} \
   && /root/node-v6.5.0-linux-x64/bin/npm install -g bunyan \
 #  && /root/node-v6.5.0-linux-x64/bin/npm install -g --unsafe-perm wetty \
+  && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
   && echo '//public-reg.apemesh.com:8080/:_authToken=***REDACTED-REGISTRY-TOKEN***' >> /root/.npmrc \
   && /root/node-v6.5.0-linux-x64/bin/npm install -g --registry ${REGISTRY} --build-from-source --sqlite=/usr/local --unsafe-perm @apemesh/cdif@${CDIF_VERSION} \
   && rm -fr /tmp/*
