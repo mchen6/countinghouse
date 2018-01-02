@@ -127,6 +127,8 @@ Command line options
 * --loadModule <path>   Load a local device driver module from <path>. If this option is enabled, all device database access will be disabled
 * --verifyModule        Enable the functionality to verify a module when receiving a verify-module request on framework's REST interface, see description of ```verify-module``` API below
 * --allowSimpleType     Enable simple type definition in ```dataType``` keyword. While we assume all kind of web services must have object type arguments, simple type would be still useful for IoT devices. If this flag is not set, we assume all argument must have ```object``` type, and only one ```input```, one ```output``` argument is allowed and no more. If this flag is set, then we don't have any restriction, and ```argumentList``` may contain definitions to any number of arguments.
+* --centralPortalUrl    Specify the portal URL, default to https://api.apemesh.com:3049/
+* --requestTimeout      Specify the API request timeout value in seconds, default to 30 seconds
 
 Summary of framework API interface:
 -----------------------------------
