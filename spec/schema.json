@@ -58,6 +58,11 @@
           "maxLength": 256,
           "minLength": 0
         },
+        "rateLimit": {
+          "description": "the total api requests to this device allowed in one second, must be a positive integer",
+          "type": "integer",
+          "minimum": 1
+        },
         "modelName": {
           "type": "string",
           "maxLength": 128,

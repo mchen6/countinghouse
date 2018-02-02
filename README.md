@@ -435,6 +435,7 @@ Currently we use following redis cache:
 DB 0: user key with balance and device list info and api stats cache, used in user and session code
 DB 5: api key / value cache management, used in wss and service code
 DB 7: sms callback handling and error log stream (publish error log to channel)
+DB 9: rate limiter key management
 
 From v0.2.40 cdif integrated wetty to allow user terminal access from within docker instance.
 

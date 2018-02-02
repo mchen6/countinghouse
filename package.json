@@ -1,6 +1,6 @@
 {
   "name": "@apemesh/cdif",
-  "version": "0.53.6",
+  "version": "0.53.7",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -58,6 +58,7 @@
     "request": "^2.79.0",
     "rewire": "^2.5.2",
     "rimraf": "^2.5.4",
+    "rolling-rate-limiter": "^0.1.10",
     "semver": "^5.3.0",
     "serve-favicon": "^2.4.3",
     "soap": "^0.18.0",

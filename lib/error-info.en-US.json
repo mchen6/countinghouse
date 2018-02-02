@@ -22,6 +22,7 @@
   "DEVICE_CONNECT_FAIL": "设备连接失败",
   "INVALID_REDIRECT_URL": "非法重定向URL",
   "DEVICE_DISCONNECT_FAIL": "设备断开连接失败",
+  "DENY_DEVICE_ACCESS": "拒绝访问设备",
   "DEVICE_NOT_CONNECTED": "设备未连接",
   "INVALID_ACCESS_TOKEN": "非法访问token",
   "CANNOT_VERIFY_ACCESS_TOKEN": "无法校验访问token",
