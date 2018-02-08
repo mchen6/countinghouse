@@ -442,3 +442,5 @@ From v0.2.40 cdif integrated wetty to allow user terminal access from within doc
 When cdif is launched with --wetty option inside a docker container, client can access http://<cdif-address>:9527/ to login with pseudo 'term' user and debug their modules there
 
 the maximum # of pts is 4096 according to `cat /proc/sys/kernel/pty/max` command in cdif's docker image
+
+Under debug mode (running inside container) we don't have redis support and thus we don't do rate limiting
