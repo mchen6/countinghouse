@@ -37,7 +37,7 @@ RUN \
   && rm /etc/legal \
   && useradd -d /home/term -m -s /bin/bash term \
   && echo 'term:term' | chpasswd \
-  && apt-get install -y apt-utils dialog net-tools curl build-essential python vim nano \
+  && apt-get install -y apt-utils dialog net-tools curl build-essential python vim nano tzdata \
   && apt-get install -y libsqlite3-dev \
   && /root/node-v6.5.0-linux-x64/bin/npm config set registry ${REGISTRY} \
   && /root/node-v6.5.0-linux-x64/bin/npm install -g bunyan \
