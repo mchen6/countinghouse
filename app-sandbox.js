@@ -12,6 +12,22 @@ options.setOptions({});
 var CdifUtil       = require('./lib/cdif-util');
 
 
+// if (isMainThread) {
+//   const worker = new Worker(__filename);
+//   const subChannel = new MessageChannel();
+//   worker.postMessage({ hereIsYourPort: subChannel.port1 }, [subChannel.port1]);
+//   subChannel.port2.on('message', (value) => {
+//     console.log('received:', value);
+//   });
+// } else {
+//   parentPort.once('message', (value) => {
+//     assert(value.hereIsYourPort instanceof MessagePort);
+//     value.hereIsYourPort.postMessage('the worker is sending this');
+//     value.hereIsYourPort.close();
+//   });
+// }
+
+
 
 if (isMainThread) {
   var worker  = new Worker(fileName);
