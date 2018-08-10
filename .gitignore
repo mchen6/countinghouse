@@ -2,7 +2,7 @@ package-dist.json
 .framework.js.swp
 *.heapsnapshot
 device_addr.db
-node_modules/*
+node_modules*/*
 npm-debug.log
 OZW_Log.txt
 modules.db

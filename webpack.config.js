@@ -58,7 +58,10 @@ module.exports = {
       { test: require.resolve("./lib/cdif-error.js"), loader: "expose-loader?DeviceError" }
     ]
   },
-  entry: './framework.js',
+  entry: {
+    'app':     path.join(__dirname, '/framework.js'),
+    'sandbox': path.join(__dirname, '/app-sandbox.js')
+  },
   target: 'node',
   externals: [nodeExternals()],
   node: {
@@ -66,7 +69,7 @@ module.exports = {
   },
   output: {
     path: path.join(__dirname, 'build'),
-    filename: 'app.js'
+    filename: "[name].js"
   },
   plugins: [
     new webpack.optimize.UglifyJsPlugin({
