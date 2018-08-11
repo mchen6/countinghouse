@@ -1,7 +1,5 @@
 var Worker         = require('worker_threads').Worker;
 var isMainThread   = require('worker_threads').isMainThread;
-var MessageChannel = require('worker_threads').MessageChannel;
-var MessagePort    = require('worker_threads').MessagePort;
 var parentPort     = require('worker_threads').parentPort;
 
 var options        = require('./lib/cli-options');
@@ -16,6 +14,7 @@ options.setOptions({});
 var logger = require('./lib/logger');
 logger.createLogger(false);
 
+var workerMessage = require('./lib/worker-message');
 
 var ModuleManager = require('./lib/module-manager');
 var CdifInterface = require('./lib/cdif-interface');
@@ -29,15 +28,13 @@ if (!isMainThread) {
     switch (msg.command) {
       case 'load-module': {
         mm.loadModuleFromPath(msg.path, msg.name, msg.version, function(err, mi) {
-          if (err) return parentPort.postMessage({errMsg: err.message, data: null});
-          return parentPort.postMessage({id: msg.id, errMsg: null, data: null});
+           //unable to send moduleInstane obj to parent, so return null here
+           //moduleInstance is only used in verify-module path which is
+           //not enabled under production environment
+          return workerMessage.replyMessageToParent(msg.id, err, null);
         });
       }
     }
-
-    // setTimeout(function() {
-    //   parentPort.postMessage({errMsg: null, data: {output: {result: value.serviceID}}});
-    // }, 3000);
   });
 }
 
