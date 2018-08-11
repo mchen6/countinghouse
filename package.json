@@ -31,7 +31,7 @@
     "registry": "http://public-reg.apemesh.com:8080/"
   },
   "dependencies": {
-    "@apemesh/cdif-device-db": "latest",
+    "@apemesh/cdif-device-db": "0.2.0",
     "ajv": "^4.8.2",
     "async": "^1.5.2",
     "body-parser": "~1.14.0",
