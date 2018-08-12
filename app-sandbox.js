@@ -1,7 +1,9 @@
+//workaround worker thread issue which didn't set process.umask as a function
+process.umask = function() {};
+
 var Worker         = require('worker_threads').Worker;
 var isMainThread   = require('worker_threads').isMainThread;
 var parentPort     = require('worker_threads').parentPort;
-
 var options        = require('./lib/cli-options');
 
 //TODO: set cli options for worker thread on start, but
@@ -13,6 +15,7 @@ options.setOptions({});
 // rewired modules have to use CdifUtil.deviceLog to print logs
 var logger = require('./lib/logger');
 logger.createLogger(false);
+
 
 var workerMessage = require('./lib/worker-message');
 
