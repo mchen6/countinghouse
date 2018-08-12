@@ -8,9 +8,6 @@ var options        = require('./lib/cli-options');
 
 options.setOptions({});
 
-// under worker mode console.log in rewired modules are not available because
-// in non-debug mode rewire stripped console.log functions
-// rewired modules have to use CdifUtil.deviceLog to print logs
 var LOG = require('./lib/logger');
 LOG.createLogger(false);
 
@@ -38,6 +35,9 @@ if (!isMainThread) {
       case 'load-module': {
         mm.loadModuleFromPath(msg.path, msg.name, msg.version, function(err, mi) {
           //TODO: return an ID representing moduleInstance to parent
+          //TODO: return loaded deviceList in this module to parent
+          //so parent can dispatch device API calls to this worker
+          //this can be done by install an event handler in mm
           return workerMessage.replyMessageToParent(msg.id, err, null);
         });
         break;
