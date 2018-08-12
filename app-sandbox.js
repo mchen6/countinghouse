@@ -13,8 +13,8 @@ options.setOptions({});
 // under worker mode console.log in rewired modules are not available because
 // in non-debug mode rewire stripped console.log functions
 // rewired modules have to use CdifUtil.deviceLog to print logs
-var logger = require('./lib/logger');
-logger.createLogger(false);
+var LOG = require('./lib/logger');
+LOG.createLogger(false);
 
 
 var workerMessage = require('./lib/worker-message');
@@ -25,6 +25,7 @@ var CdifInterface = require('./lib/cdif-interface');
 var mm = new ModuleManager();
 //device manager instance is created inside cdifInterface
 var ci = new CdifInterface(mm);
+
 
 if (!isMainThread) {
   parentPort.on('message', function(msg) {
