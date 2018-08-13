@@ -4,15 +4,13 @@ process.umask = function() {};
 var Worker         = require('worker_threads').Worker;
 var isMainThread   = require('worker_threads').isMainThread;
 var parentPort     = require('worker_threads').parentPort;
-var options        = require('./lib/cli-options');
 
+var options        = require('./lib/cli-options');
 options.setOptions({});
 
 var LOG = require('./lib/logger');
 LOG.createLogger(false);
 
-
-var workerMessage = require('./lib/worker-message');
 
 var ModuleManager = require('./lib/module-manager');
 var CdifInterface = require('./lib/cdif-interface');
@@ -21,25 +19,30 @@ var mm = new ModuleManager();
 //device manager instance is created inside cdifInterface
 var ci = new CdifInterface(mm);
 
+var WorkerMessage = require('./lib/worker-message');
+var workerMessage = new WorkerMessage(null);
+var Session       = require('./session');
 
 if (!isMainThread) {
   parentPort.on('message', function(msg) {
     switch (msg.command) {
       case 'set-options': {
         // MUST disable options.workerThread here because this flag is enabled only in main thread
+        // or else main thread will recursively run the load module path
         msg.options.workerThread = false;
         options.setOptions(msg.options);
-        return workerMessage.replyMessageToParent(msg.id, null, null);
+        return workerMessage.sendMessageToParent(msg.id, null, null);
         break;
       }
       case 'load-module': {
         mm.loadModuleFromPath(msg.path, msg.name, msg.version, function(err, mi) {
-          //TODO: return an ID representing moduleInstance to parent
-          //TODO: return loaded deviceList in this module to parent
-          //so parent can dispatch device API calls to this worker
-          //this can be done by install an event handler in mm
-          return workerMessage.replyMessageToParent(msg.id, err, null);
+          return workerMessage.sendMessageToParent(msg.id, err, null);
         });
+        break;
+      }
+      case 'invoke-action': {
+        console.log(msg);
+        var session = new Session(req, res, 'debug', '', 0, msg.deviceID, 0, null);
         break;
       }
     }
