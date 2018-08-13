@@ -26,8 +26,8 @@ if (!isMainThread) {
   parentPort.on('message', function(msg) {
     switch (msg.command) {
       case 'set-options': {
-        // MUST disable options.enableWorkerThread here because this flag is enabled only in main thread
-        msg.options.enableWorkerThread = false;
+        // MUST disable options.workerThread here because this flag is enabled only in main thread
+        msg.options.workerThread = false;
         options.setOptions(msg.options);
         return workerMessage.replyMessageToParent(msg.id, null, null);
         break;
