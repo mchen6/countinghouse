@@ -40,9 +40,8 @@ if (!isMainThread) {
         break;
       }
       case 'invoke-action': {
-        console.log(msg);
         ci.invokeDeviceAction(msg.deviceID, msg.serviceID, msg.actionName, msg.args, null, function(err, data) {
-          console.log(data);
+          return workerMessage.sendMessageToParent(msg.id, err, data);
         });
         break;
       }
