@@ -41,8 +41,9 @@ if (!isMainThread) {
       }
       case 'invoke-action': {
         console.log(msg);
-        //TODO: send in customized http headers
-        // ci.
+        ci.invokeDeviceAction(msg.deviceID, msg.serviceID, msg.actionName, msg.args, null, function(err, data) {
+          console.log(data);
+        });
         break;
       }
     }
