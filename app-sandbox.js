@@ -19,6 +19,7 @@ var mm = new ModuleManager();
 //device manager instance is created inside cdifInterface
 var ci = new CdifInterface(mm);
 
+
 var WorkerMessage = require('./lib/worker-message');
 var workerMessage = new WorkerMessage(null);
 
