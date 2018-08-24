@@ -46,6 +46,11 @@ if (!isMainThread) {
         });
         break;
       }
+      case 'get-spec': {
+        ci.getDeviceSpec(msg.deviceID, null, function(err, data) {
+          return workerMessage.sendMessageToParent(msg.id, err, data);
+        });
+      }
     }
   });
 }
