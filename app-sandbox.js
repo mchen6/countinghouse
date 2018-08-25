@@ -50,16 +50,19 @@ if (!isMainThread) {
         ci.getDeviceSpec(msg.deviceID, null, function(err, data) {
           return workerMessage.sendMessageToParent(msg.id, err, data);
         });
+        break;
       }
       case 'get-schema': {
         ci.getDeviceSchema(msg.deviceID, msg.path, null, function(err, data) {
           return workerMessage.sendMessageToParent(msg.id, err, data);
         });
+        break;
       }
       case 'invoke-device-callback': {
         ci.invokeDeviceCallbacks(msg.deviceID, msg.path, msg.data, null, function(err, data) {
           return workerMessage.sendMessageToParent(msg.id, err, data);
         });
+        break;
       }
     }
   });
