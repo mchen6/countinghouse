@@ -56,6 +56,11 @@ if (!isMainThread) {
           return workerMessage.sendMessageToParent(msg.id, err, data);
         });
       }
+      case 'invoke-device-callback': {
+        ci.invokeDeviceCallbacks(msg.deviceID, msg.path, msg.data, null, function(err, data) {
+          return workerMessage.sendMessageToParent(msg.id, err, data);
+        });
+      }
     }
   });
 }
