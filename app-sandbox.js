@@ -51,6 +51,11 @@ if (!isMainThread) {
           return workerMessage.sendMessageToParent(msg.id, err, data);
         });
       }
+      case 'get-schema': {
+        ci.getDeviceSchema(msg.deviceID, msg.path, null, function(err, data) {
+          return workerMessage.sendMessageToParent(msg.id, err, data);
+        });
+      }
     }
   });
 }
