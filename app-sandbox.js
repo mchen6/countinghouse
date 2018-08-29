@@ -64,6 +64,16 @@ if (!isMainThread) {
         });
         break;
       }
+      case 'discover-device': {
+        ci.discoverAll(function() {
+          setTimeout(function() {
+            ci.stopDiscoverAll(function() {
+              return workerMessage.sendMessageToParent(msg.id, null, null);
+            });
+          }, 5000);
+        });
+        break;
+      }
     }
   });
 }
