@@ -6,7 +6,11 @@ var fs            = require('fs');
 var packageJson   = require(__dirname + '/package.json');
 
 process.on('uncaughtException', function(e) {
-    console.error('Error: ' + e.stack);
+  console.error('Error: ' + e.stack);
+});
+
+process.on('warning', function(e) {
+  console.warn(e.stack);
 });
 
 options.setOptions(argv);
