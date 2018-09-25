@@ -37,7 +37,7 @@ monitor.init(mm);
 
 var routeManager = new RouteManager(mm);
 
-routeManager.installRoutes();
+// routeManager.startServer();
 mm.loadAllModules();
 
 
