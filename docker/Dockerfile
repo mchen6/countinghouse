@@ -41,6 +41,7 @@ RUN \
   && apt-get install -y apt-utils dialog net-tools curl build-essential python vim git tzdata \
   && apt-get install -y libsqlite3-dev \
   && /root/node-v8.12.0-linux-x64/bin/npm config set registry ${REGISTRY} \
+  && /root/node-v8.12.0-linux-x64/bin/npm config set cache /tmp/npm-cache \
   && /root/node-v8.12.0-linux-x64/bin/npm install -g bunyan \
 #  && /root/node-v8.12.0-linux-x64/bin/npm install -g --unsafe-perm wetty \
   && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
