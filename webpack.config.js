@@ -85,7 +85,6 @@ module.exports = {
     // new WebpackJsObfuscator({}, []),
     new CopyWebpackPlugin([
         { from: 'package-dist.json', to: 'package.json' },
-        { from: 'README.md', to: 'README.md' },
 //        { from: 'example', to: 'example' },
         { from: 'cdif-dist.sh', to: 'cdif', toType: 'file' }
     ])
