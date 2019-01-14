@@ -3,9 +3,9 @@ MAINTAINER out4b
 ARG CDIF_VERSION
 ARG REGISTRY
 COPY './node-v8.12.0-linux-x64' '/root/node-v8.12.0-linux-x64'
-COPY './cloud9' '/root/cloud9'
+COPY './pylon' '/root/pylon'
 WORKDIR /root
-ENV PATH="/root/node-v8.12.0-linux-x64/bin:/root/cloud9/bin:${PATH}"
+ENV PATH="/root/node-v8.12.0-linux-x64/bin:/root/pylon/bin:${PATH}"
 #VOLUME ["/root/node_modules"]
 EXPOSE 9527 3000
 RUN \
@@ -49,7 +49,7 @@ RUN \
   && /root/node-v8.12.0-linux-x64/bin/npm install -g --registry ${REGISTRY} --build-from-source --sqlite=/usr/local --unsafe-perm @apemesh/cdif@${CDIF_VERSION} \
 #  && git clone https://github.com/mchen6/cloud9.git \
 #  && cd cloud9 \
-#  && npm install --unsafe \
+#  && /root/node-v8.12.0-linux-x64/bin/npm install \
   && rm -fr /tmp/*
 
 #ENTRYPOINT ["/root/node-v8.12.0-linux-x64/bin/cdif"]
