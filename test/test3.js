@@ -2,7 +2,11 @@ var should  = require('should');
 var request = require('supertest');
 var async   = require('async');
 var io      = require('socket.io-client');
-var faker   = require('json-schema-faker');
+var jsf     = require('json-schema-faker');
+
+jsf.option({
+  alwaysFakeOptionals: true
+});
 
 var url = 'http://192.168.0.15:9527';
 
@@ -206,7 +210,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
               var variableSchema = res.body;
               variableSchema.should.be.an.Object;
               variableSchema.should.be.not.empty;
-              var fake_data = faker(variableSchema);
+              var fake_data = jsf.generate(variableSchema);
               console.log('Action invoke input: ' + JSON.stringify(fake_data));
               req.input = fake_data;
               call_back();
@@ -225,6 +229,9 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
             console.error(err);
           }
           console.log('Response: ' + JSON.stringify(res.body));
+          if (deviceID === 'b752c14b-27ec-5374-a2ca-0ce71c247566') {
+            if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) return cb(new Error('echo not work'));
+          }
           cb();
         });
       });
