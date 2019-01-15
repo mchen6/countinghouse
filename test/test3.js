@@ -4,41 +4,73 @@ var async   = require('async');
 var io      = require('socket.io-client');
 var faker   = require('json-schema-faker');
 
-var url = 'http://10.0.0.122:9527';
+var url = 'http://192.168.0.15:9527';
 
 var deviceList;
 
-describe('connect all devices', function() {
-  this.timeout(0);
 
-  it('connect OK', function(done) {
-  request(url).get('/device-list')
-  .expect('Content-Type', /json/)
-  .expect(200).end(function(err, res) {
+describe('get device list', function() {
+  it('get device list OK', function(done) {
+    request(url).get('/device-list')
+    .expect('Content-Type', /json/)
+    .expect(200).end(function(err, res) {
       if(err) throw err;
+      for (var i in res.body) {
+        res.body[i].should.have.property('configId').which.is.a.Number();
+        res.body[i].should.have.property('specVersion').and.have.property('major', 1);
+        res.body[i].should.have.property('specVersion').and.have.property('minor', 0);
+        res.body[i].should.have.property('device');
+        var device = res.body[i].device;
+        // device.should.have.property('deviceType');
+        device.should.have.property('friendlyName');
+        device.should.have.property('manufacturer');
+        // device.should.have.property('modelName');
+        device.should.have.property('serviceList', {});
+        // if (device.deviceType != 'urn:cdif-net:device:BinaryLight:1' &&
+        //   device.deviceType != 'urn:cdif-net:device:DimmableLight:1' &&
+        //   device.deviceType != 'urn:cdif-net:device:SensorHub:1' &&
+        //   device.deviceType != 'urn:cdif-net:device:ONVIFCamera:1') {
+        //     throw(new Error('unknown device type: ' + device.deviceType));
+        //   }
+      }
       deviceList = JSON.parse(JSON.stringify(res.body));
-
-      var cred = {"username": "admin", "password": "test"};
-      async.eachSeries(deviceList, function(deviceObj, callback) {
-        var device   = deviceObj.device;
-        var deviceID = device.deviceID;
-
-        // if (device.userAuth === true) {
-        //   request(url).post('/devices/' + deviceID + '/connect')
-        //   .send(cred).expect(200, function(err, res) {
-        //     if (err) throw err;
-        //     var device_access_token = res.body.device_access_token;
-        //     deviceList[deviceID].device_access_token = device_access_token;
-        //     callback();
-        //   });
-        // } else {
-        request(url).post('/devices/' + deviceID + '/connect')
-        .expect(200, callback);
-        // }
-      }, done);
+      if (deviceList.find(item => item.device.friendlyName === 'echo-device') === undefined) throw new Error('test case not found, please install echo-device first');
+      done();
     });
   });
 });
+
+// describe('connect all devices', function() {
+//   this.timeout(0);
+
+//   it('connect OK', function(done) {
+//   request(url).get('/device-list')
+//   .expect('Content-Type', /json/)
+//   .expect(200).end(function(err, res) {
+//       if(err) throw err;
+//       deviceList = JSON.parse(JSON.stringify(res.body));
+
+//       var cred = {"username": "admin", "password": "test"};
+//       async.eachSeries(deviceList, function(deviceObj, callback) {
+//         var device   = deviceObj.device;
+//         var deviceID = device.deviceID;
+
+//         // if (device.userAuth === true) {
+//         //   request(url).post('/devices/' + deviceID + '/connect')
+//         //   .send(cred).expect(200, function(err, res) {
+//         //     if (err) throw err;
+//         //     var device_access_token = res.body.device_access_token;
+//         //     deviceList[deviceID].device_access_token = device_access_token;
+//         //     callback();
+//         //   });
+//         // } else {
+//         request(url).post('/devices/' + deviceID + '/connect')
+//         .expect(200, callback);
+//         // }
+//       }, done);
+//     });
+//   });
+// });
 
 // describe('subscribe events from all devices', function() {
 //   this.timeout(0);
@@ -175,7 +207,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
               variableSchema.should.be.an.Object;
               variableSchema.should.be.not.empty;
               var fake_data = faker(variableSchema);
-              console.log('XXX:' + JSON.stringify(fake_data));
+              console.log('Action invoke input: ' + JSON.stringify(fake_data));
               req.input = fake_data;
               call_back();
             });

@@ -1,7 +1,7 @@
 var should  = require('should');
 var request = require('supertest');
 
-var url = 'http://10.0.0.122:9527';
+var url = 'http://192.168.0.15:9527';
 
 var deviceList;
 
@@ -17,11 +17,10 @@ describe('get device list', function() {
         res.body[i].should.have.property('specVersion').and.have.property('minor', 0);
         res.body[i].should.have.property('device');
         var device = res.body[i].device;
-        device.should.have.property('deviceType');
+        // device.should.have.property('deviceType');
         device.should.have.property('friendlyName');
         device.should.have.property('manufacturer');
         // device.should.have.property('modelName');
-        device.should.have.property('userAuth');
         device.should.have.property('serviceList', {});
         // if (device.deviceType != 'urn:cdif-net:device:BinaryLight:1' &&
         //   device.deviceType != 'urn:cdif-net:device:DimmableLight:1' &&
