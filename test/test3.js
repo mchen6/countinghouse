@@ -139,6 +139,190 @@ describe('invoke all actions', function() {
   });
 });
 
+describe('test unknown deviceID', function() {
+  this.timeout(0);
+  var req = { serviceID: 'pseudo', actionName: 'pseudo', input: {} };
+
+  it('invoke unknown deviceID', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-f2c1-123456789abc/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('未找到设备') === false) return done(new Error('test unknown deviceID fail'));
+      return done();
+    });
+  });
+});
+
+describe('test invoke without specifying serviceID', function() {
+  this.timeout(0);
+  var req = { actionName: 'pseudo', input: {} };
+
+  it('invoke without specifying serviceID', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('未找到serviceID') === false) return done(new Error('test invoke without specifying serviceID fail'));
+      return done();
+    });
+  });
+});
+
+describe('test invoke with unknown serviceID', function() {
+  this.timeout(0);
+  var req = { serviceID: 'pseudo', actionName: 'pseudo', input: {} };
+
+  it('invoke with unknown serviceID', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('未知服务') === false) return done(new Error('test invoke with unknown serviceID fail'));
+      return done();
+    });
+  });
+});
+
+describe('test invoke without specifying actionName', function() {
+  this.timeout(0);
+  var req = { serviceID: 'pseudo', input: {} };
+
+  it('invoke without specifying actionName', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('未找到actionName') === false) return done(new Error('test invoke without specifying actionName fail'));
+      return done();
+    });
+  });
+});
+
+describe('test invoke with unknown actionName', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'pseudo', input: {} };
+
+  it('invoke with unknown actionName', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('未找到action') === false) return done(new Error('test invoke with unknown actionName fail'));
+      return done();
+    });
+  });
+});
+
+describe('test invoke without specifying input', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo' };
+
+  it('invoke without specifying input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '未找到输入参数') return done(new Error('test invoke without specifying input fail'));
+      return done();
+    });
+  });
+});
+
+describe('test1 invoke specify incorrect input type', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: 'input' };
+
+  it('invoke without specifying input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') return done(new Error('test1 invoke specify incorrect input type fail'));
+      return done();
+    });
+  });
+});
+
+describe('test2 invoke specify incorrect input type', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: 12345 };
+
+  it('invoke without specifying input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      console.log('Response: ' + JSON.stringify(res.body));
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') return done(new Error('test2 invoke specify incorrect input type fail'));
+      return done();
+    });
+  });
+});
+
+describe('test3 invoke specify incorrect input type', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: false };
+
+  it('invoke without specifying input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') return done(new Error('test3 invoke specify incorrect input type fail'));
+      return done();
+    });
+  });
+});
+
+describe('test4 invoke specify incorrect input type', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: null };
+
+  it('invoke without specifying input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '空数据') return done(new Error('test4 invoke specify incorrect input type fail'));
+      return done();
+    });
+  });
+});
+
+describe('test4 invoke specify input validation fail', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: {foo: 111} };
+
+  it('invoke without specifying input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      console.log('Response: ' + JSON.stringify(res.body));
+      if (res.body.message.startsWith('输入数据校验错误') === false
+        || res.body.fault.reason !== '数据校验失败'
+        || res.body.fault.info.dataPath == null
+        || res.body.fault.info.schemaPath == null
+        || res.body.fault.info.validatorMessage == null
+      )  return done(new Error('test4 invoke specify incorrect input type fail'));
+      return done();
+    });
+  });
+});
+
+
 function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   var actionList = serviceList[serviceID].actionList;
   actionList.should.be.an.Object;
@@ -225,9 +409,8 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         .send(req)
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {
-          if (err) {
-            console.error(err);
-          }
+          if (err) return cb(err);
+
           console.log('Response: ' + JSON.stringify(res.body));
           if (deviceID === 'b752c14b-27ec-5374-a2ca-0ce71c247566') {
             if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) return cb(new Error('echo not work'));
@@ -235,7 +418,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
           cb();
         });
       });
-    }, 5000);
+    }, 0);
   }, callback);
 }
 
