@@ -3,6 +3,7 @@ var request = require('supertest');
 var async   = require('async');
 var io      = require('socket.io-client');
 var jsf     = require('json-schema-faker');
+var chalk   = require('chalk');
 
 jsf.option({
   alwaysFakeOptionals: true
@@ -38,7 +39,10 @@ describe('get device list', function() {
         //   }
       }
       deviceList = JSON.parse(JSON.stringify(res.body));
-      if (deviceList.find(item => item.device.friendlyName === 'echo-device') === undefined) throw new Error('test case not found, please install echo-device first');
+      if (deviceList.find(item => item.device.friendlyName === 'echo-device') === undefined) {
+        console.error(chalk.white.bgRed.bold('test case not found, please install echo-device first'));
+        throw new Error('test case not found, please install echo-device first');
+      }
       done();
     });
   });
@@ -113,7 +117,7 @@ describe('get device list', function() {
 //   });
 // });
 
-describe('invoke all actions', function() {
+describe('test1: invoke all actions', function() {
   this.timeout(0);
 
   it('invoke OK', function(done) {
@@ -139,7 +143,7 @@ describe('invoke all actions', function() {
   });
 });
 
-describe('test unknown deviceID', function() {
+describe('test2: unknown deviceID', function() {
   this.timeout(0);
   var req = { serviceID: 'pseudo', actionName: 'pseudo', input: {} };
 
@@ -149,13 +153,17 @@ describe('test unknown deviceID', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未找到设备') === false) return done(new Error('test unknown deviceID fail'));
+      if (res.body.message.startsWith('未找到设备') === false) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test unknown deviceID fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test invoke without specifying serviceID', function() {
+describe('test3: invoke without specifying serviceID', function() {
   this.timeout(0);
   var req = { actionName: 'pseudo', input: {} };
 
@@ -165,13 +173,17 @@ describe('test invoke without specifying serviceID', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未找到serviceID') === false) return done(new Error('test invoke without specifying serviceID fail'));
+      if (res.body.message.startsWith('未找到serviceID') === false) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test invoke without specifying serviceID fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test invoke with unknown serviceID', function() {
+describe('test4: invoke with unknown serviceID', function() {
   this.timeout(0);
   var req = { serviceID: 'pseudo', actionName: 'pseudo', input: {} };
 
@@ -181,13 +193,17 @@ describe('test invoke with unknown serviceID', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未知服务') === false) return done(new Error('test invoke with unknown serviceID fail'));
+      if (res.body.message.startsWith('未知服务') === false) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test invoke with unknown serviceID fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test invoke without specifying actionName', function() {
+describe('test5: invoke without specifying actionName', function() {
   this.timeout(0);
   var req = { serviceID: 'pseudo', input: {} };
 
@@ -197,13 +213,17 @@ describe('test invoke without specifying actionName', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未找到actionName') === false) return done(new Error('test invoke without specifying actionName fail'));
+      if (res.body.message.startsWith('未找到actionName') === false) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test invoke without specifying actionName fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test invoke with unknown actionName', function() {
+describe('test6: invoke with unknown actionName', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'pseudo', input: {} };
 
@@ -213,13 +233,17 @@ describe('test invoke with unknown actionName', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未找到action') === false) return done(new Error('test invoke with unknown actionName fail'));
+      if (res.body.message.startsWith('未找到action') === false) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test invoke with unknown actionName fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test invoke without specifying input', function() {
+describe('test7: invoke without specifying input', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo' };
 
@@ -229,13 +253,17 @@ describe('test invoke without specifying input', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '未找到输入参数') return done(new Error('test invoke without specifying input fail'));
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '未找到输入参数') {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test invoke without specifying input fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test1 invoke specify incorrect input type', function() {
+describe('test8: invoke specify incorrect input type', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: 'input' };
 
@@ -245,13 +273,17 @@ describe('test1 invoke specify incorrect input type', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') return done(new Error('test1 invoke specify incorrect input type fail'));
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test1 invoke specify incorrect input type fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test2 invoke specify incorrect input type', function() {
+describe('test9: invoke specify incorrect input type', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: 12345 };
 
@@ -262,13 +294,17 @@ describe('test2 invoke specify incorrect input type', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
       console.log('Response: ' + JSON.stringify(res.body));
-      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') return done(new Error('test2 invoke specify incorrect input type fail'));
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test2 invoke specify incorrect input type fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test3 invoke specify incorrect input type', function() {
+describe('test10: invoke specify incorrect input type', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: false };
 
@@ -278,13 +314,17 @@ describe('test3 invoke specify incorrect input type', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') return done(new Error('test3 invoke specify incorrect input type fail'));
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test3 invoke specify incorrect input type fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test4 invoke specify incorrect input type', function() {
+describe('test11: invoke specify incorrect input type', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: null };
 
@@ -294,13 +334,17 @@ describe('test4 invoke specify incorrect input type', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '空数据') return done(new Error('test4 invoke specify incorrect input type fail'));
+      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '空数据') {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test4 invoke specify incorrect input type fail'));
+      }
       return done();
     });
   });
 });
 
-describe('test4 invoke specify input validation fail', function() {
+describe('test12: invoke specify input validation', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: {foo: 111} };
 
@@ -310,13 +354,17 @@ describe('test4 invoke specify input validation fail', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      console.log('Response: ' + JSON.stringify(res.body));
+
       if (res.body.message.startsWith('输入数据校验错误') === false
         || res.body.fault.reason !== '数据校验失败'
         || res.body.fault.info.dataPath == null
         || res.body.fault.info.schemaPath == null
         || res.body.fault.info.validatorMessage == null
-      )  return done(new Error('test4 invoke specify incorrect input type fail'));
+      ) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test5 invoke specify input validation fail'));
+      }
       return done();
     });
   });
@@ -387,15 +435,13 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
           if (arg === 'input') {
             var schemaRef = stateVar.schema;
             schemaRef.should.be.a.String;
-            request(url).get('/devices/' + deviceID + '/schema' + schemaRef)
-            // .send({"device_access_token": deviceList[deviceID].device_access_token})
+            request(url).get('/devices/' + deviceID + '/schema' + encodeURI(schemaRef))
             .expect(200, function(err, res) {
               if (err) throw err;
               var variableSchema = res.body;
               variableSchema.should.be.an.Object;
               variableSchema.should.be.not.empty;
               var fake_data = jsf.generate(variableSchema);
-              console.log('Action invoke input: ' + JSON.stringify(fake_data));
               req.input = fake_data;
               call_back();
             });
@@ -404,16 +450,18 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
           }
         }
       }, function() {
-        console.log('Request:' + JSON.stringify(req));
         request(url).post('/devices/' + deviceID + '/invoke-action')
         .send(req)
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {
           if (err) return cb(err);
 
-          console.log('Response: ' + JSON.stringify(res.body));
           if (deviceID === 'b752c14b-27ec-5374-a2ca-0ce71c247566') {
-            if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) return cb(new Error('echo not work'));
+            if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) {
+              console.log(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+              console.log(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+              return cb(new Error('echo test case failed'));
+            }
           }
           cb();
         });

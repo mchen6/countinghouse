@@ -72,6 +72,7 @@
   },
   "devDependencies": {
     "async": "~1.5.0",
+    "chalk": "^2.4.2",
     "chmod": "^0.2.1",
     "copy-webpack-plugin": "^4.0.1",
     "expose-loader": "^0.7.3",
