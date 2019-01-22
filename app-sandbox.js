@@ -102,7 +102,7 @@ if (!isMainThread) {
           var callback = wm.msgQueue[id];
           if (callback != null && typeof(callback) === 'function') {
             if (msg.errMsg != null) {
-              callback(new Error(msg.errMsg), null);
+              callback(new Error(msg.errMsg), msg.data);
             } else {
               callback(null, msg.data);
             }
