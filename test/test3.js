@@ -4,6 +4,7 @@ var async   = require('async');
 var io      = require('socket.io-client');
 var jsf     = require('json-schema-faker');
 var chalk   = require('chalk');
+var BSON    = require('bson');
 
 jsf.option({
   alwaysFakeOptionals: true
@@ -391,6 +392,95 @@ describe('test13: invoke with timeout', function() {
   });
 });
 
+describe('test14: invoke error expect fault as an object', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:errorInfoTestService', actionName: 'testErrorInfo', input: {foo: "222"} };
+
+  it('invoke error expect fault as an object', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+
+      if (res.body.message.startsWith('设备调用失败') === false
+        || res.body.fault.reason !== 'err'
+        || res.body.fault.info !== '222'
+      ) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test14 fail: fault is not an object'));
+      }
+      return done();
+    });
+  });
+});
+
+describe('test15: invoke error expect fault as a string', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:errorInfoTestService', actionName: 'testErrorInfo', input: {foo: "333"} };
+
+  it('invoke error expect fault as a string', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+
+      if (res.body.message.startsWith('设备调用失败') === false
+        || res.body.fault !== '333'
+      ) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test15 fail: fault is not a string'));
+      }
+      return done();
+    });
+  });
+});
+
+describe('test16: invoke error expect unknown error', function() {
+  this.timeout(0);
+  var req = { serviceID: 'urn:apemesh-com:serviceID:errorInfoTestService', actionName: 'testErrorInfo', input: {foo: "444"} };
+
+  it('invoke error expect unknown error', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+
+      if (res.body.message !== '设备调用失败: unknown error'
+      ) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test16 fail: not an unknown error'));
+      }
+      return done();
+    });
+  });
+});
+
+
+describe('test17: invoke with BSON input', function() {
+  this.timeout(0);
+  var req = BSON.serialize({ serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: {foo: [{item1: '111', item2: false}], bar: '222'} });
+
+  it('invoke with BSON input', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    .set('Content-Type', 'application/bson')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(200, function(err, res) {
+      if (err) return done(new Error('test17 fail: ' + err.message));
+
+      return done();
+    });
+  });
+});
+
+
+
 function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   var actionList = serviceList[serviceID].actionList;
   actionList.should.be.an.Object;
@@ -401,6 +491,8 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   async.eachSeries(list, function(name, cb) {
     //skip testTimeout API which purposely test timeout scenario and was made as an independent test case
     if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
+    if (serviceID === 'urn:apemesh-com:serviceID:errorInfoTestService' && name === 'testErrorInfo') return cb();
+    if (serviceID === 'urn:example-com:serviceID:errTestService' && name === 'testErrorInfo') return cb();
 
     setTimeout(function() {
       var action = actionList[name];
