@@ -1,37 +1,29 @@
-var should  = require('should');
 var request = require('supertest');
+var jsf     = require('json-schema-faker');
+var chalk   = require('chalk');
+
+jsf.option({
+  alwaysFakeOptionals: true
+});
 
 var url = 'http://192.168.0.15:9527';
 
-var deviceList;
+describe('test2: unknown deviceID', function() {
+  this.timeout(0);
+  var req = { serviceID: 'pseudo', actionName: 'pseudo', input: {} };
 
-describe('get device list', function() {
-  it('get device list OK', function(done) {
-    request(url).get('/device-list')
-    .expect('Content-Type', /json/)
-    .expect(200).end(function(err, res) {
-      if(err) throw err;
-      for (var i in res.body) {
-        res.body[i].should.have.property('configId').which.is.a.Number();
-        res.body[i].should.have.property('specVersion').and.have.property('major', 1);
-        res.body[i].should.have.property('specVersion').and.have.property('minor', 0);
-        res.body[i].should.have.property('device');
-        var device = res.body[i].device;
-        // device.should.have.property('deviceType');
-        device.should.have.property('friendlyName');
-        device.should.have.property('manufacturer');
-        // device.should.have.property('modelName');
-        device.should.have.property('serviceList', {});
-        // if (device.deviceType != 'urn:cdif-net:device:BinaryLight:1' &&
-        //   device.deviceType != 'urn:cdif-net:device:DimmableLight:1' &&
-        //   device.deviceType != 'urn:cdif-net:device:SensorHub:1' &&
-        //   device.deviceType != 'urn:cdif-net:device:ONVIFCamera:1') {
-        //     throw(new Error('unknown device type: ' + device.deviceType));
-        //   }
+  it('invoke unknown deviceID', function(done) {
+    request(url).post('/devices/b752c14b-27ec-5374-f2c1-123456789abc/invoke-action')
+    .send(req)
+    .expect('Content-Type', /[json | text]/)
+    .expect(500, function(err, res) {
+      if (err) return done(err);
+      if (res.body.message.startsWith('未找到设备') === false) {
+        console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
+        console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+        return done(new Error('test unknown deviceID fail'));
       }
-      deviceList = JSON.parse(JSON.stringify(res.body));
-      done();
+      return done();
     });
   });
 });
-
