@@ -318,7 +318,7 @@ describe('test10: invoke specify incorrect input type', function() {
       if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '数据不是object类型') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
-        return done(new Error('test3 invoke specify incorrect input type fail'));
+        return done(new Error('test10 invoke specify incorrect input type fail'));
       }
       return done();
     });
@@ -338,7 +338,7 @@ describe('test11: invoke specify incorrect input type', function() {
       if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '空数据') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
-        return done(new Error('test4 invoke specify incorrect input type fail'));
+        return done(new Error('test11 invoke specify incorrect input type fail'));
       }
       return done();
     });
@@ -493,14 +493,14 @@ describe('test18: invoke with BSON content-type with binary data', function() {
 
       if (res.body.output == null
         || res.body.output.binaryData == null
-        || res.body.output.binaryData.buffer == null
-        || res.body.output.binaryData.buffer['0'] !== 97
-        || res.body.output.binaryData.buffer['1'] !== 98
-        || res.body.output.binaryData.buffer['2'] !== 99
-        || res.body.output.binaryData.buffer['3'] !== 100
-        || res.body.output.binaryData.buffer['4'] !== 101
-        || res.body.output.binaryData.buffer['5'] !== 102
-        || res.body.output.binaryData.buffer['6'] !== 103
+        || res.body.output.binaryData.data == null
+        || res.body.output.binaryData.data[0] !== 97
+        || res.body.output.binaryData.data[1] !== 98
+        || res.body.output.binaryData.data[2] !== 99
+        || res.body.output.binaryData.data[3] !== 100
+        || res.body.output.binaryData.data[4] !== 101
+        || res.body.output.binaryData.data[5] !== 102
+        || res.body.output.binaryData.data[6] !== 103
       ) {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(BSON.deserialize(req))));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
@@ -524,6 +524,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
     if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
     if (serviceID === 'urn:apemesh-com:serviceID:errorInfoTestService' && name === 'testErrorInfo') return cb();
     if (serviceID === 'urn:example-com:serviceID:errTestService' && name === 'testErrorInfo') return cb();
+    if (serviceID === 'urn:apemesh-com:serviceID:db-request') return cb();
 
     setTimeout(function() {
       var action = actionList[name];

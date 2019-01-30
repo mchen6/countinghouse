@@ -1,6 +1,7 @@
 //workaround worker thread issue which didn't set process.umask as a function
 process.umask = function() {};
 
+var BSON           = require('bson');
 var Worker         = require('worker_threads').Worker;
 var isMainThread   = require('worker_threads').isMainThread;
 var parentPort     = require('worker_threads').parentPort;
@@ -46,6 +47,16 @@ if (!isMainThread) {
         break;
       }
       case 'invoke-action': {
+        //deserialize BSON buffer and promote binary data in it as buffer
+        if (msg.args.input != null && msg.args.input instanceof Uint8Array) {
+          var bufInput = null;
+          try {
+            bufInput = BSON.deserialize(Buffer.from(msg.args.input), {promoteBuffers: true});
+          } catch (e) {
+            return wm.sendMessageToParent(msg.id, e, {fault: {reason: 'BSON deserialize fail in worker'}});
+          }
+          msg.args.input = bufInput;
+        }
         ci.invokeDeviceAction(msg.deviceID, msg.serviceID, msg.actionName, msg.args, null, function(err, data) {
           return wm.sendMessageToParent(msg.id, err, data);
         });
