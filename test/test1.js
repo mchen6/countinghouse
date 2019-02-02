@@ -233,7 +233,10 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         .send(req)
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {
-          if (err) return cb(err);
+          if (err) {
+            console.log(res.body);
+            return cb(err);
+          }
 
           if (deviceID === 'b752c14b-27ec-5374-a2ca-0ce71c247566') {
             if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) {

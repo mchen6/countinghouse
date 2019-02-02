@@ -58,7 +58,18 @@ if (!isMainThread) {
           msg.args.input = bufInput;
         }
         ci.invokeDeviceAction(msg.deviceID, msg.serviceID, msg.actionName, msg.args, null, function(err, data) {
-          return wm.sendMessageToParent(msg.id, err, data);
+          var retData = data;
+
+          if (typeof(data) === 'function') {
+            err = new Error('Invoke fail');
+            retData = {fault: 'Incorrect return data type', reason: 'Return function type to caller is not allowed'};
+          }
+          // serialize data to bson buffer if it is in object type
+          // in worker message handler we will check if this is a buffer and deserialize it
+          if (retData != null && (typeof(retData) === 'object' || Array.isArray(retData))) {
+            retData = BSON.serialize(retData);
+          }
+          return wm.sendMessageToParent(msg.id, err, retData);
         });
         break;
       }
@@ -112,6 +123,9 @@ if (!isMainThread) {
         if (wm.msgQueue[id] != null) {
           var callback = wm.msgQueue[id];
           if (callback != null && typeof(callback) === 'function') {
+            if (msg.data != null && msg.data instanceof Uint8Array) {
+              msg.data = BSON.deserialize(Buffer.from(msg.data), {promoteBuffers: true});
+            }
             if (msg.errMsg != null) {
               callback(new Error(msg.errMsg), msg.data);
             } else {
