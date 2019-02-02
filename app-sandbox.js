@@ -53,7 +53,7 @@ if (!isMainThread) {
           try {
             bufInput = BSON.deserialize(Buffer.from(msg.args.input), {promoteBuffers: true});
           } catch (e) {
-            return wm.sendMessageToParent(msg.id, e, {fault: {reason: 'BSON deserialize fail in worker'}});
+            return wm.sendMessageToParent(msg.id, e, BSON.serialize({fault: {reason: 'BSON deserialize fail in worker'}}));
           }
           msg.args.input = bufInput;
         }
@@ -124,7 +124,12 @@ if (!isMainThread) {
           var callback = wm.msgQueue[id];
           if (callback != null && typeof(callback) === 'function') {
             if (msg.data != null && msg.data instanceof Uint8Array) {
-              msg.data = BSON.deserialize(Buffer.from(msg.data), {promoteBuffers: true});
+              try {
+                msg.data = BSON.deserialize(Buffer.from(msg.data), {promoteBuffers: true});
+              } catch (e) {
+                msg.errMsg = e.message;
+                msg.data = {fault: {reason: 'BSON deserialize fail in worker'}};
+              }
             }
             if (msg.errMsg != null) {
               callback(new Error(msg.errMsg), msg.data);
