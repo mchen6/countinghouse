@@ -154,8 +154,9 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   async.eachSeries(list, function(name, cb) {
     //skip testTimeout API which purposely test timeout scenario and was made as an independent test case
     if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
-    if (serviceID === 'urn:apemesh-com:serviceID:errorInfoTestService' && name === 'testErrorInfo') return cb();
-    if (serviceID === 'urn:example-com:serviceID:errTestService' && name === 'testErrorInfo') return cb();
+    //below tests are expect to fail in this scenario, so skip it
+    if (serviceID === 'urn:apemesh-com:serviceID:errorInfoTestService') return cb();
+    if (serviceID === 'urn:example-com:serviceID:errTestService') return cb();
     if (serviceID === 'urn:apemesh-com:serviceID:db-request') return cb();
 
     setTimeout(function() {
@@ -233,7 +234,10 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         .send(req)
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {
-          if (err) return cb(err);
+          if (err) {
+            console.log(res.body);
+            return cb(err);
+          }
 
           if (deviceID === 'b752c14b-27ec-5374-a2ca-0ce71c247566') {
             if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) {
