@@ -12,6 +12,7 @@
   "DEVICE_IN_ACTION": "设备处理调用中",
   "GET_HARDWARE_ADDR_FAIL": "获取设备硬件地址失败",
   "DEVICE_SPEC_UPDATE_FAIL": "设备规范更新失败",
+  "DESTROY_DEVICE_FAIL": "销毁应用失败",
   "EVENT_SUBSCRIBER_TYPE_ERROR": "事件订阅者类型错误",
   "PRESENTATION_NOT_SUPPORTED": "设备不支持表现URL",
   "GET_DEVICE_ROOTURL_FAIL": "获取设备根URL失败",
