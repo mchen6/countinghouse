@@ -46,6 +46,12 @@ if (!isMainThread) {
         });
         break;
       }
+      case 'unload-module': {
+        mm.unloadModuleExternal(msg.name, function() {
+          return wm.sendMessageToParent(msg.id, null, null);
+        });
+        break;
+      }
       case 'invoke-action': {
         //deserialize BSON buffer and promote binary data in it as buffer
         if (msg.args.input != null && msg.args.input instanceof Uint8Array) {
