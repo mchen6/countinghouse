@@ -21,6 +21,8 @@ RUN groupadd -r couchdb && useradd -d /var/lib/couchdb -g couchdb couchdb
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    git  \
+    dnsutils \
     erlang-nox \
     libicu52 \
     libmozjs185-1.0 \
@@ -114,7 +116,13 @@ RUN buildDeps=' \
   && sed -e 's!/usr/local/var/log/couchdb/couch.log$!/dev/null!' -i /usr/local/etc/couchdb/default.ini
 
 COPY ./docker-entrypoint.sh /
+
 COPY ./local.ini /usr/local/etc/couchdb/local.ini
+ADD  couchdb-app /var/lib/couchdb/
+COPY ./node-v10.15.3-linux-x64 /root/node-v10.15.3-linux-x64
+
+RUN echo "_npm-registry-couchapp:couch=http://admin:12345678@localhost:5984/registry" >> /root/.npmrc
+ENV PATH="/root/node-v10.15.3-linux-x64/bin:${PATH}"
 
 # Define mountable directories.
 VOLUME ["/usr/local/var/lib/couchdb"]
