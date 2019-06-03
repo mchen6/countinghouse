@@ -12,6 +12,9 @@ options.setOptions({});
 var LOG = require('./lib/logger');
 LOG.createLogger(false);
 
+process.on('uncaughtException', function(e) {
+  LOG.E(new Error('Uncaught exception in worker thread: ' + e.stack));
+});
 
 var ModuleManager = require('./lib/module-manager');
 var CdifInterface = require('./lib/cdif-interface');
