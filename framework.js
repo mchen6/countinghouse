@@ -37,9 +37,11 @@ var RouteManager  = require('./lib/route-manager');
 
 var mm = new ModuleManager();
 
-monitor.init(mm);
-
 var routeManager = new RouteManager(mm);
+
+var dm = routeManager.cdifInterface.deviceManager;
+
+monitor.init(mm, dm);
 
 // routeManager.startServer();
 mm.loadAllModules();
