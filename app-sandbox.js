@@ -60,9 +60,9 @@ if (!isMainThread) {
         if (msg.args.input != null && msg.args.input instanceof Uint8Array) {
           var bufInput = null;
           try {
-            bufInput = BSON.deserialize(Buffer.from(msg.args.input), {promoteBuffers: true});
+            bufInput = BSON.deserialize(Buffer.from(msg.args.input), {promoteBuffers: true}).__d;
           } catch (e) {
-            return wm.sendMessageToParent(msg.id, e, BSON.serialize({fault: {reason: 'BSON deserialize fail in worker'}}));
+            return wm.sendMessageToParent(msg.id, e, BSON.serialize({__d: {fault: {reason: 'BSON deserialize fail in worker'}} }));
           }
           msg.args.input = bufInput;
         }
@@ -76,7 +76,7 @@ if (!isMainThread) {
           // serialize data to bson buffer if it is in object type
           // in worker message handler we will check if this is a buffer and deserialize it
           if (retData != null && (typeof(retData) === 'object' || Array.isArray(retData))) {
-            retData = BSON.serialize(retData);
+            retData = BSON.serialize({__d: retData});
           }
           return wm.sendMessageToParent(msg.id, err, retData);
         });
@@ -134,7 +134,7 @@ if (!isMainThread) {
           if (callback != null && typeof(callback) === 'function') {
             if (msg.data != null && msg.data instanceof Uint8Array) {
               try {
-                msg.data = BSON.deserialize(Buffer.from(msg.data), {promoteBuffers: true});
+                msg.data = BSON.deserialize(Buffer.from(msg.data), {promoteBuffers: true}).__d;
               } catch (e) {
                 msg.errMsg = e.message;
                 msg.data = {fault: {reason: 'BSON deserialize fail in worker'}};
