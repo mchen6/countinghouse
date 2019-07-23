@@ -24,3 +24,7 @@ docker rm $(docker ps -a -q)
 
 To attach to an existing docker instance:
 docker exec -ti [CONTAINER-ID] bash
+
+To push cdif docker image, first tag the image id to public-reg.apemesh.com:6201/apemesh/cdif:
+docker tag <image-id> public-reg.apemesh.com:6201/apemesh/cdif
+docker push public-reg.apemesh.com:6201/apemesh/cdif
