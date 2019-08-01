@@ -6,6 +6,7 @@ COPY './node-v10.15.3-linux-x64' '/root/node-v10.15.3-linux-x64'
 COPY './pylon' '/root/pylon'
 WORKDIR /root
 ENV PATH="/root/node-v10.15.3-linux-x64/bin:/root/pylon/bin:${PATH}"
+ENV TZ=Asia/Shanghai
 #VOLUME ["/root/node_modules"]
 EXPOSE 9527 3000
 RUN \
@@ -44,6 +45,8 @@ RUN \
   && /root/node-v10.15.3-linux-x64/bin/npm config set cache /tmp/npm-cache \
   && /root/node-v10.15.3-linux-x64/bin/npm install -g bunyan \
   && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+  && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+  && echo $TZ > /etc/timezone \
   && echo '//public-reg.apemesh.com:8080/:_authToken=***REDACTED-REGISTRY-TOKEN***' >> /root/.npmrc \
   && /root/node-v10.15.3-linux-x64/bin/npm install -g --registry ${REGISTRY} --build-from-source --sqlite=/usr/local --unsafe-perm @apemesh/cdif@${CDIF_VERSION} \
 #  && git clone https://github.com/mchen6/cloud9.git \
