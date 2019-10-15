@@ -1,4 +1,5 @@
 const crypto = require('crypto')
+const UnauthorizedRequestError = require('oauth2-server/lib/errors/unauthorized-request-error');
 
 const db = { // Here is a fast overview of what your db model should look like
   authorizationCode: {
@@ -121,7 +122,10 @@ var validateScope = function(user, client, scope) {
 
 var getAccessToken = function(token) {
   console.log('hh');
-  if (!token || token === 'undefined') return false
+  console.log(token); // we should lookup database to return the token object or false to caller for authentication purpose
+  //if (!token || token === 'undefined') return false
+  if (!token || token === 'undefined') return new Promise((resolve, reject) => reject(new UnauthorizedRequestError()));
+  if (token !== db.token.accessToken) return new Promise((resolve, reject) => reject(new UnauthorizedRequestError()));
   return new Promise(resolve => resolve(db.token))
 };
 

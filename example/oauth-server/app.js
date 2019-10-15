@@ -13,7 +13,7 @@ app.use(bodyParser.json());
 app.oauth = new OAuth2Server({
         model: require('./model.js'),
         grants: ['authorization_code', 'refresh_token'],
-        accessTokenLifetime: 60 * 60,
+        accessTokenLifetime: 60 * 60 * 24,
         allowBearerTokensInQueryString: true,
         allowExtendedTokenAttributes: true,
         allowEmptyState: true
@@ -54,34 +54,22 @@ app.post('/authorize', function(req, res) {
   }).catch(function(err){
     res.status(err.code || 500).json(err)
   });
-//  return app.oauth.authorize({
-//    authenticateHandler: {
-//      handle: function(req) {
-//        console.log('AAA');
-//        return req.body.user;
-//      }
-//    }
-//  });
-
 });
 
 
-app.get('/', authenticateRequest, function(req, res) {
+app.get('/', function(req, res) {
 
-        res.send('Congratulations, you are in a secret area!');
-});
-
-function authenticateRequest(req, res, next) {
   var request = new Request(req);
   var response = new Response(res);
 
   return app.oauth.authenticate(request, response)
-    .then(function(token) {
-      next();
+    .then(function(success) {
+      res.send('Congratulations, you are in a secret area!');
     }).catch(function(err) {
       res.status(err.code || 500).json(err);
     });
-}
 
+
+});
 
 app.listen(3000);
