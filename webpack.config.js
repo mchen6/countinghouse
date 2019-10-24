@@ -14,7 +14,6 @@ delete packageJson.scripts;
 packageJson.devDependencies = {};
 packageJson.optionalDependencies = {};
 packageJson.repository = '';
-packageJson.license = 'apemesh';
 
 fs.writeFileSync('./package-dist.json', JSON.stringify(packageJson, null, 2), 'utf-8');
 
