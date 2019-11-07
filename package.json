@@ -51,6 +51,7 @@
     "nano": "^6.2.0",
     "npm-registry-client": "^7.2.1",
     "oauth": "^0.9.14",
+    "oauth2-server": "^3.0.1",
     "once": "^1.4.0",
     "redis": "^2.6.3",
     "request": "^2.79.0",
