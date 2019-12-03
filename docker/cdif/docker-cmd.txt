@@ -1,5 +1,5 @@
 Build:
-docker build --build-arg CDIF_VERSION=0.63.0 --build-arg REGISTRY=http://public-reg.apemesh.com:8080/ -t test-0.63.0 .
+docker build --build-arg CDIF_VERSION=0.67.0 --build-arg REGISTRY=https://registry.npmjs.org/ -t test-0.67.0 .
 
 Run once and destroy container instance:
 docker run -p 3049:3049 -it --rm cdif
