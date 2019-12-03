@@ -28,3 +28,7 @@ docker exec -ti [CONTAINER-ID] bash
 To push cdif docker image, first tag the image id to public-reg.apemesh.com:6201/apemesh/cdif:
 docker tag <image-id> public-reg.apemesh.com:6201/apemesh/cdif
 docker push public-reg.apemesh.com:6201/apemesh/cdif
+
+To manually upgrade cdif docker image:
+docker pull public-reg.apemesh.com:6201/apemesh/cdif
+docker tag public-reg.apemesh.com:6201/apemesh/cdif cdif:latest
