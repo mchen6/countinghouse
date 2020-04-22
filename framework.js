@@ -43,6 +43,12 @@ var dm = routeManager.cdifInterface.deviceManager;
 
 monitor.init(mm, dm);
 
+global.CdifUtil     = require('./lib/cdif-util');
+global.CdifDevice   = require('./lib/cdif-device');
+global.CdifError    = require('./lib/cdif-error').CdifError;
+global.DeviceError  = require('./lib/cdif-error').DeviceError;
+
+
 // routeManager.startServer();
 mm.loadAllModules();
 

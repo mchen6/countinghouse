@@ -52,14 +52,14 @@ module.exports = {
       //           ]
       //       })
       // },
-      { test: require.resolve("./lib/cdif-util.js"), loader: "expose-loader?CdifUtil" },
-      { test: require.resolve("./lib/cdif-device.js"), loader: "expose-loader?CdifDevice"},
-      { test: require.resolve("./lib/cdif-error.js"), loader: "expose-loader?DeviceError" }
+      // { test: require.resolve("./lib/cdif-util.js"), loader: "expose-loader?CdifUtil" },
+      // { test: require.resolve("./lib/cdif-device.js"), loader: "expose-loader?CdifDevice"},
+      // { test: require.resolve("./lib/cdif-error.js"), loader: "expose-loader?DeviceError" }
     ]
   },
   entry: {
     'app':     path.join(__dirname, '/framework.js'),
-    'sandbox': path.join(__dirname, '/app-sandbox.js')
+    'sandbox': path.join(__dirname, '/lib/sandbox.js')
   },
   target: 'node',
   externals: [nodeExternals()],
