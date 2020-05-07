@@ -1,0 +1,13 @@
+{
+  "name": "echo-device-module",
+  "version": "1.0.3",
+  "description": "echo whatever in API input to response output",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "MIT"
+}
