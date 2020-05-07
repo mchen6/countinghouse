@@ -1,1 +1,0 @@
-{"$schema":"http://json-schema.org/draft-04/schema#","id":"#/","type":"object","服务名称":{"API名称":{"input":{"type":"object","properties":{}},"output":{"type":"object","properties":{}}}},"fault":{"服务名称":{"API名称":{"fault":{"type":"object","properties":{"reason":{"title":"具体错误原因","type":"string"},"info":{"title":"错误详细信息","type":"string"}}}}}}}

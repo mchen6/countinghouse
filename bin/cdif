@@ -6,8 +6,16 @@ basepath=`dirname $path`
 which bunyan
 OUT=$?
 
+NODE_VERSION=$(node -v)
+NODE_MAJOR_VERSION=$(echo $NODE_VERSION | awk -F "." '{print $1}' | awk '{sub(/v/, ""); print $1}')
+WORKER_FLAG=""
+
+if [ "$NODE_MAJOR_VERSION" -eq "10" ]; then
+  WORKER_FLAG="--experimental-worker"
+fi
+
 if [ $OUT -eq 0 ];then
-  NODE_PATH=$basepath/../lib node --experimental-worker --expose-gc "$basepath/../framework.js" "$@" | bunyan
+  NODE_PATH=$basepath/../lib node $WORKER_FLAG --expose-gc "$basepath/../framework.js" "$@" | bunyan
 else
-  NODE_PATH=$basepath/../lib node --experimental-worker --expose-gc "$basepath/../framework.js" "$@"
+  NODE_PATH=$basepath/../lib node $WORKER_FLAG --expose-gc "$basepath/../framework.js" "$@"
 fi
