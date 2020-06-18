@@ -19,6 +19,7 @@ function Device() {
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testNumberTypeReturnError', testNumberTypeReturnError.bind(this));
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testStringTypeReturnError', testStringTypeReturnError.bind(this));
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testBooleanTypeReturnError', testBooleanTypeReturnError.bind(this));
+
 }
 
 CdifUtil.inherits(Device, CdifDevice);
