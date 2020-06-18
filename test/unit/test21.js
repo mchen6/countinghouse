@@ -21,7 +21,7 @@ describe('test21: invoke return null type as output', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.message.startsWith('调用参数非法') === false) {
+      if (res.body.message.startsWith('未找到输出') === false) {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test21 fail'));

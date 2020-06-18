@@ -240,7 +240,6 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {
           if (err) {
-            console.log(res.body);
             return cb(err);
           }
 
