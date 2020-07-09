@@ -5,7 +5,7 @@ var url = 'http://127.0.0.1:9527';
 before(function(done) {
   this.timeout(0);
   console.log('starting cdif...');
-  exec('"./bin/cdif" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
+  exec('"./bin/cdif" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiCache --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
   setTimeout(() => {
     done();
   }, 5000);
