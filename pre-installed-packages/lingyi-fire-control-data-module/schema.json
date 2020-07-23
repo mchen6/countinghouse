@@ -1,0 +1,363 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "id": "#/",
+  "type": "object",
+  "devices": {
+    "list": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "设备的状态，取值范围：0、1、2、3、4、5，分别代表：预警、正常、失联、未激活、故障、故障隔离；多个状态可⽤逗号隔开，如: 1,2 "
+          },
+          "startTime": {
+            "type": "string",
+            "description": "查询部署设备时间在startTime之后的记录，13位毫秒级时间戳 "
+          },
+          "endTime": {
+            "type": "string",
+            "description": "查询部署设备时间在endTime之前的记录，13位毫秒级时间戳"
+          },
+          "sort": {
+            "type": "string",
+            "description": "指定返回记录的排序。asc：按部署设备的时间升序排列；desc：按部署设备的时间降序排列；缺省值：desc。"
+          },
+          "pageNo": {
+            "type": "number",
+            "description": "分⻚查询参数， 查询结果分⻚显示时指定要查看的⻚信息，默认1， 查询第⼀⻚，取值范围为⼤于等于1的整数。 "
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "分⻚查询参数， \n查询结果分⻚显示时每⻚显示的记录数， 默认值为20，取值范围为1-100的整数。"
+          }
+        },
+        "title": "获取⽤户可查看的设备",
+        "description": "⽤户可获取其所能⻅的设备，主商户默认获取本商户及其所有⼦商户的设备，⼦商户只能获取本商户的设备。"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "sn": {
+            "type": "string",
+            "description": "设备唯一编号"
+          },
+          "owners": {
+            "type": "string",
+            "description": "设备直接所属商户"
+          },
+          "appid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "设备名称"
+          },
+          "interval": {
+            "type": "string",
+            "description": "设备上报数据周期 "
+          },
+          "mergeType": {
+            "type": "string",
+            "description": "设备⼤类型"
+          },
+          "deviceType": {
+            "type": "string",
+            "description": "设备类型"
+          },
+          "lonlat": {
+            "type": "string",
+            "description": "设备经纬度"
+          },
+          "status": {
+            "type": "string",
+            "description": "设备状态"
+          },
+          "deployTime": {
+            "type": "string",
+            "description": "设备部署时间 "
+          }
+        }
+      }
+    },
+    "users": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "userIds": {
+            "type": "string",
+            "description": "特定⼦商户的信息，查询多个⼦商户id可逗号隔开，不传默认查询所有⼦商户信息 "
+          },
+          "pageNo": {
+            "type": "number",
+            "description": "分⻚查询参数，查询结果分⻚显示时指定要查看的⻚信息，默认1，查询第⼀⻚，取值范围为⼤于等于1的整数。 "
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "分⻚查询参数，查询结果分⻚显示时每⻚显示的记录数，默认值为20，取值范围为1-100的整数。 "
+          }
+        },
+        "description": "获取当前登陆商户的所有或者特定⼦商户。",
+        "title": "获取⼦商户列表信息"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "商户ID"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "商户名称"
+          },
+          "province": {
+            "type": "string",
+            "description": "省"
+          },
+          "city": {
+            "type": "string",
+            "description": "市"
+          },
+          "area": {
+            "type": "string",
+            "description": "区"
+          }
+        }
+      }
+    },
+    "dict": {
+      "input": {
+        "type": "object",
+        "properties": {},
+        "title": "获取设备字典 ",
+        "description": "获取当前系统⽀持的设备类型信息"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "elec_fire": {
+            "type": "string",
+            "description": "电⽓⽕灾类"
+          },
+          "hydrant": {
+            "type": "string",
+            "description": "消防栓类"
+          },
+          "level": {
+            "type": "string",
+            "description": "⽔位类"
+          },
+          "air_breaker": {
+            "type": "string",
+            "description": "智慧空开类"
+          },
+          "co": {
+            "type": "string",
+            "description": "⼈⼯煤⽓类"
+          },
+          "co2": {
+            "type": "string",
+            "description": "⼆氧化碳类"
+          },
+          "connection": {
+            "type": "string",
+            "description": "通断检测类"
+          },
+          "cover": {
+            "type": "string",
+            "description": "井盖类"
+          },
+          "door": {
+            "type": "string",
+            "description": "⻔磁类"
+          },
+          "drop": {
+            "type": "string",
+            "description": "跑冒滴漏类"
+          },
+          "lpg": {
+            "type": "string",
+            "description": "液化⽯油⽓类"
+          },
+          "natural_gas": {
+            "type": "string",
+            "description": "天然⽓类"
+          },
+          "pm": {
+            "type": "string",
+            "description": "PM类"
+          },
+          "pressure": {
+            "type": "string",
+            "description": "⽔压类"
+          },
+          "rfid": {
+            "type": "string",
+            "description": "读卡器类"
+          },
+          "smoke": {
+            "type": "string",
+            "description": "烟雾类"
+          },
+          "temp_humi": {
+            "type": "string",
+            "description": "温湿度类"
+          },
+          "temp_humi_multi": {
+            "type": "string",
+            "description": "温度贴⽚"
+          },
+          "tracker": {
+            "type": "string",
+            "description": "追踪器"
+          },
+          "fire_sprinkler": {
+            "type": "string",
+            "description": "喷淋设备"
+          }
+        }
+      }
+    }
+  },
+  "alarm": {
+    "subscribe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          }
+        },
+        "title": "订阅设备信息",
+        "description": "通过MQTT获取设备故障、预警、上报数据、设备部署与删除设备的实时数据信息"
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "unsubscribe": {
+      "input": {
+        "type": "object",
+        "properties": {},
+        "title": "取消订阅设备信息",
+        "description": "取消订阅设备故障、预警、上报数据、设备部署与删除设备的实时数据信息"
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  "api": {
+    "getInfo": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  "fault": {
+    "devices": {
+      "list": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "users": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "dict": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "alarm": {
+      "subscribe": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "unsubscribe": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "api": {
+      "getInfo": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

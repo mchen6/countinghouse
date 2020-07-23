@@ -16,6 +16,7 @@ var deviceList;
 
 
 describe('get device list', function() {
+
   it('get device list OK', function(done) {
     request(url).get('/device-list')
     .expect('Content-Type', /json/)

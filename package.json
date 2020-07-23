@@ -1,6 +1,6 @@
 {
   "name": "@apemesh/cdif",
-  "version": "2.85.2",
+  "version": "2.85.3",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -8,8 +8,8 @@
     "start": "./bin/cdif",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
-    "build": "webpack && chmod +x build/cdif",
-    "test": "mocha"
+    "build": "node --experimental-worker ./node_modules/webpack/bin/webpack.js && chmod +x build/cdif",
+    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js"
   },
   "repository": {
     "type": "git",
@@ -69,10 +69,11 @@
     "string-hash": "^1.1.1",
     "tar": "^2.2.1",
     "uuid-1345": "^0.99.6",
-    "webpack": "^3.10.0",
     "ws": "^1.0.1"
   },
   "devDependencies": {
+    "webpack": "^3.10.0",
+    "mocha": "^5.0.0",
     "async": "~1.5.0",
     "chalk": "^2.4.2",
     "chmod": "^0.2.1",

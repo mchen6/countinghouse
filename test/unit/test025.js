@@ -28,6 +28,7 @@ describe('test25: test API log feature', function() {
       .expect(200, function(err, res) {
         if (err) return done(err);
         redisClient.llen('list:aabbcc#b752c14b-27ec-5374-a2ca-0ce71c247566#urn:apemesh-com:serviceID:echoService#echo', function(err, data) {
+          redisClient.end(true);
           if (err) return done(err);
           if ((beforeLen + 1) !== data) return done(new Error('API log length mismatch'));
           return done();

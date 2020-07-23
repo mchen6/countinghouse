@@ -1,0 +1,43 @@
+{
+  "_from": "lingyi-fire-control-data-module@1.0.7",
+  "_id": "lingyi-fire-control-data-module@1.0.7",
+  "_inBundle": false,
+  "_integrity": "sha1-meiMSxTrtZM/GwmkripJmUzkP4Y=",
+  "_location": "/lingyi-fire-control-data-module",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "version",
+    "registry": true,
+    "raw": "lingyi-fire-control-data-module@1.0.7",
+    "name": "lingyi-fire-control-data-module",
+    "escapedName": "lingyi-fire-control-data-module",
+    "rawSpec": "1.0.7",
+    "saveSpec": null,
+    "fetchSpec": "1.0.7"
+  },
+  "_requiredBy": [
+    "#USER",
+    "/"
+  ],
+  "_resolved": "http://47.96.250.0:8037/lingyi-fire-control-data-module/-/lingyi-fire-control-data-module-1.0.7.tgz",
+  "_shasum": "99e88c4b14ebb5933f1b09a4ae2a49994ce43f86",
+  "_spec": "lingyi-fire-control-data-module@1.0.7",
+  "_where": "/root/.pm2/logs",
+  "author": {
+    "name": "lydata"
+  },
+  "bundleDependencies": false,
+  "dependencies": {
+    "mqtt": "4.0.0"
+  },
+  "deprecated": false,
+  "description": "消防数据接口",
+  "devDependencies": {},
+  "license": "MIT",
+  "main": "index.js",
+  "name": "lingyi-fire-control-data-module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "version": "1.0.7"
+}
