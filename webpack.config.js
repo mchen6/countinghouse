@@ -2,10 +2,9 @@ var webpack = require('webpack');
 var path = require('path');
 var fs = require('fs');
 var CopyWebpackPlugin = require('copy-webpack-plugin');
-var StringReplacePlugin = require("string-replace-webpack-plugin");
 var JavaScriptObfuscator = require('webpack-obfuscator');
 var nodeExternals = require('webpack-node-externals');
-// var WebpackJsObfuscator = require('webpack-js-obfuscator');
+var UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 var chmod = require('chmod');
 
 var packageJson = JSON.parse(fs.readFileSync(__dirname + '/package.json').toString());
@@ -19,6 +18,21 @@ fs.writeFileSync('./package-dist.json', JSON.stringify(packageJson, null, 2), 'u
 
 
 module.exports = {
+  mode: 'production',
+  optimization: {
+    minimizer: [
+      new UglifyJsPlugin(
+        {
+          uglifyOptions: {
+            warnings: false,
+            compress: {
+              drop_console: false
+            }
+          }
+        }
+      )
+    ]
+  },
   module: {
     rules: [
       // { test: /.*\.js$/,
@@ -71,17 +85,10 @@ module.exports = {
     filename: "[name].js"
   },
   plugins: [
-    new webpack.optimize.UglifyJsPlugin({
-        compress: {
-            warnings: false,
-            drop_console: false
-        }
-    }),
     new JavaScriptObfuscator({
         rotateUnicodeArray: true,
         disableConsoleOutput: false
     }, []),
-    // new WebpackJsObfuscator({}, []),
     new CopyWebpackPlugin([
         { from: 'package-dist.json', to: 'package.json' },
 //        { from: 'example', to: 'example' },

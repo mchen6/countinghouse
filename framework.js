@@ -3,7 +3,7 @@ var options       = require('./lib/cli-options');
 var deviceDB      = require('@apemesh/cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
-var packageJson   = require(__dirname + '/package.json');
+var packageJson   = require('./package.json');
 
 process.on('uncaughtException', function(e) {
   console.error('Error: ' + e.stack);
