@@ -24,10 +24,10 @@ describe("Start load module test in single thread mode", function () {
     "--loadModule",
     "./pre-installed-packages/echo-device-client-module",
     "--withPM2"
-  ]);
+  ], {silent: true});
 
   testFiles.forEach(function (file) {
-    require('./load-module/' + file)(child);
+    require('./load-module/' + file)(child, true);
   });
 });
 
