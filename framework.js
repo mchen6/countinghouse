@@ -48,6 +48,8 @@ global.CdifDevice   = require('./lib/cdif-device');
 global.CdifError    = require('./lib/cdif-error').CdifError;
 global.DeviceError  = require('./lib/cdif-error').DeviceError;
 
+var redisAPICache = require('./lib/redis-api-cache');
+redisAPICache.init();
 
 // routeManager.startServer();
 mm.loadAllModules();
