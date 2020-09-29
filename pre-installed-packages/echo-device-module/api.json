@@ -23,6 +23,7 @@
         "actionList": {
           "echo": {
             "description": "API描述信息",
+            "apiCache": 9000,
             "argumentList": {
               "input": {
                 "direction": "in",
