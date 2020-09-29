@@ -21,7 +21,7 @@ describe('test19: invoke with BSON content-type with large binary data', functio
     .send(req)
     .expect('Content-Type', /[json | text]/)
     .expect(200, function(err, res) {
-      if (err) return done(new Error('test18 fail: ' + err.message));
+      if (err) return done(new Error('test19 fail: ' + err.message));
 
       if (res.body.output == null
         || res.body.output.binaryData == null
