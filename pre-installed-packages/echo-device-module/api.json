@@ -23,43 +23,10 @@
         "actionList": {
           "echo": {
             "description": "API描述信息",
-            "apiCache": 9000,
             "argumentList": {
               "input": {
                 "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_echo_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "foo": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "item1": {
-                            "type": "string"
-                          },
-                          "item2": {
-                            "type": "boolean"
-                          },
-                          "item3": {
-                            "type": "number"
-                          }
-                        }
-                      }
-                    },
-                    "bar": {
-                      "type": "string"
-                    },
-                    "baz": {
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "foo",
-                    "bar"
-                  ]
-                }
+                "relatedStateVariable": "A_ARG_TYPE_echo_Input"
               },
               "output": {
                 "direction": "out",
@@ -73,6 +40,23 @@
             "fault": {
               "schema": "/fault/echoService/echo/fault"
             }
+          },
+          "echoWithAPICache": {
+            "description": "API描述信息",
+            "apiCache": 9000,
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_echoWithAPICache_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_echoWithAPICache_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/echoService/echoWithAPICache/fault"
+            }
           }
         },
         "serviceStateTable": {
@@ -83,6 +67,14 @@
           "A_ARG_TYPE_echo_Output": {
             "dataType": "object",
             "schema": "/echoService/echo/output"
+          },
+          "A_ARG_TYPE_echoWithAPICache_Input": {
+            "dataType": "object",
+            "schema": "/echoService/echoWithAPICache/input"
+          },
+          "A_ARG_TYPE_echoWithAPICache_Output": {
+            "dataType": "object",
+            "schema": "/echoService/echoWithAPICache/output"
           }
         }
       },

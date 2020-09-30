@@ -40,6 +40,44 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "echoWithAPICache": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "foo": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item1": {
+                  "type": "string"
+                },
+                "item2": {
+                  "type": "boolean"
+                },
+                "item3": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "bar": {
+            "type": "string"
+          },
+          "baz": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "foo",
+          "bar"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   },
   "timeOutTestService": {
@@ -123,6 +161,21 @@
   "fault": {
     "echoService": {
       "echo": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "echoWithAPICache": {
         "fault": {
           "type": "object",
           "properties": {

@@ -1,6 +1,6 @@
 {
   "name": "echo-device-module",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "echo whatever in API input to response output",
   "main": "index.js",
   "dependencies": {},
