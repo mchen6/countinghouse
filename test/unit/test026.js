@@ -25,17 +25,22 @@ describe('test26: test API Cache feature', function() {
       .send(req)
       .expect('Content-Type', /[json | text]/)
       .expect(200, function(err, res) {
-        if (err) return done(err);
-        redisClient.hgetall(hashKey, function(err, data) {
-          redisClient.del(hashKey, function(err){});
+        if (err) {
           redisClient.end(true);
-          if (err) return done(err);
-          if (data.deviceID !== 'b752c14b-27ec-5374-a2ca-0ce71c247566' || data.value == null) {
-            console.error(data);
-            return done(new Error('API cache content wrong'));
-          }
-          return done();
-        });
+          return done(err);
+        }
+        setTimeout(() => {
+          redisClient.hgetall(hashKey, function(err, data) {
+            redisClient.del(hashKey, function(err){});
+            redisClient.end(true);
+            if (err) return done(err);
+            if (data.deviceID !== 'b752c14b-27ec-5374-a2ca-0ce71c247566' || data.value == null) {
+              console.error(data);
+              return done(new Error('API cache content wrong'));
+            }
+            return done();
+          });
+        }, 1000); //wait 1000ms to allow previous redisClient.del operation effective
       });
     });
   });
