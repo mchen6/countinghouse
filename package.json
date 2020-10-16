@@ -1,6 +1,6 @@
 {
   "name": "@apemesh/cdif",
-  "version": "2.85.4",
+  "version": "2.85.7",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -77,6 +77,7 @@
     "chmod": "^0.2.1",
     "copy-webpack-plugin": "^4.0.1",
     "expose-loader": "^0.7.3",
+    "javascript-obfuscator": "^2.6.0",
     "json-schema-faker": "^0.5.0-rc16",
     "mocha": "^5.0.0",
     "should": "~7.1.0",
@@ -88,6 +89,6 @@
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.12",
     "webpack-node-externals": "^2.5.0",
-    "webpack-obfuscator": "^1.7.0"
+    "webpack-obfuscator": "^2.6.0"
   }
 }

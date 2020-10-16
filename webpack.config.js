@@ -86,6 +86,7 @@ module.exports = {
   },
   plugins: [
     new JavaScriptObfuscator({
+        simplify: false,
         rotateUnicodeArray: true,
         disableConsoleOutput: false
     }, []),
