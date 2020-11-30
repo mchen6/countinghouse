@@ -13,6 +13,7 @@ delete packageJson.scripts;
 packageJson.devDependencies = {};
 packageJson.optionalDependencies = {};
 packageJson.repository = '';
+packageJson.main = 'app.js';
 
 fs.writeFileSync('./package-dist.json', JSON.stringify(packageJson, null, 2), 'utf-8');
 
