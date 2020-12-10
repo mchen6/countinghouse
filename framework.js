@@ -3,6 +3,7 @@ var options       = require('./lib/cli-options');
 var deviceDB      = require('@apemesh/cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
+var JobControl    = require('./lib/job-control');
 var packageJson   = require('./package.json');
 
 process.on('uncaughtException', function(e) {
@@ -50,6 +51,8 @@ global.DeviceError  = require('./lib/cdif-error').DeviceError;
 
 var redisAPICache = require('./lib/redis-api-cache');
 redisAPICache.init();
+
+if (options.workerThread === true) JobControl.initJobProcess(routeManager.cdifInterface);
 
 // routeManager.startServer();
 mm.loadAllModules();

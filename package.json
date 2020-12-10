@@ -9,7 +9,7 @@
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
     "build": "webpack && chmod +x build/cdif",
-    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js"
+    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha ./test/test5.js"
   },
   "repository": {
     "type": "git",
@@ -37,6 +37,7 @@
     "body-parser": "~1.14.0",
     "body-parser-xml": "^1.1.0",
     "bson": "^4.0.1",
+    "bull": "^3.20.0",
     "bunyan": "^1.8.1",
     "chmodr": "^1.0.2",
     "cors": "^2.8.1",
