@@ -79,5 +79,7 @@
   "WEBSOCKET_REMOVE_SUBSCRIBER_ERROR": "WebSocket服务器删除订阅者失败",
   "WEBSOCKET_ERROR": "WebSocket错误",
   "REDIS_CLIENT_ERROR": "redis客户端错误",
-  "RESTART_MODULE_FAIL": "重启模块失败"
+  "RESTART_MODULE_FAIL": "重启模块失败",
+  "ADD_JOB_ERROR": "添加任务失败",
+  "GET_JOB_ERROR": "获取任务信息失败"
 }
