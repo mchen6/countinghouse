@@ -1,0 +1,55 @@
+Failed get-job output:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"opts":{"name":"fff"},"serviceID":"urn:apemesh-com:serviceID:echoS","actionName":"echo","input":{"foo":[],"bar":"inputString"}}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/add-job
+
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"id":"1"}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/get-job
+
+{"job":{"id":"1","name":"fff","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoS","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"attempts":1,"delay":0,"timestamp":1608001369714},"progress":0,"delay":0,"timestamp":1608001369714,"attemptsMade":1,"failedReason":"未知服务: urn:apemesh-com:serviceID:echoS","stacktrace":["Error\n    at Object.<anonymous> (/home/mchen6/cdif.code/lib/cdif-error.js:52:25)\n    at Module._compile (internal/modules/cjs/loader.js:1138:30)\n    at Object.Module._extensions..js (internal/modules/cjs/loader.js:1158:10)\n    at Module.load (internal/modules/cjs/loader.js:986:32)\n    at Function.Module._load (internal/modules/cjs/loader.js:879:14)\n    at Module.require (internal/modules/cjs/loader.js:1026:19)\n    at require (internal/modules/cjs/helpers.js:72:18)\n    at Object.<anonymous> (/home/mchen6/cdif.code/lib/job-control.js:5:19)\n    at Module._compile (internal/modules/cjs/loader.js:1138:30)\n    at Object.Module._extensions..js (internal/modules/cjs/loader.js:1158:10)"],"returnvalue":null,"finishedOn":1608001369726,"processedOn":1608001369721},"state":"failed"}
+
+
+Success get-job output:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"opts":{"name":"fff1"},"serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/add-job
+
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"id":"3"}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/get-job
+
+{"job":{"id":"3","name":"fff1","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"attempts":1,"delay":0,"timestamp":1608001496318},"progress":0,"delay":0,"timestamp":1608001496318,"attemptsMade":0,"stacktrace":[],"returnvalue":{"output":{"result":499999999067109000}},"finishedOn":1608001497273,"processedOn":1608001496320},"state":"completed"}
+
+Progressing get-job output:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"opts":{"name":"fff2"},"serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/add-job
+
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"id":"4"}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/get-job
+
+{"job":{"id":"4","name":"fff2","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"attempts":1,"delay":0,"timestamp":1608001688037},"progress":0,"delay":0,"timestamp":1608001688037,"attemptsMade":0,"stacktrace":[],"returnvalue":null,"finishedOn":null,"processedOn":1608001688050},"state":"active"}
+
+Delayed job get-job output:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"opts":{"name":"fff3","delay":30000},"serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/add-job
+
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"id":"5"}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/get-job
+
+{"job":{"id":"5","name":"fff3","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"attempts":1,"delay":30000,"timestamp":1608001791251},"progress":0,"delay":30000,"timestamp":1608001791251,"attemptsMade":0,"stacktrace":[],"returnvalue":null,"finishedOn":null,"processedOn":null},"state":"delayed"}
+
+
+Timeout job get-job output:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"opts":{"name":"fff4","timeout":5000},"serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/add-job
+
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"id":"6"}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/get-job
+
+{"job":{"id":"6","name":"fff4","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"attempts":1,"delay":0,"timeout":5000,"timestamp":1608001902442},"progress":0,"delay":0,"timestamp":1608001902442,"attemptsMade":1,"failedReason":"Promise timed out after 5000 milliseconds","stacktrace":["TimeoutError: Promise timed out after 5000 milliseconds\n    at Timeout._onTimeout (/home/mchen6/cdif.code/node_modules/p-timeout/index.js:34:63)\n    at listOnTimeout (internal/timers.js:549:17)\n    at processTimers (internal/timers.js:492:7)"],"returnvalue":null,"finishedOn":1608001907446,"processedOn":1608001902443},"state":"failed"}
+
+
+Repeating job get-job output:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"opts":{"name":"foo5","repeat":{"every":10000}},"serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/add-job
+
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"id":"repeat:78d1da0da3e06dac963268cf21e98da9:1608002180000"}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/get-job
+
+{"job":{"id":"repeat:78d1da0da3e06dac963268cf21e98da9:1608002180000","name":"foo5","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"repeat":{"count":1,"every":10000},"jobId":"repeat:78d1da0da3e06dac963268cf21e98da9:1608002180000","delay":1196,"timestamp":1608002178804,"prevMillis":1608002180000,"attempts":1},"progress":0,"delay":0,"timestamp":1608002178804,"attemptsMade":0,"stacktrace":[],"returnvalue":{"output":{"result":499999999067109000}},"finishedOn":1608002180981,"processedOn":1608002180006},"state":"completed"}
+
+
+count: # of times the job has repeated
+
+timestamp:    the time job is added
+processedOn:  the time job is processed
+finishedOn:   the time job is finished (completed or fail) or null (progressing)
+delay:        the delay time of the job
+failedReason: the reason why the job failed (timedout or return error)
+
+
