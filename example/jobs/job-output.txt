@@ -43,6 +43,11 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-
 
 {"job":{"id":"repeat:78d1da0da3e06dac963268cf21e98da9:1608002180000","name":"foo5","data":{"deviceID":"b752c14b-27ec-5374-a2ca-0ce71c247566","serviceID":"urn:apemesh-com:serviceID:echoService","actionName":"echo","input":{"foo":[],"bar":"inputString"}},"opts":{"repeat":{"count":1,"every":10000},"jobId":"repeat:78d1da0da3e06dac963268cf21e98da9:1608002180000","delay":1196,"timestamp":1608002178804,"prevMillis":1608002180000,"attempts":1},"progress":0,"delay":0,"timestamp":1608002178804,"attemptsMade":0,"stacktrace":[],"returnvalue":{"output":{"result":499999999067109000}},"finishedOn":1608002180981,"processedOn":1608002180006},"state":"completed"}
 
+Remove a job:
+curl -X POST -H 'Content-Type: application/json' -H 'X-Apemesh-Key: ***REDACTED-APPKEY***' -d '{"name":"foo5","id":"2","isRepeat":false}' http://192.168.0.15:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/remove-job
+{"removed":true}
+
+
 
 count: # of times the job has repeated
 
