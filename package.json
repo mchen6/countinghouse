@@ -40,6 +40,7 @@
     "bull": "^3.20.0",
     "bunyan": "^1.8.1",
     "chmodr": "^1.0.2",
+    "chokidar": "^3.5.0",
     "cors": "^2.8.1",
     "express": "~4.13.3",
     "express-http-proxy": "^1.2.0",
