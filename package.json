@@ -1,6 +1,6 @@
 {
   "name": "@apemesh/cdif",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -51,6 +51,7 @@
     "json-stable-stringify": "^1.0.1",
     "json-stringify-safe": "^5.0.1",
     "jsonwebtoken": "~5.4.0",
+    "lodash": "^4.17.20",
     "minimist": "^1.2.0",
     "mkdirp": "^0.5.1",
     "morgan": "~1.6.1",
