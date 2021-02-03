@@ -1,0 +1,7 @@
+[
+  "hmget",
+  "hmset",
+  "pexpire",
+  "get",
+  "set"
+]

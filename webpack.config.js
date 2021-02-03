@@ -22,16 +22,16 @@ module.exports = {
   mode: 'production',
   optimization: {
     minimizer: [
-      new UglifyJsPlugin(
-        {
-          uglifyOptions: {
-            warnings: false,
-            compress: {
-              drop_console: false
-            }
-          }
-        }
-      )
+      // new UglifyJsPlugin(
+      //   {
+      //     uglifyOptions: {
+      //       warnings: false,
+      //       compress: {
+      //         drop_console: false
+      //       }
+      //     }
+      //   }
+      // )
     ]
   },
   module: {
