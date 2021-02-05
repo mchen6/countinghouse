@@ -3,7 +3,6 @@ var options       = require('./lib/cli-options');
 var deviceDB      = require('@apemesh/cdif-device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
-var JobControl    = require('./lib/job-control');
 var packageJson   = require('./package.json');
 
 process.on('uncaughtException', function(e) {
@@ -55,6 +54,7 @@ global.DeviceError  = require('./lib/cdif-error').DeviceError;
 //manually set CdifUtil.redis because when cdif-util.js is first time required, redis-api.js isn't loaded and initialized yet
 global.CdifUtil.redis = redisAPI.client;
 
+var JobControl    = require('./lib/job-control');
 if (options.workerThread === true) JobControl.initJobProcess(routeManager.cdifInterface);
 
 // routeManager.startServer();

@@ -3,5 +3,11 @@
   "hmset",
   "pexpire",
   "get",
-  "set"
+  "set",
+  "lpush",
+  "rpush",
+  "lrange",
+  "multi",
+  "hget",
+  "hset"
 ]
