@@ -9,5 +9,7 @@
   "lrange",
   "multi",
   "hget",
-  "hset"
+  "hset",
+  "hdel",
+  "del"
 ]
