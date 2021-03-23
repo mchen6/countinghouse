@@ -11,5 +11,9 @@
   "hget",
   "hset",
   "hdel",
-  "del"
+  "del",
+  "zadd",
+  "zremove",
+  "zrange",
+  "ltrim"
 ]
