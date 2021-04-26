@@ -157,6 +157,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   async.eachSeries(list, function(name, cb) {
     //skip testTimeout API which purposely test timeout scenario and was made as an independent test case
     if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
+    if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeoutAsync') return cb();
     //below tests are expect to fail in this scenario, so skip it
     if (serviceID === 'urn:apemesh-com:serviceID:errorInfoTestService') return cb();
     if (serviceID === 'urn:example-com:serviceID:errTestService') return cb();
