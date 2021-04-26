@@ -78,10 +78,58 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "echoAsync": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "foo": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item1": {
+                  "type": "string"
+                },
+                "item2": {
+                  "type": "boolean"
+                },
+                "item3": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "bar": {
+            "type": "string"
+          },
+          "baz": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "foo",
+          "bar"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   },
   "timeOutTestService": {
     "testTimeout": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "testTimeoutAsync": {
       "input": {
         "type": "object",
         "properties": {}
@@ -156,6 +204,20 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "testErrorInfoAsync": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "foo": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   },
   "fault": {
@@ -189,10 +251,40 @@
             }
           }
         }
+      },
+      "echoAsync": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "timeOutTestService": {
       "testTimeout": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "testTimeoutAsync": {
         "fault": {
           "type": "object",
           "properties": {
@@ -285,6 +377,21 @@
         }
       },
       "testBooleanTypeReturnError": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "testErrorInfoAsync": {
         "fault": {
           "type": "object",
           "properties": {

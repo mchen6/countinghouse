@@ -1,3 +1,4 @@
+var com_apemesh_errorInfoTestService_testErrorInfoAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService-testErrorInfoAsync.js');
 var com_apemesh_errorInfoTestService_testBooleanTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService-testBooleanTypeReturnError.js');
 var com_apemesh_errorInfoTestService_testStringTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService-testStringTypeReturnError.js');
 var com_apemesh_errorInfoTestService_testNumberTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService-testNumberTypeReturnError.js');
@@ -11,5 +12,6 @@ module.exports = {
   com_apemesh_errorInfoTestService_testNullReturnError: com_apemesh_errorInfoTestService_testNullReturnError,
   com_apemesh_errorInfoTestService_testNumberTypeReturnError: com_apemesh_errorInfoTestService_testNumberTypeReturnError,
   com_apemesh_errorInfoTestService_testStringTypeReturnError: com_apemesh_errorInfoTestService_testStringTypeReturnError,
-  com_apemesh_errorInfoTestService_testBooleanTypeReturnError: com_apemesh_errorInfoTestService_testBooleanTypeReturnError
+  com_apemesh_errorInfoTestService_testBooleanTypeReturnError: com_apemesh_errorInfoTestService_testBooleanTypeReturnError,
+  com_apemesh_errorInfoTestService_testErrorInfoAsync: com_apemesh_errorInfoTestService_testErrorInfoAsync
 };

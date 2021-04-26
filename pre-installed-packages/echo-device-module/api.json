@@ -57,6 +57,22 @@
             "fault": {
               "schema": "/fault/echoService/echoWithAPICache/fault"
             }
+          },
+          "echoAsync": {
+            "description": "API描述信息",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_echoAsync_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_echoAsync_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/echoService/echoAsync/fault"
+            }
           }
         },
         "serviceStateTable": {
@@ -75,6 +91,14 @@
           "A_ARG_TYPE_echoWithAPICache_Output": {
             "dataType": "object",
             "schema": "/echoService/echoWithAPICache/output"
+          },
+          "A_ARG_TYPE_echoAsync_Input": {
+            "dataType": "object",
+            "schema": "/echoService/echoAsync/input"
+          },
+          "A_ARG_TYPE_echoAsync_Output": {
+            "dataType": "object",
+            "schema": "/echoService/echoAsync/output"
           }
         }
       },
@@ -103,6 +127,22 @@
             "fault": {
               "schema": "/fault/timeOutTestService/testTimeout/fault"
             }
+          },
+          "testTimeoutAsync": {
+            "description": "API描述信息",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_testTimeoutAsync_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_testTimeoutAsync_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/timeOutTestService/testTimeoutAsync/fault"
+            }
           }
         },
         "serviceStateTable": {
@@ -113,6 +153,14 @@
           "A_ARG_TYPE_testTimeout_Output": {
             "dataType": "object",
             "schema": "/timeOutTestService/testTimeout/output"
+          },
+          "A_ARG_TYPE_testTimeoutAsync_Input": {
+            "dataType": "object",
+            "schema": "/timeOutTestService/testTimeoutAsync/input"
+          },
+          "A_ARG_TYPE_testTimeoutAsync_Output": {
+            "dataType": "object",
+            "schema": "/timeOutTestService/testTimeoutAsync/output"
           }
         }
       },
@@ -265,6 +313,22 @@
             "fault": {
               "schema": "/fault/errorInfoTestService/testBooleanTypeReturnError/fault"
             }
+          },
+          "testErrorInfoAsync": {
+            "description": "API描述信息",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_testErrorInfoAsync_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_testErrorInfoAsync_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/errorInfoTestService/testErrorInfoAsync/fault"
+            }
           }
         },
         "serviceStateTable": {
@@ -315,6 +379,14 @@
           "A_ARG_TYPE_testBooleanTypeReturnError_Output": {
             "dataType": "object",
             "schema": "/errorInfoTestService/testBooleanTypeReturnError/output"
+          },
+          "A_ARG_TYPE_testErrorInfoAsync_Input": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testErrorInfoAsync/input"
+          },
+          "A_ARG_TYPE_testErrorInfoAsync_Output": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testErrorInfoAsync/output"
           }
         }
       }
