@@ -7,13 +7,19 @@
   "lpush",
   "rpush",
   "lrange",
-  "multi",
+  "llen",
   "hget",
   "hset",
   "hdel",
   "del",
+  "ltrim",
+  "mget",
+  "hgetall",
   "zadd",
-  "zremove",
   "zrange",
-  "ltrim"
+  "zrem",
+  "zlen",
+  "zrange",
+  "multi",
+  "exec"
 ]
