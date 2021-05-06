@@ -1,6 +1,6 @@
 {
   "name": "@apemesh/cdif",
-  "version": "3.0.20",
+  "version": "3.0.21",
   "description": "Common device interconnect framework",
   "bin": "./bin/cdif",
   "main": "./bin/framework.js",
@@ -45,6 +45,7 @@
     "express": "~4.13.3",
     "express-http-proxy": "^1.2.0",
     "express-ws": "^2.0.0",
+    "fs-extra": "^10.0.0",
     "isbinaryfile": "^4.0.6",
     "json-pointer": "^0.6.0",
     "json-schema-ref-parser": "^1.4.0",
