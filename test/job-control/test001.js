@@ -31,8 +31,8 @@ module.exports = function (cp, isSingleThread) {
           jobQueue.on('global:completed', function(job, result) {
             console.log(`Job completed with result ${result}`);
 
-            request(url).post('/shutdown').end(function() {});
-            return done();
+            request(url).post('/shutdown').end(function() { done(); process.exit(0); });
+            //return done();
           });
 
 
