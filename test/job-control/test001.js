@@ -31,11 +31,9 @@ module.exports = function (cp, isSingleThread) {
           jobQueue.on('global:completed', function(job, result) {
             console.log(`Job completed with result ${result}`);
 
-            request(url).post('/shutdown').end(function() { done(); process.exit(0); });
-            //return done();
+            request(url).post('/shutdown').end(function() {});
+            return done();
           });
-
-
 
           jobQueue.add({
             deviceID: 'b752c14b-27ec-5374-a2ca-0ce71c247566',
