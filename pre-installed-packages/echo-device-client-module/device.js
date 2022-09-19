@@ -19,6 +19,8 @@ function Device() {
     serviceID: 'urn:apemesh-com:serviceID:errorInfoTestService',
     appKey: 'aabbcc'
   }, (err, client) => {this.errorInfoTestclient = client});
+
+  // console.log(JSON.stringify(DeviceConfig));
 }
 
 CdifUtil.inherits(Device, CdifDevice);
