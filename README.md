@@ -1,3 +1,8 @@
+NOTE
+----
+Breaking change in 3.1.0 and above, please DONOT use 3.1.0 or above releases with existing deployed system
+which is < 3.1.0
+
 Common device interconnect framework
 ------------------------------------
 

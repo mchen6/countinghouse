@@ -1,5 +1,5 @@
 Build:
-docker build --build-arg CDIF_VERSION=0.67.0 --build-arg REGISTRY=https://registry.npmjs.org/ -t test-0.67.0 .
+docker build --build-arg CDIF_VERSION=3.0.21 --build-arg CODESERVER_VERSION=3.9.3 -t cdif .
 
 Run once and destroy container instance:
 docker run -p 3049:3049 -it --rm cdif

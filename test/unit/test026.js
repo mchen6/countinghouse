@@ -16,11 +16,11 @@ describe('test26: test API Cache feature', function() {
   var req = { serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echoWithAPICache', input: { foo: [], bar: 'vv'} };
 
   it('invoke should write API cache to redis', function(done) {
-    var hashKey = '1962328386'; //manually set key value according to the input above, if this is changed in the future, we can see cdif code on how to generate this key, or it can be observed in redis API cache
+    var hashKey = '2672998512'; //manually set key value according to the input above, if this is changed in the future, we can see cdif code on how to generate this key, or it can be observed in redis API cache
     redisClient.del(hashKey, function(err) {
       if (err) return done(err);
 
-      request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+      request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
       .set('X-Apemesh-Key', 'aabbcc')
       .send(req)
       .expect('Content-Type', /[json | text]/)
@@ -34,7 +34,7 @@ describe('test26: test API Cache feature', function() {
             redisClient.del(hashKey, function(err){});
             redisClient.end(true);
             if (err) return done(err);
-            if (data.deviceID !== 'b752c14b-27ec-5374-a2ca-0ce71c247566' || data.value == null) {
+            if (data.deviceID !== 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767' || data.value == null) {
               console.error(data);
               return done(new Error('API cache content wrong'));
             }

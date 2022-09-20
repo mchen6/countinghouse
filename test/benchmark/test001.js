@@ -10,7 +10,7 @@ module.exports = function (cp, isSingleThread) {
 
     var flow = {
       main: [
-        { post: 'http://localhost:9527/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action',
+        { post: 'http://localhost:9527/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action',
           json: {serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'vv'}},
           headers: {
             'X-Apemesh-Key': 'aabbcc',

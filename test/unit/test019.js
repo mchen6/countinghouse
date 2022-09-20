@@ -15,7 +15,7 @@ describe('test19: invoke with BSON content-type with large binary data', functio
   var req = BSON.serialize({ serviceID: 'urn:apemesh-com:serviceID:echoService', actionName: 'echo', input: {foo: [{item1: '111', item2: false}], bar: '222', binaryData: largeBuffer} });
 
   it('invoke with BSON content-type with binary data', function(done) {
-    request(url).post('/devices/b752c14b-27ec-5374-a2ca-0ce71c247566/invoke-action')
+    request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
     .set('X-Apemesh-Key', 'aabbcc')
     .set('Content-Type', 'application/bson')
     .send(req)

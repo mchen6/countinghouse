@@ -245,7 +245,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
             return cb(err);
           }
 
-          if (deviceID === 'b752c14b-27ec-5374-a2ca-0ce71c247566') {
+          if (deviceID === 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767') {
             if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) {
               console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
               console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
