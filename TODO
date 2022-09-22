@@ -1,3 +1,4 @@
-1. DeviceConfig in CEAMS web device package management
-2. Better device app health monitor support (CPU, memory, crash / thread exit log, and etc)
-3. Better distributed support (etcd, app transition, recovering and etc)
+1. DeviceConfig support in CEAMS web device package management
+2. Better device app health monitor support (CPU, memory, crash / thread exit log, and etc), and better indicator of device app's healthy state on CEAMS web
+3. Return error stack information to API on exception occurred to help better debug
+4. Better distributed support (etcd, app transition, recovering and etc)
