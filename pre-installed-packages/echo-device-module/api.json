@@ -329,6 +329,38 @@
             "fault": {
               "schema": "/fault/errorInfoTestService/testErrorInfoAsync/fault"
             }
+          },
+          "testThrowError": {
+            "description": "API描述信息",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_testThrowError_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_testThrowError_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/errorInfoTestService/testThrowError/fault"
+            }
+          },
+          "testThrowErrorAsync": {
+            "description": "API描述信息",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_testThrowErrorAsync_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_testThrowErrorAsync_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/errorInfoTestService/testThrowErrorAsync/fault"
+            }
           }
         },
         "serviceStateTable": {
@@ -387,6 +419,22 @@
           "A_ARG_TYPE_testErrorInfoAsync_Output": {
             "dataType": "object",
             "schema": "/errorInfoTestService/testErrorInfoAsync/output"
+          },
+          "A_ARG_TYPE_testThrowError_Input": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testThrowError/input"
+          },
+          "A_ARG_TYPE_testThrowError_Output": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testThrowError/output"
+          },
+          "A_ARG_TYPE_testThrowErrorAsync_Input": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testThrowErrorAsync/input"
+          },
+          "A_ARG_TYPE_testThrowErrorAsync_Output": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testThrowErrorAsync/output"
           }
         }
       }

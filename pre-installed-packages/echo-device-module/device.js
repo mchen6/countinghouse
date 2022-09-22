@@ -11,6 +11,8 @@ var com_apemesh_errorInfoTestService_testNumberTypeReturnError = CdifUtil.loadFi
 var com_apemesh_errorInfoTestService_testStringTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testStringTypeReturnError;
 var com_apemesh_errorInfoTestService_testBooleanTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testBooleanTypeReturnError;
 var com_apemesh_errorInfoTestService_testErrorInfoAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testErrorInfoAsync;
+var com_apemesh_errorInfoTestService_testThrowError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testThrowError;
+var com_apemesh_errorInfoTestService_testThrowErrorAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testThrowErrorAsync;
 
 function Device() {
   var spec = JSON.parse(fs.readFileSync(__dirname + '/api.json').toString());
@@ -27,7 +29,8 @@ function Device() {
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testStringTypeReturnError', com_apemesh_errorInfoTestService_testStringTypeReturnError.bind(this));
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testBooleanTypeReturnError', com_apemesh_errorInfoTestService_testBooleanTypeReturnError.bind(this));
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testErrorInfoAsync', com_apemesh_errorInfoTestService_testErrorInfoAsync.bind(this));
-  CdifUtil.deviceLog(this, JSON.stringify(DeviceConfig));
+  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testThrowError', com_apemesh_errorInfoTestService_testThrowError.bind(this));
+  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testThrowErrorAsync', com_apemesh_errorInfoTestService_testThrowErrorAsync.bind(this));
 }
 
 CdifUtil.inherits(Device, CdifDevice);
