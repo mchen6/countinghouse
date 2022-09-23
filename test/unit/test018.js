@@ -24,14 +24,13 @@ describe('test18: invoke with BSON content-type with binary data', function() {
 
       if (res.body.output == null
         || res.body.output.binaryData == null
-        || res.body.output.binaryData.data == null
-        || res.body.output.binaryData.data[0] !== 97
-        || res.body.output.binaryData.data[1] !== 98
-        || res.body.output.binaryData.data[2] !== 99
-        || res.body.output.binaryData.data[3] !== 100
-        || res.body.output.binaryData.data[4] !== 101
-        || res.body.output.binaryData.data[5] !== 102
-        || res.body.output.binaryData.data[6] !== 103
+        || res.body.output.binaryData[0] !== 97
+        || res.body.output.binaryData[1] !== 98
+        || res.body.output.binaryData[2] !== 99
+        || res.body.output.binaryData[3] !== 100
+        || res.body.output.binaryData[4] !== 101
+        || res.body.output.binaryData[5] !== 102
+        || res.body.output.binaryData[6] !== 103
       ) {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(BSON.deserialize(req))));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));

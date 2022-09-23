@@ -25,7 +25,6 @@ describe('test19: invoke with BSON content-type with large binary data', functio
 
       if (res.body.output == null
         || res.body.output.binaryData == null
-        || res.body.output.binaryData.data == null
       ) {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(BSON.deserialize(req))));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));

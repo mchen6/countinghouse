@@ -16,7 +16,7 @@ describe("Test started in CDIF multi-thread mode", function () {
   });
 
   testFiles.forEach(function (file) {
-    if (file !== 'input.bson') require('./unit/' + file);
+    if (file !== 'input.bson' && file !== 'test018.js') require('./unit/' + file);
   });
 
   after(function (done) {
