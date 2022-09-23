@@ -13,6 +13,8 @@ var com_apemesh_errorInfoTestService_testBooleanTypeReturnError = CdifUtil.loadF
 var com_apemesh_errorInfoTestService_testErrorInfoAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testErrorInfoAsync;
 var com_apemesh_errorInfoTestService_testThrowError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testThrowError;
 var com_apemesh_errorInfoTestService_testThrowErrorAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testThrowErrorAsync;
+var com_apemesh_errorInfoTestService_testAsyncThrowInDomain = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testAsyncThrowInDomain;
+var com_apemesh_errorInfoTestService_testAsyncThrowInAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testAsyncThrowInAsync;
 
 function Device() {
   var spec = JSON.parse(fs.readFileSync(__dirname + '/api.json').toString());
@@ -31,6 +33,8 @@ function Device() {
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testErrorInfoAsync', com_apemesh_errorInfoTestService_testErrorInfoAsync.bind(this));
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testThrowError', com_apemesh_errorInfoTestService_testThrowError.bind(this));
   this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testThrowErrorAsync', com_apemesh_errorInfoTestService_testThrowErrorAsync.bind(this));
+  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testAsyncThrowInDomain', com_apemesh_errorInfoTestService_testAsyncThrowInDomain.bind(this));
+  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testAsyncThrowInAsync', com_apemesh_errorInfoTestService_testAsyncThrowInAsync.bind(this));
 }
 
 CdifUtil.inherits(Device, CdifDevice);

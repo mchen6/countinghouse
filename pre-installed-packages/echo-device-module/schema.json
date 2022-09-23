@@ -246,6 +246,34 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "testAsyncThrowInDomain": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "foo": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "testAsyncThrowInAsync": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "foo": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   },
   "fault": {
@@ -450,6 +478,36 @@
         }
       },
       "testThrowErrorAsync": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "testAsyncThrowInDomain": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "具体错误原因",
+              "type": "string"
+            },
+            "info": {
+              "title": "错误详细信息",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "testAsyncThrowInAsync": {
         "fault": {
           "type": "object",
           "properties": {

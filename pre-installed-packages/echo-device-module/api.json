@@ -331,7 +331,7 @@
             }
           },
           "testThrowError": {
-            "description": "API描述信息",
+            "description": "directly throw a new error in callback style api function",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -347,7 +347,7 @@
             }
           },
           "testThrowErrorAsync": {
-            "description": "API描述信息",
+            "description": "directly throw a new error in async / await style api function",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -360,6 +360,38 @@
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testThrowErrorAsync/fault"
+            }
+          },
+          "testAsyncThrowInDomain": {
+            "description": "throw a new async error in callback style aoi function which should be caught by domain",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInDomain_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInDomain_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/errorInfoTestService/testAsyncThrowInDomain/fault"
+            }
+          },
+          "testAsyncThrowInAsync": {
+            "description": "throw a new async error in async / await style api function which should be cause by try...catch block ",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInAsync_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInAsync_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/errorInfoTestService/testAsyncThrowInAsync/fault"
             }
           }
         },
@@ -435,6 +467,22 @@
           "A_ARG_TYPE_testThrowErrorAsync_Output": {
             "dataType": "object",
             "schema": "/errorInfoTestService/testThrowErrorAsync/output"
+          },
+          "A_ARG_TYPE_testAsyncThrowInDomain_Input": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testAsyncThrowInDomain/input"
+          },
+          "A_ARG_TYPE_testAsyncThrowInDomain_Output": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testAsyncThrowInDomain/output"
+          },
+          "A_ARG_TYPE_testAsyncThrowInAsync_Input": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testAsyncThrowInAsync/input"
+          },
+          "A_ARG_TYPE_testAsyncThrowInAsync_Output": {
+            "dataType": "object",
+            "schema": "/errorInfoTestService/testAsyncThrowInAsync/output"
           }
         }
       }
