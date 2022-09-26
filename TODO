@@ -1,5 +1,4 @@
 1. DeviceConfig support in CEAMS web device package management
-2. Better device app health monitor support (CPU, memory, crash / thread exit log, and etc), and better indicator of device app's healthy state on CEAMS web
-3. Return error stack information to API on exception occurred to help better debug
-4. Better msgQueue implementation for worker thread
-5. Better distributed support (etcd, app transition, recovering and etc)
+2. Better device app health monitor support (CPU, memory, crash / thread exit log write to deviceLog, and etc), and better indicator of device app's healthy state on CEAMS web
+3. Better msgQueue implementation for worker thread
+4. Better distributed support (etcd, app transition, recovering and etc)
