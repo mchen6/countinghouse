@@ -1,6 +1,7 @@
 1. DeviceConfig support in CEAMS web device package management
-2. Better device app health monitor support (CPU, memory, crash / thread exit log write to deviceLog, and etc), and better indicator of device app's healthy state on CEAMS web 
-3. Better LOG.E LOG.DE support, Per-module deviceLog and system log write to redis, rewrite device-log api in cdif-controller to use per-module log instead of per-deviceID log
-4. Better msgQueue implementation for worker thread
-5. Recover BSON serialization code, and make BSON support optional
-6. Better distributed support (etcd, app transition, recovering and etc)
+2. get-config and set-config HTTP API support for device apps to read and write per-device DeviceConfig
+3. Better device app health monitor support (CPU, memory, crash / thread exit log write to deviceLog, and etc), and better indicator of device app's healthy state on CEAMS web 
+4. Better LOG.E LOG.DE support, Per-module deviceLog and system log write to redis, rewrite device-log api in cdif-controller to use per-module log instead of per-deviceID log
+5. Better msgQueue implementation for worker thread
+6. Recover BSON serialization code, and make BSON support optional
+7. Better distributed support (etcd, app transition, recovering and etc)
