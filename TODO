@@ -1,7 +1,19 @@
 1. DeviceConfig support in CEAMS web device package management
+
 2. get-config and set-config HTTP API support for device apps to read and write per-device DeviceConfig
+
 3. Better device app health monitor support (CPU, memory, crash / thread exit log write to deviceLog, and etc), and better indicator of device app's healthy state on CEAMS web 
+
 4. Better LOG.E LOG.DE support, Per-module deviceLog and system log write to redis, rewrite device-log api in cdif-controller to use per-module log instead of per-deviceID log
-5. Better msgQueue implementation for worker thread
+
+5. Better msgQueue implementation for worker thread, by using two fixed length queues: occupied(array) and available(stack) to manage pending message:
+E.g. First establish messaging channel between two workers using createServiceClient(). 
+Then, when a message is sent to another worker, first check if there is a slot in available stack, if not return fail, if yes, then pop out a slot id from its top, write the to its index localtion in occupied queue with the associated callback, and send the message(slot) id to target worker. 
+Then, when the ack message is received and processed, target worker send back the original message id to sender, sender pull out the associated callback with the message id, mark the corresponding id in empty queue as unused(simply set the indexed location to null), push the id into available stack, and invoke the callback.
+
+6. Direct messaging between workers, do not proxy it with MainThread. E.g. createServiceClient() returns the message port of destination worker, then send message to it directly. But still, there are some cases needs message exchanging between worker and MainThread:
+1) worker send message to MainThread may or may not need reply
+2) MainThread needs to send messages to worker may or may not need reply
+
 6. Recover BSON serialization code, and make BSON support optional
 7. Better distributed support (etcd, app transition, recovering and etc)
