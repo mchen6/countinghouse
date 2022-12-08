@@ -43,8 +43,8 @@ RUN set -ex; \
 
 
 # Setup Java
-ENV JAVA_PKG=https://download.oracle.com/java/18/latest/jdk-18_linux-x64_bin.tar.gz \
-      JAVA_HOME=/usr/java/jdk-18
+ENV JAVA_PKG=https://download.oracle.com/java/19/latest/jdk-19_linux-x64_bin.tar.gz \
+      JAVA_HOME=/usr/java/jdk-19
 RUN set -eux; \
       JAVA_SHA256=$(curl "$JAVA_PKG".sha256) ; \
       curl --output /tmp/jdk.tgz "$JAVA_PKG" && \
