@@ -1,10 +1,10 @@
-1. DeviceConfig support in CEAMS web device package management
+1. DeviceConfig support in CEAMS web device package management. Support read and write DeviceConfig on CEAMS web. Then reload the module to make it effective
 
-2. get-config and set-config HTTP API support for device apps to read and write per-device DeviceConfig
+2. get-config and set-config HTTP API support for device apps to read and write per-device DeviceConfig, this is used by ceams-integration to get / set device app configurations. For set-config API, it should write both DeviceConfig object and the values stored in CouchDB
 
-3. Better device app health monitor support (CPU, memory, crash / thread exit log write to deviceLog, and etc), and better indicator of device app's healthy state on CEAMS web 
+3. Better device app health monitor support (CPU, memory, crash / thread exit log write to deviceLog, and etc), and better indicator of device app's healthy state on CEAMS web, auto-recover worker on its crash event
 
-4. Better LOG.E LOG.DE support, Per-module deviceLog and system log write to redis, rewrite device-log api in cdif-controller to use per-module log instead of per-deviceID log
+4. Better LOG.E LOG.DE support, Per-module deviceLog and system log write to redis, rewrite device-log api in cdif-controller to use per-module log instead of per-deviceID log. This helps merge and present deviceLog() info and system log info to user on CEAMS app log page
 
 5. Better msgQueue implementation for worker thread, by using two fixed length queues: occupied(array) and available(stack) to manage pending message:
 E.g. First establish messaging channel between two workers using createServiceClient(). 

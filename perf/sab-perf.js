@@ -3,17 +3,14 @@ const { Worker, isMainThread, parentPort } = require('node:worker_threads');
 if (isMainThread) {
   var total = 1000000, i = 0, j = 0;
 
-  var bigobj = [];
-  for (var b = 0; b < 128; b++) {
-    bigobj.push({foo: 'foo'});
-  }
-
   const worker = new Worker(__filename);
   console.log(Date.now());
 
+  const sharedBuffer = new SharedArrayBuffer(1000 * Int32Array.BYTES_PER_ELEMENT);
+
   while(true) {
     if (i >= total) break;
-    worker.postMessage(bigobj);
+    worker.postMessage(sharedBuffer);
     i++;
   }
 

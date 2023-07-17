@@ -1,10 +1,10 @@
 const cluster = require('node:cluster');
 const process = require('node:process');
 
-var total = 10, i = 0, j = 0;
+var total = 1000000, i = 0, j = 0;
 
 var bigobj = [];
-for (var b = 0; b < 1024*1024; b++) {
+for (var b = 0; b < 128; b++) {
   bigobj.push({foo: 'foo'});
 }
 
