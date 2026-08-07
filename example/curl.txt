@@ -1,6 +1,6 @@
-curl -H "X-Apemesh-Key: ***REDACTED-REGISTRY-TOKEN***" -X POST -d 'serviceID=urn:cdif-io:serviceID:手机归属地查询&actionName=查询&input%5BphoneNum%5D=13801584073' http://10.0.0.122:9527/devices/10893d2e-98a3-58f4-b7e1-5ebe6bdaab9f/invoke-action
+curl -H "X-Apemesh-Key: <REDACTED>" -X POST -d 'serviceID=urn:cdif-io:serviceID:手机归属地查询&actionName=查询&input%5BphoneNum%5D=13801584073' http://10.0.0.122:9527/devices/10893d2e-98a3-58f4-b7e1-5ebe6bdaab9f/invoke-action
 
-curl -H "Content-Type: application/json" -H "X-Apemesh-Key: ***REDACTED-REGISTRY-TOKEN***" -X POST -d '{"serviceID":"urn:cdif-io:serviceID:手机归属地查询","actionName":"查 询","input":{"phoneNum": "13801584073"}}' http://10.0.0.122:9527/devices/10893d2e-98a3-58f4-b7e1-5ebe6bdaab9f/invoke-action
+curl -H "Content-Type: application/json" -H "X-Apemesh-Key: <REDACTED>" -X POST -d '{"serviceID":"urn:cdif-io:serviceID:手机归属地查询","actionName":"查 询","input":{"phoneNum": "13801584073"}}' http://10.0.0.122:9527/devices/10893d2e-98a3-58f4-b7e1-5ebe6bdaab9f/invoke-action
 
 curl -X POST -H 'Content-Type: application/json' -d '{"name":"cdif-airport-lookup"}' http://10.0.0.130:9527/unload-module
 

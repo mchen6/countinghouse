@@ -1,5 +1,5 @@
 //get resource tree and count the devices under each folder
-//usage: node ./count.js --host http://47.97.60.12:9527 --appKey ***REDACTED-APPKEY***
+//usage: node ./count.js --host http://47.97.60.12:9527 --appKey <REDACTED>
 
 var argv = require('minimist')(process.argv.slice(1));
 var request = require('request');
