@@ -1,6 +1,6 @@
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
-var deviceDB      = require('@apemesh/cdif-device-db');
+var deviceDB      = require('./lib/device-db');
 var mkdirp        = require('mkdirp');
 var fs            = require('fs');
 var packageJson   = require('./package.json');

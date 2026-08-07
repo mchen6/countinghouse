@@ -27,11 +27,7 @@
   ],
   "author": "out4b",
   "license": "APEMESH standard license",
-  "publishConfig": {
-    "registry": "http://public-reg.apemesh.com:8080/"
-  },
   "dependencies": {
-    "@apemesh/cdif-device-db": "0.2.1",
     "ajv": "^4.8.2",
     "async": "^1.5.2",
     "body-parser": "~1.14.0",
@@ -72,6 +68,7 @@
     "serve-favicon": "^2.4.3",
     "soap": "^0.24.0",
     "socket.io": "~1.5.0",
+    "sqlite3": "^4.1.0",
     "string-hash": "^1.1.1",
     "tar": "^2.2.1",
     "uuid-1345": "^0.99.6",
