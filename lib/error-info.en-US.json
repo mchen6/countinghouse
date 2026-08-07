@@ -37,7 +37,7 @@
   "OAUTH_ACCESS_TOKEN_NOT_AVAILABLE": "OAuth访问token不可用",
   "CANNOT_GENERATE_ACCESS_TOKEN": "无法生成访问token",
   "DEVICE_ACTION_CALL_FAIL": "调用设备接口失败",
-  "DEVICE_OBJECT_NOT_VALID_CDIF_DEVICE": "设备对象不是合法的CDIF设备",
+  "DEVICE_OBJECT_NOT_VALID_CDIF_DEVICE": "设备对象不是合法的MCPForge设备",
   "CORRESPONDING_MODULE_NOT_FOUND": "未找到相应设备模块",
   "LOAD_MODULE_FAIL": "模块加载失败",
   "GET_MODULE_INFO_FAIL": "模块信息获取失败",

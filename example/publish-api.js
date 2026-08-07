@@ -13,7 +13,7 @@ var verifyOptions = {
   },
   method: 'POST',
   json: {
-      name: '/home/mchen6/tmp/cdif-weibo-0.0.21.tgz'
+      name: '/home/mchen6/tmp/mcpforge-weibo-0.0.21.tgz'
   }
 };
 
@@ -44,7 +44,7 @@ request(verifyOptions, function(err, response, body) {
         password: 'xsVLX842',
         email: 'seeds.c@gmail.com',
         registry: 'http://localhost:5984/registry/_design/app/_rewrite/',
-        name: '/home/mchen6/tmp/cdif-weibo-0.0.21.tgz',
+        name: '/home/mchen6/tmp/mcpforge-weibo-0.0.21.tgz',
         info: packageInfo
     }
   };
@@ -55,7 +55,7 @@ request(verifyOptions, function(err, response, body) {
     }
 
     // publish done, add device info into devices db
-    // NOTICE: the uuid generation rule MUST be consistent in CDIF and web site
+    // NOTICE: the uuid generation rule MUST be consistent in MCPForge and web site
     for (var id in deviceList) {
       var device = deviceList[id];
       var deviceID = device.spec.device.deviceID;

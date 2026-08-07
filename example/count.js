@@ -9,10 +9,10 @@ var opts = {
   url: argv.host + '/devices/dd2a9a6f-e9d6-5bff-875f-d9283124909f/invoke-action',
   method: 'POST',
   headers: {
-    'X-Apemesh-Key': argv.appKey,
+    'X-MCPForge-Key': argv.appKey,
   },
   json: {
-    "serviceID": "urn:apemesh-com:serviceID:ApiStatService",
+    "serviceID": "urn:mcpforge-com:serviceID:ApiStatService",
     "actionName": "getResourceTree",
     "input": {}
   }
@@ -23,10 +23,10 @@ function getItemName(deviceID, callback) {
     url: argv.host + '/devices/dd2a9a6f-e9d6-5bff-875f-d9283124909f/invoke-action',
     method: 'POST',
     headers: {
-      'X-Apemesh-Key': argv.appKey
+      'X-MCPForge-Key': argv.appKey
     },
     json: {
-      "serviceID": "urn:apemesh-com:serviceID:ApiStatService",
+      "serviceID": "urn:mcpforge-com:serviceID:ApiStatService",
       "actionName": "getDeviceSpec",
       "input": {
         deviceID: deviceID

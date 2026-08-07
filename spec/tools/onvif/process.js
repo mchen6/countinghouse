@@ -6,7 +6,7 @@ var spec = {};
 spec.configId = 1;
 spec.specVersion = {major: 1, minor: 0};
 spec.device = {};
-spec.device.deviceType = "urn:cdif-net:device:ONVIFCamera:1";
+spec.device.deviceType = "urn:mcpforge-net:device:ONVIFCamera:1";
 spec.device.friendlyName = "onvif";
 spec.device.manufacturer = "manufacturer name";
 spec.device.manufacturerURL = "manufacturer URL";
@@ -31,7 +31,7 @@ services.forEach(function(service) {
         var value = service[key];
 	var o = require(value);
 
-        var service_name = 'urn:cdif-net:serviceID:ONVIF' + key + 'Service';
+        var service_name = 'urn:mcpforge-net:serviceID:ONVIF' + key + 'Service';
         spec.device.serviceList[service_name] = {};
         spec.device.serviceList[service_name].actionList = {};
         spec.device.serviceList[service_name].serviceStateTable = {};

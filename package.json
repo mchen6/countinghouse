@@ -1,31 +1,30 @@
 {
-  "name": "@apemesh/cdif",
+  "name": "mcpforge",
   "version": "3.1.2",
-  "description": "Common device interconnect framework",
-  "bin": "./bin/cdif",
+  "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
+  "bin": "./bin/mcpforge",
   "main": "./bin/framework.js",
   "scripts": {
-    "start": "./bin/cdif",
+    "start": "./bin/mcpforge",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
-    "build": "webpack && chmod +x build/cdif",
+    "build": "webpack && chmod +x build/mcpforge",
     "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/test6.js && mocha ./test/test7.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/out4b/cdif.git"
+    "url": "https://github.com/mchen6/mcpforge.git"
   },
   "keywords": [
-    "smart home",
-    "IoT",
-    "Bluetooth",
-    "ONVIF",
-    "Z-Wave",
-    "OAuth",
-    "SOA",
-    "WSDL"
+    "mcp",
+    "agent",
+    "tools",
+    "metering",
+    "marketplace",
+    "multi-tenant",
+    "runtime"
   ],
-  "author": "out4b",
+  "author": "Miaobo Chen",
   "license": "Apache-2.0",
   "dependencies": {
     "ajv": "^4.8.2",

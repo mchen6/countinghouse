@@ -8,7 +8,7 @@ var UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 var chmod = require('chmod');
 
 var packageJson = JSON.parse(fs.readFileSync(__dirname + '/package.json').toString());
-packageJson.bin = 'cdif';
+packageJson.bin = 'mcpforge';
 delete packageJson.scripts;
 packageJson.devDependencies = {};
 packageJson.optionalDependencies = {};
@@ -41,25 +41,25 @@ module.exports = {
       //       loader: StringReplacePlugin.replace({
       //           replacements: [
       //               {
-      //                   pattern: /var.*CdifDevice.*\=.*require.*cdif-device\'\)\;/ig,
+      //                   pattern: /var.*McpForgeDevice.*\=.*require.*mcpforge-device\'\)\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
       //               },
       //               {
-      //                   pattern: /var.*CdifError.*\=.*require.*cdif-error\'\)\.CdifError\;/ig,
+      //                   pattern: /var.*McpForgeError.*\=.*require.*mcpforge-error\'\)\.McpForgeError\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
       //               },
       //               {
-      //                   pattern: /var.*DeviceError.*\=.*require.*cdif-error\'\)\.DeviceError\;/ig,
+      //                   pattern: /var.*DeviceError.*\=.*require.*mcpforge-error\'\)\.DeviceError\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
       //               },
       //               {
-      //                   pattern: /var.*CdifUtil.*\=.*require.*cdif-util\'\)\;/ig,
+      //                   pattern: /var.*McpForgeUtil.*\=.*require.*mcpforge-util\'\)\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
@@ -67,9 +67,9 @@ module.exports = {
       //           ]
       //       })
       // },
-      // { test: require.resolve("./lib/cdif-util.js"), loader: "expose-loader?CdifUtil" },
-      // { test: require.resolve("./lib/cdif-device.js"), loader: "expose-loader?CdifDevice"},
-      // { test: require.resolve("./lib/cdif-error.js"), loader: "expose-loader?DeviceError" }
+      // { test: require.resolve("./lib/mcpforge-util.js"), loader: "expose-loader?McpForgeUtil" },
+      // { test: require.resolve("./lib/mcpforge-device.js"), loader: "expose-loader?McpForgeDevice"},
+      // { test: require.resolve("./lib/mcpforge-error.js"), loader: "expose-loader?DeviceError" }
     ]
   },
   entry: {
@@ -94,7 +94,7 @@ module.exports = {
     new CopyWebpackPlugin([
         { from: 'package-dist.json', to: 'package.json' },
 //        { from: 'example', to: 'example' },
-        { from: 'cdif-dist.sh', to: 'cdif', toType: 'file' }
+        { from: 'mcpforge-dist.sh', to: 'mcpforge', toType: 'file' }
     ])
   ]
 }

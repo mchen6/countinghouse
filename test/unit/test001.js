@@ -33,10 +33,10 @@ describe('get device list', function() {
         device.should.have.property('manufacturer');
         // device.should.have.property('modelName');
         device.should.have.property('serviceList', {});
-        // if (device.deviceType != 'urn:cdif-net:device:BinaryLight:1' &&
-        //   device.deviceType != 'urn:cdif-net:device:DimmableLight:1' &&
-        //   device.deviceType != 'urn:cdif-net:device:SensorHub:1' &&
-        //   device.deviceType != 'urn:cdif-net:device:ONVIFCamera:1') {
+        // if (device.deviceType != 'urn:mcpforge-net:device:BinaryLight:1' &&
+        //   device.deviceType != 'urn:mcpforge-net:device:DimmableLight:1' &&
+        //   device.deviceType != 'urn:mcpforge-net:device:SensorHub:1' &&
+        //   device.deviceType != 'urn:mcpforge-net:device:ONVIFCamera:1') {
         //     throw(new Error('unknown device type: ' + device.deviceType));
         //   }
       }
@@ -129,7 +129,7 @@ describe('test1: invoke all actions', function() {
 
       request(url)
       .get('/devices/' + deviceID + '/get-spec')
-      .set('X-Apemesh-Key', 'aabbcc')
+      .set('X-MCPForge-Key', 'aabbcc')
       // .send({"device_access_token": deviceList[deviceID].device_access_token})
       .expect(200, function(err, res) {
         if (err) throw err;
@@ -156,12 +156,12 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
 
   async.eachSeries(list, function(name, cb) {
     //skip testTimeout API which purposely test timeout scenario and was made as an independent test case
-    if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
-    if (serviceID === 'urn:apemesh-com:serviceID:timeOutTestService' && name === 'testTimeoutAsync') return cb();
+    if (serviceID === 'urn:mcpforge-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
+    if (serviceID === 'urn:mcpforge-com:serviceID:timeOutTestService' && name === 'testTimeoutAsync') return cb();
     //below tests are expect to fail in this scenario, so skip it
-    if (serviceID === 'urn:apemesh-com:serviceID:errorInfoTestService') return cb();
+    if (serviceID === 'urn:mcpforge-com:serviceID:errorInfoTestService') return cb();
     if (serviceID === 'urn:example-com:serviceID:errTestService') return cb();
-    if (serviceID === 'urn:apemesh-com:serviceID:db-request') return cb();
+    if (serviceID === 'urn:mcpforge-com:serviceID:db-request') return cb();
 
     setTimeout(function() {
       var action = actionList[name];
@@ -221,7 +221,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
             schemaRef.should.be.a.String;
             request(url)
             .get('/devices/' + deviceID + '/schema' + encodeURI(schemaRef))
-            .set('X-Apemesh-Key', 'aabbcc')
+            .set('X-MCPForge-Key', 'aabbcc')
             .expect(200, function(err, res) {
               if (err) throw err;
               var variableSchema = res.body;
@@ -237,7 +237,7 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         }
       }, function() {
         request(url).post('/devices/' + deviceID + '/invoke-action')
-        .set('X-Apemesh-Key', 'aabbcc')
+        .set('X-MCPForge-Key', 'aabbcc')
         .send(req)
         .expect('Content-Type', /[json | text]/)
         .expect(200, function(err, res) {

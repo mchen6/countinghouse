@@ -14,7 +14,7 @@ describe('test2: unknown deviceID', function() {
 
   it('invoke unknown deviceID', function(done) {
     request(url).post('/devices/b752c14b-27ec-5374-f2c1-123456789abc/invoke-action')
-    .set('X-Apemesh-Key', 'aabbcc')
+    .set('X-MCPForge-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {

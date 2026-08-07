@@ -6,7 +6,7 @@
   },
   "device": {
     "friendlyName": "echo-device",
-    "manufacturer": "apemesh",
+    "manufacturer": "mcpforge",
     "modelDescription": "echo whatever in API input to response output",
     "publishAudit": true,
     "iconList": [
@@ -19,7 +19,7 @@
       }
     ],
     "serviceList": {
-      "urn:apemesh-com:serviceID:echoService": {
+      "urn:mcpforge-com:serviceID:echoService": {
         "actionList": {
           "echo": {
             "description": "API描述信息",
@@ -102,7 +102,7 @@
           }
         }
       },
-      "urn:apemesh-com:serviceID:timeOutTestService": {
+      "urn:mcpforge-com:serviceID:timeOutTestService": {
         "actionList": {
           "testTimeout": {
             "description": "API描述信息",
@@ -164,7 +164,7 @@
           }
         }
       },
-      "urn:apemesh-com:serviceID:errorInfoTestService": {
+      "urn:mcpforge-com:serviceID:errorInfoTestService": {
         "actionList": {
           "testErrorInfo": {
             "description": "API描述信息",

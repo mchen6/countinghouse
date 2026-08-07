@@ -8,7 +8,7 @@ var testFiles = fs.readdirSync(__dirname + '/benchmark');
 describe("Start benchmarking in single-thread mode", function () {
   var child = null;
   this.timeout(0);
-  console.log('starting cdif...');
+  console.log('starting mcpforge...');
   child = cp.fork("./framework.js", [
     "--bindAddr",
     "127.0.0.1",

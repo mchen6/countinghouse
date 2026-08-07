@@ -7,7 +7,7 @@ var workUrl = 'http://10.0.0.122:9527/devices/3a509370-6db9-5fd0-9e98-4a912810d8
 
 //TODO: randomly choose payload / input key
 var payload = {
-  serviceID: 'urn:apemesh-com:serviceID:db-request',
+  serviceID: 'urn:mcpforge-com:serviceID:db-request',
   actionName: 'request',
   input: {
     db: 'registry'
@@ -35,7 +35,7 @@ var worker = function() {
     console.log('load: ' + loadLevel);
     console.log('interval: ' + interval);
 
-    //this random delay is only for test to see how much load we can save for cdif server
+    //this random delay is only for test to see how much load we can save for mcpforge server
     // in real production environment, client side may issue a request nor mor than interval seconds
     // and during that interval, we push updated data to client through websocket
     var randomDelay = Math.floor(Math.random() * interval);

@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
   "type": "object",
-  "title": "CDIF device root schema",
-  "description": "Schema specification for CDIF device model",
+  "title": "MCPForge device root schema",
+  "description": "Schema specification for MCPForge device model",
   "properties": {
     "configId": {
       "type": "integer",

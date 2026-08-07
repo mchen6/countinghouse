@@ -6,7 +6,7 @@ var testFiles = fs.readdirSync(__dirname + '/job-control');
 describe("Start job control tests in multi thread mode", function () {
   var child = null;
   this.timeout(0);
-  console.log('starting cdif...');
+  console.log('starting mcpforge...');
   child = cp.fork("./framework.js", [
     "--bindAddr",
     "127.0.0.1",
@@ -20,8 +20,6 @@ describe("Start job control tests in multi thread mode", function () {
     "redis://127.0.0.1:6379",
     "--loadModule",
     "./pre-installed-packages/echo-device-module",
-    "--loadModule",
-    "./pre-installed-packages/lingyi-fire-control-data-module",
     "--loadModule",
     "./pre-installed-packages/echo-device-client-module",
     "--withPM2"

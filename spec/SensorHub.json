@@ -5,7 +5,7 @@
     "minor": 0
   },
   "device": {
-    "deviceType": "urn:cdif-net:device:SensorHub:1",
+    "deviceType": "urn:mcpforge-net:device:SensorHub:1",
     "friendlyName": "device name",
     "manufacturer": "manufacturer name",
     "manufacturerURL": "manufacturer URL",
@@ -25,8 +25,8 @@
       }
     ],
     "serviceList": {
-      "urn:cdif-net:serviceID:Illuminance": {
-        "serviceType": "urn:cdif-net:service:IlluminanceSensor:1",
+      "urn:mcpforge-net:serviceID:Illuminance": {
+        "serviceType": "urn:mcpforge-net:service:IlluminanceSensor:1",
         "actionList": {
           "getIlluminanceData": {
             "argumentList": {
@@ -50,8 +50,8 @@
           }
         }
       },
-      "urn:cdif-net:serviceID:Temperature": {
-        "serviceType": "urn:cdif-net:service:TemperatureSensor:1",
+      "urn:mcpforge-net:serviceID:Temperature": {
+        "serviceType": "urn:mcpforge-net:service:TemperatureSensor:1",
         "actionList": {
           "getTemperatureData": {
             "argumentList": {
@@ -75,8 +75,8 @@
           }
         }
       },
-      "urn:cdif-net:serviceID:Humidity": {
-        "serviceType": "urn:cdif-net:service:HumiditySensor:1",
+      "urn:mcpforge-net:serviceID:Humidity": {
+        "serviceType": "urn:mcpforge-net:service:HumiditySensor:1",
         "actionList": {
           "getHumidityData": {
             "argumentList": {
@@ -100,8 +100,8 @@
           }
         }
       },
-      "urn:cdif-net:serviceID:Accelerometer": {
-        "serviceType": "urn:cdif-net:service:Accelerometer:1",
+      "urn:mcpforge-net:serviceID:Accelerometer": {
+        "serviceType": "urn:mcpforge-net:service:Accelerometer:1",
         "actionList": {
           "getAccelerometerData": {
             "argumentList": {
@@ -153,8 +153,8 @@
           }
         }
       },
-      "urn:cdif-net:serviceID:Magnetometer": {
-        "serviceType": "urn:cdif-net:service:Magnetometer:1",
+      "urn:mcpforge-net:serviceID:Magnetometer": {
+        "serviceType": "urn:mcpforge-net:service:Magnetometer:1",
         "actionList": {
           "getMagnetometerData": {
             "argumentList": {
@@ -194,8 +194,8 @@
           }
         }
       },
-      "urn:cdif-net:serviceID:Barometer": {
-        "serviceType": "urn:cdif-net:service:Barometer:1",
+      "urn:mcpforge-net:serviceID:Barometer": {
+        "serviceType": "urn:mcpforge-net:service:Barometer:1",
         "actionList": {
           "getBarometerData": {
             "argumentList": {
@@ -219,8 +219,8 @@
           }
         }
       },
-      "urn:cdif-net:serviceID:Gyroscope": {
-        "serviceType": "urn:cdif-net:service:Gyroscope:1",
+      "urn:mcpforge-net:serviceID:Gyroscope": {
+        "serviceType": "urn:mcpforge-net:service:Gyroscope:1",
         "actionList": {
           "getGyroscopeData": {
             "argumentList": {

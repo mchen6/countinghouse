@@ -13,7 +13,7 @@ module.exports = function (cp, isSingleThread) {
         { post: 'http://localhost:9527/devices/efefb416-bdc0-54eb-96a9-38f96f52779d/invoke-action',
           json: {serviceID: 'urn:example-com:serviceID:服务名称', actionName: 'API名称', input:{foo: 'vv'}},
           headers: {
-            'X-Apemesh-Key': 'aabbcc',
+            'X-MCPForge-Key': 'aabbcc',
             'Content-Type': 'application/json'
           }
         }

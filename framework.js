@@ -19,7 +19,7 @@ var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
 var monitor       = require('./lib/monitor');
 
-logger.I('cdif@' + packageJson.version + ' start with options:' + JSON.stringify(options));
+logger.I('mcpforge@' + packageJson.version + ' start with options:' + JSON.stringify(options));
 
 try {
   // create module folder
@@ -46,13 +46,13 @@ monitor.init(mm, dm);
 var redisAPI = require('./lib/redis-api');
 redisAPI.init();
 
-global.CdifUtil     = require('./lib/cdif-util');
-global.CdifDevice   = require('./lib/cdif-device');
-global.CdifError    = require('./lib/cdif-error').CdifError;
-global.DeviceError  = require('./lib/cdif-error').DeviceError;
+global.McpForgeUtil     = require('./lib/mcpforge-util');
+global.McpForgeDevice   = require('./lib/mcpforge-device');
+global.McpForgeError    = require('./lib/mcpforge-error').McpForgeError;
+global.DeviceError  = require('./lib/mcpforge-error').DeviceError;
 
-//manually set CdifUtil.redis because when cdif-util.js is first time required, redis-api.js isn't loaded and initialized yet
-global.CdifUtil.redis = redisAPI.client;
+//manually set McpForgeUtil.redis because when mcpforge-util.js is first time required, redis-api.js isn't loaded and initialized yet
+global.McpForgeUtil.redis = redisAPI.client;
 
 var JobControl    = require('./lib/job-control');
 if (options.workerThread === true) JobControl.initJobProcess(routeManager.cdifInterface);

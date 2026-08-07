@@ -1,0 +1,34 @@
+Build:
+docker build --build-arg MCPFORGE_VERSION=3.0.21 --build-arg CODESERVER_VERSION=3.9.3 -t mcpforge .
+
+Run once and destroy container instance:
+docker run -p 3049:3049 -it --rm mcpforge
+
+To commit a change for a running instance:
+docker commit `docker ps -l -q` ubuntu-with-file
+
+Cleanup all old containers:
+docker rm `docker ps --no-trunc -aq`
+
+Stop container by image name:
+docker stop $(docker ps -a -q --filter ancestor=<image-name>)
+
+Stop and remove container by image name:
+docker rm $(docker stop $(docker ps -a -q --filter ancestor=<image-name> --format="{{.ID}}"))
+
+Remove Running containers
+docker rm $(docker stop -t=1 $(docker ps -q))
+
+Remove All containers
+docker rm $(docker ps -a -q)
+
+To attach to an existing docker instance:
+docker exec -ti [CONTAINER-ID] bash
+
+To push mcpforge docker image, first tag the image id to your own registry:
+docker tag <image-id> <your-registry>/mcpforge
+docker push <your-registry>/mcpforge
+
+To manually upgrade the mcpforge docker image:
+docker pull <your-registry>/mcpforge
+docker tag <your-registry>/mcpforge mcpforge:latest

@@ -37,7 +37,7 @@ module.exports = function (cp, isSingleThread) {
 
           jobQueue.add({
             deviceID: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
-            serviceID:'urn:apemesh-com:serviceID:echoService',
+            serviceID:'urn:mcpforge-com:serviceID:echoService',
             actionName: 'echo',
             input: {foo: [], bar: 'inputString'}
           }).then(function(job) {

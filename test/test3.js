@@ -8,7 +8,7 @@ var testFiles = fs.readdirSync(__dirname + '/load-module');
 describe("Start load module test in single thread mode", function () {
   var child = null;
   this.timeout(0);
-  console.log('starting cdif...');
+  console.log('starting mcpforge...');
   child = cp.fork("./framework.js", [
     "--bindAddr",
     "127.0.0.1",
@@ -19,8 +19,6 @@ describe("Start load module test in single thread mode", function () {
     "--apiMonitor",
     "--loadModule",
     "./pre-installed-packages/echo-device-module",
-    "--loadModule",
-    "./pre-installed-packages/lingyi-fire-control-data-module",
     "--loadModule",
     "./pre-installed-packages/echo-device-client-module",
     "--withPM2"

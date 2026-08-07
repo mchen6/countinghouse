@@ -1,43 +1,43 @@
 var fs = require('fs');
-var com_apemesh_echoService_echo = CdifUtil.loadFile(__dirname + '/com-apemesh-echoService.js').com_apemesh_echoService_echo;
-var com_apemesh_echoService_echoWithAPICache = CdifUtil.loadFile(__dirname + '/com-apemesh-echoService.js').com_apemesh_echoService_echoWithAPICache;
-var com_apemesh_echoService_echoAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-echoService.js').com_apemesh_echoService_echoAsync;
-var com_apemesh_timeOutTestService_testTimeout = CdifUtil.loadFile(__dirname + '/com-apemesh-timeOutTestService.js').com_apemesh_timeOutTestService_testTimeout;
-var com_apemesh_timeOutTestService_testTimeoutAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-timeOutTestService.js').com_apemesh_timeOutTestService_testTimeoutAsync;
-var com_apemesh_errorInfoTestService_testErrorInfo = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testErrorInfo;
-var com_apemesh_errorInfoTestService_testFunctionReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testFunctionReturnError;
-var com_apemesh_errorInfoTestService_testNullReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testNullReturnError;
-var com_apemesh_errorInfoTestService_testNumberTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testNumberTypeReturnError;
-var com_apemesh_errorInfoTestService_testStringTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testStringTypeReturnError;
-var com_apemesh_errorInfoTestService_testBooleanTypeReturnError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testBooleanTypeReturnError;
-var com_apemesh_errorInfoTestService_testErrorInfoAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testErrorInfoAsync;
-var com_apemesh_errorInfoTestService_testThrowError = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testThrowError;
-var com_apemesh_errorInfoTestService_testThrowErrorAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testThrowErrorAsync;
-var com_apemesh_errorInfoTestService_testAsyncThrowInDomain = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testAsyncThrowInDomain;
-var com_apemesh_errorInfoTestService_testAsyncThrowInAsync = CdifUtil.loadFile(__dirname + '/com-apemesh-errorInfoTestService.js').com_apemesh_errorInfoTestService_testAsyncThrowInAsync;
+var com_mcpforge_echoService_echo = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-echoService.js').com_mcpforge_echoService_echo;
+var com_mcpforge_echoService_echoWithAPICache = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-echoService.js').com_mcpforge_echoService_echoWithAPICache;
+var com_mcpforge_echoService_echoAsync = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-echoService.js').com_mcpforge_echoService_echoAsync;
+var com_mcpforge_timeOutTestService_testTimeout = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-timeOutTestService.js').com_mcpforge_timeOutTestService_testTimeout;
+var com_mcpforge_timeOutTestService_testTimeoutAsync = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-timeOutTestService.js').com_mcpforge_timeOutTestService_testTimeoutAsync;
+var com_mcpforge_errorInfoTestService_testErrorInfo = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testErrorInfo;
+var com_mcpforge_errorInfoTestService_testFunctionReturnError = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testFunctionReturnError;
+var com_mcpforge_errorInfoTestService_testNullReturnError = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testNullReturnError;
+var com_mcpforge_errorInfoTestService_testNumberTypeReturnError = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testNumberTypeReturnError;
+var com_mcpforge_errorInfoTestService_testStringTypeReturnError = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testStringTypeReturnError;
+var com_mcpforge_errorInfoTestService_testBooleanTypeReturnError = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testBooleanTypeReturnError;
+var com_mcpforge_errorInfoTestService_testErrorInfoAsync = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testErrorInfoAsync;
+var com_mcpforge_errorInfoTestService_testThrowError = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testThrowError;
+var com_mcpforge_errorInfoTestService_testThrowErrorAsync = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testThrowErrorAsync;
+var com_mcpforge_errorInfoTestService_testAsyncThrowInDomain = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testAsyncThrowInDomain;
+var com_mcpforge_errorInfoTestService_testAsyncThrowInAsync = McpForgeUtil.loadFile(__dirname + '/com-mcpforge-errorInfoTestService.js').com_mcpforge_errorInfoTestService_testAsyncThrowInAsync;
 
 function Device() {
   var spec = JSON.parse(fs.readFileSync(__dirname + '/api.json').toString());
-  CdifDevice.call(this, spec);
-  this.setAction('urn:apemesh-com:serviceID:echoService', 'echo', com_apemesh_echoService_echo.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:echoService', 'echoWithAPICache', com_apemesh_echoService_echoWithAPICache.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:echoService', 'echoAsync', com_apemesh_echoService_echoAsync.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:timeOutTestService', 'testTimeout', com_apemesh_timeOutTestService_testTimeout.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:timeOutTestService', 'testTimeoutAsync', com_apemesh_timeOutTestService_testTimeoutAsync.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testErrorInfo', com_apemesh_errorInfoTestService_testErrorInfo.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testFunctionReturnError', com_apemesh_errorInfoTestService_testFunctionReturnError.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testNullReturnError', com_apemesh_errorInfoTestService_testNullReturnError.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testNumberTypeReturnError', com_apemesh_errorInfoTestService_testNumberTypeReturnError.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testStringTypeReturnError', com_apemesh_errorInfoTestService_testStringTypeReturnError.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testBooleanTypeReturnError', com_apemesh_errorInfoTestService_testBooleanTypeReturnError.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testErrorInfoAsync', com_apemesh_errorInfoTestService_testErrorInfoAsync.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testThrowError', com_apemesh_errorInfoTestService_testThrowError.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testThrowErrorAsync', com_apemesh_errorInfoTestService_testThrowErrorAsync.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testAsyncThrowInDomain', com_apemesh_errorInfoTestService_testAsyncThrowInDomain.bind(this));
-  this.setAction('urn:apemesh-com:serviceID:errorInfoTestService', 'testAsyncThrowInAsync', com_apemesh_errorInfoTestService_testAsyncThrowInAsync.bind(this));
+  McpForgeDevice.call(this, spec);
+  this.setAction('urn:mcpforge-com:serviceID:echoService', 'echo', com_mcpforge_echoService_echo.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:echoService', 'echoWithAPICache', com_mcpforge_echoService_echoWithAPICache.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:echoService', 'echoAsync', com_mcpforge_echoService_echoAsync.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:timeOutTestService', 'testTimeout', com_mcpforge_timeOutTestService_testTimeout.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:timeOutTestService', 'testTimeoutAsync', com_mcpforge_timeOutTestService_testTimeoutAsync.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testErrorInfo', com_mcpforge_errorInfoTestService_testErrorInfo.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testFunctionReturnError', com_mcpforge_errorInfoTestService_testFunctionReturnError.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testNullReturnError', com_mcpforge_errorInfoTestService_testNullReturnError.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testNumberTypeReturnError', com_mcpforge_errorInfoTestService_testNumberTypeReturnError.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testStringTypeReturnError', com_mcpforge_errorInfoTestService_testStringTypeReturnError.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testBooleanTypeReturnError', com_mcpforge_errorInfoTestService_testBooleanTypeReturnError.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testErrorInfoAsync', com_mcpforge_errorInfoTestService_testErrorInfoAsync.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testThrowError', com_mcpforge_errorInfoTestService_testThrowError.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testThrowErrorAsync', com_mcpforge_errorInfoTestService_testThrowErrorAsync.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testAsyncThrowInDomain', com_mcpforge_errorInfoTestService_testAsyncThrowInDomain.bind(this));
+  this.setAction('urn:mcpforge-com:serviceID:errorInfoTestService', 'testAsyncThrowInAsync', com_mcpforge_errorInfoTestService_testAsyncThrowInAsync.bind(this));
 }
 
-CdifUtil.inherits(Device, CdifDevice);
+McpForgeUtil.inherits(Device, McpForgeDevice);
 
 Device.prototype._getDeviceRootSchema = function() {
   return JSON.parse(fs.readFileSync(__dirname + '/schema.json').toString());
