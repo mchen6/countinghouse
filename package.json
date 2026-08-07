@@ -1,19 +1,22 @@
 {
-  "name": "mcpforge",
+  "name": "countinghouse",
   "version": "3.1.2",
   "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
-  "bin": "./bin/mcpforge",
+  "bin": {
+    "countinghouse": "./bin/countinghouse",
+    "cth": "./bin/countinghouse"
+  },
   "main": "./bin/framework.js",
   "scripts": {
-    "start": "./bin/mcpforge",
+    "start": "./bin/countinghouse",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
-    "build": "webpack && chmod +x build/mcpforge",
+    "build": "webpack && chmod +x build/countinghouse",
     "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/test6.js && mocha ./test/test7.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mchen6/mcpforge.git"
+    "url": "https://github.com/mchen6/countinghouse.git"
   },
   "keywords": [
     "mcp",

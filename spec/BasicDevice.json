@@ -5,7 +5,7 @@
     "minor": 0
   },
   "device": {
-    "deviceType": "urn:mcpforge-net:device:Basic:1",
+    "deviceType": "urn:countinghouse-net:device:Basic:1",
     "friendlyName": "device name",
     "manufacturer": "manufacturer name",
     "manufacturerURL": "manufacturer URL",

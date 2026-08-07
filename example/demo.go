@@ -26,10 +26,10 @@ type Input struct {
 type ContentData []string
 
 func main() {
- var url = "https://api.mcpforge.com:3049/devices/f5dc73f9-b739-5ee2-add7-e499da04c6ec/invoke-action"
+ var url = "https://api.countinghouse.com:3049/devices/f5dc73f9-b739-5ee2-add7-e499da04c6ec/invoke-action"
 
   var data = RequestData {
-    ServiceID: "urn:mcpforge-io:serviceID:短信服务",
+    ServiceID: "urn:countinghouse-io:serviceID:短信服务",
     ActionName: "发送验证码",
     InputData: Input{"1391000000", "<模板ID>", []string{"123135"}},
   }
@@ -43,7 +43,7 @@ func main() {
   if err != nil {
     panic(err)
   }
-  req.Header.Set("X-MCPForge-Key", "<用户appKey>")
+  req.Header.Set("X-CH-Key", "<用户appKey>")
   req.Header.Set("Content-Type", "application/json")
 
   client := &http.Client{}

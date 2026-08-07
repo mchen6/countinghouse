@@ -5,15 +5,15 @@
     "minor": 0
   },
   "device": {
-    "deviceType": "urn:mcpforge-net:device:ONVIFCamera:1",
+    "deviceType": "urn:countinghouse-net:device:ONVIFCamera:1",
     "friendlyName": "",
     "manufacturer": "",
     "modelName": "",
     "userAuth": true,
     "devicePresentation": true,
     "serviceList": {
-      "urn:mcpforge-net:serviceID:ONVIFMediaService": {
-        "serviceType": "urn:mcpforge-net:service:ONVIFMedia:1",
+      "urn:countinghouse-net:serviceID:ONVIFMediaService": {
+        "serviceType": "urn:countinghouse-net:service:ONVIFMedia:1",
         "actionList": {
           "getStreamUri": {
             "argumentList": {
@@ -75,8 +75,8 @@
           }
         }
       },
-      "urn:mcpforge-net:serviceID:ONVIFPTZService": {
-        "serviceType": "urn:mcpforge-net:service:ONVIFPTZ:1",
+      "urn:countinghouse-net:serviceID:ONVIFPTZService": {
+        "serviceType": "urn:countinghouse-net:service:ONVIFPTZ:1",
         "actionList": {
           "absoluteMove": {
             "argumentList": {

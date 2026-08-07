@@ -5,11 +5,11 @@ var url = 'http://127.0.0.1:9527';
 
 var testFiles = fs.readdirSync(__dirname + '/unit');
 
-describe("Test started in MCPForge multi-thread mode", function () {
+describe("Test started in COUNTINGHOUSE multi-thread mode", function () {
   before(function (done) {
     this.timeout(0);
-    console.log('starting mcpforge...');
-    exec('"./bin/mcpforge" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiCache --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
+    console.log('starting countinghouse...');
+    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiCache --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
     setTimeout(() => {
       done();
     }, 5000);

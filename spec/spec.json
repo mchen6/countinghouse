@@ -5,7 +5,7 @@
     "minor": 0
   },
   "device": {
-    "deviceType": "urn:mcpforge-net:device:deviceType:1",
+    "deviceType": "urn:countinghouse-net:device:deviceType:1",
     "friendlyName": "device friendly name",
     "manufacturer": "manufacturer",
     "manufacturerURL": "manufacturer url",
@@ -27,8 +27,8 @@
       }
     ],
     "serviceList": {
-      "urn:mcpforge-net:serviceID:serviceID": {
-        "serviceType": "urn:mcpforge-net:service:serviceType:1",
+      "urn:countinghouse-net:serviceID:serviceID": {
+        "serviceType": "urn:countinghouse-net:service:serviceType:1",
         "actionList": {
           "actionName": {
             "argumentList": {

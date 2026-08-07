@@ -11,9 +11,9 @@ module.exports = function (cp, isSingleThread) {
     var flow = {
       main: [
         { post: 'http://localhost:9527/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action',
-          json: {serviceID: 'urn:mcpforge-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'vv'}},
+          json: {serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [], bar: 'vv'}},
           headers: {
-            'X-MCPForge-Key': 'aabbcc',
+            'X-CH-Key': 'aabbcc',
             'Content-Type': 'application/json'
           }
         }

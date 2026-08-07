@@ -1,13 +1,13 @@
 [{
-    "name"       : "mcpforge",
-    "script"     : "/home/mchen6/mcpforge/framework.js",
-    "cwd"        : "/home/mchen6/mcpforge",
+    "name"       : "countinghouse",
+    "script"     : "/home/mchen6/countinghouse/framework.js",
+    "cwd"        : "/home/mchen6/countinghouse",
     "watch"      : true,
     "watch_options" : {
         "ignored" : "*.log*"
     },
     env: {
-      "NODE_PATH": "/home/mchen6/mcpforge/lib",
+      "NODE_PATH": "/home/mchen6/countinghouse/lib",
     },
     "instances"  : "4",
     "exec_mode"  : "cluster"

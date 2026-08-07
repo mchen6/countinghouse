@@ -1,4 +1,4 @@
-async function com_mcpforge_errorInfoTestService_testAsyncThrowInAsync(args) {
+async function com_countinghouse_errorInfoTestService_testAsyncThrowInAsync(args) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       var t = null.toString();
@@ -7,4 +7,4 @@ async function com_mcpforge_errorInfoTestService_testAsyncThrowInAsync(args) {
   });
 }
 
-module.exports = com_mcpforge_errorInfoTestService_testAsyncThrowInAsync;
+module.exports = com_countinghouse_errorInfoTestService_testAsyncThrowInAsync;

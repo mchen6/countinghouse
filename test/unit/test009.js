@@ -11,11 +11,11 @@ var url = 'http://127.0.0.1:9527';
 
 describe('test9: invoke specify incorrect input type', function() {
   this.timeout(0);
-  var req = { serviceID: 'urn:mcpforge-com:serviceID:echoService', actionName: 'echo', input: 12345 };
+  var req = { serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: 12345 };
 
   it('invoke without specifying input', function(done) {
     request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
-    .set('X-MCPForge-Key', 'aabbcc')
+    .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {

@@ -1,6 +1,6 @@
 FROM ubuntu:16.04
 MAINTAINER mchen6
-ARG MCPFORGE_VERSION
+ARG COUNTINGHOUSE_VERSION
 ARG CODESERVER_VERSION
 # ADD instantclient_19_5/* /opt/oracle/instantclient/
 WORKDIR /root
@@ -58,20 +58,20 @@ RUN set -ex; \
     npm config set cache /tmp/npm-cache ; \
     npm install -g bunyan --unsafe
 
-# Install mcpforge
+# Install countinghouse
 RUN set -ex; \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime ; \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime ; \
     echo $TZ > /etc/timezone ; \
-    npm install -g --build-from-source --sqlite=/usr --unsafe-perm mcpforge@${MCPFORGE_VERSION}
+    npm install -g --build-from-source --sqlite=/usr --unsafe-perm countinghouse@${COUNTINGHOUSE_VERSION}
 
 # Install and setup Code server
 RUN set -ex; \
     curl -fsSL https://code-server.dev/install.sh | sh -s -- --dry-run ; \
     curl -fsSL https://code-server.dev/install.sh | sh -s -- --version=${CODESERVER_VERSION} ; \
-    mkdir -p /root/mcpforge-workspace/.ExtensionData ; \
-    mkdir -p /root/mcpforge-workspace/.UserData ; \
-    mkdir -p /root/mcpforge_modules ; \
+    mkdir -p /root/countinghouse-workspace/.ExtensionData ; \
+    mkdir -p /root/countinghouse-workspace/.UserData ; \
+    mkdir -p /root/countinghouse_modules ; \
     mkdir -p /root/.config/code-server ; \
     printf "bind-addr: 0.0.0.0:3131\nauth: none\npassword:\ncert: false" > /root/.config/code-server/config.yaml ; \
     rm -fr /tmp/*
@@ -102,5 +102,5 @@ RUN set -ex; \
     rm -rf /var/cache/apt
 
 
-#ENTRYPOINT ["/root/node-v12.18.2-linux-x64/bin/mcpforge"]
+#ENTRYPOINT ["/root/node-v12.18.2-linux-x64/bin/countinghouse"]
 

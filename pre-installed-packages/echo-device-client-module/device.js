@@ -1,29 +1,29 @@
 var fs = require('fs');
-var API名称 = McpForgeUtil.loadFile(__dirname + '/服务名称.js').API名称;
-var testErrorInfo = McpForgeUtil.loadFile(__dirname + '/errTestService.js').testErrorInfo;
+var API名称 = CHUtil.loadFile(__dirname + '/服务名称.js').API名称;
+var testErrorInfo = CHUtil.loadFile(__dirname + '/errTestService.js').testErrorInfo;
 
 function Device() {
   var spec = JSON.parse(fs.readFileSync(__dirname + '/api.json').toString());
-  McpForgeDevice.call(this, spec);
+  CHDevice.call(this, spec);
   this.setAction('urn:example-com:serviceID:服务名称', 'API名称', API名称.bind(this));
   this.setAction('urn:example-com:serviceID:errTestService', 'testErrorInfo', testErrorInfo.bind(this));
 
-  McpForgeUtil.createServiceClient({
+  CHUtil.createServiceClient({
     deviceID: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
-    serviceID: 'urn:mcpforge-com:serviceID:echoService',
+    serviceID: 'urn:countinghouse-com:serviceID:echoService',
     appKey: 'aabbcc'
   }, (err, client) => {this.client = client});
 
-  McpForgeUtil.createServiceClient({
+  CHUtil.createServiceClient({
     deviceID: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
-    serviceID: 'urn:mcpforge-com:serviceID:errorInfoTestService',
+    serviceID: 'urn:countinghouse-com:serviceID:errorInfoTestService',
     appKey: 'aabbcc'
   }, (err, client) => {this.errorInfoTestclient = client});
 
-  McpForgeUtil.deviceLog(this, JSON.stringify(DeviceConfig));
+  CHUtil.deviceLog(this, JSON.stringify(DeviceConfig));
 }
 
-McpForgeUtil.inherits(Device, McpForgeDevice);
+CHUtil.inherits(Device, CHDevice);
 
 Device.prototype._getDeviceRootSchema = function() {
   return JSON.parse(fs.readFileSync(__dirname + '/schema.json').toString());

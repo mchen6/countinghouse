@@ -5,7 +5,7 @@
     "minor": 0
   },
   "device": {
-    "deviceType": "urn:mcpforge-net:device:DimmableLight:1",
+    "deviceType": "urn:countinghouse-net:device:DimmableLight:1",
     "friendlyName": "device name",
     "manufacturer": "manufacturer name",
     "manufacturerURL": "manufacturer URL",
@@ -26,8 +26,8 @@
       }
     ],
     "serviceList": {
-      "urn:mcpforge-net:serviceID:BinarySwitch": {
-        "serviceType": "urn:mcpforge-net:service:SwitchPower:1",
+      "urn:countinghouse-net:serviceID:BinarySwitch": {
+        "serviceType": "urn:countinghouse-net:service:SwitchPower:1",
         "actionList": {
           "getState": {
             "argumentList": {
@@ -55,8 +55,8 @@
           }
         }
       },
-      "urn:mcpforge-net:serviceID:Dimming": {
-        "serviceType": "urn:mcpforge-net:service:Dimming:1",
+      "urn:countinghouse-net:serviceID:Dimming": {
+        "serviceType": "urn:countinghouse-net:service:Dimming:1",
         "actionList": {
           "setLoadLevelState": {
             "argumentList": {

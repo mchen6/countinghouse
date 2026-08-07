@@ -10,10 +10,10 @@ module.exports = function (cp, isSingleThread) {
     it('should reload successfully', function(done) {
       if (isSingleThread === false) {
         request(url).post('/shutdown').end(function() {});
-        return done();  // reload-module http API is not supported in MT mode now, it is only used by mcpforge docker image
+        return done();  // reload-module http API is not supported in MT mode now, it is only used by countinghouse docker image
       }
       request(url).post('/reload-module')
-      .set('X-MCPForge-Key', 'aabbcc')
+      .set('X-CH-Key', 'aabbcc')
       .set('Content-Type', 'application/json')
       .send(req)
       .expect('Content-Type', /[json | text]/)

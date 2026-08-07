@@ -11,11 +11,11 @@ var url = 'http://127.0.0.1:9527';
 
 describe('test28: invoke async action which throw exception', function() {
   this.timeout(0);
-  var req = { serviceID: 'urn:mcpforge-com:serviceID:errorInfoTestService', actionName: 'testThrowErrorAsync', input: {} };
+  var req = { serviceID: 'urn:countinghouse-com:serviceID:errorInfoTestService', actionName: 'testThrowErrorAsync', input: {} };
 
   it('invoke async action which throw exception', function(done) {
     request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
-    .set('X-MCPForge-Key', 'aabbcc')
+    .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {

@@ -1,7 +1,7 @@
 var util              = require('util');
 var events            = require('events');
 
-var Device = McpForgeUtil.loadFile(__dirname + '/device.js');
+var Device = CHUtil.loadFile(__dirname + '/device.js');
 
 function DeviceModule() {
   this.on('discover',     this.discoverDevices.bind(this));

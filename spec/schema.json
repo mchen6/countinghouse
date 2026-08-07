@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
   "type": "object",
-  "title": "MCPForge device root schema",
-  "description": "Schema specification for MCPForge device model",
+  "title": "COUNTINGHOUSE device root schema",
+  "description": "Schema specification for COUNTINGHOUSE device model",
   "properties": {
     "configId": {
       "type": "integer",

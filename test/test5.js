@@ -6,7 +6,7 @@ var testFiles = fs.readdirSync(__dirname + '/job-control');
 describe("Start job control tests in multi thread mode", function () {
   var child = null;
   this.timeout(0);
-  console.log('starting mcpforge...');
+  console.log('starting countinghouse...');
   child = cp.fork("./framework.js", [
     "--bindAddr",
     "127.0.0.1",

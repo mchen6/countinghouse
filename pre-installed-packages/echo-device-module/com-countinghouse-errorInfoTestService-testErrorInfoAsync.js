@@ -1,4 +1,4 @@
-async function com_mcpforge_errorInfoTestService_testErrorInfoAsync(args) {
+async function com_countinghouse_errorInfoTestService_testErrorInfoAsync(args) {
   if (args.input.foo === '111') return {output: {result: true}};
 
   if (args.input.foo === '222') throw new Error('error', {fault: {reason: 'err', info :args.input.foo}});
@@ -6,4 +6,4 @@ async function com_mcpforge_errorInfoTestService_testErrorInfoAsync(args) {
   throw new Error('unknown error');
 }
 
-module.exports = com_mcpforge_errorInfoTestService_testErrorInfoAsync;
+module.exports = com_countinghouse_errorInfoTestService_testErrorInfoAsync;

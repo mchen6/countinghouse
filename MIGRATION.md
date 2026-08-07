@@ -1,8 +1,11 @@
-# Migration notes: apemesh/cdif -> mcpforge
+# Migration notes
 
-This project was rebranded from `@apemesh/cdif` to `mcpforge`. Project history and
-origin are preserved (see README); this note lists what changed on the public API
-surface for anyone integrating against the framework or writing device modules.
+This project has been rebranded twice: `@apemesh/cdif` -> `mcpforge` -> `countinghouse`
+(final name). Project history and origin are preserved (see README); these notes list
+what changed on the public API surface for anyone integrating against the framework or
+writing device modules, in chronological order.
+
+## apemesh/cdif -> mcpforge
 
 ## Package and CLI
 
@@ -53,3 +56,44 @@ Device modules that reference `CdifUtil`, `CdifDevice`, or `CdifError` by name
 - `error-info.zh-CN.json` (localized error messages) is kept. The project still
   defaults to `zh-CN` locale; the English translation (`error-info.en-US.json`) is
   incomplete relative to it and was not adopted as the default in this pass.
+
+## mcpforge -> countinghouse
+
+`mcpforge` conflicted with an existing GitHub project/npm package, so the project
+was renamed again to its final name, **countinghouse**, before any public release.
+
+### Package and CLI
+
+- npm package name: `mcpforge` -> `countinghouse`.
+- CLI executable: `mcpforge` -> `countinghouse` (`bin/mcpforge` -> `bin/countinghouse`),
+  with a short alias `cth` registered alongside it (both point at the same script).
+
+### Global API surface (breaking)
+
+The globals injected by the sandbox for device modules now use a short `CH` prefix
+instead of the full `McpForge` prefix:
+
+| mcpforge-era | countinghouse (current) |
+|---|---|
+| `global.McpForgeUtil` | `global.CHUtil` |
+| `global.McpForgeDevice` | `global.CHDevice` |
+| `global.McpForgeError` | `global.CHError` |
+| `global.DeviceError` | unchanged |
+
+(Combined with the previous rename: `CdifUtil` -> `McpForgeUtil` -> `CHUtil`, and
+likewise for `CdifDevice`/`CdifError`.)
+
+### HTTP header
+
+- `X-MCPForge-Key` -> `X-CH-Key`.
+
+### Bundled example device modules
+
+- URN namespace: `urn:mcpforge-com:serviceID:*` -> `urn:countinghouse-com:serviceID:*`
+  (framework's own example/test modules only, same caveat as the previous rename).
+
+### Not changed (same reasoning as before)
+
+- Device UUID generation (`lib/countinghouse-device.js`, `UUID.v5` namespace seed)
+  is still `https://registry.apemesh.com/packages/...` — untouched by either rename,
+  intentionally, to avoid reassigning every existing device's persistent UUID.

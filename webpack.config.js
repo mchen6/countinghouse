@@ -8,7 +8,7 @@ var UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 var chmod = require('chmod');
 
 var packageJson = JSON.parse(fs.readFileSync(__dirname + '/package.json').toString());
-packageJson.bin = 'mcpforge';
+packageJson.bin = 'countinghouse';
 delete packageJson.scripts;
 packageJson.devDependencies = {};
 packageJson.optionalDependencies = {};
@@ -41,25 +41,25 @@ module.exports = {
       //       loader: StringReplacePlugin.replace({
       //           replacements: [
       //               {
-      //                   pattern: /var.*McpForgeDevice.*\=.*require.*mcpforge-device\'\)\;/ig,
+      //                   pattern: /var.*CHDevice.*\=.*require.*countinghouse-device\'\)\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
       //               },
       //               {
-      //                   pattern: /var.*McpForgeError.*\=.*require.*mcpforge-error\'\)\.McpForgeError\;/ig,
+      //                   pattern: /var.*CHError.*\=.*require.*countinghouse-error\'\)\.CHError\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
       //               },
       //               {
-      //                   pattern: /var.*DeviceError.*\=.*require.*mcpforge-error\'\)\.DeviceError\;/ig,
+      //                   pattern: /var.*DeviceError.*\=.*require.*countinghouse-error\'\)\.DeviceError\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
       //               },
       //               {
-      //                   pattern: /var.*McpForgeUtil.*\=.*require.*mcpforge-util\'\)\;/ig,
+      //                   pattern: /var.*CHUtil.*\=.*require.*countinghouse-util\'\)\;/ig,
       //                   replacement: function (match, p1, offset, string) {
       //                       return '';
       //                   }
@@ -67,9 +67,9 @@ module.exports = {
       //           ]
       //       })
       // },
-      // { test: require.resolve("./lib/mcpforge-util.js"), loader: "expose-loader?McpForgeUtil" },
-      // { test: require.resolve("./lib/mcpforge-device.js"), loader: "expose-loader?McpForgeDevice"},
-      // { test: require.resolve("./lib/mcpforge-error.js"), loader: "expose-loader?DeviceError" }
+      // { test: require.resolve("./lib/countinghouse-util.js"), loader: "expose-loader?CHUtil" },
+      // { test: require.resolve("./lib/countinghouse-device.js"), loader: "expose-loader?CHDevice"},
+      // { test: require.resolve("./lib/countinghouse-error.js"), loader: "expose-loader?DeviceError" }
     ]
   },
   entry: {
@@ -94,7 +94,7 @@ module.exports = {
     new CopyWebpackPlugin([
         { from: 'package-dist.json', to: 'package.json' },
 //        { from: 'example', to: 'example' },
-        { from: 'mcpforge-dist.sh', to: 'mcpforge', toType: 'file' }
+        { from: 'countinghouse-dist.sh', to: 'countinghouse', toType: 'file' }
     ])
   ]
 }

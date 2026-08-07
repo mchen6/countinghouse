@@ -19,7 +19,7 @@ var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
 var monitor       = require('./lib/monitor');
 
-logger.I('mcpforge@' + packageJson.version + ' start with options:' + JSON.stringify(options));
+logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options));
 
 try {
   // create module folder
@@ -46,13 +46,13 @@ monitor.init(mm, dm);
 var redisAPI = require('./lib/redis-api');
 redisAPI.init();
 
-global.McpForgeUtil     = require('./lib/mcpforge-util');
-global.McpForgeDevice   = require('./lib/mcpforge-device');
-global.McpForgeError    = require('./lib/mcpforge-error').McpForgeError;
-global.DeviceError  = require('./lib/mcpforge-error').DeviceError;
+global.CHUtil     = require('./lib/countinghouse-util');
+global.CHDevice   = require('./lib/countinghouse-device');
+global.CHError    = require('./lib/countinghouse-error').CHError;
+global.DeviceError  = require('./lib/countinghouse-error').DeviceError;
 
-//manually set McpForgeUtil.redis because when mcpforge-util.js is first time required, redis-api.js isn't loaded and initialized yet
-global.McpForgeUtil.redis = redisAPI.client;
+//manually set CHUtil.redis because when countinghouse-util.js is first time required, redis-api.js isn't loaded and initialized yet
+global.CHUtil.redis = redisAPI.client;
 
 var JobControl    = require('./lib/job-control');
 if (options.workerThread === true) JobControl.initJobProcess(routeManager.cdifInterface);

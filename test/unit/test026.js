@@ -13,15 +13,15 @@ var url = 'http://127.0.0.1:9527';
 
 describe('test26: test API Cache feature', function() {
   this.timeout(0);
-  var req = { serviceID: 'urn:mcpforge-com:serviceID:echoService', actionName: 'echoWithAPICache', input: { foo: [], bar: 'vv'} };
+  var req = { serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echoWithAPICache', input: { foo: [], bar: 'vv'} };
 
   it('invoke should write API cache to redis', function(done) {
-    var hashKey = '901170352'; //manually set key value according to the input above, if this is changed in the future, we can see mcpforge code on how to generate this key, or it can be observed in redis API cache
+    var hashKey = '622081040'; //manually set key value according to the input above, if this is changed in the future, we can see countinghouse code on how to generate this key, or it can be observed in redis API cache
     redisClient.del(hashKey, function(err) {
       if (err) return done(err);
 
       request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
-      .set('X-MCPForge-Key', 'aabbcc')
+      .set('X-CH-Key', 'aabbcc')
       .send(req)
       .expect('Content-Type', /[json | text]/)
       .expect(200, function(err, res) {

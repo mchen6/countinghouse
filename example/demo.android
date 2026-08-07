@@ -1,19 +1,19 @@
 private void makeRequest() throws Exception
 {
-    String url="https://api.mcpforge.com:3049/devices/f5dc73f9-b739-5ee2-add7-e499da04c6ec/invoke-action";
+    String url="https://api.countinghouse.com:3049/devices/f5dc73f9-b739-5ee2-add7-e499da04c6ec/invoke-action";
     URL object=new URL(url);
 
     HttpURLConnection con = (HttpURLConnection) object.openConnection();
     con.setDoOutput(true);
     con.setDoInput(true);
     con.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
-    con.setRequestProperty("X-MCPForge-Key", "<用户appKey>");
+    con.setRequestProperty("X-CH-Key", "<用户appKey>");
     con.setRequestMethod("POST");
 
     // 这里展示的是发送短信验证码API的input JSON对象的构建方法
     // 其他API的input JSON对象参数的构建方法请参照各自的API文档
     JSONObject requestData = new JSONObject();
-    requestData.put("serviceID","urn:mcpforge-io:serviceID:短信服务");
+    requestData.put("serviceID","urn:countinghouse-io:serviceID:短信服务");
     requestData.put("actionName","发送验证码");
 
     JSONObject input = new JSONObject();

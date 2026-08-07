@@ -15,7 +15,7 @@ describe('test4: invoke with unknown serviceID', function() {
 
   it('invoke with unknown serviceID', function(done) {
     request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
-    .set('X-MCPForge-Key', 'aabbcc')
+    .set('X-CH-Key', 'aabbcc')
     .send(req)
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
