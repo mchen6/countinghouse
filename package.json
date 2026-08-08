@@ -76,7 +76,8 @@
     "ws": "^8.21.3"
   },
   "overrides": {
-    "request": "npm:postman-request@^2.88.1-postman.49"
+    "request": "npm:postman-request@^2.88.1-postman.49",
+    "qs": "^6.15.2"
   },
   "devDependencies": {
     "bench-rest": "^1.2.4",
