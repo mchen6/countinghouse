@@ -36,7 +36,7 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "async": "^3.2.6",
-    "body-parser-xml": "^1.1.0",
+    "body-parser-xml": "^2.0.5",
     "bson": "^4.0.1",
     "bullmq": "^6.0.9",
     "bunyan": "^1.8.1",
