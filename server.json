@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.mchen6/countinghouse",
+  "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
+  "version": "3.1.2",
+  "repository": {
+    "url": "https://github.com/mchen6/countinghouse.git",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "countinghouse",
+      "version": "3.1.2",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://{host}:{port}/mcp"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--port",
+          "description": "TCP port to listen on",
+          "isRequired": false,
+          "format": "number",
+          "default": "9527",
+          "variables": {
+            "port": {
+              "description": "Port the /mcp endpoint is served on",
+              "default": "9527"
+            }
+          }
+        },
+        {
+          "type": "named",
+          "name": "--bindAddr",
+          "description": "Address to bind to",
+          "isRequired": false,
+          "format": "string",
+          "variables": {
+            "host": {
+              "description": "Host the /mcp endpoint is served on",
+              "default": "127.0.0.1"
+            }
+          }
+        },
+        {
+          "type": "named",
+          "name": "--workerThread",
+          "description": "Run in multi-thread mode. Required for the MCP Tasks extension (tasks/get, tasks/list, tasks/cancel, and task-augmented tools/call) -- without it, only the synchronous tools/list and tools/call methods are available.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
