@@ -30,7 +30,8 @@
   "author": "Miaobo Chen",
   "license": "Apache-2.0",
   "dependencies": {
-    "ajv": "^4.8.2",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "async": "^1.5.2",
     "body-parser": "~1.14.0",
     "body-parser-xml": "^1.1.0",
