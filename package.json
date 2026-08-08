@@ -43,7 +43,7 @@
     "cors": "^2.8.1",
     "express": "^4.22.2",
     "express-http-proxy": "^1.2.0",
-    "express-ws": "^2.0.0",
+    "express-ws": "^5.0.2",
     "fs-extra": "^10.0.0",
     "isbinaryfile": "^4.0.6",
     "json-pointer": "^0.6.0",
@@ -75,7 +75,7 @@
     "string-hash": "^1.1.1",
     "tar": "^2.2.1",
     "uuid-1345": "^0.99.6",
-    "ws": "^1.0.1"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "async": "~1.5.0",
