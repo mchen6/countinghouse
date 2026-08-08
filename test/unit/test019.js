@@ -22,6 +22,10 @@ describe('test19: invoke with BSON content-type with large binary data', functio
     request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
     .set('X-CH-Key', 'aabbcc')
     .set('Content-Type', 'application/bson')
+    // the 20MB binary payload comes back JSON-serialized (Buffer -> {type,data:[...]}),
+    // which balloons well past superagent's 200MB buffered-response default cap added
+    // in newer versions; raise it for this deliberately-large-payload test
+    .maxResponseSize(1024 * 1024 * 1024)
     .send(req)
     .expect('Content-Type', /[json | text]/)
     .expect(200, function(err, res) {

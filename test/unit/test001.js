@@ -1,4 +1,3 @@
-var should  = require('should');
 var request = require('supertest');
 var async   = require('async');
 var io      = require('socket.io-client');
@@ -14,6 +13,25 @@ var url = 'http://127.0.0.1:9527';
 
 var deviceList;
 
+// small local helpers replacing the should.js assertions this file used to make;
+// throw synchronously on failure, same as should.js did
+function assertHasProperty(obj, key, expectedValue) {
+  if (obj == null || !Object.prototype.hasOwnProperty.call(obj, key)) {
+    throw new Error('expected property: ' + key);
+  }
+  if (expectedValue !== undefined && JSON.stringify(obj[key]) !== JSON.stringify(expectedValue)) {
+    throw new Error('expected property ' + key + ' to equal ' + JSON.stringify(expectedValue) + ', got ' + JSON.stringify(obj[key]));
+  }
+}
+function assertType(val, type) {
+  if (typeof val !== type) throw new Error('expected type ' + type + ', got ' + typeof val);
+}
+function assertNotEmpty(val) {
+  if (val == null) throw new Error('expected non-empty value');
+  if (typeof val === 'object' && Object.keys(val).length === 0) throw new Error('expected non-empty object');
+  if (typeof val === 'string' && val.length === 0) throw new Error('expected non-empty string');
+}
+
 
 describe('get device list', function() {
 
@@ -23,16 +41,18 @@ describe('get device list', function() {
     .expect(200).end(function(err, res) {
       if(err) throw err;
       for (var i in res.body) {
-        res.body[i].should.have.property('configId').which.is.a.Number();
-        res.body[i].should.have.property('specVersion').and.have.property('major', 1);
-        res.body[i].should.have.property('specVersion').and.have.property('minor', 0);
-        res.body[i].should.have.property('device');
+        assertHasProperty(res.body[i], 'configId');
+        assertType(res.body[i].configId, 'number');
+        assertHasProperty(res.body[i], 'specVersion');
+        assertHasProperty(res.body[i].specVersion, 'major', 1);
+        assertHasProperty(res.body[i].specVersion, 'minor', 0);
+        assertHasProperty(res.body[i], 'device');
         var device = res.body[i].device;
-        // device.should.have.property('deviceType');
-        device.should.have.property('friendlyName');
-        device.should.have.property('manufacturer');
-        // device.should.have.property('modelName');
-        device.should.have.property('serviceList', {});
+        // assertHasProperty(device, 'deviceType');
+        assertHasProperty(device, 'friendlyName');
+        assertHasProperty(device, 'manufacturer');
+        // assertHasProperty(device, 'modelName');
+        assertHasProperty(device, 'serviceList', {});
         // if (device.deviceType != 'urn:countinghouse-net:device:BinaryLight:1' &&
         //   device.deviceType != 'urn:countinghouse-net:device:DimmableLight:1' &&
         //   device.deviceType != 'urn:countinghouse-net:device:SensorHub:1' &&
@@ -134,9 +154,9 @@ describe('test1: invoke all actions', function() {
       .expect(200, function(err, res) {
         if (err) throw err;
         var device = res.body.device;
-        device.should.have.property('serviceList');
-        device.serviceList.should.be.an.Object;
-        device.serviceList.should.be.not.empty;
+        assertHasProperty(device, 'serviceList');
+        assertType(device.serviceList, 'object');
+        assertNotEmpty(device.serviceList);
         var serviceList = Object.keys(device.serviceList);
 
         async.eachSeries(serviceList, function(serviceID, cb) {
@@ -149,8 +169,8 @@ describe('test1: invoke all actions', function() {
 
 function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   var actionList = serviceList[serviceID].actionList;
-  actionList.should.be.an.Object;
-  actionList.should.be.not.empty;
+  assertType(actionList, 'object');
+  assertNotEmpty(actionList);
 
   var list = Object.keys(actionList);
 
@@ -165,8 +185,8 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
 
     setTimeout(function() {
       var action = actionList[name];
-      action.should.be.an.Object;
-      action.should.be.not.empty;
+      assertType(action, 'object');
+      assertNotEmpty(action);
       var args = action.argumentList;
 
       var argList = Object.keys(action.argumentList);
@@ -176,14 +196,14 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         // device_access_token: deviceList[deviceID].device_access_token
       };
       async.eachSeries(argList, function(arg, call_back) {
-        arg.should.not.be.empty;
+        assertNotEmpty(arg);
         var stateVarName = action.argumentList[arg].relatedStateVariable;
         var stateVarTable = serviceList[serviceID].serviceStateTable;
-        stateVarTable.should.be.an.Object;
-        stateVarTable.should.be.not.empty;
+        assertType(stateVarTable, 'object');
+        assertNotEmpty(stateVarTable);
         var stateVar = stateVarTable[stateVarName];
-        stateVar.should.be.an.Object;
-        stateVar.should.be.not.empty;
+        assertType(stateVar, 'object');
+        assertNotEmpty(stateVar);
         if (stateVar.dataType === 'number'  ||
             stateVar.dataType === 'integer' ||
             stateVar.dataType === 'uint8'   ||
@@ -194,8 +214,8 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
             stateVar.dataType === 'sint32') {
           var min = 0; var max = 100;
           if (stateVar.allowedValueRange) {
-            stateVar.allowedValueRange.minimum.should.be.a.Number;
-            stateVar.allowedValueRange.maximum.should.be.a.Number;
+            assertType(stateVar.allowedValueRange.minimum, 'number');
+            assertType(stateVar.allowedValueRange.maximum, 'number');
             min = stateVar.allowedValueRange.minimum;
             max = stateVar.allowedValueRange.maximum;
           }
@@ -218,15 +238,15 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         } else if (stateVar.dataType === 'object') {
           if (arg === 'input') {
             var schemaRef = stateVar.schema;
-            schemaRef.should.be.a.String;
+            assertType(schemaRef, 'string');
             request(url)
             .get('/devices/' + deviceID + '/schema' + encodeURI(schemaRef))
             .set('X-CH-Key', 'aabbcc')
             .expect(200, function(err, res) {
               if (err) throw err;
               var variableSchema = res.body;
-              variableSchema.should.be.an.Object;
-              variableSchema.should.be.not.empty;
+              assertType(variableSchema, 'object');
+              assertNotEmpty(variableSchema);
               var fake_data = jsf.generate(variableSchema);
               req.input = fake_data;
               call_back();
