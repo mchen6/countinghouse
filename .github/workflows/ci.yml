@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # test7 is a multi-thread performance benchmark, not a correctness
+      # check - it takes several minutes and isn't meant to gate CI, so
+      # this deliberately excludes it (mirrors the local dev-loop workflow)
+      - name: Run functional tests
+        run: |
+          npx mocha ./test/test1.js
+          npx mocha ./test/test2.js
+          npx mocha ./test/test3.js
+          npx mocha ./test/test4.js
+          npx mocha --exit ./test/test5.js
+          npx mocha ./test/test6.js
+
+      # informational only for now - the dependency tree isn't at zero
+      # vulnerabilities yet, so this doesn't gate CI; it's here so the
+      # count is visible in every run while that work continues
+      - name: npm audit (informational)
+        run: npm audit || true
