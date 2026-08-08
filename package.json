@@ -58,9 +58,9 @@
     "npm-registry-client": "^7.2.1",
     "oauth": "^0.9.14",
     "once": "^1.4.0",
+    "postman-request": "^2.88.1-postman.49",
     "redis": "^3.1.2",
     "redis-commands": "^1.6.0",
-    "request": "^2.79.0",
     "respawn": "^2.5.0",
     "rewire": "^2.5.2",
     "rimraf": "^2.5.4",
@@ -74,6 +74,9 @@
     "tar": "^7.5.22",
     "uuid-1345": "^0.99.6",
     "ws": "^8.21.3"
+  },
+  "overrides": {
+    "request": "npm:postman-request@^2.88.1-postman.49"
   },
   "devDependencies": {
     "bench-rest": "^1.2.4",
