@@ -1,7 +1,6 @@
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
 var deviceDB      = require('./lib/device-db');
-var mkdirp        = require('mkdirp');
 var fs            = require('fs');
 var packageJson   = require('./package.json');
 
@@ -23,7 +22,7 @@ logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.
 
 try {
   // create module folder
-  mkdirp.sync(options.modulePath);
+  fs.mkdirSync(options.modulePath, {recursive: true});
   fs.accessSync(options.modulePath, fs.W_OK);
 } catch (e) {
   logger.E(new Error('cannot access module folder: ' + e.message));
