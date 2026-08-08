@@ -22,7 +22,7 @@
       "urn:countinghouse-com:serviceID:echoService": {
         "actionList": {
           "echo": {
-            "description": "API描述信息",
+            "description": "Echoes the input object back as the output, unmodified. Useful for verifying end-to-end connectivity and input/output schema handling.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -42,7 +42,7 @@
             }
           },
           "echoWithAPICache": {
-            "description": "API描述信息",
+            "description": "Same as echo, but the response is cached server-side for 9 seconds (apiCache) so repeated identical calls skip re-invoking the device module.",
             "apiCache": 9000,
             "argumentList": {
               "input": {
@@ -59,7 +59,7 @@
             }
           },
           "echoAsync": {
-            "description": "API描述信息",
+            "description": "Same as echo, but implemented with an async/await handler instead of a callback -- exercises the async invocation code path.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -105,7 +105,7 @@
       "urn:countinghouse-com:serviceID:timeOutTestService": {
         "actionList": {
           "testTimeout": {
-            "description": "API描述信息",
+            "description": "Intentionally never calls back, so the framework's action timeout fires. Used to test timeout handling; expect a DEVICE_NOT_RESPONDING-style error.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -129,7 +129,7 @@
             }
           },
           "testTimeoutAsync": {
-            "description": "API描述信息",
+            "description": "Same as testTimeout, but implemented as an async function that never resolves.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -167,7 +167,7 @@
       "urn:countinghouse-com:serviceID:errorInfoTestService": {
         "actionList": {
           "testErrorInfo": {
-            "description": "API描述信息",
+            "description": "Returns a device-defined error object (fault) instead of a normal result, to test structured error propagation.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -195,7 +195,7 @@
             }
           },
           "testFunctionReturnError": {
-            "description": "API描述信息",
+            "description": "Returns a JavaScript Error instance directly from the action function, to test that error type is handled correctly.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -219,7 +219,7 @@
             }
           },
           "testNullReturnError": {
-            "description": "API描述信息",
+            "description": "Returns null as the error value, to test that a falsy/null error is still treated as \"no error\" correctly.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -243,7 +243,7 @@
             }
           },
           "testNumberTypeReturnError": {
-            "description": "API描述信息",
+            "description": "Returns a number as the error value, to test error normalization when the device module supplies a non-Error error.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -267,7 +267,7 @@
             }
           },
           "testStringTypeReturnError": {
-            "description": "API描述信息",
+            "description": "Returns a string as the error value, to test error normalization when the device module supplies a non-Error error.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -291,7 +291,7 @@
             }
           },
           "testBooleanTypeReturnError": {
-            "description": "API描述信息",
+            "description": "Returns a boolean as the error value, to test error normalization when the device module supplies a non-Error error.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -315,7 +315,7 @@
             }
           },
           "testErrorInfoAsync": {
-            "description": "API描述信息",
+            "description": "Async/await version of testErrorInfo: rejects with a device-defined error object to test structured error propagation.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -331,7 +331,7 @@
             }
           },
           "testThrowError": {
-            "description": "directly throw a new error in callback style api function",
+            "description": "Directly throws a new Error inside a callback-style action handler, to test that synchronous throws are caught and reported as a fault rather than crashing the process.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -347,7 +347,7 @@
             }
           },
           "testThrowErrorAsync": {
-            "description": "directly throw a new error in async / await style api function",
+            "description": "Directly throws a new Error inside an async/await-style action handler, to test that async throws are caught and reported as a fault rather than crashing the process.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -363,7 +363,7 @@
             }
           },
           "testAsyncThrowInDomain": {
-            "description": "throw a new async error in callback style aoi function which should be caught by domain",
+            "description": "Throws asynchronously (outside the initial call stack) inside a callback-style action handler, exercising Node's deprecated domain-module-based exception capture.",
             "argumentList": {
               "input": {
                 "direction": "in",
@@ -379,7 +379,7 @@
             }
           },
           "testAsyncThrowInAsync": {
-            "description": "throw a new async error in async / await style api function which should be cause by try...catch block ",
+            "description": "Throws asynchronously inside an async/await-style action handler; expected to be caught by a try/catch block rather than relying on the domain module.",
             "argumentList": {
               "input": {
                 "direction": "in",
