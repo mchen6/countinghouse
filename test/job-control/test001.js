@@ -1,15 +1,13 @@
 var request = require('supertest');
 var url = 'http://127.0.0.1:9527';
 
-var Queue = require('bull');
-var jobQueue = new Queue('job-queue', {
-  prefix: '{cdifJob}',
-  redis: {db: 11, port: 6379, host: '127.0.0.1', password: null},
-  settings: {
-    stalledInterval: 500,
-    maxStalledCount: 0
-  }
-});
+var Queue       = require('bullmq').Queue;
+var QueueEvents = require('bullmq').QueueEvents;
+
+var connection = {db: 11, port: 6379, host: '127.0.0.1', password: null};
+
+var jobQueue    = new Queue('job-queue', {prefix: '{cdifJob}', connection: connection});
+var queueEvents = new QueueEvents('job-queue', {prefix: '{cdifJob}', connection: connection});
 
 module.exports = function (cp, isSingleThread) {
   describe('Test job process', function() {
@@ -20,22 +18,22 @@ module.exports = function (cp, isSingleThread) {
 
         if (message === 'ready') {
 
-          jobQueue.on('global:failed', function(job, err) {
-            return done(err);
+          queueEvents.on('failed', function(args) {
+            return done(new Error(args.failedReason));
           });
 
-          jobQueue.on('global:stalled', function(job) {
+          queueEvents.on('stalled', function(args) {
             return done(new Error('stalled'));
           });
 
-          jobQueue.on('global:completed', function(job, result) {
-            console.log(`Job completed with result ${result}`);
+          queueEvents.on('completed', function(args) {
+            console.log(`Job completed with result ${JSON.stringify(args.returnvalue)}`);
 
             request(url).post('/shutdown').end(function() {});
             return done();
           });
 
-          jobQueue.add({
+          jobQueue.add('test1', {
             deviceID: 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767',
             serviceID:'urn:countinghouse-com:serviceID:echoService',
             actionName: 'echo',
@@ -49,5 +47,3 @@ module.exports = function (cp, isSingleThread) {
     });
   });
 };
-
-

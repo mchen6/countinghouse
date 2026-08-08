@@ -7,6 +7,9 @@
     "cth": "./bin/countinghouse"
   },
   "main": "./bin/framework.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "./bin/countinghouse",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
@@ -35,7 +38,7 @@
     "async": "^3.2.6",
     "body-parser-xml": "^1.1.0",
     "bson": "^4.0.1",
-    "bull": "^3.20.0",
+    "bullmq": "^6.0.9",
     "bunyan": "^1.8.1",
     "chmodr": "^1.0.2",
     "chokidar": "^3.5.0",
@@ -44,6 +47,7 @@
     "express-http-proxy": "^1.2.0",
     "express-ws": "^5.0.2",
     "fs-extra": "^10.0.0",
+    "ioredis": "^5.11.1",
     "isbinaryfile": "^4.0.6",
     "json-pointer": "^0.6.0",
     "json-schema-ref-parser": "^1.4.0",
