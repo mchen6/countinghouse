@@ -110,5 +110,9 @@
   "GET_JOB_ERROR": "Failed to get job info",
   "REMOVE_JOB_ERROR": "Failed to remove job",
   "DEVICE_CONFIG_LOAD_FAIL": "Failed to get app config info",
-  "DEVICE_ID_INVALID_OR_NULL": "Invalid device ID"
+  "DEVICE_ID_INVALID_OR_NULL": "Invalid device ID",
+  "PEER_GONE": "Direct peer channel is no longer valid",
+  "PEER_CHANNEL_TIMEOUT": "Direct peer channel call timed out",
+  "PEER_SELF_TARGET": "Target device is hosted by the requesting worker itself, direct peer channel not applicable",
+  "PEER_NO_HANDLER": "No peer-invoke handler registered on the remote side"
 }
