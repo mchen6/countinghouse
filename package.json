@@ -51,7 +51,6 @@
     "jsonwebtoken": "^9.0.3",
     "lodash": "^4.17.20",
     "minimist": "^1.2.0",
-    "nano": "^6.2.0",
     "npm-registry-client": "^7.2.1",
     "oauth": "^0.9.14",
     "once": "^1.4.0",
