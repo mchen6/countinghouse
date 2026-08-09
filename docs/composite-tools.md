@@ -133,7 +133,17 @@ to read. A production composition feature would need to address these:
   MCP client's apiKey (or a derived, scoped credential) down through the
   `ServiceClient` chain, and decide how `checkBalance`/`rateLimit` should
   apply at each layer — checked once at the outer call, or independently
-  at every hop.
+  at every hop. `CHUtil.createServiceClient`'s `ctx` option already exists
+  for exactly this (a module can pass along the current caller's session
+  instead of a fixed `appKey`), but nothing here uses it yet, and it comes
+  with a sharp edge if it's wired up carelessly: if the passed-through
+  session's own `appKey` is itself unresolved (`null`/`undefined`), the
+  platform's automatic metering silently no-ops for that hop rather than
+  failing the call — see `docs/cross-cutting-matrix.md`'s two "Direct peer
+  channel" rows for the verified, empirically-confirmed behavior. Worth
+  deciding deliberately (reject the call vs. bill a fallback identity vs.
+  keep the current silent-skip) before this `ctx` path is actually used
+  anywhere, rather than inheriting whatever the guard already does today.
 - **Per-hop cost is hardcoded** (`HOP_COST = 1` in
   `com-countinghouse-compositeService-run.js`), not looked up from each
   target module's own declared pricing.
