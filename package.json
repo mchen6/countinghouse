@@ -15,7 +15,7 @@
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
     "build": "webpack && chmod +x build/countinghouse",
-    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/test8.js && mocha ./test/test6.js && mocha ./test/test7.js"
+    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/auth/*.js ./test/device-config/*.js && mocha ./test/test8.js && mocha ./test/test6.js && mocha ./test/test7.js"
   },
   "repository": {
     "type": "git",
