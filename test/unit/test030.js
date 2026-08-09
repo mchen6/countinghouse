@@ -9,11 +9,18 @@ jsf.option({
 
 var url = 'http://127.0.0.1:9527';
 
-describe('test30: invoke async action which throw async exception', function() {
+describe('test30: invoke async action which throws inside a never-settling Promise', function() {
   this.timeout(0);
   var req = { serviceID: 'urn:countinghouse-com:serviceID:errorInfoTestService', actionName: 'testAsyncThrowInAsync', input: {} };
 
-  it('invoke async action which throw async exception', function(done) {
+  // testAsyncThrowInAsync's Promise executor throws inside a setTimeout and
+  // never calls resolve/reject, so `await action.invoke(args)` in
+  // Service.prototype.doActionCall's async branch (lib/service.js) never
+  // settles either -- the exception happens fully detached, same as
+  // test029's callback-style case, and try/catch cannot catch it (see the
+  // comment above doActionCall). The request times out instead of getting
+  // a fast structured error.
+  it('never settles, so the request times out as DEVICE_NOT_RESPONDING', function(done) {
     request(url).post('/devices/c5284c70-ae5f-591c-b2f1-cf0b4ebd0767/invoke-action')
     .set('X-CH-Key', 'aabbcc')
     .send(req)
@@ -22,9 +29,7 @@ describe('test30: invoke async action which throw async exception', function() {
       if (err) return done(err);
 
       if (res.body.topic !== 'device error' ||
-          res.body.code !== 'DEVICE_INVOKE_EXCEPTION' ||
-          res.body.fault == null ||
-          res.body.fault.message.startsWith('Cannot read properties of null') === false
+          res.body.code !== 'DEVICE_NOT_RESPONDING'
       ) {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
