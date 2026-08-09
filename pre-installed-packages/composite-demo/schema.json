@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "compositeService": {
+    "run": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["text"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "finalText": {
+            "type": "string"
+          },
+          "bill": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hop": {"type": "number"},
+                "tool": {"type": "string"},
+                "charged": {"type": "number"},
+                "balance": {"type": ["number", "null"]}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "fault": {
+    "compositeService": {
+      "run": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

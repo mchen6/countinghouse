@@ -1,0 +1,13 @@
+{
+  "name": "composite-demo",
+  "version": "1.0.0",
+  "description": "composes echo-device-module and transform-demo's actions in-process over the worker message channel, with per-hop metering -- see docs/composite-tools.md",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0"
+}

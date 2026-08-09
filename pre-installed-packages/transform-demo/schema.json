@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "transformService": {
+    "uppercase": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["text"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "fault": {
+    "transformService": {
+      "uppercase": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
