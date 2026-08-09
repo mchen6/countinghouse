@@ -20,6 +20,29 @@ var monitor       = require('./lib/monitor');
 
 logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options));
 
+// Eagerly instantiate the configured AuthProvider (lib/auth/) here, at
+// startup, rather than lazily on the first authenticated request.
+// FileAuthProvider's zero-config demo-key generation (see its own header
+// comment) needs to happen now so an operator sees the printed key
+// immediately -- with lazy instantiation, nothing ever printed it until
+// after someone had already tried (and failed) to make a request with no
+// key in hand yet, an unusable chicken-and-egg first-run experience.
+// Skipped entirely under --debug, which never consults AuthProvider at
+// all (see lib/user-auth.js) -- instantiating it there would be pointless
+// and could surprise an operator with an auth.json/demo key they don't
+// need. A construction failure (e.g. --authProvider couchdb without nano
+// installed, or an unreachable CouchDB) fails the whole server the same
+// way a missing module folder does above, rather than surfacing as a
+// confusing per-request 500 later.
+if (options.debug !== true) {
+  try {
+    require('./lib/auth').getAuthProvider();
+  } catch (e) {
+    logger.E(new Error('AuthProvider (--authProvider ' + options.authProvider + ') failed to initialize: ' + e.message));
+    process.exit(-1);
+  }
+}
+
 try {
   // create module folder
   fs.mkdirSync(options.modulePath, {recursive: true});
