@@ -25,14 +25,14 @@ changes.
 |---|---|---|---|---|---|---|
 | **HTTP `POST /devices/:deviceID/invoke-action`** | ✅ `lib/routes/user.js` → `user-auth.js`, mounted ahead of the route (`lib/route-manager.js`) | ✅ `Service.prototype.invoke` → `validateActionCall` (`lib/service.js`) — the shared dispatch point every path below also funnels through | ✅ `Session.prototype.updateRedisUserRecord` (`lib/session.js`), fires after every call | ✅ `CdifInterface.prototype.invokeDeviceAction`: global limiter (main thread only) + per-apiKey `this.rateLimit()` (`lib/countinghouse-interface.js`) | ✅ `Session`'s own timer, `options.requestTimeout` (default 30000ms) | `{topic, code, message[, fault]}` JSON body (`lib/session.js:81,105,107`) — `code` is the locale-independent field added in Sprint 4 |
 | **MCP `tools/call` (synchronous)** | ✅ same `userAuth` call, invoked directly in `lib/mcp/gateway.js:143` | ✅ same shared path — goes through `cdifInterface.invokeDeviceAction` exactly like HTTP | ✅ explicit call in `gateway.js:150`, cost = `options.mcpToolCallCost`, fire-and-forget | ✅ same `invokeDeviceAction` gate as HTTP (this call is *inside* `invokeDeviceAction`, not a separate check) | ✅ same `Session` timer as HTTP (this path constructs and uses a `Session` too) | `toolCallResult()` (`gateway.js:83`) — includes `err.code` (when present) as `structuredContent.code`, fixed 2026-08-09, see Findings |
-| **MCP `tools/call` (task-augmented, `params.task`)** | ✅ fixed 2026-08-09 — `createTaskForToolCall` (`gateway.js:164`) now calls `userAuth` before task creation, same gate and same `JSONRPC_INTERNAL_ERROR` failure shape as the synchronous path; the resulting `session` is discarded (job execution stays on its separate `JobControl.addJob`/`invokeJobs` path, which still takes no appKey) — this is purely an authorization check, not a rewire of execution | ✅ same shared `validateActionCall` path (execution still runs through the normal action dispatch, only the surrounding gate is skipped) | ✅ `job-control.js:84-88`, fires after job completion using `jobData.apiKey` stashed at creation time | ✅ but only checked once, at task *creation* (`gateway.js:193-200`), not re-checked at execution — a deliberate choice (queue growth is the actual resource being protected), documented in-code | ✅ bullmq `job.opts.timeout`, reimplemented via `setTimeout` (`job-control.js:59-68`, needed because bullmq dropped bull's built-in job timeout) | Same `toolCallResult()` as sync path — same `structuredContent.code` fix applies, plus job-specific failure shapes (`tasks/result`'s own error wrapping) |
+| **MCP `tools/call` (task-augmented, `params.task`)** | ✅ fixed 2026-08-09 — `createTaskForToolCall` (`gateway.js:164`) now calls `userAuth` before task creation, same gate and same `JSONRPC_INTERNAL_ERROR` failure shape as the synchronous path; the resulting `session` is discarded (job execution stays on its separate `JobControl.addJob`/`invokeJobs` path, which still takes no appKey) — this is purely an authorization check, not a rewire of execution. Regression test: `test/unit/test031.js` | ✅ same shared `validateActionCall` path (execution still runs through the normal action dispatch, only the surrounding gate is skipped) | ✅ `job-control.js:84-88`, fires after job completion using `jobData.apiKey` stashed at creation time | ✅ but only checked once, at task *creation* (`gateway.js:193-200`), not re-checked at execution — a deliberate choice (queue growth is the actual resource being protected), documented in-code | ✅ bullmq `job.opts.timeout`, reimplemented via `setTimeout` (`job-control.js:59-68`, needed because bullmq dropped bull's built-in job timeout) | Same `toolCallResult()` as sync path — `structuredContent.code` fix applies here too, via a second fix: `job-control.js`'s worker now encodes `"CODE: message"` into the rejected error before bullmq flattens it to `job.failedReason` (a plain string that drops any custom property otherwise), and `handleTasksResult` decodes it back out. Regression test: `test/unit/test032.js` |
 | **Event channel (`socket.io` `subscribe`/`disconnect`, `lib/socket-server.js`)** | ❌ **none.** No appKey/key of any kind is read from the socket connection or the `subscribe` payload — marked `//TODO: add user key support` in the code itself (`socket-server.js:38,65`) | ⚠️ unclear/likely none — `subscribe` goes through `CdifInterface.prototype.eventSubscribe` → `DeviceManager.prototype.onEventSubscribe`, a separate code path from `Service.prototype.invoke` that was not traced to a schema check | ❌ none. No `recordCall` anywhere on this path | ❌ none. `eventSubscribe`/`eventUnsubscribe` on `CdifInterface` call `deviceManager.emit(...)` directly, bypassing both the global and per-apiKey limiter machinery in `invokeDeviceAction` | ❌ no timeout observed on subscribe itself (long-lived by nature) | `{topic, code, message}` emitted back over the socket as an `'error'` event (`socket-server.js:43`) — shape matches HTTP, `code` preserved |
 | **Direct peer channel** (worker `message channel`, e.g. `ServiceClient.invoke` with `isRemoteThread: true` — the mechanism `composite-demo` uses to call other modules in-process) | ⚠️ **checked once, on the main thread, before routing** — `DeviceManager.prototype.sendInvokeActionMessageToWorker` (`lib/device-manager.js:361`) calls `userAuth` before dispatching to the callee's worker. But the callee worker's own re-entry point (`invoke-action` case in `lib/sandbox.js:68-79`) calls `ci.invokeDeviceAction(...)` with a **plain callback function as the `session` argument**, not a `Session` object — see rateLimit finding below, same root cause also means no *second* userAuth check happens worker-side (by construction there's only ever one) | ✅ same shared `validateActionCall` — the callee's action still executes through the normal per-worker dispatch, indistinguishable from a locally-triggered call | ❌ **not automatic.** No `recordCall` fires anywhere in the routing path itself. `composite-demo`'s billing (see `docs/composite-tools.md`) exists only because the *calling module's own handler* explicitly invokes `CHUtil.recordCall` per hop — this is module-level discipline, not a platform guarantee. A module that composes other modules without doing this gets metered $0 for the inner calls | ❌ **not enforced**, for a specific, verified reason: the callee-side re-entry (`sandbox.js:68-79`) passes a bare function as `invokeDeviceAction`'s `session` parameter. `checkApiKeyRateLimit` in `countinghouse-interface.js` reads `session.appKey`, which is `undefined` on a plain function, so the `if (session.appKey == null) return doInvoke();` early-return fires unconditionally — the rate-limit check is skipped, not merely absent. The main-thread global limiter is also inapplicable here since the callee-side call runs with `isMainThread === false`. Net effect: an internal hop is **never** rate-limited, regardless of `--apiKeyRateLimit` | ✅ `session.setDeviceTimer(calleeWM, ...)` set on the main thread before dispatch (`device-manager.js:364`), same underlying mechanism as HTTP/MCP | Raw `DeviceError`/Error object returned via a Node-style `(err, data)` callback to the calling module's own code (`ServiceClient.invoke`, `lib/service-client.js:57-72`) — `err.code` survives the worker boundary (Sprint 4's `worker-message.js` fix). Not an HTTP/MCP envelope; shaping for any external caller is entirely up to the calling module |
 
 ## Findings from building this table
 
 Two gaps were found while filling this table in, neither previously
-known. Both are now **fixed** (2026-08-09, `lib/mcp/gateway.js`), recorded
+known. Both are now **fixed and covered by regression tests**, recorded
 here for the history and because the table's own change-control rule
 requires every claim to stay checkable against the code:
 
@@ -43,14 +43,16 @@ requires every claim to stay checkable against the code:
    execution (`job-control.js` → `onInvokeJobs`) called `userAuth`. The
    synchronous `tools/call` path never had this gap. This was the more
    serious of the two findings — an authorization bypass, not a UX rough
-   edge. **Fix**: `createTaskForToolCall` now calls `userAuth` first (same
-   gate, same `JSONRPC_INTERNAL_ERROR` failure shape as the sync path)
-   before checking `rateLimit` and creating the job; the resulting
-   `session` is discarded since job execution doesn't need it. Verified
-   live: a task-augmented call with an unauthorized apiKey against a
-   `--debugKey`-configured server now returns
-   `{"error":{"code":-32603,"message":"未知用户"}}` instead of creating and
-   running the job; the same call with the correct key still succeeds.
+   edge. **Fix**: `createTaskForToolCall` now calls `userAuth` first — the
+   same gate, at the same point (task creation) `rateLimit` was already
+   fixed to check in an earlier Sprint, and the same `JSONRPC_INTERNAL_ERROR`
+   failure shape the synchronous path already used — before checking
+   `rateLimit` and creating the job; the resulting `session` is discarded
+   since job execution doesn't need it. **Test**: `test/unit/test031.js`
+   asserts a task-augmented call with an unauthorized apiKey is rejected
+   without creating a task, and that one with an authorized apiKey still
+   succeeds (skipped in single-thread mode, where tasks aren't supported
+   at all and the request never reaches this gate in the first place).
 2. **MCP `tools/call` responses (`toolCallResult`) dropped `err.code`.**
    Sprint 4 added a locale-independent `code` field to `CHError`/
    `DeviceError` specifically so callers don't have to pattern-match
@@ -61,9 +63,46 @@ requires every claim to stay checkable against the code:
    adds `structuredContent: {code: err.code}` to the error branch whenever
    `err.code` is present (plain `Error`s raised for request-validation
    failures in `gateway.js` itself have no `.code` and are unaffected).
-   Verified live: an invalid-input call now returns
-   `"structuredContent":{"code":"INPUT_DATA_VALIDATION_FAIL"}` alongside
-   the existing (locale-formatted) text message.
+   This alone was enough for the synchronous path, but testing the
+   task-augmented path surfaced a **second, deeper cause of the same
+   symptom**: bullmq's `Worker` only ever persists a failed job's reason
+   as a plain string (`job.failedReason = err.message`), so any custom
+   property on the rejected error — including `code` — was already gone
+   before `toolCallResult` ever ran, regardless of the first fix.
+   Addressed with a small, self-contained encode/decode: `job-control.js`'s
+   worker now rejects with `"CODE: message"` when the original error has a
+   `code` (every `CHError`/`DeviceError` code is an `UPPER_SNAKE_CASE`
+   identifier a real message would not otherwise start with), and
+   `handleTasksResult` decodes that prefix back into `err.code` before
+   calling `toolCallResult`. **Test**: `test/unit/test032.js` asserts
+   `structuredContent.code === 'INPUT_DATA_VALIDATION_FAIL'` for both the
+   synchronous path and, when tasks are supported, the task-augmented path
+   via `tasks/result` (polls until the task completes).
+
+   Running `test032.js` inside the full suite (after 30+ other tests had
+   already put real load on the same redis/bullmq instance) then surfaced
+   a **third, unrelated, pre-existing race**, confirmed via bullmq's own
+   source (`Job.prototype.getState()` is a separate redis read from the
+   `jobQueue.getJob(id)` fetch that produced the `job` instance in the
+   first place, and never refreshes that instance's fields): if a job
+   transitions to a terminal state in the gap between those two reads,
+   `JobControl.getJob`'s `job.failedReason`/`job.returnvalue` can still
+   reflect the pre-transition (empty) snapshot even though `state`
+   correctly reports the job as done — visible as `tasks/result` returning
+   the generic `"task failed"` fallback text instead of the real reason.
+   This isn't specific to the `code` fix above; it would just as easily
+   have returned an empty `failedReason` string before this Sprint too,
+   it simply had no test tight enough to notice. **Fix**: `getJob` now
+   re-fetches the job once `state` resolves to `'completed'`/`'failed'`,
+   so the returned fields reflect the same settled data the state itself
+   does. Verified with a 40-concurrent-failing-task stress script (not
+   part of the committed test suite, since it's a load-shaped
+   confirmation rather than a deterministic unit assertion) — 40/40
+   correctly returned `structuredContent.code`, 0/40 hit the generic
+   fallback, after the fix; the race was only ever seen intermittently
+   under real load (the full test suite), not reliably reproducible in
+   isolation, which is exactly why it needed a stress run rather than a
+   single-shot check to confirm.
 
 ## Decision: should the direct peer channel be rate-limited?
 
