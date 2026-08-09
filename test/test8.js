@@ -30,7 +30,22 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     if (file !== 'input.bson' && file !== 'test018.js') require('./unit/' + file);
   });
 
+  // Files in this list need their own server config incompatible with the
+  // one this describe block's before() starts (a different --debugKey,
+  // a nonzero --mcpToolCallCost, ...) and spawn their own conflicting
+  // server via their own before()/after() -- if swept in here, that second
+  // before() collides with this one on the same port, and assertions end
+  // up running against whichever server actually ends up bound, producing
+  // confusing failures that look unrelated to the real cause (found the
+  // hard way, twice, once for each file below). Each stays standalone-only,
+  // e.g. `npx mocha test/direct-peer-channels/03-grant-time-auth.js`.
+  var STANDALONE_ONLY_PEER_CHANNEL_TESTS = {
+    '03-grant-time-auth.js': true, // needs a mismatched --debugKey
+    '04-metering.js':        true  // needs a nonzero --mcpToolCallCost
+  };
+
   peerChannelTestFiles.forEach(function (file) {
+    if (STANDALONE_ONLY_PEER_CHANNEL_TESTS[file] === true) return;
     require('./direct-peer-channels/' + file);
   });
 

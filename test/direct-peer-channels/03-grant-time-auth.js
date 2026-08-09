@@ -15,8 +15,12 @@ var url = 'http://127.0.0.1:9527';
 // server, which the shared --debugKey aabbcc server test8.js starts can
 // never produce (aabbcc always matches there by construction). So this
 // file spawns its own server with a mismatched --debugKey, self-contained
-// like test1.js/test2.js are, and is run standalone (not required from
-// test8.js) -- `npx mocha test/direct-peer-channels/03-grant-time-auth.js`.
+// like test1.js/test2.js are, and is run standalone --
+// `npx mocha test/direct-peer-channels/03-grant-time-auth.js`.
+// test8.js explicitly excludes this filename from its directory sweep for
+// exactly this reason (found the hard way: without that exclusion, this
+// file's own before()/after() collided with test8.js's own server spawn on
+// the same port, producing a confusing unrelated-looking failure).
 describe('direct-peer-channels 03: grant-time authorization (D3)', function() {
   this.timeout(0);
 

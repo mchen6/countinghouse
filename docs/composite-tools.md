@@ -133,11 +133,30 @@ to read. A production composition feature would need to address these:
   flagged as a follow-up if per-worker Redis connections become a real
   constraint.
 - **Metering coverage on the cross-worker call path itself is not
-  centralized.** The platform does not automatically meter every
-  cross-worker `ServiceClient` call — only calls where the calling module's
-  own handler explicitly invokes `CHUtil.recordCall`, as composite-demo
-  does. See `docs/cross-cutting-matrix.md` for the full picture of which
-  entry paths get which cross-cutting guarantees today.
+  centralized — unless `--directPeerChannels` is on.** By default, the
+  platform does not automatically meter every cross-worker `ServiceClient`
+  call — only calls where the calling module's own handler explicitly
+  invokes `CHUtil.recordCall`, as composite-demo does. See
+  `docs/cross-cutting-matrix.md` for the full picture of which entry paths
+  get which cross-cutting guarantees today. `docs/direct-peer-channels.md`'s
+  D5 changes this specifically for the opt-in `--directPeerChannels` path:
+  every hop over a direct peer channel is now metered automatically by the
+  platform (`lib/peer-channel-broker.js`'s `handleMetering`), independent
+  of whether the calling module also meters itself.
+- **Running composite-demo with `--directPeerChannels` on double-bills
+  each hop.** Found while implementing D5: composite-demo's own explicit
+  `CHUtil.recordCall` calls (above) and the platform's new automatic
+  per-hop metering both fire for the same hop when the flag is on —
+  `composite-demo-internal`'s balance was observed dropping by 3× the
+  per-hop cost for a 2-hop call, not 2×. Not fixed here: the correct fix
+  needs a real design decision (an opt-out for modules that already meter
+  themselves, or some other dedup mechanism), not a one-line patch to this
+  demo. composite-demo's own `bill` output is unaffected and still
+  correctly shows exactly one entry per hop (composite-demo doesn't know
+  about the extra platform-level charge) — this only affects the
+  underlying balance, not the acceptance-bar-relevant bill shape. See
+  `docs/cross-cutting-matrix.md`'s direct-peer-channel row and
+  `docs/direct-peer-channels.md` for the verification that found this.
 
 ## Files
 
