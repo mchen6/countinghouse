@@ -59,33 +59,45 @@ needed to call a known module.
 
 ## In-composition metering
 
-Each inner hop is metered independently. After each `ServiceClient.invoke`
-call succeeds, the handler
-(`pre-installed-packages/composite-demo/com-countinghouse-compositeService-run.js`)
-calls `CHUtil.recordCall(apiKey, tool, cost, callback)` — the same
-`MeteringProvider.recordCall` used everywhere else in the platform
-(HTTP `invoke-action`, MCP `tools/call`) — once per hop, with a label
-identifying which module and action was called. The resulting `charged`
-and `balance` are appended to the `bill` array that becomes part of the
-tool's own MCP-visible output, so a caller can see exactly which inner
-modules were invoked and what each hop cost, without needing separate
-observability tooling.
+**Billing authority principle**: platform automatic metering is the sole
+thing that ever deducts balance for a cross-worker call — on *both* the
+main-thread-routed path (`DeviceManager.prototype.sendInvokeActionMessageToWorker`)
+and the opt-in `--directPeerChannels` path
+(`PeerChannelBroker.prototype.handleMeteringRequest`), unconditionally.
+Every module composing other modules' actions (like this one) gets billing
+for free, automatically, once per hop, without calling anything itself —
+and *cannot* double-bill a hop by also metering it, because the module-facing
+API for that (`CHUtil.recordUsage`, see below) no longer touches balance at
+all.
 
-This required one platform-level fix: `CdifInterface` previously only
-constructed a working `meteringProvider` in the main thread
-(`isMainThread === true`), so `CHUtil.recordCall` failed inside every
-device module's own worker. `lib/countinghouse-interface.js` now
-constructs the provider unconditionally, and `CHUtil.recordCall`
-(`lib/countinghouse-util.js`) is a thin passthrough to
-`CdifInterface.prototype.recordCall`. This is a real fix, not scoped to
-the demo — any module can now call `CHUtil.recordCall` from inside its own
-worker.
+Each inner hop is still metered independently, but the metering now
+originates from the platform, not from composite-demo's own handler. The
+real `{apiKey, tool, charged, balance}` result is threaded back to the
+calling module as a 3rd, additive argument on `ServiceClient.invoke()`'s
+callback — `function(err, data, platformMetering) {...}` — deliberately
+*never* merged into `data` itself: `data` is the hop's own action output,
+and some modules (e.g. `echo-device-client-module`) pass it straight
+through as their own action's return value, so an extra field injected
+into it would fail that pass-through's own output schema validation. The
+handler
+(`pre-installed-packages/composite-demo/com-countinghouse-compositeService-run.js`)
+reads `platformMetering.charged`/`.balance` off that 3rd argument to build
+the `bill` array that becomes part of the tool's own MCP-visible output,
+so a caller can see exactly which inner modules were invoked and what each
+hop cost, without needing separate observability tooling.
+
+Separately, composite-demo also calls `CHUtil.recordUsage(apiKey, tool,
+cost, callback)` per hop — purely as its own app-layer audit trail. This
+is *not* what produces `bill`'s numbers and has no effect on balance (see
+`lib/countinghouse-util.js`'s own comment on `recordUsage`); a module that
+doesn't want its own bookkeeping trail can skip calling it entirely and
+still bill correctly, since the platform's own metering is unconditional.
 
 A metering failure on one hop does not fail the whole composite call: the
-inner action has already succeeded by the time `recordCall` runs, so a
-gap is recorded in the bill (`charged`/`balance` set to `null`) rather than
-returning an error for what the caller experiences as a successful
-request.
+inner action has already succeeded by the time the platform's metering
+runs, so a gap is recorded in the bill (`charged`/`balance` set to `null`)
+rather than returning an error for what the caller experiences as a
+successful request.
 
 ### Example
 
@@ -115,48 +127,45 @@ to read. A production composition feature would need to address these:
 
 - **The outer caller's real API key is not threaded through to inner
   hops.** `composite-demo` uses a fixed internal identity
-  (`composite-demo-internal`) for every inner `ServiceClient` and every
-  `recordCall`, so all composite-demo billing shows up under one key
-  regardless of who actually called the tool. A real implementation would
-  need to pass the calling MCP client's apiKey (or a derived, scoped
-  credential) down through the `ServiceClient` chain, and decide how
-  `checkBalance`/`rateLimit` should apply at each layer — checked once at
-  the outer call, or independently at every hop.
+  (`composite-demo-internal`) for every inner `ServiceClient`, so all
+  composite-demo billing shows up under one key regardless of who actually
+  called the tool. A real implementation would need to pass the calling
+  MCP client's apiKey (or a derived, scoped credential) down through the
+  `ServiceClient` chain, and decide how `checkBalance`/`rateLimit` should
+  apply at each layer — checked once at the outer call, or independently
+  at every hop.
 - **Per-hop cost is hardcoded** (`HOP_COST = 1` in
   `com-countinghouse-compositeService-run.js`), not looked up from each
   target module's own declared pricing.
-- **`recordCall` runs a Redis connection per worker thread**, now that
+- **Metering runs a Redis connection per worker thread**, now that
   `CdifInterface` builds a `meteringProvider` unconditionally. An
   alternative would route metering calls through the existing worker→main
   message channel the way `lib/redis-api.js` proxies raw Redis commands,
   avoiding N extra Redis connections for N worker threads. Not built here;
   flagged as a follow-up if per-worker Redis connections become a real
   constraint.
-- **Metering coverage on the cross-worker call path itself is not
-  centralized — unless `--directPeerChannels` is on.** By default, the
-  platform does not automatically meter every cross-worker `ServiceClient`
-  call — only calls where the calling module's own handler explicitly
-  invokes `CHUtil.recordCall`, as composite-demo does. See
-  `docs/cross-cutting-matrix.md` for the full picture of which entry paths
-  get which cross-cutting guarantees today. `docs/direct-peer-channels.md`'s
-  D5 changes this specifically for the opt-in `--directPeerChannels` path:
-  every hop over a direct peer channel is now metered automatically by the
-  platform (`lib/peer-channel-broker.js`'s `handleMetering`), independent
-  of whether the calling module also meters itself.
-- **Running composite-demo with `--directPeerChannels` on double-bills
-  each hop.** Found while implementing D5: composite-demo's own explicit
-  `CHUtil.recordCall` calls (above) and the platform's new automatic
-  per-hop metering both fire for the same hop when the flag is on —
-  `composite-demo-internal`'s balance was observed dropping by 3× the
-  per-hop cost for a 2-hop call, not 2×. Not fixed here: the correct fix
-  needs a real design decision (an opt-out for modules that already meter
-  themselves, or some other dedup mechanism), not a one-line patch to this
-  demo. composite-demo's own `bill` output is unaffected and still
-  correctly shows exactly one entry per hop (composite-demo doesn't know
-  about the extra platform-level charge) — this only affects the
-  underlying balance, not the acceptance-bar-relevant bill shape. See
-  `docs/cross-cutting-matrix.md`'s direct-peer-channel row and
-  `docs/direct-peer-channels.md` for the verification that found this.
+- **Fixed: metering coverage on the cross-worker call path is now
+  centralized on both paths, and composite-demo no longer double-bills.**
+  Originally, only the opt-in `--directPeerChannels` path metered a
+  cross-worker call automatically; the main-thread-routed (default) path
+  didn't, so composite-demo metered itself explicitly via
+  `CHUtil.recordCall`. Once `--directPeerChannels`'s automatic metering
+  was added (D5), turning the flag on made composite-demo double-bill
+  every hop — its own `recordCall` and the platform's new automatic
+  metering both fired for the same call, dropping
+  `composite-demo-internal`'s balance by 3× the per-hop cost for a 2-hop
+  call, not 2×. The real fix (see the "billing authority" principle
+  above): platform automatic metering was extended to the
+  main-thread-routed path too, so it is unconditionally the *only* thing
+  that ever deducts balance on *either* path; the module-facing
+  `CHUtil.recordCall` was removed and replaced with `CHUtil.recordUsage`,
+  which is app-layer bookkeeping only and never touches balance, so a
+  module literally cannot double-bill itself through that API anymore.
+  `test/direct-peer-channels/06-no-double-billing.js` asserts a 2-hop
+  composite call deducts exactly 2× cost (not 3×) and `bill` still shows
+  2 independent records, in both flag states. See
+  `docs/cross-cutting-matrix.md`'s direct-peer-channel rows for the
+  updated per-path guarantee.
 
 ## Files
 
@@ -164,5 +173,15 @@ to read. A production composition feature would need to address these:
   (`uppercase` action), exists only so composite-demo has two distinct
   inner modules to chain, rather than calling echo-device-module twice.
 - `pre-installed-packages/composite-demo/` — the composite tool itself.
-- `lib/countinghouse-interface.js`, `lib/countinghouse-util.js` — the
-  `meteringProvider`/`CHUtil.recordCall` fix described above.
+- `lib/countinghouse-interface.js` — the `meteringProvider` per-worker-thread
+  construction fix.
+- `lib/countinghouse-util.js` — `CHUtil.recordUsage` (app-layer bookkeeping,
+  no balance effect; replaces the removed `CHUtil.recordCall`).
+- `lib/device-manager.js`, `lib/peer-channel-broker.js`,
+  `lib/peer-channel.js`, `lib/session.js`, `lib/worker-message.js`,
+  `lib/sandbox.js` — automatic platform metering on both cross-worker call
+  paths (the "billing authority" principle above) and the `platformMetering`
+  3rd callback argument that carries it back to a calling module without
+  touching `data`.
+- `test/direct-peer-channels/06-no-double-billing.js` — the double-billing
+  regression test, both flag states.

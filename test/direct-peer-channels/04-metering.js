@@ -17,20 +17,18 @@ var url = 'http://127.0.0.1:9527';
 //
 // Uses echo-device-client-module (服务名称/API名称), not composite-demo:
 // that action calls echo-device-module *without* the calling module doing
-// any explicit CHUtil.recordCall of its own, which is exactly what D5 is
+// any explicit CHUtil.recordUsage of its own, which is exactly what D5 is
 // meant to cover (a module that doesn't meter itself still gets billed).
-// composite-demo *also* calls CHUtil.recordCall explicitly per hop (see
-// docs/composite-tools.md) -- manual verification during this feature's
-// implementation found that this causes real, reproducible double-billing
-// once --directPeerChannels is on (composite-demo-internal's balance moved
-// by 3x cost for a 2-hop call, not 2x), a genuine finding recorded in
-// docs/composite-tools.md's known-simplifications section and
-// docs/cross-cutting-matrix.md's direct-peer-channel row rather than
-// silently fixed by changing composite-demo's code (the correct fix needs
-// an opt-out mechanism for modules that already meter themselves, a real
-// design decision out of this step's scope). Testing through
-// echo-device-client-module instead keeps this test's assertion
-// unambiguous: exactly one recordCall should fire for exactly one hop.
+// composite-demo *also* calls CHUtil.recordUsage per hop, purely as its
+// own app-layer bookkeeping now (see docs/composite-tools.md's "billing
+// authority" principle) -- it used to call the balance-deducting
+// CHUtil.recordCall there too, which caused real, reproducible
+// double-billing once --directPeerChannels was on (composite-demo-internal's
+// balance moved by 3x cost for a 2-hop call, not 2x); see
+// test/direct-peer-channels/06-no-double-billing.js for the composite-demo
+// case specifically, now fixed. Testing through echo-device-client-module
+// here keeps this test's assertion unambiguous: exactly one platform
+// metering charge should fire for exactly one hop.
 describe('direct-peer-channels 04: automatic metering on the direct path (D5)', function() {
   this.timeout(0);
 
@@ -74,19 +72,19 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
         if (err) return done(err);
         if (body.output == null) return done(new Error('direct-peer-channels 04 fail: invoke did not succeed: ' + JSON.stringify(body)));
 
-        // recordCall is fire-and-forget from lib/peer-channel-broker.js's
-        // handleMetering (see its comment) -- give it a moment to land in
-        // redis before reading the balance back.
-        setTimeout(function() {
-          getBalance(function(err, after) {
-            if (err) return done(err);
-            var delta = before - after;
-            if (delta !== 1) {
-              return done(new Error('direct-peer-channels 04 fail: expected balance to drop by exactly 1 (one recordCall for one hop, cost=1), dropped by ' + delta + ' (before=' + before + ', after=' + after + ')'));
-            }
-            return done();
-          });
-        }, 500);
+        // Metering is a synchronous request/reply now (see
+        // lib/peer-channel-broker.js's handleMeteringRequest and
+        // lib/device-manager.js's onPeerChannelOpen): invoke()'s own
+        // callback above only fires after the metering charge has already
+        // landed, so no settling delay is needed before reading balance.
+        getBalance(function(err, after) {
+          if (err) return done(err);
+          var delta = before - after;
+          if (delta !== 1) {
+            return done(new Error('direct-peer-channels 04 fail: expected balance to drop by exactly 1 (one charge for one hop, cost=1), dropped by ' + delta + ' (before=' + before + ', after=' + after + ')'));
+          }
+          return done();
+        });
       });
     });
   });

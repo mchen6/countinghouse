@@ -40,9 +40,10 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
   // hard way, twice, once for each file below). Each stays standalone-only,
   // e.g. `npx mocha test/direct-peer-channels/03-grant-time-auth.js`.
   var STANDALONE_ONLY_PEER_CHANNEL_TESTS = {
-    '03-grant-time-auth.js': true, // needs a mismatched --debugKey
-    '04-metering.js':        true, // needs a nonzero --mcpToolCallCost
-    '05-backpressure.js':    true  // needs a low --directPeerChannelsMaxConcurrency
+    '03-grant-time-auth.js':     true, // needs a mismatched --debugKey
+    '04-metering.js':            true, // needs a nonzero --mcpToolCallCost
+    '05-backpressure.js':        true, // needs a low --directPeerChannelsMaxConcurrency
+    '06-no-double-billing.js':   true  // needs its own --debugKey/--loadModule set (composite-demo) and runs both flag states itself
   };
 
   peerChannelTestFiles.forEach(function (file) {

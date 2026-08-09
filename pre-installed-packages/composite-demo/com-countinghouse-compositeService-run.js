@@ -1,5 +1,7 @@
-// Demo-fixed per-hop cost. A real deployment would look this up from each
-// target module's own declared pricing rather than hardcoding it here.
+// Demo-fixed per-hop cost, used only for this module's own app-layer
+// audit trail (CHUtil.recordUsage below). The real per-hop charge/balance
+// in `bill` comes from the platform's own automatic metering instead (see
+// recordHop).
 var HOP_COST = 1;
 
 function run(args, callback) {
@@ -16,37 +18,47 @@ function run(args, callback) {
 
   var bill = [];
 
-  function recordHop(tool, next) {
-    CHUtil.recordCall(_this.internalApiKey, tool, HOP_COST, function(err, result) {
-      // a metering failure shouldn't take down the whole composite call --
-      // the hop itself already succeeded, so note the gap in the bill and
-      // keep going, rather than failing the caller's request over
-      // bookkeeping.
-      bill.push({
-        hop:     bill.length + 1,
-        tool:    tool,
-        charged: (err == null) ? result.charged : null,
-        balance: (err == null) ? result.balance : null
-      });
-      return next();
+  // `platformMetering` is populated automatically by the platform as a 3rd,
+  // additive arg on every cross-worker ServiceClient.invoke() reply, on
+  // both the main-thread-routed and --directPeerChannels paths (see
+  // lib/device-manager.js's sendInvokeActionMessageToWorker and
+  // lib/peer-channel-broker.js's handleMeteringRequest) -- it is the only
+  // thing that ever deducts balance for a hop. Deliberately never merged
+  // into `data` itself: `data` is the hop's own action output, and some
+  // modules pass it straight through as their own return value, so an
+  // extra field there would break that pass-through's own output
+  // validation. CHUtil.recordUsage is this module's own app-layer
+  // bookkeeping only and never touches balance (see its comment in
+  // lib/countinghouse-util.js); this file used to call the
+  // balance-deducting CHUtil.recordCall here too, which double-billed
+  // every hop.
+  function recordHop(tool, platformMetering, next) {
+    CHUtil.recordUsage(_this.internalApiKey, tool, HOP_COST, function() {});
+
+    bill.push({
+      hop:     bill.length + 1,
+      tool:    tool,
+      charged: (platformMetering != null) ? platformMetering.charged : null,
+      balance: (platformMetering != null) ? platformMetering.balance : null
     });
+    return next();
   }
 
   // hop 1: transform-demo/uppercase
-  this.transformClient.invoke({actionName: 'uppercase', input: {text: input.text}}, function(err, data) {
+  this.transformClient.invoke({actionName: 'uppercase', input: {text: input.text}}, function(err, data, platformMetering) {
     if (err != null) return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', err.message), null);
 
     var upperText = data.output.text;
 
-    recordHop('transform-demo/uppercase', function() {
+    recordHop('transform-demo/uppercase', platformMetering, function() {
       // hop 2: echo-device-module/echo -- echo's own input schema requires
       // {foo: array, bar: string}, so the uppercased text rides along as `bar`
-      _this.echoClient.invoke({actionName: 'echo', input: {foo: [], bar: upperText}}, function(err, data) {
+      _this.echoClient.invoke({actionName: 'echo', input: {foo: [], bar: upperText}}, function(err, data, platformMetering) {
         if (err != null) return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', err.message), null);
 
         var finalText = data.output.bar;
 
-        recordHop('echo-device-module/echo', function() {
+        recordHop('echo-device-module/echo', platformMetering, function() {
           return callback(null, {
             output: {
               finalText: finalText,
