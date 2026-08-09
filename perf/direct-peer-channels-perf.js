@@ -16,12 +16,22 @@
 // overhead, but that overhead is identical in both conditions, so it
 // doesn't distort the relative comparison between them.
 //
+// This script computes its own comparison summary (p50 improvement range,
+// throughput win count, p99 win/loss per cell) from whatever numbers it
+// actually measured -- a hand-written summary sentence in
+// docs/direct-peer-channels.md can silently drift from the table next to
+// it (this happened once already: "1.3-7x" and "7 of 9" were both wrong
+// against the table they described, found and fixed after the fact). The
+// rule going forward: docs/direct-peer-channels.md's prose may only
+// quote numbers this script printed, copy-pasted from a real run --
+// nothing hand-computed or hand-remembered.
+//
 // Usage: node perf/direct-peer-channels-perf.js
 // Starts and stops its own server for each condition; takes several
 // minutes for the full 2 x 3 x 3 matrix (conditions x payload sizes x
-// concurrency levels). Writes results as JSON to stdout at the end (also
-// printed as a table) -- docs/direct-peer-channels.md's numbers come from
-// a run of this script.
+// concurrency levels). Prints a markdown table and a plain-language
+// summary to stdout, ready to paste into docs/direct-peer-channels.md,
+// followed by the raw JSON for archival/scripting use.
 
 var cp = require('child_process');
 var path = require('path');
@@ -155,10 +165,84 @@ async function benchmarkCondition(directPeerChannels) {
   return results;
 }
 
+function formatPayload(bytes) {
+  if (bytes >= 1048576) return (bytes / 1048576) + 'MB';
+  if (bytes >= 1024) return (bytes / 1024) + 'KB';
+  return bytes + 'B';
+}
+
+function cellKeys() {
+  var keys = [];
+  for (var s = 0; s < PAYLOAD_SIZES.length; s++) {
+    for (var c = 0; c < CONCURRENCY_LEVELS.length; c++) {
+      keys.push({key: PAYLOAD_SIZES[s] + ':' + CONCURRENCY_LEVELS[c], payload: PAYLOAD_SIZES[s], concurrency: CONCURRENCY_LEVELS[c]});
+    }
+  }
+  return keys;
+}
+
+// Builds the markdown table plus a plain-language summary computed from
+// the actual measured numbers -- see this file's header comment for why
+// this exists (docs/direct-peer-channels.md's prose must only quote
+// numbers this function produced, not hand-computed ones).
+function buildReport(mainThreadRouted, directPeerChannels) {
+  var keys = cellKeys();
+
+  var rows = ['| Payload | Concurrency | Main-thread-routed p50 / p99 | Direct peer channel p50 / p99 | Throughput (main-thread / direct) |', '|---|---|---|---|---|'];
+  var p50Ratios = [];   // {key, ratio} -- mainP50 / directP50; >1 means direct is faster
+  var throughputWins = []; // keys where direct throughput > main throughput
+  var throughputLosses = [];
+  var p99Wins = [];     // keys where direct p99 < main p99
+  var p99Losses = [];
+
+  keys.forEach(function(k) {
+    var m = mainThreadRouted[k.key];
+    var d = directPeerChannels[k.key];
+
+    rows.push('| ' + formatPayload(k.payload) + ' | ' + k.concurrency + ' | ' +
+      m.hopP50.toFixed(2) + 'ms / ' + m.hopP99.toFixed(2) + 'ms | ' +
+      d.hopP50.toFixed(2) + 'ms / ' + d.hopP99.toFixed(2) + 'ms | ' +
+      m.throughputRps.toFixed(0) + ' / ' + d.throughputRps.toFixed(0) + ' req/s |');
+
+    var ratio = m.hopP50 / d.hopP50;
+    p50Ratios.push({key: k.key, label: formatPayload(k.payload) + '/c=' + k.concurrency, ratio: ratio});
+
+    if (d.throughputRps > m.throughputRps) throughputWins.push(k.key);
+    else throughputLosses.push(k.key);
+
+    if (d.hopP99 < m.hopP99) p99Wins.push({label: formatPayload(k.payload) + '/c=' + k.concurrency, main: m.hopP99, direct: d.hopP99});
+    else p99Losses.push({label: formatPayload(k.payload) + '/c=' + k.concurrency, main: m.hopP99, direct: d.hopP99});
+  });
+
+  var minRatio = p50Ratios.reduce(function(a, b) { return a.ratio < b.ratio ? a : b; });
+  var maxRatio = p50Ratios.reduce(function(a, b) { return a.ratio > b.ratio ? a : b; });
+
+  var summary = [];
+  summary.push('**p50**: direct peer channels are faster than main-thread-routed in ' +
+    p50Ratios.filter(function(r) { return r.ratio > 1; }).length + ' of ' + p50Ratios.length +
+    ' cells, ranging from ' + minRatio.ratio.toFixed(2) + '× (at ' + minRatio.label + ') to ' +
+    maxRatio.ratio.toFixed(2) + '× (at ' + maxRatio.label + ').');
+
+  summary.push('**Throughput**: direct peer channels win on ' + throughputWins.length + ' of ' + keys.length +
+    ' cells' + (throughputWins.length > 0 ? ' (' + throughputWins.map(function(k) { return k.replace(':', '/c='); }).join(', ') + ')' : '') +
+    (throughputLosses.length > 0 ? '; main-thread-routed wins on the remaining ' + throughputLosses.length +
+      ' (' + throughputLosses.map(function(k) { return k.replace(':', '/c='); }).join(', ') + ')' : '') + '.');
+
+  summary.push('**p99**: direct peer channels are lower in ' + p99Wins.length + ' of ' + keys.length + ' cells' +
+    (p99Losses.length > 0 ? '; higher (worse) in ' + p99Losses.length + ': ' +
+      p99Losses.map(function(l) { return l.label + ' (' + l.main.toFixed(2) + 'ms main vs. ' + l.direct.toFixed(2) + 'ms direct)'; }).join(', ') : '') + '.');
+
+  return {table: rows.join('\n'), summary: summary.join('\n\n')};
+}
+
 async function main() {
   var mainThreadRouted = await benchmarkCondition(false);
   var directPeerChannels = await benchmarkCondition(true);
 
+  var report = buildReport(mainThreadRouted, directPeerChannels);
+
+  console.log('\n' + report.table + '\n');
+  console.log(report.summary + '\n');
   console.log(JSON.stringify({mainThreadRouted: mainThreadRouted, directPeerChannels: directPeerChannels}, null, 2));
 }
 

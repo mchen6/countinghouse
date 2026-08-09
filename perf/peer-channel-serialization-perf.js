@@ -12,7 +12,11 @@
 //
 // Usage: node perf/peer-channel-serialization-perf.js
 // Self-contained -- spins up its own worker, no countinghouse server
-// involved. Takes well under a minute.
+// involved. Takes well under a minute. Prints a markdown table and a
+// summary computed from the actual measured numbers (not hand-written --
+// see perf/direct-peer-channels-perf.js's header comment for why that
+// distinction matters: a hand-computed "2.7-3.7x" claim for this exact
+// benchmark once quietly ignored the 1KB row, which only showed ~1.1x).
 
 var Worker = require('worker_threads').Worker;
 var isMainThread = require('worker_threads').isMainThread;
@@ -106,9 +110,45 @@ async function mainThreadMain() {
     }
   }
 
+  var report = buildReport(results);
+  console.log('\n' + report.table + '\n');
+  console.log(report.summary + '\n');
   console.log(JSON.stringify(results, null, 2));
   channel.port1.close();
   await worker.terminate();
+}
+
+function formatPayload(bytes) {
+  if (bytes >= 1048576) return (bytes / 1048576) + 'MB';
+  if (bytes >= 1024) return (bytes / 1024) + 'KB';
+  return bytes + 'B';
+}
+
+function buildReport(results) {
+  var rows = ['| Payload | `JSON.stringify` p50 | Structured clone p50 | Transfer list p50 |', '|---|---|---|---|'];
+  var ratios = []; // stringify p50 / structuredClone p50, per payload size -- >1 means structuredClone is faster
+  var winners = [];
+
+  PAYLOAD_SIZES.forEach(function(sizeBytes) {
+    var r = results[sizeBytes];
+    var fastest = ['stringify', 'structuredClone', 'transferBuffer'].reduce(function(a, b) { return r[a].p50 < r[b].p50 ? a : b; });
+    winners.push({payload: formatPayload(sizeBytes), fastest: fastest});
+
+    var bold = function(strategy) { return strategy === fastest ? '**' + r[strategy].p50.toFixed(2) + 'ms**' : r[strategy].p50.toFixed(2) + 'ms'; };
+    rows.push('| ' + formatPayload(sizeBytes) + ' | ' + bold('stringify') + ' | ' + bold('structuredClone') + ' | ' + bold('transferBuffer') + ' |');
+
+    ratios.push({payload: formatPayload(sizeBytes), ratio: r.stringify.p50 / r.structuredClone.p50});
+  });
+
+  var minRatio = ratios.reduce(function(a, b) { return a.ratio < b.ratio ? a : b; });
+  var maxRatio = ratios.reduce(function(a, b) { return a.ratio > b.ratio ? a : b; });
+  var allStructuredCloneWins = winners.every(function(w) { return w.fastest === 'structuredClone'; });
+
+  var summary = 'Fastest strategy per payload size: ' + winners.map(function(w) { return w.payload + '=' + w.fastest; }).join(', ') + '.' +
+    (allStructuredCloneWins ? ' Structured clone wins at every size tested.' : '') +
+    ' Structured clone vs. `JSON.stringify` ratio ranges from ' + minRatio.ratio.toFixed(2) + '× (at ' + minRatio.payload + ') to ' + maxRatio.ratio.toFixed(2) + '× (at ' + maxRatio.payload + ').';
+
+  return {table: rows.join('\n'), summary: summary};
 }
 
 function workerMain() {

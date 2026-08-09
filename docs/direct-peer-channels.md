@@ -52,33 +52,48 @@ trip (that overhead is identical in both conditions, so it doesn't distort
 the comparison). 150 requests per cell, both conditions run against a
 fresh server.
 
+Every number below, and every comparative statement about it, is
+copy-pasted verbatim from a single run of `perf/direct-peer-channels-perf.js`
+(which computes the comparison itself — see that file's header comment for
+why hand-written summaries are not allowed here anymore: an earlier
+version of this section claimed "1.3–7×" and "match or beat throughput on
+7 of 9", and both were wrong against the very table they described).
+
 | Payload | Concurrency | Main-thread-routed p50 / p99 | Direct peer channel p50 / p99 | Throughput (main-thread / direct) |
 |---|---|---|---|---|
-| 1KB | 1 | 1.38ms / 25.01ms | **1.07ms / 5.22ms** | 113 / **127** req/s |
-| 1KB | 16 | 11.04ms / 30.40ms | **2.02ms / 10.12ms** | 278 / 260 req/s |
-| 1KB | 64 | 14.64ms / 42.85ms | **2.18ms / 51.50ms** | 367 / 240 req/s |
-| 100KB | 1 | 1.26ms / 6.85ms | **1.10ms / 8.30ms** | 172 / 137 req/s |
-| 100KB | 16 | 7.18ms / 23.54ms | **2.61ms / 9.94ms** | 347 / 314 req/s |
-| 100KB | 64 | 34.73ms / 103.52ms | **3.63ms / 11.91ms** | 279 / **385** req/s |
-| 1MB | 1 | 22.99ms / 68.47ms | **15.20ms / 44.79ms** | 35 / **48** req/s |
-| 1MB | 16 | 197.90ms / 338.40ms | **148.96ms / 244.98ms** | 38 / **54** req/s |
-| 1MB | 64 | 607.69ms / 713.35ms | **417.37ms / 862.82ms** | 40 / **63** req/s |
+| 1KB | 1 | 1.04ms / 7.80ms | 0.74ms / 3.95ms | 148 / 162 req/s |
+| 1KB | 16 | 7.07ms / 20.89ms | 1.61ms / 6.62ms | 352 / 300 req/s |
+| 1KB | 64 | 13.59ms / 38.70ms | 1.62ms / 9.42ms | 386 / 276 req/s |
+| 100KB | 1 | 1.14ms / 8.28ms | 0.98ms / 9.06ms | 185 / 175 req/s |
+| 100KB | 16 | 9.76ms / 23.41ms | 2.91ms / 10.27ms | 199 / 391 req/s |
+| 100KB | 64 | 18.97ms / 55.82ms | 2.45ms / 14.13ms | 289 / 387 req/s |
+| 1MB | 1 | 20.42ms / 53.81ms | 13.16ms / 44.56ms | 37 / 54 req/s |
+| 1MB | 16 | 185.80ms / 261.98ms | 122.59ms / 185.65ms | 47 / 64 req/s |
+| 1MB | 64 | 412.44ms / 521.17ms | 335.82ms / 726.45ms | 52 / 76 req/s |
 
-Direct peer channels win on p50 latency at every combination tested, by
-1.3–7× depending on payload/concurrency, and match or beat throughput on
-7 of 9. These numbers already include the backpressure fix described
-below — see that section for what changed and why, and for the honest
-caveat these numbers don't fully resolve (queueing means the highest
-combination still costs real wall-clock time, it's just no longer worse
-than the alternative).
+**p50**: direct peer channels are faster than main-thread-routed in 9 of 9
+cells, ranging from 1.16× (at 100KB/c=1) to 8.38× (at 1KB/c=64).
 
-Absolute numbers at a given payload/concurrency cell vary noticeably
-run-to-run under sustained load (an earlier run of this exact 1MB/64-way
-cell measured 360ms for main-thread-routed and 842ms for the pre-fix
-direct path, on the same hardware) — read the *relative* comparison
-within a single run as the signal, not any individual absolute figure.
-Re-run `perf/direct-peer-channels-perf.js` yourself before relying on
-precise numbers for capacity planning.
+**Throughput**: direct peer channels win on 6 of 9 cells (1024/c=1,
+102400/c=16, 102400/c=64, 1048576/c=1, 1048576/c=16, 1048576/c=64);
+main-thread-routed wins on the remaining 3 (1024/c=16, 1024/c=64,
+102400/c=1).
+
+**p99**: direct peer channels are lower in 7 of 9 cells; higher (worse) in
+2: 100KB/c=1 (8.28ms main vs. 9.06ms direct), 1MB/c=64 (521.17ms main vs.
+726.45ms direct).
+
+These numbers already include the backpressure fix described below — see
+that section for what changed and why. Absolute numbers at a given
+payload/concurrency cell vary noticeably run-to-run under sustained load —
+a different run of this exact script, also post-fix, measured 417ms
+(direct) vs. 608ms (main-thread-routed) at 1MB/c=64, both different from
+the 336ms/412ms shown in the table above. Read the *relative* comparison
+within a single run as the signal (direct has never lost the 1MB/c=64
+cell's p50 across any post-fix run so far), not any individual absolute
+figure. Re-run `perf/direct-peer-channels-perf.js` yourself — it will
+print its own fresh summary — before relying on precise numbers for
+capacity planning.
 
 ## Backpressure
 
@@ -146,27 +161,36 @@ structured clone), and encoding into a `Buffer`/`ArrayBuffer` transferred
 via the `postMessage` transfer list (zero-copy ownership transfer). 300
 round trips per cell.
 
+Table and summary below are copy-pasted verbatim from a single run of
+`perf/peer-channel-serialization-perf.js`, which computes the summary
+itself (see that file's header comment: an earlier hand-written "2.7–3.7×"
+claim here silently ignored the 1KB row, which only ever showed a much
+smaller ratio).
+
 | Payload | `JSON.stringify` p50 | Structured clone p50 | Transfer list p50 |
 |---|---|---|---|
-| 1KB | 0.30ms | **0.27ms** | 0.35ms |
-| 100KB | 1.21ms | **0.32ms** | 1.98ms |
-| 1MB | 24.43ms | **8.90ms** | 27.48ms |
+| 1KB | 0.27ms | **0.22ms** | 0.27ms |
+| 100KB | 0.95ms | **0.36ms** | 1.61ms |
+| 1MB | 23.65ms | **9.02ms** | 27.09ms |
 
-Structured clone (posting the plain object directly) wins decisively at
-every payload size tested, by 2.7–3.7× over `JSON.stringify` and by even
-more over the transfer-list approach. This is the opposite conclusion
-from the one `lib/worker-message.js`'s pre-existing comment cites — a 2016
-blog post that measured `JSON.stringify` as faster for the old,
-main-thread-routed protocol — confirming this needed re-measuring on the
-current Node target rather than assumed to still hold, per this project's
-own stated rule about not carrying forward unverified performance claims.
-The transfer-list approach loses specifically because the payloads here
-start as JS objects: encoding to a `Buffer` and decoding back on the
-other side costs more than structured clone's native object copy saves;
-transfer-list ownership transfer would likely still win for payloads that
-are *already* binary (e.g. actual file/image data passed as a `Buffer`
-throughout, never JSON), which this benchmark doesn't cover and this
-codebase doesn't yet have a use case for.
+Fastest strategy per payload size: 1KB=structuredClone, 100KB=structuredClone,
+1MB=structuredClone. Structured clone wins at every size tested.
+Structured clone vs. `JSON.stringify` ratio ranges from 1.22× (at 1KB) to
+2.62× (at 1MB).
+
+This is the opposite conclusion from the one `lib/worker-message.js`'s
+pre-existing comment cites — a 2016 blog post that measured
+`JSON.stringify` as faster for the old, main-thread-routed protocol —
+confirming this needed re-measuring on the current Node target rather
+than assumed to still hold, per this project's own stated rule about not
+carrying forward unverified performance claims. The transfer-list
+approach loses specifically because the payloads here start as JS
+objects: encoding to a `Buffer` and decoding back on the other side costs
+more than structured clone's native object copy saves; transfer-list
+ownership transfer would likely still win for payloads that are *already*
+binary (e.g. actual file/image data passed as a `Buffer` throughout,
+never JSON), which this benchmark doesn't cover and this codebase doesn't
+yet have a use case for.
 
 **Decision: `lib/peer-channel.js` keeps posting plain objects
 (structured clone).** This is what it already did before this benchmark
