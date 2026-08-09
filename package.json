@@ -43,7 +43,6 @@
     "chokidar": "^3.5.0",
     "cors": "^2.8.1",
     "express": "^4.22.2",
-    "express-http-proxy": "^1.2.0",
     "express-ws": "^5.0.2",
     "ioredis": "^5.11.1",
     "isbinaryfile": "^4.0.6",
