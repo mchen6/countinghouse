@@ -21,7 +21,7 @@ describe('test14: invoke error expect fault as an object', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.message.startsWith('设备调用失败') === false
+      if (res.body.code !== 'DEVICE_INVOKE_FAIL'
         || res.body.fault.reason !== 'err'
         || res.body.fault.info !== '222'
       ) {

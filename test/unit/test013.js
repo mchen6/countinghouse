@@ -21,7 +21,7 @@ describe('test13: invoke with timeout', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.message !== '设备无响应') {
+      if (res.body.code !== 'DEVICE_NOT_RESPONDING') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test13 invoke with timeout fail'));

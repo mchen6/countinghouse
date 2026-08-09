@@ -20,7 +20,7 @@ describe('test11: invoke specify incorrect input type', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('输入数据校验错误') === false || res.body.fault.reason !== '空数据') {
+      if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL' || res.body.fault.reason !== '空数据') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test11 invoke specify incorrect input type fail'));

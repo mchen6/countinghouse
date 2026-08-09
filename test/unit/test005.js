@@ -20,7 +20,7 @@ describe('test5: invoke without specifying actionName', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未找到actionName') === false) {
+      if (res.body.code !== 'ACTIONNAME_NOT_AVAILABLE') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test invoke without specifying actionName fail'));

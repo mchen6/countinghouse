@@ -21,7 +21,7 @@ describe('test15: invoke error expect fault as a string', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.message.startsWith('设备调用失败') === false
+      if (res.body.code !== 'DEVICE_INVOKE_FAIL'
         || res.body.fault !== '333'
       ) {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));

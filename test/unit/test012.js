@@ -21,7 +21,7 @@ describe('test12: invoke specify input validation', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.message.startsWith('输入数据校验错误') === false
+      if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL'
         || res.body.fault.reason !== '数据校验失败'
         || res.body.fault.info.dataPath == null
         || res.body.fault.info.schemaPath == null

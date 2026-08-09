@@ -20,7 +20,7 @@ describe('test4: invoke with unknown serviceID', function() {
     .expect('Content-Type', /[json | text]/)
     .expect(500, function(err, res) {
       if (err) return done(err);
-      if (res.body.message.startsWith('未知服务') === false) {
+      if (res.body.code !== 'SERVICE_NOT_FOUND') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test invoke with unknown serviceID fail'));

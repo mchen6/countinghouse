@@ -22,7 +22,7 @@ describe('test29: invoke action which throw async exception', function() {
       if (err) return done(err);
 
       if (res.body.topic !== 'device error' ||
-          res.body.message !== '设备接口调用抛出异常' ||
+          res.body.code !== 'DEVICE_INVOKE_EXCEPTION' ||
           res.body.fault == null ||
           res.body.fault.message.startsWith('Cannot read properties of null') === false
       ) {

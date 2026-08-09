@@ -21,7 +21,7 @@ describe('test20: invoke return function type as output', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.message.startsWith('输出数据校验错误') === false || res.body.fault.reason !== '未找到输出参数') {
+      if (res.body.code !== 'OUTPUT_DATA_VALIDATION_FAIL' || res.body.fault.reason !== '未找到输出参数') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test20 fail'));
