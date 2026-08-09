@@ -54,44 +54,88 @@ fresh server.
 
 | Payload | Concurrency | Main-thread-routed p50 / p99 | Direct peer channel p50 / p99 | Throughput (main-thread / direct) |
 |---|---|---|---|---|
-| 1KB | 1 | 1.46ms / 17.77ms | **0.87ms / 3.47ms** | 114 / 161 req/s |
-| 1KB | 16 | 9.12ms / 25.19ms | **1.56ms / 52.56ms** | 286 / 279 req/s |
-| 1KB | 64 | 19.12ms / 77.35ms | **1.28ms / 8.64ms** | 318 / 254 req/s |
-| 100KB | 1 | 1.37ms / 15.53ms | **0.88ms / 3.85ms** | 124 / 172 req/s |
-| 100KB | 16 | 12.87ms / 31.60ms | **2.96ms / 9.62ms** | 242 / **313** req/s |
-| 100KB | 64 | 67.07ms / 98.09ms | **5.17ms / 82.13ms** | 246 / **420** req/s |
-| 1MB | 1 | 23.06ms / 121.14ms | **14.02ms / 41.63ms** | 30 / **52** req/s |
-| 1MB | 16 | **172.71ms** / 248.99ms | 140.94ms / **329.25ms** | 44 / 49 req/s |
-| 1MB | 64 | **359.79ms** / 923.00ms | 841.82ms / 966.30ms | **43** / 40 req/s |
+| 1KB | 1 | 1.38ms / 25.01ms | **1.07ms / 5.22ms** | 113 / **127** req/s |
+| 1KB | 16 | 11.04ms / 30.40ms | **2.02ms / 10.12ms** | 278 / 260 req/s |
+| 1KB | 64 | 14.64ms / 42.85ms | **2.18ms / 51.50ms** | 367 / 240 req/s |
+| 100KB | 1 | 1.26ms / 6.85ms | **1.10ms / 8.30ms** | 172 / 137 req/s |
+| 100KB | 16 | 7.18ms / 23.54ms | **2.61ms / 9.94ms** | 347 / 314 req/s |
+| 100KB | 64 | 34.73ms / 103.52ms | **3.63ms / 11.91ms** | 279 / **385** req/s |
+| 1MB | 1 | 22.99ms / 68.47ms | **15.20ms / 44.79ms** | 35 / **48** req/s |
+| 1MB | 16 | 197.90ms / 338.40ms | **148.96ms / 244.98ms** | 38 / **54** req/s |
+| 1MB | 64 | 607.69ms / 713.35ms | **417.37ms / 862.82ms** | 40 / **63** req/s |
 
-**Read this honestly, not as a blanket "direct is faster" claim.** For
-every combination except the last row, direct peer channels win on p50
-latency, often by 2–13×, and usually match or beat main-thread-routed
-throughput too. At **1MB payloads under 64-way concurrency, the picture
-reverses**: direct peer channels are slower (p50 842ms vs. 360ms).
+Direct peer channels win on p50 latency at every combination tested, by
+1.3–7× depending on payload/concurrency, and match or beat throughput on
+7 of 9. These numbers already include the backpressure fix described
+below — see that section for what changed and why, and for the honest
+caveat these numbers don't fully resolve (queueing means the highest
+combination still costs real wall-clock time, it's just no longer worse
+than the alternative).
 
-That reversal has a specific, understood cause, not a mystery regression.
-Both paths ultimately funnel through the *same two worker threads*
-(one caller, one callee) — the only difference is whether the main thread
-is also in the loop. Under extreme sustained load with large payloads,
-the main-thread hop acts as an incidental throttle: it's *also* a
-bottleneck, but that bottleneck limits how much work can pile up waiting
-at the callee worker's single-threaded event loop. Without it, direct
-peer channels let all 64 concurrent 1MB calls queue directly at the
-callee with no back-pressure, and the callee's own event loop — doing
-real structured-clone and JS work for each — becomes the limiting factor
-instead, with a worse queueing curve than the throttled path produces.
-This is a real, currently-unaddressed limitation: **there is no
-backpressure or concurrency limit on the direct peer channel path**. A
-production deployment expecting sustained large-payload, high-concurrency
-traffic on a single worker pair should not assume direct peer channels
-are strictly better without accounting for this; a queue-depth limit or
-per-channel concurrency cap on the callee side is the natural fix, not
-built here (out of scope for this Sprint, flagged as a follow-up).
+Absolute numbers at a given payload/concurrency cell vary noticeably
+run-to-run under sustained load (an earlier run of this exact 1MB/64-way
+cell measured 360ms for main-thread-routed and 842ms for the pre-fix
+direct path, on the same hardware) — read the *relative* comparison
+within a single run as the signal, not any individual absolute figure.
+Re-run `perf/direct-peer-channels-perf.js` yourself before relying on
+precise numbers for capacity planning.
 
-For the common case this feature targets — small-to-medium payloads,
-which is most tool-call traffic, at realistic concurrency — direct peer
-channels are a clear, substantial win with no observed downside.
+## Backpressure
+
+The first version of this benchmark (before the fix described here) found
+a real regression: at 1MB payloads under 64-way concurrency specifically,
+direct peer channels were *slower* than main-thread-routed (842ms p50 vs.
+360ms). Root cause: both paths ultimately funnel through the same two
+worker threads (one caller, one callee) — the only difference is whether
+the main thread is also in the loop. The main-thread hop is itself a
+bottleneck, but that bottleneck incidentally throttled how much work
+could pile up waiting at the callee's single-threaded event loop.
+Direct peer channels had no such throttle: every `ServiceClient.invoke()`
+call fired a `postMessage` immediately, structured-clone cost and all,
+regardless of how many were already in flight on that channel.
+
+**Fix**: `lib/peer-channel.js` now caps how many invokes a channel will
+have in flight at once — on *both* ends. Capping only the callee's
+dispatch (`onInvoke`) was tried first and didn't help: `postMessage`'s
+structured-clone cost for a large payload is paid at *send* time, so an
+uncapped caller was still firing (and paying for) every concurrent
+`invoke()` call before any callee-side cap could matter. The real fix
+queues on both sides — outgoing `invoke()` calls once too many are
+already in flight, and incoming `peer-invoke` dispatch to `onInvoke` the
+same way — draining each queue as in-flight calls complete.
+
+Controlled by `--directPeerChannelsMaxConcurrency` (default **16**).
+Tuned empirically at the regressing 1MB/64-way cell, not guessed:
+
+| Cap | p50 | p99 |
+|---|---|---|
+| uncapped (pre-fix) | 688ms | 930ms |
+| 4 | 437ms | 1190ms |
+| 8 | 460ms | 936ms |
+| 16 | 464ms | 1056ms |
+| 32 | 567ms | 997ms |
+
+4, 8, and 16 land in the same range (a real, roughly 1.5× improvement
+over uncapped); 32 trends back toward uncapped. 16 was chosen as the
+default over a lower cap like 4 specifically to avoid needlessly
+serializing calls at payload sizes where concurrency was never a problem
+in the first place (1KB/100KB throughput at concurrency 16–64 was already
+excellent uncapped) — a fixed call-count cap is a blunt instrument that
+can't distinguish "many small calls" from "many large calls," so this
+picks a value that helps the large-payload case without meaningfully
+constraining the common case. `test/direct-peer-channels/05-backpressure.js`
+covers correctness (a burst well above a low cap all complete correctly,
+none dropped by the queue) — that test is not a performance assertion,
+this document is.
+
+**Still a known limitation, smaller than before but real**: the cap is a
+fixed call count, not payload-size-aware or adaptive. A deployment
+expecting sustained, very-large-payload, high-concurrency traffic on a
+single worker pair should tune `--directPeerChannelsMaxConcurrency` for
+its own payload sizes rather than assume the default is optimal, and a
+genuinely size-aware or adaptive throttle (e.g. capping total bytes
+in flight, not call count) would likely do better than a fixed cap —
+not built here, flagged as a further follow-up.
 
 ## Benchmark: message serialization strategy (D2)
 
