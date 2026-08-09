@@ -16,3 +16,9 @@ build/
 nohup.out
 .c9revisions/
 .vscode/
+
+# FileAuthProvider/SqliteAuthProvider default config -- may contain real
+# API keys (or the auto-generated demo key), never meant to be committed.
+# See lib/auth/ and README.md's Authentication section.
+/auth.json
+/auth.sqlite3

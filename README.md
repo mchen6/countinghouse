@@ -13,7 +13,10 @@ composition without hand-rolling any of it.
 
 Requires Node.js >= 20, and a Redis instance reachable at
 `redis://127.0.0.1:6379` (used for metering, rate limiting, and session
-state — see `--redisUrl` to point elsewhere).
+state — see `--redisUrl` to point elsewhere). **No other external
+service is required** — authentication is file-backed by default (see
+[Authentication](#authentication) below), not a database you have to
+stand up first.
 
 ```sh
 git clone https://github.com/mchen6/countinghouse.git
@@ -25,23 +28,79 @@ node ./framework.js --workerThread --bindAddr 127.0.0.1 --loadModule ./pre-insta
 # -> countinghouse listen on: 127.0.0.1:9527
 ```
 
-Point an MCP client at it:
+No `auth.json` yet? The first run generates one (at
+`<repo-root>/auth.json` by default — see `--authConfigPath`) with a demo
+API key and prints it once, right at startup:
+
+```
+============================================================
+countinghouse: no /path/to/countinghouse/auth.json found.
+Generated a demo API key with access to every device --
+replace it before any real deployment:
+
+  X-CH-Key: demo-a1b2c3d4e5f6...
+
+Edit /path/to/countinghouse/auth.json to add real keys, or set
+COUNTINGHOUSE_API_KEY for single-key mode instead.
+============================================================
+```
+
+Point an MCP client at it, passing that key as a header:
 
 ```sh
-claude mcp add --transport http countinghouse http://127.0.0.1:9527/mcp
+claude mcp add --transport http countinghouse http://127.0.0.1:9527/mcp \
+  --header "X-CH-Key: demo-a1b2c3d4e5f6..."
 ```
 
 Then, in a Claude Code session, just ask it to call the tool — e.g.
 "use the countinghouse echo tool to echo back 'hello'". `tools/list`
 exposes one tool per device module action (`echo_device_echoservice_echo`
 in this case), each with a JSON Schema 2020-12 `inputSchema`/`outputSchema`
-derived straight from the module's own spec.
+derived straight from the module's own spec — and, since `tools/list` is
+filtered per apiKey, only the tools for devices that key actually has
+access to (the demo key has access to every device).
 
 Want to see tool composition and per-hop billing in one call? Load
 `./pre-installed-packages/transform-demo` and `./pre-installed-packages/composite-demo`
 alongside the echo module (repeat `--loadModule` once per module) and
 call `composite_demo_compositeservice_run` — see
 [`docs/composite-tools.md`](docs/composite-tools.md).
+
+## Authentication
+
+Every request carries an API key (`X-CH-Key` header for HTTP/MCP), and
+`AuthProvider` decides which devices that key can see and call —
+pluggable, `--authProvider file|sqlite|couchdb`:
+
+- **`file` (default)** — a flat JSON file (`auth.json` by default,
+  `--authConfigPath` to point elsewhere):
+  ```json
+  {
+    "your-api-key": {"userName": "you", "devices": ["*"]}
+  }
+  ```
+  `devices` may list specific deviceIDs, or `"*"` for every device.
+  No file yet → a demo key is generated and printed once, as shown above.
+  For deployments where writing a file is friction (e.g. a container),
+  set `COUNTINGHOUSE_API_KEY=<key>` instead — that key gets wildcard
+  access without needing `auth.json` at all.
+- **`sqlite`** — a local `auth.sqlite3` file, managed with
+  `node bin/countinghouse-auth-sqlite.js add-user/grant/revoke/list`
+  (`--dbPath` to point elsewhere). No external service, just a db file
+  instead of a JSON file — useful once you have more keys than are
+  comfortable to hand-edit.
+- **`couchdb`** — for an existing CouchDB-backed deployment. Needs the
+  optional `nano` package (`npm install nano`, not installed by default)
+  and a real CouchDB instance; `node lib/couchdb-adapter/init-db.js
+  --dbUrl <url>` sets up the required design document on a fresh
+  instance.
+
+`--debug` (used in the framework's own test suite) bypasses `AuthProvider`
+entirely — every apiKey is accepted, useful for local iteration, not for
+anything reachable beyond localhost. See
+[`docs/security-model.md`](docs/security-model.md) for the full picture,
+including why an auto-generated demo key should never survive into a real
+deployment.
 
 ## Architecture
 
