@@ -104,6 +104,36 @@ These are real, and worth being specific about rather than waving at
   directly if it required the `redis` package itself and supplied its own
   connection details — this allowlist constrains the *platform-provided*
   Redis handle, not arbitrary module code.)
+- **Per-apiKey device authorization** (`AuthProvider`, `lib/auth/` —
+  `docs/cdif-audit-and-refactoring-plan.md`'s AuthProvider section has the
+  full design). Every entry path in `docs/cross-cutting-matrix.md`'s table
+  that checks `userAuth` denies a caller that isn't explicitly granted
+  the target `deviceID` (`USER_HAS_NO_DEVICE`), via one of three pluggable
+  backends: `FileAuthProvider` (default, a JSON file), `SqliteAuthProvider`,
+  or `CouchDBAuthProvider` (needs a real CouchDB instance, `nano` no
+  longer a hard dependency). This is caller-identity authorization, not
+  module sandboxing — it constrains which apiKey can invoke which device's
+  actions, not what a loaded module's own code can do once its handler
+  runs (that's the worker-thread boundary described above). Two things
+  worth being explicit about, in the spirit of this document's own rule
+  against overstating guarantees:
+  - **`FileAuthProvider`'s zero-config first run generates and prints a
+    wildcard-access demo key** if no `auth.json` exists yet, specifically
+    so a fresh checkout is immediately usable. This is meant for local
+    development and evaluation, not left running in a real deployment —
+    treat an auto-generated `demo-*` key the same as any other credential
+    that shouldn't ship to production, and replace it (or configure a real
+    `auth.json`/`COUNTINGHOUSE_API_KEY`) before exposing the server beyond
+    localhost.
+  - **An internal cross-worker call whose caller identity can't be
+    resolved is metered for free rather than denied** (see
+    `docs/cross-cutting-matrix.md`'s two "Direct peer channel" rows) — this
+    is a `MeteringProvider`-side gap (billing, not authorization: the call
+    itself still only succeeds if the resolvable identity, when there is
+    one, is separately authorized), found and documented, not fixed, since
+    the correct behavior (deny vs. bill a fallback identity vs. the
+    current silent skip) is a real design decision, not implied by
+    anything already decided.
 
 ## Honest comparison
 
