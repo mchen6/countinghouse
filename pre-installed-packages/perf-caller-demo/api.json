@@ -1,0 +1,54 @@
+{
+  "configId": 1,
+  "specVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "device": {
+    "friendlyName": "perf-caller-demo",
+    "manufacturer": "countinghouse",
+    "modelDescription": "round-trips a variable-size payload through perf-callee-demo via ServiceClient -- benchmark fixture, see docs/direct-peer-channels.md",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:perfCallerService": {
+        "actionList": {
+          "run": {
+            "description": "Generates a random string of payloadSizeBytes length and round-trips it through perf-callee-demo's echoPayload action over ServiceClient.invoke -- the same isRemoteThread path lib/service-client.js branches on options.directPeerChannels for. Returns the round-trip duration measured server-side, around just the ServiceClient.invoke call (excluding this action's own HTTP/session overhead). Benchmark fixture only, not part of any documented public API.",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_run_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_run_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/perfCallerService/run/fault"
+            }
+          }
+        },
+        "serviceStateTable": {
+          "A_ARG_TYPE_run_Input": {
+            "dataType": "object",
+            "schema": "/perfCallerService/run/input"
+          },
+          "A_ARG_TYPE_run_Output": {
+            "dataType": "object",
+            "schema": "/perfCallerService/run/output"
+          }
+        }
+      }
+    }
+  }
+}

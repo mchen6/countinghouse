@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "perfCallerService": {
+    "run": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "payloadSizeBytes": {
+            "type": "number"
+          }
+        },
+        "required": ["payloadSizeBytes"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "durationMs": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  },
+  "fault": {
+    "perfCallerService": {
+      "run": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

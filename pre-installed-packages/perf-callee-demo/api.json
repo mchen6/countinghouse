@@ -1,0 +1,54 @@
+{
+  "configId": 1,
+  "specVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "device": {
+    "friendlyName": "perf-callee-demo",
+    "manufacturer": "countinghouse",
+    "modelDescription": "echoes back a variable-size payload -- benchmark fixture, see docs/direct-peer-channels.md",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:perfCalleeService": {
+        "actionList": {
+          "echoPayload": {
+            "description": "Returns the input data unchanged. Benchmark fixture only, not part of any documented public API.",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_echoPayload_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_echoPayload_Output"
+              }
+            },
+            "fault": {
+              "schema": "/fault/perfCalleeService/echoPayload/fault"
+            }
+          }
+        },
+        "serviceStateTable": {
+          "A_ARG_TYPE_echoPayload_Input": {
+            "dataType": "object",
+            "schema": "/perfCalleeService/echoPayload/input"
+          },
+          "A_ARG_TYPE_echoPayload_Output": {
+            "dataType": "object",
+            "schema": "/perfCalleeService/echoPayload/output"
+          }
+        }
+      }
+    }
+  }
+}
