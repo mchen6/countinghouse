@@ -11,7 +11,8 @@
 //   remove-user <apiKey>                       delete a user and all its device grants
 //   grant <apiKey> <deviceID>                  authorize apiKey for deviceID (or "*" for every device)
 //   revoke <apiKey> <deviceID>                 remove one device grant
-//   list                                       print every user and their granted devices
+//   set-admin <apiKey> <true|false>            grant/revoke admin rights (module-lifecycle routes; independent of device grants)
+//   list                                       print every user, their admin status, and their granted devices
 //
 // --dbPath defaults to ./auth.sqlite3 (same default SqliteAuthProvider itself uses).
 var sqlite3 = require('sqlite3');
@@ -31,7 +32,7 @@ function parseArgs(argv) {
 }
 
 function usageAndExit(code) {
-  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|list> [args...]');
+  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|list> [args...]');
   process.exit(code);
 }
 
@@ -43,8 +44,18 @@ function main() {
 
   var db = new sqlite3.Database(parsed.dbPath);
   db.serialize(function() {
-    db.run('CREATE TABLE IF NOT EXISTS users (apiKey TEXT PRIMARY KEY, userName TEXT)');
+    db.run('CREATE TABLE IF NOT EXISTS users (apiKey TEXT PRIMARY KEY, userName TEXT, admin INTEGER DEFAULT 0)');
     db.run('CREATE TABLE IF NOT EXISTS user_devices (apiKey TEXT NOT NULL, deviceID TEXT NOT NULL, PRIMARY KEY (apiKey, deviceID))');
+    // Same migration as lib/auth/sqlite-provider.js's _ensureSchema -- this
+    // CLI can run against a pre-existing db file independently of the
+    // server, so it needs the same unconditional-ALTER-and-swallow-the-
+    // duplicate-column-error approach, for the same reason (stays inside
+    // this db.serialize() queue, ahead of any command below).
+    db.run('ALTER TABLE users ADD COLUMN admin INTEGER DEFAULT 0', function(err) {
+      if (err != null && !/duplicate column name/i.test(err.message)) {
+        console.error('failed to migrate admin column: ' + err.message);
+      }
+    });
 
     switch (command) {
       case 'add-user': {
@@ -90,8 +101,20 @@ function main() {
         });
         break;
       }
+      case 'set-admin': {
+        var apiKey = parsed.args[1], flag = parsed.args[2];
+        if (apiKey == null || (flag !== 'true' && flag !== 'false')) usageAndExit(1);
+        var adminValue = (flag === 'true') ? 1 : 0;
+        db.run('UPDATE users SET admin = ? WHERE apiKey = ?', [adminValue, apiKey], function(err) {
+          if (err) { console.error(err.message); process.exit(1); }
+          if (this.changes === 0) { console.error('no such user: ' + apiKey + ' (add-user first)'); process.exit(1); }
+          console.log('ok: ' + apiKey + ' admin -> ' + flag);
+          db.close();
+        });
+        break;
+      }
       case 'list': {
-        db.all('SELECT apiKey, userName FROM users', [], function(err, users) {
+        db.all('SELECT apiKey, userName, admin FROM users', [], function(err, users) {
           if (err) { console.error(err.message); process.exit(1); }
           if (users.length === 0) { console.log('(no users)'); db.close(); return; }
 
@@ -99,7 +122,8 @@ function main() {
           users.forEach(function(u) {
             db.all('SELECT deviceID FROM user_devices WHERE apiKey = ?', [u.apiKey], function(err, rows) {
               if (err) { console.error(err.message); process.exit(1); }
-              console.log(u.apiKey + ' (' + u.userName + '): ' + rows.map(function(r) { return r.deviceID; }).join(', '));
+              var adminLabel = (u.admin === 1) ? ', admin' : '';
+              console.log(u.apiKey + ' (' + u.userName + adminLabel + '): ' + rows.map(function(r) { return r.deviceID; }).join(', '));
               remaining--;
               if (remaining === 0) db.close();
             });

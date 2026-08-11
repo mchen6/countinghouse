@@ -75,6 +75,54 @@ describe('auth 03: SqliteAuthProvider (users/user_devices schema)', function() {
     });
   });
 
+  it('admin column defaults to false and is independent of device grants', function(done) {
+    var provider = new SqliteAuthProvider({dbPath: dbPath});
+
+    provider.db.serialize(function() {
+      provider.db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['plain-key', 'plain-user']);
+      provider.db.run('INSERT INTO users (apiKey, userName, admin) VALUES (?, ?, ?)', ['admin-key', 'admin-user', 1]);
+      provider.db.run('INSERT INTO user_devices (apiKey, deviceID) VALUES (?, ?)', ['admin-key', 'device-a']);
+    });
+
+    provider.authenticate('plain-key', null, null, null, function(err, result) {
+      assertOk(err, result, 'plain-key should authenticate');
+      if (result.isAdmin !== false) throw new Error('a user row with no explicit admin value must default to isAdmin:false, got: ' + JSON.stringify(result));
+
+      provider.authenticate('admin-key', 'device-b', null, null, function(err, result) {
+        assertDenied(err, result, 'USER_HAS_NO_DEVICE', 'admin-key should still be denied a device it is not granted');
+        if (result.isAdmin !== true) throw new Error('admin:1 must set isAdmin:true even when the device-ownership check itself fails, got: ' + JSON.stringify(result));
+        done();
+      });
+    });
+  });
+
+  it('migrates a pre-existing db file created before the admin column existed', function(done) {
+    // Simulates an operator's real auth.sqlite3 from before this feature
+    // shipped: users/user_devices tables exist, but users has no admin
+    // column at all -- not just unset rows. _ensureSchema's ALTER TABLE
+    // must add it without losing the existing row, and immediately
+    // (calling authenticate() with zero delay is the actual regression
+    // this guards: a naive PRAGMA-table_info-then-conditional-ALTER
+    // implementation can lose that race against an immediate call).
+    var sqlite3 = require('sqlite3');
+    var rawDb = new sqlite3.Database(dbPath);
+    rawDb.serialize(function() {
+      rawDb.run('CREATE TABLE users (apiKey TEXT PRIMARY KEY, userName TEXT)');
+      rawDb.run('CREATE TABLE user_devices (apiKey TEXT NOT NULL, deviceID TEXT NOT NULL, PRIMARY KEY (apiKey, deviceID))');
+      rawDb.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['legacy-key', 'legacy-user'], function() {
+        rawDb.close(function() {
+          var provider = new SqliteAuthProvider({dbPath: dbPath});
+          // No setTimeout/delay -- immediate call is the point of this test.
+          provider.authenticate('legacy-key', null, null, null, function(err, result) {
+            assertOk(err, result, 'legacy-key from a pre-migration db should still authenticate');
+            if (result.isAdmin !== false) throw new Error('a migrated row with no admin value must default to isAdmin:false, got: ' + JSON.stringify(result));
+            done();
+          });
+        });
+      });
+    });
+  });
+
   it('listDevices returns exactly the granted rows for an apiKey', function(done) {
     var provider = new SqliteAuthProvider({dbPath: dbPath});
 
