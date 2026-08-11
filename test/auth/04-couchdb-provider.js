@@ -48,4 +48,47 @@ describe('auth 04: CouchDBAuthProvider (skips without a reachable CouchDB instan
       done();
     });
   });
+
+  // admin gating: verified live against a real CouchDB 3.5.2 instance
+  // during development (this environment doesn't have one, same as every
+  // other test above) -- writes a real user doc satisfying CouchDB's own
+  // built-in _users validate_doc_update (requires name, roles: [], and
+  // _id: 'org.couchdb.user:'+name -- none of which couchdb-auth-provider.js
+  // itself reads, but a real document has to satisfy them to be written
+  // at all) with admin: true, and one without it, confirming isAdmin is
+  // independent of device access (an admin key still gets ok:false for a
+  // device it isn't granted, but isAdmin stays true).
+  it('authenticate() sets isAdmin from the admin field, independent of device access', function(done) {
+    var plainDoc = {
+      _id: 'org.couchdb.user:test-plain-' + Date.now(),
+      type: 'user', name: 'test-plain-' + Date.now(), roles: [],
+      appKey: 'test-plain-' + Date.now(), userName: 'plain-user',
+      balance: 0, devices: [{deviceID: '*'}]
+    };
+    var adminDoc = {
+      _id: 'org.couchdb.user:test-admin-' + Date.now(),
+      type: 'user', name: 'test-admin-' + Date.now(), roles: [],
+      appKey: 'test-admin-' + Date.now(), userName: 'admin-user',
+      balance: 0, devices: [{deviceID: 'granted-device'}], admin: true
+    };
+
+    provider.usersDB.insert(plainDoc, function(err) {
+      if (err) return done(err);
+      provider.usersDB.insert(adminDoc, function(err) {
+        if (err) return done(err);
+
+        provider.authenticate(plainDoc.appKey, null, null, null, function(err, result) {
+          if (err) return done(err);
+          if (result.isAdmin !== false) return done(new Error('a doc with no admin field must default to isAdmin:false, got: ' + JSON.stringify(result)));
+
+          provider.authenticate(adminDoc.appKey, 'ungranted-device', null, null, function(err, result) {
+            if (err) return done(err);
+            if (result.ok !== false) return done(new Error('admin-key should still be denied a device it is not granted, got: ' + JSON.stringify(result)));
+            if (result.isAdmin !== true) return done(new Error('admin:true must set isAdmin:true even when the device-ownership check itself fails, got: ' + JSON.stringify(result)));
+            done();
+          });
+        });
+      });
+    });
+  });
 });
