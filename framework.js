@@ -1,6 +1,5 @@
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
-var deviceDB      = require('./lib/device-db');
 var fs            = require('fs');
 var packageJson   = require('./package.json');
 
@@ -52,7 +51,20 @@ try {
   process.exit(-1);
 }
 
-deviceDB.init(options.modulePath);
+// deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
+// ModuleManager.prototype.loadAllModules's registry-lookup branch, and
+// only when no --loadModule path was given (see that function's own
+// "in case loading local module, we won't read module info from DB"
+// early return) -- the --loadModule quickstart path never touches it.
+// Requiring sqlite3 unconditionally here loads its native binding on
+// every single startup regardless, which is unnecessary work for the
+// common case and the actual crash on a glibc too old for the current
+// prebuilt binary (ERR_DLOPEN_FAILED) -- gating the require itself,
+// not just the init() call, avoids that entirely for anyone who never
+// needed the registry DB in the first place.
+if (options.localModulePath == null) {
+  require('./lib/device-db').init(options.modulePath);
+}
 
 var ModuleManager = require('./lib/module-manager');
 var RouteManager  = require('./lib/route-manager');
