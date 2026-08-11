@@ -21,9 +21,15 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     this.timeout(0);
     console.log('starting countinghouse...');
     exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiCache --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
+    // 2 modules to discover, same reasoning as
+    // test/direct-peer-channels/03-grant-time-auth.js's before(): a 5000ms
+    // wait was observed to be too short for that under load (module
+    // discovery not yet finished when the first request fires, producing
+    // spurious DEVICE_NOT_FOUND across the whole suite) -- 13000ms matches
+    // every other 2-module standalone server in this repo.
     setTimeout(() => {
       done();
-    }, 5000);
+    }, 13000);
   });
 
   testFiles.forEach(function (file) {

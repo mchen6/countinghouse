@@ -48,6 +48,8 @@ jobs:
           npx mocha ./test/test4.js
           npx mocha --exit ./test/test5.js
           npx mocha ./test/auth/*.js ./test/device-config/*.js
+          npx mocha ./test/test8.js
+          npm run test:peer-standalone
           npx mocha ./test/test6.js
 
       # informational only for now - the dependency tree isn't at zero
