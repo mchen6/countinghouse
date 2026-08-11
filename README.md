@@ -91,7 +91,21 @@ fanning out into two in-process, metered inner hops: it calls
 the resulting bill attached to the response instead of hidden in
 server-side logs. `--mcpToolCallCost` defaults to `0` (nothing is charged
 unless you opt in), so set it to something non-zero to actually see the
-bill move:
+bill move.
+
+`composite-demo`'s two inner hops run under a fixed internal identity,
+`composite-demo-internal` (see [`docs/composite-tools.md`](docs/composite-tools.md)'s
+known simplifications — a real caller's apiKey isn't threaded through to
+inner hops in this demo), separate from whatever key you call the outer
+tool with. Grant that identity access before starting the server below, or
+every call fails with `DEVICE_ACTION_CALL_FAIL` (AuthProvider rejecting an
+identity it's never seen, not a bug in the composition itself):
+
+```sh
+node -e "var c=JSON.parse(require('fs').readFileSync('auth.json'));
+  c['composite-demo-internal']={userName:'composite-demo-internal',devices:['*']};
+  require('fs').writeFileSync('auth.json', JSON.stringify(c, null, 2));"
+```
 
 ```sh
 node ./framework.js --workerThread --bindAddr 127.0.0.1 --mcpToolCallCost 1 \
