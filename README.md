@@ -60,11 +60,8 @@ derived straight from the module's own spec — and, since `tools/list` is
 filtered per apiKey, only the tools for devices that key actually has
 access to (the demo key has access to every device).
 
-Want to see tool composition and per-hop billing in one call? Load
-`./pre-installed-packages/transform-demo` and `./pre-installed-packages/composite-demo`
-alongside the echo module (repeat `--loadModule` once per module) and
-call `composite_demo_compositeservice_run` — see
-[`docs/composite-tools.md`](docs/composite-tools.md).
+Want to see tool composition and per-hop billing in one call? See the
+[Composite demo walkthrough](#composite-demo-walkthrough) below.
 
 ## Authentication
 
@@ -89,10 +86,16 @@ Beyond a single tool call, `composite-demo` shows one MCP `tools/call`
 fanning out into two in-process, metered inner hops: it calls
 `transform-demo`, then feeds that result into `echo-device-module` — with
 the resulting bill attached to the response instead of hidden in
-server-side logs. Load it alongside its two dependency modules (as shown
-in the quickstart above) and call it:
+server-side logs. `--mcpToolCallCost` defaults to `0` (nothing is charged
+unless you opt in), so set it to something non-zero to actually see the
+bill move:
 
 ```sh
+node ./framework.js --workerThread --bindAddr 127.0.0.1 --mcpToolCallCost 1 \
+  --loadModule ./pre-installed-packages/echo-device-module \
+  --loadModule ./pre-installed-packages/transform-demo \
+  --loadModule ./pre-installed-packages/composite-demo
+
 curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
   -H "X-CH-Key: <your key>" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
         "name":"composite_demo_compositeservice_run",
@@ -113,11 +116,15 @@ curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
 `echo-device-module` echoing that result back — two independent modules,
 called one after another entirely inside the server process, with neither
 intermediate result ever entering this MCP client's context. `bill` is
-one entry per inner hop: which tool ran, what it cost, and the caller's
-running balance afterward — proof that per-hop metering isn't skipped
-just because the calls happen module-to-module instead of client-to-server.
-Full mechanism, the billing-authority guarantee behind it, and known
-simplifications: [`docs/composite-tools.md`](docs/composite-tools.md).
+one entry per inner hop: which tool ran, what it cost, and the running
+balance afterward for `composite-demo`'s own internal identity (not the
+caller's apiKey — see [`docs/composite-tools.md`](docs/composite-tools.md)'s
+known simplifications for why) — proof that per-hop metering isn't
+skipped just because the calls happen module-to-module instead of
+client-to-server. A fresh identity starts at balance `0`; each hop
+subtracts its cost, so balance going more negative over successive calls
+is expected, not an error. Full mechanism and the billing-authority
+guarantee behind it: [`docs/composite-tools.md`](docs/composite-tools.md).
 
 ## CLI flags reference
 
