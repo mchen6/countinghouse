@@ -24,7 +24,11 @@ docker run -d --name countinghouse-redis -p 6379:6379 redis:7
 
 git clone https://github.com/mchen6/countinghouse.git
 cd countinghouse
-npm install
+
+# --legacy-peer-deps: bullmq peer-requires redis>=5.0.0, but this repo
+# pins redis@^3.1.2 (a different, still-supported client API) -- plain
+# `npm install` fails on that ERESOLVE conflict without the flag.
+npm install --legacy-peer-deps
 
 # start the runtime, loading the bundled echo demo module
 node ./framework.js --workerThread --bindAddr 127.0.0.1 --loadModule ./pre-installed-packages/echo-device-module
