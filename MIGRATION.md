@@ -53,9 +53,10 @@ Device modules that reference `CdifUtil`, `CdifDevice`, or `CdifError` by name
   reassign the UUID of every existing device on upgrade, which is a far more
   disruptive break than the renames above, for no functional or user-visible
   benefit. It stays as-is intentionally.
-- `error-info.zh-CN.json` (localized error messages) is kept. The project still
-  defaults to `zh-CN` locale; the English translation (`error-info.en-US.json`) is
-  incomplete relative to it and was not adopted as the default in this pass.
+- `error-info.zh-CN.json` (localized error messages) is kept, `zh-CN` is still
+  available via `--locale zh-CN`. The default flipped to `en-US` afterward
+  (commit `c95384b`); `error-info.en-US.json` has since reached full parity
+  with `error-info.zh-CN.json` (same key set, currently 118 each).
 
 ## mcpforge -> countinghouse
 
