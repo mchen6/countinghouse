@@ -6,7 +6,7 @@ var loadDeviceConfig = require('../../lib/device-config');
 // Pure unit tests, no server -- same style as test/auth/02-file-provider-unit.js.
 // Covers lib/device-config.js's file backend (replaces the old CouchDB
 // device-config db, never migrated -- see
-// docs/cdif-audit-and-refactoring-plan.md's AuthProvider section): reading
+// docs/design-decisions.md's AuthProvider section): reading
 // <moduleName>.json from the configured directory, the "no file" case
 // (empty config, not an error), and a corrupt-JSON file surfacing as a
 // real error rather than crashing.
