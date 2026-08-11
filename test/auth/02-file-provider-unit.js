@@ -44,6 +44,9 @@ describe('auth 02: FileAuthProvider ergonomics (demo key generation, COUNTINGHOU
 
     provider.authenticate(demoKey, 'any-device-id', null, null, function(err, result) {
       assertOk(err, result, 'the generated demo key should authenticate against any deviceID');
+      if (result.isAdmin !== false) {
+        throw new Error('the auto-generated demo key must not be admin (wildcard device access and admin are separate capabilities), got: ' + JSON.stringify(result));
+      }
 
       // Re-instantiating (simulating a restart) must reuse the persisted
       // key, not generate a second, different one -- otherwise every
@@ -85,9 +88,36 @@ describe('auth 02: FileAuthProvider ergonomics (demo key generation, COUNTINGHOU
 
     provider.authenticate('env-mode-key', 'any-device-id', null, null, function(err, result) {
       assertOk(err, result, 'COUNTINGHOUSE_API_KEY value should authenticate with wildcard access');
+      if (result.isAdmin !== true) {
+        throw new Error('COUNTINGHOUSE_API_KEY should also grant admin rights, got: ' + JSON.stringify(result));
+      }
 
       provider.authenticate('some-other-key', 'any-device-id', null, null, function(err, result) {
         assertDenied(err, result, 'a key other than COUNTINGHOUSE_API_KEY should still be denied');
+        done();
+      });
+    });
+  });
+
+  it('auth.json\'s optional "admin" field controls isAdmin, independent of device access', function(done) {
+    var fileKeyConfig = {};
+    fileKeyConfig['plain-key'] = {userName: 'plain-user', devices: ['*']};
+    fileKeyConfig['admin-key'] = {userName: 'admin-user', devices: ['some-device-id'], admin: true};
+    fs.writeFileSync(configPath, JSON.stringify(fileKeyConfig));
+
+    var provider = new FileAuthProvider({configPath: configPath});
+
+    provider.authenticate('plain-key', null, null, null, function(err, result) {
+      assertOk(err, result, 'plain-key should authenticate');
+      if (result.isAdmin !== false) {
+        throw new Error('a key with no "admin" field must default to isAdmin:false even with wildcard device access, got: ' + JSON.stringify(result));
+      }
+
+      provider.authenticate('admin-key', 'some-other-device-not-granted', null, null, function(err, result) {
+        assertDenied(err, result, 'admin-key should still be denied for a device it is not granted (admin and device access are independent)');
+        if (result.isAdmin !== true) {
+          throw new Error('admin:true must set isAdmin:true even when the device-access check itself fails, got: ' + JSON.stringify(result));
+        }
         done();
       });
     });
