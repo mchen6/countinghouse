@@ -5,8 +5,15 @@ This is a Node.js API hosting framework being refactored and rebranded
 backend for MCP tools.
 
 ## Authoritative plan
-docs/cdif-audit-and-refactoring-plan.md — follow its Sprint order.
-Do not skip P0 items.
+The original sprint-by-sprint working plan
+(docs/cdif-audit-and-refactoring-plan.md) was an internal, Chinese-language
+working document — it has been removed from the repo and exists only in
+the maintainer's local backup, not in git. docs/design-decisions.md
+carries forward the technical rationale from it that has lasting public
+value (AuthProvider backend choices, the billing-authority principle,
+direct-peer-channels D1–D5, MCP protocol version strategy). For current
+project status, read the codebase and git history directly rather than
+assuming a plan doc exists.
 
 ## Key decisions already made
 - License: Apache-2.0 everywhere ("APEMESH standard license" in
