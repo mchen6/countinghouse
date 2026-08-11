@@ -46,11 +46,18 @@ document makes no performance claims.
 4. Returns `{finalText, bill}`, where `bill` is an array with one entry per
    inner hop.
 
-Both inner calls are ordinary cross-worker invocations: composite-demo's
-worker sends an `invokeforeignaction`-style message to the main thread,
-which routes it to the target module's worker and relays the reply back —
-exactly the mechanism any two modules already use to call each other today.
-Nothing about the routing path was changed for this feature.
+Both inner calls are ordinary cross-worker invocations, through whichever
+path `ServiceClient.invoke()` is currently configured to use. By default
+that's the main-thread-routed path: composite-demo's worker sends an
+`invokeforeignaction`-style message to the main thread, which routes it to
+the target module's worker and relays the reply back — exactly the
+mechanism any two modules already use to call each other today. With
+`--directPeerChannels` on, the same calls instead go directly
+worker-to-worker over a `MessageChannel`, bypassing the main thread
+entirely — see [`direct-peer-channels.md`](direct-peer-channels.md) for
+how that path works. Either way, composite-demo's own code is unchanged:
+which path is taken is entirely `ServiceClient`'s concern, transparent to
+the module calling it.
 
 Target modules are addressed by their deterministic `deviceID`
 (`UUID.v5` of a fixed namespace and the target module's `api.json`
