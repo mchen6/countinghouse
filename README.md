@@ -19,6 +19,9 @@ service is required** — authentication is file-backed by default (see
 stand up first.
 
 ```sh
+# don't have Redis running already? this is enough for local evaluation
+docker run -d --name countinghouse-redis -p 6379:6379 redis:7
+
 git clone https://github.com/mchen6/countinghouse.git
 cd countinghouse
 npm install
