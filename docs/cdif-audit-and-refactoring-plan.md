@@ -496,7 +496,7 @@ AuthProvider 10 步方案推送后，GitHub Actions CI（`.github/workflows/ci.y
 2. **第一版 try/catch 替换后，实测复现出**同样的症状（`fault` 序列化成 `{}`）——说明假设不完整。用一次干净的 A/B 对照定位真因：把 `lib/service.js` 换回 commit `79132eb` 的原始 domain 版本，用**同一份** `node_modules`、同一台机器直接起服务器实测，**结果完全相同**——证明这个"捕获的异常序列化成 `{}`"的 bug 在 domain 时代就已经存在，从来不是 domain 在防护的东西。根因：原生 `Error` 对象的 `.message`/`.stack` 是不可枚举属性，`res.json({fault: err})` 必然序列化成 `{}`，与捕获机制（domain 还是 try/catch）无关。
 3. **本地复现环境本身不可信，此次排查中正式确认**：全新 `git clone` + `npm install` 在本机会撞上与 CI 无关的 `sqlite3`/glibc 版本不匹配（本机 glibc 2.35 < 预编译二进制要求的 2.38，CI 的 `ubuntu-latest` glibc 更新，不受影响）；直接 `npx mocha test1.js` 重跑多次会出现与 CI 实际失败不一致、彼此也不一致的失败特征（ECONNREFUSED、时序竞态等）。结论：本次排查改为完全以用户粘贴的 CI 日志为唯一权威事实来源，不再信任本地全量跑分作为 CI 信号的替代。
 
-**修复**（commit `b9ac21e`）：
+**修复**（原 commit `b9ac21e`，2026-08-10 历史重写后为 `1184029`）：
 1. 新增 `toJSONSafeFault(err)` 辅助函数，把捕获到的 `Error` 显式转成 `{message, name, stack}` 纯对象再作为 `fault`/`data` 传给回调，从根本上修掉序列化缺口，与捕获机制无关。
 2. `Service.prototype.doActionCall` 的 `Domain.create()`/`unsafeDomain.run()` 包装替换为 async 分支的 `try { await action.invoke(args) } catch`、callback 分支的 `try { action.invoke(...) } catch`。
 3. **诚实记录的能力损失**（写进 `lib/service.js` 代码注释）：`try/catch`（含 `await`）只能捕获与自身**同步相对位置**抛出的异常，无法捕获在完全脱离调用栈的回调（如一个从不调用自身回调的裸 `setTimeout`）里抛出的异常——这正是 domain 模块当年存在的意义，且没有非废弃的现代等价物（除非引入更大范围的 `AsyncLocalStorage` 重实现，本次不在范围内）。`test/unit/test029.js`（`testAsyncThrowInDomain`）与 `test030.js`（`testAsyncThrowInAsync`）的测试动作就是刻意在裸 `setTimeout` 里抛异常来验证这个场景，两个文件相应更新为断言"请求超时后收到 `DEVICE_NOT_RESPONDING`"而非"快速收到结构化的 `DEVICE_INVOKE_EXCEPTION`"——这是一次有意的、已记录的行为变化，不是回归。
@@ -507,19 +507,41 @@ AuthProvider 10 步方案推送后，GitHub Actions CI（`.github/workflows/ci.y
 - 完整回归：`test1.js`（34/34，含更新后的 test029/030）、`test2`–`test5`、`test/auth/*.js` + `test/device-config/*.js`、`test8.js`（单/多线程、`--directPeerChannels` 各态）全部通过，`test6.js`（基准测试）顺带跑过也全绿；`test7.js`（另一档基准）按惯例跳过。
 - 推送后经 GitHub `check-runs` API（无 `gh` CLI，用未认证 REST API 轮询）确认：`test (20)`、`test (22)` 均 `completed`/`success`。CI 转绿，是本轮排查的最终目标。
 
-**收尾**：把此前一直只在本地工作副本、从未提交的 `CLAUDE.md`、本文档、`docs/direct-peer-channels-design.md` 一并提交推送（commit `faca05a`），仓库状态与本地完全同步。
+**收尾**：把此前一直只在本地工作副本、从未提交的 `CLAUDE.md`、本文档、`docs/direct-peer-channels-design.md` 一并提交推送（原 commit `faca05a`，2026-08-10 历史重写后为 `dbb3196`），仓库状态与本地完全同步。
 
 ---
 
 ## 当前状态快照（2026-08-10，供后续会话/其他 Claude 参考）
 
-**已完成、无需重复核实**：Sprint 1–5 全部任务；Direct Peer Channels 设计文档六步全部实现（D1–D5 五项决策均未偏离）；两次发布阻断修复（性能数字一致性、直连路径双重计费）；AuthProvider 10 步重构 + legacy 计价死代码退役；本节记录的 CI 修复（domain → try/catch + `toJSONSafeFault`）。CI 在 Node 20/22 均绿（commit `b9ac21e`）。仓库与 `origin/master` 完全同步（最新 `faca05a`）。
+**已完成、无需重复核实**：Sprint 1–5 全部任务；Direct Peer Channels 设计文档六步全部实现（D1–D5 五项决策均未偏离）；两次发布阻断修复（性能数字一致性、直连路径双重计费）；AuthProvider 10 步重构 + legacy 计价死代码退役；本节记录的 CI 修复（domain → try/catch + `toJSONSafeFault`）。CI 在 Node 20/22 均绿（原 commit `b9ac21e`）。仓库与 `origin/master` 完全同步（原最新 `faca05a`，见下方 P0-4 收尾一节——此后发生过一次历史重写，全部历史 hash 已变化）。
 
 **明确剩余、尚未开始**（原施工图"七、内容与发布"，只有 七.1 README 完成）：
 - 七.2 技术博客初稿（《We built MCP's tool architecture in 2015 — by accident》）
 - 七.3 Show HN 发帖 + 首日答疑口径
 - 七.4 注册官方 MCP Registry（`server.json` 已就绪）+ 提交 awesome-mcp-servers/awesome-mcp-gateways 收录 PR
 
-**需要确认是否真正关闭**：P0-4 凭证泄露——线上 token 已确认吊销（2026-08-08），但施工图原文要求的 `git filter-repo --replace-text` 历史清理步骤，本文档中没有找到执行记录，建议下一步先确认这一步是否已经做过。
-
 **已如实记录为已知问题/roadmap，非阻断，暂无计划修复**（见各自小节）：`lib/socket-server.js` 事件推送链路本身不完整（只修了参数错位）；身份无法解析的内部调用会被无限期免费放行；direct peer channel 的并发上限是固定值（16），非按 payload 大小自适应；`priceRecord` 预付费配额概念未重新实现（如需要应作为新 `MeteringProvider` 方法，而非复活绑定旧 CouchDB schema 的 fallback 代码）。
+
+---
+
+## P0-4 收尾：git 历史凭证清理（2026-08-10）✅ 已关闭
+
+> **重要**：`git filter-repo` 会重写从最早一次改动开始的每一个后续 commit 的 hash（父 hash 变了，自身 hash 就变），而本轮清理触及的最早一个泄露文件在 2015 年代的原始历史中就存在——意味着**本文档在此之前记录的几乎全部 commit hash 引用都已过期**，在当前 `origin/master`/本地仓库上已找不到那些具体的 hash。这些引用作为"这件事发生过、这是当时的提交信息"的历史记录仍然准确，只是不能再用于 `git show <hash>` 之类的操作；如需定位某次改动，改用 commit message 关键词搜索（`git log --all --grep=...`）。以下本节的新 hash 引用均为重写后的当前值。
+
+`aad25fa`（2026-08-07）当时明确把"HEAD 内容原地脱敏"与"`git filter-repo` 历史重写"标注为两个独立、故意分开的后续动作，只做了前者。本轮核实发现历史重写这一步此前从未执行——直接查证 `origin/master`（真实公开的 `mchen6/countinghouse` 仓库，而非本地假设）确认 681 个 commit 的完整历史（含改名前 2015 年起的原始仓库历史）已经推送公开，其中包含泄露凭证的原始提交仍可被任何人 `git clone`/`git log -p` 读到。线上 token 本身早已吊销（2026-08-08），但历史暴露本身此前从未真正关闭。
+
+**执行方式**（严格遵循施工图原定方法：先在一次性 fresh clone 上跑 `git filter-repo --replace-text`，验证干净后再 force-push 覆盖旧仓库，不在原地操作）：
+
+1. 复用本地保存的 gitleaks 全历史扫描结果（`gitleaks-report.json`，2026-08-07 产出，46 处发现收敛为 11 个不同的真实 secret 值）构建 `--replace-text` 替换表。
+2. **过程中发现一个必须排除的假阳性**：11 个值中的一个（`test/loop.sh` 里被 `curl-auth-header` 规则命中的字面量 `123456789`）根本不是凭证，只是脚本里的占位 header 值；第一次不排除直接跑替换，验证时发现它把 `test/unit/test002.js` 里一个无关的测试用 deviceID 片段也误伤替换掉了——排除该值后重跑，问题消失。最终替换表为 10 个真实 secret。
+3. **过程中发现一个此前未被 `aad25fa`覆盖的、当前仍在 HEAD 里的真实遗留泄露**：`example/oauth-server/README` 里一组 2019 年本地 oauth2-server demo 产生的 authorizationCode/accessToken/refreshToken，gitleaks 之前的报告里其中两个已被记录（`accessToken`/`refreshToken`，规则 `generic-api-key`），`authorizationCode` 因字段名不在规则关键词列表里未被命中，但同属一类，一并处理。**先在原仓库单独提交推送**（原 commit `9130f38`，2026-08-10 历史重写后为 `2ea7d57`，正常 push，不涉及历史重写）做原地脱敏，与 `aad25fa` 手法一致。
+4. 从推送后的最新 `origin/master`（含上一步）重新 fresh clone，跑 `git filter-repo --replace-text`（10 个真实 secret），验证：commit 数量不变（682）、`git log -p --all` 全历史重新扫描确认 10 个 secret 全部 0 处残留、HEAD 树内容与重写前逐文件 diff 完全一致（无意外改动）。
+5. 确认干净后 `git push --force origin master`（旧 `origin` 已被 `filter-repo` 自动移除，重新 `git remote add` 后推送）。所有 commit hash 因此改变（这是 `filter-repo` 重写的必然结果，不是意外）。
+6. 本地工作副本（此前一直指向旧 hash 历史）`git fetch` + `git reset --hard origin/master` 同步到新历史；额外执行 `git reflog expire --expire=now --all && git gc --prune=now --aggressive`，`git cat-file -t` 确认旧的、含明文凭证的 commit 对象已从本机 `.git` 对象库物理删除，不只是不可达。
+
+**如实记录的残留边界，不过度宣称**：
+- 本机本地仓库与 `origin/master` 上的可达历史均已确认干净；GitHub 服务端是否会保留一段时间内部缓存的悬空对象（dangling object，标准 git force-push 后的已知行为，通常最终会被 GitHub 自身的垃圾回收清理，但具体时间线不受本地操作控制），未做进一步核实——如需更强保证，可联系 GitHub Support 请求清理服务端缓存。
+- 若在此次 force-push 之前有任何第三方已经 clone/fork 过旧仓库，那些副本仍完整保留旧历史（含泄露凭证），force-push 无法追溯清除；据此前记录，这个仓库改名后才公开发布不久，第三方 clone/fork 的可能性判断为低，但未做穷举核实。
+- Sensoro 第三方凭证（随 `lingyi-fire-control-data-module` 一并出现在历史中）本轮随同其余 10 个值一起从历史中清除；轮换该凭证不是本方的权限范围，此前已如实记录为"仅标记未处理"，本轮的清除动作不改变这一结论——只是让它不再能从 git 历史里被读到。
+
+**验收结果**：`origin/master` 与本地仓库均确认 10/10 目标 secret 在全历史 0 处残留；commit 树内容（除目标 secret 字符串外）逐文件比对与重写前一致；`git fsck --full` 干净。P0-4 至此视为完整关闭。
