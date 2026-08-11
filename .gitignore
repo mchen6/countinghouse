@@ -22,3 +22,8 @@ nohup.out
 # See lib/auth/ and README.md's Authentication section.
 /auth.json
 /auth.sqlite3
+
+# Internal planning docs, kept locally by the maintainer only -- see
+# docs/design-decisions.md for the public-facing distillation of these.
+/docs/cdif-audit-and-refactoring-plan.md
+/docs/direct-peer-channels-design.md
