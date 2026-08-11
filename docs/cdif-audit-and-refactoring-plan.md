@@ -483,3 +483,43 @@ Step 6 记录的"直连路径无背压/并发上限"这一局限已修复，comm
 **测试期间的插曲，记录以备将来复核**：验证过程中反复撞到与本次改动无关的环境噪音——(1) 本机上跑着另一个 PM2 托管的、完全独立的旧版本部署（`/home/mchen6/cdif.code/build/cdif`），与本仓库的测试共用同一个 Redis 实例；(2) `test1.js`/`test8.js` 固定 5 秒的服务器启动等待时间，在这台机器上经常不够（实测"all module discovered"经常要 7-12+ 秒）。用 `git stash` 把本次改动完全移除、在同一台机器上跑同一个 baseline 测试，复现了同样的失败模式——**确认这些失败与本次 AuthProvider 改动无关，是这台机器长期存在的环境问题**，经用户确认后按"忽略、按需重跑"处理，不在本次范围内修复。每一步的实际正确性验证改为以更快、更可靠的方式为主：新增的单元测试（不依赖服务器启动时序）+ 针对性的手工端到端验证（给足等待时间，规避已知的环境计时噪音）。
 
 **收尾**：按用户指示，完成以上全部后执行 README 重写，鉴权部分改为描述"pluggable（file/sqlite/couchdb-adapter）"，quickstart 以"零外部依赖"为基线（不再要求先起 CouchDB）。
+
+---
+
+## CI 修复：Domain 模块异常捕获替换为 try/catch（2026-08-09）
+
+AuthProvider 10 步方案推送后，GitHub Actions CI（`.github/workflows/ci.yml`，Node 20/22 双矩阵）双双失败：`test1.js` 跑到 `test027`–`test030` 时抛 `TypeError: Cannot read properties of undefined (reading 'startsWith')`，"Run functional tests" 整步中止，`test2`–`test5`/新鉴权测试/`test6` 均未执行。
+
+**排查过程（本环境无 `gh` CLI、无 `GITHUB_TOKEN`，日志靠用户粘贴获得，本机本地复现被证实不可信——见下）**：
+
+1. **初始假设**（基于既有记忆 `project_domain_module_fragility` 记录的 Sprint 2 nano 升级事故）：`lib/service.js` 的 `Service.prototype.doActionCall` 用 Node 已废弃的 `domain` 模块做异常隔离，怀疑是又一次 domain 对依赖树变化的脆弱性发作。用户明确选择"根治方案"：把 domain 替换为 `try/catch`，而非绕开症状的局部方案（如重新引入已删除的 `nano` 依赖）。
+2. **第一版 try/catch 替换后，实测复现出**同样的症状（`fault` 序列化成 `{}`）——说明假设不完整。用一次干净的 A/B 对照定位真因：把 `lib/service.js` 换回 commit `79132eb` 的原始 domain 版本，用**同一份** `node_modules`、同一台机器直接起服务器实测，**结果完全相同**——证明这个"捕获的异常序列化成 `{}`"的 bug 在 domain 时代就已经存在，从来不是 domain 在防护的东西。根因：原生 `Error` 对象的 `.message`/`.stack` 是不可枚举属性，`res.json({fault: err})` 必然序列化成 `{}`，与捕获机制（domain 还是 try/catch）无关。
+3. **本地复现环境本身不可信，此次排查中正式确认**：全新 `git clone` + `npm install` 在本机会撞上与 CI 无关的 `sqlite3`/glibc 版本不匹配（本机 glibc 2.35 < 预编译二进制要求的 2.38，CI 的 `ubuntu-latest` glibc 更新，不受影响）；直接 `npx mocha test1.js` 重跑多次会出现与 CI 实际失败不一致、彼此也不一致的失败特征（ECONNREFUSED、时序竞态等）。结论：本次排查改为完全以用户粘贴的 CI 日志为唯一权威事实来源，不再信任本地全量跑分作为 CI 信号的替代。
+
+**修复**（commit `b9ac21e`）：
+1. 新增 `toJSONSafeFault(err)` 辅助函数，把捕获到的 `Error` 显式转成 `{message, name, stack}` 纯对象再作为 `fault`/`data` 传给回调，从根本上修掉序列化缺口，与捕获机制无关。
+2. `Service.prototype.doActionCall` 的 `Domain.create()`/`unsafeDomain.run()` 包装替换为 async 分支的 `try { await action.invoke(args) } catch`、callback 分支的 `try { action.invoke(...) } catch`。
+3. **诚实记录的能力损失**（写进 `lib/service.js` 代码注释）：`try/catch`（含 `await`）只能捕获与自身**同步相对位置**抛出的异常，无法捕获在完全脱离调用栈的回调（如一个从不调用自身回调的裸 `setTimeout`）里抛出的异常——这正是 domain 模块当年存在的意义，且没有非废弃的现代等价物（除非引入更大范围的 `AsyncLocalStorage` 重实现，本次不在范围内）。`test/unit/test029.js`（`testAsyncThrowInDomain`）与 `test030.js`（`testAsyncThrowInAsync`）的测试动作就是刻意在裸 `setTimeout` 里抛异常来验证这个场景，两个文件相应更新为断言"请求超时后收到 `DEVICE_NOT_RESPONDING`"而非"快速收到结构化的 `DEVICE_INVOKE_EXCEPTION`"——这是一次有意的、已记录的行为变化，不是回归。
+
+**验证**：
+- 手工起服务器 + `curl` 直接验证 `testThrowError`/`testThrowErrorAsync`（同步抛异常）：`fault.message`/`name`/`stack` 均正确填充，不再是 `{}`。
+- 用 `--requestTimeout 3` 起服务器验证 `testAsyncThrowInDomain`/`testAsyncThrowInAsync`（裸 `setTimeout` 内抛异常）：均在约 3 秒（即配置的 timeout）后返回 `DEVICE_NOT_RESPONDING`，行为与代码注释描述一致。
+- 完整回归：`test1.js`（34/34，含更新后的 test029/030）、`test2`–`test5`、`test/auth/*.js` + `test/device-config/*.js`、`test8.js`（单/多线程、`--directPeerChannels` 各态）全部通过，`test6.js`（基准测试）顺带跑过也全绿；`test7.js`（另一档基准）按惯例跳过。
+- 推送后经 GitHub `check-runs` API（无 `gh` CLI，用未认证 REST API 轮询）确认：`test (20)`、`test (22)` 均 `completed`/`success`。CI 转绿，是本轮排查的最终目标。
+
+**收尾**：把此前一直只在本地工作副本、从未提交的 `CLAUDE.md`、本文档、`docs/direct-peer-channels-design.md` 一并提交推送（commit `faca05a`），仓库状态与本地完全同步。
+
+---
+
+## 当前状态快照（2026-08-10，供后续会话/其他 Claude 参考）
+
+**已完成、无需重复核实**：Sprint 1–5 全部任务；Direct Peer Channels 设计文档六步全部实现（D1–D5 五项决策均未偏离）；两次发布阻断修复（性能数字一致性、直连路径双重计费）；AuthProvider 10 步重构 + legacy 计价死代码退役；本节记录的 CI 修复（domain → try/catch + `toJSONSafeFault`）。CI 在 Node 20/22 均绿（commit `b9ac21e`）。仓库与 `origin/master` 完全同步（最新 `faca05a`）。
+
+**明确剩余、尚未开始**（原施工图"七、内容与发布"，只有 七.1 README 完成）：
+- 七.2 技术博客初稿（《We built MCP's tool architecture in 2015 — by accident》）
+- 七.3 Show HN 发帖 + 首日答疑口径
+- 七.4 注册官方 MCP Registry（`server.json` 已就绪）+ 提交 awesome-mcp-servers/awesome-mcp-gateways 收录 PR
+
+**需要确认是否真正关闭**：P0-4 凭证泄露——线上 token 已确认吊销（2026-08-08），但施工图原文要求的 `git filter-repo --replace-text` 历史清理步骤，本文档中没有找到执行记录，建议下一步先确认这一步是否已经做过。
+
+**已如实记录为已知问题/roadmap，非阻断，暂无计划修复**（见各自小节）：`lib/socket-server.js` 事件推送链路本身不完整（只修了参数错位）；身份无法解析的内部调用会被无限期免费放行；direct peer channel 的并发上限是固定值（16），非按 payload 大小自适应；`priceRecord` 预付费配额概念未重新实现（如需要应作为新 `MeteringProvider` 方法，而非复活绑定旧 CouchDB schema 的 fallback 代码）。
