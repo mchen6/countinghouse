@@ -28,8 +28,8 @@ authorized to call it, and hands each side one end of a new
 `postMessage` hops, zero main-thread involvement. The port is cached and
 reused for later calls to the same worker (even for a different device
 hosted there), and invalidated automatically if that worker reloads,
-unloads, or crashes — see `docs/direct-peer-channels-design.md` (D1–D5)
-for the full design and `docs/cross-cutting-matrix.md`'s two
+unloads, or crashes — see [`design-decisions.md`](design-decisions.md#direct-peer-channels-five-decisions-d1d5)
+(D1–D5) for the full design and `docs/cross-cutting-matrix.md`'s two
 "Direct peer channel" rows for exactly which cross-cutting guarantees
 (authorization, metering, rate limiting, timeouts) apply on this path
 versus the main-thread-routed one.
@@ -199,8 +199,7 @@ change.
 
 ## Retired numbers
 
-Per `docs/cdif-audit-and-refactoring-plan.md` and this project's own
-stated discipline: the old "20–30×" performance figures from this
+Per this project's own stated discipline: the old "20–30×" performance figures from this
 codebase's earlier PPT-era materials must not be cited anywhere going
 forward. The tables above, produced by `perf/direct-peer-channels-perf.js`
 and `perf/peer-channel-serialization-perf.js` on the current Node target,

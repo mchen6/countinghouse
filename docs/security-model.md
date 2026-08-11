@@ -104,9 +104,11 @@ These are real, and worth being specific about rather than waving at
   directly if it required the `redis` package itself and supplied its own
   connection details — this allowlist constrains the *platform-provided*
   Redis handle, not arbitrary module code.)
-- **Per-apiKey device authorization** (`AuthProvider`, `lib/auth/` —
-  `docs/cdif-audit-and-refactoring-plan.md`'s AuthProvider section has the
-  full design). Every entry path in `docs/cross-cutting-matrix.md`'s table
+- **Per-apiKey device authorization** (`AuthProvider`, `lib/auth/` — see
+  [`design-decisions.md`](design-decisions.md#authprovider-three-pluggable-backends-one-narrow-interface)
+  for why it's split into three backends, and
+  [`authentication.md`](authentication.md) for how to configure each one).
+  Every entry path in `docs/cross-cutting-matrix.md`'s table
   that checks `userAuth` denies a caller that isn't explicitly granted
   the target `deviceID` (`USER_HAS_NO_DEVICE`), via one of three pluggable
   backends: `FileAuthProvider` (default, a JSON file), `SqliteAuthProvider`,

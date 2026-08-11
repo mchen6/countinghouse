@@ -29,7 +29,8 @@ happens to do more work per call.
 
 Old performance numbers ("20-30x") describing this codebase's prior
 worker-thread architecture must not be cited here or anywhere else until
-they are re-benchmarked on the current Node target (see the plan doc). This
+they are re-benchmarked on the current Node target (see
+[`direct-peer-channels.md`](direct-peer-channels.md#retired-numbers)). This
 document makes no performance claims.
 
 ## How composite-demo works
