@@ -168,7 +168,12 @@ WebSocket/socket.io event delivery, OpenStack API simulation).
 | `POST /verify-module`, `/reload-module`, `/shutdown`, `GET /get-module-device-list` | Platform, `--debug` or `--verifyModule` | Operational/admin surface, not meant to be reachable by end users. |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
-goes through the same `AuthProvider` check `tools/call` does.
+goes through the same `AuthProvider` check `tools/call` does. For exactly
+which guarantee (auth, schema validation, metering, rate limiting,
+timeout, error shape) applies on which entry path — HTTP, MCP sync, MCP
+task-augmented, the event channel, and both direct-peer-channel modes —
+see [`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md), kept
+current as a living inventory rather than a point-in-time snapshot.
 
 ## Module development
 
@@ -249,7 +254,12 @@ isolation does and doesn't provide). Modules can call each other's
 actions over the same message channel the runtime already uses to route
 every action call, letting one MCP `tools/call` fan out into several
 metered inner hops without any of the intermediate data leaving the
-process or entering a model's context window.
+process or entering a model's context window. The rationale behind this
+and a handful of other architecture decisions — why AuthProvider has
+three backends, the billing-authority rule that prevents double-charging
+composed calls, the direct-peer-channels design, MCP protocol version
+negotiation — is collected in
+[`docs/design-decisions.md`](docs/design-decisions.md).
 
 ## Origin
 
