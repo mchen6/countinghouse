@@ -1,8 +1,8 @@
 1) Get authorization code:
 Request:  curl -X POST http://localhost:3000/authorize -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=client22" -d "client_secret=secret" -d "grant_type=authorization_code" -d "response_type=code" -d "redirect_uri=http://localhost:3030/client/app"
 
-Response: {"redirectUri":"http://localhost:3030/client/app","authorizationCode":"0cc1b43aafa39ca5fc4e8ad86d6716f704f6be4e","expiresAt":"2019-10-12T06:35:40.533Z","client":{"clientId":"client22","clientSecret":null,"grants":["authorization_code","refresh_token"],"redirectUris":["http://localhost:3030/client/app"]},"user":{"user":1}}
+Response: {"redirectUri":"http://localhost:3030/client/app","authorizationCode":"<REDACTED>","expiresAt":"2019-10-12T06:35:40.533Z","client":{"clientId":"client22","clientSecret":null,"grants":["authorization_code","refresh_token"],"redirectUris":["http://localhost:3030/client/app"]},"user":{"user":1}}
 
 2) Using authorization code to get access token:
-Request:  curl -X POST http://localhost:3000/token -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=client22" -d "client_secret=secret" -d "grant_type=authorization_code" -d "code=0cc1b43aafa39ca5fc4e8ad86d6716f704f6be4e"
-Response: {"accessToken":"***REDACTED-SECRET***","accessTokenExpiresAt":"2019-10-12T07:30:54.942Z","refreshToken":"***REDACTED-SECRET***","refreshTokenExpiresAt":"2019-10-26T06:30:54.942Z","client":{"clientId":"client22","clientSecret":"secret","grants":["authorization_code","refresh_token"],"redirectUris":["http://localhost:3030/client/app"]},"user":{"user":1}}
+Request:  curl -X POST http://localhost:3000/token -H "Content-Type: application/x-www-form-urlencoded" -d "client_id=client22" -d "client_secret=secret" -d "grant_type=authorization_code" -d "code=<REDACTED>"
+Response: {"accessToken":"<REDACTED>","accessTokenExpiresAt":"2019-10-12T07:30:54.942Z","refreshToken":"<REDACTED>","refreshTokenExpiresAt":"2019-10-26T06:30:54.942Z","client":{"clientId":"client22","clientSecret":"secret","grants":["authorization_code","refresh_token"],"redirectUris":["http://localhost:3030/client/app"]},"user":{"user":1}}
