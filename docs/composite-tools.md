@@ -110,7 +110,7 @@ successful request.
 ### Example
 
 ```
-$ curl -s -X POST http://127.0.0.1:18200/mcp -H "Content-Type: application/json" \
+$ curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
         "name":"composite_demo_compositeservice_run",
         "arguments":{"text":"hello from the composite demo"}}}'
