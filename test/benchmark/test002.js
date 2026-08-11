@@ -31,7 +31,7 @@ module.exports = function (cp, isSingleThread) {
       .on('end', function (stats, errorCount) {
         console.log('error count: ', errorCount);
         console.log('stats', stats);
-        request(url).post('/shutdown').end(function() {});
+        request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(function() {}); // /shutdown is now admin-gated, shared with test6/test7's debugKey
         return done();
       });
     });

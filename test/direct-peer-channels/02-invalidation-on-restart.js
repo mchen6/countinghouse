@@ -49,6 +49,7 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
       // fire the restart without waiting for it, then race several calls
       // against the teardown+recreate window.
       request(url).post('/restart-module')
+      .set('X-CH-Key', 'aabbcc') // /restart-module is now admin-gated (lib/routes/admin-only.js) -- shared with test8.js's server, same debugKey
       .send({path: './pre-installed-packages/echo-device-module', name: 'echo-device-module', version: '1.3.0'})
       .end(function() {}); // response timing isn't needed -- the race calls below are what matters
 

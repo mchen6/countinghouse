@@ -43,15 +43,17 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
 
   after(function(done) {
     fs.unlinkSync(AUTH_CONFIG_PATH);
-    // /shutdown is only mounted when options.debug or options.verifyModule
-    // is true (lib/route-manager.js) -- this server deliberately runs
-    // WITHOUT --debug (that's the whole point of this test), so unlike
-    // every other standalone test in this repo, POSTing /shutdown here
-    // just 404s and leaves the process running forever (which in turn
-    // keeps this test's own `exec()`-spawned child alive, hanging mocha
-    // itself past the last assertion -- found the hard way). Kill the
-    // actual node process directly instead, matched via the unique
-    // --authConfigPath value on its command line.
+    // /shutdown is always mounted now (lib/route-manager.js), but gated
+    // by admin-only.js -- this server's auth.json (built above) grants no
+    // key admin rights, so unlike every other standalone test in this
+    // repo, POSTing /shutdown here would just 403 (ADMIN_REQUIRED) and
+    // leave the process running forever (which in turn keeps this test's
+    // own `exec()`-spawned child alive, hanging mocha itself past the
+    // last assertion -- found the hard way, back when this route 404'd
+    // instead for the same underlying reason: no legitimate way for this
+    // deliberately-non-debug, non-admin server to shut itself down via
+    // HTTP). Kill the actual node process directly instead, matched via
+    // the unique --authConfigPath value on its command line.
     exec('pkill -f "framework.js.*' + AUTH_CONFIG_PATH + '"', function() { done(); });
   });
 

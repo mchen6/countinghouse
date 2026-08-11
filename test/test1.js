@@ -22,6 +22,7 @@ describe("Test started in COUNTINGHOUSE multi-thread mode", function () {
   after(function (done) {
     console.log('test ended');
     request(url).post('/shutdown')
+    .set('X-CH-Key', 'aabbcc') // /shutdown is now admin-gated (lib/routes/admin-only.js) -- this server's --debugKey
     .end(function() {
       done();
     });

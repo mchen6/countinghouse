@@ -40,7 +40,7 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
   });
 
   after(function(done) {
-    request(url).post('/shutdown').end(function() { done(); });
+    request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(function() { done(); }); // /shutdown is now admin-gated
   });
 
   var ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module

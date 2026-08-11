@@ -39,7 +39,10 @@ describe('direct-peer-channels 03: grant-time authorization (D3)', function() {
   });
 
   after(function(done) {
-    request(url).post('/shutdown').end(function() { done(); });
+    // /shutdown is now admin-gated (lib/routes/admin-only.js) -- this
+    // server's --debugKey is the mismatched 'not-aabbcc' (the whole point
+    // of this file), not the shared 'aabbcc' other standalone tests use.
+    request(url).post('/shutdown').set('X-CH-Key', 'not-aabbcc').end(function() { done(); });
   });
 
   var ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module

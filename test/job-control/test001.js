@@ -29,7 +29,7 @@ module.exports = function (cp, isSingleThread) {
           queueEvents.on('completed', function(args) {
             console.log(`Job completed with result ${JSON.stringify(args.returnvalue)}`);
 
-            request(url).post('/shutdown').end(function() {});
+            request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(function() {}); // /shutdown is now admin-gated, shared with test5.js's debugKey
             return done();
           });
 

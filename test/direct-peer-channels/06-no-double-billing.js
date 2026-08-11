@@ -85,7 +85,7 @@ describe('direct-peer-channels 06: composite-demo does not double-bill (--direct
   });
 
   after(function(done) {
-    request(url).post('/shutdown').end(function() { done(); });
+    request(url).post('/shutdown').set('X-CH-Key', INTERNAL_API_KEY).end(function() { done(); }); // /shutdown is now admin-gated
   });
 
   it('a 2-hop composite call bills exactly 2, and bill still shows 2 independent records', function(done) {
@@ -104,7 +104,7 @@ describe('direct-peer-channels 06b: composite-demo does not double-bill (--direc
   });
 
   after(function(done) {
-    request(url).post('/shutdown').end(function() { done(); });
+    request(url).post('/shutdown').set('X-CH-Key', INTERNAL_API_KEY).end(function() { done(); }); // /shutdown is now admin-gated
   });
 
   it('a 2-hop composite call bills exactly 2, and bill still shows 2 independent records', function(done) {
