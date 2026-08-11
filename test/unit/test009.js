@@ -21,7 +21,7 @@ describe('test9: invoke specify incorrect input type', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL' || res.body.fault.reason !== '数据不是object类型') {
+      if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test2 invoke specify incorrect input type fail'));

@@ -149,7 +149,7 @@ WebSocket/socket.io event delivery, OpenStack API simulation).
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |
 | `--deviceConfigPath <path>` | `./config/devices` | Directory of per-module device config files (one `<moduleName>.json` each). |
-| `--locale <locale>` | `zh-CN` | Error message locale (`en-US` also available). |
+| `--locale <locale>` | `en-US` | Error message locale (`zh-CN` also available). |
 
 ## HTTP API surface
 

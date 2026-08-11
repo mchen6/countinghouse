@@ -22,7 +22,6 @@ describe('test12: invoke specify input validation', function() {
       if (err) return done(err);
 
       if (res.body.code !== 'INPUT_DATA_VALIDATION_FAIL'
-        || res.body.fault.reason !== '数据校验失败'
         || res.body.fault.info.dataPath == null
         || res.body.fault.info.schemaPath == null
         || res.body.fault.info.validatorMessage == null

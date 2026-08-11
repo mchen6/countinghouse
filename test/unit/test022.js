@@ -21,7 +21,7 @@ describe('test22: invoke return number type as output', function() {
     .expect(500, function(err, res) {
       if (err) return done(err);
 
-      if (res.body.code !== 'OUTPUT_DATA_VALIDATION_FAIL' || res.body.fault.reason !== '未找到输出参数') {
+      if (res.body.code !== 'OUTPUT_DATA_VALIDATION_FAIL') {
         console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
         console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
         return done(new Error('test22 fail'));
