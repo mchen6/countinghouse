@@ -101,6 +101,20 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
         if (res.status !== 200) {
           return done(new Error('load-module failed for an admin key: ' + res.status + ' ' + JSON.stringify(res.body)));
         }
+
+        // The response must be the minimal answer to "did it load", not the
+        // live module/WorkerMessage instance -- that used to serialize
+        // msgQueue, the worker_threads handle, workerId, rateLimiters and
+        // deviceList straight onto the wire.
+        if (res.body.loaded !== true || res.body.name !== 'transform-demo') {
+          return done(new Error('expected {loaded:true,name,version}, got: ' + JSON.stringify(res.body)));
+        }
+        ['msgQueue', 'worker', 'workerId', 'rateLimiters', 'deviceList', 'msgID', 'discoverState'].forEach(function(leak) {
+          if (Object.prototype.hasOwnProperty.call(res.body, leak)) {
+            throw new Error('internal field "' + leak + '" leaked in /load-module response: ' + JSON.stringify(res.body));
+          }
+        });
+
         setTimeout(done, 4000); // let the worker come up and the device register
       });
   });
@@ -136,6 +150,9 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
         if (err) return done(err);
         if (res.status === 403) {
           return done(new Error('admin key was refused on /unload-module: ' + JSON.stringify(res.body)));
+        }
+        if (res.status === 200 && res.body.unloaded !== true) {
+          return done(new Error('expected {unloaded:true,name}, got: ' + JSON.stringify(res.body)));
         }
         return done();
       });
