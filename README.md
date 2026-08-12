@@ -235,11 +235,21 @@ A device module is a directory with:
 
 ```
 my-module/
-├── package.json   # name, version — a normal npm package
-├── api.json        # device/service/action metadata (see below)
+├── package.json   # name, version, and "main": "index.js"
+├── index.js        # the device MODULE — answers `discover` by emitting `deviceonline`
+├── api.json         # device/service/action metadata (see below)
 ├── schema.json       # JSON Schema 2020-12 input/output/fault per action
-└── device.js           # wires api.json + schema.json + action handlers together
+└── device.js          # wires api.json + schema.json + action handlers together
 ```
+
+**`index.js` is required and is not the same file as `device.js`.** The
+framework loads your package's `main` and treats it as a device *module* — an
+object that answers a `discover` request by announcing devices — not as a
+device. Point `main` at `device.js` and the module will load, report success,
+and then never appear, because nothing is listening for `discover`. Every
+module in `pre-installed-packages/` has the same ~20-line `index.js`; copy it.
+Full reference and a "my module doesn't appear in tools/list" checklist:
+[`docs/module-development.md`](docs/module-development.md).
 
 `api.json` declares one `friendlyName`, one or more services (each a
 `urn:...:serviceID:...`), and each service's actions — a name, a

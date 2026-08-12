@@ -1,0 +1,19 @@
+{
+  "specVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "device": {
+    "friendlyName": "no-index-module",
+    "manufacturer": "countinghouse-test",
+    "modelName": "noindex",
+    "modelDescription": "valid spec; the only defect is package.json main",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:svc": {
+        "serviceType": "urn:countinghouse-test:serviceID:svc",
+        "actionList": {},
+        "serviceStateTable": {}
+      }
+    }
+  }
+}

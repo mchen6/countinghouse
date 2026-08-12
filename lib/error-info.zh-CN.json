@@ -117,6 +117,8 @@
   "PEER_CHANNEL_TIMEOUT": "直连调用超时",
   "PEER_SELF_TARGET": "目标设备由发起调用的 worker 自身承载，不支持建立直连通道",
   "PEER_NO_HANDLER": "对端未注册直连调用处理器",
+  "MODULE_NOT_DISCOVERABLE": "设备模块不可发现",
+  "MODULE_NO_DEVICE_ONLINE": "设备模块未产出可用设备",
   "QUERY_DEVICE_ON_MAIN_THREAD": "worker 线程模式下禁止在主线程中查找设备",
   "JOB_ACCESS_DENIED": "该 apiKey 不是所请求任务的归属者"
 }

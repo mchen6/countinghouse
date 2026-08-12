@@ -117,6 +117,8 @@
   "PEER_CHANNEL_TIMEOUT": "Direct peer channel call timed out",
   "PEER_SELF_TARGET": "Target device is hosted by the requesting worker itself, direct peer channel not applicable",
   "PEER_NO_HANDLER": "No peer-invoke handler registered on the remote side",
+  "MODULE_NOT_DISCOVERABLE": "Device module is not discoverable",
+  "MODULE_NO_DEVICE_ONLINE": "Device module produced no usable device",
   "QUERY_DEVICE_ON_MAIN_THREAD": "Cannot look up a device from the main thread in worker-thread mode",
   "JOB_ACCESS_DENIED": "This apiKey is not the owner of the requested job"
 }
