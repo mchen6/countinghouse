@@ -38,6 +38,15 @@ placeholder published before any of this existed. It contains no usable
 release and nothing upgrades from it. `4.0.0` is the first real published
 version of this package.
 
+**4.0.1 supersedes 4.0.0.** 4.0.0 shipped with `sqlite3` already optional,
+but its failure message did not explain *why* the optional backend was
+unavailable, and the limitation was undocumented. 4.0.1 adds the diagnosis
+(the prebuilt binding needs glibc >= 2.38; the message reports the host's
+actual version and both ways forward) and documents it in
+[`docs/authentication.md`](docs/authentication.md#sqlite) and README. No API
+changes -- if 4.0.0 works for you, 4.0.1 changes nothing but the error text
+you see when it doesn't.
+
 ---
 
 This project has been rebranded twice: `@apemesh/cdif` -> `mcpforge` -> `countinghouse`
