@@ -21,16 +21,38 @@ stand up first.
 ```sh
 # don't have Redis running already? this is enough for local evaluation
 docker run -d --name countinghouse-redis -p 6379:6379 redis:7
+```
 
-git clone https://github.com/mchen6/countinghouse.git
-cd countinghouse
+**Install from npm** — for running countinghouse as-is:
 
-npm install
+```sh
+npm install countinghouse
 
-# start the runtime, loading the bundled echo demo module
-node ./framework.js --workerThread --bindAddr 127.0.0.1 --loadModule ./pre-installed-packages/echo-device-module
+# start the runtime, loading the bundled echo demo module.
+# `countinghouse` (or the short alias `cth`) is on your PATH via npx.
+npx countinghouse --workerThread --bindAddr 127.0.0.1 \
+  --loadModule ./node_modules/countinghouse/pre-installed-packages/echo-device-module
 # -> countinghouse listen on: 127.0.0.1:9527
 ```
+
+**Install from source** — for developing on countinghouse itself, or running
+the test suite:
+
+```sh
+git clone https://github.com/mchen6/countinghouse.git
+cd countinghouse
+npm install
+
+# from a clone the bundled modules are at the repo root, and framework.js is
+# run directly rather than through the installed bin
+node ./framework.js --workerThread --bindAddr 127.0.0.1 \
+  --loadModule ./pre-installed-packages/echo-device-module
+# -> countinghouse listen on: 127.0.0.1:9527
+```
+
+The two differ only in how the runtime is launched and where the bundled
+demo modules live; every flag, endpoint and behaviour below is identical.
+`auth.json` is created in the current working directory either way.
 
 No `auth.json` yet? The first run generates one (at
 `<repo-root>/auth.json` by default — see `--authConfigPath`) with a demo
