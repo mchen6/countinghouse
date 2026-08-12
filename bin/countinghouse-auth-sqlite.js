@@ -15,7 +15,18 @@
 //   list                                       print every user, their admin status, and their granted devices
 //
 // --dbPath defaults to ./auth.sqlite3 (same default SqliteAuthProvider itself uses).
-var sqlite3 = require('sqlite3');
+// sqlite3 is an optionalDependency -- see lib/auth/sqlite-provider.js.
+// This CLI is unusable without it by definition, so fail with an actionable
+// message instead of a native-loader stack trace.
+var sqlite3;
+try {
+  sqlite3 = require('sqlite3');
+} catch (e) {
+  console.error('This CLI requires the "sqlite3" package, which is not installed or cannot be ' +
+                'loaded on this host:\n  ' + e.message.split('\n')[0] +
+                '\nRun: npm install sqlite3');
+  process.exit(1);
+}
 
 function parseArgs(argv) {
   var dbPath = process.cwd() + '/auth.sqlite3';

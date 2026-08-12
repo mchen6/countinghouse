@@ -71,7 +71,28 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
     });
   });
 
-  it('alice posts add-job with opts.apiKey forged to mallory -- and mallory is NOT billed', function(done) {
+  // Billing happens when the job *completes*, which is asynchronous and, on a
+  // loaded machine, can take well over the fixed delay this used to wait. A
+  // single sleep made the test flaky -- and, worse, made its central negative
+  // assertion ("mallory was not billed") pass vacuously whenever the job
+  // simply hadn't run yet. So: poll until the job's charge actually lands,
+  // and only then check who paid for it.
+  function waitForCharge(cb) {
+    var deadline = Date.now() + 20000;
+    (function poll() {
+      balance(ALICE, function(err, a) {
+        if (err) return cb(err);
+        if (a !== 0) return cb(null, a);                    // the charge landed
+        if (Date.now() > deadline) {
+          return cb(new Error('job never completed/recorded within 20s -- cannot tell who was billed, ' +
+                              'so the forgery assertion below would be meaningless'));
+        }
+        setTimeout(poll, 500);
+      });
+    })();
+  }
+
+  it('alice posts add-job with opts.apiKey forged to mallory', function(done) {
     request(url).post('/devices/' + DEVICE_ID + '/add-job')
       .set('X-CH-Key', ALICE)
       .send({
@@ -86,27 +107,26 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
           return done(new Error('expected the job to be created (the forged field must be ignored, not fatal), got: ' +
                                 res.status + ' ' + JSON.stringify(res.body)));
         }
-
-        // give the job time to run and its completion to record the call
-        setTimeout(function() {
-          balance(MALLORY, function(err, m) {
-            if (err) return done(err);
-            if (m !== 0) {
-              return done(new Error('billing-attribution forgery: mallory was charged ' + (0 - m) + ' for a job alice submitted'));
-            }
-            return done();
-          });
-        }, 4000);
+        return done();
       });
   });
 
-  it('the bill landed on alice, the real caller', function(done) {
-    balance(ALICE, function(err, a) {
+  it('the bill landed on alice, the real caller -- and NOT on the forged identity', function(done) {
+    waitForCharge(function(err, aliceBalance) {
       if (err) return done(err);
-      if (a !== -1) {
-        return done(new Error('expected alice to be charged exactly once (balance -1), got: ' + a));
+      if (aliceBalance !== -1) {
+        return done(new Error('expected alice to be charged exactly once (balance -1), got: ' + aliceBalance));
       }
-      return done();
+      // checked only now that the job is known to have completed, so a 0 here
+      // means "not billed", not "not run yet"
+      balance(MALLORY, function(err, m) {
+        if (err) return done(err);
+        if (m !== 0) {
+          return done(new Error('billing-attribution forgery: mallory was charged ' + (0 - m) +
+                                ' for a job alice submitted'));
+        }
+        return done();
+      });
     });
   });
 

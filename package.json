@@ -7,6 +7,22 @@
     "cth": "./bin/countinghouse"
   },
   "main": "./framework.js",
+  "files": [
+    "framework.js",
+    "bin/",
+    "lib/",
+    "pre-installed-packages/",
+    "spec/schema.json",
+    "docs/authentication.md",
+    "docs/composite-tools.md",
+    "docs/cross-cutting-matrix.md",
+    "docs/design-decisions.md",
+    "docs/direct-peer-channels.md",
+    "docs/module-development.md",
+    "docs/security-model.md",
+    "MIGRATION.md",
+    "server.json"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -65,7 +81,6 @@
     "serve-favicon": "^2.4.3",
     "soap": "^1.6.4",
     "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1",
     "string-hash": "^1.1.1",
     "tar": "^7.5.22",
     "uuid-1345": "^0.99.6",
@@ -92,5 +107,8 @@
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.12",
     "webpack-node-externals": "^2.5.0"
+  },
+  "optionalDependencies": {
+    "sqlite3": "^6.0.1"
   }
 }
