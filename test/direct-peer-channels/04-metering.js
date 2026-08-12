@@ -44,6 +44,7 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
   });
 
   var ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
+  var ECHO_DEVICE_ID        = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, called directly for the baseline below
 
   function getBalance(cb) {
     request(url).get('/balance')
@@ -64,7 +65,51 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
     });
   }
 
-  it('a call over a direct peer channel bills exactly once, not zero or twice', function(done) {
+  // A non-composing call: straight to echo-device-module, zero inner hops.
+  // Its cost is entirely the outer HTTP invoke-action charge.
+  function invokeDirect(cb) {
+    request(url).post('/devices/' + ECHO_DEVICE_ID + '/invoke-action')
+    .set('X-CH-Key', 'aabbcc')
+    .send({serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [{item1: 'x'}], bar: 'y'}})
+    .end(function(err, res) {
+      if (err) return cb(err);
+      return cb(null, res.body);
+    });
+  }
+
+  // Measured, not assumed. HTTP invoke-action is itself a metered entry path
+  // (it always should have been -- until 2026-08-11 it recorded nothing,
+  // which is what this test's original "delta must be 1" expectation had
+  // quietly baked in). So the total for a composing call is now
+  //   outer invoke-action charge + one platform charge per inner hop
+  // and asserting a bare total can no longer distinguish "one charge per
+  // hop" from "the outer call is being double-counted". Measuring the outer
+  // charge separately, against a module that makes no inner calls at all, is
+  // what keeps this test a statement about *hops* rather than about the
+  // total.
+  var outerCallCost = null;
+
+  it('a plain (non-composing) call establishes the outer invoke-action charge', function(done) {
+    getBalance(function(err, before) {
+      if (err) return done(err);
+
+      invokeDirect(function(err, body) {
+        if (err) return done(err);
+        if (body.output == null) return done(new Error('direct-peer-channels 04 fail: baseline invoke did not succeed: ' + JSON.stringify(body)));
+
+        getBalance(function(err, after) {
+          if (err) return done(err);
+          outerCallCost = before - after;
+          if (outerCallCost !== 1) {
+            return done(new Error('direct-peer-channels 04 fail: expected a plain invoke-action with zero inner hops to cost exactly 1 (the outer charge, cost=1), got ' + outerCallCost));
+          }
+          return done();
+        });
+      });
+    });
+  });
+
+  it('a call over a direct peer channel bills the hop exactly once, not zero or twice', function(done) {
     getBalance(function(err, before) {
       if (err) return done(err);
 
@@ -80,8 +125,10 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
         getBalance(function(err, after) {
           if (err) return done(err);
           var delta = before - after;
-          if (delta !== 1) {
-            return done(new Error('direct-peer-channels 04 fail: expected balance to drop by exactly 1 (one charge for one hop, cost=1), dropped by ' + delta + ' (before=' + before + ', after=' + after + ')'));
+          var hopCost = delta - outerCallCost;
+          if (hopCost !== 1) {
+            return done(new Error('direct-peer-channels 04 fail: expected the single inner hop to be billed exactly once (cost=1), got ' + hopCost +
+                                  ' (total delta ' + delta + ' minus the measured outer invoke-action charge ' + outerCallCost + '; before=' + before + ', after=' + after + ')'));
           }
           return done();
         });

@@ -21,6 +21,7 @@ var url = 'http://127.0.0.1:9527';
 // STANDALONE_ONLY_PEER_CHANNEL_TESTS comment for why these can never run
 // concurrently with it or with each other).
 var COMPOSITE_DEVICE_ID = '6042a93c-06b1-54b5-a62d-a68c15f1ce1e'; // composite-demo
+var ECHO_DEVICE_ID      = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, called directly for the outer-charge baseline
 var INTERNAL_API_KEY    = 'composite-demo-internal'; // composite-demo/device.js's fixed internal identity
 
 function loadModuleArgs() {
@@ -48,7 +49,49 @@ function invokeComposite(cb) {
   });
 }
 
+// A non-composing call: straight to echo-device-module, zero inner hops, so
+// its whole cost is the outer HTTP invoke-action charge.
+//
+// This baseline is measured rather than assumed because HTTP invoke-action
+// is itself a metered entry path. It always should have been; until
+// 2026-08-11 it recorded nothing at all, and this test's original "delta
+// must be 2" expectation had quietly baked that bug in. With the outer call
+// correctly billed, a 2-hop composite call costs 1 (outer) + 2 (hops) = 3,
+// and asserting the bare total could no longer tell "one charge per hop"
+// apart from "a hop got double-counted" -- which is the only thing this
+// regression test exists to detect. Subtracting a separately measured outer
+// charge keeps the assertion about hops.
+function invokeDirect(cb) {
+  request(url).post('/devices/' + ECHO_DEVICE_ID + '/invoke-action')
+  .set('X-CH-Key', INTERNAL_API_KEY)
+  .send({serviceID: 'urn:countinghouse-com:serviceID:echoService', actionName: 'echo', input: {foo: [{item1: 'x'}], bar: 'y'}})
+  .end(function(err, res) {
+    if (err) return cb(err);
+    return cb(null, res.body);
+  });
+}
+
+function measureOuterCallCost(cb) {
+  getBalance(function(err, before) {
+    if (err) return cb(err);
+    invokeDirect(function(err, body) {
+      if (err) return cb(err);
+      if (body.output == null) return cb(new Error('06-no-double-billing fail: baseline invoke did not succeed: ' + JSON.stringify(body)));
+      getBalance(function(err, after) {
+        if (err) return cb(err);
+        return cb(null, before - after);
+      });
+    });
+  });
+}
+
 function runBillingAssertion(done) {
+  measureOuterCallCost(function(err, outerCallCost) {
+    if (err) return done(err);
+    if (outerCallCost !== 1) {
+      return done(new Error('06-no-double-billing fail: expected a plain invoke-action with zero inner hops to cost exactly 1, got ' + outerCallCost));
+    }
+
   getBalance(function(err, before) {
     if (err) return done(err);
 
@@ -64,13 +107,16 @@ function runBillingAssertion(done) {
       getBalance(function(err, after) {
         if (err) return done(err);
 
-        var delta = before - after;
-        if (delta !== 2) {
-          return done(new Error('06-no-double-billing fail: expected balance to drop by exactly 2 (one platform charge per hop, cost=1, 2 hops), dropped by ' + delta + ' (before=' + before + ', after=' + after + ')'));
+        var delta   = before - after;
+        var hopCost = delta - outerCallCost;
+        if (hopCost !== 2) {
+          return done(new Error('06-no-double-billing fail: expected the 2 inner hops to be billed exactly once each (2 total, cost=1 per hop), got ' + hopCost +
+                                ' (total delta ' + delta + ' minus the measured outer invoke-action charge ' + outerCallCost + '; before=' + before + ', after=' + after + ')'));
         }
         return done();
       });
     });
+  });
   });
 }
 
