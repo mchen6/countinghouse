@@ -116,7 +116,13 @@ known simplifications — a real caller's apiKey isn't threaded through to
 inner hops in this demo), separate from whatever key you call the outer
 tool with. Grant that identity access before starting the server below, or
 every call fails with `DEVICE_ACTION_CALL_FAIL` (AuthProvider rejecting an
-identity it's never seen, not a bug in the composition itself):
+identity it's never seen, not a bug in the composition itself).
+
+**This applies to every bundled module that calls other modules, not just
+this one** — `echo-device-client-module` (`aabbcc`) and `perf-caller-demo`
+(`perf-caller-demo-internal`) each need the same grant if you load them. See
+[`docs/composite-tools.md`](docs/composite-tools.md#every-composing-module-needs-its-internal-identity-granted)
+for the full list and a one-liner that grants all three.
 
 ```sh
 node -e "var c=JSON.parse(require('fs').readFileSync('auth.json'));

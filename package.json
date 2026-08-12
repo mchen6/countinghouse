@@ -6,7 +6,7 @@
     "countinghouse": "./bin/countinghouse",
     "cth": "./bin/countinghouse"
   },
-  "main": "./bin/framework.js",
+  "main": "./framework.js",
   "engines": {
     "node": ">=20"
   },

@@ -128,6 +128,45 @@ returns a `bill` with two independent entries, one per inner module:
 }
 ```
 
+## Every composing module needs its internal identity granted
+
+A module that calls other modules does so as *some* apiKey, and that apiKey
+goes through the same `AuthProvider` check any external caller would. So on
+a real (non-`--debug`) server, a composing module does not work until its
+internal identity is granted access to the modules it calls — otherwise
+every inner hop fails with `USER_HAS_NO_DEVICE`, surfacing at the outer tool
+as `DEVICE_ACTION_CALL_FAIL` (or, if the module passes the inner result
+straight through, as `MISSING_OUTPUT_ARGUMENT`). This is `AuthProvider`
+correctly refusing an identity it has never seen, not a bug in composition.
+
+Every bundled module that composes has one, and **all of them need this**,
+not just `composite-demo`:
+
+| Module | Internal apiKey | Calls |
+|---|---|---|
+| `composite-demo` | `composite-demo-internal` | `transform-demo`, `echo-device-module` |
+| `echo-device-client-module` | `aabbcc` | `echo-device-module` |
+| `perf-caller-demo` | `perf-caller-demo-internal` | `perf-callee-demo` |
+
+Grant whichever ones you load, before starting the server:
+
+```sh
+node -e "var f='auth.json',fs=require('fs');
+  var c=JSON.parse(fs.readFileSync(f));
+  ['composite-demo-internal','aabbcc','perf-caller-demo-internal'].forEach(function(k){
+    c[k]={userName:k, devices:['*']};
+  });
+  fs.writeFileSync(f, JSON.stringify(c,null,2));"
+```
+
+`echo-device-client-module`'s key is the literal string `aabbcc` because it
+predates this convention and doubles as the `--debugKey` this repo's test
+suite runs with — under `--debug` the two have to match or the module's own
+calls are refused. It is a test fixture, not a pattern to copy: a new module
+should use a descriptive `<module-name>-internal` identity like the other
+two, and no module should ship a guessable internal key to a real
+deployment.
+
 ## Known simplifications (demo scope, not hidden)
 
 This demo cuts several corners deliberately, so that the mechanism is easy
