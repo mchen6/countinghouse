@@ -1,13 +1,45 @@
 var fs = require('fs');
 
-var SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+// sqlite3 ships a prebuilt native binding, and the prebuild for current
+// versions is linked against a newer glibc than some supported hosts have
+// (observed: the prebuilt node_sqlite3.node needs GLIBC_2.38, Ubuntu 22.04
+// has 2.35 -- it fails with ERR_DLOPEN_FAILED). Requiring it at the top of
+// this file made that abort the *entire* mocha invocation, taking ~90
+// unrelated tests in this directory down with it, on a host where the
+// quickstart itself works perfectly well (framework.js already avoids
+// loading sqlite3 unless the registry DB is actually needed, and the
+// AuthProvider only loads it for --authProvider sqlite).
+//
+// So: load it defensively and skip *this file* with a loud reason if the
+// binding won't load. Deliberately narrow -- only a native-binding load
+// failure skips; any other error still throws, because "sqlite3 is broken
+// here" and "SqliteAuthProvider is broken" must not look alike.
+var SqliteAuthProvider = null;
+var sqliteLoadError    = null;
+try {
+  SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+} catch (e) {
+  if (e.code === 'ERR_DLOPEN_FAILED' || /GLIBC|\.node|bindings/i.test(e.message)) {
+    sqliteLoadError = e;
+  } else {
+    throw e;
+  }
+}
 
 // Pure unit tests, no server -- SqliteAuthProvider instantiated directly,
 // same style as 02-file-provider-unit.js. Covers the users/user_devices
 // schema, wildcard device grants, and that bin/countinghouse-auth-sqlite.js
 // (a separate manual smoke-test, not re-run here) writes rows this
 // provider actually reads.
-describe('auth 03: SqliteAuthProvider (users/user_devices schema)', function() {
+(sqliteLoadError != null ? describe.skip : describe)(
+  'auth 03: SqliteAuthProvider (users/user_devices schema)' +
+  (sqliteLoadError != null
+    ? ' [SKIPPED: sqlite3 native binding will not load on this host -- ' +
+      sqliteLoadError.message.split('\n')[0] +
+      '. The sqlite AuthProvider backend and bin/countinghouse-auth-sqlite.js ' +
+      'are unusable here; the file and couchdb backends are unaffected.]'
+    : ''),
+  function() {
   var dbPath = '/tmp/countinghouse-test-auth-03-' + process.pid + '.sqlite3';
 
   beforeEach(function() {
