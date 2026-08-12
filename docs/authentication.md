@@ -19,12 +19,18 @@ A flat JSON file, `auth.json` in the working directory by default
 
 ```json
 {
-  "your-api-key": {"userName": "you", "devices": ["*"]}
+  "your-api-key":   {"userName": "you",      "devices": ["*"]},
+  "your-admin-key": {"userName": "operator", "devices": ["*"], "admin": true}
 }
 ```
 
 `devices` may list specific deviceIDs, or the literal string `"*"` for
 every device.
+
+`admin` is optional and defaults to `false`. It is a **separate capability
+from `devices`** — see [Admin keys](#admin-keys) below. A key can have
+`devices: ["*"]` and still not be admin (that is exactly what the
+auto-generated demo key is), or be admin without any device grants.
 
 **Zero-config first run**: if `auth.json` doesn't exist yet, a demo key
 with wildcard access is generated, written to `auth.json` (so it survives
@@ -81,6 +87,12 @@ node bin/countinghouse-auth-sqlite.js list
 node bin/countinghouse-auth-sqlite.js revoke my-api-key '*'
 node bin/countinghouse-auth-sqlite.js grant my-api-key some-specific-device-id
 node bin/countinghouse-auth-sqlite.js remove-user my-api-key
+
+# admin rights (see "Admin keys" below) -- independent of device grants
+node bin/countinghouse-auth-sqlite.js set-admin my-api-key true
+node bin/countinghouse-auth-sqlite.js list
+# my-api-key (alice, admin): some-specific-device-id
+node bin/countinghouse-auth-sqlite.js set-admin my-api-key false
 ```
 
 Pass `--dbPath <path>` before the subcommand if not using the default
@@ -125,7 +137,8 @@ User documents look like:
   "appKey": "your-api-key",
   "userName": "you",
   "balance": 0,
-  "devices": [{"deviceID": "some-device-id"}]
+  "devices": [{"deviceID": "some-device-id"}],
+  "admin": false
 }
 ```
 
@@ -134,6 +147,67 @@ addition on top of the original schema, kept for consistency with the
 other two backends. `balance` is read by this provider's underlying
 document but not part of `authenticate()`'s result; balance and pricing
 are `MeteringProvider`'s domain, not `AuthProvider`'s.
+
+## Admin keys
+
+Device access answers *"which tools may this key call?"*. It says nothing
+about *"may this key change what the server is running?"* — that is a second,
+independent capability, `admin`.
+
+**These endpoints require an admin key**, and reject everything else with
+`403 ADMIN_REQUIRED` (`lib/routes/admin-only.js`):
+
+| Endpoint | What it does |
+|---|---|
+| `POST /load-module` | Load a module from a filesystem path into the running server |
+| `POST /unload-module` | Unload a loaded module |
+| `POST /restart-module` | Restart a loaded module's worker |
+| `POST /reload-module` | Reload a module in place |
+| `POST /verify-module` | Structurally verify a module package |
+| `POST /shutdown` | Stop the server process |
+| `GET /get-module-device-list` | List the devices a named module provides |
+
+Treat an admin key as an operator credential, not a tenant credential:
+`/load-module` takes a filesystem path and runs whatever module is there,
+with the full privileges of the server process (see
+[`security-model.md`](security-model.md)). It is not something to hand to a
+tenant so they can install their own tools.
+
+How to grant it:
+
+```jsonc
+// file backend -- auth.json
+{"your-admin-key": {"userName": "operator", "devices": ["*"], "admin": true}}
+```
+
+```sh
+# sqlite backend
+node bin/countinghouse-auth-sqlite.js add-user your-admin-key operator
+node bin/countinghouse-auth-sqlite.js set-admin your-admin-key true
+```
+
+```sh
+# COUNTINGHOUSE_API_KEY is admin as well as wildcard-device -- it is the
+# single-shared-key mode, so it has to be usable end to end on its own.
+COUNTINGHOUSE_API_KEY=... node ./framework.js ...
+```
+
+For `couchdb`, set `"admin": true` on the user document (the design document
+emits it, see `lib/couchdb-adapter/init-db.js`).
+
+**Two things worth knowing before you go looking for why a call is 403:**
+
+- **The auto-generated demo key is *not* admin.** It gets
+  `{"userName": "demo", "devices": ["*"]}` — wildcard device access, no admin
+  rights. A fresh checkout can call every tool immediately, but cannot
+  `/load-module`. Add `"admin": true` to it in `auth.json` (and restart —
+  `auth.json` is read once at startup) if you want that from the demo key.
+- **`--debug` bypasses this, along with everything else.** Under `--debug`
+  every key resolves to an admin session, which is why the repo's own test
+  suite can call these endpoints freely. That is a property of `--debug`, not
+  a way to configure admin access. **Normal use does not need `--debug`** —
+  including hot-loading modules, which is what an admin key is for. See
+  [`README.md`](../README.md#authentication).
 
 ## Choosing a backend
 

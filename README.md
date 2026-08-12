@@ -79,12 +79,25 @@ shown above) needs nothing beyond a JSON file and is what the quickstart
 uses; `sqlite` trades the hand-edited file for a real db once you have
 more keys than are comfortable to manage by hand; `couchdb` is for
 plugging into a CouchDB-backed deployment you already operate, and is the
-only one of the three that needs an external service. `--debug` (used by
-this repo's own test suite) bypasses `AuthProvider` entirely — useful for
-local iteration, not for anything reachable beyond localhost. **The
-auto-generated demo key shown above grants wildcard access to every
+only one of the three that needs an external service.
+
+A second, independent capability, `admin`, gates the module-lifecycle
+endpoints (`/load-module` and friends) — a key can have access to every
+device and still not be admin, which is exactly what the auto-generated demo
+key is. Set `"admin": true` on a key in `auth.json` to grant it. See
+[Admin keys](docs/authentication.md#admin-keys).
+
+**Normal use — including loading modules into a running server — does not
+need `--debug`.** `--debug` (used by this repo's own test suite) bypasses
+`AuthProvider` entirely: every apiKey is accepted, every key is treated as
+admin, `tools/list` stops filtering, and task ownership stops being checked.
+It's for local iteration, not for anything reachable beyond localhost, and
+not the way to get access to an endpoint that returns `403 ADMIN_REQUIRED` —
+grant `admin` instead.
+
+**The auto-generated demo key shown above grants wildcard access to every
 device with no expiry — replace it before any real deployment.** Full
-reference, including `auth.json`'s format and CouchDB setup:
+reference, including `auth.json`'s format, admin keys, and CouchDB setup:
 [`docs/authentication.md`](docs/authentication.md).
 
 ## Composite demo walkthrough
@@ -180,7 +193,7 @@ WebSocket event delivery, OpenStack API simulation).
 | `--redisUrl` | `redis://127.0.0.1:6379` | Redis instance for metering, rate limiting, and session state. |
 | `--authProvider file\|sqlite\|couchdb` | `file` | AuthProvider backend — see [Authentication](#authentication). |
 | `--authConfigPath <path>` | backend-specific | Config file/db path for the selected AuthProvider backend. |
-| `--debug` | off | Bypass AuthProvider entirely; every apiKey accepted. Local iteration only. |
+| `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](docs/authentication.md#admin-keys). |
 | `--directPeerChannels` | off | Route worker-to-worker calls directly instead of through the main thread — see [`docs/direct-peer-channels.md`](docs/direct-peer-channels.md). |
 | `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path. |
 | `--mcpToolCallCost <n>` | `0` | Cost recorded via `MeteringProvider.recordCall` for every MCP `tools/call`. |
@@ -199,9 +212,8 @@ WebSocket event delivery, OpenStack API simulation).
 | `GET /device-list` | Platform | Devices the caller's apiKey can see — same filtering `tools/list` applies. |
 | `POST /devices/:deviceID/invoke-action` | Platform, pre-MCP HTTP API | Direct HTTP equivalent of `tools/call`; predates the MCP gateway and still works. |
 | `GET /devices/:deviceID/get-spec`, `.../schema` | Platform | A device's `api.json` / resolved JSON Schema 2020-12 documents. |
-| `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. |
-| `POST /load-module`, `/unload-module`, `/restart-module` | Platform, `--debug` only | Module lifecycle management. |
-| `POST /verify-module`, `/reload-module`, `/shutdown`, `GET /get-module-device-list` | Platform, `--debug` or `--verifyModule` | Operational/admin surface, not meant to be reachable by end users. |
+| `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. |
+| `POST /load-module`, `/unload-module`, `/restart-module`, `/verify-module`, `/reload-module`, `/shutdown`, `GET /get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](docs/authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly
