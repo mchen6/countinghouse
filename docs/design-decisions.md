@@ -111,6 +111,45 @@ not expected to deviate from without deliberately revisiting them.
   combines with the main-thread-routed path's own metering to avoid
   double-charging.
 
+## Every entry path gets a row before it ships
+
+[`cross-cutting-matrix.md`](cross-cutting-matrix.md) exists because the same
+bug shape kept recurring: a new way into the system was added, and one or
+more cross-cutting concerns — authorization, ownership, metering, rate
+limiting — silently didn't apply to it, because those concerns live as calls
+scattered across the code rather than as one gate every entry path is forced
+through.
+
+A 2026-08-11 pre-release review made that shape recur for the **fourth**
+time, and the recurrence is the interesting part: the matrix was accurate
+about every path it listed. What it didn't do was list every path. `tasks/get`,
+`tasks/result`, `tasks/list`, `tasks/cancel`, `GET /balance`, the four HTTP
+job routes and the seven admin routes had never been enumerated, and four
+serious defects were sitting on exactly those unlisted paths — including MCP
+task methods that took no apiKey parameter at all, letting an anonymous
+caller read, enumerate and delete any tenant's tasks.
+
+**The rule: a change that adds or exposes an entry path is not complete
+until that path has a row in the matrix, with every cell filled in as either
+an implementation location or an explicit "exempt, because …".** Two
+corollaries, both learned from this round:
+
+- **A missing row is worse than a blank cell**, because a blank cell is
+  visible in a table you are already reading and a missing row is not. When
+  reviewing the matrix, check it against the actual route/method dispatch
+  tables (`lib/route-manager.js`, `lib/mcp/gateway.js`'s `handle` switch)
+  rather than reading only what the document already contains.
+- **"Exempt" must name a reason, and the reason must be about the path, not
+  about effort.** "No metering because reading a balance isn't a billable
+  call" is an exemption; "no metering here yet" is a blank cell wearing a
+  disguise.
+
+The cheapest available check for the specific failure this rule addresses:
+a handler that cannot see the caller's identity cannot be enforcing
+anything. All four unauthenticated task methods shared one visible symptom —
+no `appKey` in their signature. When adding a handler, ask what identity it
+receives before asking what it does with it.
+
 ## MCP protocol version: negotiate, don't hardcode
 
 This implementation targets the 2026-07-28 MCP specification revision
