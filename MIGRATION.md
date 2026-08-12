@@ -1,5 +1,45 @@
 # Migration notes
 
+## Versioning: why the first real release is 4.0.0
+
+`countinghouse` is not a new package that happens to share code with something
+older — it is the continuation of **CDIF 3.x** (`@apemesh/cdif`), renamed. The
+version number carries that lineage forward rather than restarting it, so
+`4.0.0` reads the way a major bump should: same project, breaking changes
+since 3.x.
+
+Those breaking changes, all documented below:
+
+- **The module-facing global API was renamed twice**, `CdifUtil`/`CdifDevice`/
+  `CdifError` -> `McpForgeUtil`/... -> `CHUtil`/`CHDevice`/`CHError`. A 3.x
+  device module referencing the old names does not run unchanged.
+- **`CHUtil.recordCall` was removed** and replaced by `CHUtil.recordUsage`,
+  which is app-layer bookkeeping and never touches balance. Balance is now
+  deducted exactly once per cross-worker call by the platform itself (the
+  "billing authority" rule — see
+  [`docs/design-decisions.md`](docs/design-decisions.md)). A module that
+  metered itself under 3.x was double-billing and must drop that call.
+- **The authorization model was rebuilt around `AuthProvider`**
+  (`--authProvider file|sqlite|couchdb`), replacing the inline
+  Redis-cache-then-CouchDB logic. Deployments that relied on the old CouchDB
+  user schema keep working via the `couchdb` backend, but the default is now
+  a flat `auth.json` and a separate `admin` capability gates the
+  module-lifecycle endpoints. See
+  [`docs/authentication.md`](docs/authentication.md).
+- **The metering identity is unified on
+  `encodeLegacyTool(deviceID, serviceID, actionName)`** across every entry
+  path. Per-tool pricing or free-call quotas keyed by the old MCP tool name
+  (`toolPriceRecord`) must be re-keyed.
+- **The HTTP header is `X-CH-Key`** (was `X-Apemesh-Key`, then
+  `X-MCPForge-Key`).
+
+**About `countinghouse@0.0.1` on npm**: that was a name-reservation
+placeholder published before any of this existed. It contains no usable
+release and nothing upgrades from it. `4.0.0` is the first real published
+version of this package.
+
+---
+
 This project has been rebranded twice: `@apemesh/cdif` -> `mcpforge` -> `countinghouse`
 (final name). Project history and origin are preserved (see README); these notes list
 what changed on the public API surface for anyone integrating against the framework or
