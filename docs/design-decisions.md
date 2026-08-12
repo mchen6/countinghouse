@@ -95,6 +95,29 @@ not expected to deviate from without deliberately revisiting them.
   round trip for every call, defeating the point of the direct path — not
   an oversight. Revocation happens through invalidation (D4): a port that
   should no longer work is closed, not left valid but unchecked.
+
+  **A port is possession of a *worker*, not of a device.** This follows
+  from D1 (ports are keyed by worker pair and reused for every device that
+  worker hosts) and is spelled out here because "possession of the port =
+  authorization" only bounds risk once you know what a port is possession
+  of. The callee does not retain which deviceID its port was granted for —
+  `DeviceManager.prototype.onPeerChannelOpen` drops `msg.targetDeviceID`
+  and dispatches whatever `request.deviceID` arrives — so one granted port
+  authorizes calls to every device on that callee worker. Going through
+  `ServiceClient` still re-brokers (and so re-checks `userAuth`) for each
+  new deviceID, because the caller-side map is keyed by device; but module
+  code can reach the port directly and skip that. The blast radius is
+  bounded to co-hosted devices — a deviceID the callee doesn't host fails
+  its own `deviceMap` lookup — and sits inside the trust boundary
+  [`security-model.md`](security-model.md) already draws: AuthProvider
+  constrains which apiKey may invoke which device, not what a loaded
+  module's own code can do. Tightening it would mean either passing the
+  granted deviceID set to the callee and filtering there (cheap, no
+  main-thread round trip, but the set has to be kept in sync on every
+  subsequent grant) or one port per device (simple, but gives up D1's
+  reuse). Neither is done today; the constraint is documented rather than
+  assumed away. See [`cross-cutting-matrix.md`](cross-cutting-matrix.md)'s
+  `--directPeerChannels` row for the same fact stated per-concern.
 - **D4 — lifecycle: ports are invalidated on reload, unload, and crash.**
   This is treated as the most important of the five, because silent
   staleness is worse than a fast, explicit error. Two independent
