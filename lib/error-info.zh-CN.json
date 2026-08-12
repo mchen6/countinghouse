@@ -116,5 +116,6 @@
   "PEER_GONE": "直连通道已失效",
   "PEER_CHANNEL_TIMEOUT": "直连调用超时",
   "PEER_SELF_TARGET": "目标设备由发起调用的 worker 自身承载，不支持建立直连通道",
-  "PEER_NO_HANDLER": "对端未注册直连调用处理器"
+  "PEER_NO_HANDLER": "对端未注册直连调用处理器",
+  "JOB_ACCESS_DENIED": "该 apiKey 不是所请求任务的归属者"
 }
