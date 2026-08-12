@@ -70,8 +70,42 @@ sits inside.
 
 Same zero-external-service property as `file`, but a real db file instead
 of hand-edited JSON — useful once there are more keys than are
-comfortable to maintain by hand. Reuses the `sqlite3` dependency this
-repo already has for other things; no new install required.
+comfortable to maintain by hand.
+
+> **Platform limitation — this backend needs a working `sqlite3` native
+> module, and that is not available everywhere.**
+>
+> `sqlite3` is an **optionalDependency**. It ships a prebuilt native binding
+> linked against **glibc 2.38**, so on a host with an older glibc (Ubuntu
+> 22.04 LTS ships 2.35) the package installs successfully and then fails to
+> *load*, with `ERR_DLOPEN_FAILED`. Marking it optional is therefore
+> necessary but not sufficient: npm only skips a dependency that fails to
+> install, and this one installs fine.
+>
+> Selecting `--authProvider sqlite` on such a host fails at startup with an
+> explicit message naming the cause, this system's glibc version, and both
+> ways forward:
+>
+> ```
+> --authProvider sqlite requires the optional "sqlite3" package, which is
+> installed but cannot be loaded on this host.
+>   Cause:   sqlite3 ships a prebuilt native binding that requires glibc >= 2.38;
+>            this system has glibc 2.35.
+>   Fix (a): rebuild sqlite3 from source against this system's glibc:
+>              npm install sqlite3 --build-from-source
+>            (needs a C++ toolchain: build-essential and python3)
+>   Fix (b): use --authProvider file (the default), which needs no native
+>            modules at all
+> ```
+>
+> **Nothing else is affected.** The `file` and `couchdb` backends, the MCP
+> gateway, metering, rate limiting and the module-lifecycle routes all work
+> normally without `sqlite3` — the documented `--loadModule` startup path
+> never touches the module registry DB (the only other thing that uses it).
+> Covered by `test/module-loading/02-sqlite3-unavailable.js`, which runs the
+> whole file-backend flow with `sqlite3` made unloadable.
+
+The CLI below has the same requirement, and reports the same diagnosis.
 
 Start the server with `--authProvider sqlite` (`--authConfigPath` sets the
 db file path, default `./auth.sqlite3`), then manage users with the

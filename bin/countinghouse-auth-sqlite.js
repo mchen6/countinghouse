@@ -15,16 +15,17 @@
 //   list                                       print every user, their admin status, and their granted devices
 //
 // --dbPath defaults to ./auth.sqlite3 (same default SqliteAuthProvider itself uses).
-// sqlite3 is an optionalDependency -- see lib/auth/sqlite-provider.js.
-// This CLI is unusable without it by definition, so fail with an actionable
-// message instead of a native-loader stack trace.
+// sqlite3 is an optionalDependency, required lazily -- see
+// lib/optional-sqlite3.js. This CLI is unusable without it by definition,
+// so report the reason and the ways out instead of a native-loader stack.
 var sqlite3;
 try {
-  sqlite3 = require('sqlite3');
+  sqlite3 = require('../lib/optional-sqlite3').requireSqlite3(
+    'bin/countinghouse-auth-sqlite.js (the sqlite AuthProvider CLI)',
+    'use --authProvider file and edit auth.json directly; see docs/authentication.md'
+  );
 } catch (e) {
-  console.error('This CLI requires the "sqlite3" package, which is not installed or cannot be ' +
-                'loaded on this host:\n  ' + e.message.split('\n')[0] +
-                '\nRun: npm install sqlite3');
+  console.error(e.message);
   process.exit(1);
 }
 

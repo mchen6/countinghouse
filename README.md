@@ -216,7 +216,7 @@ WebSocket event delivery, OpenStack API simulation).
 | `--port` | `9527` | HTTP port. |
 | `--loadModule <path>` | — | Load a local device module at startup; repeat for multiple modules. |
 | `--redisUrl` | `redis://127.0.0.1:6379` | Redis instance for metering, rate limiting, and session state. |
-| `--authProvider file\|sqlite\|couchdb` | `file` | AuthProvider backend — see [Authentication](#authentication). |
+| `--authProvider file\|sqlite\|couchdb` | `file` | AuthProvider backend — see [Authentication](#authentication). `sqlite` needs the optional `sqlite3` native module, whose prebuilt binary requires glibc >= 2.38 and so does not load on e.g. Ubuntu 22.04; `file` (the default) and `couchdb` need no native modules. See [docs/authentication.md](docs/authentication.md#sqlite). |
 | `--authConfigPath <path>` | backend-specific | Config file/db path for the selected AuthProvider backend. |
 | `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](docs/authentication.md#admin-keys). |
 | `--directPeerChannels` | off | Route worker-to-worker calls directly instead of through the main thread — see [`docs/direct-peer-channels.md`](docs/direct-peer-channels.md). |
