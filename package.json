@@ -73,7 +73,10 @@
   },
   "overrides": {
     "request": "npm:postman-request@^2.88.1-postman.49",
-    "qs": "^6.15.2"
+    "qs": "^6.15.2",
+    "bullmq": {
+      "redis": "$redis"
+    }
   },
   "devDependencies": {
     "bench-rest": "^1.2.4",
