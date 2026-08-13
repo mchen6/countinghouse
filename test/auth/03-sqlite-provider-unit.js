@@ -2,29 +2,25 @@ var fs = require('fs');
 
 // sqlite3 ships a prebuilt native binding, and the prebuild for current
 // versions is linked against a newer glibc than some supported hosts have
-// (observed: the prebuilt node_sqlite3.node needs GLIBC_2.38, Ubuntu 22.04
-// has 2.35 -- it fails with ERR_DLOPEN_FAILED). Requiring it at the top of
-// this file made that abort the *entire* mocha invocation, taking ~90
-// unrelated tests in this directory down with it, on a host where the
-// quickstart itself works perfectly well (framework.js already avoids
-// loading sqlite3 unless the registry DB is actually needed, and the
-// AuthProvider only loads it for --authProvider sqlite).
+// (observed: it needs GLIBC_2.38, Ubuntu 22.04 has 2.35 -- ERR_DLOPEN_FAILED).
+// This whole file is unrunnable on such a host, so it skips itself, loudly.
 //
-// So: load it defensively and skip *this file* with a loud reason if the
-// binding won't load. Deliberately narrow -- only a native-binding load
-// failure skips; any other error still throws, because "sqlite3 is broken
-// here" and "SqliteAuthProvider is broken" must not look alike.
-var SqliteAuthProvider = null;
-var sqliteLoadError    = null;
+// The probe is `require('sqlite3')` directly, NOT "does requiring
+// SqliteAuthProvider throw". It used to be the latter, which worked only
+// while the provider required sqlite3 at module scope; once the provider was
+// changed to require it lazily (so that a deployment not using this backend
+// is unaffected by its absence), the provider module started loading fine on
+// a host where sqlite3 cannot load, this guard stopped tripping, and these
+// six tests failed instead of skipping. Probing the actual dependency is
+// both simpler and immune to where the provider happens to require it.
+var sqliteLoadError = null;
 try {
-  SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+  require('sqlite3');
 } catch (e) {
-  if (e.code === 'ERR_DLOPEN_FAILED' || /GLIBC|\.node|bindings/i.test(e.message)) {
-    sqliteLoadError = e;
-  } else {
-    throw e;
-  }
+  sqliteLoadError = e;
 }
+
+var SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
 
 // Pure unit tests, no server -- SqliteAuthProvider instantiated directly,
 // same style as 02-file-provider-unit.js. Covers the users/user_devices
