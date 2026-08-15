@@ -26,6 +26,13 @@ modules.forEach(function(m) {
   args.push('--loadModule', path.join(PKG_DIR, m));
 });
 
+// Guarded: this file sits in a directory mocha globs, and it must not spawn a
+// server (or call process.exit) merely because mocha required it.
+if (require.main !== module) {
+  module.exports = {};
+  return;
+}
+
 var server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore'});
 
 function toolsList(callback) {

@@ -47,7 +47,7 @@ jobs:
           npx mocha ./test/test3.js
           npx mocha ./test/test4.js
           npx mocha --exit ./test/test5.js
-          npx mocha ./test/auth/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js
+          npx mocha ./test/auth/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js
           npx mocha ./test/test8.js
           npm run test:peer-standalone
           npx mocha ./test/test6.js

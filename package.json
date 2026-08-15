@@ -32,7 +32,7 @@
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
     "build": "webpack && chmod +x build/countinghouse",
-    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/auth/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js && mocha ./test/test8.js && npm run test:peer-standalone && mocha ./test/test6.js && mocha ./test/test7.js",
+    "test": "mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/auth/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js && mocha ./test/test8.js && npm run test:peer-standalone && mocha ./test/test6.js && mocha ./test/test7.js",
     "test:peer-standalone": "mocha --exit ./test/direct-peer-channels/03-grant-time-auth.js ./test/direct-peer-channels/04-metering.js ./test/direct-peer-channels/05-backpressure.js ./test/direct-peer-channels/06-no-double-billing.js"
   },
   "repository": {
