@@ -55,6 +55,52 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
     });
   }
 
+  var SETTLE_POLL_MS    = 200;
+  var SETTLE_STABLE     = 3;
+  var SETTLE_TIMEOUT_MS = 15000;
+
+  // The *hop* charge is awaited before the reply (see the note in the second
+  // test below), but the *outer* HTTP invoke-action charge is not: it goes
+  // through Session.prototype.recordMeteredCall (lib/session.js), which is
+  // deliberately fire-and-forget and can land after the response has already
+  // been sent. Reading the balance straight out of an invoke callback
+  // therefore races that charge, and the miss shows up as an off-by-the-
+  // outer-charge result rather than as an obvious failure.
+  //
+  // Waiting for a specific expected value would defeat the purpose of these
+  // tests -- they exist to catch a hop being billed twice, so stopping as
+  // soon as the expected number appears would hide a surplus charge landing
+  // just after. Wait for the balance to stop moving instead, then assert.
+  // See 06-no-double-billing.js for the same helper and the fuller rationale.
+  function settledBalance(mustDifferFrom, cb) {
+    var deadline = Date.now() + SETTLE_TIMEOUT_MS;
+    var last     = null;
+    var stable   = 0;
+    var changed  = (mustDifferFrom === null);
+
+    (function poll() {
+      getBalance(function(err, balance) {
+        if (err) return cb(err);
+        if (typeof balance !== 'number') {
+          return cb(new Error('direct-peer-channels 04 fail: /balance did not return a numeric balance, got ' + JSON.stringify(balance)));
+        }
+
+        if (balance !== mustDifferFrom) changed = true;
+        stable = (last !== null && balance === last) ? stable + 1 : 1;
+        last   = balance;
+
+        if (changed && stable >= SETTLE_STABLE) return cb(null, balance);
+
+        if (Date.now() >= deadline) {
+          return cb(new Error('direct-peer-channels 04 fail: balance did not ' +
+                              (changed ? 'settle' : 'move from ' + mustDifferFrom) +
+                              ' within ' + SETTLE_TIMEOUT_MS + 'ms (last read ' + balance + ')'));
+        }
+        setTimeout(poll, SETTLE_POLL_MS);
+      });
+    })();
+  }
+
   function invoke(cb) {
     request(url).post('/devices/' + ECHO_DEVICE_CLIENT_ID + '/invoke-action')
     .set('X-CH-Key', 'aabbcc')
@@ -90,14 +136,14 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
   var outerCallCost = null;
 
   it('a plain (non-composing) call establishes the outer invoke-action charge', function(done) {
-    getBalance(function(err, before) {
+    settledBalance(null, function(err, before) {
       if (err) return done(err);
 
       invokeDirect(function(err, body) {
         if (err) return done(err);
         if (body.output == null) return done(new Error('direct-peer-channels 04 fail: baseline invoke did not succeed: ' + JSON.stringify(body)));
 
-        getBalance(function(err, after) {
+        settledBalance(before, function(err, after) {
           if (err) return done(err);
           outerCallCost = before - after;
           if (outerCallCost !== 1) {
@@ -110,19 +156,22 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
   });
 
   it('a call over a direct peer channel bills the hop exactly once, not zero or twice', function(done) {
-    getBalance(function(err, before) {
+    settledBalance(null, function(err, before) {
       if (err) return done(err);
 
       invoke(function(err, body) {
         if (err) return done(err);
         if (body.output == null) return done(new Error('direct-peer-channels 04 fail: invoke did not succeed: ' + JSON.stringify(body)));
 
-        // Metering is a synchronous request/reply now (see
+        // The *hop* charge is a synchronous request/reply (see
         // lib/peer-channel-broker.js's handleMeteringRequest and
         // lib/device-manager.js's onPeerChannelOpen): invoke()'s own
-        // callback above only fires after the metering charge has already
-        // landed, so no settling delay is needed before reading balance.
-        getBalance(function(err, after) {
+        // callback above only fires after that charge has already landed.
+        // The outer HTTP invoke-action charge is the one that has not --
+        // Session.prototype.recordMeteredCall is fire-and-forget -- and
+        // `delta` below spans both, so it still has to be read from a
+        // settled balance. Only the hop half of it was ever race-free.
+        settledBalance(before, function(err, after) {
           if (err) return done(err);
           var delta = before - after;
           var hopCost = delta - outerCallCost;

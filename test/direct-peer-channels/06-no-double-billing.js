@@ -39,6 +39,58 @@ function getBalance(cb) {
   });
 }
 
+var SETTLE_POLL_MS    = 200;   // gap between balance reads
+var SETTLE_STABLE     = 3;     // identical consecutive reads that count as quiesced
+var SETTLE_TIMEOUT_MS = 15000; // overall cap before giving up
+
+// Balance debits are applied asynchronously: an invoke's HTTP response can
+// return before every hop's metering write has landed. Reading the balance
+// straight out of the invoke callback therefore races the debits, and the
+// shortfall shows up as an under-count -- observed under full-suite load as
+// a 2-hop composite call measuring as 1 hop, while the bill array in the
+// same response correctly held 2 entries.
+//
+// Polling until the *expected* number appears would be the wrong fix: this
+// test exists to catch double-billing, so stopping the moment the balance
+// reaches the expected value would hide a third charge arriving just after.
+// Instead wait for the balance to go quiet -- unchanged across several
+// consecutive reads -- and only then let the caller assert. A surplus
+// charge either keeps the balance moving (so we keep waiting) or has landed
+// before it settles; either way the assertion still sees it.
+//
+// mustDifferFrom: when non-null, also require the balance to have moved off
+// that value first. Every call site here is known to cost at least the outer
+// invoke-action charge, so "quiet" must not be satisfied by reading three
+// times before the first debit even lands.
+function settledBalance(mustDifferFrom, cb) {
+  var deadline = Date.now() + SETTLE_TIMEOUT_MS;
+  var last     = null;
+  var stable   = 0;
+  var changed  = (mustDifferFrom === null);
+
+  (function poll() {
+    getBalance(function(err, balance) {
+      if (err) return cb(err);
+      if (typeof balance !== 'number') {
+        return cb(new Error('06-no-double-billing fail: /balance did not return a numeric balance, got ' + JSON.stringify(balance)));
+      }
+
+      if (balance !== mustDifferFrom) changed = true;
+      stable = (last !== null && balance === last) ? stable + 1 : 1;
+      last   = balance;
+
+      if (changed && stable >= SETTLE_STABLE) return cb(null, balance);
+
+      if (Date.now() >= deadline) {
+        return cb(new Error('06-no-double-billing fail: balance did not ' +
+                            (changed ? 'settle' : 'move from ' + mustDifferFrom) +
+                            ' within ' + SETTLE_TIMEOUT_MS + 'ms (last read ' + balance + ')'));
+      }
+      setTimeout(poll, SETTLE_POLL_MS);
+    });
+  })();
+}
+
 function invokeComposite(cb) {
   request(url).post('/devices/' + COMPOSITE_DEVICE_ID + '/invoke-action')
   .set('X-CH-Key', INTERNAL_API_KEY)
@@ -72,12 +124,12 @@ function invokeDirect(cb) {
 }
 
 function measureOuterCallCost(cb) {
-  getBalance(function(err, before) {
+  settledBalance(null, function(err, before) {
     if (err) return cb(err);
     invokeDirect(function(err, body) {
       if (err) return cb(err);
       if (body.output == null) return cb(new Error('06-no-double-billing fail: baseline invoke did not succeed: ' + JSON.stringify(body)));
-      getBalance(function(err, after) {
+      settledBalance(before, function(err, after) {
         if (err) return cb(err);
         return cb(null, before - after);
       });
@@ -92,7 +144,7 @@ function runBillingAssertion(done) {
       return done(new Error('06-no-double-billing fail: expected a plain invoke-action with zero inner hops to cost exactly 1, got ' + outerCallCost));
     }
 
-  getBalance(function(err, before) {
+  settledBalance(null, function(err, before) {
     if (err) return done(err);
 
     invokeComposite(function(err, body) {
@@ -104,7 +156,7 @@ function runBillingAssertion(done) {
         return done(new Error('06-no-double-billing fail: expected bill with exactly 2 entries, got ' + JSON.stringify(bill)));
       }
 
-      getBalance(function(err, after) {
+      settledBalance(before, function(err, after) {
         if (err) return done(err);
 
         var delta   = before - after;
