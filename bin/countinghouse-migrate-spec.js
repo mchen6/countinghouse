@@ -27,15 +27,15 @@
 // module produces is unchanged. It is also idempotent -- a spec already in the
 // new format is passed through untouched, so re-running this over a tree is
 // safe.
-var fs   = require('fs');
-var path = require('path');
+const fs   = require('fs');
+const path = require('path');
 
-var DROPPED_ACTION_KEYS = ['argumentList', 'realPrice', 'priceInfo', 'freeCount', 'apiCache', 'apiLog'];
+const DROPPED_ACTION_KEYS = ['argumentList', 'realPrice', 'priceInfo', 'freeCount', 'apiCache', 'apiLog'];
 
 function isOldFormat(spec) {
   if (spec == null || spec.device == null || spec.device.serviceList == null) return false;
-  var serviceList = spec.device.serviceList;
-  for (var serviceID in serviceList) {
+  const serviceList = spec.device.serviceList;
+  for (const serviceID in serviceList) {
     if (serviceList[serviceID].serviceStateTable != null) return true;
     if (!Array.isArray(serviceList[serviceID].actionList)) return true;
   }
@@ -47,36 +47,37 @@ function isOldFormat(spec) {
 function schemaPointerFor(stateTable, argument, where) {
   if (argument == null) return null;
 
-  var varName = argument.relatedStateVariable;
+  const varName = argument.relatedStateVariable;
   if (varName == null) {
-    throw new Error(where + ': argument has no relatedStateVariable, nothing to convert it to');
+    throw new Error(`${where}: argument has no relatedStateVariable, nothing to convert it to`);
   }
 
-  var stateVar = stateTable && stateTable[varName];
+  const stateVar = stateTable && stateTable[varName];
   if (stateVar == null) {
-    throw new Error(where + ': relatedStateVariable "' + varName + '" is not in serviceStateTable');
+    throw new Error(`${where}: relatedStateVariable "${varName}" is not in serviceStateTable`);
   }
   if (typeof(stateVar.schema) !== 'string') {
-    throw new Error(where + ': state variable "' + varName + '" has no schema pointer (dataType ' +
-                    stateVar.dataType + '). Only object arguments carry over to the 5.0.0 format.');
+    throw new Error(`${where}: state variable "${varName}" has no schema pointer ` +
+                    `(dataType ${stateVar.dataType}). Only object arguments carry over ` +
+                    `to the 5.0.0 format.`);
   }
   return stateVar.schema;
 }
 
 function migrateAction(actionName, action, stateTable, where) {
-  var out = {name: actionName};
+  const out = {name: actionName};
 
   if (action.description != null) out.description = action.description;
 
-  var argumentList = action.argumentList || {};
-  var inputPtr  = schemaPointerFor(stateTable, argumentList.input,  where + '/input');
-  var outputPtr = schemaPointerFor(stateTable, argumentList.output, where + '/output');
+  const argumentList = action.argumentList || {};
+  const inputPtr  = schemaPointerFor(stateTable, argumentList.input,  `${where}/input`);
+  const outputPtr = schemaPointerFor(stateTable, argumentList.output, `${where}/output`);
 
   if (inputPtr  != null) out.input  = {schema: inputPtr};
   if (outputPtr != null) out.output = {schema: outputPtr};
   if (action.fault != null) out.fault = JSON.parse(JSON.stringify(action.fault));
 
-  for (var key in action) {
+  for (const key in action) {
     if (key === 'name' || key === 'description' || key === 'fault') continue;
     if (DROPPED_ACTION_KEYS.indexOf(key) !== -1) continue;
     // anything unrecognized is carried over rather than silently dropped; the
@@ -90,24 +91,24 @@ function migrateAction(actionName, action, stateTable, where) {
 // CLI leaves it empty because it prints the file path itself.
 function migrate(spec, label) {
   if (!isOldFormat(spec)) return spec;
-  var prefix = (label != null && label !== '') ? label + ' ' : '';
+  const prefix = (label != null && label !== '') ? `${label} ` : '';
 
-  var out = JSON.parse(JSON.stringify(spec));
+  const out = JSON.parse(JSON.stringify(spec));
   delete out.configId;
   delete out.specVersion;
 
-  var serviceList = out.device.serviceList;
+  const serviceList = out.device.serviceList;
 
-  for (var serviceID in serviceList) {
-    var service = serviceList[serviceID];
+  for (const serviceID in serviceList) {
+    const service = serviceList[serviceID];
     if (Array.isArray(service.actionList)) continue; // already converted
 
-    var stateTable = service.serviceStateTable;
-    var actions    = [];
+    const stateTable = service.serviceStateTable;
+    const actions    = [];
 
-    for (var actionName in service.actionList) {
+    for (const actionName in service.actionList) {
       actions.push(migrateAction(actionName, service.actionList[actionName], stateTable,
-                                 prefix + serviceID + '/' + actionName));
+                                 `${prefix + serviceID}/${actionName}`));
     }
 
     service.actionList = actions;
@@ -117,15 +118,15 @@ function migrate(spec, label) {
 }
 
 function apiJsonPathFor(target) {
-  var stat = fs.statSync(target);
+  const stat = fs.statSync(target);
   return stat.isDirectory() ? path.join(target, 'api.json') : target;
 }
 
 function main(argv) {
-  var toStdout = false;
-  var targets  = [];
+  let toStdout = false;
+  const targets  = [];
 
-  argv.forEach(function(a) {
+  argv.forEach((a) => {
     if (a === '--stdout') toStdout = true;
     else targets.push(a);
   });
@@ -135,29 +136,29 @@ function main(argv) {
     return 2;
   }
 
-  var failed = 0;
+  let failed = 0;
 
-  targets.forEach(function(target) {
-    var file = apiJsonPathFor(target);
+  targets.forEach((target) => {
+    const file = apiJsonPathFor(target);
     try {
-      var spec = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const spec = JSON.parse(fs.readFileSync(file, 'utf8'));
 
       if (!isOldFormat(spec)) {
-        if (toStdout) process.stdout.write(JSON.stringify(spec, null, 2) + '\n');
-        else console.log(file + ': already in the 5.0.0 format, unchanged');
+        if (toStdout) process.stdout.write(`${JSON.stringify(spec, null, 2)}\n`);
+        else console.log(`${file}: already in the 5.0.0 format, unchanged`);
         return;
       }
 
-      var out = migrate(spec);
+      const out = migrate(spec);
 
       if (toStdout) {
-        process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+        process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
       } else {
-        fs.writeFileSync(file, JSON.stringify(out, null, 2) + '\n');
-        console.log(file + ': migrated to the 5.0.0 format');
+        fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`);
+        console.log(`${file}: migrated to the 5.0.0 format`);
       }
     } catch (e) {
-      console.error(file + ': ' + e.message);
+      console.error(`${file}: ${e.message}`);
       failed++;
     }
   });
