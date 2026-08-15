@@ -269,13 +269,17 @@ module in `pre-installed-packages/` has the same ~20-line `index.js`; copy it.
 Full reference and a "my module doesn't appear in tools/list" checklist:
 [`docs/module-development.md`](docs/module-development.md).
 
-`api.json` declares one `friendlyName`, one or more services (each a
-`urn:...:serviceID:...`), and each service's actions — a name, a
-human-readable `description` (required; it's what an LLM sees as the MCP
-tool's description) and an `argumentList` pointing at named entries in
-`schema.json`. `schema.json` supplies the actual JSON Schema 2020-12
-`input`/`output`/`fault` shapes those names refer to — this is what
-becomes each MCP tool's `inputSchema`/`outputSchema`. `device.js` loads
+`api.json` declares one `friendlyName`, one or more services (each keyed by a
+`urn:...:serviceID:...`), and each service's `actionList` — an array whose
+elements carry their own `name`, a human-readable `description` (required;
+it's what an LLM sees as the MCP tool's description) and up to three schema
+pointers, `input`, `output` and `fault`, straight into `schema.json`
+(`{"schema": "/echoService/echo/input"}`). `schema.json` supplies the actual
+JSON Schema 2020-12 documents those pointers resolve to — this is what
+becomes each MCP tool's `inputSchema`/`outputSchema`. Specs written for 4.x
+(`argumentList` + `serviceStateTable`) do not load; convert them with
+`npx countinghouse-migrate-spec ./my-module` (see
+[`MIGRATION.md`](MIGRATION.md)). `device.js` loads
 one handler function per action (via `CHUtil.loadFile`) and registers it
 with `this.setAction(serviceID, actionName, handlerFn)` — the bundled
 modules keep one handler per file, named `com-<namespace>-<service>-<action>.js`,

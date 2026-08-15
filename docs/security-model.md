@@ -75,8 +75,8 @@ These are real, and worth being specific about rather than waving at
   module is installed, its `package.json`, `api.json`, and `schema.json` are
   extracted and parsed, and the API spec is checked against the framework's
   own JSON Schema 2020-12 meta-schema (`lib/validator.js`, via `ajv`) for
-  structural conformance — well-formed service/action lists, valid
-  `serviceStateTable` references, resolvable schema pointers. **This is not
+  structural conformance — well-formed service/action lists, unique action
+  names, resolvable schema pointers. **This is not
   a security scan.** It does not inspect the module's actual JS source, does
   not check its `node_modules` dependency tree for known vulnerabilities,
   and does not verify a signature or checksum against a trusted publisher.

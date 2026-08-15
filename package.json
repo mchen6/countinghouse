@@ -1,6 +1,6 @@
 {
   "name": "countinghouse",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
   "bin": {
     "countinghouse": "./bin/countinghouse",

@@ -189,3 +189,56 @@ none of this server's request/response shapes (`tools/list`, `tools/call`,
 the Tasks extension) actually branch on protocol version, so there is no
 real compatibility matrix to maintain — just a version string that gets
 echoed back either way.
+
+## Spec format 5.0.0: an action holds its own schemas
+
+The device spec inherited UPnP's action shape by way of CDIF 3.x. An action
+listed argument *names*; each argument named a variable in a
+`serviceStateTable`; that variable held the pointer to the actual JSON Schema.
+Answering "what does this tool take?" meant three hops through two objects.
+
+The indirection is load-bearing in UPnP, where state variables genuinely are
+device state that actions read and write, and where several actions share one
+variable. Here they were neither: the state values stopped being reachable
+when `/get-state` was removed, every variable was consumed by exactly one
+argument of exactly one action, and `--allowSimpleType`'s removal had already
+made every argument an object with a schema. What remained was a level of
+naming that carried no information — `A_ARG_TYPE_echo_Input` exists only to be
+looked up.
+
+So 5.0.0 flattens it: `input`, `output` and `fault` sit directly on the
+action, each holding the same `{"schema": "<pointer>"}` object `fault` already
+used, and `actionList` becomes an array whose elements carry their own `name`.
+The pointers, the `schema.json` layout and the dereference machinery are
+unchanged — only who holds the pointer moved.
+
+Two reasons, in order of weight:
+
+1. **Reading cost, for humans and for models.** A module spec is increasingly
+   read by an LLM being asked to write or modify a module. Every indirection
+   is a place to lose the thread or to invent a plausible-looking state
+   variable name that doesn't resolve. The flat form can be read top to bottom.
+2. **One fewer thing to keep consistent.** The old form could be internally
+   wrong in ways the meta-schema could not catch — an argument naming a
+   variable that isn't in the table, a table entry no argument references.
+   Those were runtime cross-checks in `validateDeviceSpec`. They are now
+   unrepresentable.
+
+What did *not* change is the MCP contract: converting a module produces
+byte-identical `tools/list` output, asserted in `test/mcp-contract/` against a
+golden sample captured before the conversion. The spec format describes tools;
+it is not part of what a client sees. That property is what made the change
+safe to make at all, and it is the reason the assertion exists rather than a
+note claiming as much.
+
+The cost, stated plainly: `actionList` as an array cannot express name
+uniqueness in JSON Schema, so that became a runtime check
+(`validateDeviceSpec`), trading a guarantee the format used to give for free.
+The array was still worth it — it mirrors MCP's own tools array, and it makes
+action order explicit rather than a property of object key ordering.
+
+`serviceList` deliberately stayed an object keyed by service URN. Unlike
+`actionList` it has no MCP counterpart to mirror (MCP has no notion of a
+service; it only contributes a slug to the tool name), and the URN is a lookup
+key on every invoke, in the routes, in job control, and in the peer channels.
+Symmetry there would have bought nothing and cost a scan on a hot path.
