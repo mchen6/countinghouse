@@ -14,8 +14,6 @@
     "lib/",
     "pre-installed-packages/",
     "spec/schema.json",
-    "README.md",
-    "LICENSE",
     "MIGRATION.md",
     "server.json"
   ],
