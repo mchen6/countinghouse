@@ -73,11 +73,127 @@ table anymore; the state values it nominally held stopped being readable when
   `defaultValue`, `allowedValueRange`, `allowedValueList`, `configId`,
   `specVersion`, `realPrice`, `priceInfo`, `freeCount`, `apiCache`, `apiLog`.
 
+### Scalar arguments must be rewritten by hand — the converter will not guess
+
 Scalar (non-object) arguments are gone with `dataType`: every argument is a
 JSON Schema document, and a constraint that used to live in
-`allowedValueRange`/`allowedValueList` belongs in that schema. `--allowSimpleType`,
-which was what let a scalar argument through at all, was removed earlier in
-5.0.0 — no bundled module ever used it.
+`allowedValueRange`/`allowedValueList` belongs in that schema.
+`--allowSimpleType`, which was what let a scalar argument through at all, was
+removed earlier in 5.0.0.
+
+**If your module declares a state variable whose `dataType` is anything other
+than `object`, `countinghouse-migrate-spec` stops with an error rather than
+converting it:**
+
+```
+$ npx countinghouse-migrate-spec ./my-module
+./my-module/api.json: urn:...:serviceID:dimming/setLevel/input: state variable
+"A_ARG_TYPE_setLevel_Input" has no schema pointer (dataType number). Only
+object arguments carry over to the 5.0.0 format.
+$ echo $?
+1
+```
+
+Nothing is written when this happens, and other modules named on the same
+command line are still converted; the exit status is 1 if any failed.
+
+This is deliberate. A scalar argument has no schema document to point at, and
+inventing one would mean guessing both the wire shape your handler receives and
+the property name to wrap it in — a choice that silently changes your tool's
+`inputSchema` and breaks every caller. Nothing about that should be automatic.
+
+The rewrite is mechanical. Wrap the scalar in an object, move its constraints
+into the schema, and unwrap it in the handler.
+
+**Before** — `api.json`:
+
+```json
+"actionList": {
+  "setLevel": {
+    "description": "Set the dimmer level.",
+    "argumentList": {
+      "input":  {"direction": "in",  "relatedStateVariable": "A_ARG_TYPE_setLevel_Input"},
+      "output": {"direction": "out", "relatedStateVariable": "A_ARG_TYPE_setLevel_Output"}
+    }
+  }
+},
+"serviceStateTable": {
+  "A_ARG_TYPE_setLevel_Input": {
+    "dataType": "number",
+    "allowedValueRange": {"minimum": 0, "maximum": 100},
+    "defaultValue": 50
+  },
+  "A_ARG_TYPE_setLevel_Output": {"dataType": "boolean"}
+}
+```
+
+**After** — `api.json`:
+
+```json
+"actionList": [
+  {
+    "name": "setLevel",
+    "description": "Set the dimmer level.",
+    "input":  {"schema": "/dimming/setLevel/input"},
+    "output": {"schema": "/dimming/setLevel/output"}
+  }
+]
+```
+
+**After** — the matching entries in `schema.json`, where the range and the
+default now live:
+
+```json
+{
+  "dimming": {
+    "setLevel": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "level": {"type": "number", "minimum": 0, "maximum": 100, "default": 50}
+        },
+        "required": ["level"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {"ok": {"type": "boolean"}},
+        "required": ["ok"]
+      }
+    }
+  }
+}
+```
+
+**After** — `device.js`, unwrapping one level:
+
+```js
+// before: function(args, callback) { var level = args.input; ... }
+function setLevel(args, callback) {
+  var level = args.input.level;          // now a property of the input object
+  // ...
+  return callback(null, {output: {ok: true}});   // was: callback(null, {output: true})
+}
+```
+
+Mapping for the other retired state-variable fields:
+
+| 4.x state variable | 5.0.0 equivalent |
+|---|---|
+| `dataType: "number" / "integer"` | `{"type": "number"}` / `{"type": "integer"}` inside the object |
+| `dataType: "string"` / `"boolean"` | `{"type": "string"}` / `{"type": "boolean"}` |
+| `allowedValueRange: {minimum, maximum}` | `"minimum"` / `"maximum"` on the property |
+| `allowedValueList: [...]` | `"enum": [...]` on the property |
+| `defaultValue` | `"default"` on the property (advisory; the framework no longer substitutes it) |
+| `sendEvents` | nothing — event delivery was removed, see below |
+
+Note that `defaultValue` was only ever *stored*, never substituted into a call:
+it fed `/get-state`, which 5.0.0 also removes. Putting it in the schema as
+`default` documents the intent for a client without changing behaviour.
+
+After rewriting, re-run the converter over the module: it will report
+`already in the 5.0.0 format, unchanged` once no `serviceStateTable` remains,
+and the server's own meta-schema validation is the final check.
 
 ### What did not change
 
