@@ -7,8 +7,9 @@ time (`lib/validator.js` compiles it with ajv). This is the 5.0.0 format:
 `actionList` is an array of actions that carry their own `name` and their own
 `input`/`output`/`fault` schema pointers. See
 [`docs/module-development.md`](https://github.com/mchen6/countinghouse/blob/master/docs/module-development.md)
-to write against it and [`MIGRATION.md`](../MIGRATION.md) for what changed
-from 4.x.
+to write against it and
+[`MIGRATION.md`](https://github.com/mchen6/countinghouse/blob/master/MIGRATION.md)
+for what changed from 4.x.
 
 ## Everything else here — historical
 
