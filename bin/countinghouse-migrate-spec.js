@@ -86,8 +86,11 @@ function migrateAction(actionName, action, stateTable, where) {
   return out;
 }
 
+// `label` is an optional prefix for error messages (a module name, say). The
+// CLI leaves it empty because it prints the file path itself.
 function migrate(spec, label) {
   if (!isOldFormat(spec)) return spec;
+  var prefix = (label != null && label !== '') ? label + ' ' : '';
 
   var out = JSON.parse(JSON.stringify(spec));
   delete out.configId;
@@ -104,7 +107,7 @@ function migrate(spec, label) {
 
     for (var actionName in service.actionList) {
       actions.push(migrateAction(actionName, service.actionList[actionName], stateTable,
-                                 label + ' ' + serviceID + '/' + actionName));
+                                 prefix + serviceID + '/' + actionName));
     }
 
     service.actionList = actions;
@@ -145,7 +148,7 @@ function main(argv) {
         return;
       }
 
-      var out = migrate(spec, file);
+      var out = migrate(spec);
 
       if (toStdout) {
         process.stdout.write(JSON.stringify(out, null, 2) + '\n');

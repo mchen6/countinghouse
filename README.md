@@ -243,7 +243,7 @@ Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly
 which guarantee (auth, schema validation, metering, rate limiting,
 timeout, error shape) applies on which entry path — HTTP, MCP sync, MCP
-task-augmented, the event channel, and both direct-peer-channel modes —
+task-augmented, and both direct-peer-channel modes —
 see [`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md), kept
 current as a living inventory rather than a point-in-time snapshot.
 

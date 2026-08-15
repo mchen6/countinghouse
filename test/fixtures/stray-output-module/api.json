@@ -1,0 +1,25 @@
+{
+  "device": {
+    "friendlyName": "stray-output-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "one action returns an argument nobody declared; the other behaves",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:svc": {
+        "actionList": [
+          {
+            "name": "returnsStrayKey",
+            "description": "Returns a well-formed output plus one undeclared argument, to prove the framework rejects it.",
+            "input":  {"schema": "/svc/returnsStrayKey/input"},
+            "output": {"schema": "/svc/returnsStrayKey/output"}
+          },
+          {
+            "name": "returnsCleanly",
+            "description": "Returns exactly the declared output; the control case for returnsStrayKey.",
+            "input":  {"schema": "/svc/returnsCleanly/input"},
+            "output": {"schema": "/svc/returnsCleanly/output"}
+          }
+        ]
+      }
+    }
+  }
+}

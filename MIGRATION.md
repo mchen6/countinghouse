@@ -73,30 +73,211 @@ table anymore; the state values it nominally held stopped being readable when
   `defaultValue`, `allowedValueRange`, `allowedValueList`, `configId`,
   `specVersion`, `realPrice`, `priceInfo`, `freeCount`, `apiCache`, `apiLog`.
 
+### Scalar arguments must be rewritten by hand — the converter will not guess
+
 Scalar (non-object) arguments are gone with `dataType`: every argument is a
 JSON Schema document, and a constraint that used to live in
-`allowedValueRange`/`allowedValueList` belongs in that schema. `--allowSimpleType`,
-which was what let a scalar argument through at all, was removed earlier in
-5.0.0 — no bundled module ever used it.
+`allowedValueRange`/`allowedValueList` belongs in that schema.
+`--allowSimpleType`, which was what let a scalar argument through at all, was
+removed earlier in 5.0.0.
+
+**If your module declares a state variable whose `dataType` is anything other
+than `object`, `countinghouse-migrate-spec` stops with an error rather than
+converting it:**
+
+```
+$ npx countinghouse-migrate-spec ./my-module
+./my-module/api.json: urn:...:serviceID:dimming/setLevel/input: state variable
+"A_ARG_TYPE_setLevel_Input" has no schema pointer (dataType number). Only
+object arguments carry over to the 5.0.0 format.
+$ echo $?
+1
+```
+
+Nothing is written when this happens, and other modules named on the same
+command line are still converted; the exit status is 1 if any failed.
+
+This is deliberate. A scalar argument has no schema document to point at, and
+inventing one would mean guessing both the wire shape your handler receives and
+the property name to wrap it in — a choice that silently changes your tool's
+`inputSchema` and breaks every caller. Nothing about that should be automatic.
+
+The rewrite is mechanical. Wrap the scalar in an object, move its constraints
+into the schema, and unwrap it in the handler.
+
+**Before** — `api.json`:
+
+```json
+"actionList": {
+  "setLevel": {
+    "description": "Set the dimmer level.",
+    "argumentList": {
+      "input":  {"direction": "in",  "relatedStateVariable": "A_ARG_TYPE_setLevel_Input"},
+      "output": {"direction": "out", "relatedStateVariable": "A_ARG_TYPE_setLevel_Output"}
+    }
+  }
+},
+"serviceStateTable": {
+  "A_ARG_TYPE_setLevel_Input": {
+    "dataType": "number",
+    "allowedValueRange": {"minimum": 0, "maximum": 100},
+    "defaultValue": 50
+  },
+  "A_ARG_TYPE_setLevel_Output": {"dataType": "boolean"}
+}
+```
+
+**After** — `api.json`:
+
+```json
+"actionList": [
+  {
+    "name": "setLevel",
+    "description": "Set the dimmer level.",
+    "input":  {"schema": "/dimming/setLevel/input"},
+    "output": {"schema": "/dimming/setLevel/output"}
+  }
+]
+```
+
+**After** — the matching entries in `schema.json`, where the range and the
+default now live:
+
+```json
+{
+  "dimming": {
+    "setLevel": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "level": {"type": "number", "minimum": 0, "maximum": 100, "default": 50}
+        },
+        "required": ["level"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {"ok": {"type": "boolean"}},
+        "required": ["ok"]
+      }
+    }
+  }
+}
+```
+
+**After** — `device.js`, unwrapping one level:
+
+```js
+// before: function(args, callback) { var level = args.input; ... }
+function setLevel(args, callback) {
+  var level = args.input.level;          // now a property of the input object
+  // ...
+  return callback(null, {output: {ok: true}});   // was: callback(null, {output: true})
+}
+```
+
+Mapping for the other retired state-variable fields:
+
+| 4.x state variable | 5.0.0 equivalent |
+|---|---|
+| `dataType: "number" / "integer"` | `{"type": "number"}` / `{"type": "integer"}` inside the object |
+| `dataType: "string"` / `"boolean"` | `{"type": "string"}` / `{"type": "boolean"}` |
+| `allowedValueRange: {minimum, maximum}` | `"minimum"` / `"maximum"` on the property |
+| `allowedValueList: [...]` | `"enum": [...]` on the property |
+| `defaultValue` | `"default"` on the property (advisory; the framework no longer substitutes it) |
+| `sendEvents` | nothing — event delivery was removed, see below |
+
+Note that `defaultValue` was only ever *stored*, never substituted into a call:
+it fed `/get-state`, which 5.0.0 also removes. Putting it in the schema as
+`default` documents the intent for a client without changing behaviour.
+
+After rewriting, re-run the converter over the module: it will report
+`already in the 5.0.0 format, unchanged` once no `serviceStateTable` remains,
+and the server's own meta-schema validation is the final check.
 
 ### What did not change
 
-The MCP contract. A converted module produces byte-identical `tools/list`
-output — same tool names, descriptions, `inputSchema` and `outputSchema`. The
-spec format describes tools; it is not part of what a client sees, and this is
-asserted by a test (`test/mcp-contract/`) against a golden sample captured
-before the conversion.
+The MCP contract, for every tool that still exists. A converted module produces
+byte-identical `tools/list` output — same tool names, descriptions,
+`inputSchema` and `outputSchema`. The spec format describes tools; it is not
+part of what a client sees, and this is asserted by a test
+(`test/mcp-contract/01-tools-list-unchanged.js`) against a golden sample
+captured before the conversion.
 
-## Also removed in 5.0.0: the event subsystem and the response cache
+### The one tool that did disappear
 
-`--sioServer`, `--wsServer` and `--apiCache` are gone, along with the
-socket.io/WebSocket servers, the `event-sub`/`event-unsub`/`wss`/`get-state`
-routes, and the per-action `apiCache` response cache they were gated on. Event
-delivery never actually worked: a subscription was accepted but no listener was
-ever registered and nothing ever published, so this removes dead code rather
-than a feature. `--apiMonitor` stays but now always writes the summary log; the
-per-action `apiLog` flag that switched it to logging every call's input and
-output body is gone.
+`echo_device_echoservice_echowithapicache` is gone. It is the **only**
+difference between the complete 4.x tool surface and the 5.0.0 one: no other
+tool was removed, none was added, and no surviving tool's description or
+schemas changed.
+
+The action behind it (`echoWithAPICache` on `echo-device-module`) existed
+solely to demonstrate the per-action response cache, which 5.0.0 removes (see
+below). It was a demo action on a bundled example module, not part of any
+documented API — but it was reachable over MCP, so removing it is a contract
+change and is recorded as one rather than left for someone to discover.
+
+This is pinned by `test/mcp-contract/02-approved-tool-changes.js`, which
+compares the 5.0.0 surface against a sample captured at commit `31f1316`
+(before any 5.0.0 work) and fails if any tool disappears without being listed
+as approved. Removing a tool breaks every client that calls it, so it has to be
+a decision rather than a side effect.
+
+## Also removed in 5.0.0: the API response cache and the event subsystem
+
+Both are gone, and they went together because the second depended on the first.
+
+### The response cache (`--apiCache`, per-action `apiCache: <ms>`)
+
+**Removed.** A cached response was served without the call reaching the device
+module — but metering, rate limiting and the module's own bookkeeping all sit
+*on* that call path. A cache hit therefore returned a billable result that
+nothing billed for, and the per-apiKey limiter never saw. That is not a tuning
+problem, it is the cache and the per-call metering model disagreeing about what
+a call *is*, and this project's whole reason to exist is metering per call.
+
+Gone with it: the `Cache-Control: max-age=` response header derived from it,
+`Session.apiKeyFreq`, `lib/hash-key.js` and `lib/input-key.js` (no other
+consumer), and the `echoWithAPICache` demo action on `echo-device-module`
+(see above — it is the one tool this release removes).
+
+If you need caching, put it in front of countinghouse (a reverse proxy) or
+inside your module where you can decide what a billable call is. Do not expect
+the runtime to serve a response it did not meter.
+
+### The event subsystem (`--sioServer`, `--wsServer`)
+
+**Removed**: the socket.io and WebSocket servers, the
+`event-sub` / `event-unsub` / `wss` / `get-state` routes, `Subscriber` and
+`WsSubscriber`, and the state machinery `get-state` read.
+
+Two reasons:
+
+1. **It never delivered anything.** `subscribeEvent` validated the request and
+   returned success without registering a listener, and
+   `Subscriber.prototype.publish` was defined but called from nowhere. A client
+   could subscribe successfully and then wait forever. This deletes dead code,
+   not a working feature.
+2. **It was UPnP-era plumbing, gated on the cache.** Event subscription came
+   from the CDIF 3.x device model, where a controller subscribes to a physical
+   device's state variables. It was also literally gated on the response cache
+   (`subscribeEvent` refused unless `--apiCache` was on *and* the action
+   declared `apiCache`), so removing the cache left it unreachable regardless.
+
+The auth story it did have was real — a handshake-time apiKey check plus a
+per-`subscribe` device-access check, the same `AuthProvider` every HTTP/MCP
+route uses. That is deliberately kept written down in
+[`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md)'s event-channel
+row, as the bar to meet if event delivery is ever reinstated. MCP's own
+server-to-client notification mechanism is the more likely shape for that, not
+a second socket.io server.
+
+### Detailed API logging (per-action `apiLog`)
+
+**Removed.** `--apiMonitor` stays and always writes the summary log (timestamp,
+start time, isError, isHTTP). The `apiLog` flag switched it to also pushing
+every call's input and output *body* into redis — a per-tenant data-retention
+decision the spec format has no business making. No bundled module declared it.
 
 ## Versioning: why the first real release is 4.0.0
 

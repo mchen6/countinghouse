@@ -1,0 +1,467 @@
+[
+  {
+    "name": "composite_demo_compositeservice_run",
+    "description": "Uppercases the input text via transform-demo, then round-trips the result through echo-device-module's echo action, all in-process over the worker message channel (no HTTP, no model-context round trip for the intermediate steps). Returns the final text plus a call-chain bill with one independent metering record per inner module invoked.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "finalText": {
+          "type": "string"
+        },
+        "bill": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hop": {
+                "type": "number"
+              },
+              "tool": {
+                "type": "string"
+              },
+              "charged": {
+                "type": "number"
+              },
+              "balance": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "countinghouse_check_balance",
+    "description": "Check the calling API key's current metering balance on this countinghouse instance.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "apiKey": {
+          "type": "string"
+        },
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "echo_device_client_errtestservice_testerrorinfo",
+    "description": "Returns a device-defined error object (fault) instead of a normal result, to test structured error propagation from a client-side service module.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_client_x_api",
+    "description": "Demonstrates cross-module invocation: creates a ServiceClient pointed at the echo-device module and calls its echo action with a fixed sample payload, returning whatever echo returns.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_echoservice_echo",
+    "description": "Echoes the input object back as the output, unmodified. Useful for verifying end-to-end connectivity and input/output schema handling.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item1": {
+                "type": "string"
+              },
+              "item2": {
+                "type": "boolean"
+              },
+              "item3": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "bar": {
+          "type": "string"
+        },
+        "baz": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "foo",
+        "bar"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_echoservice_echoasync",
+    "description": "Same as echo, but implemented with an async/await handler instead of a callback -- exercises the async invocation code path.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item1": {
+                "type": "string"
+              },
+              "item2": {
+                "type": "boolean"
+              },
+              "item3": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "bar": {
+          "type": "string"
+        },
+        "baz": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "foo",
+        "bar"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_echoservice_echowithapicache",
+    "description": "Same as echo, but the response is cached server-side for 9 seconds (apiCache) so repeated identical calls skip re-invoking the device module.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item1": {
+                "type": "string"
+              },
+              "item2": {
+                "type": "boolean"
+              },
+              "item3": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "bar": {
+          "type": "string"
+        },
+        "baz": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "foo",
+        "bar"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testasyncthrowinasync",
+    "description": "Throws asynchronously inside an async/await-style action handler; expected to be caught by a try/catch block rather than relying on the domain module.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testasyncthrowindomain",
+    "description": "Throws asynchronously (outside the initial call stack) inside a callback-style action handler, exercising Node's deprecated domain-module-based exception capture.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testbooleantypereturnerror",
+    "description": "Returns a boolean as the error value, to test error normalization when the device module supplies a non-Error error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testerrorinfo",
+    "description": "Returns a device-defined error object (fault) instead of a normal result, to test structured error propagation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testerrorinfoasync",
+    "description": "Async/await version of testErrorInfo: rejects with a device-defined error object to test structured error propagation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testfunctionreturnerror",
+    "description": "Returns a JavaScript Error instance directly from the action function, to test that error type is handled correctly.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testnullreturnerror",
+    "description": "Returns null as the error value, to test that a falsy/null error is still treated as \"no error\" correctly.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testnumbertypereturnerror",
+    "description": "Returns a number as the error value, to test error normalization when the device module supplies a non-Error error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_teststringtypereturnerror",
+    "description": "Returns a string as the error value, to test error normalization when the device module supplies a non-Error error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testthrowerror",
+    "description": "Directly throws a new Error inside a callback-style action handler, to test that synchronous throws are caught and reported as a fault rather than crashing the process.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_errorinfotestservice_testthrowerrorasync",
+    "description": "Directly throws a new Error inside an async/await-style action handler, to test that async throws are caught and reported as a fault rather than crashing the process.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_timeouttestservice_testtimeout",
+    "description": "Intentionally never calls back, so the framework's action timeout fires. Used to test timeout handling; expect a DEVICE_NOT_RESPONDING-style error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "echo_device_timeouttestservice_testtimeoutasync",
+    "description": "Same as testTimeout, but implemented as an async function that never resolves.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "perf_callee_demo_perfcalleeservice_echopayload",
+    "description": "Returns the input data unchanged. Benchmark fixture only, not part of any documented public API.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "perf_caller_demo_perfcallerservice_run",
+    "description": "Generates a random string of payloadSizeBytes length and round-trips it through perf-callee-demo's echoPayload action over ServiceClient.invoke -- the same isRemoteThread path lib/service-client.js branches on options.directPeerChannels for. Returns the round-trip duration measured server-side, around just the ServiceClient.invoke call (excluding this action's own HTTP/session overhead). Benchmark fixture only, not part of any documented public API.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "payloadSizeBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "payloadSizeBytes"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "durationMs": {
+          "type": "number"
+        }
+      }
+    }
+  },
+  {
+    "name": "transform_demo_transformservice_uppercase",
+    "description": "Returns the input text converted to uppercase.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      }
+    }
+  }
+]
