@@ -35,6 +35,7 @@ cdif-audit-and-refactoring-plan.md
 direct-peer-channels-design.md
 PRE-RELEASE-AUDIT.md
 SPEC-REFACTOR-HANDOFF.md
+v6-module-api-and-es6-design.md
 
 # Build and scratch archives. `npm pack` drops its tarball in the repo root on
 # every release rehearsal, and ad-hoc archives of working notes have landed in
