@@ -242,3 +242,49 @@ action order explicit rather than a property of object key ordering.
 service; it only contributes a slug to the tool name), and the URN is a lookup
 key on every invoke, in the routes, in job control, and in the peer channels.
 Symmetry there would have bought nothing and cost a scan on a hot path.
+
+## Unknown arguments are rejected, not ignored
+
+An action's argument object may contain only the two reserved argument names,
+`input` and `output`, plus the keys the framework injects itself (`ctx`,
+`httpHeaders`, `jobID`). Anything else fails validation, naming the offending
+key, in whichever direction it appeared.
+
+There was no decision behind the alternative, which is why this one is written
+down. Before 5.0.0, `validateActionCall` walked every key in the argument
+object and read `argList[key].relatedStateVariable` — so an unrecognised key
+dereferenced `undefined` and threw a `TypeError` out of a function whose
+callers do not catch it on the input path. Rewriting the function for the new
+spec format quietly turned that into the opposite behaviour: unknown keys were
+skipped. Both are accidents of how the loop happened to be written, and the
+second is the more dangerous, because it is silent — a module returning
+`{output: {...}, surprise: ...}` had the stray value travel back to its caller
+unvalidated.
+
+Rejecting is the right default for a schema-validating boundary:
+
+1. **The spec is the contract.** A key the spec does not declare has no schema,
+   so passing it through means shipping unvalidated data to whoever called the
+   tool — exactly what this layer exists to prevent.
+2. **A stray key is usually a typo.** `{ouptut: ...}` silently ignored looks
+   to the module author like the framework losing their return value. Named
+   and refused, it takes seconds to find.
+3. **It is a closed vocabulary, and a small one.** Two argument names, three
+   framework keys. Not a schema-evolution mechanism where unknown-field
+   tolerance would buy forward compatibility.
+
+The alternative considered was letting an action opt into extra keys by
+declaring `additionalProperties` in its own JSON Schema. Rejected: the stray
+keys in question are *siblings* of `input`/`output`, not properties inside
+them, so a schema on the input document cannot describe them — the schema
+would have to be for the argument envelope, which is framework-owned and not
+something a module gets to redefine. An action that genuinely needs to carry
+more data can put it inside `input`, where it has a schema like everything
+else.
+
+Cost, stated: a caller that was passing extra keys and getting away with it now
+gets a 500. Nothing in this repo did, and the pre-5.0.0 behaviour for that same
+caller was a `TypeError`, so this breaks nothing that previously worked.
+Tests: `test/validation/01` (both directions, at the unit level) and
+`test/validation/02` (a real module returning a stray key, end to end,
+including that the server survives it).

@@ -1,0 +1,12 @@
+{
+  "svc": {
+    "returnsStrayKey": {
+      "input":  {"type": "object", "properties": {"v": {"type": "string"}}, "required": ["v"]},
+      "output": {"type": "object", "properties": {"v": {"type": "string"}}, "required": ["v"]}
+    },
+    "returnsCleanly": {
+      "input":  {"type": "object", "properties": {"v": {"type": "string"}}, "required": ["v"]},
+      "output": {"type": "object", "properties": {"v": {"type": "string"}}, "required": ["v"]}
+    }
+  }
+}
