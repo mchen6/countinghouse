@@ -223,16 +223,61 @@ compares the 5.0.0 surface against a sample captured at commit `31f1316`
 as approved. Removing a tool breaks every client that calls it, so it has to be
 a decision rather than a side effect.
 
-## Also removed in 5.0.0: the event subsystem and the response cache
+## Also removed in 5.0.0: the API response cache and the event subsystem
 
-`--sioServer`, `--wsServer` and `--apiCache` are gone, along with the
-socket.io/WebSocket servers, the `event-sub`/`event-unsub`/`wss`/`get-state`
-routes, and the per-action `apiCache` response cache they were gated on. Event
-delivery never actually worked: a subscription was accepted but no listener was
-ever registered and nothing ever published, so this removes dead code rather
-than a feature. `--apiMonitor` stays but now always writes the summary log; the
-per-action `apiLog` flag that switched it to logging every call's input and
-output body is gone.
+Both are gone, and they went together because the second depended on the first.
+
+### The response cache (`--apiCache`, per-action `apiCache: <ms>`)
+
+**Removed.** A cached response was served without the call reaching the device
+module — but metering, rate limiting and the module's own bookkeeping all sit
+*on* that call path. A cache hit therefore returned a billable result that
+nothing billed for, and the per-apiKey limiter never saw. That is not a tuning
+problem, it is the cache and the per-call metering model disagreeing about what
+a call *is*, and this project's whole reason to exist is metering per call.
+
+Gone with it: the `Cache-Control: max-age=` response header derived from it,
+`Session.apiKeyFreq`, `lib/hash-key.js` and `lib/input-key.js` (no other
+consumer), and the `echoWithAPICache` demo action on `echo-device-module`
+(see above — it is the one tool this release removes).
+
+If you need caching, put it in front of countinghouse (a reverse proxy) or
+inside your module where you can decide what a billable call is. Do not expect
+the runtime to serve a response it did not meter.
+
+### The event subsystem (`--sioServer`, `--wsServer`)
+
+**Removed**: the socket.io and WebSocket servers, the
+`event-sub` / `event-unsub` / `wss` / `get-state` routes, `Subscriber` and
+`WsSubscriber`, and the state machinery `get-state` read.
+
+Two reasons:
+
+1. **It never delivered anything.** `subscribeEvent` validated the request and
+   returned success without registering a listener, and
+   `Subscriber.prototype.publish` was defined but called from nowhere. A client
+   could subscribe successfully and then wait forever. This deletes dead code,
+   not a working feature.
+2. **It was UPnP-era plumbing, gated on the cache.** Event subscription came
+   from the CDIF 3.x device model, where a controller subscribes to a physical
+   device's state variables. It was also literally gated on the response cache
+   (`subscribeEvent` refused unless `--apiCache` was on *and* the action
+   declared `apiCache`), so removing the cache left it unreachable regardless.
+
+The auth story it did have was real — a handshake-time apiKey check plus a
+per-`subscribe` device-access check, the same `AuthProvider` every HTTP/MCP
+route uses. That is deliberately kept written down in
+[`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md)'s event-channel
+row, as the bar to meet if event delivery is ever reinstated. MCP's own
+server-to-client notification mechanism is the more likely shape for that, not
+a second socket.io server.
+
+### Detailed API logging (per-action `apiLog`)
+
+**Removed.** `--apiMonitor` stays and always writes the summary log (timestamp,
+start time, isError, isHTTP). The `apiLog` flag switched it to also pushing
+every call's input and output *body* into redis — a per-tenant data-retention
+decision the spec format has no business making. No bundled module declared it.
 
 ## Versioning: why the first real release is 4.0.0
 
