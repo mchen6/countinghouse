@@ -35,3 +35,14 @@ cdif-audit-and-refactoring-plan.md
 direct-peer-channels-design.md
 PRE-RELEASE-AUDIT.md
 SPEC-REFACTOR-HANDOFF.md
+
+# Build and scratch archives. `npm pack` drops its tarball in the repo root on
+# every release rehearsal, and ad-hoc archives of working notes have landed in
+# docs/ -- one of them was committed and pushed with a copy of a
+# maintainer-local document inside it, which no .gitignore rule can catch once
+# it is inside an archive.
+#
+# Deliberately not a bare `*.tgz`: pre-installed-packages/cdif-load-test-0.0.4.tgz
+# is a test fixture that is meant to be tracked.
+/countinghouse-*.tgz
+docs/*.tgz
