@@ -7,6 +7,13 @@
 // the same modules, now converted, still produce exactly that -- same tool
 // names, descriptions, inputSchema and outputSchema, field for field.
 //
+// Scope, stated because it is easy to over-read this file: the baseline was
+// taken at 6f948fc, which is *after* phases 1b/1c had already removed the
+// echoWithAPICache action. So this file proves the format change moved
+// nothing; it cannot see that earlier removal.
+// 02-approved-tool-changes.js covers the rest -- it pins the complete 4.x ->
+// 5.0.0 delta against a sample from before any of this work.
+//
 // Regenerate the golden file only when a tool surface is meant to change:
 //   node test/mcp-contract/capture-tools-list.js
 var assert = require('assert');
