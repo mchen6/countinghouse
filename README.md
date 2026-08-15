@@ -104,7 +104,7 @@ A second, independent capability, `admin`, gates the module-lifecycle
 endpoints (`/load-module` and friends) — a key can have access to every
 device and still not be admin, which is exactly what the auto-generated demo
 key is. Set `"admin": true` on a key in `auth.json` to grant it. See
-[Admin keys](docs/authentication.md#admin-keys).
+[Admin keys](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md#admin-keys).
 
 **Normal use — including loading modules into a running server — does not
 need `--debug`.** `--debug` (used by this repo's own test suite) bypasses
@@ -117,7 +117,7 @@ grant `admin` instead.
 **The auto-generated demo key shown above grants wildcard access to every
 device with no expiry — replace it before any real deployment.** Full
 reference, including `auth.json`'s format, admin keys, and CouchDB setup:
-[`docs/authentication.md`](docs/authentication.md).
+[`docs/authentication.md`](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md).
 
 ## Composite demo walkthrough
 
@@ -130,7 +130,7 @@ unless you opt in), so set it to something non-zero to actually see the
 bill move.
 
 `composite-demo`'s two inner hops run under a fixed internal identity,
-`composite-demo-internal` (see [`docs/composite-tools.md`](docs/composite-tools.md)'s
+`composite-demo-internal` (see [`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md)'s
 known simplifications — a real caller's apiKey isn't threaded through to
 inner hops in this demo), separate from whatever key you call the outer
 tool with. Grant that identity access before starting the server below, or
@@ -140,7 +140,7 @@ identity it's never seen, not a bug in the composition itself).
 **This applies to every bundled module that calls other modules, not just
 this one** — `echo-device-client-module` (`aabbcc`) and `perf-caller-demo`
 (`perf-caller-demo-internal`) each need the same grant if you load them. See
-[`docs/composite-tools.md`](docs/composite-tools.md#every-composing-module-needs-its-internal-identity-granted)
+[`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md#every-composing-module-needs-its-internal-identity-granted)
 for the full list and a one-liner that grants all three.
 
 ```sh
@@ -194,13 +194,13 @@ entirely inside the server process, with neither intermediate result ever
 entering this MCP client's context. `bill` is one entry per inner hop:
 which tool ran, what it cost, and the running balance afterward for
 `composite-demo`'s own internal identity (not the caller's apiKey — see
-[`docs/composite-tools.md`](docs/composite-tools.md)'s known
+[`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md)'s known
 simplifications for why) — proof that per-hop metering isn't skipped just
 because the calls happen module-to-module instead of client-to-server. A
 fresh identity starts at balance `0`; each hop
 subtracts its cost, so balance going more negative over successive calls
 is expected, not an error. Full mechanism and the billing-authority
-guarantee behind it: [`docs/composite-tools.md`](docs/composite-tools.md).
+guarantee behind it: [`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md).
 
 ## CLI flags reference
 
@@ -215,10 +215,10 @@ simulation).
 | `--port` | `9527` | HTTP port. |
 | `--loadModule <path>` | — | Load a local device module at startup; repeat for multiple modules. |
 | `--redisUrl` | `redis://127.0.0.1:6379` | Redis instance for metering, rate limiting, and session state. |
-| `--authProvider file\|sqlite\|couchdb` | `file` | AuthProvider backend — see [Authentication](#authentication). `sqlite` needs the optional `sqlite3` native module, whose prebuilt binary requires glibc >= 2.38 and so does not load on e.g. Ubuntu 22.04; `file` (the default) and `couchdb` need no native modules. See [docs/authentication.md](docs/authentication.md#sqlite). |
+| `--authProvider file\|sqlite\|couchdb` | `file` | AuthProvider backend — see [Authentication](#authentication). `sqlite` needs the optional `sqlite3` native module, whose prebuilt binary requires glibc >= 2.38 and so does not load on e.g. Ubuntu 22.04; `file` (the default) and `couchdb` need no native modules. See [docs/authentication.md](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md#sqlite). |
 | `--authConfigPath <path>` | backend-specific | Config file/db path for the selected AuthProvider backend. |
-| `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](docs/authentication.md#admin-keys). |
-| `--directPeerChannels` | off | Route worker-to-worker calls directly instead of through the main thread — see [`docs/direct-peer-channels.md`](docs/direct-peer-channels.md). |
+| `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md#admin-keys). |
+| `--directPeerChannels` | off | Route worker-to-worker calls directly instead of through the main thread — see [`docs/direct-peer-channels.md`](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md). |
 | `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path. |
 | `--mcpToolCallCost <n>` | `0` | Cost recorded via `MeteringProvider.recordCall` for every MCP `tools/call`. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
@@ -237,14 +237,14 @@ simulation).
 | `POST /devices/:deviceID/invoke-action` | Platform, pre-MCP HTTP API | Direct HTTP equivalent of `tools/call`; predates the MCP gateway and still works. |
 | `GET /devices/:deviceID/get-spec`, `.../schema` | Platform | A device's `api.json` / resolved JSON Schema 2020-12 documents. |
 | `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. |
-| `POST /load-module`, `/unload-module`, `/restart-module`, `/verify-module`, `/reload-module`, `/shutdown`, `GET /get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](docs/authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
+| `POST /load-module`, `/unload-module`, `/restart-module`, `/verify-module`, `/reload-module`, `/shutdown`, `GET /get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly
 which guarantee (auth, schema validation, metering, rate limiting,
 timeout, error shape) applies on which entry path — HTTP, MCP sync, MCP
 task-augmented, and both direct-peer-channel modes —
-see [`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md), kept
+see [`docs/cross-cutting-matrix.md`](https://github.com/mchen6/countinghouse/blob/master/docs/cross-cutting-matrix.md), kept
 current as a living inventory rather than a point-in-time snapshot.
 
 ## Module development
@@ -267,7 +267,7 @@ device. Point `main` at `device.js` and the module will load, report success,
 and then never appear, because nothing is listening for `discover`. Every
 module in `pre-installed-packages/` has the same ~20-line `index.js`; copy it.
 Full reference and a "my module doesn't appear in tools/list" checklist:
-[`docs/module-development.md`](docs/module-development.md).
+[`docs/module-development.md`](https://github.com/mchen6/countinghouse/blob/master/docs/module-development.md).
 
 `api.json` declares one `friendlyName`, one or more services (each keyed by a
 `urn:...:serviceID:...`), and each service's `actionList` — an array whose
@@ -299,7 +299,7 @@ that calls other modules.
 Cross-worker call performance — main-thread-routed (default) vs. the
 opt-in `--directPeerChannels` path — is benchmarked against the current
 Node target, not carried over from this codebase's earlier architecture.
-See [`docs/direct-peer-channels.md`](docs/direct-peer-channels.md) for
+See [`docs/direct-peer-channels.md`](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md) for
 the numbers and methodology.
 
 ## Architecture
@@ -335,7 +335,7 @@ flowchart TB
 Each device module runs in its own `worker_threads.Worker` — an
 independent V8 heap, reachable only through a structured message-passing
 protocol, not shared memory (see
-[`docs/security-model.md`](docs/security-model.md) for exactly what that
+[`docs/security-model.md`](https://github.com/mchen6/countinghouse/blob/master/docs/security-model.md) for exactly what that
 isolation does and doesn't provide). Modules can call each other's
 actions over the same message channel the runtime already uses to route
 every action call, letting one MCP `tools/call` fan out into several
@@ -345,7 +345,7 @@ and a handful of other architecture decisions — why AuthProvider has
 three backends, the billing-authority rule that prevents double-charging
 composed calls, the direct-peer-channels design, MCP protocol version
 negotiation — is collected in
-[`docs/design-decisions.md`](docs/design-decisions.md).
+[`docs/design-decisions.md`](https://github.com/mchen6/countinghouse/blob/master/docs/design-decisions.md).
 
 ## Origin
 
@@ -367,7 +367,7 @@ Streamable HTTP as the transport instead of a bespoke REST API.
 Device modules run with real OS-user privileges, isolated only at the
 `worker_threads` level (independent heap, message-passing boundary) —
 not sandboxed against arbitrary code execution. Read
-[`docs/security-model.md`](docs/security-model.md) for the full threat
+[`docs/security-model.md`](https://github.com/mchen6/countinghouse/blob/master/docs/security-model.md) for the full threat
 model: what worker isolation actually provides, what it explicitly does
 not, and how that shapes the trust assumptions around third-party device
 modules.

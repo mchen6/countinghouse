@@ -1,6 +1,6 @@
 {
   "name": "countinghouse",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
   "bin": {
     "countinghouse": "./bin/countinghouse",
@@ -14,13 +14,8 @@
     "lib/",
     "pre-installed-packages/",
     "spec/schema.json",
-    "docs/authentication.md",
-    "docs/composite-tools.md",
-    "docs/cross-cutting-matrix.md",
-    "docs/design-decisions.md",
-    "docs/direct-peer-channels.md",
-    "docs/module-development.md",
-    "docs/security-model.md",
+    "README.md",
+    "LICENSE",
     "MIGRATION.md",
     "server.json"
   ],

@@ -267,7 +267,7 @@ Two reasons:
 The auth story it did have was real — a handshake-time apiKey check plus a
 per-`subscribe` device-access check, the same `AuthProvider` every HTTP/MCP
 route uses. That is deliberately kept written down in
-[`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md)'s event-channel
+[`docs/cross-cutting-matrix.md`](https://github.com/mchen6/countinghouse/blob/master/docs/cross-cutting-matrix.md)'s event-channel
 row, as the bar to meet if event delivery is ever reinstated. MCP's own
 server-to-client notification mechanism is the more likely shape for that, not
 a second socket.io server.
@@ -296,7 +296,7 @@ Those breaking changes, all documented below:
   which is app-layer bookkeeping and never touches balance. Balance is now
   deducted exactly once per cross-worker call by the platform itself (the
   "billing authority" rule — see
-  [`docs/design-decisions.md`](docs/design-decisions.md)). A module that
+  [`docs/design-decisions.md`](https://github.com/mchen6/countinghouse/blob/master/docs/design-decisions.md)). A module that
   metered itself under 3.x was double-billing and must drop that call.
 - **The authorization model was rebuilt around `AuthProvider`**
   (`--authProvider file|sqlite|couchdb`), replacing the inline
@@ -304,7 +304,7 @@ Those breaking changes, all documented below:
   user schema keep working via the `couchdb` backend, but the default is now
   a flat `auth.json` and a separate `admin` capability gates the
   module-lifecycle endpoints. See
-  [`docs/authentication.md`](docs/authentication.md).
+  [`docs/authentication.md`](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md).
 - **The metering identity is unified on
   `encodeLegacyTool(deviceID, serviceID, actionName)`** across every entry
   path. Per-tool pricing or free-call quotas keyed by the old MCP tool name
@@ -322,7 +322,7 @@ but its failure message did not explain *why* the optional backend was
 unavailable, and the limitation was undocumented. 4.0.1 adds the diagnosis
 (the prebuilt binding needs glibc >= 2.38; the message reports the host's
 actual version and both ways forward) and documents it in
-[`docs/authentication.md`](docs/authentication.md#sqlite) and README. No API
+[`docs/authentication.md`](https://github.com/mchen6/countinghouse/blob/master/docs/authentication.md#sqlite) and README. No API
 changes -- if 4.0.0 works for you, 4.0.1 changes nothing but the error text
 you see when it doesn't.
 
