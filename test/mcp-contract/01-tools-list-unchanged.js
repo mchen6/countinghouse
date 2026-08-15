@@ -13,6 +13,7 @@ var assert = require('assert');
 var fs     = require('fs');
 var path   = require('path');
 var http   = require('http');
+var net    = require('net');
 var spawn  = require('child_process').spawn;
 
 var PORT    = 9531;
@@ -22,16 +23,58 @@ var GOLDEN  = require('./tools-list.golden.json');
 
 var server;
 
+// bin/countinghouse is a /bin/sh wrapper that runs node as a *child* (and
+// pipes it into bunyan when bunyan is on PATH), so killing the returned pid
+// only kills the shell and leaves the server running. Spawn detached so the
+// whole thing is one process group, and kill the group.
+function stopServer() {
+  if (server == null || server.pid == null) return;
+  try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+  server = null;
+}
+
+// A server left behind by an earlier run would answer on this port, and the
+// comparison below would then pass against *its* modules rather than the ones
+// in this working tree -- the exact failure this file exists to catch, which
+// is why it refuses to run rather than trusting whoever answers.
+//
+// A bare TCP connect, not an HTTP request: it cannot hang on protocol
+// semantics, and every path destroys the socket -- an undrained socket keeps
+// the event loop alive and mocha never exits.
+function assertPortFree(callback) {
+  var done   = false;
+  var socket = net.connect({host: '127.0.0.1', port: PORT});
+
+  function finish(err) {
+    if (done) return;
+    done = true;
+    socket.destroy();
+    callback(err);
+  }
+
+  socket.setTimeout(2000);
+  socket.on('connect', function() {
+    finish(new Error('port ' + PORT + ' is already in use. A server from an earlier run is still up; ' +
+                     'kill it (fuser -k ' + PORT + '/tcp) before running this suite.'));
+  });
+  socket.on('timeout', function() { finish(null); });
+  socket.on('error',   function() { finish(null); }); // nothing listening: what we want
+}
+
 function startServer(done) {
-  var modules = fs.readdirSync(PKG_DIR).filter(function(f) {
-    return fs.statSync(path.join(PKG_DIR, f)).isDirectory();
-  }).sort();
+  assertPortFree(function(err) {
+    if (err) return done(err);
 
-  var args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
-  modules.forEach(function(m) { args.push('--loadModule', path.join(PKG_DIR, m)); });
+    var modules = fs.readdirSync(PKG_DIR).filter(function(f) {
+      return fs.statSync(path.join(PKG_DIR, f)).isDirectory();
+    }).sort();
 
-  server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore'});
-  setTimeout(done, 8000);
+    var args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
+    modules.forEach(function(m) { args.push('--loadModule', path.join(PKG_DIR, m)); });
+
+    server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true});
+    setTimeout(done, 8000);
+  });
 }
 
 function toolsList(callback) {
@@ -56,7 +99,8 @@ describe('mcp-contract 01: the spec format change did not move the MCP surface',
   var actual;
 
   before(function(done) {
-    startServer(function() {
+    startServer(function(startErr) {
+      if (startErr) return done(startErr);
       toolsList(function(err, res) {
         if (err) return done(err);
         if (res == null || res.result == null || !Array.isArray(res.result.tools)) {
@@ -71,7 +115,7 @@ describe('mcp-contract 01: the spec format change did not move the MCP surface',
   });
 
   after(function() {
-    if (server != null) server.kill();
+    stopServer();
   });
 
   it('advertises exactly the same tool names', function() {

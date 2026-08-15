@@ -33,7 +33,14 @@ if (require.main !== module) {
   return;
 }
 
-var server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore'});
+// detached so the whole process group can be killed: bin/countinghouse is a
+// /bin/sh wrapper that runs node as a child (and pipes it into bunyan), so
+// killing the returned pid alone leaves the server listening.
+var server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true});
+
+function stopServer() {
+  try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+}
 
 function toolsList(callback) {
   var body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}});
@@ -59,14 +66,14 @@ setTimeout(function() {
   toolsList(function(err, res) {
     if (err || res == null || res.result == null || !Array.isArray(res.result.tools)) {
       console.error('tools/list failed:', err ? err.message : JSON.stringify(res));
-      server.kill();
+      stopServer();
       process.exit(1);
     }
     // sort by name so the golden file does not depend on module load order
     var tools = res.result.tools.slice().sort(function(a, b) { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
     fs.writeFileSync(OUT, JSON.stringify(tools, null, 2) + '\n');
     console.log('wrote ' + tools.length + ' tools to ' + OUT);
-    server.kill();
+    stopServer();
     process.exit(0);
   });
 }, 8000);
