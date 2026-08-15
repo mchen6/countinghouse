@@ -1,9 +1,4 @@
 {
-  "configId": 1,
-  "specVersion": {
-    "major": 1,
-    "minor": 0
-  },
   "device": {
     "friendlyName": "echo-device",
     "manufacturer": "countinghouse",
@@ -20,446 +15,211 @@
     ],
     "serviceList": {
       "urn:countinghouse-com:serviceID:echoService": {
-        "actionList": {
-          "echo": {
+        "actionList": [
+          {
+            "name": "echo",
             "description": "Echoes the input object back as the output, unmodified. Useful for verifying end-to-end connectivity and input/output schema handling.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_echo_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_echo_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/echoService/echo/input"
+            },
+            "output": {
+              "schema": "/echoService/echo/output"
             },
             "fault": {
               "schema": "/fault/echoService/echo/fault"
             }
           },
-          "echoAsync": {
+          {
+            "name": "echoAsync",
             "description": "Same as echo, but implemented with an async/await handler instead of a callback -- exercises the async invocation code path.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_echoAsync_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_echoAsync_Output"
-              }
+            "input": {
+              "schema": "/echoService/echoAsync/input"
+            },
+            "output": {
+              "schema": "/echoService/echoAsync/output"
             },
             "fault": {
               "schema": "/fault/echoService/echoAsync/fault"
             }
           }
-        },
-        "serviceStateTable": {
-          "A_ARG_TYPE_echo_Input": {
-            "dataType": "object",
-            "schema": "/echoService/echo/input"
-          },
-          "A_ARG_TYPE_echo_Output": {
-            "dataType": "object",
-            "schema": "/echoService/echo/output"
-          },
-          "A_ARG_TYPE_echoAsync_Input": {
-            "dataType": "object",
-            "schema": "/echoService/echoAsync/input"
-          },
-          "A_ARG_TYPE_echoAsync_Output": {
-            "dataType": "object",
-            "schema": "/echoService/echoAsync/output"
-          }
-        }
+        ]
       },
       "urn:countinghouse-com:serviceID:timeOutTestService": {
-        "actionList": {
-          "testTimeout": {
+        "actionList": [
+          {
+            "name": "testTimeout",
             "description": "Intentionally never calls back, so the framework's action timeout fires. Used to test timeout handling; expect a DEVICE_NOT_RESPONDING-style error.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testTimeout_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testTimeout_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/timeOutTestService/testTimeout/input"
+            },
+            "output": {
+              "schema": "/timeOutTestService/testTimeout/output"
             },
             "fault": {
               "schema": "/fault/timeOutTestService/testTimeout/fault"
             }
           },
-          "testTimeoutAsync": {
+          {
+            "name": "testTimeoutAsync",
             "description": "Same as testTimeout, but implemented as an async function that never resolves.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testTimeoutAsync_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testTimeoutAsync_Output"
-              }
+            "input": {
+              "schema": "/timeOutTestService/testTimeoutAsync/input"
+            },
+            "output": {
+              "schema": "/timeOutTestService/testTimeoutAsync/output"
             },
             "fault": {
               "schema": "/fault/timeOutTestService/testTimeoutAsync/fault"
             }
           }
-        },
-        "serviceStateTable": {
-          "A_ARG_TYPE_testTimeout_Input": {
-            "dataType": "object",
-            "schema": "/timeOutTestService/testTimeout/input"
-          },
-          "A_ARG_TYPE_testTimeout_Output": {
-            "dataType": "object",
-            "schema": "/timeOutTestService/testTimeout/output"
-          },
-          "A_ARG_TYPE_testTimeoutAsync_Input": {
-            "dataType": "object",
-            "schema": "/timeOutTestService/testTimeoutAsync/input"
-          },
-          "A_ARG_TYPE_testTimeoutAsync_Output": {
-            "dataType": "object",
-            "schema": "/timeOutTestService/testTimeoutAsync/output"
-          }
-        }
+        ]
       },
       "urn:countinghouse-com:serviceID:errorInfoTestService": {
-        "actionList": {
-          "testErrorInfo": {
+        "actionList": [
+          {
+            "name": "testErrorInfo",
             "description": "Returns a device-defined error object (fault) instead of a normal result, to test structured error propagation.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testErrorInfo_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "foo": {
-                      "type": "string"
-                    }
-                  }
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testErrorInfo_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testErrorInfo/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testErrorInfo/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testErrorInfo/fault"
             }
           },
-          "testFunctionReturnError": {
+          {
+            "name": "testFunctionReturnError",
             "description": "Returns a JavaScript Error instance directly from the action function, to test that error type is handled correctly.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testFunctionReturnError_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testFunctionReturnError_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testFunctionReturnError/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testFunctionReturnError/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testFunctionReturnError/fault"
             }
           },
-          "testNullReturnError": {
+          {
+            "name": "testNullReturnError",
             "description": "Returns null as the error value, to test that a falsy/null error is still treated as \"no error\" correctly.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testNullReturnError_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testNullReturnError_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testNullReturnError/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testNullReturnError/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testNullReturnError/fault"
             }
           },
-          "testNumberTypeReturnError": {
+          {
+            "name": "testNumberTypeReturnError",
             "description": "Returns a number as the error value, to test error normalization when the device module supplies a non-Error error.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testNumberTypeReturnError_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testNumberTypeReturnError_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testNumberTypeReturnError/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testNumberTypeReturnError/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testNumberTypeReturnError/fault"
             }
           },
-          "testStringTypeReturnError": {
+          {
+            "name": "testStringTypeReturnError",
             "description": "Returns a string as the error value, to test error normalization when the device module supplies a non-Error error.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testStringTypeReturnError_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testStringTypeReturnError_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testStringTypeReturnError/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testStringTypeReturnError/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testStringTypeReturnError/fault"
             }
           },
-          "testBooleanTypeReturnError": {
+          {
+            "name": "testBooleanTypeReturnError",
             "description": "Returns a boolean as the error value, to test error normalization when the device module supplies a non-Error error.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testBooleanTypeReturnError_Input",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testBooleanTypeReturnError_Output",
-                "schema": {
-                  "type": "object",
-                  "properties": {}
-                }
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testBooleanTypeReturnError/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testBooleanTypeReturnError/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testBooleanTypeReturnError/fault"
             }
           },
-          "testErrorInfoAsync": {
+          {
+            "name": "testErrorInfoAsync",
             "description": "Async/await version of testErrorInfo: rejects with a device-defined error object to test structured error propagation.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testErrorInfoAsync_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testErrorInfoAsync_Output"
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testErrorInfoAsync/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testErrorInfoAsync/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testErrorInfoAsync/fault"
             }
           },
-          "testThrowError": {
+          {
+            "name": "testThrowError",
             "description": "Directly throws a new Error inside a callback-style action handler, to test that synchronous throws are caught and reported as a fault rather than crashing the process.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testThrowError_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testThrowError_Output"
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testThrowError/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testThrowError/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testThrowError/fault"
             }
           },
-          "testThrowErrorAsync": {
+          {
+            "name": "testThrowErrorAsync",
             "description": "Directly throws a new Error inside an async/await-style action handler, to test that async throws are caught and reported as a fault rather than crashing the process.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testThrowErrorAsync_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testThrowErrorAsync_Output"
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testThrowErrorAsync/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testThrowErrorAsync/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testThrowErrorAsync/fault"
             }
           },
-          "testAsyncThrowInDomain": {
+          {
+            "name": "testAsyncThrowInDomain",
             "description": "Throws asynchronously (outside the initial call stack) inside a callback-style action handler, exercising Node's deprecated domain-module-based exception capture.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInDomain_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInDomain_Output"
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testAsyncThrowInDomain/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testAsyncThrowInDomain/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testAsyncThrowInDomain/fault"
             }
           },
-          "testAsyncThrowInAsync": {
+          {
+            "name": "testAsyncThrowInAsync",
             "description": "Throws asynchronously inside an async/await-style action handler; expected to be caught by a try/catch block rather than relying on the domain module.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInAsync_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_testAsyncThrowInAsync_Output"
-              }
+            "input": {
+              "schema": "/errorInfoTestService/testAsyncThrowInAsync/input"
+            },
+            "output": {
+              "schema": "/errorInfoTestService/testAsyncThrowInAsync/output"
             },
             "fault": {
               "schema": "/fault/errorInfoTestService/testAsyncThrowInAsync/fault"
             }
           }
-        },
-        "serviceStateTable": {
-          "A_ARG_TYPE_testErrorInfo_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testErrorInfo/input"
-          },
-          "A_ARG_TYPE_testErrorInfo_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testErrorInfo/output"
-          },
-          "A_ARG_TYPE_testFunctionReturnError_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testFunctionReturnError/input"
-          },
-          "A_ARG_TYPE_testFunctionReturnError_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testFunctionReturnError/output"
-          },
-          "A_ARG_TYPE_testNullReturnError_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testNullReturnError/input"
-          },
-          "A_ARG_TYPE_testNullReturnError_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testNullReturnError/output"
-          },
-          "A_ARG_TYPE_testNumberTypeReturnError_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testNumberTypeReturnError/input"
-          },
-          "A_ARG_TYPE_testNumberTypeReturnError_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testNumberTypeReturnError/output"
-          },
-          "A_ARG_TYPE_testStringTypeReturnError_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testStringTypeReturnError/input"
-          },
-          "A_ARG_TYPE_testStringTypeReturnError_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testStringTypeReturnError/output"
-          },
-          "A_ARG_TYPE_testBooleanTypeReturnError_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testBooleanTypeReturnError/input"
-          },
-          "A_ARG_TYPE_testBooleanTypeReturnError_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testBooleanTypeReturnError/output"
-          },
-          "A_ARG_TYPE_testErrorInfoAsync_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testErrorInfoAsync/input"
-          },
-          "A_ARG_TYPE_testErrorInfoAsync_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testErrorInfoAsync/output"
-          },
-          "A_ARG_TYPE_testThrowError_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testThrowError/input"
-          },
-          "A_ARG_TYPE_testThrowError_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testThrowError/output"
-          },
-          "A_ARG_TYPE_testThrowErrorAsync_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testThrowErrorAsync/input"
-          },
-          "A_ARG_TYPE_testThrowErrorAsync_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testThrowErrorAsync/output"
-          },
-          "A_ARG_TYPE_testAsyncThrowInDomain_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testAsyncThrowInDomain/input"
-          },
-          "A_ARG_TYPE_testAsyncThrowInDomain_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testAsyncThrowInDomain/output"
-          },
-          "A_ARG_TYPE_testAsyncThrowInAsync_Input": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testAsyncThrowInAsync/input"
-          },
-          "A_ARG_TYPE_testAsyncThrowInAsync_Output": {
-            "dataType": "object",
-            "schema": "/errorInfoTestService/testAsyncThrowInAsync/output"
-          }
-        }
+        ]
       }
     }
   }

@@ -2,35 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "title": "COUNTINGHOUSE device root schema",
-  "description": "Schema specification for COUNTINGHOUSE device model",
+  "description": "Meta-schema for a device module's api.json. 5.0.0 format: an action holds its input / output / fault schema pointers directly, and actionList is an array whose elements carry their own name -- there is no serviceStateTable indirection anymore.",
   "properties": {
-    "configId": {
-      "type": "integer",
-      "maximum": 16777216,
-      "minimum": 0
-    },
-    "specVersion": {
-      "type": "object",
-      "properties": {
-        "major": {
-          "type": "integer",
-          "enum": [
-            1
-          ]
-        },
-        "minor": {
-          "type": "integer",
-          "enum": [
-            0
-          ]
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "major",
-        "minor"
-      ]
-    },
     "device": {
       "description": "Schema for device object",
       "type": "object",
@@ -162,189 +135,76 @@
                   "pattern": "^urn:[ \\S]{1,64}:service:[ \\S]{1,64}:[0-9]{1,8}$"
                 },
                 "actionList": {
-                  "type": "object",
-                  "maxProperties": 64,
-                  "minProperties": 0,
-                  "patternProperties": {
-                    "^[\\S]{1,128}$": {
-                      "type": "object",
-                      "properties": {
-                        "argumentList": {
-                          "type": "object",
-                          "maxProperties": 32,
-                          "minProperties": 1,
-                          "patternProperties": {
-                            "^[\\S]{1,128}$": {
-                              "type": "object",
-                              "properties": {
-                                "direction": {
-                                  "type": "string",
-                                  "enum": [
-                                    "in",
-                                    "out"
-                                  ]
-                                },
-                                "retval": {
-                                  "type": "boolean"
-                                },
-                                "relatedStateVariable": {
-                                  "type": "string",
-                                  "maxLength": 128,
-                                  "minLength": 1
-                                }
-                              },
-                              "required": [
-                                "direction",
-                                "relatedStateVariable"
-                              ]
-                            }
-                          },
-                          "additionalProperties": false
-                        },
-                        "realPrice": {
-                          "type": "number"
-                        },
-                        "priceInfo": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "price": {
-                                "type": "number"
-                              },
-                              "count": {
-                                "type": "number"
-                              }
-                            },
-                            "required": [
-                              "price",
-                              "count"
-                            ]
+                  "type": "array",
+                  "maxItems": 64,
+                  "minItems": 0,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "pattern": "^[\\S]{1,128}$"
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "input": {
+                        "type": "object",
+                        "description": "Pointer to this action's input schema in the module's schema.json, e.g. \"/echoService/echo/input\".",
+                        "properties": {
+                          "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024
                           }
                         },
-                        "freeCount": {
-                          "type": "integer"
-                        },
-                        "apiCache": {
-                          "type": "number"
-                        },
-                        "apiLog": {
-                          "type": "boolean"
-                        },
-                        "fault": {
-                          "type": "object",
-                          "properties": {
-                            "schema": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "schema"
-                          ]
-                        }
+                        "additionalProperties": false,
+                        "required": [
+                          "schema"
+                        ]
                       },
-                      "required": [
-                        "argumentList"
-                      ]
-                    }
-                  },
-                  "additionalProperties": false
-                },
-                "serviceStateTable": {
-                  "type": "object",
-                  "maxProperties": 256,
-                  "minProperties": 1,
-                  "patternProperties": {
-                    "^[\\S]{1,128}$": {
-                      "type": "object",
-                      "properties": {
-                        "sendEvents": {
-                          "type": "boolean"
-                        },
-                        "dataType": {
-                          "type": "string",
-                          "enum": [
-                            "string",
-                            "boolean",
-                            "integer",
-                            "number",
-                            "object"
-                          ]
-                        },
-                        "schema": {
-                          "type": "string"
-                        },
-                        "defaultValue": {
-                          "type": [
-                            "boolean",
-                            "integer",
-                            "number",
-                            "string"
-                          ],
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 1024,
-                              "minLength": 1
-                            },
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "integer"
-                            },
-                            {
-                              "type": "number"
-                            }
-                          ]
-                        },
-                        "allowedValueRange": {
-                          "type": "object",
-                          "properties": {
-                            "minimum": {
-                              "type": "number"
-                            },
-                            "maximum": {
-                              "type": "number"
-                            },
-                            "step": {
-                              "type": "number"
-                            }
-                          },
-                          "additionalProperties": false,
-                          "required": [
-                            "minimum",
-                            "maximum"
-                          ]
-                        },
-                        "allowedValueList": {
-                          "type": "array",
-                          "maxItems": 256,
-                          "minItems": 1,
-                          "uniqueItems": true,
-                          "items": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "number"
-                              }
-                            ]
+                      "output": {
+                        "type": "object",
+                        "description": "Pointer to this action's output schema in the module's schema.json, e.g. \"/echoService/echo/output\".",
+                        "properties": {
+                          "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024
                           }
-                        }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "schema"
+                        ]
                       },
-                      "required": [
-                        "dataType"
-                      ]
-                    }
-                  },
-                  "additionalProperties": false
+                      "fault": {
+                        "type": "object",
+                        "description": "Pointer to this action's fault schema in the module's schema.json, e.g. \"/fault/echoService/echo/fault\".",
+                        "properties": {
+                          "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "schema"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "name"
+                    ]
+                  }
                 }
               },
               "required": [
-                "actionList",
-                "serviceStateTable"
+                "actionList"
               ]
             }
           },
@@ -368,7 +228,6 @@
   },
   "additionalProperties": false,
   "required": [
-    "specVersion",
     "device"
   ]
 }

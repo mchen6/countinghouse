@@ -1,9 +1,4 @@
 {
-  "configId": 1,
-  "specVersion": {
-    "major": 1,
-    "minor": 0
-  },
   "device": {
     "friendlyName": "transform-demo",
     "manufacturer": "countinghouse",
@@ -20,34 +15,21 @@
     ],
     "serviceList": {
       "urn:countinghouse-com:serviceID:transformService": {
-        "actionList": {
-          "uppercase": {
+        "actionList": [
+          {
+            "name": "uppercase",
             "description": "Returns the input text converted to uppercase.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_uppercase_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_uppercase_Output"
-              }
+            "input": {
+              "schema": "/transformService/uppercase/input"
+            },
+            "output": {
+              "schema": "/transformService/uppercase/output"
             },
             "fault": {
               "schema": "/fault/transformService/uppercase/fault"
             }
           }
-        },
-        "serviceStateTable": {
-          "A_ARG_TYPE_uppercase_Input": {
-            "dataType": "object",
-            "schema": "/transformService/uppercase/input"
-          },
-          "A_ARG_TYPE_uppercase_Output": {
-            "dataType": "object",
-            "schema": "/transformService/uppercase/output"
-          }
-        }
+        ]
       }
     }
   }

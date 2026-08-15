@@ -1,8 +1,4 @@
 {
-  "specVersion": {
-    "major": 1,
-    "minor": 0
-  },
   "device": {
     "friendlyName": "invalid-spec-module",
     "manufacturer": "countinghouse-test",
@@ -10,12 +6,11 @@
     "serviceList": {
       "urn:countinghouse-test:serviceID:brokenService": {
         "serviceType": "urn:countinghouse-test:serviceID:brokenService",
-        "actionList": {
-          "doThing": {
-            "description": "deliberately missing argumentList"
+        "actionList": [
+          {
+            "description": "deliberately missing the required action name"
           }
-        },
-        "serviceStateTable": {}
+        ]
       }
     }
   }

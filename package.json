@@ -4,7 +4,8 @@
   "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
   "bin": {
     "countinghouse": "./bin/countinghouse",
-    "cth": "./bin/countinghouse"
+    "cth": "./bin/countinghouse",
+    "countinghouse-migrate-spec": "./bin/countinghouse-migrate-spec.js"
   },
   "main": "./framework.js",
   "files": [

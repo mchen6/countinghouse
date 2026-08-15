@@ -1,9 +1,4 @@
 {
-  "configId": 1,
-  "specVersion": {
-    "major": 1,
-    "minor": 0
-  },
   "device": {
     "friendlyName": "composite-demo",
     "manufacturer": "countinghouse",
@@ -20,34 +15,21 @@
     ],
     "serviceList": {
       "urn:countinghouse-com:serviceID:compositeService": {
-        "actionList": {
-          "run": {
+        "actionList": [
+          {
+            "name": "run",
             "description": "Uppercases the input text via transform-demo, then round-trips the result through echo-device-module's echo action, all in-process over the worker message channel (no HTTP, no model-context round trip for the intermediate steps). Returns the final text plus a call-chain bill with one independent metering record per inner module invoked.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_run_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_run_Output"
-              }
+            "input": {
+              "schema": "/compositeService/run/input"
+            },
+            "output": {
+              "schema": "/compositeService/run/output"
             },
             "fault": {
               "schema": "/fault/compositeService/run/fault"
             }
           }
-        },
-        "serviceStateTable": {
-          "A_ARG_TYPE_run_Input": {
-            "dataType": "object",
-            "schema": "/compositeService/run/input"
-          },
-          "A_ARG_TYPE_run_Output": {
-            "dataType": "object",
-            "schema": "/compositeService/run/output"
-          }
-        }
+        ]
       }
     }
   }
