@@ -18,10 +18,15 @@ var exec    = require('child_process').exec;
 //      errors[0].message with no instancePath -- "must have required property
 //      'argumentList'" with no way to tell which action.
 //
+// C was added in 5.0.0, which changed the spec format: an api.json still in
+// the old format is a spec failure like B, but one with a known fix, so it
+// gets its own message naming the converter instead of an ajv symptom.
+//
 // Fixtures live in test/fixtures/, deliberately broken in exactly one way each.
 var SP  = '/tmp/countinghouse-test-modload-' + process.pid;
 var LOG_INVALID  = SP + '-invalid.log';
 var LOG_NO_INDEX = SP + '-noindex.log';
+var LOG_LEGACY   = SP + '-legacy.log';
 
 // --debug and no --port collision with any other test file; the server is only
 // started so it will try to load the fixture, no request is ever made to it.
@@ -137,6 +142,36 @@ describe('module-loading 01: a module that fails to load says why, with a locata
       if (parseInt(m[1], 10) < 1) {
         throw new Error('expected at least one reported schema error, got: ' + m[1]);
       }
+    });
+  });
+
+  describe('C. api.json is still in the pre-5.0.0 spec format', function() {
+    before(function(done) {
+      this.timeout(0);
+      startAndCapture('./test/fixtures/legacy-spec-module', 9573, LOG_LEGACY, done);
+    });
+
+    after(function(done) {
+      try { fs.unlinkSync(LOG_LEGACY); } catch (e) {}
+      exec('pkill -f "framework.js --debug --bindAddr 127.0.0.1 --port 9573"', function() { done(); });
+    });
+
+    it('names the module and the failing stage', function() {
+      var text = errorRecords(LOG_LEGACY).join('\n');
+      if (text.indexOf('legacy-spec-module') === -1 || text.indexOf('stage=validateDeviceSpec') === -1) {
+        throw new Error('the error must name the module and the stage, got: ' + text);
+      }
+    });
+
+    it('says the format is the problem and names the converter to run', function() {
+      var text = errorRecords(LOG_LEGACY).join('\n');
+      // the whole point: not a bare ajv symptom like "actionList must be array",
+      // which leaves an author with no idea a converter exists
+      ['pre-5.0.0 spec format', 'serviceStateTable', 'countinghouse-migrate-spec'].forEach(function(needle) {
+        if (text.indexOf(needle) === -1) {
+          throw new Error('expected the diagnostic to mention "' + needle + '", got: ' + text);
+        }
+      });
     });
   });
 });

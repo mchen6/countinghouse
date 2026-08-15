@@ -1,0 +1,41 @@
+{
+  "specVersion": {
+    "major": 1,
+    "minor": 0
+  },
+  "device": {
+    "friendlyName": "legacy-spec-module",
+    "manufacturer": "countinghouse-test",
+    "modelName": "legacy",
+    "modelDescription": "a spec still in the pre-5.0.0 format, valid as 4.x",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:legacyService": {
+        "actionList": {
+          "doThing": {
+            "description": "an action declared the 4.x way",
+            "argumentList": {
+              "input": {
+                "direction": "in",
+                "relatedStateVariable": "A_ARG_TYPE_doThing_Input"
+              },
+              "output": {
+                "direction": "out",
+                "relatedStateVariable": "A_ARG_TYPE_doThing_Output"
+              }
+            }
+          }
+        },
+        "serviceStateTable": {
+          "A_ARG_TYPE_doThing_Input": {
+            "dataType": "object",
+            "schema": "/x"
+          },
+          "A_ARG_TYPE_doThing_Output": {
+            "dataType": "object",
+            "schema": "/x"
+          }
+        }
+      }
+    }
+  }
+}

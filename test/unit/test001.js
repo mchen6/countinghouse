@@ -1,6 +1,5 @@
 var request = require('supertest');
 var async   = require('async');
-var io      = require('socket.io-client');
 var jsf     = require('json-schema-faker');
 var chalk   = require('chalk');
 var BSON    = require('bson');
@@ -41,11 +40,6 @@ describe('get device list', function() {
     .expect(200).end(function(err, res) {
       if(err) throw err;
       for (var i in res.body) {
-        assertHasProperty(res.body[i], 'configId');
-        assertType(res.body[i].configId, 'number');
-        assertHasProperty(res.body[i], 'specVersion');
-        assertHasProperty(res.body[i].specVersion, 'major', 1);
-        assertHasProperty(res.body[i].specVersion, 'minor', 0);
         assertHasProperty(res.body[i], 'device');
         var device = res.body[i].device;
         // assertHasProperty(device, 'deviceType');
@@ -169,12 +163,12 @@ describe('test1: invoke all actions', function() {
 
 function testInvokeActions(deviceID, serviceID, serviceList, callback) {
   var actionList = serviceList[serviceID].actionList;
-  assertType(actionList, 'object');
+  if (!Array.isArray(actionList)) throw new Error('actionList must be an array (5.0.0 spec format)');
   assertNotEmpty(actionList);
 
-  var list = Object.keys(actionList);
-
-  async.eachSeries(list, function(name, cb) {
+  async.eachSeries(actionList, function(action, cb) {
+    var name = action.name;
+    assertType(name, 'string');
     //skip testTimeout API which purposely test timeout scenario and was made as an independent test case
     if (serviceID === 'urn:countinghouse-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
     if (serviceID === 'urn:countinghouse-com:serviceID:timeOutTestService' && name === 'testTimeoutAsync') return cb();
@@ -184,78 +178,33 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
     if (serviceID === 'urn:countinghouse-com:serviceID:db-request') return cb();
 
     setTimeout(function() {
-      var action = actionList[name];
-      assertType(action, 'object');
-      assertNotEmpty(action);
-      var args = action.argumentList;
-
-      var argList = Object.keys(action.argumentList);
       var req = { serviceID: serviceID,
         actionName: name,
         input: {}
         // device_access_token: deviceList[deviceID].device_access_token
       };
-      async.eachSeries(argList, function(arg, call_back) {
-        assertNotEmpty(arg);
-        var stateVarName = action.argumentList[arg].relatedStateVariable;
-        var stateVarTable = serviceList[serviceID].serviceStateTable;
-        assertType(stateVarTable, 'object');
-        assertNotEmpty(stateVarTable);
-        var stateVar = stateVarTable[stateVarName];
-        assertType(stateVar, 'object');
-        assertNotEmpty(stateVar);
-        if (stateVar.dataType === 'number'  ||
-            stateVar.dataType === 'integer' ||
-            stateVar.dataType === 'uint8'   ||
-            stateVar.dataType === 'uint16'  ||
-            stateVar.dataType === 'uint32'  ||
-            stateVar.dataType === 'sint8'   ||
-            stateVar.dataType === 'sint16'  ||
-            stateVar.dataType === 'sint32') {
-          var min = 0; var max = 100;
-          if (stateVar.allowedValueRange) {
-            assertType(stateVar.allowedValueRange.minimum, 'number');
-            assertType(stateVar.allowedValueRange.maximum, 'number');
-            min = stateVar.allowedValueRange.minimum;
-            max = stateVar.allowedValueRange.maximum;
-          }
-          if (stateVar.defaultValue) {
-            req.argumentList[arg] = stateVar.defaultValue;
-          } else {
-            req.argumentList[arg] = Math.floor(Math.random() * max) + min;
-          }
-          call_back();
-        } else if (stateVar.dataType === 'boolean') {
-          req.argumentList[arg] = Math.random() >= 0.5;
-          call_back();
-        } else if (stateVar.dataType === 'string') {
-          if (stateVar.defaultValue) {
-            req.argumentList[arg] = stateVar.defaultValue;
-          } else {
-            req.argumentList[arg] = 'test';
-          }
-          call_back();
-        } else if (stateVar.dataType === 'object') {
-          if (arg === 'input') {
-            var schemaRef = stateVar.schema;
-            assertType(schemaRef, 'string');
-            request(url)
-            .get('/devices/' + deviceID + '/schema' + encodeURI(schemaRef))
-            .set('X-CH-Key', 'aabbcc')
-            .expect(200, function(err, res) {
-              if (err) throw err;
-              var variableSchema = res.body;
-              assertType(variableSchema, 'object');
-              assertNotEmpty(variableSchema);
-              var fake_data = jsf.generate(variableSchema);
-              req.input = fake_data;
-              call_back();
-            });
-          } else {
-            call_back();
-          }
-        }
-      }, function() {
+
+      // 5.0.0 spec format: the action points straight at its input schema in
+      // the module's schema.json -- no state table to walk through, and every
+      // argument is a schema document, so there are no scalar cases left.
+      function withInput(next) {
+        if (action.input == null) return next();
+        var schemaRef = action.input.schema;
+        assertType(schemaRef, 'string');
+        request(url)
+        .get('/devices/' + deviceID + '/schema' + encodeURI(schemaRef))
+        .set('X-CH-Key', 'aabbcc')
+        .expect(200, function(err, res) {
+          if (err) throw err;
+          var variableSchema = res.body;
+          assertType(variableSchema, 'object');
+          assertNotEmpty(variableSchema);
+          req.input = jsf.generate(variableSchema);
+          next();
+        });
+      }
+
+      withInput(function() {
         request(url).post('/devices/' + deviceID + '/invoke-action')
         .set('X-CH-Key', 'aabbcc')
         .send(req)

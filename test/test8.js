@@ -20,7 +20,7 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
-    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiCache --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
+    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
     // 2 modules to discover, same reasoning as
     // test/direct-peer-channels/03-grant-time-auth.js's before(): a 5000ms
     // wait was observed to be too short for that under load (module

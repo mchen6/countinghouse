@@ -15,7 +15,6 @@ describe("Start load module test in single thread mode", function () {
     "--debug",
     "--debugKey",
     "aabbcc",
-    "--apiCache",
     "--apiMonitor",
     "--loadModule",
     "./pre-installed-packages/echo-device-module",

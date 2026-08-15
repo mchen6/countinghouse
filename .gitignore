@@ -23,7 +23,9 @@ nohup.out
 /auth.json
 /auth.sqlite3
 
-# Internal planning docs, kept locally by the maintainer only -- see
-# docs/design-decisions.md for the public-facing distillation of these.
+# Internal planning and review docs, kept locally by the maintainer only --
+# see docs/design-decisions.md for the public-facing distillation of these.
 /docs/cdif-audit-and-refactoring-plan.md
 /docs/direct-peer-channels-design.md
+/docs/PRE-RELEASE-AUDIT.md
+/docs/SPEC-REFACTOR-HANDOFF.md

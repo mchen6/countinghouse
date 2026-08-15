@@ -1,5 +1,103 @@
 # Migration notes
 
+## 4.x -> 5.0.0: the device spec format
+
+**Every existing `api.json` must be converted.** A module whose spec is still
+in the 4.x format does not load; the server says so by name and tells you what
+to run:
+
+```
+DEVICE_SPEC_VALIDATION_FAIL ... stage=validateDeviceSpec -- this api.json is in
+the pre-5.0.0 spec format (found a serviceStateTable in service urn:...).
+Convert it with: npx countinghouse-migrate-spec <module directory>
+```
+
+The converter ships with the package:
+
+```sh
+npx countinghouse-migrate-spec ./my-module          # rewrites ./my-module/api.json
+npx countinghouse-migrate-spec --stdout ./my-module # print instead, to diff first
+```
+
+It is order-preserving and idempotent — running it twice, or over a tree that
+mixes converted and unconverted modules, is safe. It converts `api.json` only;
+`schema.json` is untouched, and so are the pointers into it.
+
+### What changed
+
+An action now holds its own input, output and fault schemas. Previously it
+listed argument *names*, each naming an entry in a `serviceStateTable`, which
+held the actual pointer into `schema.json` — two lookups to answer "what does
+this tool take?", inherited from UPnP by way of CDIF 3.x. There is no state
+table anymore; the state values it nominally held stopped being readable when
+`/get-state` was removed earlier in 5.0.0.
+
+```jsonc
+// 4.x
+"actionList": {
+  "echo": {
+    "description": "...",
+    "argumentList": {
+      "input":  {"direction": "in",  "relatedStateVariable": "A_ARG_TYPE_echo_Input"},
+      "output": {"direction": "out", "relatedStateVariable": "A_ARG_TYPE_echo_Output"}
+    },
+    "fault": {"schema": "/fault/echoService/echo/fault"}
+  }
+},
+"serviceStateTable": {
+  "A_ARG_TYPE_echo_Input":  {"dataType": "object", "schema": "/echoService/echo/input"},
+  "A_ARG_TYPE_echo_Output": {"dataType": "object", "schema": "/echoService/echo/output"}
+}
+
+// 5.0.0
+"actionList": [
+  {
+    "name": "echo",
+    "description": "...",
+    "input":  {"schema": "/echoService/echo/input"},
+    "output": {"schema": "/echoService/echo/output"},
+    "fault":  {"schema": "/fault/echoService/echo/fault"}
+  }
+]
+```
+
+- `actionList` is an **array**; each element carries its own `name`. This
+  mirrors the MCP tools array. Action names must be unique within a service —
+  previously implicit (they were object keys), now checked and reported.
+- `input`, `output` and `fault` are three optional sibling keys. Each is the
+  same `{"schema": "<pointer into schema.json>"}` object `fault` already used.
+  An action that declares no `input` takes none.
+- `serviceList` is **unchanged**: still an object keyed by service URN.
+- **Removed**, and now rejected rather than ignored: `serviceStateTable`,
+  `relatedStateVariable`, `direction`, `retval`, `dataType`, `sendEvents`,
+  `defaultValue`, `allowedValueRange`, `allowedValueList`, `configId`,
+  `specVersion`, `realPrice`, `priceInfo`, `freeCount`, `apiCache`, `apiLog`.
+
+Scalar (non-object) arguments are gone with `dataType`: every argument is a
+JSON Schema document, and a constraint that used to live in
+`allowedValueRange`/`allowedValueList` belongs in that schema. `--allowSimpleType`,
+which was what let a scalar argument through at all, was removed earlier in
+5.0.0 — no bundled module ever used it.
+
+### What did not change
+
+The MCP contract. A converted module produces byte-identical `tools/list`
+output — same tool names, descriptions, `inputSchema` and `outputSchema`. The
+spec format describes tools; it is not part of what a client sees, and this is
+asserted by a test (`test/mcp-contract/`) against a golden sample captured
+before the conversion.
+
+## Also removed in 5.0.0: the event subsystem and the response cache
+
+`--sioServer`, `--wsServer` and `--apiCache` are gone, along with the
+socket.io/WebSocket servers, the `event-sub`/`event-unsub`/`wss`/`get-state`
+routes, and the per-action `apiCache` response cache they were gated on. Event
+delivery never actually worked: a subscription was accepted but no listener was
+ever registered and nothing ever published, so this removes dead code rather
+than a feature. `--apiMonitor` stays but now always writes the summary log; the
+per-action `apiLog` flag that switched it to logging every call's input and
+output body is gone.
+
 ## Versioning: why the first real release is 4.0.0
 
 `countinghouse` is not a new package that happens to share code with something

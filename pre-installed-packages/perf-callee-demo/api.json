@@ -1,9 +1,4 @@
 {
-  "configId": 1,
-  "specVersion": {
-    "major": 1,
-    "minor": 0
-  },
   "device": {
     "friendlyName": "perf-callee-demo",
     "manufacturer": "countinghouse",
@@ -20,34 +15,21 @@
     ],
     "serviceList": {
       "urn:countinghouse-com:serviceID:perfCalleeService": {
-        "actionList": {
-          "echoPayload": {
+        "actionList": [
+          {
+            "name": "echoPayload",
             "description": "Returns the input data unchanged. Benchmark fixture only, not part of any documented public API.",
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_echoPayload_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_echoPayload_Output"
-              }
+            "input": {
+              "schema": "/perfCalleeService/echoPayload/input"
+            },
+            "output": {
+              "schema": "/perfCalleeService/echoPayload/output"
             },
             "fault": {
               "schema": "/fault/perfCalleeService/echoPayload/fault"
             }
           }
-        },
-        "serviceStateTable": {
-          "A_ARG_TYPE_echoPayload_Input": {
-            "dataType": "object",
-            "schema": "/perfCalleeService/echoPayload/input"
-          },
-          "A_ARG_TYPE_echoPayload_Output": {
-            "dataType": "object",
-            "schema": "/perfCalleeService/echoPayload/output"
-          }
-        }
+        ]
       }
     }
   }

@@ -57,21 +57,47 @@ which a device ever enters the runtime.
 
 ## `api.json`
 
-Declares `specVersion`, one `friendlyName`, and one or more services (each a
-`urn:...:serviceID:...`), and each service's actions — a name, a
-human-readable `description` (**required**; it is what an LLM sees as the MCP
-tool's description, and an action without one is skipped) and an
-`argumentList` pointing at named entries in `schema.json`.
+Declares one `friendlyName` and one or more services (each keyed by a
+`urn:...:serviceID:...`). Each service has an `actionList` **array**, and each
+action carries its own `name`, a human-readable `description` (**required**;
+it is what an LLM sees as the MCP tool's description, and an action without
+one is skipped), and up to three schema pointers into `schema.json`:
+
+```json
+"serviceList": {
+  "urn:example-com:serviceID:echoService": {
+    "actionList": [
+      {
+        "name": "echo",
+        "description": "Echoes the input object back, unmodified.",
+        "input":  {"schema": "/echoService/echo/input"},
+        "output": {"schema": "/echoService/echo/output"},
+        "fault":  {"schema": "/fault/echoService/echo/fault"}
+      }
+    ]
+  }
+}
+```
+
+`input`, `output` and `fault` are each optional; an action that declares no
+`input` takes none, and one that declares no `output` is not validated on the
+way back. Action names must be unique within a service.
 
 The spec is validated against the framework's own JSON Schema 2020-12
 meta-schema at load time. Required fields it is easy to forget:
-`specVersion`, `device.modelDescription`, and each action's
-`argumentList.input`/`argumentList.output`.
+`device.modelDescription`, and each action's `name`. Anything the meta-schema
+does not know is **rejected**, not ignored — so a stale field left over from
+an older format shows up as a load error rather than silently doing nothing.
+
+Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
+error says so and names the converter:
+`npx countinghouse-migrate-spec ./my-module`. See
+[`MIGRATION.md`](../MIGRATION.md).
 
 ## `schema.json`
 
-Supplies the JSON Schema 2020-12 `input`/`output`/`fault` shapes the
-`argumentList` names refer to. This is what becomes each MCP tool's
+Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
+pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
 
 ## `device.js`
@@ -130,14 +156,14 @@ listening for the `discover` request.
 
 ```
 Device spec validation failed: my-module stage=validateDeviceSpec -- 2 schema error(s):
-  /device must have required property 'modelDescription' | /device/serviceList/urn:.../actionList/doThing must have required property 'argumentList'
+  /device must have required property 'modelDescription' | /device/serviceList/urn:.../actionList/0 must have required property 'name'
 ```
 
 Your `api.json` doesn't satisfy the meta-schema. Each error gives the JSON
 pointer (`instancePath`) into your spec and what is wrong there, and **all**
 errors are reported, so you can fix the spec in one pass. Common causes:
-missing `specVersion`, missing `device.modelDescription`, an action without
-`argumentList.input`/`output`.
+missing `device.modelDescription`, an action without a `name`, an
+`actionList` that is still an object rather than an array.
 
 ### 3. The log says `MODULE_NO_DEVICE_ONLINE`
 
@@ -166,7 +192,8 @@ Then the device did come online, and the problem is downstream:
   "properties":{}}`) → the schema fetch failed and fell back to a permissive
   default. Server-side validation still enforces the real schema, so calls
   with wrong arguments are still rejected; but the LLM is flying blind. Check
-  that `schema.json` resolves and the paths in `serviceStateTable` are right.
+  that `schema.json` resolves and each action's `input`/`output`/`fault`
+  pointers are right.
 
 ### Verifying a spec without starting a server
 
