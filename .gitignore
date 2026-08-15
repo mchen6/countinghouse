@@ -25,7 +25,13 @@ nohup.out
 
 # Internal planning and review docs, kept locally by the maintainer only --
 # see docs/design-decisions.md for the public-facing distillation of these.
-/docs/cdif-audit-and-refactoring-plan.md
-/docs/direct-peer-channels-design.md
-/docs/PRE-RELEASE-AUDIT.md
-/docs/SPEC-REFACTOR-HANDOFF.md
+#
+# Deliberately NOT path-anchored. These were once written as
+# /docs/<name>.md, which matches only the repo-root copy: a copy of one of
+# them anywhere else (docs/verification-5.0.0/SPEC-REFACTOR-HANDOFF.md, which
+# is exactly what happened and reached a public remote) sailed straight past
+# the rule. Matching by basename means any copy, at any depth, is ignored.
+cdif-audit-and-refactoring-plan.md
+direct-peer-channels-design.md
+PRE-RELEASE-AUDIT.md
+SPEC-REFACTOR-HANDOFF.md
