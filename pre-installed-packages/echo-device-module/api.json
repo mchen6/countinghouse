@@ -41,23 +41,6 @@
               "schema": "/fault/echoService/echo/fault"
             }
           },
-          "echoWithAPICache": {
-            "description": "Same as echo, but the response is cached server-side for 9 seconds (apiCache) so repeated identical calls skip re-invoking the device module.",
-            "apiCache": 9000,
-            "argumentList": {
-              "input": {
-                "direction": "in",
-                "relatedStateVariable": "A_ARG_TYPE_echoWithAPICache_Input"
-              },
-              "output": {
-                "direction": "out",
-                "relatedStateVariable": "A_ARG_TYPE_echoWithAPICache_Output"
-              }
-            },
-            "fault": {
-              "schema": "/fault/echoService/echoWithAPICache/fault"
-            }
-          },
           "echoAsync": {
             "description": "Same as echo, but implemented with an async/await handler instead of a callback -- exercises the async invocation code path.",
             "argumentList": {
@@ -83,14 +66,6 @@
           "A_ARG_TYPE_echo_Output": {
             "dataType": "object",
             "schema": "/echoService/echo/output"
-          },
-          "A_ARG_TYPE_echoWithAPICache_Input": {
-            "dataType": "object",
-            "schema": "/echoService/echoWithAPICache/input"
-          },
-          "A_ARG_TYPE_echoWithAPICache_Output": {
-            "dataType": "object",
-            "schema": "/echoService/echoWithAPICache/output"
           },
           "A_ARG_TYPE_echoAsync_Input": {
             "dataType": "object",

@@ -205,13 +205,12 @@ guarantee behind it: [`docs/composite-tools.md`](docs/composite-tools.md).
 ## CLI flags reference
 
 The flags most operators need. `lib/cli-options.js` has the complete set,
-including less commonly used ones (module verification, API caching,
-WebSocket event delivery, OpenStack API simulation).
+including less commonly used ones (module verification, OpenStack API
+simulation).
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--workerThread` | off | Run each device module in its own `worker_threads.Worker` — the isolation this project is built around. Recommended for anything beyond a quick local test. |
-| `--sioServer` | off | Enable socket.io-based event delivery (`lib/socket-server.js`), gated by the same AuthProvider every HTTP/MCP route uses: connect with `io(url, {auth: {apiKey: '<your key>'}})`; an unknown/missing key is rejected at handshake, and a valid key that isn't granted the `deviceID` you `subscribe` to gets `USER_HAS_NO_DEVICE`. See [`docs/cross-cutting-matrix.md`](docs/cross-cutting-matrix.md)'s event-channel row. |
 | `--bindAddr` | all interfaces | Address to bind the HTTP server to. |
 | `--port` | `9527` | HTTP port. |
 | `--loadModule <path>` | — | Load a local device module at startup; repeat for multiple modules. |

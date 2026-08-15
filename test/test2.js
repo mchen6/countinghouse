@@ -9,7 +9,7 @@ describe("Test started in COUNTINGHOUSE single-thread mode", function () {
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
-    exec('"./bin/countinghouse" --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiCache --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
+    exec('"./bin/countinghouse" --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
     setTimeout(() => {
       done();
     }, 5000);

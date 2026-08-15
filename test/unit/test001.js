@@ -1,6 +1,5 @@
 var request = require('supertest');
 var async   = require('async');
-var io      = require('socket.io-client');
 var jsf     = require('json-schema-faker');
 var chalk   = require('chalk');
 var BSON    = require('bson');

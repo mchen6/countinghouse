@@ -1,6 +1,5 @@
 var fs = require('fs');
 var com_countinghouse_echoService_echo = CHUtil.loadFile(__dirname + '/com-countinghouse-echoService.js').com_countinghouse_echoService_echo;
-var com_countinghouse_echoService_echoWithAPICache = CHUtil.loadFile(__dirname + '/com-countinghouse-echoService.js').com_countinghouse_echoService_echoWithAPICache;
 var com_countinghouse_echoService_echoAsync = CHUtil.loadFile(__dirname + '/com-countinghouse-echoService.js').com_countinghouse_echoService_echoAsync;
 var com_countinghouse_timeOutTestService_testTimeout = CHUtil.loadFile(__dirname + '/com-countinghouse-timeOutTestService.js').com_countinghouse_timeOutTestService_testTimeout;
 var com_countinghouse_timeOutTestService_testTimeoutAsync = CHUtil.loadFile(__dirname + '/com-countinghouse-timeOutTestService.js').com_countinghouse_timeOutTestService_testTimeoutAsync;
@@ -20,7 +19,6 @@ function Device() {
   var spec = JSON.parse(fs.readFileSync(__dirname + '/api.json').toString());
   CHDevice.call(this, spec);
   this.setAction('urn:countinghouse-com:serviceID:echoService', 'echo', com_countinghouse_echoService_echo.bind(this));
-  this.setAction('urn:countinghouse-com:serviceID:echoService', 'echoWithAPICache', com_countinghouse_echoService_echoWithAPICache.bind(this));
   this.setAction('urn:countinghouse-com:serviceID:echoService', 'echoAsync', com_countinghouse_echoService_echoAsync.bind(this));
   this.setAction('urn:countinghouse-com:serviceID:timeOutTestService', 'testTimeout', com_countinghouse_timeOutTestService_testTimeout.bind(this));
   this.setAction('urn:countinghouse-com:serviceID:timeOutTestService', 'testTimeoutAsync', com_countinghouse_timeOutTestService_testTimeoutAsync.bind(this));
