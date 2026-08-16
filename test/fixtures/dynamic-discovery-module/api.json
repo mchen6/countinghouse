@@ -1,0 +1,33 @@
+{
+  "device": {
+    "friendlyName": "dynamic-discovery-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a module that decides at runtime how many devices to expose",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:dynService": {
+        "actionList": [
+          {
+            "name": "hello",
+            "description": "Returns this instance's name.",
+            "input": {
+              "schema": "/dynService/hello/input"
+            },
+            "output": {
+              "schema": "/dynService/hello/output"
+            }
+          },
+          {
+            "name": "retire",
+            "description": "Takes this device offline, the way a module does when its backing resource disappears.",
+            "input": {
+              "schema": "/dynService/retire/input"
+            },
+            "output": {
+              "schema": "/dynService/retire/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

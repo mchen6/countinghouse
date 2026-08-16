@@ -288,3 +288,78 @@ caller was a `TypeError`, so this breaks nothing that previously worked.
 Tests: `test/validation/01` (both directions, at the unit level) and
 `test/validation/02` (a real module returning a stray key, end to end,
 including that the server survives it).
+
+## Module shape 6.0.0: handlers by default, discovery when you need it
+
+Writing a module that exposes one `echo` tool used to cost about thirty-five
+lines before any of them did anything. An `index.js` that inherits
+`EventEmitter`, listens for `discover`, and immediately emits `deviceonline`
+with a new device — no actual discovery, just the handshake. A `device.js` that
+imports each handler by full path and then registers it with a `setAction` call
+repeating the full service URN. A `_getDeviceRootSchema` that reads
+`schema.json` by hand.
+
+The cost is not the line count, it is that the same facts are written three
+times. `api.json` already declares which services and actions exist. The
+`com-<reverse-domain>-<service>-<action>.js` filename convention encodes it
+again. `device.js` repeats it a third time. Three copies with no mechanism
+keeping them in step, so any one of them can drift, and the contract
+(`api.json`) and the implementation (the handler) are tangled together in the
+same file rather than being separable.
+
+So 6.0.0 makes a module its handlers:
+
+```js
+module.exports = {
+  echoService: {
+    echo: async (input, ctx) => ({output: input})
+  }
+};
+```
+
+Top-level keys are service *short* names; `api.json` remains the only place a
+full URN appears. Actions are matched to it by name. `schema.json` is read by
+the framework. Authors who prefer a file per action drop `device.js` and use
+`handlers/<serviceShortName>/<actionName>.js` instead — the same map, assembled
+from the filesystem.
+
+**Discovery stays, as an opt-in.** A module that exports a class or an
+EventEmitter still takes the existing dynamic path, with `discover`,
+`deviceonline` and `deviceoffline` behaving exactly as before. This is not
+politeness toward old code; the capability is real and a handler map cannot
+express it. A module that exposes one device per configured database
+connection genuinely does not know its device count until it reads that
+configuration, and a module whose backing resource disappears genuinely needs
+to withdraw that device and leave its siblings alone. What was wrong was not
+that discovery existed, it was that a module with nothing to discover still had
+to perform the ceremony. Now the framework synthesizes that shim, which also
+means the runtime grew no second path to maintain: assembly ends by handing the
+existing pipeline the same EventEmitter it always got.
+
+Assembly is strict in both directions, and this is the part worth defending.
+Convention-based wiring is exactly the kind of mechanism that fails silently —
+a renamed service, a mistyped action, and the tool simply is not there. This
+project has already shipped that failure once and fixed it (a module with an
+illegal spec used to vanish with nothing at error level; see
+`test/module-loading/03-legacy-spec-not-silent.js`). So: an action declared in
+`api.json` with no handler is a startup error, a handler that `api.json` does
+not declare is a startup error, an unresolvable service short name is a startup
+error, and a short name that two URNs both claim is reported as ambiguous
+rather than resolved to whichever was enumerated last. Every mismatch in a
+module is collected and reported together, each naming the module, the stage,
+the offending name, and the fix.
+
+Costs, stated plainly. Short names must be unique within a module, which the
+full URN did not require — hence the explicit ambiguity error rather than a
+silent pick. And a handler map is one device, described statically; anything
+else is the dynamic path by definition, so the choice of shape is a real
+decision an author makes rather than a default they can drift away from without
+noticing.
+
+One existing behaviour this did *not* change, noted because it surprises:
+`deviceoffline` marks a device `online = false` but does not unlist it, so an
+offline device still appears in `tools/list` and fails at call time with
+`DEVICE_OFFLINE`. Tests: `test/module-loading/04` (validation rules, unit
+level), `05` (assembly and every mismatch, end to end), `06` (both paths in one
+server, including the first test in this repo to exercise `deviceoffline` at
+all).
