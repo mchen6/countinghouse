@@ -172,25 +172,43 @@ deployment.
 This demo cuts several corners deliberately, so that the mechanism is easy
 to read. A production composition feature would need to address these:
 
-- **The outer caller's real API key is not threaded through to inner
-  hops.** `composite-demo` uses a fixed internal identity
-  (`composite-demo-internal`) for every inner `ServiceClient`, so all
-  composite-demo billing shows up under one key regardless of who actually
-  called the tool. A real implementation would need to pass the calling
-  MCP client's apiKey (or a derived, scoped credential) down through the
-  `ServiceClient` chain, and decide how `checkBalance`/`rateLimit` should
-  apply at each layer — checked once at the outer call, or independently
-  at every hop. `CHUtil.createServiceClient`'s `ctx` option already exists
-  for exactly this (a module can pass along the current caller's session
-  instead of a fixed `appKey`), but nothing here uses it yet, and it comes
-  with a sharp edge if it's wired up carelessly: if the passed-through
-  session's own `appKey` is itself unresolved (`null`/`undefined`), the
-  platform's automatic metering silently no-ops for that hop rather than
-  failing the call — see `docs/cross-cutting-matrix.md`'s two "Direct peer
-  channel" rows for the verified, empirically-confirmed behavior. Worth
-  deciding deliberately (reject the call vs. bill a fallback identity vs.
-  keep the current silent-skip) before this `ctx` path is actually used
-  anywhere, rather than inheriting whatever the guard already does today.
+- **Resolved in 6.0.0 — the outer caller's real API key now reaches inner
+  hops.** This used to read: `composite-demo` uses a fixed internal identity
+  for every inner `ServiceClient`, so all composite billing showed up under
+  one key regardless of who actually called the tool.
+
+  What changed: authorization and billing became two identities instead of
+  one. `ctx.serviceClient({deviceID, serviceID, as})` authorizes the hop as
+  `as` — the composing module's own identity — and bills it to
+  `ctx.caller`, the authenticated outer caller. `ServiceClient`,
+  `CHUtil.createServiceClient` and both hop paths (main-thread-routed and
+  `--directPeerChannels`) carry a `billingKey` alongside `appKey`; when it is
+  absent it falls back to `appKey`, which is exactly the old one-key
+  behaviour, so nothing existing changed shape.
+
+  Keeping `as` explicit and required is deliberate. Threading the caller
+  through *both* questions would have been the obvious reading of "pass the
+  caller's apiKey down", and it would have broken encapsulation: every end
+  user would suddenly need their own grant to every module a composing tool
+  calls internally. Authorization stays with the module; only the bill moves.
+
+  The sharp edge this entry used to warn about is closed rather than
+  inherited. A hop whose billing identity cannot be resolved is now refused
+  with `HOP_IDENTITY_UNRESOLVED`, on both paths, instead of being metered for
+  free with no caller-visible signal. That check sits before `recordCall`, not
+  on its error, because a `recordCall` failure can also mean Redis is down —
+  and this codebase deliberately fails *open* on infrastructure. Unresolvable
+  identity is not an infrastructure failure; it is a call nobody can be
+  charged for.
+
+  Test: `test/auth/13-ctx-billing-identity.js`, non-`--debug` and
+  multi-tenant, where the caller is granted the composing device but *not* the
+  inner one. It asserts the hop still succeeds, that `ctx.caller` is the real
+  caller, and — the assertion that actually matters — that the module identity
+  was billed nothing.
+
+  Still open here: `checkBalance`/`rateLimit` are applied at the outer call,
+  not independently per hop.
 - **Per-hop cost is hardcoded** (`HOP_COST = 1` in
   `com-countinghouse-compositeService-run.js`), not looked up from each
   target module's own declared pricing.

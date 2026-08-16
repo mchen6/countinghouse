@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "ctx-compose-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "composes another module through ctx.serviceClient",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:composeService": {
+        "actionList": [
+          {
+            "name": "compose",
+            "description": "Calls echo-device-module and returns what it said.",
+            "input": {
+              "schema": "/composeService/compose/input"
+            },
+            "output": {
+              "schema": "/composeService/compose/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

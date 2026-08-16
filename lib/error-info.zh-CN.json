@@ -110,5 +110,6 @@
   "QUERY_DEVICE_ON_MAIN_THREAD": "worker 线程模式下禁止在主线程中查找设备",
   "JOB_ACCESS_DENIED": "该 apiKey 不是所请求任务的归属者",
   "MODULE_ASSEMBLY_FAIL": "handler map 模块装配失败",
-  "MODULE_HANDLER_MISMATCH": "handler map 与 api.json 不匹配"
+  "MODULE_HANDLER_MISMATCH": "handler map 与 api.json 不匹配",
+  "HOP_IDENTITY_UNRESOLVED": "已拒绝：无法解析本次内层跳转的调用方身份，该调用无法计费到任何账户"
 }

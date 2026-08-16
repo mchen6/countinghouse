@@ -110,5 +110,6 @@
   "QUERY_DEVICE_ON_MAIN_THREAD": "Cannot look up a device from the main thread in worker-thread mode",
   "JOB_ACCESS_DENIED": "This apiKey is not the owner of the requested job",
   "MODULE_ASSEMBLY_FAIL": "Handler-map module assembly failed",
-  "MODULE_HANDLER_MISMATCH": "Handler map does not match api.json"
+  "MODULE_HANDLER_MISMATCH": "Handler map does not match api.json",
+  "HOP_IDENTITY_UNRESOLVED": "Refused: the calling identity for this inner hop could not be resolved, so the call cannot be billed to anyone"
 }
