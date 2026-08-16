@@ -2,7 +2,6 @@
   "name": "perf-caller-demo",
   "version": "1.0.0",
   "description": "generates a variable-size payload and round-trips it through perf-callee-demo via ServiceClient -- the caller half of perf/direct-peer-channels-perf.js's cross-worker benchmark, see docs/direct-peer-channels.md",
-  "main": "index.js",
   "dependencies": {},
   "devDependencies": {},
   "scripts": {
