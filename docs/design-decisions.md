@@ -363,3 +363,71 @@ offline device still appears in `tools/list` and fails at call time with
 level), `05` (assembly and every mismatch, end to end), `06` (both paths in one
 server, including the first test in this repo to exercise `deviceoffline` at
 all).
+
+## Handler failure is classified by the error, not by how it arrived
+
+6.0.0 lets a handler be written either way:
+
+```js
+async (input, ctx) => ({output})          // return, or throw
+(input, ctx, callback) => callback(...)   // deprecated, removed in 7.0.0
+```
+
+Which style a handler uses is decided by what it *returns* — a thenable is
+awaited, anything else waits for the callback. The previous test was
+`action.invoke.constructor.name === 'AsyncFunction'`, which is a question about
+how the function was declared rather than how it behaves, and it was wrong in
+the worst available way: an ordinary function returning a promise
+(`() => someAsyncHelper()`, the shape any handler takes the moment it is
+refactored) has `constructor.name === 'Function'`, so it was sent down the
+callback branch, where nothing ever called back. The call hung until the 30s
+device timeout rather than failing.
+
+The harder question was what a failure should look like. The goal was for
+`callback(err)`, `throw` and a rejected promise to produce one response. They
+now do — for every error the runtime can classify:
+
+| how the handler failed | response |
+| --- | --- |
+| `callback(new DeviceError(C))` | `C` |
+| `throw new DeviceError(C)` | `C` |
+| `callback(new Error('boom'))` | `DEVICE_INVOKE_FAIL` |
+| `throw new Error('boom')` | `DEVICE_INVOKE_EXCEPTION` |
+
+The first pair is what was actually broken. A rejection was flattened to
+`DEVICE_INVOKE_EXCEPTION` unconditionally, discarding the code, so an async
+handler had no way to return a typed error at all. Nothing caught it because
+no bundled module throws one.
+
+The last two rows are a deliberate deviation from "all three identical", and
+the reason is that the two are not the same event. `callback(err)` is a handler
+*reporting* a failure it anticipated; a throw is a handler *crashing*. Both
+codes are already load-bearing: `test/direct-peer-channels/02` reads
+`DEVICE_INVOKE_FAIL` to tell a re-established channel from a broken one, and
+`DEVICE_INVOKE_EXCEPTION` arrives with the thrown value's stack attached as the
+fault. Collapsing them would have meant picking one and deleting the other
+distinction — and either choice changes a client-visible code that existing
+tests pin from both directions.
+
+So the rule is: classify by the error's *type*, not by the delivery mechanism.
+A typed error (`DeviceError`/`CHError`) means "I anticipated this" and keeps its
+code however it arrives. An untyped error means the runtime is guessing, and
+the only honest evidence left is how it got there. This is the one case where
+an async handler is genuinely less expressive than a callback one — `throw` is
+its only exit, so it cannot say "reported, not crashed" about an untyped error.
+A handler that wants that distinction should throw a `DeviceError`, which is
+what it should be doing anyway.
+
+Output validation was unified along the way: the async branch had its own copy
+that turned any validation failure into `DEVICE_INVOKE_EXCEPTION`, losing the
+validator's own code. Both styles now report what the validator said.
+
+`platformMetering` needed no change and no new shape. It reaches a composing
+module as the third argument of `ServiceClient.invoke`'s callback, not through
+the action's return value, so the `{output}` contract was never at risk of
+having to carry it — see `docs/composite-tools.md`'s "billing authority".
+
+Tests: `test/module-loading/08-error-semantics.js` asserts every cell of the
+table above, including that the two typed-error styles produce byte-identical
+responses, and that a plain function returning a promise now completes instead
+of hanging.

@@ -1,0 +1,73 @@
+{
+  "device": {
+    "friendlyName": "error-semantics-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "one action per way a handler can succeed or fail",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:errService": {
+        "actionList": [
+          {
+            "name": "callbackTyped",
+            "description": "error-semantics case callbackTyped",
+            "input": {
+              "schema": "/errService/callbackTyped/input"
+            },
+            "output": {
+              "schema": "/errService/callbackTyped/output"
+            }
+          },
+          {
+            "name": "rejectTyped",
+            "description": "error-semantics case rejectTyped",
+            "input": {
+              "schema": "/errService/rejectTyped/input"
+            },
+            "output": {
+              "schema": "/errService/rejectTyped/output"
+            }
+          },
+          {
+            "name": "callbackPlain",
+            "description": "error-semantics case callbackPlain",
+            "input": {
+              "schema": "/errService/callbackPlain/input"
+            },
+            "output": {
+              "schema": "/errService/callbackPlain/output"
+            }
+          },
+          {
+            "name": "rejectPlain",
+            "description": "error-semantics case rejectPlain",
+            "input": {
+              "schema": "/errService/rejectPlain/input"
+            },
+            "output": {
+              "schema": "/errService/rejectPlain/output"
+            }
+          },
+          {
+            "name": "promiseFromPlainFn",
+            "description": "error-semantics case promiseFromPlainFn",
+            "input": {
+              "schema": "/errService/promiseFromPlainFn/input"
+            },
+            "output": {
+              "schema": "/errService/promiseFromPlainFn/output"
+            }
+          },
+          {
+            "name": "asyncOk",
+            "description": "error-semantics case asyncOk",
+            "input": {
+              "schema": "/errService/asyncOk/input"
+            },
+            "output": {
+              "schema": "/errService/asyncOk/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
