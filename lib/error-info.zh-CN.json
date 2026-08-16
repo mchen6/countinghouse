@@ -108,5 +108,7 @@
   "MODULE_NOT_DISCOVERABLE": "设备模块不可发现",
   "MODULE_NO_DEVICE_ONLINE": "设备模块未产出可用设备",
   "QUERY_DEVICE_ON_MAIN_THREAD": "worker 线程模式下禁止在主线程中查找设备",
-  "JOB_ACCESS_DENIED": "该 apiKey 不是所请求任务的归属者"
+  "JOB_ACCESS_DENIED": "该 apiKey 不是所请求任务的归属者",
+  "MODULE_ASSEMBLY_FAIL": "handler map 模块装配失败",
+  "MODULE_HANDLER_MISMATCH": "handler map 与 api.json 不匹配"
 }
