@@ -1,7 +1,7 @@
 async function com_countinghouse_errorInfoTestService_testAsyncThrowInAsync(args) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
-      var t = null.toString();
+      const t = null.toString();
       return resolve({output: {result: t}});
     }, 1000);
   });

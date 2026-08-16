@@ -1,5 +1,5 @@
 function com_countinghouse_errorInfoTestService_testThrowError(args, callback) {
-  var t = null.toString();
+  const t = null.toString();
   return callback(null, {
     output: {result: t}
   });

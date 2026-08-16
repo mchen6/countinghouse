@@ -1,5 +1,5 @@
 async function com_countinghouse_errorInfoTestService_testThrowErrorAsync(args) {
-  var t = null.toString();
+  const t = null.toString();
   return t;
 }
 

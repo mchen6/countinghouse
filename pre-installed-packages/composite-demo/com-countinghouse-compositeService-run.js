@@ -2,11 +2,11 @@
 // audit trail (CHUtil.recordUsage below). The real per-hop charge/balance
 // in `bill` comes from the platform's own automatic metering instead (see
 // recordHop).
-var HOP_COST = 1;
+const HOP_COST = 1;
 
 function run(args, callback) {
-  var _this = this;
-  var input = args.input;
+  const _this = this;
+  const input = args.input;
 
   if (input == null || typeof(input.text) !== 'string') {
     return callback(new DeviceError('ARGUMENTS_INVALID'), null);
@@ -16,7 +16,7 @@ function run(args, callback) {
     return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', 'inner service clients not ready yet'), null);
   }
 
-  var bill = [];
+  const bill = [];
 
   // `platformMetering` is populated automatically by the platform as a 3rd,
   // additive arg on every cross-worker ServiceClient.invoke() reply, on
@@ -33,7 +33,7 @@ function run(args, callback) {
   // balance-deducting CHUtil.recordCall here too, which double-billed
   // every hop.
   function recordHop(tool, platformMetering, next) {
-    CHUtil.recordUsage(_this.internalApiKey, tool, HOP_COST, function() {});
+    CHUtil.recordUsage(_this.internalApiKey, tool, HOP_COST, () => {});
 
     bill.push({
       hop:     bill.length + 1,
@@ -45,20 +45,20 @@ function run(args, callback) {
   }
 
   // hop 1: transform-demo/uppercase
-  this.transformClient.invoke({actionName: 'uppercase', input: {text: input.text}}, function(err, data, platformMetering) {
+  this.transformClient.invoke({actionName: 'uppercase', input: {text: input.text}}, (err, data, platformMetering) => {
     if (err != null) return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', err.message), null);
 
-    var upperText = data.output.text;
+    const upperText = data.output.text;
 
-    recordHop('transform-demo/uppercase', platformMetering, function() {
+    recordHop('transform-demo/uppercase', platformMetering, () => {
       // hop 2: echo-device-module/echo -- echo's own input schema requires
       // {foo: array, bar: string}, so the uppercased text rides along as `bar`
-      _this.echoClient.invoke({actionName: 'echo', input: {foo: [], bar: upperText}}, function(err, data, platformMetering) {
+      _this.echoClient.invoke({actionName: 'echo', input: {foo: [], bar: upperText}}, (err, data, platformMetering) => {
         if (err != null) return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', err.message), null);
 
-        var finalText = data.output.bar;
+        const finalText = data.output.bar;
 
-        recordHop('echo-device-module/echo', platformMetering, function() {
+        recordHop('echo-device-module/echo', platformMetering, () => {
           return callback(null, {
             output: {
               finalText: finalText,

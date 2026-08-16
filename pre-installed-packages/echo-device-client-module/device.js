@@ -1,9 +1,9 @@
-var fs = require('fs');
-var API名称 = CHUtil.loadFile(__dirname + '/服务名称.js').API名称;
-var testErrorInfo = CHUtil.loadFile(__dirname + '/errTestService.js').testErrorInfo;
+const fs = require('fs');
+const API名称 = CHUtil.loadFile(`${__dirname}/服务名称.js`).API名称;
+const testErrorInfo = CHUtil.loadFile(`${__dirname}/errTestService.js`).testErrorInfo;
 
 function Device() {
-  var spec = JSON.parse(fs.readFileSync(__dirname + '/api.json').toString());
+  const spec = JSON.parse(fs.readFileSync(`${__dirname}/api.json`).toString());
   CHDevice.call(this, spec);
   this.setAction('urn:example-com:serviceID:服务名称', 'API名称', API名称.bind(this));
   this.setAction('urn:example-com:serviceID:errTestService', 'testErrorInfo', testErrorInfo.bind(this));
@@ -26,7 +26,7 @@ function Device() {
 CHUtil.inherits(Device, CHDevice);
 
 Device.prototype._getDeviceRootSchema = function() {
-  return JSON.parse(fs.readFileSync(__dirname + '/schema.json').toString());
+  return JSON.parse(fs.readFileSync(`${__dirname}/schema.json`).toString());
 };
 
 module.exports = Device;

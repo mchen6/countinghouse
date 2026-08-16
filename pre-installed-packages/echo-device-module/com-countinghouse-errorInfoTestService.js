@@ -1,14 +1,14 @@
-var com_countinghouse_errorInfoTestService_testAsyncThrowInAsync = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testAsyncThrowInAsync.js');
-var com_countinghouse_errorInfoTestService_testAsyncThrowInDomain = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testAsyncThrowInDomain.js');
-var com_countinghouse_errorInfoTestService_testThrowErrorAsync = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testThrowErrorAsync.js');
-var com_countinghouse_errorInfoTestService_testThrowError = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testThrowError.js');
-var com_countinghouse_errorInfoTestService_testErrorInfoAsync = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testErrorInfoAsync.js');
-var com_countinghouse_errorInfoTestService_testBooleanTypeReturnError = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testBooleanTypeReturnError.js');
-var com_countinghouse_errorInfoTestService_testStringTypeReturnError = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testStringTypeReturnError.js');
-var com_countinghouse_errorInfoTestService_testNumberTypeReturnError = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testNumberTypeReturnError.js');
-var com_countinghouse_errorInfoTestService_testNullReturnError = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testNullReturnError.js');
-var com_countinghouse_errorInfoTestService_testFunctionReturnError = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testFunctionReturnError.js');
-var com_countinghouse_errorInfoTestService_testErrorInfo = CHUtil.loadFile(__dirname + '/com-countinghouse-errorInfoTestService-testErrorInfo.js');
+const com_countinghouse_errorInfoTestService_testAsyncThrowInAsync = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testAsyncThrowInAsync.js`);
+const com_countinghouse_errorInfoTestService_testAsyncThrowInDomain = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testAsyncThrowInDomain.js`);
+const com_countinghouse_errorInfoTestService_testThrowErrorAsync = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testThrowErrorAsync.js`);
+const com_countinghouse_errorInfoTestService_testThrowError = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testThrowError.js`);
+const com_countinghouse_errorInfoTestService_testErrorInfoAsync = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testErrorInfoAsync.js`);
+const com_countinghouse_errorInfoTestService_testBooleanTypeReturnError = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testBooleanTypeReturnError.js`);
+const com_countinghouse_errorInfoTestService_testStringTypeReturnError = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testStringTypeReturnError.js`);
+const com_countinghouse_errorInfoTestService_testNumberTypeReturnError = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testNumberTypeReturnError.js`);
+const com_countinghouse_errorInfoTestService_testNullReturnError = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testNullReturnError.js`);
+const com_countinghouse_errorInfoTestService_testFunctionReturnError = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testFunctionReturnError.js`);
+const com_countinghouse_errorInfoTestService_testErrorInfo = CHUtil.loadFile(`${__dirname}/com-countinghouse-errorInfoTestService-testErrorInfo.js`);
 
 module.exports = {
   com_countinghouse_errorInfoTestService_testErrorInfo: com_countinghouse_errorInfoTestService_testErrorInfo,

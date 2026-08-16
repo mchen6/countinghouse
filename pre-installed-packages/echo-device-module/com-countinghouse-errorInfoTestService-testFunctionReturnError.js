@@ -1,5 +1,5 @@
 function testFunctionReturnError(args, callback) {
-  return callback(null, function(err, data) {
+  return callback(null, (err, data) => {
     console.log(data);
   });
 }

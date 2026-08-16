@@ -1,5 +1,5 @@
 function run(args, callback) {
-  var input = args.input;
+  const input = args.input;
 
   if (input == null || typeof(input.payloadSizeBytes) !== 'number') {
     return callback(new DeviceError('ARGUMENTS_INVALID'), null);
@@ -9,13 +9,13 @@ function run(args, callback) {
     return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', 'callee service client not ready yet'), null);
   }
 
-  var data = 'x'.repeat(input.payloadSizeBytes);
+  const data = 'x'.repeat(input.payloadSizeBytes);
 
-  var start = process.hrtime.bigint();
-  this.calleeClient.invoke({actionName: 'echoPayload', input: {data: data}}, function(err) {
+  const start = process.hrtime.bigint();
+  this.calleeClient.invoke({actionName: 'echoPayload', input: {data: data}}, (err) => {
     if (err != null) return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', err.message), null);
 
-    var durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
     return callback(null, {output: {durationMs: durationMs}});
   });
 }

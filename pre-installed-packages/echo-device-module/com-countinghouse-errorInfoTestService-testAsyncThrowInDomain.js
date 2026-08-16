@@ -1,6 +1,6 @@
 function com_countinghouse_errorInfoTestService_testAsyncThrowInDomain(args, callback) {
   setTimeout(() => {
-    var t = null.toString();
+    const t = null.toString();
     return callback(null, {
       output: {}
     });
