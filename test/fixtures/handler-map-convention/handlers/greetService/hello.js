@@ -1,2 +1,4 @@
-// One file per action: handlers/<serviceShortName>/<actionName>.js
-module.exports = (args, callback) => callback(null, {output: {text: `hello ${args.input.name}`}});
+// Same signature, one file per action. Async form: return {output}, no callback.
+module.exports = async (input, ctx) => ({
+  output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}
+});

@@ -20,6 +20,12 @@
         "properties": {
           "text": {
             "type": "string"
+          },
+          "caller": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

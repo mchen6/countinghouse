@@ -107,7 +107,8 @@ describe('module-loading 06: both module shapes, in one server', function() {
       call('handler_map_module_greetservice_hello', {name: 'x'}, (err2, hm) => {
         if (err2) return done(err2);
         assert.strictEqual(hm.isError, false, JSON.stringify(hm));
-        assert.deepStrictEqual(hm.structuredContent, {output: {text: 'hello x'}});
+        assert.deepStrictEqual(hm.structuredContent,
+          {output: {text: 'hello x', caller: 'aabbcc'}});
         return done();
       });
     });

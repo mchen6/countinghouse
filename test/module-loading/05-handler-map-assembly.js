@@ -96,7 +96,10 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       name: 'handler_map_module_greetservice_hello', arguments: {name: 'world'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(res.result.structuredContent, {output: {text: 'hello world'}});
+      // caller is asserted here too: the handler read it off ctx, so this
+      // doubles as proof that ctx reaches a device.js-exported handler.
+      assert.deepStrictEqual(res.result.structuredContent,
+        {output: {text: 'hello world', caller: 'aabbcc'}});
       return done();
     });
   });
@@ -106,7 +109,8 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       name: 'handler_map_convention_greetservice_hello', arguments: {name: 'convention'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(res.result.structuredContent, {output: {text: 'hello convention'}});
+      assert.deepStrictEqual(res.result.structuredContent,
+        {output: {text: 'hello convention', caller: 'aabbcc'}});
       return done();
     });
   });
