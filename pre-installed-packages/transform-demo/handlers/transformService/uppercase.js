@@ -1,5 +1,4 @@
-function uppercase(args, callback) {
-  const input = args.input;
+module.exports = (input, ctx, callback) => {
   if (input == null || typeof(input.text) !== 'string') {
     return callback(new DeviceError('ARGUMENTS_INVALID'), null);
   }
@@ -7,5 +6,3 @@ function uppercase(args, callback) {
     output: {text: input.text.toUpperCase()}
   });
 }
-
-module.exports = uppercase;

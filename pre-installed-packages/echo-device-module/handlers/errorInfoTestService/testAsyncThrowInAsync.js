@@ -1,4 +1,4 @@
-async function com_countinghouse_errorInfoTestService_testAsyncThrowInAsync(args) {
+module.exports = async (input, ctx) => {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       const t = null.toString();
@@ -6,5 +6,3 @@ async function com_countinghouse_errorInfoTestService_testAsyncThrowInAsync(args
     }, 1000);
   });
 }
-
-module.exports = com_countinghouse_errorInfoTestService_testAsyncThrowInAsync;

@@ -2,7 +2,6 @@
   "name": "transform-demo",
   "version": "1.0.0",
   "description": "uppercases text -- a minimal second module for the composite-demo module to compose with",
-  "main": "index.js",
   "dependencies": {},
   "devDependencies": {},
   "scripts": {

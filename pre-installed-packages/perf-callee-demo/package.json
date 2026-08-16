@@ -2,7 +2,6 @@
   "name": "perf-callee-demo",
   "version": "1.0.0",
   "description": "echoes back a variable-size payload -- the callee half of perf/direct-peer-channels-perf.js's cross-worker benchmark, see docs/direct-peer-channels.md",
-  "main": "index.js",
   "dependencies": {},
   "devDependencies": {},
   "scripts": {
