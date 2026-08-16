@@ -37,6 +37,13 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      # Holds the 6.0.0 ES6 conversion in place: no-var, prefer-const,
+      # prefer-arrow-callback, prefer-template, no-prototype-builtins.
+      # Runs before the tests because it is seconds, not minutes, and a
+      # style regression should not wait on a full suite to surface.
+      - name: Lint
+        run: npm run lint
+
       # test7 is a multi-thread performance benchmark, not a correctness
       # check - it takes several minutes and isn't meant to gate CI, so
       # this deliberately excludes it (mirrors the local dev-loop workflow)
