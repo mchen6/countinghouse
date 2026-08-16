@@ -169,7 +169,7 @@ function rewriteHandler(modulePath, file, src) {
   // the trailing `module.exports = name;` is now redundant
   out = out.replace(/\n*module\.exports\s*=\s*[A-Za-z0-9_$]+\s*;?\s*$/, '\n');
 
-  return out.trimEnd() + '\n';
+  return `${out.trimEnd()  }\n`;
 }
 
 function migrate(modulePath, dryRun) {

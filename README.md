@@ -253,20 +253,34 @@ A device module is a directory with:
 
 ```
 my-module/
-├── package.json   # name, version, and "main": "index.js"
-├── index.js        # the device MODULE — answers `discover` by emitting `deviceonline`
-├── api.json         # device/service/action metadata (see below)
-├── schema.json       # JSON Schema 2020-12 input/output/fault per action
-└── device.js          # wires api.json + schema.json + action handlers together
+├── package.json   # name and version
+├── api.json       # device/service/action metadata (see below)
+├── schema.json    # JSON Schema 2020-12 input/output/fault per action
+└── handlers/
+    └── greetService/          # service SHORT name
+        └── hello.js           # one handler per action
 ```
 
-**`index.js` is required and is not the same file as `device.js`.** The
-framework loads your package's `main` and treats it as a device *module* — an
-object that answers a `discover` request by announcing devices — not as a
-device. Point `main` at `device.js` and the module will load, report success,
-and then never appear, because nothing is listening for `discover`. Every
-module in `pre-installed-packages/` has the same ~20-line `index.js`; copy it.
-Full reference and a "my module doesn't appear in tools/list" checklist:
+That is all of it — since 6.0.0 there is no `index.js` and no `device.js`. A
+handler is a function of `(input, ctx)`:
+
+```js
+// handlers/greetService/hello.js
+module.exports = async (input, ctx) => ({
+  output: {text: `hello ${input.name}`}
+});
+```
+
+`input` is the validated input. `ctx` carries the authenticated caller
+(`ctx.caller`), this device's identity, a logger, and `ctx.serviceClient` for
+calling other modules. Prefer one file per action as above; a single
+`device.js` exporting `{serviceShortName: {actionName: handler}}` is equivalent
+if you would rather keep it together.
+
+If a handler is missing for a declared action — or declared for a handler that
+does not exist — the module fails at startup with a message naming the module,
+the service, the action and the fix. It never half-loads. Full reference and a
+"my module doesn't appear in tools/list" checklist:
 [`docs/module-development.md`](https://github.com/mchen6/countinghouse/blob/master/docs/module-development.md).
 
 `api.json` declares one `friendlyName`, one or more services (each keyed by a
@@ -276,17 +290,19 @@ it's what an LLM sees as the MCP tool's description) and up to three schema
 pointers, `input`, `output` and `fault`, straight into `schema.json`
 (`{"schema": "/echoService/echo/input"}`). `schema.json` supplies the actual
 JSON Schema 2020-12 documents those pointers resolve to — this is what
-becomes each MCP tool's `inputSchema`/`outputSchema`. Specs written for 4.x
-(`argumentList` + `serviceStateTable`) do not load; convert them with
-`npx countinghouse-migrate-spec ./my-module` (see
-[`MIGRATION.md`](MIGRATION.md)). `device.js` loads
-one handler function per action (via `CHUtil.loadFile`) and registers it
-with `this.setAction(serviceID, actionName, handlerFn)` — the bundled
-modules keep one handler per file, named `com-<namespace>-<service>-<action>.js`,
-but that's a convention `device.js` chooses, not something the framework
-requires. Handlers are plain Node functions, callback-style
-(`function(args, callback)`) or `async`, that return `{output: {...}}` or
-call back with an error.
+becomes each MCP tool's `inputSchema`/`outputSchema`, and the framework reads
+it for you. Handler files key off the service *short* name (the part after
+`:serviceID:`); the full URN appears only in `api.json`.
+
+Migrating a 5.x module is one command:
+`npx countinghouse-migrate-module ./my-module`. Specs written for 4.x
+(`argumentList` + `serviceStateTable`) additionally need
+`npx countinghouse-migrate-spec ./my-module` first — see
+[`MIGRATION.md`](MIGRATION.md).
+
+A module that decides at runtime how many devices to expose still exports a
+class or EventEmitter and uses `discover`/`deviceonline` exactly as before;
+that path is unchanged and is not deprecated.
 
 The bundled `pre-installed-packages/` modules are worked examples at
 different complexity levels: `echo-device-module` for the full pattern

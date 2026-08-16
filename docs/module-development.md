@@ -8,52 +8,120 @@ has the short version.
 
 ```
 my-module/
-├── package.json   # name, version, and "main": "index.js"
-├── index.js       # the device MODULE -- what the framework loads and talks to
-├── device.js      # the device itself: wires api.json + schema.json + handlers
-├── api.json       # device/service/action metadata
+├── package.json   # name and version
+├── api.json       # device/service/action metadata -- the single declaration
 ├── schema.json    # JSON Schema 2020-12 input/output/fault per action
-└── com-<ns>-<service>-<action>.js   # one handler per action (a convention, not a rule)
+└── handlers/
+    └── <serviceShortName>/
+        └── <actionName>.js     # one handler per action
 ```
 
-**`index.js` is not optional, and it is not the same thing as `device.js`.**
-This is the single most common way a new module fails, so it is worth being
-explicit about: the framework loads your package's `main` entry and treats
-that object as a *device module* — something that answers a `discover` request
-by announcing one or more devices. It does **not** treat it as a device.
+That is the whole module. There is no `index.js` and no `device.js`: since
+6.0.0 the framework assembles the device from `api.json`, reads `schema.json`
+itself, and matches handlers by name. See
+[`design-decisions.md`](design-decisions.md#module-shape-600-handlers-by-default-discovery-when-you-need-it)
+for why the old boilerplate went away.
+
+A handler is a function of `(input, ctx)`:
 
 ```js
-// index.js -- the device MODULE
-var util   = require('util');
-var events = require('events');
+// handlers/greetService/hello.js
+module.exports = async (input, ctx) => ({
+  output: {text: `hello ${input.name}`}
+});
+```
 
-var Device = CHUtil.loadFile(__dirname + '/device.js');
+`input` is the validated input object. `ctx` carries the caller, this device's
+identity, and the helpers a handler needs — see [`ctx`](#ctx) below.
 
+If you would rather keep everything in one file, export the same thing as a
+map from `device.js` instead of using the `handlers/` tree:
+
+```js
+// device.js -- an alternative to handlers/, not an addition
+module.exports = {
+  greetService: {                                    // service SHORT name
+    hello: async (input, ctx) => ({output: {text: `hello ${input.name}`}})
+  }
+};
+```
+
+Top-level keys are service **short** names — the part after `:serviceID:` in
+the URN. `api.json` remains the only place the full URN appears.
+
+**Mismatches are startup errors, not silent omissions.** An action declared in
+`api.json` with no handler, a handler `api.json` does not declare, a service
+short name that does not resolve, or one that two URNs both claim: each fails
+the module at load with a message naming the module, the stage, the offending
+name and the fix. A module never half-loads.
+
+## `ctx`
+
+| field | what it is |
+| --- | --- |
+| `ctx.caller` | `{apiKey, userName, isAdmin}` — the authenticated caller |
+| `ctx.device` | `{deviceID, friendlyName}` — this device |
+| `ctx.serviceID`, `ctx.actionName` | the action being served |
+| `ctx.log(entry)` | device log, already bound to this device |
+| `ctx.serviceClient(opts, cb)` | call another module — see below |
+| `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
+| `ctx.redis` | the shared Redis client |
+| `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance |
+| `ctx.httpHeaders` | request headers, when the call arrived over HTTP |
+
+`ctx` replaces the device instance that used to be bound as `this`. That is a
+narrowing on purpose: handlers used to be able to reach `setAction`,
+`deviceControl` and the rest of the framework's own surface. They no longer
+can.
+
+## Handler styles
+
+Return a promise, or take a callback. Which one you are using is decided by
+what the handler returns, so both work in the same module:
+
+```js
+module.exports = async (input, ctx) => ({output: {...}});          // preferred
+
+module.exports = (input, ctx, callback) =>                          // deprecated
+  callback(null, {output: {...}});
+```
+
+**The callback form is deprecated and will be removed in 7.0.0.** It is fully
+supported until then.
+
+To fail a call, throw (or call back with) a `DeviceError` — a typed error keeps
+its own code either way. An untyped error thrown becomes
+`DEVICE_INVOKE_EXCEPTION` (you crashed); an untyped error passed to a callback
+becomes `DEVICE_INVOKE_FAIL` (you reported a failure). See
+[`design-decisions.md`](design-decisions.md#handler-failure-is-classified-by-the-error-not-by-how-it-arrived).
+
+## Dynamic discovery: when one module has many devices
+
+Everything above describes a module that is one device, described statically.
+If your module decides at runtime how many devices to expose — one per
+configured database connection, say — or needs to withdraw one when its
+backing resource disappears, export a class or EventEmitter instead of a
+handler map and the 5.x discovery path applies unchanged:
+
+```js
+// index.js -- still supported, and still the right answer for this case
 function DeviceModule() {
   this.on('discover',     this.discoverDevices.bind(this));
   this.on('stopdiscover', this.stopDiscoverDevices.bind(this));
 }
-
 util.inherits(DeviceModule, events.EventEmitter);
 
 DeviceModule.prototype.discoverDevices = function() {
-  this.emit('deviceonline', new Device(), this);   // <-- this is what makes your tool appear
+  for (const conn of readConfig()) this.emit('deviceonline', new Device(conn), this);
 };
-
-DeviceModule.prototype.stopDiscoverDevices = function() {
-};
-
-module.exports = DeviceModule;
 ```
 
-Every bundled module in `pre-installed-packages/` has exactly this file, byte
-for byte apart from the `require` path. Copy it.
+`discover`, `deviceonline` and `deviceoffline` behave exactly as they did.
+Note that `deviceoffline` marks a device offline rather than unlisting it: it
+stays in `tools/list` and fails at call time with `DEVICE_OFFLINE`.
 
-The indirection exists because one module may announce several devices (and
-may discover them at runtime rather than at load). If your module only ever
-has one device, `index.js` is pure boilerplate — but it is *required*
-boilerplate, because `discover` → `deviceonline` is the only handshake by
-which a device ever enters the runtime.
+The framework chooses between the two shapes by what your module exports — a
+plain object is a handler map, anything else takes the discovery path.
 
 ## `api.json`
 
@@ -100,13 +168,6 @@ Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
 pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
 
-## `device.js`
-
-Loads one handler function per action (via `CHUtil.loadFile`) and registers it
-with `this.setAction(serviceID, actionName, handlerFn)`. Handlers are plain
-Node functions, callback-style (`function(args, callback)`) or `async`, that
-return `{output: {...}}` or call back with an error.
-
 ## Loading your module
 
 At startup:
@@ -129,9 +190,18 @@ for the whole server; it is not how you get access to an endpoint.
 
 ## Calling other modules
 
-A module that calls another module's action does so under some apiKey, and
-that apiKey goes through the same `AuthProvider` check any external caller
-would — so it must be granted access first, or every inner call fails. See
+Use `ctx.serviceClient`, which keeps two identities apart:
+
+```js
+ctx.serviceClient({deviceID, serviceID, as: 'my-module-internal'}, (err, client) => {
+  client.invoke({actionName: 'echo', input: {...}}, (err, data, platformMetering) => { ... });
+});
+```
+
+`as` is the identity the inner hop is **authorized** as — your module's own,
+which must be granted access to the target device or every inner call fails.
+The hop is **billed** to `ctx.caller`, so per-hop cost lands on whoever called
+your tool rather than on your module. See
 [`composite-tools.md`](composite-tools.md#every-composing-module-needs-its-internal-identity-granted).
 
 ## Troubleshooting: my module doesn't appear in `tools/list`
@@ -146,8 +216,9 @@ Device module is not discoverable: my-module its main entry point registers no
 "discover" listener, so it can never emit "deviceonline" ...
 ```
 
-Your `package.json`'s `main` points at `device.js` instead of `index.js`, or
-you have no `index.js` at all. See [Directory layout](#directory-layout) above.
+This applies to the dynamic-discovery shape only. Your `package.json`'s `main`
+points at the device instead of the module that announces it. A handler-map
+module cannot hit this — the framework supplies the discovery shim itself.
 This is the most common failure by a wide margin: the module loads without
 error, reports success, and then nothing else ever happens, because nothing is
 listening for the `discover` request.

@@ -1,5 +1,115 @@
 # Migration notes
 
+## 5.x -> 6.0.0: the module shape
+
+**Every existing module keeps working or converts with one command.** Nothing
+about `api.json` or `schema.json` changed in 6.0.0 — this is entirely about the
+JavaScript around them.
+
+### What changed
+
+A module used to need three files before it did anything: an `index.js` that
+answered `discover` by emitting `deviceonline`, a `device.js` that imported each
+handler and re-registered it with `setAction(<full URN>, <action>, fn)`, and a
+`_getDeviceRootSchema` that read `schema.json` by hand. All three are gone.
+`api.json` already declares what exists, so the framework assembles the device
+from it.
+
+| 5.x | 6.0.0 |
+| --- | --- |
+| `index.js` + `device.js` + `com-<ns>-<service>-<action>.js` | `handlers/<serviceShortName>/<actionName>.js` |
+| `this.setAction('urn:...:serviceID:greetService', 'hello', fn)` | file path, or a `{greetService: {hello: fn}}` map |
+| `function (args, callback)`, reading `args.input` | `(input, ctx)`, returning `{output}` |
+| `this` bound to the device | `ctx` |
+| `Device.prototype._getDeviceRootSchema` | the framework reads `schema.json` |
+
+Before:
+
+```js
+// device.js
+const echo = CHUtil.loadFile(`${__dirname}/com-countinghouse-echoService-echo.js`);
+
+function Device() {
+  const spec = JSON.parse(fs.readFileSync(`${__dirname}/api.json`).toString());
+  CHDevice.call(this, spec);
+  this.setAction('urn:countinghouse-com:serviceID:echoService', 'echo', echo.bind(this));
+}
+CHUtil.inherits(Device, CHDevice);
+Device.prototype._getDeviceRootSchema = function() { ... };
+module.exports = Device;
+```
+
+After:
+
+```js
+// handlers/echoService/echo.js  -- and no other file
+module.exports = async (input, ctx) => ({output: input});
+```
+
+### Running the migrator
+
+```sh
+npx countinghouse-migrate-module ./my-module          # or --dry-run first
+```
+
+It moves each handler file into `handlers/`, rewrites the signature line and
+`args.input` references, deletes `index.js` and `device.js`, and drops the now
+meaningless `main` from `package.json`. Handler bodies are otherwise untouched.
+
+It is deliberately conservative and **refuses rather than guesses**. Expect it
+to decline, by name, when:
+
+- `index.js` does real discovery (a loop, config reads, more than one
+  `deviceonline`). That path is not deprecated — keep the module as it is.
+- `device.js` builds a `ServiceClient` in its constructor. That is a
+  behavioural change, not a move: see below.
+- a handler reads anything on `args` besides `args.input`, or declares a local
+  that would collide with the new parameter names.
+
+A refusal leaves the module exactly as it was.
+
+### Composing modules need a hand edit
+
+If your module calls other modules, its clients were built once in the
+constructor under a fixed apiKey. In 6.0.0 build them per call from `ctx`:
+
+```js
+ctx.serviceClient({deviceID, serviceID, as: 'my-module-internal'}, (err, client) => {
+  client.invoke({actionName: 'echo', input: {...}}, (err, data, platformMetering) => { ... });
+});
+```
+
+`as` is the identity the hop is **authorized** as — your module's own, which
+still needs a grant to the target device. The hop is now **billed** to
+`ctx.caller` instead, so per-hop cost lands on whoever called your tool. This
+is the fix for the "all composite billing shows up under one key" limitation
+`docs/composite-tools.md` used to list as a known simplification.
+
+A hop whose billing identity cannot be resolved is refused with
+`HOP_IDENTITY_UNRESOLVED` rather than metered for free.
+
+### Error handling
+
+A typed error (`DeviceError`/`CHError`) keeps its own code whether you throw it
+or pass it to a callback — previously a thrown one was flattened to
+`DEVICE_INVOKE_EXCEPTION`, so async handlers could not report a typed error at
+all. Untyped errors still distinguish "reported" (`callback(err)` ->
+`DEVICE_INVOKE_FAIL`) from "crashed" (`throw` -> `DEVICE_INVOKE_EXCEPTION`).
+
+### Deprecated, still supported
+
+- The `(input, ctx, callback)` callback form. Removed in 7.0.0.
+- The `com-<reverse-domain>-<service>-<action>.js` filename convention. It has
+  no meaning to the framework any more; `handlers/<service>/<action>.js` is
+  matched by path.
+
+### Not changed
+
+`api.json`, `schema.json`, the MCP contract, deviceIDs, and the dynamic
+discovery path. Converting a module produces byte-identical `tools/list`
+output — asserted in `test/mcp-contract/` against a golden sample.
+
+
 ## 4.x -> 5.0.0: the device spec format
 
 **Every existing `api.json` must be converted.** A module whose spec is still
