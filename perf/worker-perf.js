@@ -1,7 +1,8 @@
 const { Worker, isMainThread, parentPort } = require('node:worker_threads');
 
 if (isMainThread) {
-  var total = 1000000, i = 0, j = 0;
+  const total = 1000000;
+  let i = 0, j = 0;
 
   const worker = new Worker(__filename);
   console.log(Date.now());

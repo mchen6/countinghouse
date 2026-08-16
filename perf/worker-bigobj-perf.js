@@ -1,10 +1,11 @@
 const { Worker, isMainThread, parentPort } = require('node:worker_threads');
 
 if (isMainThread) {
-  var total = 1000000, i = 0, j = 0;
+  const total = 1000000;
+  let i = 0, j = 0;
 
-  var bigobj = [];
-  for (var b = 0; b < 128; b++) {
+  const bigobj = [];
+  for (let b = 0; b < 128; b++) {
     bigobj.push({foo: 'foo'});
   }
 

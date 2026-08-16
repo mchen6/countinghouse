@@ -7,11 +7,11 @@
 // Uses the real lib/peer-channel.js, so the measurement includes its actual
 // request/reply correlation, its per-call timer, and the structured clone
 // postMessage performs -- i.e. the transport as shipped, not a mock of it.
-var workerData = require('worker_threads').workerData;
-var parentPort = require('worker_threads').parentPort;
-var PeerChannel = require('../../lib/peer-channel');
+const workerData = require('worker_threads').workerData;
+const parentPort = require('worker_threads').parentPort;
+const PeerChannel = require('../../lib/peer-channel');
 
-var TIMEOUT_MS = 120000; // generous: this benchmark is not testing timeouts
+const TIMEOUT_MS = 120000; // generous: this benchmark is not testing timeouts
 
 if (workerData.role === 'callee') {
   new PeerChannel(workerData.port, {
@@ -26,14 +26,14 @@ if (workerData.role === 'callee') {
 }
 
 // caller role
-var channel = new PeerChannel(workerData.port, {workerId: 'bench-callee'});
+const channel = new PeerChannel(workerData.port, {workerId: 'bench-callee'});
 
 function oneChain(payload, hops, done) {
-  var i = 0;
+  let i = 0;
   (function hop() {
     if (i >= hops) return done();
     i++;
-    channel.invoke('bench-device', 'bench-service', 'echo', payload, TIMEOUT_MS, function(err) {
+    channel.invoke('bench-device', 'bench-service', 'echo', payload, TIMEOUT_MS, (err) => {
       if (err != null) return done(err);
       hop();
     });
@@ -43,20 +43,20 @@ function oneChain(payload, hops, done) {
 // stays alive across runs: the driver issues a warmup run first and only
 // samples CPU/RSS around the measured one, so worker startup is not charged
 // to the measurement (conditions (b) and (c) warm up the same way)
-parentPort.on('message', function(msg) {
+parentPort.on('message', (msg) => {
   if (msg.command !== 'run') return;
 
-  var payload = 'x'.repeat(msg.payloadBytes);
-  var latencies = [];
-  var n = 0;
+  const payload = 'x'.repeat(msg.payloadBytes);
+  const latencies = [];
+  let n = 0;
 
   function iteration() {
     if (n >= msg.iterations) {
       return parentPort.postMessage({done: true, latencies: latencies});
     }
     n++;
-    var t0 = process.hrtime.bigint();
-    oneChain(payload, msg.hops, function(err) {
+    const t0 = process.hrtime.bigint();
+    oneChain(payload, msg.hops, (err) => {
       if (err != null) return parentPort.postMessage({done: true, error: String(err.message || err)});
       latencies.push(Number(process.hrtime.bigint() - t0) / 1e6);
       iteration();

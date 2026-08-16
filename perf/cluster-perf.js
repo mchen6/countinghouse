@@ -1,7 +1,9 @@
 const cluster = require('node:cluster');
 const process = require('node:process');
 
-var total = 1000000, i = 0, j = 0;
+const total = 1000000;
+
+let i = 0, j = 0;
 
 
 if (cluster.isPrimary) {

@@ -2,24 +2,24 @@
 // stdio transport uses (one JSON object per line on stdin/stdout).
 // Deliberately minimal: it does nothing but parse, echo and serialize, so
 // what the benchmark measures is transport cost and not tool work.
-var buf = '';
+let buf = '';
 
-process.stdin.on('data', function(chunk) {
+process.stdin.on('data', (chunk) => {
   buf += chunk;
-  var nl;
+  let nl;
   while ((nl = buf.indexOf('\n')) !== -1) {
-    var line = buf.slice(0, nl);
+    const line = buf.slice(0, nl);
     buf = buf.slice(nl + 1);
     if (line.trim() === '') continue;
 
-    var req;
+    let req;
     try { req = JSON.parse(line); } catch (e) { continue; }
 
-    process.stdout.write(JSON.stringify({
+    process.stdout.write(`${JSON.stringify({
       jsonrpc: '2.0',
       id: req.id,
       result: {echo: req.params != null ? req.params.payload : null}
-    }) + '\n');
+    })  }\n`);
   }
 });
 
