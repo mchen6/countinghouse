@@ -1,10 +1,10 @@
-var fs = require('fs');
-var cp = require('child_process');
+const fs = require('fs');
+const cp = require('child_process');
 
-var testFiles = fs.readdirSync(__dirname + '/job-control');
+const testFiles = fs.readdirSync(`${__dirname}/job-control`);
 
 describe("Start job control tests in multi thread mode", function () {
-  var child = null;
+  let child = null;
   this.timeout(0);
   console.log('starting countinghouse...');
   child = cp.fork("./framework.js", [
@@ -24,8 +24,8 @@ describe("Start job control tests in multi thread mode", function () {
     "--withPM2"
   ], {silent: true});
 
-  testFiles.forEach(function (file) {
-    require('./job-control/' + file)(child, false);
+  testFiles.forEach((file) => {
+    require(`./job-control/${file}`)(child, false);
   });
 });
 

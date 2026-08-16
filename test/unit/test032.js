@@ -1,6 +1,6 @@
-var request = require('supertest');
+const request = require('supertest');
 
-var url = 'http://127.0.0.1:9527';
+const url = 'http://127.0.0.1:9527';
 
 // docs/cross-cutting-matrix.md found that MCP tools/call error responses
 // (lib/mcp/gateway.js's toolCallResult()) dropped err.code -- the locale-
@@ -19,9 +19,9 @@ var url = 'http://127.0.0.1:9527';
 describe('test32: MCP tools/call error responses carry err.code', function() {
   this.timeout(0);
 
-  var badInput = {bar: 123}; // echoService/echo requires bar: string -- schema validation fails
+  const badInput = {bar: 123}; // echoService/echo requires bar: string -- schema validation fails
 
-  it('sync tools/call: an input-validation failure carries structuredContent.code', function(done) {
+  it('sync tools/call: an input-validation failure carries structuredContent.code', (done) => {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
     .set('X-CH-Key', 'aabbcc')
@@ -29,26 +29,26 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
       jsonrpc: '2.0', id: 1, method: 'tools/call',
       params: {name: 'echo_device_echoservice_echo', arguments: badInput}
     })
-    .expect(200, function(err, res) {
+    .expect(200, (err, res) => {
       if (err) return done(err);
-      var result = res.body.result;
+      const result = res.body.result;
       if (result == null || result.isError !== true) {
-        return done(new Error('test32 fail: expected an isError:true result, got: ' + JSON.stringify(res.body)));
+        return done(new Error(`test32 fail: expected an isError:true result, got: ${JSON.stringify(res.body)}`));
       }
       if (result.structuredContent == null || result.structuredContent.code !== 'INPUT_DATA_VALIDATION_FAIL') {
-        return done(new Error('test32 fail: expected structuredContent.code === INPUT_DATA_VALIDATION_FAIL, got: ' + JSON.stringify(result)));
+        return done(new Error(`test32 fail: expected structuredContent.code === INPUT_DATA_VALIDATION_FAIL, got: ${JSON.stringify(result)}`));
       }
       return done();
     });
   });
 
-  it('task-augmented tools/call: an input-validation failure carries structuredContent.code via tasks/result', function(done) {
+  it('task-augmented tools/call: an input-validation failure carries structuredContent.code via tasks/result', (done) => {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
     .send({jsonrpc: '2.0', id: 2, method: 'initialize', params: {protocolVersion: '2026-07-28'}})
-    .expect(200, function(err, res) {
+    .expect(200, (err, res) => {
       if (err) return done(err);
-      var tasksSupported = res.body.result != null
+      const tasksSupported = res.body.result != null
         && res.body.result.capabilities != null
         && res.body.result.capabilities.tasks != null;
       if (tasksSupported !== true) return done(); // single-thread mode: nothing to test here
@@ -60,31 +60,31 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
         jsonrpc: '2.0', id: 3, method: 'tools/call',
         params: {name: 'echo_device_echoservice_echo', arguments: badInput, task: {}}
       })
-      .expect(200, function(err, res) {
+      .expect(200, (err, res) => {
         if (err) return done(err);
-        var taskId = res.body.result != null && res.body.result.task != null ? res.body.result.task.taskId : null;
-        if (taskId == null) return done(new Error('test32 fail: expected a task to be created, got: ' + JSON.stringify(res.body)));
+        const taskId = res.body.result != null && res.body.result.task != null ? res.body.result.task.taskId : null;
+        if (taskId == null) return done(new Error(`test32 fail: expected a task to be created, got: ${JSON.stringify(res.body)}`));
 
-        var attemptsLeft = 20;
+        let attemptsLeft = 20;
         function pollResult() {
           attemptsLeft--;
           request(url).post('/mcp')
           .set('Content-Type', 'application/json')
           .set('X-CH-Key', 'aabbcc')
           .send({jsonrpc: '2.0', id: 4, method: 'tasks/result', params: {taskId: taskId}})
-          .expect(200, function(err, res) {
+          .expect(200, (err, res) => {
             if (err) return done(err);
             if (res.body.result == null) {
               // not completed yet
-              if (attemptsLeft <= 0) return done(new Error('test32 fail: task ' + taskId + ' did not complete in time'));
+              if (attemptsLeft <= 0) return done(new Error(`test32 fail: task ${taskId} did not complete in time`));
               return setTimeout(pollResult, 300);
             }
-            var result = res.body.result;
+            const result = res.body.result;
             if (result.isError !== true) {
-              return done(new Error('test32 fail: expected task result isError:true, got: ' + JSON.stringify(result)));
+              return done(new Error(`test32 fail: expected task result isError:true, got: ${JSON.stringify(result)}`));
             }
             if (result.structuredContent == null || result.structuredContent.code !== 'INPUT_DATA_VALIDATION_FAIL') {
-              return done(new Error('test32 fail: expected structuredContent.code === INPUT_DATA_VALIDATION_FAIL, got: ' + JSON.stringify(result)));
+              return done(new Error(`test32 fail: expected structuredContent.code === INPUT_DATA_VALIDATION_FAIL, got: ${JSON.stringify(result)}`));
             }
             return done();
           });

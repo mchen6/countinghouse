@@ -1,6 +1,6 @@
-var request = require('supertest');
+const request = require('supertest');
 
-var url = 'http://127.0.0.1:9527';
+const url = 'http://127.0.0.1:9527';
 
 // docs/cross-cutting-matrix.md found that MCP task-augmented tools/call
 // (params.task) never called userAuth -- any apiKey could task-augment a
@@ -21,17 +21,17 @@ describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
     .send({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28'}})
-    .expect(200, function(err, res) {
+    .expect(200, (err, res) => {
       if (err) return callback(err);
-      var supported = res.body.result != null
+      const supported = res.body.result != null
         && res.body.result.capabilities != null
         && res.body.result.capabilities.tasks != null;
       return callback(null, supported);
     });
   }
 
-  it('rejects a task-augmented call from an apiKey with no access to the device, without creating a task', function(done) {
-    tasksSupported(function(err, supported) {
+  it('rejects a task-augmented call from an apiKey with no access to the device, without creating a task', (done) => {
+    tasksSupported((err, supported) => {
       if (err) return done(err);
 
       request(url).post('/mcp')
@@ -45,7 +45,7 @@ describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
           task: {}
         }
       })
-      .expect(200, function(err, res) {
+      .expect(200, (err, res) => {
         if (err) return done(err);
 
         if (supported !== true) {
@@ -56,7 +56,7 @@ describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
         }
 
         if (res.body.error == null) {
-          return done(new Error('test31 fail: expected task-augmented call with an unauthorized apiKey to be rejected, got: ' + JSON.stringify(res.body)));
+          return done(new Error(`test31 fail: expected task-augmented call with an unauthorized apiKey to be rejected, got: ${JSON.stringify(res.body)}`));
         }
         if (res.body.result != null && res.body.result.task != null) {
           return done(new Error('test31 fail: a task should not have been created for an unauthorized apiKey'));
@@ -66,8 +66,8 @@ describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
     });
   });
 
-  it('still creates and completes a task for an apiKey that does have access', function(done) {
-    tasksSupported(function(err, supported) {
+  it('still creates and completes a task for an apiKey that does have access', (done) => {
+    tasksSupported((err, supported) => {
       if (err) return done(err);
       if (supported !== true) return done(); // nothing to test in this mode
 
@@ -82,10 +82,10 @@ describe('test31: MCP task-augmented tools/call enforces userAuth', function() {
           task: {}
         }
       })
-      .expect(200, function(err, res) {
+      .expect(200, (err, res) => {
         if (err) return done(err);
         if (res.body.result == null || res.body.result.task == null || res.body.result.task.taskId == null) {
-          return done(new Error('test31 fail: expected a task to be created for an authorized apiKey, got: ' + JSON.stringify(res.body)));
+          return done(new Error(`test31 fail: expected a task to be created for an authorized apiKey, got: ${JSON.stringify(res.body)}`));
         }
         return done();
       });

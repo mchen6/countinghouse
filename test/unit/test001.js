@@ -1,29 +1,29 @@
-var request = require('supertest');
-var async   = require('async');
-var jsf     = require('json-schema-faker');
-var chalk   = require('chalk');
-var BSON    = require('bson');
+const request = require('supertest');
+const async   = require('async');
+const jsf     = require('json-schema-faker');
+const chalk   = require('chalk');
+const BSON    = require('bson');
 
 jsf.option({
   alwaysFakeOptionals: true
 });
 
-var url = 'http://127.0.0.1:9527';
+const url = 'http://127.0.0.1:9527';
 
-var deviceList;
+let deviceList;
 
 // small local helpers replacing the should.js assertions this file used to make;
 // throw synchronously on failure, same as should.js did
 function assertHasProperty(obj, key, expectedValue) {
   if (obj == null || !Object.prototype.hasOwnProperty.call(obj, key)) {
-    throw new Error('expected property: ' + key);
+    throw new Error(`expected property: ${key}`);
   }
   if (expectedValue !== undefined && JSON.stringify(obj[key]) !== JSON.stringify(expectedValue)) {
-    throw new Error('expected property ' + key + ' to equal ' + JSON.stringify(expectedValue) + ', got ' + JSON.stringify(obj[key]));
+    throw new Error(`expected property ${key} to equal ${JSON.stringify(expectedValue)}, got ${JSON.stringify(obj[key])}`);
   }
 }
 function assertType(val, type) {
-  if (typeof val !== type) throw new Error('expected type ' + type + ', got ' + typeof val);
+  if (typeof val !== type) throw new Error(`expected type ${type}, got ${typeof val}`);
 }
 function assertNotEmpty(val) {
   if (val == null) throw new Error('expected non-empty value');
@@ -32,16 +32,16 @@ function assertNotEmpty(val) {
 }
 
 
-describe('get device list', function() {
+describe('get device list', () => {
 
-  it('get device list OK', function(done) {
+  it('get device list OK', (done) => {
     request(url).get('/device-list')
     .expect('Content-Type', /json/)
-    .expect(200).end(function(err, res) {
+    .expect(200).end((err, res) => {
       if(err) throw err;
-      for (var i in res.body) {
+      for (const i in res.body) {
         assertHasProperty(res.body[i], 'device');
-        var device = res.body[i].device;
+        const device = res.body[i].device;
         // assertHasProperty(device, 'deviceType');
         assertHasProperty(device, 'friendlyName');
         assertHasProperty(device, 'manufacturer');
@@ -136,24 +136,24 @@ describe('get device list', function() {
 describe('test1: invoke all actions', function() {
   this.timeout(0);
 
-  it('invoke OK', function(done) {
-    async.eachSeries(deviceList, function(deviceObj, callback) {
-      var device   = deviceObj.device;
-      var deviceID = device.deviceID;
+  it('invoke OK', (done) => {
+    async.eachSeries(deviceList, (deviceObj, callback) => {
+      const device   = deviceObj.device;
+      const deviceID = device.deviceID;
 
       request(url)
-      .get('/devices/' + deviceID + '/get-spec')
+      .get(`/devices/${deviceID}/get-spec`)
       .set('X-CH-Key', 'aabbcc')
       // .send({"device_access_token": deviceList[deviceID].device_access_token})
-      .expect(200, function(err, res) {
+      .expect(200, (err, res) => {
         if (err) throw err;
-        var device = res.body.device;
+        const device = res.body.device;
         assertHasProperty(device, 'serviceList');
         assertType(device.serviceList, 'object');
         assertNotEmpty(device.serviceList);
-        var serviceList = Object.keys(device.serviceList);
+        const serviceList = Object.keys(device.serviceList);
 
-        async.eachSeries(serviceList, function(serviceID, cb) {
+        async.eachSeries(serviceList, (serviceID, cb) => {
           testInvokeActions(deviceID, serviceID, res.body.device.serviceList, cb);
         }, callback);
       });
@@ -162,12 +162,12 @@ describe('test1: invoke all actions', function() {
 });
 
 function testInvokeActions(deviceID, serviceID, serviceList, callback) {
-  var actionList = serviceList[serviceID].actionList;
+  const actionList = serviceList[serviceID].actionList;
   if (!Array.isArray(actionList)) throw new Error('actionList must be an array (5.0.0 spec format)');
   assertNotEmpty(actionList);
 
-  async.eachSeries(actionList, function(action, cb) {
-    var name = action.name;
+  async.eachSeries(actionList, (action, cb) => {
+    const name = action.name;
     assertType(name, 'string');
     //skip testTimeout API which purposely test timeout scenario and was made as an independent test case
     if (serviceID === 'urn:countinghouse-com:serviceID:timeOutTestService' && name === 'testTimeout') return cb();
@@ -177,8 +177,8 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
     if (serviceID === 'urn:example-com:serviceID:errTestService') return cb();
     if (serviceID === 'urn:countinghouse-com:serviceID:db-request') return cb();
 
-    setTimeout(function() {
-      var req = { serviceID: serviceID,
+    setTimeout(() => {
+      const req = { serviceID: serviceID,
         actionName: name,
         input: {}
         // device_access_token: deviceList[deviceID].device_access_token
@@ -189,14 +189,14 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
       // argument is a schema document, so there are no scalar cases left.
       function withInput(next) {
         if (action.input == null) return next();
-        var schemaRef = action.input.schema;
+        const schemaRef = action.input.schema;
         assertType(schemaRef, 'string');
         request(url)
-        .get('/devices/' + deviceID + '/schema' + encodeURI(schemaRef))
+        .get(`/devices/${deviceID}/schema${encodeURI(schemaRef)}`)
         .set('X-CH-Key', 'aabbcc')
-        .expect(200, function(err, res) {
+        .expect(200, (err, res) => {
           if (err) throw err;
-          var variableSchema = res.body;
+          const variableSchema = res.body;
           assertType(variableSchema, 'object');
           assertNotEmpty(variableSchema);
           req.input = jsf.generate(variableSchema);
@@ -204,20 +204,20 @@ function testInvokeActions(deviceID, serviceID, serviceList, callback) {
         });
       }
 
-      withInput(function() {
-        request(url).post('/devices/' + deviceID + '/invoke-action')
+      withInput(() => {
+        request(url).post(`/devices/${deviceID}/invoke-action`)
         .set('X-CH-Key', 'aabbcc')
         .send(req)
         .expect('Content-Type', /[json | text]/)
-        .expect(200, function(err, res) {
+        .expect(200, (err, res) => {
           if (err) {
             return cb(err);
           }
 
           if (deviceID === 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767') {
             if (JSON.stringify(req.input) !== JSON.stringify(res.body.output)) {
-              console.error(chalk.white.bgRed.bold('Request:' + JSON.stringify(req)));
-              console.error(chalk.white.bgRed.bold('Response: ' + JSON.stringify(res.body)));
+              console.error(chalk.white.bgRed.bold(`Request:${JSON.stringify(req)}`));
+              console.error(chalk.white.bgRed.bold(`Response: ${JSON.stringify(res.body)}`));
               return cb(new Error('echo test case failed'));
             }
           }

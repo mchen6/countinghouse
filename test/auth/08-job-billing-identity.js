@@ -1,6 +1,6 @@
-var fs      = require('fs');
-var exec    = require('child_process').exec;
-var request = require('supertest');
+const fs      = require('fs');
+const exec    = require('child_process').exec;
+const request = require('supertest');
 
 // Standalone-only, non---debug: this is about *whose* balance moves, which
 // only means anything when apiKeys are real identities resolved by
@@ -14,19 +14,19 @@ var request = require('supertest');
 //
 // apiKeys are suffixed with the pid so each run starts from a clean,
 // never-before-billed balance in redis (balances are keyed by apiKey).
-var PORT             = 9542;
-var url              = 'http://127.0.0.1:' + PORT;
-var AUTH_CONFIG_PATH = '/tmp/countinghouse-test-auth-08-' + process.pid + '.json';
+const PORT             = 9542;
+const url              = `http://127.0.0.1:${PORT}`;
+const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-08-${process.pid}.json`;
 
-var ALICE   = 'alice-key-08-' + process.pid;
-var MALLORY = 'mallory-key-08-' + process.pid;
+const ALICE   = `alice-key-08-${process.pid}`;
+const MALLORY = `mallory-key-08-${process.pid}`;
 
-var DEVICE_ID  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, deterministic UUID.v5
-var SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
-var ECHO_INPUT = {foo: [{item1: 'x'}], bar: 'y'};
+const DEVICE_ID  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767'; // echo-device-module, deterministic UUID.v5
+const SERVICE_ID = 'urn:countinghouse-com:serviceID:echoService';
+const ECHO_INPUT = {foo: [{item1: 'x'}], bar: 'y'};
 
 function balance(key, cb) {
-  request(url).get('/balance').set('X-CH-Key', key).end(function(err, res) {
+  request(url).get('/balance').set('X-CH-Key', key).end((err, res) => {
     if (err) return cb(err);
     cb(null, res.body.balance);
   });
@@ -38,7 +38,7 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
   before(function(done) {
     this.timeout(0);
 
-    var config = {};
+    const config = {};
     config[ALICE]   = {userName: 'alice',   devices: ['*']};
     config[MALLORY] = {userName: 'mallory', devices: ['*']};
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
@@ -47,25 +47,25 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
     // a nonzero cost is what makes recordCall's effect observable as a
     // balance delta at all -- with the default 0 every assertion below would
     // pass trivially whether or not the fix works.
-    exec('"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ' + PORT +
-         ' --authProvider file --authConfigPath ' + AUTH_CONFIG_PATH +
-         ' --mcpToolCallCost 1' +
-         ' --loadModule ./pre-installed-packages/echo-device-module',
-         function(err, stdout, stderr) { console.log(err); });
-    setTimeout(function() { done(); }, 13000);
+    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+         } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
+         } --mcpToolCallCost 1` +
+         ` --loadModule ./pre-installed-packages/echo-device-module`,
+         (err, stdout, stderr) => { console.log(err); });
+    setTimeout(() => { done(); }, 13000);
   });
 
-  after(function(done) {
+  after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec('pkill -f "framework.js.*' + AUTH_CONFIG_PATH + '"', function() { done(); });
+    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
   });
 
-  it('both tenants start from a zero balance', function(done) {
-    balance(ALICE, function(err, a) {
+  it('both tenants start from a zero balance', (done) => {
+    balance(ALICE, (err, a) => {
       if (err) return done(err);
-      balance(MALLORY, function(err, m) {
+      balance(MALLORY, (err, m) => {
         if (err) return done(err);
-        if (a !== 0 || m !== 0) return done(new Error('expected fresh zero balances, got alice=' + a + ' mallory=' + m));
+        if (a !== 0 || m !== 0) return done(new Error(`expected fresh zero balances, got alice=${a} mallory=${m}`));
         return done();
       });
     });
@@ -78,9 +78,9 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
   // simply hadn't run yet. So: poll until the job's charge actually lands,
   // and only then check who paid for it.
   function waitForCharge(cb) {
-    var deadline = Date.now() + 20000;
+    const deadline = Date.now() + 20000;
     (function poll() {
-      balance(ALICE, function(err, a) {
+      balance(ALICE, (err, a) => {
         if (err) return cb(err);
         if (a !== 0) return cb(null, a);                    // the charge landed
         if (Date.now() > deadline) {
@@ -92,54 +92,54 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
     })();
   }
 
-  it('alice posts add-job with opts.apiKey forged to mallory', function(done) {
-    request(url).post('/devices/' + DEVICE_ID + '/add-job')
+  it('alice posts add-job with opts.apiKey forged to mallory', (done) => {
+    request(url).post(`/devices/${DEVICE_ID}/add-job`)
       .set('X-CH-Key', ALICE)
       .send({
         serviceID: SERVICE_ID,
         actionName: 'echo',
-        opts: {name: 'forged-billing-job-' + process.pid, apiKey: MALLORY},
+        opts: {name: `forged-billing-job-${process.pid}`, apiKey: MALLORY},
         input: ECHO_INPUT
       })
-      .end(function(err, res) {
+      .end((err, res) => {
         if (err) return done(err);
         if (res.status !== 200 || res.body.id == null) {
-          return done(new Error('expected the job to be created (the forged field must be ignored, not fatal), got: ' +
-                                res.status + ' ' + JSON.stringify(res.body)));
+          return done(new Error(`expected the job to be created (the forged field must be ignored, not fatal), got: ${
+                                res.status  } ${JSON.stringify(res.body)}`));
         }
         return done();
       });
   });
 
-  it('the bill landed on alice, the real caller -- and NOT on the forged identity', function(done) {
-    waitForCharge(function(err, aliceBalance) {
+  it('the bill landed on alice, the real caller -- and NOT on the forged identity', (done) => {
+    waitForCharge((err, aliceBalance) => {
       if (err) return done(err);
       if (aliceBalance !== -1) {
-        return done(new Error('expected alice to be charged exactly once (balance -1), got: ' + aliceBalance));
+        return done(new Error(`expected alice to be charged exactly once (balance -1), got: ${aliceBalance}`));
       }
       // checked only now that the job is known to have completed, so a 0 here
       // means "not billed", not "not run yet"
-      balance(MALLORY, function(err, m) {
+      balance(MALLORY, (err, m) => {
         if (err) return done(err);
         if (m !== 0) {
-          return done(new Error('billing-attribution forgery: mallory was charged ' + (0 - m) +
-                                ' for a job alice submitted'));
+          return done(new Error(`billing-attribution forgery: mallory was charged ${0 - m
+                                } for a job alice submitted`));
         }
         return done();
       });
     });
   });
 
-  it('the created job is owned by alice, not by the forged identity', function(done) {
+  it('the created job is owned by alice, not by the forged identity', (done) => {
     // The same field is both the billing subject and the ownership subject,
     // so a forgeable value was simultaneously a billing and an authorization
     // bug -- mallory must not be able to reach the job either.
-    request(url).post('/devices/' + DEVICE_ID + '/get-job-history')
-      .set('X-CH-Key', MALLORY).send({name: 'forged-billing-job-' + process.pid})
-      .end(function(err, res) {
+    request(url).post(`/devices/${DEVICE_ID}/get-job-history`)
+      .set('X-CH-Key', MALLORY).send({name: `forged-billing-job-${process.pid}`})
+      .end((err, res) => {
         if (err) return done(err);
         if (Array.isArray(res.body) && res.body.length > 0) {
-          return done(new Error('the forged identity gained access to the job: ' + JSON.stringify(res.body)));
+          return done(new Error(`the forged identity gained access to the job: ${JSON.stringify(res.body)}`));
         }
         return done();
       });

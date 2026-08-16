@@ -1,8 +1,8 @@
-var fs      = require('fs');
-var exec    = require('child_process').exec;
-var request = require('supertest');
+const fs      = require('fs');
+const exec    = require('child_process').exec;
+const request = require('supertest');
 
-var url = 'http://127.0.0.1:9527';
+const url = 'http://127.0.0.1:9527';
 
 // Regression test: the AuthProvider (lib/auth/) used to be instantiated
 // lazily, on the first authenticated request -- meaning FileAuthProvider's
@@ -21,30 +21,30 @@ var url = 'http://127.0.0.1:9527';
 describe('auth 05: AuthProvider initializes at startup, not lazily on first request', function() {
   this.timeout(0);
 
-  var AUTH_CONFIG_PATH = '/tmp/countinghouse-test-auth-05-' + process.pid + '.json';
+  const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-05-${process.pid}.json`;
 
-  before(function() {
+  before(() => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {} // guarantee a true first-run
   });
 
-  after(function(done) {
+  after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec('pkill -f "framework.js.*' + AUTH_CONFIG_PATH + '"', function() { done(); });
+    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
   });
 
-  it('auth.json exists shortly after server startup, before any request is sent', function(done) {
-    exec('"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authConfigPath ' + AUTH_CONFIG_PATH +
-         ' --loadModule ./pre-installed-packages/echo-device-module',
-         function(err, stdout, stderr) { console.log(err); });
+  it('auth.json exists shortly after server startup, before any request is sent', (done) => {
+    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authConfigPath ${AUTH_CONFIG_PATH
+         } --loadModule ./pre-installed-packages/echo-device-module`,
+         (err, stdout, stderr) => { console.log(err); });
 
     // Deliberately short and well before the ~13s this repo's other
     // standalone tests wait for full module discovery -- this assertion
     // is about AuthProvider initializing at process startup, which
     // happens long before module loading even begins, not about the
     // server being ready to serve requests yet.
-    setTimeout(function() {
+    setTimeout(() => {
       if (!fs.existsSync(AUTH_CONFIG_PATH)) {
-        return done(new Error('expected ' + AUTH_CONFIG_PATH + ' to already exist shortly after startup (eager AuthProvider init), before any request was made'));
+        return done(new Error(`expected ${AUTH_CONFIG_PATH} to already exist shortly after startup (eager AuthProvider init), before any request was made`));
       }
       return done();
     }, 2000);

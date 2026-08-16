@@ -17,37 +17,37 @@
 //   3. it names the command that fixes it
 //   4. the broken module contributes no tools, and the good module still
 //      serves its own -- the failure is isolated, not fatal, not partial
-var assert = require('assert');
-var fs     = require('fs');
-var http   = require('http');
-var exec   = require('child_process').exec;
+const assert = require('assert');
+const fs     = require('fs');
+const http   = require('http');
+const exec   = require('child_process').exec;
 
-var PORT = 9574;
-var LOG  = '/tmp/countinghouse-test-legacy-' + process.pid + '.log';
+const PORT = 9574;
+const LOG  = `/tmp/countinghouse-test-legacy-${process.pid}.log`;
 
 // framework.js directly, not bin/countinghouse: the launcher pipes stdout
 // through bunyan when bunyan is on PATH (npm/npx put node_modules/.bin there),
 // and this file reads the log as JSON. Same reasoning as 01.
 function startServer(done) {
-  exec('NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ' + PORT +
-       ' --debugKey aabbcc' +
-       ' --loadModule ./test/fixtures/legacy-spec-module' +
-       ' --loadModule ./pre-installed-packages/echo-device-module' +
-       ' > ' + LOG + ' 2>&1', function() {});
+  exec(`NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ${PORT
+       } --debugKey aabbcc` +
+       ` --loadModule ./test/fixtures/legacy-spec-module` +
+       ` --loadModule ./pre-installed-packages/echo-device-module` +
+       ` > ${LOG} 2>&1`, () => {});
   setTimeout(done, 12000);
 }
 
 function errorRecords() {
-  var out = [];
-  var raw;
+  const out = [];
+  let raw;
   try { raw = fs.readFileSync(LOG, 'utf8'); } catch (e) { return out; }
 
-  raw.split('\n').forEach(function(line) {
+  raw.split('\n').forEach((line) => {
     if (line.trim() === '') return;
-    var rec;
+    let rec;
     try { rec = JSON.parse(line); } catch (e) { return; }
     if (rec.level == null || rec.level < 40) return;   // 40 = bunyan ERROR
-    var text = (typeof(rec.e) === 'string') ? rec.e
+    const text = (typeof(rec.e) === 'string') ? rec.e
              : (rec.de != null ? JSON.stringify(rec.de) : JSON.stringify(rec));
     out.push(text);
   });
@@ -55,15 +55,15 @@ function errorRecords() {
 }
 
 function toolsList(callback) {
-  var body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}});
-  var req = http.request({
+  const body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}});
+  const req = http.request({
     host: '127.0.0.1', port: PORT, path: '/mcp', method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-CH-Key': 'aabbcc', 'Content-Length': Buffer.byteLength(body)}
-  }, function(res) {
-    var data = '';
-    res.on('data', function(c) { data += c; });
-    res.on('end', function() {
-      try { callback(null, JSON.parse(data)); } catch (e) { callback(new Error('non-JSON response: ' + data.slice(0, 200))); }
+  }, (res) => {
+    let data = '';
+    res.on('data', (c) => { data += c; });
+    res.on('end', () => {
+      try { callback(null, JSON.parse(data)); } catch (e) { callback(new Error(`non-JSON response: ${data.slice(0, 200)}`)); }
     });
   });
   req.on('error', callback);
@@ -73,57 +73,57 @@ function toolsList(callback) {
 describe('module-loading 03: an un-migrated 4.x module fails loudly, specifically, and alone', function() {
   this.timeout(0);
 
-  var tools;
+  let tools;
 
-  before(function(done) {
-    startServer(function() {
-      toolsList(function(err, res) {
+  before((done) => {
+    startServer(() => {
+      toolsList((err, res) => {
         if (err) return done(err);
         if (res == null || res.result == null || !Array.isArray(res.result.tools)) {
-          return done(new Error('tools/list did not return a tool array: ' + JSON.stringify(res)));
+          return done(new Error(`tools/list did not return a tool array: ${JSON.stringify(res)}`));
         }
-        tools = res.result.tools.map(function(t) { return t.name; });
+        tools = res.result.tools.map((t) => { return t.name; });
         done();
       });
     });
   });
 
-  after(function(done) {
+  after((done) => {
     try { fs.unlinkSync(LOG); } catch (e) {}
-    exec('pkill -f "framework.js --debug --bindAddr 127.0.0.1 --port ' + PORT + '"', function() { done(); });
+    exec(`pkill -f "framework.js --debug --bindAddr 127.0.0.1 --port ${PORT}"`, () => { done(); });
   });
 
-  it('does not fail silently: the module error is visible at error level', function() {
-    var hits = errorRecords().filter(function(e) { return e.indexOf('legacy-spec-module') !== -1; });
+  it('does not fail silently: the module error is visible at error level', () => {
+    const hits = errorRecords().filter((e) => { return e.indexOf('legacy-spec-module') !== -1; });
     assert.ok(hits.length > 0,
-      'a module that cannot load must produce an error-level record naming it; ' +
-      'found none among: ' + JSON.stringify(errorRecords()));
+      `a module that cannot load must produce an error-level record naming it; ` +
+      `found none among: ${JSON.stringify(errorRecords())}`);
   });
 
-  it('names the failing stage and the concrete reason, not just "invalid"', function() {
-    var text = errorRecords().join('\n');
-    assert.ok(/stage=validateDeviceSpec/.test(text), 'missing the stage: ' + text);
-    assert.ok(/pre-5\.0\.0 spec format/.test(text), 'missing the diagnosis: ' + text);
+  it('names the failing stage and the concrete reason, not just "invalid"', () => {
+    const text = errorRecords().join('\n');
+    assert.ok(/stage=validateDeviceSpec/.test(text), `missing the stage: ${text}`);
+    assert.ok(/pre-5\.0\.0 spec format/.test(text), `missing the diagnosis: ${text}`);
     // the specific construct found, and where -- not a generic ajv symptom
-    assert.ok(/serviceStateTable/.test(text), 'missing what was found: ' + text);
+    assert.ok(/serviceStateTable/.test(text), `missing what was found: ${text}`);
     assert.ok(/urn:countinghouse-test:serviceID:legacyService/.test(text),
-      'missing which service it was found in: ' + text);
+      `missing which service it was found in: ${text}`);
   });
 
-  it('names the command that fixes it', function() {
-    var text = errorRecords().join('\n');
-    assert.ok(/countinghouse-migrate-spec/.test(text), 'missing the converter command: ' + text);
-    assert.ok(/MIGRATION\.md/.test(text), 'missing the pointer to the migration notes: ' + text);
+  it('names the command that fixes it', () => {
+    const text = errorRecords().join('\n');
+    assert.ok(/countinghouse-migrate-spec/.test(text), `missing the converter command: ${text}`);
+    assert.ok(/MIGRATION\.md/.test(text), `missing the pointer to the migration notes: ${text}`);
   });
 
-  it('registers no tools for the broken module -- it does not half-load', function() {
-    var leaked = tools.filter(function(n) { return n.indexOf('legacy_spec_module') === 0; });
+  it('registers no tools for the broken module -- it does not half-load', () => {
+    const leaked = tools.filter((n) => { return n.indexOf('legacy_spec_module') === 0; });
     assert.deepStrictEqual(leaked, [],
-      'a module that failed validation must expose no tools, got: ' + JSON.stringify(leaked));
+      `a module that failed validation must expose no tools, got: ${JSON.stringify(leaked)}`);
   });
 
-  it('does not take the healthy module down with it', function() {
+  it('does not take the healthy module down with it', () => {
     assert.ok(tools.indexOf('echo_device_echoservice_echo') !== -1,
-      'a module loaded alongside the broken one must still be served, got: ' + JSON.stringify(tools));
+      `a module loaded alongside the broken one must still be served, got: ${JSON.stringify(tools)}`);
   });
 });

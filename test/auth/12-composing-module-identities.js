@@ -1,6 +1,6 @@
-var fs      = require('fs');
-var exec    = require('child_process').exec;
-var request = require('supertest');
+const fs      = require('fs');
+const exec    = require('child_process').exec;
+const request = require('supertest');
 
 // Standalone-only, non---debug, multi-tenant auth.json.
 //
@@ -18,17 +18,17 @@ var request = require('supertest');
 // the documented grants applied. The first case must fail, the second must
 // succeed -- if both passed, the documentation would be describing a
 // requirement that doesn't exist.
-var PORT             = 9546;
-var url              = 'http://127.0.0.1:' + PORT;
-var AUTH_UNGRANTED   = '/tmp/countinghouse-test-auth-12a-' + process.pid + '.json';
-var AUTH_GRANTED     = '/tmp/countinghouse-test-auth-12b-' + process.pid + '.json';
+const PORT             = 9546;
+const url              = `http://127.0.0.1:${PORT}`;
+const AUTH_UNGRANTED   = `/tmp/countinghouse-test-auth-12a-${process.pid}.json`;
+const AUTH_GRANTED     = `/tmp/countinghouse-test-auth-12b-${process.pid}.json`;
 
-var CALLER = 'caller-key-12-' + process.pid;
+const CALLER = `caller-key-12-${process.pid}`;
 
 // exactly the identities docs/composite-tools.md now tabulates
-var INTERNAL_IDENTITIES = ['composite-demo-internal', 'aabbcc', 'perf-caller-demo-internal'];
+const INTERNAL_IDENTITIES = ['composite-demo-internal', 'aabbcc', 'perf-caller-demo-internal'];
 
-var MODULES = [
+const MODULES = [
   './pre-installed-packages/echo-device-module',
   './pre-installed-packages/transform-demo',
   './pre-installed-packages/composite-demo',
@@ -36,24 +36,24 @@ var MODULES = [
 ];
 
 function writeAuth(path, withGrants) {
-  var config = {};
+  const config = {};
   config[CALLER] = {userName: 'caller', devices: ['*']};
   if (withGrants === true) {
-    INTERNAL_IDENTITIES.forEach(function(k) { config[k] = {userName: k, devices: ['*']}; });
+    INTERNAL_IDENTITIES.forEach((k) => { config[k] = {userName: k, devices: ['*']}; });
   }
   fs.writeFileSync(path, JSON.stringify(config));
 }
 
 function startServer(authPath, done) {
-  exec('"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ' + PORT +
-       ' --authProvider file --authConfigPath ' + authPath +
-       MODULES.map(function(m) { return ' --loadModule ' + m; }).join(''),
-       function(err, stdout, stderr) { console.log(err); });
+  exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+       } --authProvider file --authConfigPath ${authPath
+       }${MODULES.map((m) => { return ` --loadModule ${m}`; }).join('')}`,
+       (err, stdout, stderr) => { console.log(err); });
   setTimeout(done, 14000);
 }
 
 function stopServer(authPath, done) {
-  exec('pkill -f "framework.js.*' + authPath + '"', function() { setTimeout(done, 2000); });
+  exec(`pkill -f "framework.js.*${authPath}"`, () => { setTimeout(done, 2000); });
 }
 
 function callComposite(cb) {
@@ -66,54 +66,54 @@ function callComposite(cb) {
 describe('auth 12: composing modules need their internal identity granted (all of them, not just composite-demo)', function() {
   this.timeout(0);
 
-  describe('WITHOUT the documented grants', function() {
+  describe('WITHOUT the documented grants', () => {
     before(function(done) { this.timeout(0); writeAuth(AUTH_UNGRANTED, false); startServer(AUTH_UNGRANTED, done); });
-    after(function(done)  { try { fs.unlinkSync(AUTH_UNGRANTED); } catch (e) {} stopServer(AUTH_UNGRANTED, done); });
+    after((done) =>  { try { fs.unlinkSync(AUTH_UNGRANTED); } catch (e) {} stopServer(AUTH_UNGRANTED, done); });
 
-    it('composite-demo fails, because its internal identity is unknown to AuthProvider', function(done) {
-      callComposite(function(err, res) {
+    it('composite-demo fails, because its internal identity is unknown to AuthProvider', (done) => {
+      callComposite((err, res) => {
         if (err) return done(err);
         if (res.body.result != null && res.body.result.isError !== true) {
-          return done(new Error('expected the inner hops to be refused without a grant, but the call succeeded: ' +
-                                JSON.stringify(res.body) + ' -- if this is now legitimately allowed, ' +
-                                'docs/composite-tools.md is describing a requirement that no longer exists'));
+          return done(new Error(`expected the inner hops to be refused without a grant, but the call succeeded: ${
+                                JSON.stringify(res.body)  } -- if this is now legitimately allowed, ` +
+                                `docs/composite-tools.md is describing a requirement that no longer exists`));
         }
         return done();
       });
     });
   });
 
-  describe('WITH the documented grants applied', function() {
+  describe('WITH the documented grants applied', () => {
     before(function(done) { this.timeout(0); writeAuth(AUTH_GRANTED, true); startServer(AUTH_GRANTED, done); });
-    after(function(done)  { try { fs.unlinkSync(AUTH_GRANTED); } catch (e) {} stopServer(AUTH_GRANTED, done); });
+    after((done) =>  { try { fs.unlinkSync(AUTH_GRANTED); } catch (e) {} stopServer(AUTH_GRANTED, done); });
 
-    it('composite-demo runs both inner hops and returns a per-hop bill', function(done) {
-      callComposite(function(err, res) {
+    it('composite-demo runs both inner hops and returns a per-hop bill', (done) => {
+      callComposite((err, res) => {
         if (err) return done(err);
-        var result = res.body.result;
+        const result = res.body.result;
         if (result == null || result.isError === true) {
-          return done(new Error('composite-demo still failing with the documented grants applied: ' + JSON.stringify(res.body)));
+          return done(new Error(`composite-demo still failing with the documented grants applied: ${JSON.stringify(res.body)}`));
         }
-        var output = result.structuredContent.output;
+        const output = result.structuredContent.output;
         if (output.finalText !== 'HELLO FROM THE COMPOSITE DEMO') {
-          return done(new Error('unexpected finalText: ' + JSON.stringify(output)));
+          return done(new Error(`unexpected finalText: ${JSON.stringify(output)}`));
         }
         if (!Array.isArray(output.bill) || output.bill.length !== 2) {
-          return done(new Error('expected one bill entry per inner hop, got: ' + JSON.stringify(output.bill)));
+          return done(new Error(`expected one bill entry per inner hop, got: ${JSON.stringify(output.bill)}`));
         }
         return done();
       });
     });
 
-    it('echo-device-client-module (internal identity "aabbcc") also works', function(done) {
+    it('echo-device-client-module (internal identity "aabbcc") also works', (done) => {
       request(url).post('/mcp').set('Content-Type', 'application/json').set('X-CH-Key', CALLER)
         .send({jsonrpc: '2.0', id: 2, method: 'tools/call',
                params: {name: 'echo_device_client_x_api', arguments: {}}})
-        .end(function(err, res) {
+        .end((err, res) => {
           if (err) return done(err);
-          var result = res.body.result;
+          const result = res.body.result;
           if (result == null || result.isError === true) {
-            return done(new Error('echo-device-client-module failed even with its identity granted: ' + JSON.stringify(res.body)));
+            return done(new Error(`echo-device-client-module failed even with its identity granted: ${JSON.stringify(res.body)}`));
           }
           return done();
         });

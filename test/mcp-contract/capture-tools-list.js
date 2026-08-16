@@ -7,22 +7,22 @@
 //
 // Starts its own server on port 9530 with --debug (so no AuthProvider
 // filtering hides anything) and every module in pre-installed-packages/.
-var fs      = require('fs');
-var path    = require('path');
-var http    = require('http');
-var spawn   = require('child_process').spawn;
+const fs      = require('fs');
+const path    = require('path');
+const http    = require('http');
+const spawn   = require('child_process').spawn;
 
-var PORT     = 9530;
-var ROOT     = path.join(__dirname, '..', '..');
-var PKG_DIR  = path.join(ROOT, 'pre-installed-packages');
-var OUT      = process.argv[2] || path.join(__dirname, 'tools-list.golden.json');
+const PORT     = 9530;
+const ROOT     = path.join(__dirname, '..', '..');
+const PKG_DIR  = path.join(ROOT, 'pre-installed-packages');
+const OUT      = process.argv[2] || path.join(__dirname, 'tools-list.golden.json');
 
-var modules = fs.readdirSync(PKG_DIR).filter(function(f) {
+const modules = fs.readdirSync(PKG_DIR).filter((f) => {
   return fs.statSync(path.join(PKG_DIR, f)).isDirectory();
 }).sort();
 
-var args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
-modules.forEach(function(m) {
+const args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
+modules.forEach((m) => {
   args.push('--loadModule', path.join(PKG_DIR, m));
 });
 
@@ -36,25 +36,25 @@ if (require.main !== module) {
 // detached so the whole process group can be killed: bin/countinghouse is a
 // /bin/sh wrapper that runs node as a child (and pipes it into bunyan), so
 // killing the returned pid alone leaves the server listening.
-var server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true});
+const server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true});
 
 function stopServer() {
   try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
 }
 
 function toolsList(callback) {
-  var body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}});
-  var req = http.request({
+  const body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}});
+  const req = http.request({
     host: '127.0.0.1', port: PORT, path: '/mcp', method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-CH-Key': 'aabbcc', 'Content-Length': Buffer.byteLength(body)}
-  }, function(res) {
-    var data = '';
-    res.on('data', function(c) { data += c; });
-    res.on('end', function() {
+  }, (res) => {
+    let data = '';
+    res.on('data', (c) => { data += c; });
+    res.on('end', () => {
       try {
         return callback(null, JSON.parse(data));
       } catch (e) {
-        return callback(new Error('non-JSON response: ' + data.slice(0, 200)));
+        return callback(new Error(`non-JSON response: ${data.slice(0, 200)}`));
       }
     });
   });
@@ -62,17 +62,17 @@ function toolsList(callback) {
   req.end(body);
 }
 
-setTimeout(function() {
-  toolsList(function(err, res) {
+setTimeout(() => {
+  toolsList((err, res) => {
     if (err || res == null || res.result == null || !Array.isArray(res.result.tools)) {
       console.error('tools/list failed:', err ? err.message : JSON.stringify(res));
       stopServer();
       process.exit(1);
     }
     // sort by name so the golden file does not depend on module load order
-    var tools = res.result.tools.slice().sort(function(a, b) { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
-    fs.writeFileSync(OUT, JSON.stringify(tools, null, 2) + '\n');
-    console.log('wrote ' + tools.length + ' tools to ' + OUT);
+    const tools = res.result.tools.slice().sort((a, b) => { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
+    fs.writeFileSync(OUT, `${JSON.stringify(tools, null, 2)}\n`);
+    console.log(`wrote ${tools.length} tools to ${OUT}`);
     stopServer();
     process.exit(0);
   });

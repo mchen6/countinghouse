@@ -1,7 +1,7 @@
-var fs = require('fs');
-var exec = require('child_process').exec;
-var request = require('supertest');
-var url = 'http://127.0.0.1:9527';
+const fs = require('fs');
+const exec = require('child_process').exec;
+const request = require('supertest');
+const url = 'http://127.0.0.1:9527';
 
 // docs/direct-peer-channels-design.md section 5's step-by-step acceptance
 // requires "全量测试在 flag 开/关两态下均绿" -- test1.js/test2.js already cover
@@ -13,14 +13,14 @@ var url = 'http://127.0.0.1:9527';
 // directly over HTTP), so this is mostly a "did turning this on break
 // anything unrelated" smoke check -- the actual peer-channel mechanics are
 // covered by test/direct-peer-channels/*.js below.
-var testFiles = fs.readdirSync(__dirname + '/unit');
-var peerChannelTestFiles = fs.readdirSync(__dirname + '/direct-peer-channels');
+const testFiles = fs.readdirSync(`${__dirname}/unit`);
+const peerChannelTestFiles = fs.readdirSync(`${__dirname}/direct-peer-channels`);
 
-describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChannels", function () {
+describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChannels", () => {
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
-    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', function(err, stdout, stderr){console.log(err)});
+    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) =>{console.log(err)});
     // 2 modules to discover, same reasoning as
     // test/direct-peer-channels/03-grant-time-auth.js's before(): a 5000ms
     // wait was observed to be too short for that under load (module
@@ -32,8 +32,8 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     }, 13000);
   });
 
-  testFiles.forEach(function (file) {
-    if (file !== 'input.bson' && file !== 'test018.js') require('./unit/' + file);
+  testFiles.forEach((file) => {
+    if (file !== 'input.bson' && file !== 'test018.js') require(`./unit/${file}`);
   });
 
   // Files in this list need their own server config incompatible with the
@@ -45,23 +45,23 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
   // confusing failures that look unrelated to the real cause (found the
   // hard way, twice, once for each file below). Each stays standalone-only,
   // e.g. `npx mocha test/direct-peer-channels/03-grant-time-auth.js`.
-  var STANDALONE_ONLY_PEER_CHANNEL_TESTS = {
+  const STANDALONE_ONLY_PEER_CHANNEL_TESTS = {
     '03-grant-time-auth.js':     true, // needs a mismatched --debugKey
     '04-metering.js':            true, // needs a nonzero --mcpToolCallCost
     '05-backpressure.js':        true, // needs a low --directPeerChannelsMaxConcurrency
     '06-no-double-billing.js':   true  // needs its own --debugKey/--loadModule set (composite-demo) and runs both flag states itself
   };
 
-  peerChannelTestFiles.forEach(function (file) {
+  peerChannelTestFiles.forEach((file) => {
     if (STANDALONE_ONLY_PEER_CHANNEL_TESTS[file] === true) return;
-    require('./direct-peer-channels/' + file);
+    require(`./direct-peer-channels/${file}`);
   });
 
-  after(function (done) {
+  after((done) => {
     console.log('test ended');
     request(url).post('/shutdown')
     .set('X-CH-Key', 'aabbcc') // /shutdown is now admin-gated (lib/routes/admin-only.js) -- this server's --debugKey
-    .end(function() {
+    .end(() => {
       done();
     });
   });

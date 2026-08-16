@@ -1,35 +1,35 @@
-var request = require('supertest');
-var url = 'http://127.0.0.1:9527';
+const request = require('supertest');
+const url = 'http://127.0.0.1:9527';
 
-var Queue       = require('bullmq').Queue;
-var QueueEvents = require('bullmq').QueueEvents;
+const Queue       = require('bullmq').Queue;
+const QueueEvents = require('bullmq').QueueEvents;
 
-var connection = {db: 11, port: 6379, host: '127.0.0.1', password: null};
+const connection = {db: 11, port: 6379, host: '127.0.0.1', password: null};
 
-var jobQueue    = new Queue('job-queue', {prefix: '{cdifJob}', connection: connection});
-var queueEvents = new QueueEvents('job-queue', {prefix: '{cdifJob}', connection: connection});
+const jobQueue    = new Queue('job-queue', {prefix: '{cdifJob}', connection: connection});
+const queueEvents = new QueueEvents('job-queue', {prefix: '{cdifJob}', connection: connection});
 
 module.exports = function (cp, isSingleThread) {
   describe('Test job process', function() {
     this.timeout(0);
 
-    it('should complete added job after module is loaded', function(done) {
+    it('should complete added job after module is loaded', (done) => {
       cp.on('message', message => {
 
         if (message === 'ready') {
 
-          queueEvents.on('failed', function(args) {
+          queueEvents.on('failed', (args) => {
             return done(new Error(args.failedReason));
           });
 
-          queueEvents.on('stalled', function(args) {
+          queueEvents.on('stalled', (args) => {
             return done(new Error('stalled'));
           });
 
-          queueEvents.on('completed', function(args) {
+          queueEvents.on('completed', (args) => {
             console.log(`Job completed with result ${JSON.stringify(args.returnvalue)}`);
 
-            request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(function() {}); // /shutdown is now admin-gated, shared with test5.js's debugKey
+            request(url).post('/shutdown').set('X-CH-Key', 'aabbcc').end(() => {}); // /shutdown is now admin-gated, shared with test5.js's debugKey
             return done();
           });
 
@@ -38,9 +38,9 @@ module.exports = function (cp, isSingleThread) {
             serviceID:'urn:countinghouse-com:serviceID:echoService',
             actionName: 'echo',
             input: {foo: [], bar: 'inputString'}
-          }).then(function(job) {
-          }).catch(function(err) {
-            console.log('job add error:' + err.message);
+          }).then((job) => {
+          }).catch((err) => {
+            console.log(`job add error:${err.message}`);
           });
         }
       });

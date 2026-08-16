@@ -1,8 +1,8 @@
-var fs      = require('fs');
-var exec    = require('child_process').exec;
-var request = require('supertest');
+const fs      = require('fs');
+const exec    = require('child_process').exec;
+const request = require('supertest');
 
-var url = 'http://127.0.0.1:9527';
+const url = 'http://127.0.0.1:9527';
 
 // Standalone-only, same reason as 01-file-provider-tools-list-filtering.js:
 // needs a real (non---debug) server, since --debug bypasses AuthProvider
@@ -12,11 +12,11 @@ var url = 'http://127.0.0.1:9527';
 // /get-module-device-list, /reload-module, /shutdown -- previously gated
 // by --debug/--verifyModule at mount time (nonexistent otherwise), now
 // always mounted and gated per-request by lib/routes/admin-only.js.
-var AUTH_CONFIG_PATH = '/tmp/countinghouse-test-auth-06-' + process.pid + '.json';
+const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-06-${process.pid}.json`;
 
-var ADMIN_KEY    = 'admin-key';
-var NON_ADMIN_KEY = 'non-admin-key'; // valid apiKey, just not admin
-var UNKNOWN_KEY   = 'unknown-key';   // not present in auth.json at all
+const ADMIN_KEY    = 'admin-key';
+const NON_ADMIN_KEY = 'non-admin-key'; // valid apiKey, just not admin
+const UNKNOWN_KEY   = 'unknown-key';   // not present in auth.json at all
 
 describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verifyModule-gated', function() {
   this.timeout(0);
@@ -24,28 +24,28 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
   before(function(done) {
     this.timeout(0);
 
-    var config = {};
+    const config = {};
     config[ADMIN_KEY]     = {userName: 'admin-user',     devices: ['*'], admin: true};
     config[NON_ADMIN_KEY] = {userName: 'non-admin-user', devices: ['*']}; // no admin field
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for admin-gating test...');
-    exec('"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authProvider file --authConfigPath ' + AUTH_CONFIG_PATH +
-         ' --loadModule ./pre-installed-packages/echo-device-module',
-         function(err, stdout, stderr) { console.log(err); });
-    setTimeout(function() { done(); }, 13000);
+    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
+         } --loadModule ./pre-installed-packages/echo-device-module`,
+         (err, stdout, stderr) => { console.log(err); });
+    setTimeout(() => { done(); }, 13000);
   });
 
-  after(function(done) {
+  after((done) => {
     fs.unlinkSync(AUTH_CONFIG_PATH);
     // The last test in this file shuts the server down for real via the
     // admin key -- if that test never ran (e.g. an earlier failure
     // aborted the suite), fall back to pkill, same technique
     // 01-file-provider-tools-list-filtering.js uses for the same reason.
-    exec('pkill -f "framework.js.*' + AUTH_CONFIG_PATH + '"', function() { done(); });
+    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
   });
 
-  var ADMIN_ONLY_ROUTES = [
+  const ADMIN_ONLY_ROUTES = [
     '/load-module', '/unload-module', '/restart-module',
     '/verify-module', '/get-module-device-list', '/reload-module'
     // /shutdown deliberately excluded from this shared list -- see its
@@ -53,29 +53,29 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
     // once, as this file's very last action.
   ];
 
-  ADMIN_ONLY_ROUTES.forEach(function(route) {
-    it(route + ': denies a non-admin apiKey with 403 ADMIN_REQUIRED', function(done) {
-      request(url).post(route).set('X-CH-Key', NON_ADMIN_KEY).send({}).expect(403, function(err, res) {
+  ADMIN_ONLY_ROUTES.forEach((route) => {
+    it(`${route}: denies a non-admin apiKey with 403 ADMIN_REQUIRED`, (done) => {
+      request(url).post(route).set('X-CH-Key', NON_ADMIN_KEY).send({}).expect(403, (err, res) => {
         if (err) return done(err);
         if (res.body.code !== 'ADMIN_REQUIRED') {
-          return done(new Error('expected ADMIN_REQUIRED for a non-admin (but otherwise valid) key on ' + route + ', got: ' + JSON.stringify(res.body)));
+          return done(new Error(`expected ADMIN_REQUIRED for a non-admin (but otherwise valid) key on ${route}, got: ${JSON.stringify(res.body)}`));
         }
         return done();
       });
     });
 
-    it(route + ': denies an unknown apiKey with 403 (not admin, and not a valid user at all)', function(done) {
-      request(url).post(route).set('X-CH-Key', UNKNOWN_KEY).send({}).expect(403, function(err, res) {
+    it(`${route}: denies an unknown apiKey with 403 (not admin, and not a valid user at all)`, (done) => {
+      request(url).post(route).set('X-CH-Key', UNKNOWN_KEY).send({}).expect(403, (err, res) => {
         if (err) return done(err);
         if (res.body.code !== 'SYSTEM_ERROR_UNKNOWN_USER') {
-          return done(new Error('expected SYSTEM_ERROR_UNKNOWN_USER for an unknown key on ' + route + ', got: ' + JSON.stringify(res.body)));
+          return done(new Error(`expected SYSTEM_ERROR_UNKNOWN_USER for an unknown key on ${route}, got: ${JSON.stringify(res.body)}`));
         }
         return done();
       });
     });
 
-    it(route + ': admin apiKey reaches the actual route handler (not blocked at the admin gate)', function(done) {
-      request(url).post(route).set('X-CH-Key', ADMIN_KEY).send({}).end(function(err, res) {
+    it(`${route}: admin apiKey reaches the actual route handler (not blocked at the admin gate)`, (done) => {
+      request(url).post(route).set('X-CH-Key', ADMIN_KEY).send({}).end((err, res) => {
         if (err) return done(err);
         // Deliberately not asserting a specific status/body here -- an
         // empty {} body is nonsense input for every one of these routes,
@@ -88,24 +88,24 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
         // have their own functional tests (e.g. reload-module in
         // test/load-module/test002.js).
         if (res.status === 403 && res.body.code === 'ADMIN_REQUIRED') {
-          return done(new Error('admin key should not be blocked by the admin gate on ' + route + ', got: ' + JSON.stringify(res.body)));
+          return done(new Error(`admin key should not be blocked by the admin gate on ${route}, got: ${JSON.stringify(res.body)}`));
         }
         return done();
       });
     });
   });
 
-  it('/shutdown: denies a non-admin apiKey with 403 ADMIN_REQUIRED', function(done) {
-    request(url).post('/shutdown').set('X-CH-Key', NON_ADMIN_KEY).expect(403, function(err, res) {
+  it('/shutdown: denies a non-admin apiKey with 403 ADMIN_REQUIRED', (done) => {
+    request(url).post('/shutdown').set('X-CH-Key', NON_ADMIN_KEY).expect(403, (err, res) => {
       if (err) return done(err);
       if (res.body.code !== 'ADMIN_REQUIRED') {
-        return done(new Error('expected ADMIN_REQUIRED for a non-admin key on /shutdown, got: ' + JSON.stringify(res.body)));
+        return done(new Error(`expected ADMIN_REQUIRED for a non-admin key on /shutdown, got: ${JSON.stringify(res.body)}`));
       }
       return done();
     });
   });
 
-  it('/shutdown: an admin apiKey actually shuts the server down', function(done) {
+  it('/shutdown: an admin apiKey actually shuts the server down', (done) => {
     // The real, end-to-end proof for this route specifically -- unlike
     // the other 6, /shutdown's handler is just process.exit(0), so there
     // is no "reached the handler but errored on bad input" middle ground
@@ -113,7 +113,7 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
     // doesn't. Safe here because this test file owns a dedicated,
         // disposable server (same pattern test/load-module/test002.js
     // already uses to end its own shared server's life on purpose).
-    request(url).post('/shutdown').set('X-CH-Key', ADMIN_KEY).end(function() {
+    request(url).post('/shutdown').set('X-CH-Key', ADMIN_KEY).end(() => {
       done();
     });
   });

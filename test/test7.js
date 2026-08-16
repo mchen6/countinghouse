@@ -1,12 +1,12 @@
-var fs = require('fs');
-var cp = require('child_process');
-var request = require('supertest');
-var url = 'http://127.0.0.1:9527';
+const fs = require('fs');
+const cp = require('child_process');
+const request = require('supertest');
+const url = 'http://127.0.0.1:9527';
 
-var testFiles = fs.readdirSync(__dirname + '/benchmark');
+const testFiles = fs.readdirSync(`${__dirname}/benchmark`);
 
 describe("Start benchmarking in multi-thread mode", function () {
-  var child = null;
+  let child = null;
   this.timeout(0);
   console.log('starting countinghouse...');
   child = cp.fork("./framework.js", [
@@ -23,8 +23,8 @@ describe("Start benchmarking in multi-thread mode", function () {
     "--withPM2"
   ], {silent: true});
 
-  testFiles.forEach(function (file) {
-    require('./benchmark/' + file)(child, false);
+  testFiles.forEach((file) => {
+    require(`./benchmark/${file}`)(child, false);
   });
 });
 

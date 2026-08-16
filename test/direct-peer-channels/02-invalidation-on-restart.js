@@ -1,6 +1,6 @@
-var request = require('supertest');
+const request = require('supertest');
 
-var url = 'http://127.0.0.1:9527';
+const url = 'http://127.0.0.1:9527';
 
 // docs/direct-peer-channels-design.md section 5, step 2's required test:
 // "调用进行中热重载目标模块 -> 调用方收到明确错误且下一次调用成功走新实例" (reload the
@@ -23,27 +23,27 @@ var url = 'http://127.0.0.1:9527';
 describe('direct-peer-channels 02: port invalidation on module restart (D4)', function() {
   this.timeout(0);
 
-  var ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
+  const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
 
   function invoke(cb) {
-    var t0 = Date.now();
-    request(url).post('/devices/' + ECHO_DEVICE_CLIENT_ID + '/invoke-action')
+    const t0 = Date.now();
+    request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
     .set('X-CH-Key', 'aabbcc')
     .send({serviceID: 'urn:example-com:serviceID:errTestService', actionName: 'testErrorInfo', input: {foo: 'test'}})
-    .end(function(err, res) {
+    .end((err, res) => {
       if (err) return cb(err);
       return cb(null, {ms: Date.now() - t0, code: res.body != null ? res.body.code : null});
     });
   }
 
-  it('a channel established before restart, invalidated fast (not a ~30s hang) during it, and working again after', function(done) {
+  it('a channel established before restart, invalidated fast (not a ~30s hang) during it, and working again after', (done) => {
     // establish the channel -- steady state is DEVICE_INVOKE_FAIL (the
     // target action's own intentional fault, see header comment), which
     // also confirms the call actually reached the device successfully.
-    invoke(function(err, first) {
+    invoke((err, first) => {
       if (err) return done(err);
       if (first.code !== 'DEVICE_INVOKE_FAIL') {
-        return done(new Error('direct-peer-channels 02 fail: expected DEVICE_INVOKE_FAIL establishing the channel, got: ' + first.code));
+        return done(new Error(`direct-peer-channels 02 fail: expected DEVICE_INVOKE_FAIL establishing the channel, got: ${first.code}`));
       }
 
       // fire the restart without waiting for it, then race several calls
@@ -51,19 +51,19 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
       request(url).post('/restart-module')
       .set('X-CH-Key', 'aabbcc') // /restart-module is now admin-gated (lib/routes/admin-only.js) -- shared with test8.js's server, same debugKey
       .send({path: './pre-installed-packages/echo-device-module', name: 'echo-device-module', version: '1.3.0'})
-      .end(function() {}); // response timing isn't needed -- the race calls below are what matters
+      .end(() => {}); // response timing isn't needed -- the race calls below are what matters
 
-      var raceResults = [];
-      var racesRemaining = 5;
-      var raceInterval = setInterval(function() {
-        invoke(function(err, result) {
+      const raceResults = [];
+      let racesRemaining = 5;
+      const raceInterval = setInterval(() => {
+        invoke((err, result) => {
           if (err) { raceResults.push({error: err.message}); } else { raceResults.push(result); }
         });
         racesRemaining--;
         if (racesRemaining === 0) {
           clearInterval(raceInterval);
           // give the races a moment to all resolve before inspecting them
-          setTimeout(function() { checkRaces(); }, 500);
+          setTimeout(() => { checkRaces(); }, 500);
         }
       }, 200);
 
@@ -74,11 +74,11 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
         // approaching that would mean a stale port was hanging instead of
         // failing fast. 5000ms is a generous margin over what was observed
         // manually (single-digit to low-double-digit ms).
-        for (var i = 0; i < raceResults.length; i++) {
-          var r = raceResults[i];
-          if (r.ms == null) return done(new Error('direct-peer-channels 02 fail: race call ' + i + ' errored: ' + JSON.stringify(r)));
+        for (let i = 0; i < raceResults.length; i++) {
+          const r = raceResults[i];
+          if (r.ms == null) return done(new Error(`direct-peer-channels 02 fail: race call ${i} errored: ${JSON.stringify(r)}`));
           if (r.ms > 5000) {
-            return done(new Error('direct-peer-channels 02 fail: race call ' + i + ' took ' + r.ms + 'ms -- looks like it hung waiting for a stale port instead of being invalidated (got code: ' + r.code + ')'));
+            return done(new Error(`direct-peer-channels 02 fail: race call ${i} took ${r.ms}ms -- looks like it hung waiting for a stale port instead of being invalidated (got code: ${r.code})`));
           }
         }
 
@@ -90,11 +90,11 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
         // restart hadn't actually started affecting this channel yet by
         // the time the races ran, and the test wouldn't have exercised D4
         // at all.
-        var sawChannelDisruption = raceResults.some(function(r) {
+        const sawChannelDisruption = raceResults.some((r) => {
           return r.code === 'PEER_GONE' || r.code === 'DEVICE_NOT_FOUND';
         });
         if (sawChannelDisruption !== true) {
-          return done(new Error('direct-peer-channels 02 fail: no race call observed PEER_GONE or DEVICE_NOT_FOUND -- test did not exercise the restart window: ' + JSON.stringify(raceResults)));
+          return done(new Error(`direct-peer-channels 02 fail: no race call observed PEER_GONE or DEVICE_NOT_FOUND -- test did not exercise the restart window: ${JSON.stringify(raceResults)}`));
         }
 
         // Finally, wait for the new worker instance to be fully back
@@ -105,19 +105,19 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
         // ~5s (sandbox.js's 'discover-device' handling), so the total
         // time before the new instance is actually queryable varies and
         // can comfortably exceed 10s under load.
-        var finalAttemptsLeft = 20; // ~20s budget at 1s/attempt
+        let finalAttemptsLeft = 20; // ~20s budget at 1s/attempt
         function pollFinal() {
-          invoke(function(err, final) {
+          invoke((err, final) => {
             if (err) return done(err);
             if (final.code === 'DEVICE_INVOKE_FAIL') return done();
             finalAttemptsLeft--;
             if (finalAttemptsLeft <= 0) {
-              return done(new Error('direct-peer-channels 02 fail: expected DEVICE_INVOKE_FAIL after restart settled (channel re-established against new instance), still getting: ' + final.code));
+              return done(new Error(`direct-peer-channels 02 fail: expected DEVICE_INVOKE_FAIL after restart settled (channel re-established against new instance), still getting: ${final.code}`));
             }
             return setTimeout(pollFinal, 1000);
           });
         }
-        setTimeout(function() {
+        setTimeout(() => {
           pollFinal();
         }, 3000);
       }
