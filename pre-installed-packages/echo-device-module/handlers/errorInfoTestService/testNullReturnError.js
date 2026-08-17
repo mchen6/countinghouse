@@ -1,3 +1,3 @@
-module.exports = (input, ctx, callback) => {
-  return callback(null, null);
-}
+// Returns a deliberately wrong output so the framework's own output
+// validation is what rejects the call, not the handler.
+module.exports = async (input, ctx) => (null);

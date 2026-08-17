@@ -74,25 +74,21 @@ narrowing on purpose: handlers used to be able to reach `setAction`,
 `deviceControl` and the rest of the framework's own surface. They no longer
 can.
 
-## Handler styles
+## Failing a call
 
-Return a promise, or take a callback. Which one you are using is decided by
-what the handler returns, so both work in the same module:
+Throw a `DeviceError`:
 
 ```js
-module.exports = async (input, ctx) => ({output: {...}});          // preferred
-
-module.exports = (input, ctx, callback) =>                          // deprecated
-  callback(null, {output: {...}});
+module.exports = async (input, ctx) => {
+  if (typeof input.text !== 'string') throw new DeviceError('ARGUMENTS_INVALID');
+  return {output: {text: input.text.toUpperCase()}};
+};
 ```
 
-**The callback form is deprecated and will be removed in 7.0.0.** It is fully
-supported until then.
-
-To fail a call, throw (or call back with) a `DeviceError` — a typed error keeps
-its own code either way. An untyped error thrown becomes
-`DEVICE_INVOKE_EXCEPTION` (you crashed); an untyped error passed to a callback
-becomes `DEVICE_INVOKE_FAIL` (you reported a failure). See
+A typed error (`DeviceError`/`CHError`) keeps its own code. An untyped error
+that you throw becomes `DEVICE_INVOKE_EXCEPTION` — the runtime reads a bare
+`throw` as "this handler crashed", which is why an anticipated failure should
+carry a `DeviceError`. See
 [`design-decisions.md`](design-decisions.md#handler-failure-is-classified-by-the-error-not-by-how-it-arrived).
 
 ## Dynamic discovery: when one module has many devices
@@ -274,3 +270,26 @@ report everything it finds, rather than stopping at the first one:
 ```sh
 node ./framework.js --verifyModule --loadModule ./path/to/my-module
 ```
+
+## The callback form (deprecated, removed in 7.0.0)
+
+Before 6.0.0 a handler took a Node-style callback. That form still works, and
+every 5.x handler keeps running unchanged:
+
+```js
+module.exports = (input, ctx, callback) => callback(null, {output: {...}});
+```
+
+**It is deprecated and will be removed in 7.0.0.** Write new handlers as
+`async (input, ctx)`; the migrator converts old ones for you
+(`npx countinghouse-migrate-module ./my-module`).
+
+Which form you are using is decided by what the handler *returns* — a thenable
+is awaited, anything else waits for the callback — so both can coexist in one
+module while you migrate.
+
+One difference worth knowing while both forms are in play: an *untyped* error
+resolves differently by route. `callback(new Error('boom'))` becomes
+`DEVICE_INVOKE_FAIL` ("I am reporting a failure"), while `throw new
+Error('boom')` becomes `DEVICE_INVOKE_EXCEPTION` ("I crashed"). A typed
+`DeviceError` keeps its own code either way, which is the reason to use one.

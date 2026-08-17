@@ -4,27 +4,43 @@
 const CALLEE_DEVICE_ID = 'fb9fbd3d-5860-538e-b0b7-9f5e34389577'; // perf-callee-demo
 const CALLEE_SERVICE   = 'urn:countinghouse-com:serviceID:perfCalleeService';
 
+// the identity the inner hop is AUTHORIZED as; billing goes to ctx.caller
 const AS_IDENTITY = 'perf-caller-demo-internal';
 
-module.exports = (input, ctx, callback) => {
+function clientFor(ctx) {
+  return new Promise((resolve, reject) => {
+    ctx.serviceClient({deviceID: CALLEE_DEVICE_ID, serviceID: CALLEE_SERVICE, as: AS_IDENTITY},
+      (err, client) => (err != null) ? reject(err) : resolve(client));
+  });
+}
+
+function invoke(client, input) {
+  return new Promise((resolve, reject) => {
+    client.invoke({actionName: 'echoPayload', input: input},
+      (err, data) => (err != null) ? reject(err) : resolve(data));
+  });
+}
+
+module.exports = async (input, ctx) => {
   if (input == null || typeof(input.payloadSizeBytes) !== 'number') {
-    return callback(new DeviceError('ARGUMENTS_INVALID'), null);
+    throw new DeviceError('ARGUMENTS_INVALID');
   }
 
   const data = 'x'.repeat(input.payloadSizeBytes);
 
-  ctx.serviceClient({deviceID: CALLEE_DEVICE_ID, serviceID: CALLEE_SERVICE, as: AS_IDENTITY},
-    (err, client) => {
-      if (err != null) {
-        return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', err.message), null);
-      }
+  let client;
+  try {
+    client = await clientFor(ctx);
+  } catch (e) {
+    throw new DeviceError('DEVICE_ACTION_CALL_FAIL', e.message);
+  }
 
-      const start = process.hrtime.bigint();
-      client.invoke({actionName: 'echoPayload', input: {data: data}}, (iErr) => {
-        if (iErr != null) return callback(new DeviceError('DEVICE_ACTION_CALL_FAIL', iErr.message), null);
+  const start = process.hrtime.bigint();
+  try {
+    await invoke(client, {data: data});
+  } catch (e) {
+    throw new DeviceError('DEVICE_ACTION_CALL_FAIL', e.message);
+  }
 
-        const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-        return callback(null, {output: {durationMs: durationMs}});
-      });
-    });
+  return {output: {durationMs: Number(process.hrtime.bigint() - start) / 1e6}};
 };

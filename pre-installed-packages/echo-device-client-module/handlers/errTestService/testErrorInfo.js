@@ -5,13 +5,16 @@ const ERR_SERVICE    = 'urn:countinghouse-com:serviceID:errorInfoTestService';
 
 const AS_IDENTITY = 'aabbcc';
 
-module.exports = (input, ctx, callback) => {
-  ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: ERR_SERVICE, as: AS_IDENTITY}, (err, client) => {
-    if (err != null) return callback(err, null);
-
-    client.invoke({actionName: 'testErrorInfo', input: input}, (iErr, data) => {
-      if (iErr) return callback(iErr, data);
-      return callback(null, {output: data});
-    });
+module.exports = async (input, ctx) => {
+  const client = await new Promise((resolve, reject) => {
+    ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: ERR_SERVICE, as: AS_IDENTITY},
+      (err, c) => (err != null) ? reject(err) : resolve(c));
   });
+
+  const data = await new Promise((resolve, reject) => {
+    client.invoke({actionName: 'testErrorInfo', input: input},
+      (err, d) => (err != null) ? reject(err) : resolve(d));
+  });
+
+  return {output: data};
 };

@@ -1,6 +1,9 @@
-module.exports = (input, ctx, callback) => {
+// Echoes its payload back. The callee half of perf/'s cross-worker
+// measurements -- kept as small as possible so the benchmark measures
+// transport rather than this handler.
+module.exports = async (input, ctx) => {
   if (input == null || typeof(input.data) !== 'string') {
-    return callback(new DeviceError('ARGUMENTS_INVALID'), null);
+    throw new DeviceError('ARGUMENTS_INVALID');
   }
-  return callback(null, {output: {data: input.data}});
-}
+  return {output: {data: input.data}};
+};

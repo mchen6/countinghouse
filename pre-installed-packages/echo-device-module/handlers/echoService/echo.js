@@ -1,5 +1,2 @@
-module.exports = (input, ctx, callback) => {
-  return callback(null, {
-    output: input
-  });
-}
+// The 6.0.0 handler shape: take the validated input, return {output}.
+module.exports = async (input, ctx) => ({output: input});

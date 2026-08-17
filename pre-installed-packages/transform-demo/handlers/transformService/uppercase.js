@@ -1,8 +1,8 @@
-module.exports = (input, ctx, callback) => {
+// Throw a DeviceError to fail a call -- a typed error keeps its own code
+// whether it is thrown or passed to a callback.
+module.exports = async (input, ctx) => {
   if (input == null || typeof(input.text) !== 'string') {
-    return callback(new DeviceError('ARGUMENTS_INVALID'), null);
+    throw new DeviceError('ARGUMENTS_INVALID');
   }
-  return callback(null, {
-    output: {text: input.text.toUpperCase()}
-  });
-}
+  return {output: {text: input.text.toUpperCase()}};
+};
