@@ -61,39 +61,41 @@ version of this section claimed "1.3–7×" and "match or beat throughput on
 
 | Payload | Concurrency | Main-thread-routed p50 / p99 | Direct peer channel p50 / p99 | Throughput (main-thread / direct) |
 |---|---|---|---|---|
-| 1KB | 1 | 1.04ms / 7.80ms | 0.74ms / 3.95ms | 148 / 162 req/s |
-| 1KB | 16 | 7.07ms / 20.89ms | 1.61ms / 6.62ms | 352 / 300 req/s |
-| 1KB | 64 | 13.59ms / 38.70ms | 1.62ms / 9.42ms | 386 / 276 req/s |
-| 100KB | 1 | 1.14ms / 8.28ms | 0.98ms / 9.06ms | 185 / 175 req/s |
-| 100KB | 16 | 9.76ms / 23.41ms | 2.91ms / 10.27ms | 199 / 391 req/s |
-| 100KB | 64 | 18.97ms / 55.82ms | 2.45ms / 14.13ms | 289 / 387 req/s |
-| 1MB | 1 | 20.42ms / 53.81ms | 13.16ms / 44.56ms | 37 / 54 req/s |
-| 1MB | 16 | 185.80ms / 261.98ms | 122.59ms / 185.65ms | 47 / 64 req/s |
-| 1MB | 64 | 412.44ms / 521.17ms | 335.82ms / 726.45ms | 52 / 76 req/s |
+| 1KB | 1 | 3.10ms / 9.00ms | 3.02ms / 9.68ms | 115 / 121 req/s |
+| 1KB | 16 | 26.11ms / 70.57ms | 18.88ms / 43.42ms | 227 / 237 req/s |
+| 1KB | 64 | 34.97ms / 65.78ms | 26.33ms / 74.52ms | 253 / 265 req/s |
+| 100KB | 1 | 3.10ms / 10.14ms | 2.95ms / 10.21ms | 120 / 128 req/s |
+| 100KB | 16 | 19.87ms / 36.28ms | 15.76ms / 30.80ms | 255 / 325 req/s |
+| 100KB | 64 | 51.31ms / 136.91ms | 81.79ms / 117.35ms | 247 / 357 req/s |
+| 1MB | 1 | 18.87ms / 44.12ms | 12.72ms / 41.77ms | 40 / 53 req/s |
+| 1MB | 16 | 180.78ms / 292.23ms | 122.46ms / 181.79ms | 53 / 76 req/s |
+| 1MB | 64 | 517.15ms / 732.65ms | 397.51ms / 762.46ms | 53 / 75 req/s |
 
-**p50**: direct peer channels are faster than main-thread-routed in 9 of 9
-cells, ranging from 1.16× (at 100KB/c=1) to 8.38× (at 1KB/c=64).
+**p50**: direct peer channels are faster than main-thread-routed in 8 of 9
+cells, ranging from 0.63× (at 100KB/c=64) to 1.48× (at 1MB/c=1).
 
-**Throughput**: direct peer channels win on 6 of 9 cells (1024/c=1,
-102400/c=16, 102400/c=64, 1048576/c=1, 1048576/c=16, 1048576/c=64);
-main-thread-routed wins on the remaining 3 (1024/c=16, 1024/c=64,
-102400/c=1).
+**Throughput**: direct peer channels win on 9 of 9 cells (1024/c=1,
+1024/c=16, 1024/c=64, 102400/c=1, 102400/c=16, 102400/c=64, 1048576/c=1,
+1048576/c=16, 1048576/c=64).
 
-**p99**: direct peer channels are lower in 7 of 9 cells; higher (worse) in
-2: 100KB/c=1 (8.28ms main vs. 9.06ms direct), 1MB/c=64 (521.17ms main vs.
-726.45ms direct).
+**p99**: direct peer channels are lower in 5 of 9 cells; higher (worse) in
+4: 1KB/c=1 (9.00ms main vs. 9.68ms direct), 1KB/c=64 (65.78ms main vs.
+74.52ms direct), 100KB/c=1 (10.14ms main vs. 10.21ms direct), 1MB/c=64
+(732.65ms main vs. 762.46ms direct).
 
 These numbers already include the backpressure fix described below — see
-that section for what changed and why. Absolute numbers at a given
-payload/concurrency cell vary noticeably run-to-run under sustained load —
-a different run of this exact script, also post-fix, measured 417ms
-(direct) vs. 608ms (main-thread-routed) at 1MB/c=64, both different from
-the 336ms/412ms shown in the table above. Read the *relative* comparison
-within a single run as the signal (direct has never lost the 1MB/c=64
-cell's p50 across any post-fix run so far), not any individual absolute
-figure. Re-run `perf/direct-peer-channels-perf.js` yourself — it will
-print its own fresh summary — before relying on precise numbers for
-capacity planning.
+that section for what changed and why.
+
+**Run-to-run variance is large in the mid-concurrency cells, and it is worth
+knowing which rows to trust.** Running this script three times against
+*identical* code on the 6.0.0 reference machine (2 cores, otherwise idle) gave
+a main-thread p50 spread of 3–6% at c=1 and at 1MB/c=64, but 33% at 1KB/c=64,
+43% at 100KB/c=16 and 175% at 100KB/c=64. So a single run cannot resolve a 10%
+difference in those cells, and neither can a comparison of two single runs.
+Read the *relative* comparison within one run as the signal, and treat any
+absolute mid-concurrency figure as indicative only. Re-run
+`perf/direct-peer-channels-perf.js` yourself — it prints its own fresh
+summary — before relying on precise numbers for capacity planning.
 
 ## Backpressure
 
@@ -169,14 +171,14 @@ smaller ratio).
 
 | Payload | `JSON.stringify` p50 | Structured clone p50 | Transfer list p50 |
 |---|---|---|---|
-| 1KB | 0.27ms | **0.22ms** | 0.27ms |
-| 100KB | 0.95ms | **0.36ms** | 1.61ms |
-| 1MB | 23.65ms | **9.02ms** | 27.09ms |
+| 1KB | 0.23ms | **0.20ms** | 0.27ms |
+| 100KB | 0.94ms | **0.35ms** | 1.17ms |
+| 1MB | 20.84ms | **7.53ms** | 23.52ms |
 
 Fastest strategy per payload size: 1KB=structuredClone, 100KB=structuredClone,
 1MB=structuredClone. Structured clone wins at every size tested.
-Structured clone vs. `JSON.stringify` ratio ranges from 1.22× (at 1KB) to
-2.62× (at 1MB).
+Structured clone vs. `JSON.stringify` ratio ranges from 1.17× (at 1KB) to
+2.77× (at 1MB).
 
 This is the opposite conclusion from the one `lib/worker-message.js`'s
 pre-existing comment cites — a 2016 blog post that measured
@@ -233,21 +235,21 @@ section is hand-computed.
 
 | Payload | Hops | Direct peer channel<br>p50 / p99 | MCP stdio subprocess<br>p50 / p99 | localhost HTTP<br>p50 / p99 | Per-hop p50<br>(peer / stdio / http) | Hops/s<br>(peer / stdio / http) | CPU<br>(peer / stdio / http) | Peak RSS<br>(peer / stdio / http) | n |
 |---|---|---|---|---|---|---|---|---|---|
-| 1KB | 1 | 0.228ms / 1.462ms | 0.366ms / 2.019ms | 0.890ms / 5.498ms | 0.228ms / 0.366ms / 0.890ms | 3296 / 2344 / 764 | 0.15s / 0.21s / 0.61s | 60MB / 89MB / 103MB | 500 |
-| 1KB | 10 | 2.527ms / 6.564ms | 3.132ms / 9.652ms | 6.431ms / 17.166ms | 0.253ms / 0.313ms / 0.643ms | 3562 / 2835 / 1384 | 1.07s / 1.38s / 3.04s | 73MB / 101MB / 110MB | 400 |
-| 1KB | 100 | 26.545ms / 46.832ms | 26.956ms / 57.129ms | 63.598ms / 88.287ms | 0.265ms / 0.270ms / 0.636ms | 3658 / 3363 / 1533 | 1.06s / 1.18s / 2.58s | 76MB / 105MB / 109MB | 40 |
-| 64KB | 1 | 0.280ms / 2.556ms | 1.240ms / 4.067ms | 2.159ms / 5.742ms | 0.280ms / 1.240ms / 2.159ms | 2418 / 686 / 421 | 0.19s / 0.72s / 1.19s | 75MB / 106MB / 114MB | 500 |
-| 64KB | 10 | 3.875ms / 15.988ms | 15.395ms / 53.820ms | 19.959ms / 39.169ms | 0.388ms / 1.539ms / 1.996ms | 2277 / 557 / 475 | 0.37s / 1.45s / 2.14s | 80MB / 112MB / 120MB | 100 |
-| 64KB | 100 | 37.001ms / 66.654ms | 136.075ms / 169.094ms | 191.558ms / 250.722ms | 0.370ms / 1.361ms / 1.916ms | 2499 / 733 / 541 | 0.74s / 2.66s / 3.71s | 82MB / 116MB / 129MB | 20 |
-| 1MB | 1 | 8.934ms / 16.498ms | 88.839ms / 231.273ms | 39.398ms / 69.441ms | 8.934ms / 88.839ms / 39.398ms | 108 / 11 / 24 | 1.88s / 17.49s / 7.98s | 89MB / 191MB / 195MB | 200 |
-| 1MB | 10 | 97.178ms / 116.457ms | 883.946ms / 1245.203ms | 402.654ms / 569.131ms | 9.718ms / 88.395ms / 40.265ms | 103 / 11 / 24 | 1.89s / 17.02s / 7.82s | 106MB / 181MB / 195MB | 20 |
-| 1MB | 100 | 970.954ms / 1122.555ms | 8932.021ms / 9848.791ms | 3592.677ms / 4166.861ms | 9.710ms / 89.320ms / 35.927ms | 102 / 11 / 28 | 19.55s / 169.14s / 71.73s | 105MB / 194MB / 204MB | 20 |
+| 1KB | 1 | 0.325ms / 1.509ms | 0.334ms / 1.354ms | 0.770ms / 2.882ms | 0.325ms / 0.334ms / 0.770ms | 2788 / 2641 / 1079 | 0.16s / 0.20s / 0.55s | 59MB / 87MB / 102MB | 500 |
+| 1KB | 10 | 2.510ms / 5.918ms | 2.977ms / 10.627ms | 6.550ms / 15.394ms | 0.251ms / 0.298ms / 0.655ms | 3501 / 2925 / 1409 | 1.10s / 1.39s / 3.02s | 71MB / 101MB / 108MB | 400 |
+| 1KB | 100 | 30.272ms / 45.276ms | 33.361ms / 59.975ms | 61.362ms / 93.938ms | 0.303ms / 0.334ms / 0.614ms | 3355 / 2901 / 1576 | 1.10s / 1.32s / 2.58s | 75MB / 103MB / 107MB | 40 |
+| 64KB | 1 | 0.272ms / 1.455ms | 1.208ms / 3.578ms | 1.709ms / 5.017ms | 0.272ms / 1.208ms / 1.709ms | 2778 / 714 / 512 | 0.18s / 0.74s / 1.08s | 75MB / 108MB / 116MB | 500 |
+| 64KB | 10 | 3.606ms / 11.040ms | 12.655ms / 26.723ms | 18.544ms / 38.818ms | 0.361ms / 1.266ms / 1.854ms | 2584 / 733 / 523 | 0.36s / 1.38s / 2.09s | 80MB / 114MB / 119MB | 100 |
+| 64KB | 100 | 38.356ms / 53.166ms | 117.407ms / 150.686ms | 177.703ms / 224.453ms | 0.384ms / 1.174ms / 1.777ms | 2667 / 843 / 563 | 0.72s / 2.52s / 3.81s | 81MB / 115MB / 127MB | 20 |
+| 1MB | 1 | 8.822ms / 18.393ms | 82.503ms / 105.767ms | 37.794ms / 58.027ms | 8.822ms / 82.503ms / 37.794ms | 110 / 12 / 26 | 1.95s / 16.70s / 7.81s | 88MB / 175MB / 196MB | 200 |
+| 1MB | 10 | 87.889ms / 109.261ms | 826.454ms / 879.735ms | 342.551ms / 404.943ms | 8.789ms / 82.645ms / 34.255ms | 114 / 12 / 29 | 1.88s / 16.78s / 7.09s | 124MB / 178MB / 198MB | 20 |
+| 1MB | 100 | 900.709ms / 988.999ms | 8298.396ms / 8488.732ms | 3358.586ms / 3541.209ms | 9.007ms / 82.984ms / 33.586ms | 110 / 12 / 30 | 19.47s / 165.62s / 68.46s | 120MB / 197MB / 202MB | 20 |
 
-**vs. MCP stdio subprocess**: the direct peer channel has a lower p50 in 9 of 9 cells, from 1.02× (at 1KB/100hop) to 9.94× (at 1MB/1hop).
+**vs. MCP stdio subprocess**: the direct peer channel has a lower p50 in 9 of 9 cells, from 1.03× (at 1KB/1hop) to 9.40× (at 1MB/10hop).
 
-**vs. localhost HTTP**: lower p50 in 9 of 9 cells, from 2.40× (at 1KB/100hop) to 7.72× (at 64KB/1hop).
+**vs. localhost HTTP**: lower p50 in 9 of 9 cells, from 2.03× (at 1KB/100hop) to 6.29× (at 64KB/1hop).
 
-**Scale of the difference**: the largest per-hop saving measured here is 30.548ms (best case for the direct channel, across every cell). A tool whose own execution takes more than ~305ms per call would see even that saving as under 10% of the hop, and proportionally less the slower it gets. This benchmark measures transport, not tools.
+**Scale of the difference**: the largest per-hop saving measured here is 28.973ms (best case for the direct channel, across every cell). A tool whose own execution takes more than ~290ms per call would see even that saving as under 10% of the hop, and proportionally less the slower it gets. This benchmark measures transport, not tools.
 
 ### What this does and does not justify
 
