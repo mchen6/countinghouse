@@ -93,7 +93,18 @@ a main-thread p50 spread of 3–6% at c=1 and at 1MB/c=64, but 33% at 1KB/c=64,
 43% at 100KB/c=16 and 175% at 100KB/c=64. So a single run cannot resolve a 10%
 difference in those cells, and neither can a comparison of two single runs.
 Read the *relative* comparison within one run as the signal, and treat any
-absolute mid-concurrency figure as indicative only. Re-run
+absolute mid-concurrency figure as indicative only.
+
+A worked example from 6.0.0's own release measurements, because it shows the
+effect at a cell you would otherwise trust: at 100KB/c=1 the main-thread p50
+reads 3.10ms in the table above and 3.40ms on a re-run of the *same commit* —
++10%, from nothing but background load (the reference machine has 2 cores; the
+re-run had a CouchDB, a MongoDB and an Appsmith container running alongside).
+That cell is one of the *stable* ones: three runs of identical code on the idle
+machine spread only 5%. So a 10% swing there is load, not code — and a
+before/after comparison of two single runs, one taken on a busy machine, can
+manufacture a regression that does not exist. It did during this release, until
+the same-code control run was added. Re-run
 `perf/direct-peer-channels-perf.js` yourself — it prints its own fresh
 summary — before relying on precise numbers for capacity planning.
 

@@ -431,3 +431,63 @@ Tests: `test/module-loading/08-error-semantics.js` asserts every cell of the
 table above, including that the two typed-error styles produce byte-identical
 responses, and that a plain function returning a promise now completes instead
 of hanging.
+
+## CHDevice stays prototype-based: class methods are not enumerable
+
+6.0.0 converted the whole repo to ES6 — `const`/`let`, arrow callbacks,
+template literals — with one part of that pass deliberately left undone.
+`Foo.prototype.bar = function` was *not* converted to `class` syntax anywhere,
+and `lib/` still carries 213 prototype assignments across 25 files.
+
+The blocker is `CHUtil.inherits`, the helper every device module calls to
+inherit from `CHDevice`:
+
+```js
+inherits: function(constructor, superConstructor) {
+  util.inherits(constructor, superConstructor);
+
+  // prevent child override
+  if (superConstructor === CHDevice) {
+    for (var i in superConstructor.prototype) {
+      constructor.prototype[i] = superConstructor.prototype[i];
+    }
+  }
+}
+```
+
+That `for...in` copies `CHDevice`'s prototype members back over anything the
+module defined, so a module cannot replace a framework method. Class methods
+are non-enumerable, so the loop would stop seeing them. Measured rather than
+reasoned about:
+
+```
+prototype style, for..in over the prototype:  20 keys  (foo, bar + 18 inherited EventEmitter members)
+class style,     for..in over the prototype:  18 keys  (only the inherited members; foo and bar are gone)
+```
+
+The failure mode is what makes this a blocker rather than a chore. The loop
+would not throw and would not iterate zero times — it would keep finding the 18
+EventEmitter members and silently stop covering exactly the 15 methods that
+matter: `setAction`, `initServices`, `getDeviceSpec`, `connect`, `disconnect`,
+`getHWAddress`, `deviceControl`, `invokeDeviceCallback`, `updateDeviceSpec`,
+`getDeviceRootUrl`, `getDeviceRootSchema`, `destroyCdifDevice`,
+`resolveSchemaFromPath`, `setOAuthAccessToken`, `oauthTokenValidate`. A module
+could then override `setAction` or `deviceControl`, which it cannot today, and
+no test would notice. All five bundled modules go through this helper.
+
+Rewriting the guard is not a one-line substitution either.
+`Object.getOwnPropertyNames(CHDevice.prototype)` is the obvious replacement,
+but it is not equivalent: the current `for...in` also walks the inherited chain
+and therefore copies EventEmitter's own methods onto the child, and dropping
+that is a behavioural change in its own right.
+
+So the conversion is deferred, not abandoned, and deliberately so: 6.0.0's
+step B replaces this inheritance path for static modules entirely — a handler
+map never calls `CHUtil.inherits` — so the question of what the guard should
+become is better answered once the dynamic path is the only caller left.
+Converting it first would have meant rewriting a mechanism that was about to
+change shape, in the most fragile files in the tree.
+
+Two other candidate hazards were checked and cleared: `.super_` is referenced
+nowhere, and every `for (const x in this.…)` walks a data property
+(`this.modules`, `this.deviceMap`, `this.pending`), not a prototype.
