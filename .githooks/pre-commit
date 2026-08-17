@@ -1,26 +1,66 @@
 #!/bin/sh
-# Runs the golden tools/list sample before every commit.
+# Two checks before every commit, cheapest first:
 #
-# The invariant it guards: no commit may move the MCP surface. That is the
-# safety belt the 6.0.0 refactor leaned on -- api.json is a description format
-# and the module shape is an authoring concern, so neither is allowed to change
-# what a client sees. A regression here is the one thing that cannot be
-# discovered late.
-#
-# ~9s: it spawns a real server, loads every module in pre-installed-packages/,
-# takes tools/list and compares it byte for byte against
-# test/mcp-contract/tools-list.golden.json.
+#   1. npm run lint    (~3s)  -- the five rules the 6.0.0 ES6 conversion is
+#                                defined by. Added after lint sat broken on
+#                                master for two commits because it was only
+#                                ever run by hand, on a subdirectory.
+#   2. npm run golden  (~10s) -- the invariant the whole refactor leaned on:
+#                                no commit may move the MCP surface. api.json
+#                                is a description format and the module shape
+#                                is an authoring concern, so neither is
+#                                allowed to change what a client sees. It
+#                                spawns a real server, loads every module in
+#                                pre-installed-packages/, and compares
+#                                tools/list byte for byte against
+#                                test/mcp-contract/tools-list.golden.json.
 #
 # Enable once per clone (git does not clone hooks):
 #     git config core.hooksPath .githooks
 #
-# Requires Redis on 6379, same as the test suite. Skip a single commit with
-# `git commit --no-verify` when you are committing something that cannot
-# affect the tool surface (docs, CI) and Redis is not to hand -- but note that
-# the check is cheap precisely so it does not need skipping.
+# The golden check needs Redis on 6379, same as the test suite. CI enforces
+# both of these too, so skipping locally only defers the failure:
+#     SKIP_LINT=1        skip the lint check
+#     SKIP_GOLDEN=1      skip the golden check
+#     git commit --no-verify   skip the hook entirely
 #
-# Regenerate the sample only when a tool surface change is intended:
+# Regenerate the golden sample only when a tool surface change is intended:
 #     node test/mcp-contract/capture-tools-list.js
+
+LOG=/tmp/countinghouse-precommit.log
+
+# Checked first, and explicitly, because the failure otherwise is unreadable:
+# on Node < 18 eslint 9 dies inside its own config loader with
+# "ConfigError: Key \"rules\": Key \"no-var\": structuredClone is not defined",
+# printed underneath "COMMIT BLOCKED: lint failed" -- which points at the
+# rules, not at the interpreter. package.json's engines field already says
+# >=20; this makes the hook say it too, at the moment it matters.
+NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  echo >&2
+  echo "COMMIT BLOCKED: node $(node -v 2>/dev/null || echo '(not found)') is too old." >&2
+  echo "This repo needs Node >= 20 (see package.json engines). eslint and the" >&2
+  echo "test suite both fail in confusing ways on older runtimes." >&2
+  echo >&2
+  echo "Put a Node 20+ on PATH and commit again, or skip with --no-verify." >&2
+  exit 1
+fi
+
+if [ -n "$SKIP_LINT" ]; then
+  echo "pre-commit: SKIP_LINT set, skipping lint"
+else
+  echo "pre-commit: linting..."
+  if ! npm run --silent lint > "$LOG" 2>&1; then
+    echo
+    echo "COMMIT BLOCKED: lint failed." >&2
+    echo >&2
+    tail -40 "$LOG" >&2
+    echo >&2
+    echo "Most of these are auto-fixable:  npx eslint . --fix" >&2
+    exit 1
+  fi
+  echo "pre-commit: lint clean"
+fi
 
 if [ -n "$SKIP_GOLDEN" ]; then
   echo "pre-commit: SKIP_GOLDEN set, skipping the golden tools/list check"
@@ -29,13 +69,13 @@ fi
 
 echo "pre-commit: checking the golden tools/list sample..."
 
-if ! npm run --silent golden > /tmp/countinghouse-golden-precommit.log 2>&1; then
+if ! npm run --silent golden > "$LOG" 2>&1; then
   echo
   echo "COMMIT BLOCKED: the golden tools/list sample does not match." >&2
   echo >&2
-  tail -40 /tmp/countinghouse-golden-precommit.log >&2
+  tail -40 "$LOG" >&2
   echo >&2
-  echo "Full output: /tmp/countinghouse-golden-precommit.log" >&2
+  echo "Full output: $LOG" >&2
   echo >&2
   echo "If this change is *meant* to move the tool surface, regenerate the" >&2
   echo "sample and say so in the commit message:" >&2
