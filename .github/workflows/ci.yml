@@ -77,7 +77,17 @@ jobs:
           FAILED=""
           for SHA in $COMMITS; do
             git checkout -q "$SHA"
-            if npm run --silent golden > /tmp/golden-$SHA.log 2>&1; then
+
+            # Invoke mocha directly rather than `npm run golden`: the script
+            # only exists from the commit that added it, so using it would
+            # report every older commit as a failure with an empty log. A
+            # check that cries wolf on history is worse than no check.
+            if [ ! -d test/mcp-contract ]; then
+              echo "  skip    $(git log -1 --format='%h %s' "$SHA")  (predates the golden sample)"
+              continue
+            fi
+
+            if npx mocha ./test/mcp-contract/*.js > /tmp/golden-$SHA.log 2>&1; then
               echo "  ok      $(git log -1 --format='%h %s' "$SHA")"
             else
               echo "  MOVED   $(git log -1 --format='%h %s' "$SHA")"

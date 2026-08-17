@@ -20,7 +20,14 @@ module.exports = [
       'spec/**',
       'adaptive-test/**',
       'example/**',
-      'docker/**'
+      'docker/**',
+
+      // Deliberately ES5, and must stay that way: it is the input to
+      // test/module-loading/09-migrator.js, which exists because the migrator
+      // originally only understood the ES6 spelling and so refused every real
+      // 5.x module. Linting this fixture into ES6 would delete the thing it
+      // is testing.
+      'test/fixtures/legacy-5x-module/**'
     ]
   },
   {
