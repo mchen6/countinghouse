@@ -1,0 +1,47 @@
+#!/bin/sh
+# Runs the golden tools/list sample before every commit.
+#
+# The invariant it guards: no commit may move the MCP surface. That is the
+# safety belt the 6.0.0 refactor leaned on -- api.json is a description format
+# and the module shape is an authoring concern, so neither is allowed to change
+# what a client sees. A regression here is the one thing that cannot be
+# discovered late.
+#
+# ~9s: it spawns a real server, loads every module in pre-installed-packages/,
+# takes tools/list and compares it byte for byte against
+# test/mcp-contract/tools-list.golden.json.
+#
+# Enable once per clone (git does not clone hooks):
+#     git config core.hooksPath .githooks
+#
+# Requires Redis on 6379, same as the test suite. Skip a single commit with
+# `git commit --no-verify` when you are committing something that cannot
+# affect the tool surface (docs, CI) and Redis is not to hand -- but note that
+# the check is cheap precisely so it does not need skipping.
+#
+# Regenerate the sample only when a tool surface change is intended:
+#     node test/mcp-contract/capture-tools-list.js
+
+if [ -n "$SKIP_GOLDEN" ]; then
+  echo "pre-commit: SKIP_GOLDEN set, skipping the golden tools/list check"
+  exit 0
+fi
+
+echo "pre-commit: checking the golden tools/list sample..."
+
+if ! npm run --silent golden > /tmp/countinghouse-golden-precommit.log 2>&1; then
+  echo
+  echo "COMMIT BLOCKED: the golden tools/list sample does not match." >&2
+  echo >&2
+  tail -40 /tmp/countinghouse-golden-precommit.log >&2
+  echo >&2
+  echo "Full output: /tmp/countinghouse-golden-precommit.log" >&2
+  echo >&2
+  echo "If this change is *meant* to move the tool surface, regenerate the" >&2
+  echo "sample and say so in the commit message:" >&2
+  echo "    node test/mcp-contract/capture-tools-list.js" >&2
+  exit 1
+fi
+
+echo "pre-commit: tools/list is byte-identical to the golden sample"
+exit 0

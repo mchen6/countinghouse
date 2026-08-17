@@ -43,6 +43,11 @@ git clone https://github.com/mchen6/countinghouse.git
 cd countinghouse
 npm install
 
+# enable the repo's git hooks (git does not clone hooks). The pre-commit hook
+# runs the golden tools/list check -- ~10s -- so no commit can move the MCP
+# surface without saying so. CI enforces the same thing.
+git config core.hooksPath .githooks
+
 # from a clone the bundled modules are at the repo root, and framework.js is
 # run directly rather than through the installed bin
 node ./framework.js --workerThread --bindAddr 127.0.0.1 \

@@ -7,7 +7,93 @@ on:
     branches: [master]
 
 jobs:
+  # The one invariant that must never break: no commit may move the MCP
+  # surface. api.json is a description format and the module shape is an
+  # authoring concern, so neither is allowed to change what a client sees.
+  #
+  # Its own job, ahead of everything else, because it takes ~10s where the
+  # functional suite takes ~25min -- a moved tool surface should be the first
+  # thing a run reports, not something found 20 minutes in. `needs:` on the
+  # test job makes this a gate rather than a parallel opinion.
+  golden:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the per-commit walk below needs history
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Golden tools/list sample (tip)
+        run: npm run golden
+
+      # "every commit", not just the tip. A push can contain a commit that
+      # moved the surface and a later one that moved it back; the tip check
+      # cannot see that, and a bisect later would land in a broken window.
+      #
+      # Bounded deliberately: pushes larger than MAX are checked at the tip
+      # only, so an initial import or a long-lived branch merge does not turn
+      # one push into an hour of CI. node_modules is untracked, so it survives
+      # each checkout and is installed once.
+      - name: Golden tools/list sample (every commit in this push)
+        if: github.event_name == 'push'
+        env:
+          MAX: 25
+        run: |
+          BEFORE='${{ github.event.before }}'
+          case "$BEFORE" in
+            ''|0000000000000000000000000000000000000000)
+              echo "no usable base ref (new branch or force-push) -- tip already checked"
+              exit 0 ;;
+          esac
+
+          COMMITS=$(git rev-list --reverse "$BEFORE..${{ github.sha }}" || true)
+          [ -z "$COMMITS" ] && { echo "no commits to walk"; exit 0; }
+
+          N=$(echo "$COMMITS" | wc -l)
+          if [ "$N" -gt "$MAX" ]; then
+            echo "$N commits in this push, over the $MAX cap -- tip already checked, skipping the walk"
+            exit 0
+          fi
+
+          echo "walking $N commit(s)"
+          FAILED=""
+          for SHA in $COMMITS; do
+            git checkout -q "$SHA"
+            if npm run --silent golden > /tmp/golden-$SHA.log 2>&1; then
+              echo "  ok      $(git log -1 --format='%h %s' "$SHA")"
+            else
+              echo "  MOVED   $(git log -1 --format='%h %s' "$SHA")"
+              tail -25 /tmp/golden-$SHA.log
+              FAILED="$FAILED $SHA"
+            fi
+          done
+
+          git checkout -q '${{ github.sha }}'
+          if [ -n "$FAILED" ]; then
+            echo "the tool surface moved at:$FAILED"
+            exit 1
+          fi
+
   test:
+    needs: golden
     runs-on: ubuntu-latest
 
     strategy:

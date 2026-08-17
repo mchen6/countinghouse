@@ -24,6 +24,7 @@
   },
   "scripts": {
     "lint": "eslint .",
+    "golden": "mocha ./test/mcp-contract/*.js",
     "start": "./bin/countinghouse",
     "start-allow-discover": "NODE_PATH=./lib node ./framework.js --allowDiscover",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
