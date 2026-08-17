@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "legacy-5x-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a 5.x-shaped module, in ES5, for the migrator to convert",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:legacyService": {
+        "actionList": [
+          {
+            "name": "shout",
+            "description": "Uppercases text.",
+            "input": {
+              "schema": "/legacyService/shout/input"
+            },
+            "output": {
+              "schema": "/legacyService/shout/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

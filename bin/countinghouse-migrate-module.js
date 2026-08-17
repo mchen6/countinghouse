@@ -87,12 +87,21 @@ function readDeviceJs(modulePath) {
       'See docs/composite-tools.md.');
   }
 
-  // <ref> = CHUtil.loadFile(`${__dirname}/<file>`)[.<prop>]
+  // <ref> = CHUtil.loadFile(<path>)[.<prop>], in both spellings:
+  //   CHUtil.loadFile(`${__dirname}/x.js`)      (ES6)
+  //   CHUtil.loadFile(__dirname + '/x.js')      (ES5)
+  //
+  // Accepting both matters more than it looks. A real 5.x module in the wild
+  // is ES5 and uses the second form; only this repo's own modules had been
+  // modernised to the first before being migrated. Matching just the template
+  // literal made the migrator work on exactly the modules that no longer
+  // needed it -- caught by running the packed tarball against a module
+  // checked out from v5.0.1, which it refused.
   const loads = {};
-  const loadRe = /(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*CHUtil\.loadFile\(\s*`\$\{__dirname\}\/([^`]+)`\s*\)(?:\.([A-Za-z0-9_$]+))?/g;
+  const loadRe = /(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*CHUtil\.loadFile\(\s*(?:`\$\{__dirname\}\/([^`]+)`|__dirname\s*\+\s*['"]\/([^'"]+)['"])\s*\)(?:\.([A-Za-z0-9_$]+))?/g;
   let m;
   while ((m = loadRe.exec(src)) !== null) {
-    loads[m[1]] = {file: m[2], prop: m[3] || null};
+    loads[m[1]] = {file: m[2] || m[3], prop: m[4] || null};
   }
 
   // this.setAction('<urn>', '<action>', <ref>.bind(this))
@@ -208,13 +217,14 @@ function migrate(modulePath, dryRun) {
     let sourceFile = load.file;
     if (load.prop != null) {
       const intermediate = fs.readFileSync(path.join(modulePath, load.file), 'utf8');
-      const re = new RegExp(`(?:const|let|var)\\s+${load.prop}\\s*=\\s*CHUtil\\.loadFile\\(\\s*\`\\$\\{__dirname\\}\\/([^\`]+)\``);
+      // same two spellings as loadRe above
+      const re = new RegExp(`(?:const|let|var)\\s+${load.prop}\\s*=\\s*CHUtil\\.loadFile\\(\\s*(?:\`\\$\\{__dirname\\}\\/([^\`]+)\`|__dirname\\s*\\+\\s*['"]\\/([^'"]+)['"])`);
       const inner = stripComments(intermediate).match(re);
       if (inner == null) {
         fail(modulePath, `${load.file} does not resolve "${load.prop}" to a file`,
           'migrate this module by hand.');
       }
-      sourceFile = inner[1];
+      sourceFile = inner[1] || inner[2];
       removals.push(load.file);
     }
 
