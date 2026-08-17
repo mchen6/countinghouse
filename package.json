@@ -1,11 +1,12 @@
 {
   "name": "countinghouse",
-  "version": "5.0.1",
+  "version": "6.0.0",
   "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
   "bin": {
     "countinghouse": "./bin/countinghouse",
     "cth": "./bin/countinghouse",
-    "countinghouse-migrate-spec": "./bin/countinghouse-migrate-spec.js"
+    "countinghouse-migrate-spec": "./bin/countinghouse-migrate-spec.js",
+    "countinghouse-migrate-module": "./bin/countinghouse-migrate-module.js"
   },
   "main": "./framework.js",
   "files": [
