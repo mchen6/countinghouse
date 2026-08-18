@@ -1,5 +1,7 @@
 # We built MCP's tool architecture in 2015 — by accident
 
+*[countinghouse](https://github.com/mchen6/countinghouse) — a multi-tenant MCP runtime. Apache-2.0, [on npm](https://www.npmjs.com/package/countinghouse).*
+
 In 2015 I wrote a Node.js framework for a problem nobody framed this way back then: let a client that has never seen your service discover it, understand it, and call it — without integrating an SDK.
 
 In 2024, Anthropic shipped the Model Context Protocol. When I read the spec carefully, I had a strange afternoon: the tool architecture — a discovery endpoint returning machine-readable descriptions, a uniform invocation endpoint, every tool taking exactly one schema-defined JSON object in and returning one out, validated on the server — was, piece for piece, what I had been running in production for a decade.
