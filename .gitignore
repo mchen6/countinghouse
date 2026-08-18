@@ -11,8 +11,19 @@ device_store.db
 core
 output
 *.log*
-examples/
 build/
+
+# The two example directories swapped roles.
+#
+# `examples/` (plural) used to be ignored here, from when it was a scratch
+# directory. It now holds examples/repo-review/, the composite-tool demo the
+# README links to -- a flagship example git refuses to track is not one.
+#
+# `example/` (singular) is the pre-rebrand deployment scraps: nginx configs,
+# pm2 configs, an oauth-server sketch, per-language curl demos. Local material,
+# not part of what this project ships.
+example/
+
 nohup.out
 .c9revisions/
 .vscode/
