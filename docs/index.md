@@ -60,28 +60,35 @@ That's the next post, along with the benchmarks and the two bugs I hit building 
 
 ## Try it
 
-  ```bash
-  git clone https://github.com/mchen6/countinghouse.git
-  cd countinghouse && npm install
+Needs Node 20+ and a running Redis. Metering is not optional here — without a
+reachable Redis the server does not start at all, let alone bill anything.
 
-  node -e "var fs=require('fs'),c={};c['demo-key']={userName:'demo',devices:['*']};
-    c['repo-review-internal']={userName:'repo-review-internal',devices:['*']};
-    fs.writeFileSync('auth.json',JSON.stringify(c,null,2))"
+```bash
+git clone https://github.com/mchen6/countinghouse.git
+cd countinghouse && npm install
 
-  node ./framework.js --workerThread --bindAddr 127.0.0.1 --mcpToolCallCost 1 \
-    --loadModule ./examples/repo-review/repo-scan \
-    --loadModule ./examples/repo-review/secret-detect \
-    --loadModule ./examples/repo-review/dep-audit \
-    --loadModule ./examples/repo-review/repo-review
-  ```
+npm run demo:repo-review
+```
 
-  Then:
+Then point an MCP client at it:
 
-  ```bash
-  claude mcp add --transport http countinghouse http://127.0.0.1:9527/mcp \
-    --header "X-CH-Key: demo-key"
-  ```
+```bash
+claude mcp add --transport http countinghouse http://127.0.0.1:9527/mcp \
+  --header "X-CH-Key: demo-key"
+```
 
+The script loads all four modules and reads `examples/repo-review/auth.json`, a
+file committed on purpose. It grants `demo-key` the composite tool and nothing
+else: the three inner tools are not in that key's `tools/list`, and calling one
+of them directly is refused — which is exactly the encapsulation the composite
+exists to demonstrate, since the same call *through* `repo-review` works and
+bills `demo-key` for all three hops. That key is a demo credential, usable only
+against a server you started yourself on `127.0.0.1`; replace it, or set
+`COUNTINGHOUSE_API_KEY`, before this is reachable from anywhere else.
+
+Balances live in Redis and survive a restart, so only your first run bills
+`demo-key` from `0` down to `-3` — after that the meter keeps counting where it
+left off.
 
 Then point `examples/repo-review` at a repository you wouldn't paste into a chat window, and watch what does and doesn't come back.
 
