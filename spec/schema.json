@@ -27,8 +27,9 @@
           "format": "uri"
         },
         "modelDescription": {
+          "description": "Free text describing the device module. 4096 to match an action's `description`: both are read by an LLM rather than rendered in a device-listing UI, which is what the old 256-character cap was sized for, and a module whose scope needs a disclaimer (see examples/repo-review/secret-detect) cannot state it in 256. Widening a maxLength is backward compatible -- every spec that validated before still does.",
           "type": "string",
-          "maxLength": 256,
+          "maxLength": 4096,
           "minLength": 0
         },
         "rateLimit": {
