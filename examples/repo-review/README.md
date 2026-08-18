@@ -70,42 +70,42 @@ It scans this repository by default, so there is nothing to configure.
 
 ### Calling the tool yourself
 
-Grant the composing module's internal identity access to the three inner
-modules, then start the server:
+One command. The script loads all four modules and points
+`--authConfigPath` at [`auth.json`](auth.json) in this directory, so it never
+touches -- or needs -- an `auth.json` in the repository root:
 
 ```sh
-node -e "var fs=require('fs'), c=JSON.parse(fs.readFileSync('auth.json'));
-  c['repo-review-internal']={userName:'repo-review-internal', devices:[
-    '1359302a-e4fe-5c14-853b-f83638e8ca01',
-    '7d4e06e9-0742-556b-a7f2-a32aee36e2e7',
-    '01919ef1-dd71-5d42-99ce-98decb9a2408']};
-  fs.writeFileSync('auth.json', JSON.stringify(c, null, 2));"
+npm run demo:repo-review
 ```
 
-```sh
-node ./framework.js --workerThread --bindAddr 127.0.0.1 --mcpToolCallCost 1 \
-  --loadModule ./examples/repo-review/repo-scan \
-  --loadModule ./examples/repo-review/secret-detect \
-  --loadModule ./examples/repo-review/dep-audit \
-  --loadModule ./examples/repo-review/repo-review
-```
+That file grants `demo-key` the composite module only, and the composing
+module's internal identity (`repo-review-internal`) the three inner modules.
+Call it with the demo key:
 
 ```sh
 curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
-  -H "X-CH-Key: <your key>" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+  -H "Accept: application/json, text/event-stream" -H "X-CH-Key: demo-key" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
         "name":"repo_review_reviewservice_review","arguments":{}}}'
 ```
 
-`--mcpToolCallCost` defaults to `0`, so set it to something non-zero or the
-`bill` will be all zeroes. Those three device IDs are deterministic
+`demo-key` is a demo credential committed on purpose, usable only against a
+server you started yourself on `127.0.0.1`. Replace it with a real key --
+edit that file, or set `COUNTINGHOUSE_API_KEY`, which is honoured in addition
+to whatever the file contains -- before exposing this to anything.
+
+`--mcpToolCallCost` defaults to `0`; the script sets it to `1`, or the `bill`
+would be all zeroes. The four device IDs in `auth.json` are deterministic
 (`UUIDv5` of a fixed namespace and each module's `api.json` `friendlyName`), so
-they are the same on every machine.
+they are the same on every machine, which is what lets that file be committed
+at all. Balances live in Redis keyed by API key and survive a restart, so only
+your first run bills `demo-key` from `0` down to `-3`.
 
 As an MCP client, point Claude Code at it:
 
 ```sh
 claude mcp add --transport http countinghouse http://127.0.0.1:9527/mcp \
-  --header "X-CH-Key: <your key>"
+  --header "X-CH-Key: demo-key"
 ```
 
 then ask it to review the repository. A full recorded round trip, request and
