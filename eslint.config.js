@@ -36,7 +36,14 @@ module.exports = [
       'bin/**/*.js',
       'pre-installed-packages/**/*.js',
       'test/**/*.js',
-      'perf/**/*.js'
+      'perf/**/*.js',
+
+      // Added after section 2's original scope: examples/ did not exist then,
+      // and a directory the README points readers at as the worked example of
+      // how to write a module has to be held to the style it demonstrates.
+      // Note this is examples/ (the demo modules), not example/ (pre-rebrand
+      // deployment scraps), which stays ignored above.
+      'examples/**/*.js'
     ],
     languageOptions: {
       ecmaVersion: 2022,

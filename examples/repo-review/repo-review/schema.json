@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "reviewService": {
+    "review": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "title": "repository to review",
+            "description": "Directory to review. Defaults to the countinghouse repository this tool is hosted in, which is what makes the demo runnable with no arguments.",
+            "type": "string"
+          },
+          "include": {
+            "title": "include globs",
+            "description": "Passed through to repo-scan. Defaults to source and manifest files.",
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 64
+          },
+          "exclude": {
+            "title": "exclude globs",
+            "description": "Passed through to repo-scan. Defaults to node_modules, .git and build output.",
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 64
+          },
+          "maxBytes": {
+            "title": "byte budget for the read",
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxFiles": {
+            "title": "file budget for the read",
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxSecretFindings": {
+            "title": "cap on reported credential findings",
+            "description": "Defaults to 100. The output schema caps the array at 200 regardless.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "output": {
+        "type": "object",
+        "description": "The structural guarantee this demo is about lives here rather than in the handler: there is no property anywhere in this document capable of holding a source file. Every string is length-capped, every array is maxItems-capped, and additionalProperties is false at every level, so the response has a ceiling the runtime enforces on the way out -- independently of whether the handler behaves.",
+        "properties": {
+
+          "findings": {
+            "title": "the review report",
+            "type": "object",
+            "properties": {
+              "summary": {
+                "title": "one-paragraph plain-language result",
+                "type": "string",
+                "maxLength": 2000
+              },
+              "scanned": {
+                "title": "what was read, in aggregate only",
+                "type": "object",
+                "properties": {
+                  "root":             {"type": "string", "maxLength": 4096},
+                  "fileCount":        {"type": "integer"},
+                  "byteCount":        {"type": "integer"},
+                  "truncated":        {"type": "boolean"},
+                  "truncationReason": {"type": ["string", "null"], "maxLength": 200}
+                },
+                "required": ["root", "fileCount", "byteCount", "truncated", "truncationReason"],
+                "additionalProperties": false
+              },
+              "secrets": {
+                "title": "credential findings, always masked",
+                "type": "object",
+                "properties": {
+                  "findingCount": {"type": "integer"},
+                  "reported":     {"title": "how many findings are in items (may be fewer than findingCount)", "type": "integer"},
+                  "truncated":    {"type": "boolean"},
+                  "byType":       {"type": "object", "additionalProperties": {"type": "integer"}},
+                  "bySeverity":   {"type": "object", "additionalProperties": {"type": "integer"}},
+                  "items": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "file":     {"type": "string", "maxLength": 512},
+                        "line":     {"type": "integer"},
+                        "type":     {"type": "string", "maxLength": 64},
+                        "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                        "redacted": {
+                          "title": "masked excerpt -- the widest field in this schema, at 120 characters",
+                          "type": "string",
+                          "maxLength": 120
+                        }
+                      },
+                      "required": ["file", "line", "type", "severity", "redacted"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "disclaimer": {"type": "string", "maxLength": 500}
+                },
+                "required": ["findingCount", "reported", "truncated", "byType", "bySeverity", "items", "disclaimer"],
+                "additionalProperties": false
+              },
+              "dependencies": {
+                "title": "manifest hygiene, offline only",
+                "type": "object",
+                "properties": {
+                  "packageName":    {"type": ["string", "null"], "maxLength": 214},
+                  "packageVersion": {"type": ["string", "null"], "maxLength": 64},
+                  "counts": {
+                    "type": "object",
+                    "properties": {
+                      "dependencies":         {"type": "integer"},
+                      "devDependencies":      {"type": "integer"},
+                      "peerDependencies":     {"type": "integer"},
+                      "optionalDependencies": {"type": "integer"},
+                      "total":                {"type": "integer"}
+                    },
+                    "required": ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "total"],
+                    "additionalProperties": false
+                  },
+                  "unpinnedCount":  {"type": "integer"},
+                  "unpinnedByKind": {"type": "object", "additionalProperties": {"type": "integer"}},
+                  "suspicious": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name":     {"type": "string", "maxLength": 214},
+                        "range":    {"type": "string", "maxLength": 200},
+                        "section":  {"type": "string", "maxLength": 32},
+                        "reason":   {"type": "string", "maxLength": 200},
+                        "severity": {"type": "string", "enum": ["high", "medium", "low"]}
+                      },
+                      "required": ["name", "range", "section", "reason", "severity"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "lockfile": {
+                    "type": "object",
+                    "properties": {
+                      "present":          {"type": "boolean"},
+                      "name":             {"type": ["string", "null"], "maxLength": 128},
+                      "format":           {"type": ["string", "null"], "maxLength": 32},
+                      "lockfileVersion":  {"type": ["integer", "null"]},
+                      "resolvedPackages": {"type": ["integer", "null"]},
+                      "missingFromLockCount": {"type": "integer"}
+                    },
+                    "required": ["present", "name", "format", "lockfileVersion", "resolvedPackages", "missingFromLockCount"],
+                    "additionalProperties": false
+                  },
+                  "notes": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {"type": "string", "maxLength": 400}
+                  },
+                  "analyzed": {
+                    "title": "false when no package.json was found in the scan",
+                    "type": "boolean"
+                  }
+                },
+                "required": ["analyzed", "packageName", "packageVersion", "counts", "unpinnedCount", "unpinnedByKind", "suspicious", "lockfile", "notes"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["summary", "scanned", "secrets", "dependencies"],
+            "additionalProperties": false
+          },
+
+          "bill": {
+            "title": "one metering record per internal hop, charged to the outer caller",
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "properties": {
+                "hop":         {"type": "integer"},
+                "tool":        {"type": "string", "maxLength": 128},
+                "charged":     {"type": ["number", "null"]},
+                "balance":     {"type": ["number", "null"]},
+                "billedTo":    {"title": "the identity the platform charged for this hop", "type": ["string", "null"], "maxLength": 128},
+                "authorizedAs": {"title": "the identity the hop was authorized as", "type": ["string", "null"], "maxLength": 128},
+                "wallMs":      {"type": "number"}
+              },
+              "required": ["hop", "tool", "charged", "balance", "billedTo", "authorizedAs", "wallMs"],
+              "additionalProperties": false
+            }
+          },
+
+          "dataFlow": {
+            "title": "bytes moved internally versus bytes returned",
+            "type": "object",
+            "properties": {
+              "sourceBytesRead": {
+                "title": "bytes of file content repo-scan read off disk",
+                "type": "integer"
+              },
+              "inProcessBytes": {
+                "title": "total bytes handed between the internal tools, both directions, across every hop",
+                "type": "integer"
+              },
+              "returnedBytes": {
+                "title": "bytes of this response's findings and bill",
+                "type": "integer"
+              },
+              "reductionFactor": {
+                "title": "inProcessBytes / returnedBytes",
+                "type": "number"
+              },
+              "hops": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tool":        {"type": "string", "maxLength": 128},
+                    "inputBytes":  {"type": "integer"},
+                    "outputBytes": {"type": "integer"}
+                  },
+                  "required": ["tool", "inputBytes", "outputBytes"],
+                  "additionalProperties": false
+                }
+              },
+              "measurement": {
+                "title": "how these numbers were obtained, and what they are not",
+                "type": "string",
+                "maxLength": 1200
+              }
+            },
+            "required": ["sourceBytesRead", "inProcessBytes", "returnedBytes", "reductionFactor", "hops", "measurement"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["findings", "bill", "dataFlow"],
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "fault": {
+    "reviewService": {
+      "review": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

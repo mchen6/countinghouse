@@ -1,0 +1,12 @@
+{
+  "name": "secret-detect",
+  "version": "1.0.0",
+  "description": "DEMO-GRADE regex detection of hardcoded credentials in supplied file contents -- not a replacement for gitleaks/trufflehog. Part of the repo-review composite demo.",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0"
+}

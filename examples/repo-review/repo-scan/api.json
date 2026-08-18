@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "repo-scan",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Reads matching source files off the local filesystem and returns their full text. This is the bulk-data leaf of the repo-review composite demo: its output is deliberately large, so that what the composite tool does NOT return becomes visible. Calling it directly puts every matched file's full contents into the caller's context.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:scanService": {
+        "actionList": [
+          {
+            "name": "scan",
+            "description": "Walks a local directory tree and returns the FULL TEXT of every file matching the include globs and not matching the exclude globs, together with the exact number of files and bytes read. Defaults to scanning the countinghouse repository this module ships in, so it can be called with no arguments at all. Read-only: it never writes, moves or deletes anything, and never leaves the directory it was pointed at. Be aware that the response contains complete source files and is therefore large -- a few hundred kilobytes for a mid-sized repository. If your goal is to analyse the code rather than to read it yourself, prefer a tool that consumes this output internally (see the repo-review tool) instead of pulling every file through your own context. Set maxBytes/maxFiles to bound the response; when a limit is hit the result is marked truncated rather than failing.",
+            "input": {
+              "schema": "/scanService/scan/input"
+            },
+            "output": {
+              "schema": "/scanService/scan/output"
+            },
+            "fault": {
+              "schema": "/fault/scanService/scan/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

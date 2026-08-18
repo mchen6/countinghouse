@@ -1,0 +1,12 @@
+{
+  "name": "repo-review",
+  "version": "1.0.0",
+  "description": "the flagship composite tool: one tools/call fans out to repo-scan, secret-detect and dep-audit in-process, and returns findings + a per-hop bill + a byte-flow report, never the source code",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0"
+}

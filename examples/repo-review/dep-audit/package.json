@@ -1,0 +1,12 @@
+{
+  "name": "dep-audit",
+  "version": "1.0.0",
+  "description": "offline static analysis of a package.json + lockfile pair: dependency counts, unpinned ranges, suspicious specifiers. Part of the repo-review composite demo.",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0"
+}

@@ -134,11 +134,12 @@ server-side logs. `--mcpToolCallCost` defaults to `0` (nothing is charged
 unless you opt in), so set it to something non-zero to actually see the
 bill move.
 
-`composite-demo`'s two inner hops run under a fixed internal identity,
-`composite-demo-internal` (see [`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md)'s
-known simplifications — a real caller's apiKey isn't threaded through to
-inner hops in this demo), separate from whatever key you call the outer
-tool with. Grant that identity access before starting the server below, or
+`composite-demo`'s two inner hops are *authorized* as a fixed internal
+identity, `composite-demo-internal`, separate from whatever key you call the
+outer tool with — and *billed* to that outer caller, which is what
+`ctx.serviceClient({..., as})` splits apart (see
+[`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md)).
+Grant that internal identity access before starting the server below, or
 every call fails with `DEVICE_ACTION_CALL_FAIL` (AuthProvider rejecting an
 identity it's never seen, not a bug in the composition itself).
 
@@ -197,15 +198,26 @@ directly rather than re-parsing `content[0].text`. `finalText` is
 that result back — two independent modules, called one after another
 entirely inside the server process, with neither intermediate result ever
 entering this MCP client's context. `bill` is one entry per inner hop:
-which tool ran, what it cost, and the running balance afterward for
-`composite-demo`'s own internal identity (not the caller's apiKey — see
-[`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md)'s known
-simplifications for why) — proof that per-hop metering isn't skipped just
-because the calls happen module-to-module instead of client-to-server. A
+which tool ran, what it cost, and the running balance afterward for the
+apiKey that made the outer call — proof that per-hop metering isn't skipped
+just because the calls happen module-to-module instead of client-to-server. A
 fresh identity starts at balance `0`; each hop
 subtracts its cost, so balance going more negative over successive calls
 is expected, not an error. Full mechanism and the billing-authority
 guarantee behind it: [`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md).
+
+### A bigger one: `repo-review`
+
+`composite-demo` shows the mechanism on a toy payload. For the same idea on a
+workload where the intermediate data is genuinely large, see
+[`examples/repo-review/`](https://github.com/mchen6/countinghouse/blob/master/examples/repo-review/README.md)
+— four modules where one composite tool reads a repository, scans it for
+credentials and audits its dependencies, and returns a few kilobytes of
+findings, a per-hop bill and a byte-flow report. The source it read never
+leaves the process: measured at **427× fewer response bytes** than composing
+the same three tools client-side, with an output schema that has no field
+capable of holding a source file. It also carries an honest comparison against
+code execution, and a recorded round trip from Claude Code as the MCP client.
 
 ## CLI flags reference
 
@@ -313,7 +325,9 @@ The bundled `pre-installed-packages/` modules are worked examples at
 different complexity levels: `echo-device-module` for the full pattern
 including error/fault handling, `transform-demo` for close to the
 smallest module that's still useful, and `composite-demo` for a module
-that calls other modules.
+that calls other modules. [`examples/repo-review/`](https://github.com/mchen6/countinghouse/blob/master/examples/repo-review/README.md)
+is the same shape at demo scale: four modules, one of which composes the other
+three.
 
 ## Performance
 

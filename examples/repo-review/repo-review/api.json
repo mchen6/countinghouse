@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "repo-review",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Reviews a local source repository by composing three other hosted tools -- repo-scan, secret-detect and dep-audit -- inside a single tool call. The source code the review is derived from is read, passed between the three modules in-process, and discarded: it is never part of this tool's response, and this tool's output schema has no field that could carry it. Returns the findings, a per-hop billing record, and a byte-flow report showing how much data moved internally versus how much came back.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:reviewService": {
+        "actionList": [
+          {
+            "name": "review",
+            "description": "Reviews a local repository for hardcoded credentials and dependency-declaration hygiene, and returns a compact report. Defaults to the countinghouse repository this tool is hosted in, so it can be called with no arguments; pass `path` to review a different directory, and include/exclude globs to narrow what is read. Internally it runs three tools in sequence -- a file reader, a credential detector and a manifest auditor -- and only the aggregate survives: no file contents, no code excerpts and no full credentials are ever returned, and the response is a few kilobytes regardless of how large the repository is. The response has three parts. `findings` is the report: what was scanned, masked credential hits with file and line, and dependency counts plus unpinned and suspicious specifiers. `bill` is one metering record per internal hop, charged to whoever called this tool. `dataFlow` reports how many bytes moved between the internal tools versus how many bytes came back to you. TWO SCOPE LIMITS TO PASS ON WHEN REPORTING RESULTS: credential detection is demo-grade regex matching, not a substitute for gitleaks or trufflehog, so a clean result is not proof a repository is clean and every hit needs human confirmation; and the dependency audit never touches the network, so it reports manifest hygiene only and says nothing about known vulnerabilities.",
+            "input": {
+              "schema": "/reviewService/review/input"
+            },
+            "output": {
+              "schema": "/reviewService/review/output"
+            },
+            "fault": {
+              "schema": "/fault/reviewService/review/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

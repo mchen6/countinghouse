@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "scanService": {
+    "scan": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "title": "directory to scan",
+            "description": "Absolute or relative path of the directory to walk. Defaults to the countinghouse repository this module ships in, which is what makes the repo-review demo runnable with no arguments.",
+            "type": "string"
+          },
+          "include": {
+            "title": "include globs",
+            "description": "Glob patterns a repository-relative path must match to be read. Supports *, ?, ** and {a,b} alternation. Defaults to source and manifest files.",
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 64
+          },
+          "exclude": {
+            "title": "exclude globs",
+            "description": "Glob patterns that veto a path even when it matched an include pattern. Defaults to node_modules, .git, build output and binary assets.",
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 64
+          },
+          "maxBytes": {
+            "title": "byte budget",
+            "description": "Stop reading once this many bytes of file content have been collected, and mark the result truncated.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxFiles": {
+            "title": "file budget",
+            "description": "Stop reading once this many files have been collected, and mark the result truncated.",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "title": "resolved scan root",
+            "type": "string"
+          },
+          "fileCount": {
+            "title": "number of files actually read",
+            "type": "integer"
+          },
+          "byteCount": {
+            "title": "total bytes of file content actually read",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "whether a budget stopped the walk early",
+            "type": "boolean"
+          },
+          "truncationReason": {
+            "title": "which budget stopped the walk, or null",
+            "type": ["string", "null"]
+          },
+          "files": {
+            "title": "matched files, with full contents",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path":    {"title": "path relative to root", "type": "string"},
+                "bytes":   {"title": "size of this file's content", "type": "integer"},
+                "content": {"title": "the file's full text", "type": "string"}
+              },
+              "required": ["path", "bytes", "content"]
+            }
+          }
+        },
+        "required": ["root", "fileCount", "byteCount", "truncated", "files"]
+      }
+    }
+  },
+  "fault": {
+    "scanService": {
+      "scan": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "secret-detect",
+    "manufacturer": "countinghouse",
+    "modelDescription": "DEMO-GRADE credential detection. It applies a fixed list of about twenty regular expressions to text it is handed, and reports the file, line and a masked excerpt for each hit. It is a worked example of a pure-function analysis leaf in the repo-review composite demo, NOT a security product: it has no entropy analysis, no git-history walk, no verification that a matched credential is live, and no baseline/allowlist support. Do not use it as the credential-scanning gate for a real repository -- use gitleaks or trufflehog, which do all of the above. Expect both false positives (test fixtures, documentation examples) and false negatives (any credential format not in the list).",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:detectService": {
+        "actionList": [
+          {
+            "name": "detect",
+            "description": "Scans file contents you supply for patterns that look like hardcoded credentials -- cloud access keys, personal access tokens, private key blocks, JWTs, database connection strings with inline passwords, and generic assignments to names like secret/password/api_key. Returns one finding per match with the file path, 1-based line number, a pattern label, and a MASKED excerpt; the matched credential is never returned in full, so a finding is safe to show to a user or put in a report. Takes contents as an argument rather than reading disk, which makes it a pure function of its input and lets a composite tool feed it another tool's output without either one touching the filesystem. IMPORTANT, state this if you report results: detection is regex-only and demo-grade. A clean result is not evidence that a repository has no leaked credentials, and any hit needs human confirmation -- test fixtures and documentation examples match these patterns routinely.",
+            "input": {
+              "schema": "/detectService/detect/input"
+            },
+            "output": {
+              "schema": "/detectService/detect/output"
+            },
+            "fault": {
+              "schema": "/fault/detectService/detect/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

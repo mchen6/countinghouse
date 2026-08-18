@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "auditService": {
+    "audit": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "title": "package.json text",
+            "description": "The full text of a package.json. Passed as text rather than a path so this action stays a pure function of its input.",
+            "type": "string"
+          },
+          "lockfile": {
+            "title": "lockfile text",
+            "description": "Optional. The full text of package-lock.json, npm-shrinkwrap.json or yarn.lock. npm's JSON lockfiles are parsed; yarn.lock is recognized but only counted, since parsing its format is beyond this demo.",
+            "type": ["string", "null"]
+          },
+          "lockfileName": {
+            "title": "lockfile filename",
+            "description": "Optional. The lockfile's name, used to pick a parser and to label the result. Defaults to package-lock.json.",
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["manifest"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "packageName":    {"title": "name field from the manifest", "type": ["string", "null"]},
+          "packageVersion": {"title": "version field from the manifest", "type": ["string", "null"]},
+          "counts": {
+            "title": "declared dependency counts per manifest section",
+            "type": "object",
+            "properties": {
+              "dependencies":         {"type": "integer"},
+              "devDependencies":      {"type": "integer"},
+              "peerDependencies":     {"type": "integer"},
+              "optionalDependencies": {"type": "integer"},
+              "total":                {"type": "integer"}
+            },
+            "required": ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "total"]
+          },
+          "unpinned": {
+            "title": "dependencies not pinned to one exact version",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name":    {"type": "string"},
+                "range":   {"type": "string", "maxLength": 200},
+                "section": {"type": "string"},
+                "kind":    {"title": "which flavour of non-exact range", "type": "string"}
+              },
+              "required": ["name", "range", "section", "kind"],
+              "additionalProperties": false
+            }
+          },
+          "suspicious": {
+            "title": "specifiers that bypass normal registry version resolution",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name":     {"type": "string"},
+                "range":    {"type": "string", "maxLength": 200},
+                "section":  {"type": "string"},
+                "reason":   {"type": "string"},
+                "severity": {"type": "string", "enum": ["high", "medium", "low"]}
+              },
+              "required": ["name", "range", "section", "reason", "severity"],
+              "additionalProperties": false
+            }
+          },
+          "lockfile": {
+            "title": "what the lockfile said, if one was supplied",
+            "type": "object",
+            "properties": {
+              "present":            {"type": "boolean"},
+              "name":               {"type": ["string", "null"]},
+              "format":             {"title": "npm-json, yarn-classic, or unknown", "type": ["string", "null"]},
+              "lockfileVersion":    {"type": ["integer", "null"]},
+              "resolvedPackages":   {"title": "total entries the lockfile resolves, transitive included", "type": ["integer", "null"]},
+              "missingFromLock":    {
+                "title": "direct dependencies with no lockfile entry",
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            },
+            "required": ["present", "name", "format", "lockfileVersion", "resolvedPackages", "missingFromLock"]
+          },
+          "notes": {
+            "title": "scope statements and anything the analysis could not do",
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "required": ["packageName", "packageVersion", "counts", "unpinned", "suspicious", "lockfile", "notes"]
+      }
+    }
+  },
+  "fault": {
+    "auditService": {
+      "audit": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

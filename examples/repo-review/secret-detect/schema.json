@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "detectService": {
+    "detect": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "title": "files to scan",
+            "description": "File contents to scan. Shaped to accept repo-scan's `files` array unchanged, so a composite tool can pass one tool's output straight into this one.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path":    {"title": "path used to label findings", "type": "string"},
+                "content": {"title": "the text to scan", "type": "string"},
+                "bytes":   {"title": "ignored; accepted so repo-scan's output validates as-is", "type": "integer"}
+              },
+              "required": ["path", "content"]
+            }
+          },
+          "maxFindings": {
+            "title": "findings cap",
+            "description": "Stop after this many findings and mark the result truncated. Defaults to 500.",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": ["files"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "filesScanned": {
+            "title": "number of files examined",
+            "type": "integer"
+          },
+          "bytesScanned": {
+            "title": "total bytes of content examined",
+            "type": "integer"
+          },
+          "findingCount": {
+            "title": "number of findings reported",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "whether the findings cap stopped the scan",
+            "type": "boolean"
+          },
+          "byType": {
+            "title": "finding count per pattern label",
+            "description": "Map of pattern label to number of hits. Present so a caller can summarize without reading every finding.",
+            "type": "object",
+            "additionalProperties": {"type": "integer"}
+          },
+          "findings": {
+            "title": "individual findings, credential masked",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file":     {"title": "path as supplied", "type": "string"},
+                "line":     {"title": "1-based line number", "type": "integer"},
+                "type":     {"title": "pattern label", "type": "string"},
+                "severity": {"title": "rough triage hint", "type": "string", "enum": ["high", "medium", "low"]},
+                "redacted": {
+                  "title": "masked excerpt",
+                  "description": "The match with its credential body replaced by asterisks. Capped short on purpose: this field is structurally incapable of carrying a source file, so no amount of handler misbehaviour can turn a finding into a code dump.",
+                  "type": "string",
+                  "maxLength": 120
+                }
+              },
+              "required": ["file", "line", "type", "severity", "redacted"],
+              "additionalProperties": false
+            }
+          },
+          "disclaimer": {
+            "title": "scope statement travelling with the result",
+            "type": "string"
+          }
+        },
+        "required": ["filesScanned", "bytesScanned", "findingCount", "truncated", "byType", "findings", "disclaimer"]
+      }
+    }
+  },
+  "fault": {
+    "detectService": {
+      "detect": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "title": "specific error reason",
+              "type": "string"
+            },
+            "info": {
+              "title": "detailed error info",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

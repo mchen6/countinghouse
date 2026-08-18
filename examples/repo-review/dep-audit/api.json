@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "dep-audit",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Offline, purely static analysis of an npm manifest and lockfile. It answers questions about how a project declares its dependencies -- how many, which are unpinned, which use specifiers that bypass the registry -- and nothing about whether any of them is vulnerable. It performs no network access whatsoever, so it cannot and does not consult any advisory database; it is not `npm audit`. Part of the repo-review composite demo.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:auditService": {
+        "actionList": [
+          {
+            "name": "audit",
+            "description": "Parses the text of a package.json (and optionally its lockfile) and reports: how many dependencies are declared in each section; which ones are not pinned to an exact version; which use a specifier that bypasses the registry's version resolution entirely (a git or http URL, a local file path, `*`, `latest`, or an unbounded `>=`); and, if a lockfile is supplied, how many packages it resolves and whether every direct dependency appears in it. Takes the file text as arguments rather than reading disk, so it is a pure function and can be fed another tool's output. This is a HYGIENE check, not a vulnerability scan: it never reaches the network, so it knows nothing about CVEs or advisories. Do not report its output as a security audit or as equivalent to `npm audit` -- an empty findings list means the manifest is tidy, not that the dependencies are safe.",
+            "input": {
+              "schema": "/auditService/audit/input"
+            },
+            "output": {
+              "schema": "/auditService/audit/output"
+            },
+            "fault": {
+              "schema": "/fault/auditService/audit/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
