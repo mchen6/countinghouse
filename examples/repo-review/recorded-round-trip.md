@@ -375,7 +375,7 @@ is identical.
 ## 5. What the record shows
 
 - **One call, 10,478 bytes.** The same review composed client-side moves
-  4.58 MB into context across three calls — see
+  4.59 MB into context across three calls — see
   [`token-comparison.js`](token-comparison.js) and the table in
   [`README.md`](README.md#token-comparison).
 - **4,995,458 bytes moved between the three modules; 4,057 came back.** The

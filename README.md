@@ -214,7 +214,7 @@ workload where the intermediate data is genuinely large, see
 — four modules where one composite tool reads a repository, scans it for
 credentials and audits its dependencies, and returns a few kilobytes of
 findings, a per-hop bill and a byte-flow report. The source it read never
-leaves the process: measured at **427× fewer response bytes** than composing
+leaves the process: measured at **428× fewer response bytes** than composing
 the same three tools client-side, with an output schema that has no field
 capable of holding a source file. It also carries an honest comparison against
 code execution, and a recorded round trip from Claude Code as the MCP client.

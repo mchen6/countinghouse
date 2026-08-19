@@ -13,9 +13,9 @@ intermediate data is genuinely large.
 Two claims, and they carry equal weight — the second is the one that survives
 a handler being rewritten badly:
 
-1. **The bytes.** Composed in the client, this review moves **4.58 MB** into
+1. **The bytes.** Composed in the client, this review moves **4.59 MB** into
    the caller's context across three tool calls. Composed in the runtime, it
-   moves **11.0 KB** in one call — a **427× reduction**, all of it source code
+   moves **11.0 KB** in one call — a **428× reduction**, all of it source code
    that stayed on the server. Measured, not asserted: see
    [Token comparison](#token-comparison).
 
@@ -209,25 +209,25 @@ nothing here may be edited by hand — re-run the script and paste again.
 | | (a) three separate tools | (b) one composite tool | ratio |
 |---|---|---|---|
 | MCP tool calls | 3 | 1 | 3× |
-| Response bytes (into model context) | 4.58 MB | 11.0 KB | **427×** |
-| Estimated response tokens | ~1.20M | ~2.8k | 427× |
-| Request bytes (out of model context) | 2.61 MB | 115 B | 23794× |
-| Total bytes across the MCP boundary | 7.19 MB | 11.1 KB | 663× |
-| End-to-end wall time (p50) | 414 ms | 206 ms | 2.01× |
+| Response bytes (into model context) | 4.59 MB | 11.0 KB | **428×** |
+| Estimated response tokens | ~1.20M | ~2.8k | 428× |
+| Request bytes (out of model context) | 2.61 MB | 115 B | 23834× |
+| Total bytes across the MCP boundary | 7.21 MB | 11.1 KB | 664× |
+| End-to-end wall time (p50) | 532 ms | 234 ms | 2.27× |
 | Samples | 5 | 5 | |
 
 | Condition | Tool call | Request | Response |
 |---|---|---|---|
-| (a) | `repo_scan_scanservice_scan` | 109 B | 4.57 MB |
-| (a) | `secret_detect_detectservice_detect` | 2.15 MB | 5.8 KB |
-| (a) | `dep_audit_auditservice_audit` | 469.3 KB | 9.0 KB |
+| (a) | `repo_scan_scanservice_scan` | 109 B | 4.58 MB |
+| (a) | `secret_detect_detectservice_detect` | 2.16 MB | 5.8 KB |
+| (a) | `dep_audit_auditservice_audit` | 469.6 KB | 9.0 KB |
 | (b) | `repo_review_reviewservice_review` | 115 B | 11.0 KB |
 
-**Same work, checked rather than assumed**: both conditions reported 326 files / 2073177 bytes scanned, 15 credential finding(s) and 46 declared dependencies. The two work descriptors are identical.
+**Same work, checked rather than assumed**: both conditions reported 327 files / 2077259 bytes scanned, 15 credential finding(s) and 46 declared dependencies. The two work descriptors are identical.
 
-**Context cost**: the client received 4.58 MB across 3 calls in (a) and 11.0 KB in one call in (b) -- 427× less. That is 4796423 bytes, an estimated ~1.20M tokens, that never entered a model context. The source code is the whole of the difference: it was read and analysed in both conditions, and only in (b) did it stay inside the server.
+**Context cost**: the client received 4.59 MB across 3 calls in (a) and 11.0 KB in one call in (b) -- 428× less. That is 4805043 bytes, an estimated ~1.20M tokens, that never entered a model context. The source code is the whole of the difference: it was read and analysed in both conditions, and only in (b) did it stay inside the server.
 
-**Latency**: (b) took 206ms at p50 against (a)'s 414ms (2.01×). Both numbers are dominated by the tools' own work -- reading and regex-scanning 1.98 MB of source -- not by the transport, and (b) additionally pays for serializing every hop payload to build its dataFlow report. Treat the byte column as the result of this benchmark and the latency column as context for it.
+**Latency**: (b) took 234ms at p50 against (a)'s 532ms (2.27×). Both numbers are dominated by the tools' own work -- reading and regex-scanning 1.98 MB of source -- not by the transport, and (b) additionally pays for serializing every hop payload to build its dataFlow report. Treat the byte column as the result of this benchmark and the latency column as context for it.
 
 **What (a) is charitable about**: its 2.61 MB of request body is this script copying an object in memory. A model client would have to emit those bytes as tool-call arguments, token by token, before the second and third calls could happen at all.
 ```
