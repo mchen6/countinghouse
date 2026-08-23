@@ -380,6 +380,35 @@ describe('authoring tools: present with --authoringTools', function() {
       });
     });
   });
+
+  // Task 8 review round: a module whose main entry writes to stdout during
+  // require() -- an ordinary startup log line, not adversarial -- used to
+  // corrupt the machine-readable channel bin/countinghouse-validate.js --json
+  // promises. The child's stdout became "<module's log line>\n<the real JSON
+  // line>", lib/mcp/gateway.js's parseValidateChildOutput could not
+  // JSON.parse that combined blob, and a perfectly clean module was reported
+  // as ok:false with a validateModuleChildProcess problem. Fixed two ways:
+  // the CLI captures process.stdout.write for the duration of the
+  // validateModule call in --json mode (so console.log-based writes never
+  // reach the JSON channel), and the gateway now scans for the LAST line of
+  // stdout that parses as JSON rather than trusting the whole stream, as
+  // defense-in-depth against writes that bypass the CLI's capture (e.g.
+  // fs.writeSync(1, ...)). This is the regression guard for both halves.
+  it('a module that logs at load time still validates cleanly (Task 8 review: stdout pollution)', (done) => {
+    const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-logs-on-load');
+    toolsCall(PORT, 'aabbcc', 13, 'countinghouse_validate_module', {path: fixture}, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, false,
+        `countinghouse_validate_module itself must not surface as a tool error: ${JSON.stringify(body.result)}`);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.ok, true,
+        `a module's own load-time stdout write must not corrupt the result, got: ${JSON.stringify(out)}`);
+      assert.deepStrictEqual(out.problems, []);
+      assert.ok(!out.problems.some((p) => p.stage === 'validateModuleChildProcess'),
+        'a load-time console.log must never be misread as the validator subprocess failing to produce a result');
+      done();
+    });
+  });
 });
 
 // Regression guard for the I3 finding: every case above runs under --debug,
