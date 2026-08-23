@@ -20,7 +20,7 @@
 - Existing validator messages must stay **byte-identical**. This work adds structure around them; it does not reword them.
 - Never delete `adaptive-test/`, `perf/`, `spec/`.
 - The MCP surface must not move: `npm run golden` must stay green without regenerating `test/mcp-contract/tools-list.golden.json`.
-- Test ports: 9550-9552 are reserved for this plan's tests. Do not reuse 9527, 9530-9531, 9541-9546, 9574-9575, 9584-9595 — they are already bound by existing test files, and `npm test` runs several of those suites in the same invocation group.
+- Test ports: 9550-9554 are reserved for this plan's tests. One port per server, and note that a single task can spawn more than one: Task 3 ends up with three. Two files in `test/module-authoring/` are globbed into ONE mocha invocation by `npm test`, so ports must be unique across the whole directory, not just within a file. Do not reuse 9527, 9530-9531, 9541-9546, 9574-9575, 9584-9595 — they are already bound by existing test files, and `npm test` runs several of those suites in the same invocation group.
 
 ---
 
@@ -901,7 +901,7 @@ const request = require('supertest');
 
 const ROOT    = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'handler-map-convention');
-const PORT    = 9552;
+const PORT    = 9553;
 
 function mcp(method, params, cb) {
   request(`http://127.0.0.1:${PORT}`)
