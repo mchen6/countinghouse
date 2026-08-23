@@ -1,7 +1,7 @@
 # Module development
 
 A device module is an npm package that countinghouse loads and exposes as one
-or more MCP tools. This document is the full reference; [`README.md`](../README.md#module-development)
+or more MCP tools. This document is the full reference; [`README.md`](../README.md#writing-one)
 has the short version.
 
 ## Directory layout

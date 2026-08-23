@@ -241,7 +241,7 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
   suite can call these endpoints freely. That is a property of `--debug`, not
   a way to configure admin access. **Normal use does not need `--debug`** —
   including hot-loading modules, which is what an admin key is for. See
-  [`README.md`](../README.md#authentication).
+  [`cli-and-api-reference.md`](cli-and-api-reference.md).
 
 ## Choosing a backend
 
