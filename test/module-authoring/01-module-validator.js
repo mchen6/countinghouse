@@ -88,6 +88,21 @@ describe('module-validator: spec problems', () => {
     });
   });
 
+  // This fixture's index.js is written for the vm-sandboxed load path (see
+  // lib/sandbox.js), so it also throws ReferenceError: CHUtil is not defined
+  // when required directly outside the sandbox -- a genuine load-time failure
+  // this validator must surface, not a phantom to be filtered out.
+  it('also reports the main entry throwing, naming the sandbox-globals cause', (done) => {
+    moduleValidator.validateModule(fixture('invalid-spec-module'), (err, result) => {
+      assert.ifError(err);
+      const entry = result.problems.filter((p) => p.stage === 'loadModuleEntry');
+      assert.strictEqual(entry.length, 1);
+      assert.ok(/CHUtil/.test(entry[0].message));
+      assert.ok(/sandbox/.test(entry[0].fix));
+      done();
+    });
+  });
+
   it('names the migrator for a pre-5.0.0 spec instead of an ajv symptom', (done) => {
     moduleValidator.validateModule(fixture('legacy-spec-module'), (err, result) => {
       assert.ifError(err);
@@ -96,6 +111,42 @@ describe('module-validator: spec problems', () => {
       done();
     });
   });
+
+  it('also reports that fixture\'s main entry throwing, same sandbox cause', (done) => {
+    moduleValidator.validateModule(fixture('legacy-spec-module'), (err, result) => {
+      assert.ifError(err);
+      const entry = result.problems.filter((p) => p.stage === 'loadModuleEntry');
+      assert.strictEqual(entry.length, 1);
+      assert.ok(/CHUtil/.test(entry[0].message));
+      done();
+    });
+  });
+});
+
+describe('module-validator: a main entry that exists and throws', () => {
+  // Before the loadModuleEntry check existed, this fixture -- main entry
+  // present on disk and throwing, but with a valid handlers/ tree that
+  // resolveHandlerMap can assemble independently of that entry file --
+  // validated as {ok: true, problems: []}. An author would have shipped a
+  // module that crashes the real server, having been told it was fine.
+  it('reports ok:false with a loadModuleEntry problem, even though handlers/ resolves fine', (done) => {
+    moduleValidator.validateModule(fixture('handler-map-entry-throws'), (err, result) => {
+      assert.ifError(err);
+      assert.strictEqual(result.ok, false);
+      const entry = result.problems.filter((p) => p.stage === 'loadModuleEntry');
+      assert.strictEqual(entry.length, 1);
+      assert.ok(/boom/.test(entry[0].message));
+      done();
+    });
+  });
+
+  // The guard: a convention-shaped module with no index.js at all must not
+  // produce a loadModuleEntry problem -- package.json's default main
+  // ('index.js') legitimately does not exist on disk, and require() throwing
+  // MODULE_NOT_FOUND for a file that was never supposed to exist is not an
+  // author error. Already covered by 'reports ok with no problems' above
+  // (handler-map-convention has no index.js and asserts an empty problem
+  // list), so it is not duplicated here.
 });
 
 describe('module-validator: unusable input', () => {
