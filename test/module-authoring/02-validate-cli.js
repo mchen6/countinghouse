@@ -1,4 +1,4 @@
-// bin/countinghouse-validate is the same oracle as lib/module-validator.js,
+// bin/countinghouse-validate.js is the same oracle as lib/module-validator.js,
 // reachable from a shell. It exists for humans, for CI, and for agents that
 // can run a command but have no MCP server up.
 const assert = require('assert');
@@ -6,7 +6,7 @@ const path   = require('path');
 const exec   = require('child_process').exec;
 
 const ROOT     = path.join(__dirname, '..', '..');
-const BIN      = path.join(ROOT, 'bin', 'countinghouse-validate');
+const BIN      = path.join(ROOT, 'bin', 'countinghouse-validate.js');
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 
 function run(args, done) {

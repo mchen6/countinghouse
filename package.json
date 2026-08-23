@@ -7,7 +7,7 @@
     "cth": "./bin/countinghouse",
     "countinghouse-migrate-spec": "./bin/countinghouse-migrate-spec.js",
     "countinghouse-migrate-module": "./bin/countinghouse-migrate-module.js",
-    "countinghouse-validate": "./bin/countinghouse-validate"
+    "countinghouse-validate": "./bin/countinghouse-validate.js"
   },
   "main": "./framework.js",
   "files": [
