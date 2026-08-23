@@ -85,6 +85,26 @@ function stopServer(server) {
   try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
 }
 
+// Regression guard for the C1 review finding: `exec('pkill ...', callback)`'s
+// callback fires once the pkill *process itself* exits, not once the target
+// process has actually released its port -- SIGTERM (pkill's default signal)
+// is a request, not an instantaneous teardown, and this describe block's
+// server is a real `exec`-spawned process (not the `spawn(..., detached:
+// true)` + `process.kill(-pid, 'SIGKILL')` pattern `stopServer` above uses,
+// which has no such gap). Returning from `after` before the port is actually
+// free let a later file in the same `npm test` mocha run (one process, one
+// port namespace across every file in test/module-authoring/*.js) collide
+// with this port while the old server was still mid-shutdown. Polling
+// assertPortFree closes that gap instead of just hoping pkill was fast
+// enough.
+function waitForPortFree(port, deadline, callback) {
+  assertPortFree(port, (err) => {
+    if (err == null) return callback();
+    if (Date.now() >= deadline) return callback(err);
+    return setTimeout(() => waitForPortFree(port, deadline, callback), 100);
+  });
+}
+
 function mcpCall(port, apiKey, body, cb) {
   let req = request(`http://127.0.0.1:${port}`).post('/mcp');
   if (apiKey != null) req = req.set('X-CH-Key', apiKey);
@@ -248,9 +268,18 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
     });
   });
 
-  after((done) => {
+  after(function(done) {
+    this.timeout(15000);
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) { /* already gone */ }
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => {
+      // Soft-fail on timeout (log, don't fail the suite): a teardown that's
+      // merely slow shouldn't be reported as a test failure. What matters is
+      // that we actually waited instead of racing the next file's server.
+      waitForPortFree(PORT, Date.now() + 10000, (err) => {
+        if (err != null) console.warn(`03-authoring-tools-gating: ${err.message}`);
+        done();
+      });
+    });
   });
 
   it('is absent from tools/list for a non-admin (but otherwise valid) key', (done) => {
@@ -280,6 +309,27 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
       assert.ok(body.result.structuredContent != null && body.result.structuredContent.code === 'ADMIN_REQUIRED',
         `expected structuredContent.code === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
       done();
+    });
+  });
+
+  // Regression guard for the I5 review finding: the admin gate in
+  // dispatchAuthoringTool runs once, before the name-specific branches --
+  // this had only ever been exercised via countinghouse_validate_module.
+  // countinghouse_load_module and countinghouse_call_tool share the exact
+  // same gate (same function, same early check), but that was never
+  // actually asserted for either of them -- --debug (every other describe
+  // block in this file) forces isAdmin: true unconditionally, so it cannot
+  // exercise this at all; this block is the only one with a real non-admin
+  // identity to call them with.
+  ['countinghouse_load_module', 'countinghouse_call_tool'].forEach((name) => {
+    it(`refuses a ${name} call from the non-admin key with ADMIN_REQUIRED`, (done) => {
+      toolsCall(PORT, NON_ADMIN_KEY, 6, name, {path: '.', name: 'x'}, (err, body) => {
+        assert.ifError(err);
+        assert.strictEqual(body.result.isError, true);
+        assert.ok(body.result.structuredContent != null && body.result.structuredContent.code === 'ADMIN_REQUIRED',
+          `expected structuredContent.code === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
+        done();
+      });
     });
   });
 

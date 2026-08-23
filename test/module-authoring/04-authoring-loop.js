@@ -14,7 +14,12 @@ const request = require('supertest');
 
 const ROOT    = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'handler-map-convention');
-const PORT    = 9552;
+// 9550-9552 are 03-authoring-tools-gating.js's three servers; this plan's
+// reserved range is now 9550-9554 (see the C1 review finding on this task --
+// Task 3's fix round added a fourth server to 03 after this file's port was
+// first picked, and 9552 collided with it under `npm test`'s single
+// mocha invocation of the whole directory).
+const PORT    = 9553;
 
 // Same technique as test/module-authoring/03-authoring-tools-gating.js's
 // assertPortFree -- a stale server left behind by an earlier run would, by
@@ -90,10 +95,31 @@ describe('the authoring loop', function() {
       assert.ifError(err);
       const out = body.result.structuredContent;
       assert.strictEqual(out.loaded, true);
+      assert.strictEqual(out.discoveryComplete, true,
+                          'a load that reports tool names must also confirm discovery completed');
       assert.ok(Array.isArray(out.toolNames) && out.toolNames.length > 0,
                 'load_module must report the tools it made callable');
       loadedToolName = out.toolNames.find((n) => /hello/.test(n));
       assert.ok(loadedToolName != null, `expected a hello tool, got ${out.toolNames.join(', ')}`);
+      done();
+    });
+  });
+
+  // Regression guard for the C2 review finding: the first implementation
+  // diffed the server's whole tool set before/after the load, which is
+  // structurally empty on a reload (the tool name was already present in
+  // "before" -- it never went away). load_module now reads the module's OWN
+  // device list instead, which is correct -- and available instantly,
+  // no discovery wait needed -- on every load after the first.
+  it('reloads the same module and still reports its tool names', (done) => {
+    call('countinghouse_load_module',
+         {path: FIXTURE, name: 'handler-map-convention', version: '1.0.0'}, (err, body) => {
+      assert.ifError(err);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.loaded, true);
+      assert.strictEqual(out.discoveryComplete, true);
+      assert.ok(Array.isArray(out.toolNames) && out.toolNames.indexOf(loadedToolName) !== -1,
+                `reload must still report ${loadedToolName}, got ${out.toolNames.join(', ')}`);
       done();
     });
   });
@@ -111,6 +137,19 @@ describe('the authoring loop', function() {
     call('countinghouse_call_tool', {name: 'no_such_tool_at_all', arguments: {}}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true);
+      done();
+    });
+  });
+
+  // Regression guard for the I5 review finding: this is the recursion-safety
+  // property (call_tool must not be usable to invoke itself, load_module, or
+  // validate_module/validate_plan) -- previously only verified by the
+  // reviewer reading the code, not by any test.
+  it('refuses call_tool for an authoring tool name (no recursion)', (done) => {
+    call('countinghouse_call_tool', {name: 'countinghouse_load_module', arguments: {}}, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, true,
+                          'call_tool must refuse to dispatch to another authoring tool');
       done();
     });
   });
