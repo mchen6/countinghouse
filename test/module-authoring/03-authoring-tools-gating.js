@@ -23,6 +23,7 @@
 // name itself scrubbed out first.
 const assert  = require('assert');
 const fs      = require('fs');
+const os      = require('os');
 const path    = require('path');
 const net     = require('net');
 const spawn   = require('child_process').spawn;
@@ -120,6 +121,48 @@ function toolsList(port, apiKey, cb) {
 function toolsCall(port, apiKey, id, name, toolArgs, cb) {
   mcpCall(port, apiKey,
     {jsonrpc: '2.0', id: id, method: 'tools/call', params: {name: name, arguments: toolArgs || {}}}, cb);
+}
+
+// Builds a throwaway module directory on disk -- api.json/schema.json/
+// handlers/ identical in shape to test/fixtures/handler-map-convention, plus
+// an index.js whose content the caller controls. Used by the Task 8 defect-A
+// (require() cache staleness) proof below, which needs to edit a module's
+// main entry BETWEEN two validate calls -- that can't be done against a
+// fixture checked into the repo without leaving the working tree dirty.
+function writeTempModule(indexContent) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-cache-'));
+  fs.writeFileSync(path.join(dir, 'package.json'),
+    JSON.stringify({name: 'cache-staleness-fixture', version: '1.0.0'}));
+  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({
+    device: {
+      friendlyName: 'cache-staleness-fixture',
+      manufacturer: 'countinghouse-test',
+      modelDescription: 'Task 8 defect-A proof: temp module, edited between two validate calls.',
+      serviceList: {
+        'urn:countinghouse-test:serviceID:greetService': {
+          actionList: [{
+            name: 'hello', description: 'Returns a greeting.',
+            input:  {schema: '/greetService/hello/input'},
+            output: {schema: '/greetService/hello/output'}
+          }]
+        }
+      }
+    }
+  }));
+  fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({
+    $schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+    greetService: {
+      hello: {
+        input:  {type: 'object', properties: {name: {type: 'string'}}, required: ['name']},
+        output: {type: 'object', properties: {text: {type: 'string'}, caller: {type: ['string', 'null']}}}
+      }
+    }
+  }));
+  fs.mkdirSync(path.join(dir, 'handlers', 'greetService'), {recursive: true});
+  fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'),
+    'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}});\n');
+  fs.writeFileSync(path.join(dir, 'index.js'), indexContent);
+  return dir;
 }
 
 // True when bodyA (for toolName nameA) and bodyB (for nameB) are the same
@@ -228,6 +271,111 @@ describe('authoring tools: present with --authoringTools', function() {
         assert.ok(sameEnvelope(anonBody, 'countinghouse_validate_module', controlBody, CONTROL_NAME),
           'anonymous-caller response differs from the unknown-tool control beyond the name:\n' +
           `  anon: ${JSON.stringify(anonBody)}\n  control: ${JSON.stringify(controlBody)}`);
+        done();
+      });
+    });
+  });
+
+  // Task 8, item C: countinghouse_validate_plan had no end-to-end coverage
+  // through the real JSON-RPC path, unlike its sibling
+  // countinghouse_validate_module above -- these two mirror that sibling's
+  // shape (a clean case and a broken one), against the real HTTP/MCP entry
+  // point rather than lib/plan-validator.js directly (already covered by
+  // test/module-authoring/05-validate-plan.js).
+  it('validates a well-formed plan through the tool', (done) => {
+    const plan = {
+      device: 'log-review',
+      services: [{
+        name: 'reviewService',
+        actions: [{name: 'summarize', description: 'Summarize error logs by service.'}]
+      }]
+    };
+    toolsCall(PORT, 'aabbcc', 8, 'countinghouse_validate_plan', plan, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, false);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.ok, true);
+      assert.deepStrictEqual(out.problems, []);
+      // Matches the exact name test/module-authoring/05-validate-plan.js's
+      // "reports a collision" case already pins down for this same plan.
+      assert.deepStrictEqual(out.toolNames, ['log_review_reviewservice_summarize']);
+      done();
+    });
+  });
+
+  it('returns the problem list for a broken plan through the tool', (done) => {
+    const plan = {device: 'x', services: []};
+    toolsCall(PORT, 'aabbcc', 9, 'countinghouse_validate_plan', plan, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, false);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.ok, false);
+      assert.ok(out.problems.some((p) => p.stage === 'validatePlan'),
+        `expected a validatePlan problem, got: ${JSON.stringify(out.problems)}`);
+      done();
+    });
+  });
+
+  // Task 8, item A: validate -> edit a handler/entry file -> validate again
+  // is the exact authoring loop this toolchain exists to serve, and it used
+  // to be broken by it -- countinghouse_validate_module ran require() inside
+  // this long-lived gateway process, so Node's module cache returned the
+  // FIRST validate's already-loaded export on every subsequent call against
+  // the same path, no matter what the file on disk said by then. Proven here
+  // by validating a module whose index.js does not throw, editing that same
+  // file on disk to throw, and validating the same path again: the second
+  // result must reflect the edit. Against the pre-Task-8 in-process
+  // implementation this test fails (second result is still ok:true, from the
+  // stale cached export) -- against the child-process implementation it
+  // passes, because there is no require() cache spanning two separate
+  // `node bin/countinghouse-validate.js` processes.
+  it('reflects an edited entry file on the very next validate call (Task 8, defect A: no stale require cache)', function(done) {
+    this.timeout(15000);
+    const dir = writeTempModule('module.exports = {};\n');
+
+    toolsCall(PORT, 'aabbcc', 10, 'countinghouse_validate_module', {path: dir}, (err, first) => {
+      assert.ifError(err);
+      assert.strictEqual(first.result.structuredContent.ok, true,
+        `expected the first validate to be clean, got: ${JSON.stringify(first.result)}`);
+
+      fs.writeFileSync(path.join(dir, 'index.js'), "throw new Error('edited-after-first-validate');\n");
+
+      toolsCall(PORT, 'aabbcc', 11, 'countinghouse_validate_module', {path: dir}, (err, second) => {
+        assert.ifError(err);
+        const out = second.result.structuredContent;
+        assert.strictEqual(out.ok, false,
+          `expected the edit to be picked up by the second validate, got: ${JSON.stringify(out)}`);
+        const entryProblems = out.problems.filter((p) => p.stage === 'loadModuleEntry');
+        assert.strictEqual(entryProblems.length, 1,
+          `expected exactly one loadModuleEntry problem, got: ${JSON.stringify(out.problems)}`);
+        assert.ok(/edited-after-first-validate/.test(entryProblems[0].message),
+          `expected the SECOND validate's problem to name the edit, got: ${entryProblems[0].message}`);
+        done();
+      });
+    });
+  });
+
+  // Task 8, item B: a module whose main entry calls process.exit() during
+  // require() used to take the whole gateway process down with it -- there
+  // is no try/catch that survives a require() calling process.exit()
+  // in-process. Proven here two ways: the tool call itself answers with a
+  // problem (not a crash, not a hang), AND the same server goes on to answer
+  // an unrelated tools/list call right afterward, proving the gateway
+  // process is still alive.
+  it('a module whose entry calls process.exit() is reported as a problem, and the gateway survives (Task 8, defect B)', (done) => {
+    const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-process-exit');
+    toolsCall(PORT, 'aabbcc', 12, 'countinghouse_validate_module', {path: fixture}, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, false,
+        `countinghouse_validate_module itself must not surface as a tool error: ${JSON.stringify(body.result)}`);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.ok, false);
+      assert.ok(out.problems.length > 0, 'expected at least one problem describing the crashed subprocess');
+
+      toolsList(PORT, 'aabbcc', (listErr, result) => {
+        assert.ifError(listErr);
+        assert.ok(Array.isArray(result.tools) && result.tools.length > 0,
+          'the gateway must still be able to answer tools/list after validating a module that called process.exit()');
         done();
       });
     });
