@@ -90,7 +90,7 @@ author's handler files, which executes their top-level code. That is
 acceptable for a local authoring flow over code the user is writing anyway,
 and is one of the reasons this surface must not become remotely reachable.
 
-### 2. `bin/countinghouse-validate <module-path>`
+### 2. `bin/countinghouse-validate.js <module-path>`
 
 A thin CLI over the same function, for humans, for CI, and for agents that
 can run a shell but have no server up. Exits non-zero when `ok` is false and
@@ -216,7 +216,7 @@ default-on.
 | `lib/mcp/tool-registry.js` | Four entries in `PLATFORM_TOOLS`/`PLATFORM_TOOL_NAMES` |
 | `lib/mcp/gateway.js` | Dispatch for the four, admin + flag gating |
 | `lib/cli-options.js` | `--authoringTools`, default off |
-| `bin/countinghouse-validate` | New CLI |
+| `bin/countinghouse-validate.js` | New CLI |
 | `.claude/skills/countinghouse-module/SKILL.md` | New skill |
 | `test/mcp-contract/` | Golden regeneration |
 | `test/module-authoring/` | New test directory per the plan above |

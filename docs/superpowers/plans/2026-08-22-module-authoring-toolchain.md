@@ -29,7 +29,7 @@
 | Path | Responsibility |
 |---|---|
 | `lib/module-validator.js` | **New.** Directory → `{ok, problems[]}`. The single oracle every other component wraps. No Redis, no worker, no server. |
-| `bin/countinghouse-validate` | **New.** CLI over `validateModule`. Exit non-zero on problems. |
+| `bin/countinghouse-validate.js` | **New.** CLI over `validateModule`. Exit non-zero on problems. |
 | `lib/mcp/tool-name.js` | **New.** `slugify`, extracted so a pure validator can predict tool names without requiring `tool-registry.js` — which opens a Redis socket at require time. |
 | `lib/mcp/tool-registry.js` | **Modify.** Add `AUTHORING_TOOLS` / `AUTHORING_TOOL_NAMES` beside the existing `PLATFORM_TOOLS`, and reserve the names so no device tool can take them. |
 | `lib/mcp/gateway.js` | **Modify.** List the authoring tools when enabled + admin; dispatch the four in `handleToolsCall`. Gating lives here because this is where caller identity is resolved. |
@@ -62,7 +62,7 @@ Create `test/module-authoring/01-module-validator.js`:
 
 ```js
 // Unit cover for lib/module-validator.js -- the standalone oracle behind
-// bin/countinghouse-validate and the countinghouse_validate_module MCP tool.
+// bin/countinghouse-validate.js and the countinghouse_validate_module MCP tool.
 //
 // These run in-process against fixtures that are each broken in exactly one
 // way, with no Redis and no server: that independence is the whole point of
@@ -362,10 +362,10 @@ byte-identical, so what an author reads here is what the server logs."
 
 ---
 
-### Task 2: The CLI — `bin/countinghouse-validate`
+### Task 2: The CLI — `bin/countinghouse-validate.js`
 
 **Files:**
-- Create: `bin/countinghouse-validate`
+- Create: `bin/countinghouse-validate.js`
 - Modify: `package.json` (the `bin` block, and the `test` script)
 - Test: `test/module-authoring/02-validate-cli.js`
 
@@ -378,7 +378,7 @@ byte-identical, so what an author reads here is what the server logs."
 Create `test/module-authoring/02-validate-cli.js`:
 
 ```js
-// bin/countinghouse-validate is the same oracle as lib/module-validator.js,
+// bin/countinghouse-validate.js is the same oracle as lib/module-validator.js,
 // reachable from a shell. It exists for humans, for CI, and for agents that
 // can run a command but have no MCP server up.
 const assert = require('assert');
@@ -441,7 +441,7 @@ Expected: FAIL — the bin does not exist, so every case gets a non-zero code wi
 
 - [ ] **Step 3: Write the implementation**
 
-Create `bin/countinghouse-validate`:
+Create `bin/countinghouse-validate.js`:
 
 ```js
 #!/usr/bin/env node
@@ -489,13 +489,13 @@ moduleValidator.validateModule(target, (err, result) => {
 - [ ] **Step 4: Make it executable and register it**
 
 ```sh
-chmod +x bin/countinghouse-validate
+chmod +x bin/countinghouse-validate.js
 ```
 
 In `package.json`, add to the existing `bin` block (keep the other three entries):
 
 ```json
-"countinghouse-validate": "./bin/countinghouse-validate"
+"countinghouse-validate": "./bin/countinghouse-validate.js"
 ```
 
 And append the new test directory to the `test` script, immediately after the existing `mocha ./test/auth/*.js ...` group:
@@ -516,7 +516,7 @@ Expected: 4 passing.
 
 ```sh
 npm run lint
-git add bin/countinghouse-validate package.json test/module-authoring/02-validate-cli.js
+git add bin/countinghouse-validate.js package.json test/module-authoring/02-validate-cli.js
 git commit -m "feat(authoring): countinghouse-validate, the oracle from a shell
 
 Exit codes are the contract -- 0 clean, 1 problems, 2 could not look -- so
@@ -1450,7 +1450,7 @@ go straight to writing files, delete it."
 - Test: manual (see Step 3)
 
 **Interfaces:**
-- Consumes: every tool from Tasks 3–5, plus `bin/countinghouse-validate`.
+- Consumes: every tool from Tasks 3–5, plus `bin/countinghouse-validate.js`.
 - Produces: no code. This is the piece that makes an agent decompose well rather than merely legally.
 
 - [ ] **Step 1: Write the skill**
