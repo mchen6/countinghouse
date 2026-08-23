@@ -20,6 +20,7 @@
 - Existing validator messages must stay **byte-identical**. This work adds structure around them; it does not reword them.
 - Never delete `adaptive-test/`, `perf/`, `spec/`.
 - The MCP surface must not move: `npm run golden` must stay green without regenerating `test/mcp-contract/tools-list.golden.json`.
+- Test ports: 9550-9552 are reserved for this plan's tests. Do not reuse 9527, 9530-9531, 9541-9546, 9574-9575, 9584-9595 — they are already bound by existing test files, and `npm test` runs several of those suites in the same invocation group.
 
 ---
 
@@ -584,7 +585,7 @@ function toolsList(port, cb) {
 describe('authoring tools: absent unless --authoringTools', function() {
   this.timeout(30000);
   let server = null;
-  const PORT = 9541;
+  const PORT = 9550;
 
   before((done) => { startServer(PORT, [], (s) => { server = s; done(); }); });
   after(() => { if (server != null) process.kill(-server.pid); });
@@ -618,7 +619,7 @@ describe('authoring tools: absent unless --authoringTools', function() {
 describe('authoring tools: present with --authoringTools', function() {
   this.timeout(30000);
   let server = null;
-  const PORT = 9542;
+  const PORT = 9551;
 
   before((done) => { startServer(PORT, ['--authoringTools'], (s) => { server = s; done(); }); });
   after(() => { if (server != null) process.kill(-server.pid); });
@@ -900,7 +901,7 @@ const request = require('supertest');
 
 const ROOT    = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'handler-map-convention');
-const PORT    = 9543;
+const PORT    = 9552;
 
 function mcp(method, params, cb) {
   request(`http://127.0.0.1:${PORT}`)
