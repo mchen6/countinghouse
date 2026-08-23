@@ -179,11 +179,16 @@ not untrusted third-party modules.
 
 ## Effect on the golden `tools/list` surface
 
-Adding four platform tools changes the MCP surface, so the golden sample
-must be regenerated — the pre-commit hook and CI will both refuse the change
-otherwise. That is the mechanism working as designed. The regeneration
-should be its own commit, so the diff is legible as "four tools added
-deliberately" rather than buried in a feature commit.
+**None, by construction.** `test/mcp-contract/capture-tools-list.js` spawns
+the server with `--debug` and a fixed module list, and never passes
+`--authoringTools`. Since the authoring tools are default-off, the captured
+surface is byte-identical with or without this feature, and the golden sample
+does not need regenerating.
+
+This is worth an explicit test rather than a happy assumption: a case
+asserting that none of the four tools appear in `tools/list` without the
+flag, which doubles as the regression guard if someone later makes them
+default-on.
 
 ## Testing
 
