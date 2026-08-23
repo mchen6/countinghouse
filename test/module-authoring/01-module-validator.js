@@ -1,5 +1,5 @@
 // Unit cover for lib/module-validator.js -- the standalone oracle behind
-// bin/countinghouse-validate and the countinghouse_validate_module MCP tool.
+// bin/countinghouse-validate.js and the countinghouse_validate_module MCP tool.
 //
 // These run in-process against fixtures that are each broken in exactly one
 // way, with no Redis and no server: that independence is the whole point of

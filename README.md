@@ -201,9 +201,12 @@ latency. [Tables, methodology and caveats](https://github.com/mchen6/countinghou
 ## Status, and what isn't built
 
 In-process composition works only between modules on the same runtime. Modules
-must be written to this runtime's format, which today means porting an
-existing MCP server by hand — an importer that converts servers built on the
-official TypeScript SDK is the next thing planned, and does not exist yet.
+must be written to this runtime's format — though not by hand: start with
+`--authoringTools` and a coding agent can design, validate, load and call a
+module for you, using the four authoring tools and the skill this repo ships at
+`.claude/skills/countinghouse-module/`. `npx countinghouse-validate ./my-module`
+is the same check from a shell. An importer for servers built on the official
+MCP TypeScript SDK is planned and does not exist yet.
 
 Module isolation is `worker_threads`: separate V8 heap, shared OS process,
 filesystem, network and `process` global. That is a reasonable boundary for

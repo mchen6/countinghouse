@@ -262,14 +262,36 @@ Then the device did come online, and the problem is downstream:
   that `schema.json` resolves and each action's `input`/`output`/`fault`
   pointers are right.
 
-### Verifying a spec without starting a server
+### Verifying a module without starting a server
 
-`--verifyModule` makes the framework continue past validation failures and
-report everything it finds, rather than stopping at the first one:
+```sh
+npx countinghouse-validate ./my-module
+```
+
+Checks `api.json`, `schema.json` and the handler map against each other and
+prints every problem it finds, each naming the stage and the way out. Exit
+codes: `0` clean, `1` problems found, `2` the path could not be read. No
+Redis and no server required.
+
+`--verifyModule` remains available for checking a module in the context of a
+running framework: it makes the framework continue past validation failures
+and report everything it finds, rather than stopping at the first one.
 
 ```sh
 node ./framework.js --verifyModule --loadModule ./path/to/my-module
 ```
+
+### Letting an agent write the module
+
+Start the runtime with `--authoringTools` and an admin key, and a coding
+agent can validate a design, write the module, validate it, load it and call
+it without a human editing JSON. The four tools are
+`countinghouse_validate_plan`, `countinghouse_validate_module`,
+`countinghouse_load_module` and `countinghouse_call_tool`; they are admin-only
+and absent from `tools/list` unless the flag is set.
+
+The repo ships the skill that drives them at
+`.claude/skills/countinghouse-module/SKILL.md`.
 
 ## The callback form (deprecated, removed in 7.0.0)
 
