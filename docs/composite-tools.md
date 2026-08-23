@@ -65,6 +65,77 @@ Target modules are addressed by their deterministic `deviceID`
 pattern used by `echo-device-client-module`. No runtime discovery is
 needed to call a known module.
 
+## Running it
+
+`composite-demo`'s two inner hops are *authorized* as a fixed internal
+identity, `composite-demo-internal`, separate from whatever key you call the
+outer tool with. Grant that identity access before starting the server, or
+every call fails with `DEVICE_ACTION_CALL_FAIL` — AuthProvider rejecting an
+identity it has never seen, not a bug in the composition itself. This applies
+to every bundled module that calls other modules; see
+[Every composing module needs its internal identity granted](#every-composing-module-needs-its-internal-identity-granted)
+below for the full list and a one-liner that grants all of them.
+
+```sh
+node -e "var c=JSON.parse(require('fs').readFileSync('auth.json'));
+  c['composite-demo-internal']={userName:'composite-demo-internal',devices:['*']};
+  require('fs').writeFileSync('auth.json', JSON.stringify(c, null, 2));"
+```
+
+`--mcpToolCallCost` defaults to `0` (nothing is charged unless you opt in), so
+set it to something non-zero to actually see the bill move:
+
+```sh
+node ./framework.js --workerThread --bindAddr 127.0.0.1 --mcpToolCallCost 1 \
+  --loadModule ./pre-installed-packages/echo-device-module \
+  --loadModule ./pre-installed-packages/transform-demo \
+  --loadModule ./pre-installed-packages/composite-demo
+
+curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
+  -H "X-CH-Key: <your key>" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+        "name":"composite_demo_compositeservice_run",
+        "arguments":{"text":"hello from the composite demo"}}}'
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "content": [
+      {"type": "text", "text": "{\"output\":{\"finalText\":\"HELLO FROM THE COMPOSITE DEMO\",\"bill\":[...]}}"}
+    ],
+    "structuredContent": {
+      "output": {
+        "finalText": "HELLO FROM THE COMPOSITE DEMO",
+        "bill": [
+          {"hop": 1, "tool": "transform-demo/uppercase", "charged": 1, "balance": -1},
+          {"hop": 2, "tool": "echo-device-module/echo", "charged": 1, "balance": -2}
+        ]
+      }
+    }
+  }
+}
+```
+
+That is the shape MCP's `tools/call` wraps every response in —
+`jsonrpc`/`id`/`result` are the JSON-RPC 2.0 envelope, `content` is the same
+payload serialized as text (for clients that only read that), and
+`structuredContent.output` is the actual return value, worth parsing directly
+rather than re-parsing `content[0].text`. `finalText` is `transform-demo`
+uppercasing the input, then `echo-device-module` echoing that result back —
+two independent modules, called one after another entirely inside the server
+process, with neither intermediate result ever entering the MCP client's
+context.
+
+`bill` is one entry per inner hop: which tool ran, what it cost, and the
+running balance afterward for the apiKey that made the outer call — per-hop
+metering is not skipped just because the calls happen module-to-module
+instead of client-to-server. A fresh identity starts at balance `0` and each
+hop subtracts its cost, so a balance going more negative over successive
+calls is expected, not an error.
+
 ## In-composition metering
 
 **Billing authority principle**: platform automatic metering is the sole
