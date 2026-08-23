@@ -876,7 +876,7 @@ tools/list surface untouched -- capture-tools-list.js never passes the flag."
 - Test: `test/module-authoring/04-authoring-loop.js`
 
 **Interfaces:**
-- Consumes: `cdifInterface.deviceManager`; `toolRegistry.buildToolTargets(cdifInterface)` (synchronous, returns `{toolName: target}`); the module manager's `loadModuleFromPath(path, name, version, callback)` as used in `lib/routes/load-module.js`.
+- Consumes: `cdifInterface.deviceManager.moduleManager.loadModuleFromPath(path, name, version, callback)` — **verified**: `CdifInterface` does not store the module manager itself (`lib/countinghouse-interface.js:18-19` passes it straight to `DeviceManager`), which keeps it at `lib/device-manager.js:43` as `this.moduleManager`. `toolRegistry.buildToolTargets(cdifInterface)` (synchronous, returns `{toolName: target}`).
 - Produces: `countinghouse_load_module` returning `{loaded, name, version, toolNames}`; `countinghouse_call_tool` returning the same result shape `tools/call` produces.
 
 **Why `toolNames` matters:** `buildToolList` recomputes from live device specs on every request (`lib/mcp/tool-registry.js:181`), so a loaded module *does* appear on the next `tools/list`. What is missing is `notifications/tools/list_changed` — nothing tells the client to re-ask. Returning the names it just made callable, plus `call_tool` to invoke them, closes the loop without giving the transport a server→client channel it does not have.
@@ -1031,7 +1031,7 @@ In `lib/mcp/gateway.js`, inside `dispatchAuthoringTool`, after the `countinghous
         return callback(null, resultResponse(req.id, toolCallResult(new Error('arguments.path and arguments.name are required'))));
       }
       const before = Object.keys(toolRegistry.buildToolTargets(cdifInterface));
-      return cdifInterface.moduleManager.loadModuleFromPath(
+      return cdifInterface.deviceManager.moduleManager.loadModuleFromPath(
         toolArgs.path, toolArgs.name, toolArgs.version || null, (loadErr) => {
           if (loadErr != null) {
             return callback(null, resultResponse(req.id, toolCallResult(loadErr)));
@@ -1079,15 +1079,22 @@ function dispatchAuthoringTool(req, name, toolArgs, cdifInterface, appKey, callb
     if (dispatchAuthoringTool(req, name, toolArgs, cdifInterface, appKey, callback) === true) return;
 ```
 
-- [ ] **Step 5: Verify the module manager is reachable as written**
+- [ ] **Step 5: Confirm the module-manager path still holds**
 
-`lib/routes/load-module.js` receives `mm` directly, but the gateway only has `cdifInterface`. Confirm the path before trusting the code above:
+`lib/routes/load-module.js` receives `mm` directly, but the gateway only has
+`cdifInterface`. The path above (`cdifInterface.deviceManager.moduleManager`)
+was verified against the code — `CdifInterface` takes `mm` and hands it to
+`DeviceManager` without keeping a reference
+(`lib/countinghouse-interface.js:18-19`), and `DeviceManager` stores it as
+`this.moduleManager` (`lib/device-manager.js:43`). Re-confirm it in one
+command before trusting it:
 
 ```sh
-grep -n 'moduleManager\|this.mm' lib/countinghouse-interface.js | head
+grep -n 'this.moduleManager' lib/device-manager.js
 ```
 
-If `cdifInterface.moduleManager` does not exist, use whatever property that file actually exposes (or add one), and update the branch accordingly. Do not guess.
+Expected: line 43. If that has moved, follow the real property rather than
+adding a new one to `CdifInterface`.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
