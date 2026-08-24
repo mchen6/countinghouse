@@ -153,4 +153,26 @@ describe('the authoring loop', function() {
       done();
     });
   });
+
+  // Final-review regression guard: unlike its sibling countinghouse_validate_
+  // module (bounded by VALIDATE_CHILD_TIMEOUT_MS on a child process),
+  // countinghouse_load_module had no bound at all on loadModuleFromPath's own
+  // callback. Under --workerThread (this file's server), a module whose main
+  // entry calls process.exit() during require() kills only the worker, not
+  // the gateway -- but the pending load message to that worker never gets a
+  // reply, so the callback simply never fired. Verified live past 100s of
+  // hanging before LOAD_MODULE_TIMEOUT_MS (lib/mcp/gateway.js) was added.
+  // This must now resolve as a reported failure well inside this test's own
+  // timeout, not hang it.
+  it('a module whose entry calls process.exit() is reported as a failure, not a hang', function(done) {
+    this.timeout(20000);
+    const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-process-exit');
+    call('countinghouse_load_module',
+         {path: fixture, name: 'handler-map-process-exit-hang-guard', version: '1.0.0'}, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, true,
+        `expected a reported failure (LOAD_MODULE_TIMEOUT or similar), got: ${JSON.stringify(body.result)}`);
+      done();
+    });
+  });
 });
