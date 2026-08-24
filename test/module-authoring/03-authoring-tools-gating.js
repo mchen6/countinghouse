@@ -1,10 +1,13 @@
 // The authoring tools are admin-gated AND off unless --authoringTools is
 // passed. Default-off is a safety property, not a preference:
-// countinghouse_validate_module already does require(callerSuppliedPath)
-// unsandboxed in the main gateway process (lib/module-validator.js's
-// loadPackage) -- and countinghouse_load_module plus countinghouse_call_tool
-// (Tasks 4/5) will only add more of the same. It must not be one flag-flip
-// away on a deployment that merely happens to have an admin key configured.
+// countinghouse_load_module does require(callerSuppliedPath) unsandboxed in
+// the main gateway process to load a module into the live runtime.
+// (countinghouse_validate_module runs caller-supplied code too, but in a
+// spawned child process instead -- see lib/mcp/gateway.js's
+// validateModuleInChildProcess comment for the full picture of what each of
+// the four authoring tools does and doesn't protect against.) It must not be
+// one flag-flip away on a deployment that merely happens to have an admin
+// key configured.
 //
 // Default-off is also what keeps the golden tools/list surface still --
 // test/mcp-contract/capture-tools-list.js never passes the flag -- so the
