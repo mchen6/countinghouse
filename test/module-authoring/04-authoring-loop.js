@@ -79,7 +79,36 @@ describe('the authoring loop', function() {
   });
   after(() => { stopServer(server); });
 
-  let loadedToolName = null;
+  let loadedToolName    = null;
+  let predictedToolNames = null;
+
+  // Final-review regression guard: the whole point of countinghouse_
+  // validate_plan is that the tool name it predicts is the tool name that
+  // actually appears once the module is loaded -- but until now that
+  // property was only ever asserted by two separate tests (this file's and
+  // 05-validate-plan.js's) happening to hardcode the same literal string,
+  // never checked against each other. This plan describes FIXTURE
+  // (test/fixtures/handler-map-convention) exactly -- same device
+  // friendlyName, same service short name, same action name -- so its
+  // predicted toolNames can be compared directly against what load_module
+  // reports below for the very same fixture.
+  it('validate_plan predicts the exact tool name load_module will report', (done) => {
+    const plan = {
+      device: 'handler-map-convention',
+      services: [{
+        name: 'greetService',
+        actions: [{name: 'hello', description: 'Returns a greeting.'}]
+      }]
+    };
+    call('countinghouse_validate_plan', plan, (err, body) => {
+      assert.ifError(err);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.ok, true, `expected the plan to validate cleanly, got: ${JSON.stringify(out)}`);
+      predictedToolNames = out.toolNames;
+      assert.ok(Array.isArray(predictedToolNames) && predictedToolNames.length > 0);
+      done();
+    });
+  });
 
   it('validates the module before loading it', (done) => {
     call('countinghouse_validate_module', {path: FIXTURE}, (err, body) => {
@@ -101,6 +130,9 @@ describe('the authoring loop', function() {
                 'load_module must report the tools it made callable');
       loadedToolName = out.toolNames.find((n) => /hello/.test(n));
       assert.ok(loadedToolName != null, `expected a hello tool, got ${out.toolNames.join(', ')}`);
+      assert.deepStrictEqual(out.toolNames.slice().sort(), predictedToolNames.slice().sort(),
+        'the tool names load_module actually reports must equal what validate_plan predicted for the ' +
+        `same device/service/action, got real=${out.toolNames.join(',')} predicted=${predictedToolNames.join(',')}`);
       done();
     });
   });
