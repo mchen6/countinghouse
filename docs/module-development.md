@@ -283,6 +283,10 @@ node ./framework.js --verifyModule --loadModule ./path/to/my-module
 
 ### Letting an agent write the module
 
+Full reference for the authoring toolchain — the four tools, the loop, the
+security boundary and its known limits — is in
+[`module-authoring.md`](module-authoring.md).
+
 Start the runtime with `--authoringTools` and an admin key, and a coding
 agent can validate a design, write the module, validate it, load it and call
 it without a human editing JSON. The four tools are

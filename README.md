@@ -205,7 +205,7 @@ must be written to this runtime's format — though not by hand: start with
 `--authoringTools` and a coding agent can design, validate, load and call a
 module for you, using the four authoring tools and the skill this repo ships at
 `.claude/skills/countinghouse-module/`. `npx countinghouse-validate ./my-module`
-is the same check from a shell. An importer for servers built on the official
+is the same check from a shell — see [`docs/module-authoring.md`](https://github.com/mchen6/countinghouse/blob/master/docs/module-authoring.md). An importer for servers built on the official
 MCP TypeScript SDK is planned and does not exist yet.
 
 Module isolation is `worker_threads`: separate V8 heap, shared OS process,
