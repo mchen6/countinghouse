@@ -409,6 +409,29 @@ describe('authoring tools: present with --authoringTools', function() {
       done();
     });
   });
+
+  // Final-review regression guard: bin/countinghouse-validate.js's --json mode
+  // restores process.stdout.write BEFORE printing its own result line, so
+  // anything a module prints AFTER that point (a process 'exit' handler,
+  // teardown logging) lands after the real result and, before this fix,
+  // would win lib/mcp/gateway.js's end-of-stream scan for "the last line
+  // that parses as JSON" -- a bare {shutdown:'clean',...} object parses fine,
+  // it just isn't the validator's result. See
+  // test/fixtures/handler-map-logs-on-exit/index.js for the exact reproducer
+  // and parseValidateChildOutput's shape check for the fix.
+  it('a module that logs at process-exit time still validates cleanly (final review: stale stdout scan)', (done) => {
+    const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-logs-on-exit');
+    toolsCall(PORT, 'aabbcc', 14, 'countinghouse_validate_module', {path: fixture}, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, false,
+        `countinghouse_validate_module itself must not surface as a tool error: ${JSON.stringify(body.result)}`);
+      const out = body.result.structuredContent;
+      assert.strictEqual(out.ok, true,
+        `an exit-time console.log must not be mistaken for the validator's result, got: ${JSON.stringify(out)}`);
+      assert.deepStrictEqual(out.problems, []);
+      done();
+    });
+  });
 });
 
 // Regression guard for the I3 finding: every case above runs under --debug,
