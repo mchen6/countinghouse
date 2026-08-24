@@ -72,7 +72,9 @@ Full reference: `docs/module-development.md`.
 3. `countinghouse_validate_module` — repeat until `ok: true`. It returns
    *every* problem, each naming the stage and the fix; do not fix them one per
    run.
-4. `countinghouse_load_module` — note the `toolNames` it returns.
+4. `countinghouse_load_module` — note the `toolNames` it returns. If
+   `discoveryComplete` is `false`, `toolNames` may be incomplete; the call is
+   worth retrying.
 5. `countinghouse_call_tool` with one of those names, and real arguments.
 6. Show the user the call and its output.
 
