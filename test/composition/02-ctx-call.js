@@ -21,24 +21,32 @@
 // worker-thread dispatch, doActionCall's async-rejection handling -- turns
 // ctx.call's rejection into a real MCP error instead of hanging or
 // crashing), and again in-process against the exact message. That split is
-// not a style choice -- it is forced by something verified by hand while
-// writing this test (see the probe transcript below): under
-// --workerThread, DeviceManager.prototype.invokeAction re-wraps a worker's
-// error reply as `new DeviceError(err.code != null ? err.code : err.message)`
-// (lib/device-manager.js, the `device.sendInvokeActionMessage(...)` branch).
-// Since ctx.call's rejection carries a `code` (DEVICE_INVOKE_EXCEPTION, from
-// lib/service.js's `fail`), only the code survives the hop back to the main
-// thread -- the detailed message ("...no auth identity is bound...") does
-// not. A real `tools/call` in worker-thread mode therefore always shows the
-// client the same generic "Device interface call threw an exception" text,
-// no matter which of ctx.call's two guard clauses actually fired. This was
-// confirmed by hand: a probe server on port 9556 with these exact fixtures
-// returned the identical isError:true / structuredContent.code shape for
-// viaCall, undeclared and viaBoom alike. That collapsing behavior predates
-// this task and is out of scope here, but it means (2) can only be checked
-// for its real message text by calling ctx.call directly, in-process,
-// against the same production code (lib/handler-ctx.js's buildCtx and
-// setComposition) rather than through the worker boundary.
+// not a style choice -- it is forced by something confirmed by hand while
+// writing this test (see the probe transcript below), and traced to its
+// root cause on code review: lib/mcp/gateway.js's toolCallResult (~lines
+// 121-136) builds the client-facing error shape from `err.message` and
+// `err.code` alone -- it never reads the `data`/fault argument in its
+// error branch, so any detail that only lives there is discarded for
+// every MCP client, in both threading modes. Under --workerThread there is
+// a second, compounding loss on top of that: DeviceManager.prototype.
+// invokeAction re-wraps a worker's error reply as
+// `new DeviceError(err.code != null ? err.code : err.message)`
+// (lib/device-manager.js, the `device.sendInvokeActionMessage(...)`
+// branch) -- since ctx.call's rejection carries a `code`
+// (DEVICE_INVOKE_EXCEPTION, from lib/service.js's `fail`), even
+// `err.message` itself does not survive the hop back to the main thread,
+// so gateway.js never has the detail to drop in the first place. Either
+// way, a real `tools/call` in worker-thread mode shows the client the same
+// generic "Device interface call threw an exception" text, no matter which
+// of ctx.call's two guard clauses actually fired. This was confirmed by
+// hand: a probe server on port 9556 with these exact fixtures returned the
+// identical isError:true / structuredContent.code shape for viaCall,
+// undeclared and viaBoom alike. Both of these are pre-existing, general
+// MCP-layer behaviors, out of scope for this task -- but together they
+// mean (2) can only be checked for its real message text by calling
+// ctx.call directly, in-process, against the same production code
+// (lib/handler-ctx.js's buildCtx and setComposition) rather than through
+// the worker boundary and the gateway.
 //
 // Real tool name and MCP envelope, recorded by hand before writing the
 // assertions below (server started with the fixtures and auth config this
