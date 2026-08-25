@@ -36,6 +36,19 @@
 // caller's X-CH-Key, and so implicitly as ctx.caller.apiKey, which is who
 // every hop and the outer call are billed to
 // (lib/handler-ctx.js's ctx.serviceClient).
+//
+// Task 6b: the first run of this file found a real divergence between the
+// two flag states -- a failed hop's rejection had `.code === null` with
+// --directPeerChannels off and `.code === 'DEVICE_INVOKE_EXCEPTION'` with
+// it on, even though `.fault` itself was already identical either way.
+// Traced to lib/device-manager.js's sendActionInvokeReplyToChild call
+// sites never forwarding `errCode` on the main-thread-routed reply
+// envelope, unlike lib/peer-channel.js's _dispatchInvoke, which already
+// did. Fixed in lib/device-manager.js (added errCode alongside errMsg) and
+// lib/sandbox.js's 'invoke-action-reply' case (reattaches it, mirroring
+// lib/peer-channel.js:202's `if (msg.errCode != null) err.code =
+// msg.errCode`). The assertion below now checks for the CONVERGED value on
+// both flag states rather than documenting the difference.
 const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
@@ -201,12 +214,12 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
       // boundary and land in the piped stdout buffer before reading it.
       setTimeout(() => {
         const observed = lastCtxCallFault(getStdoutBuf());
-        console.log(`    [observed] viaBoom's ctx.call .fault on this flag state: ${JSON.stringify(observed)}`);
+        console.log(`    [observed] viaBoom's ctx.call rejection on this flag state: ${JSON.stringify(observed)}`);
 
-        // Assertion written AFTER observing (see report). ctx.call must
-        // not invent fault content (lib/handler-ctx.js's own comment) --
-        // assert null if that's what was observed, otherwise assert the
-        // real value.
+        // Assertion written AFTER observing (see report -- Task 6b).
+        // ctx.call must not invent fault content (lib/handler-ctx.js's own
+        // comment) -- assert null if that's what was observed, otherwise
+        // assert the real value.
         assert.ok(observed != null, 'expected a CTX_CALL_FAULT log line from viaBoom.js');
         if (observed.fault == null) {
           assert.strictEqual(observed.fault, null);
@@ -214,6 +227,16 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
           assert.strictEqual(observed.fault.message, 'boom from the callee',
             `expected the callee's own error message in .fault, got ${JSON.stringify(observed.fault)}`);
         }
+
+        // Was a genuine divergence (null off / 'DEVICE_INVOKE_EXCEPTION' on)
+        // before lib/device-manager.js's sendInvokeActionMessageToWorker and
+        // lib/sandbox.js's 'invoke-action-reply' case were fixed (Task 6b)
+        // to carry `errCode` as a sibling of `errMsg` on the main-thread-
+        // routed reply envelope, mirroring what lib/peer-channel.js already
+        // did. Now converges on both flag states -- asserted here rather
+        // than left as a known difference, per the controller's ruling.
+        assert.strictEqual(observed.code, 'DEVICE_INVOKE_EXCEPTION',
+          `expected ctx.call's rejection .code to converge on both flag states, got ${JSON.stringify(observed)}`);
         done();
       }, 500);
     });
