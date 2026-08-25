@@ -220,3 +220,77 @@ describe('ctx.call: guard clause messages (in-process, same production code)', (
     );
   });
 });
+
+// Single-thread mode (no --workerThread): the OTHER half of
+// DeviceManager.prototype.verifyComposition's callback in
+// onAllModulesDiscovered. Under --workerThread, this.deviceMap[deviceID] on
+// the main thread is a WorkerMessage proxy, so the resolved {identity,
+// allowed} has to be relayed into the composing module's own worker thread
+// (WorkerMessage.prototype.sendSetCompositionMessage / lib/sandbox.js's
+// 'set-composition' case) before ctx.call can see it -- that is what the
+// describe block above exercises. Without --workerThread,
+// this.deviceMap[deviceID] IS the real CHDevice directly, so verifyComposition
+// takes its `else` branch instead: a plain, synchronous
+// handlerCtx.setComposition(cdifDevice, composition) call, no relay at all.
+// That branch has no other coverage in this suite -- this is it.
+//
+// Reuses this file's fixtures and auth config (compose-callee/compose-caller,
+// fixtures-auth.json's "compose-caller-internal" binding), on a different
+// port (9557) from the worker-mode server above (9556) so the two servers,
+// which this file's own before/after hooks keep alive for the whole
+// duration of their respective describe blocks, never collide.
+const PORT_SINGLE_THREAD = 9557;
+const BASE_SINGLE_THREAD = `http://127.0.0.1:${PORT_SINGLE_THREAD}`;
+
+let singleThreadServer;
+
+function startSingleThreadServer(done) {
+  singleThreadServer = spawn(process.execPath, [
+    path.join(__dirname, '..', '..', 'framework.js'),
+    // Deliberately no --workerThread.
+    '--bindAddr', '127.0.0.1', '--port', String(PORT_SINGLE_THREAD),
+    '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+    '--loadModule', path.join(FIXTURES, 'compose-callee'),
+    '--loadModule', path.join(FIXTURES, 'compose-caller')
+  ], {stdio: ['ignore', 'pipe', 'pipe']});
+
+  let out = '';
+  const onData = (buf) => {
+    out += buf.toString();
+    if (/all module discovered/i.test(out)) {
+      setTimeout(done, 2500);
+      singleThreadServer.stdout.removeListener('data', onData);
+    }
+  };
+  singleThreadServer.stdout.on('data', onData);
+  singleThreadServer.stderr.on('data', onData);
+}
+
+function callToolSingleThread(name, args, cb) {
+  request(BASE_SINGLE_THREAD)
+    .post('/mcp')
+    .set('X-CH-Key', 'composition-test-key')
+    .set('Accept', 'application/json, text/event-stream')
+    .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: name, arguments: args}})
+    .expect(200)
+    .end((err, res) => {
+      if (err) return cb(err);
+      return cb(null, res.body);
+    });
+}
+
+describe('ctx.call: success in single-thread mode (no --workerThread)', function() {
+  this.timeout(40000);
+
+  before((done) => startSingleThreadServer(done));
+  after(() => { if (singleThreadServer != null) singleThreadServer.kill('SIGKILL'); });
+
+  it('viaCall (a declared address) succeeds end-to-end: a real two-hop ctx.call, single-thread mode', (done) => {
+    callToolSingleThread('compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
+      assert.ifError(err);
+      assert.strictEqual(body.result.isError, false, JSON.stringify(body));
+      assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body));
+      done();
+    });
+  });
+});
