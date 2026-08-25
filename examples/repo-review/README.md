@@ -242,17 +242,27 @@ cancels out of the ratio, but it inflates both absolute figures by roughly 2×.
 
 ## Identity and billing across four hops
 
-`repo-review` builds its clients per call from `ctx`:
+`repo-review` calls its three inner tools by name:
 
 ```js
-ctx.serviceClient({deviceID, serviceID, as: 'repo-review-internal'}, cb)
+const {data, platformMetering} =
+  await ctx.call('repo-scan/scanService.scan', input, {detail: true});
 ```
 
-Two identities, kept apart on purpose. The hop is **authorized** as `as` — the
-composing module's own identity — so a caller granted only the composite device
-can still trigger three inner calls it has no grant for. The hop is **billed**
-to `ctx.caller`, the authenticated outer caller, so cost lands on whoever
-actually made the request. Full rationale:
+Each address (`<module>/<service>.<action>`) is declared once in
+[`repo-review/package.json`](repo-review/package.json) under
+`countinghouse.calls`, not hardcoded in the handler. `{detail: true}` is what
+makes `ctx.call` resolve to `{data, platformMetering}` instead of just `data`;
+`platformMetering` is what the handler reads to build the per-hop `bill` above.
+
+Two identities, kept apart on purpose. The hop is **authorized** as
+`repo-review-internal` — the composing module's own identity, bound in
+[`auth.json`](auth.json) via that entry's `"runsModules": ["repo-review"]` —
+so a caller granted only the composite device can still trigger three inner
+calls it has no grant for. `ctx.call` resolves and enforces that identity
+itself; the handler never chooses it. The hop is **billed** to `ctx.caller`,
+the authenticated outer caller, so cost lands on whoever actually made the
+request. Full rationale:
 [`docs/composite-tools.md`](../../docs/composite-tools.md).
 
 This demo exists partly to check that the behaviour holds one level deeper than
