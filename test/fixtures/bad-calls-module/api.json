@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "handler-map-convention",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "handler-map assembly fixture",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:greetService": {
+        "actionList": [
+          {
+            "name": "hello",
+            "description": "Returns a greeting.",
+            "input": {
+              "schema": "/greetService/hello/input"
+            },
+            "output": {
+              "schema": "/greetService/hello/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

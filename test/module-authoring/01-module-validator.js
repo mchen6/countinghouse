@@ -149,6 +149,27 @@ describe('module-validator: a main entry that exists and throws', () => {
   // list), so it is not duplicated here.
 });
 
+describe('module-validator: countinghouse.calls', () => {
+  it('reports a malformed address', (done) => {
+    moduleValidator.validateModule(fixture('bad-calls-module'), (err, result) => {
+      assert.ifError(err);
+      assert.strictEqual(result.ok, false);
+      const problem = result.problems.find((p) => p.stage === 'countinghouse.calls');
+      assert.ok(problem != null, 'a calls problem should be reported');
+      assert.ok(/repo-scan\.scan/.test(problem.message));
+      done();
+    });
+  });
+
+  it('accepts a well-formed calls list', (done) => {
+    moduleValidator.validateModule(fixture('handler-map-convention'), (err, result) => {
+      assert.ifError(err);
+      assert.strictEqual(result.problems.some((p) => p.stage === 'countinghouse.calls'), false);
+      done();
+    });
+  });
+});
+
 describe('module-validator: unusable input', () => {
   it('errors when the directory does not exist', (done) => {
     moduleValidator.validateModule(fixture('no-such-module-anywhere'), (err) => {
