@@ -249,13 +249,13 @@ identities**: the hop is authorized as the bound identity above, but billed
 to `ctx.caller` — the real outer caller — so per-hop cost lands on whoever
 actually called your tool, not on the module.
 
-**Everything is verified at load time, not at first call.** When the runtime
-starts (or a module loads), every address in `countinghouse.calls` is
-resolved against the target's real spec, the identity is bound via
-`runsModules`, a duplicate binding is refused, and the bound identity's grant
-to each target is checked. A typo, a missing binding, or a missing grant
-fails the module at startup with a message naming the module, the address,
-and the file to fix — it does not wait until the first call to surface.
+**Everything is verified at load time, not at first call.** For modules
+present at startup, every address in `countinghouse.calls` is resolved
+against the target's real spec, the identity is bound via `runsModules`, a
+duplicate binding is refused, and the bound identity's grant to each target
+is checked. A typo, a missing binding, or a missing grant fails the module
+at startup with a message naming the module, the address, and the file to
+fix — it does not wait until the first call to surface.
 
 This matters because **a runtime refusal from `ctx.call` does not reach an
 MCP client with any detail.** The gateway reduces every failed `tools/call`
@@ -278,6 +278,21 @@ are both correct; retrying shortly after resolves it.
 `examples/repo-review/token-comparison.js` waits for the server's "all
 module discovered" log line plus a settle buffer for exactly this reason —
 see its comment on `waitForAllModulesDiscovered` for the full timeline.
+
+**Known limitation — a module loaded at runtime into an instance started
+with no preloaded modules is never verified, and its `ctx.call` will
+refuse.** Composition verification runs off the `allmodulediscovered` event,
+which only fires once the startup module count (from `--loadModule` or the
+device DB) has been reached; loading a module later via
+`countinghouse_load_module` does not increment that count and so never
+triggers it. Concretely: the `--authoringTools` setup recommended above,
+started with no `--loadModule` flags, will load your module successfully
+and list its tools, but any `ctx.call` it makes will fail with `ctx.call is
+unavailable: no auth identity is bound to this module` even with a fully
+correct auth config — there is no verification pass left to bind it. This is
+a real gap, not a race like the window above; retrying does not help.
+Fixing it (making runtime loads trigger their own verification) is scoped as
+follow-up work, not covered here.
 
 ### `ctx.serviceClient` — the escape hatch
 

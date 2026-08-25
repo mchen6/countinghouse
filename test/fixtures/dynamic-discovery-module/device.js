@@ -1,8 +1,9 @@
 const fs = require('fs');
 
 // One CHDevice per backing "resource". friendlyName has to differ per
-// instance: deviceID is UUID.v5 of it (see lib/countinghouse-device.js), so
-// two instances sharing a name would collide into one device.
+// instance: deviceID is UUID.v5 of it (see lib/call-address.js's
+// deviceIDForName), so two instances sharing a name would collide into one
+// device.
 function Device(instanceName) {
   const spec = JSON.parse(fs.readFileSync(`${__dirname}/api.json`).toString());
   spec.device.friendlyName = instanceName;

@@ -129,7 +129,10 @@ Four steps, in `lib/call-address.js` (new) plus one existing message round trip:
 4. **Action check**: the action exists in that service's `actionList`; the error
    lists what does exist.
 
-Resolved targets are cached per module after first resolution.
+Resolution is NOT currently cached -- `ctx.call` re-resolves the address
+(steps 3 and 4 above, via `querydevice`) on every call, not just the first.
+Caching resolved targets per module in `_composition` is scoped as
+follow-up work, not implemented here.
 
 Step 3 needs the target's spec, so resolution is not a pure function end to end
 — the URN vendor segment varies across modules already in this repo

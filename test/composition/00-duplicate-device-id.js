@@ -1,6 +1,7 @@
-// deviceID is UUID v5 of friendlyName, so two modules that pick the same
-// friendlyName collide on ID. This is the rule that decides whether a
-// registration is a collision (refuse) or a reload (allow).
+// deviceID is UUID v5 of friendlyName (lib/call-address.js's
+// deviceIDForName), so two modules that pick the same friendlyName collide
+// on ID. This is the rule that decides whether a registration is a
+// collision (refuse) or a reload (allow).
 const assert = require('assert');
 const conflict = require('../../lib/device-id-conflict');
 
