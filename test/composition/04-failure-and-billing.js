@@ -37,6 +37,25 @@
 // every hop and the outer call are billed to
 // (lib/handler-ctx.js's ctx.serviceClient).
 //
+// What --debug means this file can and cannot prove (Fix round 1,
+// task-6-report.md): because every appKey in the chain must equal the one
+// shared debugKey, `as` (the composing module's own authorization identity,
+// resolved from "runsModules") and the billing key end up as the literal
+// same string here -- there is no separate "outer caller" identity distinct
+// from "compose-caller-internal" for this file to observe. That means this
+// file CANNOT regression-test the authorization/billing identity SPLIT
+// itself -- the property that a composing module's inner hops authorize as
+// its own internal identity while billing lands on the real outer caller,
+// which is exactly the split that used to be missing (composite billing
+// once wrongly showed up under the module's own key instead of the
+// caller's). test/auth/13-ctx-billing-identity.js is the file that covers
+// that split, non-debug, with the caller granted the composing device but
+// deliberately NOT the inner one. This file's billing assertions are about
+// a different property -- the total amount charged and to whom under a
+// single already-authorized identity -- which --debug does not distort:
+// see this file's report for which options.debug branches were checked to
+// confirm that.
+//
 // Task 6b: the first run of this file found a real divergence between the
 // two flag states -- a failed hop's rejection had `.code === null` with
 // --directPeerChannels off and `.code === 'DEVICE_INVOKE_EXCEPTION'` with
@@ -72,10 +91,8 @@ const PORT_FLAG_ON  = 9559;
 // MCP caller's X-CH-Key and (via ctx.caller.apiKey) the billing identity.
 const CALLER_KEY = 'compose-caller-internal';
 
-// Constants from test/direct-peer-channels/06-no-double-billing.js, reused
+// Constant from test/direct-peer-channels/06-no-double-billing.js, reused
 // rather than invented (CONTROLLER AMENDMENT 2).
-const SETTLE_POLL_MS    = 200;
-const SETTLE_STABLE     = 3;
 const SETTLE_TIMEOUT_MS = 15000;
 
 function getBalance(base, cb) {
@@ -87,52 +104,29 @@ function getBalance(base, cb) {
     });
 }
 
-// Copied from test/direct-peer-channels/06-no-double-billing.js's
-// settledBalance -- used ONLY for assertion 3 below (a real charge is
-// expected). See CONTROLLER AMENDMENT 1 in the task brief for why this
-// must not be reused for a "nothing was billed" assertion: it only returns
-// once the balance has moved off `mustDifferFrom` and then gone quiet, so
-// a call that is never going to move the balance either hangs to this
-// function's own timeout (mustDifferFrom = the pre-call balance) or
-// returns almost immediately, often before a late fire-and-forget charge
-// would have landed (mustDifferFrom = null) -- a false pass for exactly
-// the bug this task exists to catch.
-function settledBalance(base, mustDifferFrom, cb) {
-  const deadline = Date.now() + SETTLE_TIMEOUT_MS;
-  let last    = null;
-  let stable  = 0;
-  let changed = (mustDifferFrom === null);
-
-  (function poll() {
-    getBalance(base, (err, balance) => {
-      if (err) return cb(err);
-      if (typeof balance !== 'number') {
-        return cb(new Error(`settledBalance: /balance did not return a numeric balance, got ${JSON.stringify(balance)}`));
-      }
-
-      if (balance !== mustDifferFrom) changed = true;
-      stable = (last !== null && balance === last) ? stable + 1 : 1;
-      last   = balance;
-
-      if (changed && stable >= SETTLE_STABLE) return cb(null, balance);
-      if (Date.now() >= deadline) {
-        return cb(new Error(`settledBalance: balance did not ${
-                            changed ? 'settle' : `move from ${mustDifferFrom}`
-                            } within ${SETTLE_TIMEOUT_MS}ms (last read ${balance})`));
-      }
-      setTimeout(poll, SETTLE_POLL_MS);
-    });
-  })();
-}
-
-// For the two "not billed" assertions (CONTROLLER AMENDMENT 1): read the
-// balance, wait a FIXED window (not poll-until-stable, not
-// poll-until-expected) at least as long as SETTLE_TIMEOUT_MS above -- the
-// same order of magnitude this suite already trusts to be enough for a
-// fire-and-forget charge to land -- then read again and hand both numbers
-// to the caller to compare. A surplus charge landing at any point in that
-// window is caught; stopping early the moment three reads agree (what
-// settledBalance does) would not catch one that lands just after.
+// Fixed-window balance read: wait a FIXED window (not poll-until-stable,
+// not poll-until-expected) at least as long as SETTLE_TIMEOUT_MS, then read
+// once. Originally written for CONTROLLER AMENDMENT 1's two "not billed"
+// assertions -- see below for why it is now also used for the "billed 2"
+// success assertion (Fix round 1, task-6-report.md), which is NOT the same
+// thing amendment 1 forbade:
+//
+// Amendment 1 banned poll-UNTIL-EXPECTED (stop the moment the hoped-for
+// number appears) because that would hide a surplus charge landing just
+// after. A fixed window does the opposite: it waits the SAME unconditional
+// duration no matter what the balance is doing in the meantime, and only
+// reads once that wait is over -- a spurious extra charge landing inside
+// the window is still there when the read finally happens, so it still
+// fails an exact-equality assertion. It trades "detect the instant
+// settlement happens" for "always wait long enough that settlement has
+// already happened" -- which is what BOTH a call that should stay flat and
+// a call with more than one independently-timed charge need.
+//
+// A surplus charge landing at any point in the window is caught; stopping
+// early the moment N reads agree (a poll-until-stable helper, like
+// test/direct-peer-channels/06-no-double-billing.js's settledBalance) would
+// not catch one that lands just after those N reads happen to agree --
+// this is exactly what real-mechanism run-to-run testing found (below).
 function balanceBefore(base, cb) { getBalance(base, cb); }
 
 function balanceAfterFixedWait(base, cb) {
@@ -261,14 +255,34 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
   });
 
   it('a successful viaCall bills exactly 2 (1 outer MCP call + 1 inner hop, both at --mcpToolCallCost 1)', function(done) {
-    this.timeout(SETTLE_TIMEOUT_MS + 10000);
-    settledBalance(getBase(), null, (err, before) => {
+    this.timeout(2 * SETTLE_TIMEOUT_MS + 10000);
+    // Fixed-window read for the BEFORE baseline too, not just the after
+    // read: a prior test in this file could in principle still have a
+    // fire-and-forget write in flight (none currently should, but nothing
+    // here should rely on that holding forever as the suite grows), so the
+    // baseline itself waits out the same window before being trusted.
+    balanceAfterFixedWait(getBase(), (err, before) => {
       assert.ifError(err);
       callTool(getBase(), 'compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
         assert.ifError(err);
         assert.strictEqual(body.result.isError, false, `expected success, got ${JSON.stringify(body)}`);
         assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body));
-        settledBalance(getBase(), before, (err, after) => {
+        // A successful composed call fires TWO independently-timed charges,
+        // not one: the hop charge (lib/device-manager.js:668's
+        // CHUtil.ci.recordCall) GATES the reply back to the composing
+        // handler, so it has durably landed by the time ctx.call resolves
+        // -- but the outer charge (lib/mcp/gateway.js:623-624) is fired
+        // WITHOUT being awaited, immediately before the HTTP response ships
+        // at :628, so it has not necessarily landed by the time this test's
+        // own HTTP response arrives. A poll-until-3-stable-reads heuristic
+        // (~600ms) is robust for ONE lump charge but can observe "stable"
+        // at `before + 1` (the hop only) and return before the outer +1
+        // arrives -- undercounting by exactly 1. This is not hypothetical:
+        // an earlier run of this exact assertion, using settledBalance,
+        // measured delta=1 instead of 2 on the --directPeerChannels ON
+        // path. The fixed window below waits long enough for both charges
+        // to have landed before reading at all.
+        balanceAfterFixedWait(getBase(), (err, after) => {
           assert.ifError(err);
           const delta = before - after;
           console.log(`    [observed] viaCall billing delta: before=${before} after=${after} delta=${delta}`);
