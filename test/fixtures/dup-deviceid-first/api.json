@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "dup-deviceid-target",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "single-thread duplicate-deviceID guard fixture (registers first, must stay registered)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:pingService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Returns which fixture answered.",
+            "input": {
+              "schema": "/pingService/ping/input"
+            },
+            "output": {
+              "schema": "/pingService/ping/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

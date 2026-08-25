@@ -79,9 +79,11 @@ const ROOT     = path.join(__dirname, '..', '..');
 // Port for this task per the dispatch: 9558 only, plus a second port this
 // file picks for the second (--directPeerChannels) server -- 9559, checked
 // against every port literal under test/ at the time this file was written
-// (grep turned up 9527, 9530-9531, 9541-9546, 9550-9557, 9574-9575, 9584,
-// 9586, 9590-9591, 9593, 9595; 9559 is in none of those, nor in the task's
-// own "taken elsewhere" list).
+// (grep turned up 9527, 9530-9531, 9541-9546, 9550-9556, 9557, 9560,
+// 9574-9575, 9584, 9586, 9590-9591, 9593, 9595; 9559 is in none of those,
+// nor in the task's own "taken elsewhere" list). 9560 was added later --
+// 02-ctx-call.js's single-thread server moved there off 9557 once it was
+// found colliding with 03-declaration.js's server of the same number.
 const PORT_FLAG_OFF = 9558;
 const PORT_FLAG_ON  = 9559;
 

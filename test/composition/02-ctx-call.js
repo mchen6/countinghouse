@@ -236,10 +236,14 @@ describe('ctx.call: guard clause messages (in-process, same production code)', (
 //
 // Reuses this file's fixtures and auth config (compose-callee/compose-caller,
 // fixtures-auth.json's "compose-caller-internal" binding), on a different
-// port (9557) from the worker-mode server above (9556) so the two servers,
+// port (9560) from the worker-mode server above (9556) so the two servers,
 // which this file's own before/after hooks keep alive for the whole
-// duration of their respective describe blocks, never collide.
-const PORT_SINGLE_THREAD = 9557;
+// duration of their respective describe blocks, never collide. 9560, not
+// 9557: 03-declaration.js's server also uses 9557, and mocha runs these
+// files back to back -- see this file's after() below for the other half
+// of that fix (waiting for the process to actually exit before the next
+// file's before() tries to bind the port it just freed).
+const PORT_SINGLE_THREAD = 9560;
 const BASE_SINGLE_THREAD = `http://127.0.0.1:${PORT_SINGLE_THREAD}`;
 
 let singleThreadServer;
@@ -283,7 +287,16 @@ describe('ctx.call: success in single-thread mode (no --workerThread)', function
   this.timeout(40000);
 
   before((done) => startSingleThreadServer(done));
-  after(() => { if (singleThreadServer != null) singleThreadServer.kill('SIGKILL'); });
+  // Await 'exit', not just issuing the kill -- SIGKILL is asynchronous, and
+  // 03-declaration.js's own server binds this same port range right after
+  // this file finishes. Returning before the process has actually released
+  // the port is what produced the measured EADDRINUSE flakes (3/10 at 0ms
+  // delay between the two files, 0/10 once this waits on 'exit').
+  after((done) => {
+    if (singleThreadServer == null) return done();
+    singleThreadServer.on('exit', () => done());
+    singleThreadServer.kill('SIGKILL');
+  });
 
   it('viaCall (a declared address) succeeds end-to-end: a real two-hop ctx.call, single-thread mode', (done) => {
     callToolSingleThread('compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
