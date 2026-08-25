@@ -88,9 +88,34 @@ function startServer() {
   MODULES.forEach((m) => { args.push('--loadModule', `./examples/repo-review/${m}`); });
 
   const child = cp.spawn(process.execPath, args, {cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe']});
-  child.stdout.resume();
-  child.stderr.resume();
+  // Buffered rather than discarded (resume()'d): waitForAllModulesDiscovered
+  // below needs to read it back.
+  child.log = '';
+  child.stdout.on('data', (c) => { child.log += c.toString(); });
+  child.stderr.on('data', (c) => { child.log += c.toString(); });
   return child;
+}
+
+// repo-review is this repo's first module to declare "countinghouse.calls" --
+// composition binding (DeviceManager.prototype.verifyComposition) does its own
+// async work (a queryDevice resolution plus an authenticate() round trip per
+// declared address, then under --workerThread a further main<->worker relay)
+// AFTER a device is already visible in tools/list and callable for its own
+// action, but BEFORE ctx.call inside it has anything to call through. Waiting
+// on tools/list alone (as waitForReady below does) races that: repo-review can
+// appear ready and still reject its first call with "ctx.call is unavailable".
+// test/composition/03-declaration.js hit the same ordering and waits for the
+// server's own "all module discovered" log line plus a settle buffer instead
+// -- same fix, here.
+function waitForAllModulesDiscovered(child, deadlineMs) {
+  const deadline = Date.now() + deadlineMs;
+  return new Promise((resolve, reject) => {
+    (function poll() {
+      if (/all module discovered/i.test(child.log)) return setTimeout(resolve, 2500);
+      if (Date.now() > deadline) return reject(new Error('"all module discovered" never appeared in server output'));
+      setTimeout(poll, 100);
+    })();
+  });
 }
 
 // Poll tools/list until every demo module is registered, rather than sleeping a
@@ -318,6 +343,7 @@ async function main() {
   process.on('exit', shutdown);
 
   try {
+    await waitForAllModulesDiscovered(server, 60000);
     await waitForReady(60000);
     console.error('all four tools registered.\n');
 
