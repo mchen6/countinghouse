@@ -162,9 +162,29 @@ describe('module-validator: countinghouse.calls', () => {
   });
 
   it('accepts a well-formed calls list', (done) => {
-    moduleValidator.validateModule(fixture('handler-map-convention'), (err, result) => {
+    // compose-caller's package.json carries a real, non-empty
+    // countinghouse.calls array (two valid addresses) -- unlike
+    // handler-map-convention, which has no countinghouse key at all and so
+    // would pass this assertion even if the parse-success branch were
+    // broken or callsProblems were never called. This fixture actually
+    // exercises parseAddress's accept path.
+    moduleValidator.validateModule(fixture('compose-caller'), (err, result) => {
       assert.ifError(err);
-      assert.strictEqual(result.problems.some((p) => p.stage === 'countinghouse.calls'), false);
+      assert.strictEqual(result.problems.some((p) => p.stage === 'countinghouse.calls'), false,
+        `expected no countinghouse.calls problems, got: ${JSON.stringify(result.problems)}`);
+      done();
+    });
+  });
+
+  it('reports a duplicate address', (done) => {
+    moduleValidator.validateModule(fixture('duplicate-calls-module'), (err, result) => {
+      assert.ifError(err);
+      assert.strictEqual(result.ok, false);
+      const problem = result.problems.find((p) =>
+        p.stage === 'countinghouse.calls' && /more than once/.test(p.message));
+      assert.ok(problem != null,
+        `expected a duplicate countinghouse.calls problem, got: ${JSON.stringify(result.problems)}`);
+      assert.ok(/repo-scan\/scanService\.scan/.test(problem.message));
       done();
     });
   });
