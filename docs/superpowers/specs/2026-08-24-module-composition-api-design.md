@@ -47,10 +47,37 @@ Out, deliberately:
 
 ## Prerequisite: duplicate deviceID silently overwrites
 
-`lib/device-manager.js:464` is a bare `this.deviceMap[deviceID] = wm`.
 `deviceID` is UUID v5 of `friendlyName` (`lib/countinghouse-device.js:32`), so
-two modules that pick the same `friendlyName` produce the same deviceID and the
-second silently replaces the first — no error, no log.
+two modules that pick the same `friendlyName` produce the same deviceID. Both
+registration paths mishandle that, differently:
+
+- **Worker mode** (`lib/device-manager.js:464`) is a bare
+  `this.deviceMap[deviceID] = wm`. No check at all; the second module silently
+  replaces the first.
+- **Single-thread mode** (`lib/device-manager.js:168-173`) has a guard, and it
+  is inverted:
+
+  ```js
+  if (this.deviceMap[uuid] != null) {
+    if (this.deviceMap[uuid].module === moduleInstance) {
+      LOG.DE(cdifDevice, new CHError('DEVICE_OBJECT_CONFLICT'));
+      if (options.verifyModule !== true) return;
+    }
+  }
+  ```
+
+  It refuses when the existing device came from the **same** module instance —
+  blocking a module from re-registering its own device — and falls straight
+  through to `this.deviceMap[uuid] = cdifDevice` when a **different** module
+  claims an existing deviceID, which is the case that actually matters.
+
+`DEVICE_OBJECT_CONFLICT` is raised in that one place and asserted by no test,
+so its semantics can be corrected rather than preserved.
+
+**The rule after the fix**, both paths: a deviceID already registered by a
+*different* module (compared by `modulePath`) is refused, with an error naming
+both modules and the shared `friendlyName`. Re-registration by the same module
+is allowed and replaces the entry, because module reload depends on it.
 
 This is a latent bug today, independent of composition. It becomes load-bearing
 here: every address resolves through `friendlyName`, so silent shadowing would
