@@ -2,21 +2,25 @@
 // of a pasted UUID, a service URN, an identity string and two promise
 // wrappers).
 //
-// This file covers what is real and testable in THIS task. The
-// success-path assertion (viaCall returns 42) is deliberately NOT here --
-// ctx.call refuses to run at all until a module's identity is bound, and
-// that binding is written by Task 5's load-time verification
-// (DeviceManager.prototype.verifyComposition, which calls
-// handlerCtx.setComposition). Nothing in this branch calls setComposition
-// yet, so device._composition is always undefined right now, and Task 5
-// adds the success case to this same describe block once it exists.
+// UPDATED by Task 5. The success-path assertion (viaCall returns 42) now
+// lives here: DeviceManager.prototype.verifyComposition runs after discovery
+// completes, binds compose-caller's identity from fixtures-auth.json's
+// "runsModules", and calls handlerCtx.setComposition -- under --workerThread
+// that binding is relayed into compose-caller's own worker thread
+// (WorkerMessage.prototype.sendSetCompositionMessage / lib/sandbox.js's
+// 'set-composition' case), since the real CHDevice buildCtx reads
+// _composition off of lives there, not on the main thread's WorkerMessage
+// proxy. That is also why the OLD "viaCall fails: no identity is bound"
+// assertion is gone rather than kept alongside the new one -- once Task 5's
+// wiring runs, that premise is simply false in this file's own spawned
+// server (its fixtures-auth.json already binds compose-caller's identity),
+// so the call now succeeds instead of failing the first guard clause.
 //
-// What ctx.call must already do, regardless of Task 5, is refuse correctly:
-//   1. no identity bound            -> rejects, message names "runsModules"
-//   2. address not in countinghouse.calls -> rejects, message names
-//      "countinghouse.calls"
+// What ctx.call must still do, now that identity IS bound, is refuse a call
+// to an address outside "countinghouse.calls" ("undeclared", below) -- that
+// assertion is unchanged from before Task 5 and must keep passing.
 //
-// Both are asserted below. (1) is asserted twice: once against the real
+// The refusal is asserted twice: once against the real
 // spawned server on port 9556 (proving the whole stack -- MCP layer,
 // worker-thread dispatch, doActionCall's async-rejection handling -- turns
 // ctx.call's rejection into a real MCP error instead of hanging or
@@ -41,9 +45,10 @@
 // of ctx.call's two guard clauses actually fired. This was confirmed by
 // hand: a probe server on port 9556 with these exact fixtures returned the
 // identical isError:true / structuredContent.code shape for viaCall,
-// undeclared and viaBoom alike. Both of these are pre-existing, general
-// MCP-layer behaviors, out of scope for this task -- but together they
-// mean (2) can only be checked for its real message text by calling
+// undeclared and viaBoom alike (pre-Task-5, when every call failed the
+// first guard). Both of these are pre-existing, general MCP-layer
+// behaviors, out of scope for this task -- but together they mean the
+// refusal can only be checked for its real message text by calling
 // ctx.call directly, in-process, against the same production code
 // (lib/handler-ctx.js's buildCtx and setComposition) rather than through
 // the worker boundary and the gateway.
@@ -57,7 +62,17 @@
 //     {"name":"compose_caller_callerservice_undeclared", ...}
 //     {"name":"compose_caller_callerservice_viaboom", ...}
 //
-//   tools/call (any of the three, right now, with no Task 5 wiring):
+//   tools/call "viaCall" with {n: 21}, with Task 5's wiring in place:
+//     {"jsonrpc":"2.0","id":1,"result":{"isError":false,
+//      "content":[{"type":"text","text":"{\"output\":{\"n\":42}}"}],
+//      "structuredContent":{"output":{"n":42}}}}
+//   (structuredContent nests under "output" because that is the raw shape a
+//   6.0.0 handler returns/receives -- see docs/module-development.md -- and
+//   ctx.call resolves with exactly what the callee returned, unwrapped no
+//   further than any other ServiceClient.invoke caller sees it.)
+//
+//   tools/call "undeclared", with Task 5's wiring in place (identity bound,
+//   but "compose-callee/calleeService.triple" is not in "countinghouse.calls"):
 //     {"jsonrpc":"2.0","id":2,"result":{"isError":true,
 //      "content":[{"type":"text","text":"Device interface call threw an exception"}],
 //      "structuredContent":{"code":"DEVICE_INVOKE_EXCEPTION"}}}
@@ -93,9 +108,17 @@ function startServer(done) {
   let out = '';
   const onData = (buf) => {
     out += buf.toString();
-    if (/device list ready|server listening|new device online/i.test(out)) {
-      // give discovery a beat to finish registering the second module
-      setTimeout(done, 1500);
+    // Wait for "all module discovered" specifically, not just the first
+    // device announcing itself: DeviceManager.prototype.verifyComposition
+    // (Task 5) now runs after that point, and it does its own async work --
+    // a 'querydevice' resolution plus an authenticate() round trip per
+    // declared address, then (under --workerThread) a further main<->worker
+    // relay of the result via WorkerMessage.prototype.
+    // sendSetCompositionMessage -- before compose-caller's ctx.call is
+    // actually usable. The older "new device online" trigger fired too
+    // early for that extra work to have finished yet.
+    if (/all module discovered/i.test(out)) {
+      setTimeout(done, 2500);
       server.stdout.removeListener('data', onData);
     }
   };
@@ -120,28 +143,27 @@ function callTool(name, args, cb) {
     });
 }
 
-describe('ctx.call: refusal path, against the real spawned server', function() {
+describe('ctx.call: success and refusal, against the real spawned server', function() {
   this.timeout(40000);
 
   before((done) => startServer(done));
   after(() => { if (server != null) server.kill('SIGKILL'); });
 
-  // compose-caller declares countinghouse.calls, but nothing in this branch
-  // has called handlerCtx.setComposition yet -- that is Task 5's job. So
-  // every call through ctx.call fails the very first guard clause
-  // ("no auth identity is bound") no matter which address the handler
-  // names. This proves ctx.call's rejection reaches the client as a real
-  // MCP error, through worker-thread dispatch and doActionCall's async
-  // rejection path -- not a hang, not an unhandled rejection.
-  it('viaCall (a declared address) fails: no identity is bound to compose-caller yet', (done) => {
+  // compose-caller's identity is now bound (DeviceManager.prototype.
+  // verifyComposition, run by the framework right after discovery, before
+  // this server ever accepts a request) and "compose-callee/calleeService.
+  // double" is declared in its countinghouse.calls. viaCall's handler does
+  // `await ctx.call('compose-callee/calleeService.double', {n: input.n})`
+  // and doubles input.n server-side -- a real two-hop call: MCP -> worker
+  // thread A (compose-caller) -> ctx.call -> worker thread B
+  // (compose-callee) -> back. 21 doubled is 42.
+  it('viaCall (a declared address) succeeds end-to-end: a real two-hop ctx.call', (done) => {
     callTool('compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
       assert.ifError(err);
-      assert.strictEqual(body.result.isError, true, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.code, 'DEVICE_INVOKE_EXCEPTION');
+      assert.strictEqual(body.result.isError, false, JSON.stringify(body));
+      assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body));
       done();
     });
-    // Task 5 adds the success case here: once verifyComposition binds
-    // compose-caller's identity, this same call should return {n: 42}.
   });
 
   it('undeclared (an address outside countinghouse.calls) fails the same way', (done) => {

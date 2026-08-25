@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "compose-caller-badaddr",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Declares an action-that-does-not-exist address, for load-time verification's resolveAddress failure path (test/composition/03-declaration.js case 1).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Never actually called -- this module must fail to come online at all.",
+            "input":  {"schema": "/callerService/ping/input"},
+            "output": {"schema": "/callerService/ping/output"}
+          }
+        ]
+      }
+    }
+  }
+}

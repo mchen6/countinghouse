@@ -1,1 +1,1 @@
-module.exports = async (input) => ({n: input.n * 2});
+module.exports = async (input) => ({output: {n: input.n * 2}});
