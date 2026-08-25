@@ -1,0 +1,31 @@
+{
+  "device": {
+    "friendlyName": "compose-caller",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Caller half of the ctx.call fixture chain.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "viaCall",
+            "description": "Doubles a number by calling compose-callee through ctx.call.",
+            "input":  {"schema": "/callerService/viaCall/input"},
+            "output": {"schema": "/callerService/viaCall/output"}
+          },
+          {
+            "name": "undeclared",
+            "description": "Calls an address this module did not declare in countinghouse.calls.",
+            "input":  {"schema": "/callerService/undeclared/input"},
+            "output": {"schema": "/callerService/undeclared/output"}
+          },
+          {
+            "name": "viaBoom",
+            "description": "Calls the callee's always-failing action through ctx.call.",
+            "input":  {"schema": "/callerService/viaBoom/input"},
+            "output": {"schema": "/callerService/viaBoom/output"}
+          }
+        ]
+      }
+    }
+  }
+}

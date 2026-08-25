@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "callerService": {
+    "viaCall": {
+      "input":  {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]},
+      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+    },
+    "undeclared": {
+      "input":  {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+    },
+    "viaBoom": {
+      "input":  {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+    }
+  }
+}
