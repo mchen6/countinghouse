@@ -20,38 +20,37 @@
 // to an address outside "countinghouse.calls" ("undeclared", below) -- that
 // assertion is unchanged from before Task 5 and must keep passing.
 //
-// The refusal is asserted twice: once against the real
-// spawned server on port 9556 (proving the whole stack -- MCP layer,
-// worker-thread dispatch, doActionCall's async-rejection handling -- turns
-// ctx.call's rejection into a real MCP error instead of hanging or
-// crashing), and again in-process against the exact message. That split is
-// not a style choice -- it is forced by something confirmed by hand while
-// writing this test (see the probe transcript below), and traced to its
-// root cause on code review: lib/mcp/gateway.js's toolCallResult (~lines
-// 121-136) builds the client-facing error shape from `err.message` and
-// `err.code` alone -- it never reads the `data`/fault argument in its
-// error branch, so any detail that only lives there is discarded for
-// every MCP client, in both threading modes. Under --workerThread there is
-// a second, compounding loss on top of that: DeviceManager.prototype.
-// invokeAction re-wraps a worker's error reply as
+// The refusal is asserted twice: once against the real spawned server on
+// port 9556 (proving the whole stack -- MCP layer, worker-thread dispatch,
+// doActionCall's async-rejection handling -- turns ctx.call's rejection
+// into a real MCP error instead of hanging or crashing), and again
+// in-process against the exact message. That split is not a style choice --
+// it is forced by where the detail is lost, which was confirmed by hand
+// while writing this test and traced to its root cause on code review:
+// lib/mcp/gateway.js's toolCallResult (~lines 121-136) builds the
+// client-facing error shape from `err.message` and `err.code` alone -- it
+// never reads the `data`/fault argument in its error branch, so any detail
+// that only lives there is discarded for every MCP client, in both
+// threading modes. Under --workerThread there is a second, compounding
+// loss on top of that: DeviceManager.prototype.invokeAction re-wraps a
+// worker's error reply as
 // `new DeviceError(err.code != null ? err.code : err.message)`
 // (lib/device-manager.js, the `device.sendInvokeActionMessage(...)`
-// branch) -- since ctx.call's rejection carries a `code`
-// (DEVICE_INVOKE_EXCEPTION, from lib/service.js's `fail`), even
-// `err.message` itself does not survive the hop back to the main thread,
-// so gateway.js never has the detail to drop in the first place. Either
-// way, a real `tools/call` in worker-thread mode shows the client the same
-// generic "Device interface call threw an exception" text, no matter which
-// of ctx.call's two guard clauses actually fired. This was confirmed by
-// hand: a probe server on port 9556 with these exact fixtures returned the
-// identical isError:true / structuredContent.code shape for viaCall,
-// undeclared and viaBoom alike (pre-Task-5, when every call failed the
-// first guard). Both of these are pre-existing, general MCP-layer
-// behaviors, out of scope for this task -- but together they mean the
-// refusal can only be checked for its real message text by calling
-// ctx.call directly, in-process, against the same production code
-// (lib/handler-ctx.js's buildCtx and setComposition) rather than through
-// the worker boundary and the gateway.
+// branch), so the per-call text -- which address, which module -- does not
+// survive the hop back to the main thread either.
+//
+// What DOES survive that hop is the code, and it is now a meaningful one.
+// ctx.call's guard clauses reject with a DeviceError rather than a plain
+// Error (lib/handler-ctx.js), which lib/service.js's `fail` passes through
+// intact instead of flattening to DEVICE_INVOKE_EXCEPTION -- so an
+// undeclared address arrives at the client as CTX_CALL_UNDECLARED, and the
+// message text is that code's actionable head from error-info.*.json. It
+// was not always so: a probe server on port 9556 with these exact fixtures
+// once returned the identical isError:true / DEVICE_INVOKE_EXCEPTION shape
+// for viaCall, undeclared and viaBoom alike. test/composition/
+// 09-refusal-codes.js owns the full code set and the startup-window case;
+// what remains asserted in-process here is the per-call message text, which
+// still reaches no MCP client under --workerThread.
 //
 // Real tool name and MCP envelope, recorded by hand before writing the
 // assertions below (server started with the fixtures and auth config this
@@ -74,8 +73,12 @@
 //   tools/call "undeclared", with Task 5's wiring in place (identity bound,
 //   but "compose-callee/calleeService.triple" is not in "countinghouse.calls"):
 //     {"jsonrpc":"2.0","id":2,"result":{"isError":true,
-//      "content":[{"type":"text","text":"Device interface call threw an exception"}],
-//      "structuredContent":{"code":"DEVICE_INVOKE_EXCEPTION"}}}
+//      "content":[{"type":"text","text":"ctx.call refused: this address is not
+//        declared in the module's \"countinghouse.calls\" (package.json)"}],
+//      "structuredContent":{"code":"CTX_CALL_UNDECLARED"}}}
+//   (before the guards became typed errors this was the generic "Device
+//   interface call threw an exception" / DEVICE_INVOKE_EXCEPTION pair, which
+//   a callee that actually crashed returns too -- indistinguishable.)
 const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
@@ -170,7 +173,14 @@ describe('ctx.call: success and refusal, against the real spawned server', funct
     callTool('compose_caller_callerservice_undeclared', {}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.code, 'DEVICE_INVOKE_EXCEPTION');
+      // Was DEVICE_INVOKE_EXCEPTION -- the generic code every failed
+      // tools/call collapsed into, which is what made this refusal
+      // indistinguishable from a callee that crashed. ctx.call's guards now
+      // reject with a DeviceError, and a code survives the worker hop and
+      // the gateway untouched. test/composition/09-refusal-codes.js owns
+      // the full set; this file keeps its own assertion honest.
+      assert.strictEqual(body.result.structuredContent.code, 'CTX_CALL_UNDECLARED',
+        JSON.stringify(body));
       done();
     });
   });
@@ -189,8 +199,12 @@ describe('ctx.call: guard clause messages (in-process, same production code)', (
 
   it('rejects with no identity bound, naming runsModules', async () => {
     const device = fakeDevice();
-    // no setComposition call: device._composition stays unset, exactly as
-    // it is on this branch before Task 5 exists.
+    // setComposition(device, null) is the verdict "verification ran and had
+    // nothing to bind". It is required now: an untouched device means
+    // verification has not reached it yet, and ctx.call refuses that with
+    // CTX_CALL_NOT_READY rather than sending the caller off to fix an auth
+    // config that may be perfectly correct (09-refusal-codes.js).
+    handlerCtx.setComposition(device, null);
     const ctx = handlerCtx.buildCtx(device, {ctx: {appKey: 'irrelevant'}}, {});
 
     await assert.rejects(
