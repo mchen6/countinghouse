@@ -1,0 +1,16 @@
+{
+  "composition-test-key": {
+    "userName": "composition-test",
+    "devices": ["*"]
+  },
+  "compose-caller-internal": {
+    "userName": "compose-caller-internal",
+    "devices": ["*"],
+    "runsModules": ["compose-caller"]
+  },
+  "compose-caller-badaddr-internal": {
+    "userName": "compose-caller-badaddr-internal",
+    "devices": ["*"],
+    "runsModules": ["compose-caller-badaddr"]
+  }
+}

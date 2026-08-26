@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "compose-caller-noident",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Declares a perfectly valid countinghouse.calls address, but no auth identity lists it in 'runsModules' -- for load-time verification's identity-binding failure path (test/composition/03-declaration.js case 3).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Never actually called -- this module must fail to come online at all.",
+            "input":  {"schema": "/callerService/ping/input"},
+            "output": {"schema": "/callerService/ping/output"}
+          }
+        ]
+      }
+    }
+  }
+}

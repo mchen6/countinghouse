@@ -28,7 +28,7 @@ const ECHO_TOOL = 'echo_device_echoservice_echo';
 
 // echo-device-module's deviceID is deterministic (UUID.v5 of a fixed
 // namespace and the module's api.json friendlyName -- see
-// lib/countinghouse-device.js), so it can be hardcoded here the same way
+// lib/call-address.js's deviceIDForName), so it can be hardcoded here the same way
 // pre-installed-packages/composite-demo/device.js hardcodes its targets.
 // Declared here rather than at the foot of the file, where `var` hoisting
 // was the only thing making its use ~60 lines above the declaration work.

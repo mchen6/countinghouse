@@ -1,0 +1,11 @@
+{
+  "name": "compose-caller-noident",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "compose-callee/calleeService.double"
+    ]
+  }
+}

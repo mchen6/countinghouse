@@ -1,0 +1,1 @@
+{"name": "duplicate-calls-module", "version": "1.0.0", "countinghouse": {"calls": ["repo-scan/scanService.scan", "repo-scan/scanService.scan"]}}

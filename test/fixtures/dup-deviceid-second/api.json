@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "dup-deviceid-target",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "single-thread duplicate-deviceID guard fixture (loads second, must be refused)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:pingService": {
+        "actionList": [
+          {
+            "name": "pingSecond",
+            "description": "Must never become reachable -- its module should be refused as a deviceID conflict against dup-deviceid-first.",
+            "input": {
+              "schema": "/pingService/pingSecond/input"
+            },
+            "output": {
+              "schema": "/pingService/pingSecond/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

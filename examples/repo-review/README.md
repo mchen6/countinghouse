@@ -13,11 +13,13 @@ intermediate data is genuinely large.
 Two claims, and they carry equal weight — the second is the one that survives
 a handler being rewritten badly:
 
-1. **The bytes.** Composed in the client, this review moves **4.59 MB** into
+1. **The bytes.** Composed in the client, this review moves **5.04 MB** into
    the caller's context across three tool calls. Composed in the runtime, it
-   moves **11.0 KB** in one call — a **428× reduction**, all of it source code
+   moves **11.0 KB** in one call — a **470× reduction**, all of it source code
    that stayed on the server. Measured, not asserted: see
-   [Token comparison](#token-comparison).
+   [Token comparison](#token-comparison). (The absolute byte counts drift as
+   this repository's own source grows — re-run the script for a current
+   number; the reduction factor is what the comparison is actually about.)
 
 2. **The schema.** `repo-review`'s output schema has no field capable of
    holding a source file. Every string is `maxLength`-capped (the widest is a
@@ -209,27 +211,27 @@ nothing here may be edited by hand — re-run the script and paste again.
 | | (a) three separate tools | (b) one composite tool | ratio |
 |---|---|---|---|
 | MCP tool calls | 3 | 1 | 3× |
-| Response bytes (into model context) | 4.59 MB | 11.0 KB | **428×** |
-| Estimated response tokens | ~1.20M | ~2.8k | 428× |
-| Request bytes (out of model context) | 2.61 MB | 115 B | 23834× |
-| Total bytes across the MCP boundary | 7.21 MB | 11.1 KB | 664× |
-| End-to-end wall time (p50) | 532 ms | 234 ms | 2.27× |
+| Response bytes (into model context) | 5.04 MB | 11.0 KB | **470×** |
+| Estimated response tokens | ~1.32M | ~2.8k | 470× |
+| Request bytes (out of model context) | 2.83 MB | 115 B | 25847× |
+| Total bytes across the MCP boundary | 7.88 MB | 11.1 KB | 726× |
+| End-to-end wall time (p50) | 514 ms | 253 ms | 2.03× |
 | Samples | 5 | 5 | |
 
 | Condition | Tool call | Request | Response |
 |---|---|---|---|
-| (a) | `repo_scan_scanservice_scan` | 109 B | 4.58 MB |
-| (a) | `secret_detect_detectservice_detect` | 2.16 MB | 5.8 KB |
-| (a) | `dep_audit_auditservice_audit` | 469.6 KB | 9.0 KB |
+| (a) | `repo_scan_scanservice_scan` | 109 B | 5.03 MB |
+| (a) | `secret_detect_detectservice_detect` | 2.38 MB | 5.8 KB |
+| (a) | `dep_audit_auditservice_audit` | 469.7 KB | 9.0 KB |
 | (b) | `repo_review_reviewservice_review` | 115 B | 11.0 KB |
 
-**Same work, checked rather than assumed**: both conditions reported 327 files / 2077259 bytes scanned, 15 credential finding(s) and 46 declared dependencies. The two work descriptors are identical.
+**Same work, checked rather than assumed**: both conditions reported 394 files / 2296494 bytes scanned, 15 credential finding(s) and 46 declared dependencies. The two work descriptors are identical.
 
-**Context cost**: the client received 4.59 MB across 3 calls in (a) and 11.0 KB in one call in (b) -- 428× less. That is 4805043 bytes, an estimated ~1.20M tokens, that never entered a model context. The source code is the whole of the difference: it was read and analysed in both conditions, and only in (b) did it stay inside the server.
+**Context cost**: the client received 5.04 MB across 3 calls in (a) and 11.0 KB in one call in (b) -- 470× less. That is 5276545 bytes, an estimated ~1.32M tokens, that never entered a model context. The source code is the whole of the difference: it was read and analysed in both conditions, and only in (b) did it stay inside the server.
 
-**Latency**: (b) took 234ms at p50 against (a)'s 532ms (2.27×). Both numbers are dominated by the tools' own work -- reading and regex-scanning 1.98 MB of source -- not by the transport, and (b) additionally pays for serializing every hop payload to build its dataFlow report. Treat the byte column as the result of this benchmark and the latency column as context for it.
+**Latency**: (b) took 253ms at p50 against (a)'s 514ms (2.03×). Both numbers are dominated by the tools' own work -- reading and regex-scanning 2.19 MB of source -- not by the transport, and (b) additionally pays for serializing every hop payload to build its dataFlow report. Treat the byte column as the result of this benchmark and the latency column as context for it.
 
-**What (a) is charitable about**: its 2.61 MB of request body is this script copying an object in memory. A model client would have to emit those bytes as tool-call arguments, token by token, before the second and third calls could happen at all.
+**What (a) is charitable about**: its 2.83 MB of request body is this script copying an object in memory. A model client would have to emit those bytes as tool-call arguments, token by token, before the second and third calls could happen at all.
 ```
 
 Tokens are **estimated at 4 bytes each**, not counted — there is no tokenizer
@@ -242,17 +244,27 @@ cancels out of the ratio, but it inflates both absolute figures by roughly 2×.
 
 ## Identity and billing across four hops
 
-`repo-review` builds its clients per call from `ctx`:
+`repo-review` calls its three inner tools by name:
 
 ```js
-ctx.serviceClient({deviceID, serviceID, as: 'repo-review-internal'}, cb)
+const {data, platformMetering} =
+  await ctx.call('repo-scan/scanService.scan', input, {detail: true});
 ```
 
-Two identities, kept apart on purpose. The hop is **authorized** as `as` — the
-composing module's own identity — so a caller granted only the composite device
-can still trigger three inner calls it has no grant for. The hop is **billed**
-to `ctx.caller`, the authenticated outer caller, so cost lands on whoever
-actually made the request. Full rationale:
+Each address (`<module>/<service>.<action>`) is declared once in
+[`repo-review/package.json`](repo-review/package.json) under
+`countinghouse.calls`, not hardcoded in the handler. `{detail: true}` is what
+makes `ctx.call` resolve to `{data, platformMetering}` instead of just `data`;
+`platformMetering` is what the handler reads to build the per-hop `bill` above.
+
+Two identities, kept apart on purpose. The hop is **authorized** as
+`repo-review-internal` — the composing module's own identity, bound in
+[`auth.json`](auth.json) via that entry's `"runsModules": ["repo-review"]` —
+so a caller granted only the composite device can still trigger three inner
+calls it has no grant for. `ctx.call` resolves and enforces that identity
+itself; the handler never chooses it. The hop is **billed** to `ctx.caller`,
+the authenticated outer caller, so cost lands on whoever actually made the
+request. Full rationale:
 [`docs/composite-tools.md`](../../docs/composite-tools.md).
 
 This demo exists partly to check that the behaviour holds one level deeper than

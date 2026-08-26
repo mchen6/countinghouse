@@ -33,6 +33,36 @@ they are re-benchmarked on the current Node target (see
 [`direct-peer-channels.md`](direct-peer-channels.md#retired-numbers)). This
 document makes no performance claims.
 
+## Two ways to call another module
+
+There are two module-facing APIs for calling another module, and they answer
+different needs — this is not "old way, new way."
+
+**`ctx.call(address, input, opts)` — call by name, the default choice.**
+The target is addressed as `<module>/<service>.<action>`
+(`repo-scan/scanService.scan`), what the module is allowed to call is
+declared in its own `package.json` (`countinghouse.calls`), and which auth
+identity its hops are authorized as is bound separately, by the operator, in
+the auth config (`runsModules`). Everything — address resolution, the
+identity binding, and the grant to each target — is verified once at load
+time, so a misconfigured chain fails the module at startup rather than on
+first call. `examples/repo-review/repo-review` is the live example: it calls
+`repo-scan`, `secret-detect` and `dep-audit` this way. Full reference:
+[`module-development.md`](module-development.md#calling-other-modules).
+
+**`ctx.serviceClient(opts, cb)` — call by deviceID, the escape hatch.**
+`ctx.call` deliberately doesn't cover two cases: authorizing a single hop as
+an identity other than the one identity bound to this module
+(`runsModules` binds exactly one), or a module that legitimately needs to
+act as *two* different identities for different targets. `composite-demo`,
+this document's subject, stays on `ctx.serviceClient` on purpose so both
+paths keep a live example and test coverage — see
+[Running it](#running-it) below.
+
+Both keep the same two-identity split: the inner hop is *authorized* as the
+module's own identity, and *billed* to `ctx.caller`, the real outer caller —
+see [In-composition metering](#in-composition-metering).
+
 ## How composite-demo works
 
 `composite-demo` exposes one tool, `compositeService/run`, that:
@@ -148,6 +178,18 @@ for free, automatically, once per hop, without calling anything itself —
 and *cannot* double-bill a hop by also metering it, because the module-facing
 API for that (`CHUtil.recordUsage`, see below) no longer touches balance at
 all.
+
+**The two paths also now agree on error shape.** A rejected inner hop's
+`.fault` — the callee's own structured fault payload, when it supplied one —
+was already identical on both paths. Its `.code`, the locale-independent
+`CHError`/`DeviceError` code, was not: it rode through on the
+`--directPeerChannels` path but arrived `null` on the main-thread-routed
+(default) path, because only `--directPeerChannels`' own dispatch carried it
+across the worker boundary. `DeviceManager.prototype.sendInvokeActionMessageToWorker`
+now sends `errCode` alongside `errMsg` on its reply envelope the same way, so
+a caller (including `ctx.call`'s own rejection — see
+[`module-development.md`](module-development.md#calling-other-modules)) sees
+the same `.code` regardless of which path is in effect.
 
 Each inner hop is still metered independently, but the metering now
 originates from the platform, not from composite-demo's own handler. The

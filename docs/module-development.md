@@ -63,7 +63,8 @@ name and the fix. A module never half-loads.
 | `ctx.device` | `{deviceID, friendlyName}` — this device |
 | `ctx.serviceID`, `ctx.actionName` | the action being served |
 | `ctx.log(entry)` | device log, already bound to this device |
-| `ctx.serviceClient(opts, cb)` | call another module — see below |
+| `ctx.serviceClient(opts, cb)` | call another module by deviceID — see below |
+| `ctx.call(address, input, opts)` | call another module by name — see below |
 | `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
 | `ctx.redis` | the shared Redis client |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance |
@@ -186,7 +187,126 @@ for the whole server; it is not how you get access to an endpoint.
 
 ## Calling other modules
 
-Use `ctx.serviceClient`, which keeps two identities apart:
+### `ctx.call` — by name (the default)
+
+```js
+const data = await ctx.call('repo-scan/scanService.scan', input);
+const {data, platformMetering} = await ctx.call('repo-scan/scanService.scan', input, {detail: true});
+```
+
+The address form is `<module>/<service>.<action>`:
+
+- `<module>` — the target's `friendlyName` (its `api.json`'s
+  `device.friendlyName`), not `package.json`'s `name`.
+- `<service>` — the **service label**: the raw last segment of the service's
+  URN (`urn:...:serviceID:scanService` → `scanService`), not a made-up short
+  name.
+- `<action>` — the action's `name`, exactly as declared in `api.json`.
+
+Exactly one `/` and one `.` are allowed, and none of the three parts may
+themselves contain either character — `repo-scan/scanService.scan` is valid,
+`repo.scan/scanService.scan` is not. This is deliberately **not** the MCP tool
+name (`repo_scan_scanservice_scan`): tool names are deduped with a `_2` suffix
+on collision, in an order that depends on module load order, so a hardcoded
+tool name cannot survive another module being loaded first.
+
+**Declare what you call, in your own `package.json`** — not `api.json`, whose
+format did not change:
+
+```json
+{
+  "countinghouse": {
+    "calls": [
+      "repo-scan/scanService.scan",
+      "secret-detect/detectService.detect"
+    ]
+  }
+}
+```
+
+**Bind the identity your hops run as, in the auth config — not in the
+module.** An operator lists this module's `friendlyName` in the
+`runsModules` array of whichever auth identity should authorize its inner
+hops:
+
+```json
+{
+  "repo-review-internal": {
+    "userName": "repo-review-internal",
+    "devices": ["<deviceID of repo-scan>", "<deviceID of secret-detect>"],
+    "runsModules": ["repo-review"]
+  }
+}
+```
+
+That split is deliberate: which identity a module runs as is the operator's
+decision, not the author's, so the same module can be deployed twice under
+two different identities with two different grants. A handler never names
+its own identity — it just calls `ctx.call`.
+
+As with `ctx.serviceClient`, **authorization and billing are two different
+identities**: the hop is authorized as the bound identity above, but billed
+to `ctx.caller` — the real outer caller — so per-hop cost lands on whoever
+actually called your tool, not on the module.
+
+**Everything is verified at load time, not at first call.** For modules
+present at startup, every address in `countinghouse.calls` is resolved
+against the target's real spec, the identity is bound via `runsModules`, a
+duplicate binding is refused, and the bound identity's grant to each target
+is checked. A typo, a missing binding, or a missing grant fails the module
+at startup with a message naming the module, the address, and the file to
+fix — it does not wait until the first call to surface.
+
+This matters because **a runtime refusal from `ctx.call` does not reach an
+MCP client with any detail.** The gateway reduces every failed `tools/call`
+to a generic `DEVICE_INVOKE_EXCEPTION` message and a `code`; the rejected
+promise's `.fault` field (the callee's structured fault, when it supplied
+one) never crosses that boundary — only the REST `/devices/:id/invoke-action`
+path surfaces it. So the load-time error above is how you actually find out
+a chain is misconfigured; the runtime rejection is a backstop for changes
+that happen after startup (a target module reloaded with a different spec,
+for instance), not the primary diagnostic.
+
+**Known limitation — a short startup window where a composing tool is
+listed but not yet callable.** A device appears in `tools/list` and can
+serve its own actions before load-time composition verification (which does
+the work described above) has finished — that verification is asynchronous
+and runs after all modules are discovered. A client that calls a composing
+tool immediately on server startup can see `ctx.call is unavailable: no auth
+identity is bound to this module` even though the module and its auth config
+are both correct; retrying shortly after resolves it.
+`examples/repo-review/token-comparison.js` waits for the server's "all
+module discovered" log line plus a settle buffer for exactly this reason —
+see its comment on `waitForAllModulesDiscovered` for the full timeline.
+
+**Known limitation — a module loaded at runtime into an instance started
+with no preloaded modules is never verified, and its `ctx.call` will
+refuse.** Composition verification runs off the `allmodulediscovered` event,
+which only fires once the startup module count (from `--loadModule` or the
+device DB) has been reached; loading a module later via
+`countinghouse_load_module` does not increment that count and so never
+triggers it. Concretely: the `--authoringTools` setup recommended above,
+started with no `--loadModule` flags, will load your module successfully
+and list its tools, but any `ctx.call` it makes will fail with `ctx.call is
+unavailable: no auth identity is bound to this module` even with a fully
+correct auth config — there is no verification pass left to bind it. This is
+a real gap, not a race like the window above; retrying does not help.
+Fixing it (making runtime loads trigger their own verification) is scoped as
+follow-up work, not covered here.
+
+### `ctx.serviceClient` — the escape hatch
+
+`ctx.call` intentionally does not cover every case. Use `ctx.serviceClient`
+directly when you need:
+
+- **A per-call identity override** — `ctx.call` always authorizes as the one
+  identity bound to this module via `runsModules`; `ctx.serviceClient` lets
+  you pick `as` per call.
+- **A module needing two identities** — `ctx.call`'s load-time verification
+  binds exactly one identity per module (a second `runsModules` claim on the
+  same `friendlyName` is refused as a conflict); a module that legitimately
+  needs to act as two different identities for different targets still
+  needs `ctx.serviceClient`.
 
 ```js
 ctx.serviceClient({deviceID, serviceID, as: 'my-module-internal'}, (err, client) => {
@@ -196,8 +316,13 @@ ctx.serviceClient({deviceID, serviceID, as: 'my-module-internal'}, (err, client)
 
 `as` is the identity the inner hop is **authorized** as — your module's own,
 which must be granted access to the target device or every inner call fails.
-The hop is **billed** to `ctx.caller`, so per-hop cost lands on whoever called
-your tool rather than on your module. See
+The hop is **billed** to `ctx.caller`, same as `ctx.call`, so per-hop cost
+lands on whoever called your tool rather than on your module. Unlike
+`ctx.call`, the target here is addressed by `deviceID`, computed offline or
+looked up yourself — there is no name resolution.
+
+`pre-installed-packages/composite-demo` stays on `ctx.serviceClient`
+deliberately, so both paths keep a live example and test coverage; see
 [`composite-tools.md`](composite-tools.md#every-composing-module-needs-its-internal-identity-granted).
 
 ## Troubleshooting: my module doesn't appear in `tools/list`

@@ -1,28 +1,29 @@
 // repo-review: one MCP tools/call, three in-process hops, and a response that
 // structurally cannot contain the source code the review was derived from.
 //
-// The three hops are ordinary cross-worker ServiceClient invocations -- the
-// same mechanism docs/composite-tools.md describes for the two-hop
-// composite-demo. What this module adds is a third hop (so the identity and
-// billing story is exercised at four levels: outer call plus three inner ones)
-// and a deliberately huge intermediate payload, so that "the intermediate
-// result never enters the caller's context" is a number rather than a claim.
+// The three hops are ctx.call('module/service.action', input, {detail: true})
+// -- composition by name (docs/composite-tools.md). Each address is declared
+// in this module's package.json under "countinghouse.calls" and resolved once
+// at load time; the identity the hops run AS is bound in auth.json's
+// "runsModules" for this module's friendlyName ("repo-review"), not chosen by
+// this handler. {detail: true} is required: it is what makes ctx.call resolve
+// to {data, platformMetering} instead of just data, and the `bill` array
+// below is built entirely from platformMetering. What this module adds over
+// the two-hop composite-demo is a third hop (so the identity and billing
+// story is exercised at four levels: outer call plus three inner ones) and a
+// deliberately huge intermediate payload, so that "the intermediate result
+// never enters the caller's context" is a number rather than a claim.
 //
-// 6.0.0 shape: one handler file, async (input, ctx), clients built per call
-// from ctx so each hop is AUTHORIZED as this module and BILLED to the real
-// outer caller.
-const SCAN_DEVICE_ID   = '1359302a-e4fe-5c14-853b-f83638e8ca01'; // repo-scan
-const DETECT_DEVICE_ID = '7d4e06e9-0742-556b-a7f2-a32aee36e2e7'; // secret-detect
-const AUDIT_DEVICE_ID  = '01919ef1-dd71-5d42-99ce-98decb9a2408'; // dep-audit
+// 6.0.0 shape: one handler file, async (input, ctx), every hop a single
+// ctx.call so it is AUTHORIZED as this module and BILLED to the real outer
+// caller.
 
-const SCAN_SERVICE   = 'urn:countinghouse-com:serviceID:scanService';
-const DETECT_SERVICE = 'urn:countinghouse-com:serviceID:detectService';
-const AUDIT_SERVICE  = 'urn:countinghouse-com:serviceID:auditService';
-
-// The identity the inner hops are AUTHORIZED as -- it needs a grant to the
-// three modules above. Billing does not use it: ctx.serviceClient bills
-// ctx.caller. See docs/composite-tools.md's table of module identities.
-const AS_IDENTITY = 'repo-review-internal';
+// ctx.call resolves and enforces the runsModules-bound identity itself; it
+// does not hand that identity back to the handler. This mirrors it only as a
+// label for the bill below -- it must match the auth.json "runsModules"
+// binding for "repo-review" or this label, not the actual authorization,
+// would drift from reality.
+const AUTHORIZED_AS_LABEL = 'repo-review-internal';
 
 const HOP_COST = 1;   // app-layer audit trail only; the real charge comes from platform metering
 
@@ -44,27 +45,6 @@ function jsonBytes(value) {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
 
-function clientFor(ctx, deviceID, serviceID) {
-  return new Promise((resolve, reject) => {
-    ctx.serviceClient({deviceID: deviceID, serviceID: serviceID, as: AS_IDENTITY}, (err, client) => {
-      if (err != null) return reject(err);
-      return resolve(client);
-    });
-  });
-}
-
-// platformMetering is the 3rd, additive argument on a cross-worker
-// ServiceClient.invoke reply. It is never merged into `data` -- see
-// docs/composite-tools.md for why that separation is load-bearing.
-function rawInvoke(client, actionName, input) {
-  return new Promise((resolve, reject) => {
-    client.invoke({actionName: actionName, input: input}, (err, data, platformMetering) => {
-      if (err != null) return reject(err);
-      return resolve({data: data, platformMetering: platformMetering});
-    });
-  });
-}
-
 module.exports = async (input, ctx) => {
   const opts = input || {};
 
@@ -80,13 +60,13 @@ module.exports = async (input, ctx) => {
   // real work that a composite tool would not otherwise do. It makes this
   // module's wall-clock time pessimistic, which is the right direction for a
   // demo whose whole point is a favourable comparison.
-  async function hop(label, client, actionName, hopInput) {
+  async function hop(label, address, hopInput) {
     const inBytes = jsonBytes(hopInput);
     const t0 = Date.now();
 
     let result;
     try {
-      result = await rawInvoke(client, actionName, hopInput);
+      result = await ctx.call(address, hopInput, {detail: true});
     } catch (e) {
       throw new DeviceError('DEVICE_ACTION_CALL_FAIL', `${label}: ${e.message}`);
     }
@@ -107,7 +87,7 @@ module.exports = async (input, ctx) => {
       // stop-condition check for this demo is that billedTo stays the outer
       // caller on all three hops, not just the first.
       billedTo:     (ctx.caller != null) ? ctx.caller.apiKey : null,
-      authorizedAs: AS_IDENTITY,
+      authorizedAs: AUTHORIZED_AS_LABEL,
       wallMs:       wallMs
     });
 
@@ -116,10 +96,6 @@ module.exports = async (input, ctx) => {
 
     return result.data.output;
   }
-
-  const scanClient   = await clientFor(ctx, SCAN_DEVICE_ID,   SCAN_SERVICE);
-  const detectClient = await clientFor(ctx, DETECT_DEVICE_ID, DETECT_SERVICE);
-  const auditClient  = await clientFor(ctx, AUDIT_DEVICE_ID,  AUDIT_SERVICE);
 
   // --- hop 1: read the repository ----------------------------------------
   // Only pass through what the caller actually set: repo-scan's input schema is
@@ -131,7 +107,7 @@ module.exports = async (input, ctx) => {
   if (opts.maxBytes != null) scanInput.maxBytes = opts.maxBytes;
   if (opts.maxFiles != null) scanInput.maxFiles = opts.maxFiles;
 
-  const scanned = await hop('repo-scan/scan', scanClient, 'scan', scanInput);
+  const scanned = await hop('repo-scan/scan', 'repo-scan/scanService.scan', scanInput);
 
   // `scanned.files` holds the full text of the repository, in this worker, for
   // the rest of this function. It is passed to the next two hops and then
@@ -139,7 +115,7 @@ module.exports = async (input, ctx) => {
   const maxFindings = (opts.maxSecretFindings != null) ? opts.maxSecretFindings : DEFAULT_MAX_SECRET_FINDINGS;
 
   // --- hop 2: detect credentials -----------------------------------------
-  const secrets = await hop('secret-detect/detect', detectClient, 'detect',
+  const secrets = await hop('secret-detect/detect', 'secret-detect/detectService.detect',
                             {files: scanned.files, maxFindings: maxFindings});
 
   // --- hop 3: audit the manifest -----------------------------------------
@@ -161,7 +137,7 @@ module.exports = async (input, ctx) => {
       notes: [`No ${MANIFEST_NAME} at the root of the scanned tree (or the include globs excluded it), so no dependency audit was run.`]
     };
   } else {
-    const audited = await hop('dep-audit/audit', auditClient, 'audit', {
+    const audited = await hop('dep-audit/audit', 'dep-audit/auditService.audit', {
       manifest:     manifestFile.content,
       lockfile:     (lockFile != null) ? lockFile.content : null,
       lockfileName: (lockFile != null) ? lockFile.path : null

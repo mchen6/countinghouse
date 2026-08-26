@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "calleeService": {
+    "double": {
+      "input":  {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]},
+      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+    },
+    "boom": {
+      "input":  {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"never": {"type": "string"}}}
+    }
+  }
+}

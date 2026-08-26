@@ -28,7 +28,12 @@ const AUDIT_DEVICE  = '01919ef1-dd71-5d42-99ce-98decb9a2408';
 function writeAuth() {
   const config = {};
   config[CALLER]      = {userName: 'caller', devices: [REVIEW_DEVICE]};
-  config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [SCAN_DEVICE, DETECT_DEVICE, AUDIT_DEVICE]};
+  // "runsModules" is what binds AS_IDENTITY as repo-review's ctx.call
+  // identity (DeviceManager.prototype.verifyComposition, load-time) -- since
+  // repo-review's package.json declares "countinghouse.calls", the module
+  // now refuses to come online without this, same as the real auth.json.
+  config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [SCAN_DEVICE, DETECT_DEVICE, AUDIT_DEVICE],
+                          runsModules: ['repo-review']};
   fs.writeFileSync(AUTH_PATH, JSON.stringify(config, null, 2));
 }
 

@@ -8,5 +8,12 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "mchen6",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "repo-scan/scanService.scan",
+      "secret-detect/detectService.detect",
+      "dep-audit/auditService.audit"
+    ]
+  }
 }

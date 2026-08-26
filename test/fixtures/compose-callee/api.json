@@ -1,0 +1,25 @@
+{
+  "device": {
+    "friendlyName": "compose-callee",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Callee half of the ctx.call fixture chain.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:calleeService": {
+        "actionList": [
+          {
+            "name": "double",
+            "description": "Doubles a number. Exists so a composing fixture has something to call.",
+            "input":  {"schema": "/calleeService/double/input"},
+            "output": {"schema": "/calleeService/double/output"}
+          },
+          {
+            "name": "boom",
+            "description": "Always fails. Exists so the failure path has something to fail on.",
+            "input":  {"schema": "/calleeService/boom/input"},
+            "output": {"schema": "/calleeService/boom/output"}
+          }
+        ]
+      }
+    }
+  }
+}

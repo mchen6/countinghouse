@@ -49,7 +49,7 @@ tools appear:
 
 | Tool | Purpose |
 |---|---|
-| `countinghouse_validate_plan` | Check a proposed device/services/actions split **before any file exists** — names, duplicates, missing descriptions, collisions with tools already on this runtime. Returns the tool names the plan would produce. |
+| `countinghouse_validate_plan` | Check a proposed device/services/actions split **before any file exists** — names, duplicates, missing descriptions, collisions with tools already on this runtime, and an optional `calls` array (see [Composing](#composing-countinghousecalls) below). Returns the tool names the plan would produce. |
 | `countinghouse_validate_module` | The CLI's check over MCP. Returns `{ok, module, problems}`. |
 | `countinghouse_load_module` | Load a module from a local path into the running runtime. Returns the tool names it made callable, plus `discoveryComplete`. |
 | `countinghouse_call_tool` | Invoke a tool by name — so a just-loaded module can be called without waiting for the client to refresh its tool list. |
@@ -75,6 +75,54 @@ Its first rule is the one worth repeating here: **decide what a tool is
 allowed to return before deciding what it does.** The output schema is the
 guarantee. A tool whose schema has no field that can hold a file cannot leak
 a file, whatever its handler does or a model asks of it.
+
+## Composing: `countinghouse.calls`
+
+A module that needs to call another module by name declares what it may call
+in **its own `package.json`**, not `api.json` — the device spec format did
+not change for this at all:
+
+```json
+{
+  "countinghouse": {
+    "calls": ["repo-scan/scanService.scan", "secret-detect/detectService.detect"]
+  }
+}
+```
+
+Each entry is an address, `<module>/<service>.<action>` — the target's
+`friendlyName`, the raw last segment of its service URN, and its action
+name. Not the target's MCP tool name (`repo_scan_scanservice_scan`): that's
+deduped and load-order-dependent, so it cannot be hardcoded reliably. The
+handler then calls it with `ctx.call('repo-scan/scanService.scan', input)` —
+see [`module-development.md`](module-development.md#calling-other-modules) for
+the full mechanism.
+
+**The identity is not yours to declare.** A module says what it calls; it
+never says who it calls as. Which auth identity a module's inner hops are
+authorized as is bound separately, after the module is written, by the
+operator listing the module's `friendlyName` in that identity's
+`runsModules` entry in the auth config. That split is deliberate: the same
+module can be deployed twice, under two different identities with two
+different grants, without editing it.
+
+**Both validators know about `calls`, at different depths.** They cannot
+substitute for each other:
+
+- `countinghouse_validate_plan` accepts an optional `calls` array in the same
+  shape, checked against whatever targets are already loaded on this
+  runtime — useful for approving a chain's shape before any file exists.
+- `countinghouse_validate_module` (and the CLI it wraps) checks `package.json`'s
+  real `countinghouse.calls` for shape and duplicates, with no server needed
+  — but it cannot know whether a named module, service or action actually
+  exists, only that the address is well-formed.
+- **Neither one binds the identity or confirms the grant.** That check —
+  along with confirming the target actually exists — happens only when the
+  module is loaded into a running runtime (`DeviceManager`'s composition
+  verification, which runs once discovery finishes). A module can validate
+  clean and still fail at load time if no identity's `runsModules` claims it,
+  or if the bound identity lacks a grant to a declared target. Load it (step
+  5 of the loop) and check the server log before declaring the chain done.
 
 ## Why `tools/list` does not update by itself
 
