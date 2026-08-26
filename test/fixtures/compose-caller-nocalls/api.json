@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "compose-caller-nocalls",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Composes at runtime but declares no countinghouse.calls -- the module that proves composition verification delivers a verdict even when it has nothing to bind.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "tryCall",
+            "description": "Calls an address, having declared nothing.",
+            "input":  {"schema": "/callerService/tryCall/input"},
+            "output": {"schema": "/callerService/tryCall/output"}
+          }
+        ]
+      }
+    }
+  }
+}

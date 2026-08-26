@@ -265,6 +265,7 @@ comes back `isError: true` with `structuredContent.code` set to one of:
 
 | `code` | what it means |
 | --- | --- |
+| `CTX_CALL_NOT_READY` | composition verification has not finished for this module yet — retry; this does *not* mean the config is wrong |
 | `CTX_CALL_UNBOUND` | verification finished and bound nothing: the address is missing from `countinghouse.calls`, or no identity's `runsModules` lists this module (both are required) |
 | `CTX_CALL_UNDECLARED` | an identity is bound, but this address is not in `countinghouse.calls` |
 | `CTX_CALL_BAD_ADDRESS` | the address is not of the form `<module>/<service>.<action>` |
@@ -282,16 +283,16 @@ message, not "… for address `x/y.z`". The full text survives in
 single-thread mode and over REST `/devices/:id/invoke-action`. The callee's
 structured `.fault` reaches neither.
 
-**Known limitation — a short startup window where a composing tool is
-listed but not yet callable.** A device appears in `tools/list` and can
-serve its own actions before load-time composition verification (which does
-the work described above) has finished — that verification is asynchronous
-and runs after all modules are discovered. A client that calls a composing
-tool immediately on server startup can see `CTX_CALL_UNBOUND` even though
-the module and its auth config are both correct; retrying shortly after
-resolves it. `examples/repo-review/token-comparison.js` waits for the
-server's "all module discovered" log line plus a settle buffer for exactly
-this reason — see its comment on `waitForAllModulesDiscovered` for the full
+**A short startup window remains, but it now says so.** A device appears in
+`tools/list` and can serve its own actions before composition verification
+has finished — that verification is asynchronous and runs after all modules
+are discovered. A call landing in that window is refused with
+`CTX_CALL_NOT_READY`, whose message says to retry, rather than being blamed
+on an auth config that is in fact correct. Treat that code as retryable and
+every other `CTX_CALL_*` code as a configuration bug.
+`examples/repo-review/token-comparison.js` waits for the server's "all
+module discovered" log line plus a settle buffer to stay out of the window
+entirely — see its comment on `waitForAllModulesDiscovered` for the full
 timeline.
 
 Composition verification also runs for modules loaded at runtime, including

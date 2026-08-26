@@ -113,6 +113,7 @@
   "MODULE_HANDLER_MISMATCH": "handler map 与 api.json 不匹配",
   "HOP_IDENTITY_UNRESOLVED": "已拒绝：无法解析本次内层跳转的调用方身份，该调用无法计费到任何账户",
   "MODULE_COMPOSITION_INVALID": "模块组合声明无效",
+  "CTX_CALL_NOT_READY": "ctx.call 尚未就绪：该模块的组合关系还未完成校验 -- 请稍后重试，这不一定说明鉴权配置有误",
   "CTX_CALL_UNBOUND": "ctx.call 不可用：该模块没有任何可用的组合绑定 -- 需要同时在 package.json 的 \"countinghouse.calls\" 中声明该地址，并在鉴权配置中把模块的 friendlyName 加入某个身份的 \"runsModules\"，两者缺一不可",
   "CTX_CALL_UNDECLARED": "ctx.call 已拒绝：该地址未在模块的 \"countinghouse.calls\"（package.json）中声明",
   "CTX_CALL_BAD_ADDRESS": "ctx.call 已拒绝：地址格式错误，应为 <module>/<service>.<action>",
