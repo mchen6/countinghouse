@@ -103,7 +103,9 @@ function startServer() {
 // AFTER a device is already visible in tools/list and callable for its own
 // action, but BEFORE ctx.call inside it has anything to call through. Waiting
 // on tools/list alone (as waitForReady below does) races that: repo-review can
-// appear ready and still reject its first call with "ctx.call is unavailable".
+// appear ready and still reject its first call with CTX_CALL_NOT_READY -- the
+// code ctx.call uses for exactly this window, as opposed to the CTX_CALL_*
+// codes that mean the configuration is actually wrong.
 // test/composition/03-declaration.js hit the same ordering and waits for the
 // server's own "all module discovered" log line plus a settle buffer instead
 // -- same fix, here.

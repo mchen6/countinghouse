@@ -257,27 +257,43 @@ is checked. A typo, a missing binding, or a missing grant fails the module
 at startup with a message naming the module, the address, and the file to
 fix — it does not wait until the first call to surface.
 
-This matters because **a runtime refusal from `ctx.call` does not reach an
-MCP client with any detail.** The gateway reduces every failed `tools/call`
-to a generic `DEVICE_INVOKE_EXCEPTION` message and a `code`; the rejected
-promise's `.fault` field (the callee's structured fault, when it supplied
-one) never crosses that boundary — only the REST `/devices/:id/invoke-action`
-path surfaces it. So the load-time error above is how you actually find out
-a chain is misconfigured; the runtime rejection is a backstop for changes
-that happen after startup (a target module reloaded with a different spec,
-for instance), not the primary diagnostic.
+Load time is still where you want to find a broken chain, because only the
+load-time error can name the module, the address and the file to fix. But a
+runtime refusal is no longer anonymous: **each `ctx.call` guard rejects with
+a typed code that reaches an MCP client intact.** A failed `tools/call`
+comes back `isError: true` with `structuredContent.code` set to one of:
 
-**Known limitation — a short startup window where a composing tool is
-listed but not yet callable.** A device appears in `tools/list` and can
-serve its own actions before load-time composition verification (which does
-the work described above) has finished — that verification is asynchronous
-and runs after all modules are discovered. A client that calls a composing
-tool immediately on server startup can see `ctx.call is unavailable: no auth
-identity is bound to this module` even though the module and its auth config
-are both correct; retrying shortly after resolves it.
+| `code` | what it means |
+| --- | --- |
+| `CTX_CALL_NOT_READY` | composition verification has not finished for this module yet — retry; this does *not* mean the config is wrong |
+| `CTX_CALL_UNBOUND` | verification finished and bound nothing: the address is missing from `countinghouse.calls`, or no identity's `runsModules` lists this module (both are required) |
+| `CTX_CALL_UNDECLARED` | an identity is bound, but this address is not in `countinghouse.calls` |
+| `CTX_CALL_BAD_ADDRESS` | the address is not of the form `<module>/<service>.<action>` |
+| `CTX_CALL_UNRESOLVED` | the address does not resolve against the target module's spec |
+
+A callee that genuinely threw still reports `DEVICE_INVOKE_EXCEPTION` —
+telling a misconfigured chain apart from a failing one is the whole point of
+the codes. Because they come from `lib/error-info.*.json`, each code's
+message text is actionable on its own.
+
+What still does not cross the MCP boundary is the per-call **detail**. Under
+`--workerThread`, `DeviceManager.prototype.invokeAction` rebuilds a worker's
+error reply from its `code` alone, so a client sees the code's generic
+message, not "… for address `x/y.z`". The full text survives in
+single-thread mode and over REST `/devices/:id/invoke-action`. The callee's
+structured `.fault` reaches neither.
+
+**A short startup window remains, but it now says so.** A device appears in
+`tools/list` and can serve its own actions before composition verification
+has finished — that verification is asynchronous and runs after all modules
+are discovered. A call landing in that window is refused with
+`CTX_CALL_NOT_READY`, whose message says to retry, rather than being blamed
+on an auth config that is in fact correct. Treat that code as retryable and
+every other `CTX_CALL_*` code as a configuration bug.
 `examples/repo-review/token-comparison.js` waits for the server's "all
-module discovered" log line plus a settle buffer for exactly this reason —
-see its comment on `waitForAllModulesDiscovered` for the full timeline.
+module discovered" log line plus a settle buffer to stay out of the window
+entirely — see its comment on `waitForAllModulesDiscovered` for the full
+timeline.
 
 Composition verification also runs for modules loaded at runtime, including
 into an instance started with no `--loadModule` flags at all — the
@@ -288,13 +304,10 @@ loaded entirely at runtime can `ctx.call` normally.
 
 This was not always true: `allmodulediscovered` used to be gated on a
 startup module count that a bare instance never reached, so verification
-never ran there and every `ctx.call` refused with `ctx.call is unavailable:
-no auth identity is bound to this module` against a perfectly correct auth
-config. `test/composition/08-bare-server-discovery.js` guards both halves —
-that a bare instance reaches discovery completion, and that a composing
-module loaded into one at runtime can actually call through.
-Fixing it (making runtime loads trigger their own verification) is scoped as
-follow-up work, not covered here.
+never ran there and every `ctx.call` was refused against a perfectly correct
+auth config. `test/composition/08-bare-server-discovery.js` guards both
+halves — that a bare instance reaches discovery completion, and that a
+composing module loaded into one at runtime can actually call through.
 
 ### `ctx.serviceClient` — the escape hatch
 

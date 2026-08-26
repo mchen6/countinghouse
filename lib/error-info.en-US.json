@@ -112,5 +112,10 @@
   "MODULE_ASSEMBLY_FAIL": "Handler-map module assembly failed",
   "MODULE_HANDLER_MISMATCH": "Handler map does not match api.json",
   "HOP_IDENTITY_UNRESOLVED": "Refused: the calling identity for this inner hop could not be resolved, so the call cannot be billed to anyone",
-  "MODULE_COMPOSITION_INVALID": "Module composition declaration is invalid"
+  "MODULE_COMPOSITION_INVALID": "Module composition declaration is invalid",
+  "CTX_CALL_NOT_READY": "ctx.call is not ready yet: this module's composition has not been verified yet -- retry shortly, the auth config is not necessarily wrong",
+  "CTX_CALL_UNBOUND": "ctx.call is unavailable: nothing is bound for this module -- declare the address in \"countinghouse.calls\" (package.json) AND add the module's friendlyName to some identity's \"runsModules\" in the auth config; both are required",
+  "CTX_CALL_UNDECLARED": "ctx.call refused: this address is not declared in the module's \"countinghouse.calls\" (package.json)",
+  "CTX_CALL_BAD_ADDRESS": "ctx.call refused: the address is malformed, expected <module>/<service>.<action>",
+  "CTX_CALL_UNRESOLVED": "ctx.call refused: the address does not resolve against the target module's spec"
 }
