@@ -1,0 +1,112 @@
+# Changelog
+
+Notable changes per release. Releases before 6.1.0 carry their notes in
+their annotated git tag (`git show v6.0.0`); this file starts the in-repo
+record and 6.0.0 is summarized below as the baseline.
+
+This project follows [semantic versioning](https://semver.org/), where the
+public surface is the CLI flags, the MCP contract, the module format, and
+the auth config.
+
+## 6.1.0
+
+Two new subsystems, both additive: a toolchain for authoring modules, and an
+API for modules to call each other by name. `api.json`, `schema.json` and the
+MCP contract are unchanged — `tools/list` remains byte-identical to the golden
+sample, asserted on every commit.
+
+### Added — composition: modules call each other by name
+
+- **`ctx.call(address, input, opts)`**. A handler reaches another module as
+  `<module>/<service>.<action>` — `repo-scan/scanService.scan` — instead of a
+  pasted deviceID UUID, a service URN and a hand-built client. `opts.detail`
+  returns `{data, platformMetering}` where the plain form returns `data`.
+- **`countinghouse.calls` in `package.json`** declares every address a module
+  is allowed to call. An address outside the declared set is refused.
+- **`runsModules` in the auth config** binds the identity a module's hops are
+  *authorized* as. Which identity a module runs as is the operator's decision,
+  not the author's, so the same module can be deployed twice under two
+  identities. Both auth backends implement it (`identityForModule` on the file
+  and sqlite providers).
+- **Everything is verified at load time, not at first call.** Every declared
+  address is resolved against the target's real spec, the identity is bound, a
+  duplicate binding is refused, and the bound identity's grant to each target
+  is checked. A typo fails the module at startup with a message naming the
+  module, the address and the file to fix.
+- Authorization and billing stay two different identities: a hop is authorized
+  as the bound identity and billed to `ctx.caller`, the real outer caller, so
+  per-hop cost lands on whoever made the outer call.
+- `ctx.serviceClient` remains the escape hatch for a per-call identity override
+  or a module that legitimately needs two identities.
+
+### Added — the module-authoring toolchain
+
+- **`--authoringTools`** (default off) exposes four MCP tools behind a second,
+  independent admin-key gate: `countinghouse_validate_plan`,
+  `countinghouse_validate_module`, `countinghouse_load_module` and
+  `countinghouse_call_tool`. Default-off matters because `load_module` plus
+  `call_tool` is arbitrary code execution with a friendly name. With the flag
+  off the tools are byte-identical to tools that do not exist — same envelope,
+  same error code, produced by the same line of code as a genuinely unknown
+  tool.
+- **`countinghouse-validate`**, a new bin: the same validation oracle from a
+  shell, no server required. `--json` emits a machine-readable result.
+- `countinghouse_validate_module` runs the module under test in a **spawned
+  child process**, so a crash or a `process.exit()` in caller-supplied code
+  kills the child rather than the gateway, and a re-validated module is never
+  served from a stale `require` cache.
+- The `countinghouse-module` skill ships in-repo (`.claude/skills/`), so
+  pointing a coding agent at a clone is enough.
+
+### Fixed
+
+- **`ctx.call` refusals now carry typed error codes** — `CTX_CALL_NOT_READY`,
+  `CTX_CALL_UNBOUND`, `CTX_CALL_UNDECLARED`, `CTX_CALL_BAD_ADDRESS`,
+  `CTX_CALL_UNRESOLVED` — reaching an MCP client in `structuredContent.code`.
+  They previously collapsed into the generic `DEVICE_INVOKE_EXCEPTION`, making
+  a misconfigured chain indistinguishable from a callee that genuinely crashed.
+- **The startup window identifies itself.** Composition verification is
+  asynchronous and runs after discovery, while a device is already listed and
+  serving. A call landing in that window is now refused with
+  `CTX_CALL_NOT_READY` ("retry") instead of being blamed on an auth config that
+  was already correct.
+- **A bare instance completes discovery.** `allmodulediscovered` was gated on a
+  startup module count an instance with no `--loadModule` flags never reached,
+  so composition verification never ran there and every runtime-loaded module's
+  `ctx.call` was refused. This was exactly the `--authoringTools` workflow,
+  which is designed to start with no modules.
+- **A deviceID already registered by a different module is refused** rather
+  than silently taking over the existing registration.
+- Re-verification after a runtime module load no longer purges devices that are
+  already online and serving; it only clears their composition binding.
+- `errCode` now rides the main-thread-routed reply envelope, so an inner hop's
+  error code survives the worker boundary on the default path as it already did
+  under `--directPeerChannels`.
+- The heap-stat timer is installed once per process instead of once per
+  discovery event.
+- Authoring fixes: a module's own load-time stdout no longer shadows the CLI's
+  `--json` line, `load_module`'s wait on a hanging module is bounded, and
+  `validate_plan` resolves `plan.calls` against live specs and catches
+  duplicates.
+
+### Changed
+
+- `spec/schema.json` relaxes a device's `modelDescription` to 4096 characters,
+  matching what an action's `description` already allowed.
+
+### Docs
+
+- `examples/repo-review` — a composite tool that reads a repository and never
+  returns the source it read — with `npm run demo:repo-review` to start it in
+  one command.
+- The README leads with composition; reference material moved into `docs/`.
+- All three benchmarks re-measured, with every citing document updated.
+
+## 6.0.0
+
+A breaking release for module authors; `api.json`, `schema.json` and the MCP
+contract were unchanged. A module became its handlers — `index.js` and
+`device.js` are gone, handlers are `async (input, ctx) => ({output})`, and the
+framework assembles the device from `api.json`. See
+[`MIGRATION.md`](MIGRATION.md) for the conversion, `git show v6.0.0` for the
+full notes, and `npx countinghouse-migrate-module` for the automated path.
