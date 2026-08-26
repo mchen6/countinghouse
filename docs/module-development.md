@@ -279,18 +279,20 @@ are both correct; retrying shortly after resolves it.
 module discovered" log line plus a settle buffer for exactly this reason —
 see its comment on `waitForAllModulesDiscovered` for the full timeline.
 
-**Known limitation — a module loaded at runtime into an instance started
-with no preloaded modules is never verified, and its `ctx.call` will
-refuse.** Composition verification runs off the `allmodulediscovered` event,
-which only fires once the startup module count (from `--loadModule` or the
-device DB) has been reached; loading a module later via
-`countinghouse_load_module` does not increment that count and so never
-triggers it. Concretely: the `--authoringTools` setup recommended above,
-started with no `--loadModule` flags, will load your module successfully
-and list its tools, but any `ctx.call` it makes will fail with `ctx.call is
-unavailable: no auth identity is bound to this module` even with a fully
-correct auth config — there is no verification pass left to bind it. This is
-a real gap, not a race like the window above; retrying does not help.
+Composition verification also runs for modules loaded at runtime, including
+into an instance started with no `--loadModule` flags at all — the
+`--authoringTools` setup recommended above. A bare instance completes
+discovery vacuously at startup, and each later `countinghouse_load_module`
+re-runs verification for what was just loaded, so a module authored and
+loaded entirely at runtime can `ctx.call` normally.
+
+This was not always true: `allmodulediscovered` used to be gated on a
+startup module count that a bare instance never reached, so verification
+never ran there and every `ctx.call` refused with `ctx.call is unavailable:
+no auth identity is bound to this module` against a perfectly correct auth
+config. `test/composition/08-bare-server-discovery.js` guards both halves —
+that a bare instance reaches discovery completion, and that a composing
+module loaded into one at runtime can actually call through.
 Fixing it (making runtime loads trigger their own verification) is scoped as
 follow-up work, not covered here.
 
