@@ -467,9 +467,9 @@ class style,     for..in over the prototype:  18 keys  (only the inherited membe
 
 The failure mode is what makes this a blocker rather than a chore. The loop
 would not throw and would not iterate zero times — it would keep finding the 18
-EventEmitter members and silently stop covering exactly the 15 methods that
+EventEmitter members and silently stop covering exactly the 14 methods that
 matter: `setAction`, `initServices`, `getDeviceSpec`, `connect`, `disconnect`,
-`getHWAddress`, `deviceControl`, `invokeDeviceCallback`, `updateDeviceSpec`,
+`getHWAddress`, `deviceControl`, `updateDeviceSpec`,
 `getDeviceRootUrl`, `getDeviceRootSchema`, `destroyCdifDevice`,
 `resolveSchemaFromPath`, `setOAuthAccessToken`, `oauthTokenValidate`. A module
 could then override `setAction` or `deviceControl`, which it cannot today, and

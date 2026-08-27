@@ -75,8 +75,6 @@
   "NOT_ENOUGH_USER_BALANCE": "用户余额不足",
   "DEVICE_INVOKE_EXCEPTION": "设备接口调用抛出异常",
   "DEVICE_INVOKE_FAIL": "设备调用失败",
-  "DEVICE_INVOKE_CALLBACK_FAIL": "调用设备回调地址失败",
-  "DEVICE_CALLBACK_NOT_AVAILABLE":"设备回调函数不存在",
   "DEVICE_ACCESS_ERROR": "设备访问失败",
   "DEVICE_NOT_RESPONDING": "设备无响应",
   "REDIS_CLIENT_ERROR": "redis客户端错误",

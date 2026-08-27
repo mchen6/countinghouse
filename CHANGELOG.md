@@ -8,6 +8,30 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
+## 7.0.0 (unreleased)
+
+### Removed — the dead device-callback entry path
+
+- **`/callbacks/:deviceID/*` is gone**, together with
+  `CdifInterface.invokeDeviceCallbacks`, `DeviceManager.onInvokeDeviceCallback`,
+  `CHDevice.invokeDeviceCallback`, the `invoke-device-callback` worker message,
+  and the `DEVICE_CALLBACK_NOT_AVAILABLE` / `DEVICE_INVOKE_CALLBACK_FAIL` error
+  codes. This is a breaking change to the HTTP surface and to `CHDevice`, which
+  is why it lands in a major — but nothing functional is lost. The chain ended
+  at `this._deviceCallbackHandler`, **a property nothing in the repo ever
+  assigned**, so every request that reached the route came back
+  `DEVICE_CALLBACK_NOT_AVAILABLE`. It was dead code in the same sense as the
+  event subsystem removed in 5.0.0: the front door worked, the delivery never
+  did.
+- The route was also mounted with no authentication at all ("callback don't do
+  user auth"), reachable whenever the server was. It was flagged in the
+  pre-release audit as needing review before any public deployment; the review
+  concluded there was nothing there to secure.
+- A CDIF-era inbound webhook has no MCP equivalent, and since 5.0.0 removed
+  event delivery there is no path from an inbound request to a connected
+  client. Reinstating inbound webhooks means supplying both halves.
+- Test: `test/auth/14-removed-callback-routes.js`.
+
 ## 6.1.0
 
 Two new subsystems, both additive: a toolchain for authoring modules, and an

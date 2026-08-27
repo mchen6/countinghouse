@@ -75,8 +75,6 @@
   "NOT_ENOUGH_USER_BALANCE": "Insufficient user balance",
   "DEVICE_INVOKE_EXCEPTION": "Device interface call threw an exception",
   "DEVICE_INVOKE_FAIL": "Device call failed",
-  "DEVICE_INVOKE_CALLBACK_FAIL": "Failed to call device callback URL",
-  "DEVICE_CALLBACK_NOT_AVAILABLE": "Device callback function not available",
   "DEVICE_ACCESS_ERROR": "Device access failed",
   "DEVICE_NOT_RESPONDING": "Device is not responding",
   "REDIS_CLIENT_ERROR": "Redis client error",
