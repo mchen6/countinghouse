@@ -32,6 +32,30 @@ the auth config.
   client. Reinstating inbound webhooks means supplying both halves.
 - Test: `test/auth/14-removed-callback-routes.js`.
 
+### Removed — the OAuth device path
+
+- **`/callback_url` is gone**, together with `lib/oauth/`, the `oauth` npm
+  dependency, `CHDevice.setOAuthAccessToken`, `CHDevice.oauthTokenValidate`,
+  the `oauth_version` branch in `DeviceManager.onDeviceOnline`, and the
+  `CANNOT_SET_OAUTH_ACCESS_TOKEN_INVALID_INTERFACE` /
+  `OAUTH_ACCESS_TOKEN_NOT_AVAILABLE` error codes. Nothing regresses, because
+  none of it was reachable: `lib/routes/oauth-callback.js` called
+  `cdifInterface.setDeviceOAuthAccessToken(...)`, **a method never defined on
+  `CdifInterface`**, so every GET threw `TypeError` and answered 500. It also
+  read `req.session`, which only `routes/user.js` and `routes/admin-only.js`
+  ever set, and neither was mounted on that path. Nothing outside
+  `lib/oauth/oauth.js` itself ever set `oauth_version`, and
+  `oauthTokenValidate` had no callers at all.
+- **What this does remove is a module's ability to hold a third-party API's
+  OAuth token.** MCP's authorization framework covers client→server — which is
+  what AuthProvider and `X-CH-Key` already do — and deliberately leaves
+  server→third-party credentials to the implementation. That gap is now
+  unfilled rather than filled-but-broken, and wants its own design when a
+  module actually needs it.
+- A module's *own* redirect flow is untouched: `connectionState:
+  'redirecting'` is driven by a module's `_connect` returning a `redirectObj`
+  and never depended on any of the above.
+
 ## 6.1.0
 
 Two new subsystems, both additive: a toolchain for authoring modules, and an
