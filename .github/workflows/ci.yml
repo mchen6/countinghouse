@@ -51,7 +51,9 @@ jobs:
       # Bounded deliberately: pushes larger than MAX are checked at the tip
       # only, so an initial import or a long-lived branch merge does not turn
       # one push into an hour of CI. node_modules is untracked, so it survives
-      # each checkout and is installed once.
+      # each checkout and is installed once -- except for commits whose own
+      # dependencies differ from the tip's, which get their own install (see
+      # the loop).
       - name: Golden tools/list sample (every commit in this push)
         if: github.event_name == 'push'
         env:
@@ -75,8 +77,26 @@ jobs:
 
           echo "walking $N commit(s)"
           FAILED=""
+          TIP='${{ github.sha }}'
+
+          # node_modules currently holds the tip's dependencies. Reusing it
+          # across the walk is a large speed win and is correct for the usual
+          # push, where no commit touches dependencies. It is NOT correct for
+          # a commit whose dependency set differs from the tip's: that
+          # commit's code then runs against the wrong node_modules and can
+          # fail to load outright, which this check would report as a moved
+          # tool surface. That is what happened on the 7.0.0 push that removed
+          # the `oauth` dependency -- the commit before the removal still
+          # required that package, could not boot, and was reported as MOVED
+          # when its surface was in fact byte-identical.
+          #
+          # So: give such a commit its own install, and put the tip's
+          # dependencies back before the next commit that expects them.
+          # -f on checkout because npm rewrites package-lock.json, which would
+          # otherwise block the next checkout.
+          DEPS_ARE_TIP=1
           for SHA in $COMMITS; do
-            git checkout -q "$SHA"
+            git checkout -q -f "$SHA"
 
             # Invoke mocha directly rather than `npm run golden`: the script
             # only exists from the commit that added it, so using it would
@@ -87,18 +107,44 @@ jobs:
               continue
             fi
 
+            if git diff --quiet "$TIP" "$SHA" -- package.json package-lock.json; then
+              if [ "$DEPS_ARE_TIP" != "1" ]; then
+                echo "  deps    restoring the tip's dependencies"
+                git checkout -q -f "$TIP" -- package.json package-lock.json
+                npm install --legacy-peer-deps > /tmp/npm-restore.log 2>&1 \
+                  || { echo "  ERROR   could not restore the tip's dependencies"; tail -25 /tmp/npm-restore.log; exit 1; }
+                git checkout -q -f "$SHA"
+                DEPS_ARE_TIP=1
+              fi
+            else
+              echo "  deps    $(git log -1 --format='%h' "$SHA") declares different dependencies -- installing its own"
+              npm install --legacy-peer-deps > /tmp/npm-$SHA.log 2>&1 \
+                || { echo "  ERROR   npm install failed at this commit"; tail -25 /tmp/npm-$SHA.log; exit 1; }
+              DEPS_ARE_TIP=0
+            fi
+
             if npx mocha ./test/mcp-contract/*.js > /tmp/golden-$SHA.log 2>&1; then
               echo "  ok      $(git log -1 --format='%h %s' "$SHA")"
             else
-              echo "  MOVED   $(git log -1 --format='%h %s' "$SHA")"
+              # A server that never started is a broken commit, but it is not
+              # a moved tool surface, and saying it moved sends the next
+              # reader hunting for a change that never happened.
+              if grep -q 'ECONNREFUSED' /tmp/golden-$SHA.log; then
+                echo "  NOBOOT  $(git log -1 --format='%h %s' "$SHA")  -- server did not start; not a surface change"
+              else
+                echo "  MOVED   $(git log -1 --format='%h %s' "$SHA")"
+              fi
               tail -25 /tmp/golden-$SHA.log
               FAILED="$FAILED $SHA"
             fi
           done
 
-          git checkout -q '${{ github.sha }}'
+          git checkout -q -f "$TIP"
+          if [ "$DEPS_ARE_TIP" != "1" ]; then
+            npm install --legacy-peer-deps > /tmp/npm-restore.log 2>&1 || true
+          fi
           if [ -n "$FAILED" ]; then
-            echo "the tool surface moved at:$FAILED"
+            echo "the golden check failed at:$FAILED"
             exit 1
           fi
 
