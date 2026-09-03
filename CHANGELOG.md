@@ -10,6 +10,27 @@ the auth config.
 
 ## 7.0.0 (unreleased)
 
+### Fixed — an unresolvable tool schema is no longer a silent downgrade
+
+- **A declared schema pointer that fails to resolve is now logged at error
+  level**, naming the tool, which schema (input vs output), the pointer, the
+  concrete reason, and the consequence. `resolveSchemas`
+  (`lib/mcp/tool-registry.js`) previously dropped the error on both branches
+  and advertised `{type: 'object', properties: {}}` — "any object is fine" —
+  in place of the real schema, so a client would send what that permits and
+  the call would then fail server-side in `validateActionCall`, with nothing
+  upstream to explain it. New error code `TOOL_SCHEMA_RESOLVE_FAIL`.
+- **Behavior is otherwise unchanged**: the tool is still advertised, still
+  with the permissive default schema. Omitting it instead would move the
+  `tools/list` surface, and is deliberately out of scope here.
+- Worth knowing if you relied on `--debug` to surface this: there was an
+  incidental error log on this path from `lib/session.js`, but it fires only
+  under `--debug` and names neither the tool nor which schema. A normal
+  (non-`--debug`) run produced **no** error records at all for a dangling
+  pointer.
+- "No schema declared" stays silent — that is legitimate and common.
+- Test: `test/module-loading/10-schema-pointer-not-silent.js`.
+
 ### Removed — the dead device-callback entry path
 
 - **`/callbacks/:deviceID/*` is gone**, together with
