@@ -10,6 +10,37 @@ the auth config.
 
 ## 7.0.0 (unreleased)
 
+### Security — the authenticated read paths are now rate limited
+
+- **`GET /balance`, the `countinghouse_check_balance` MCP tool, and
+  `tasks/get` / `tasks/result` / `tasks/list` / `tasks/cancel` now enforce
+  `--apiKeyRateLimit`.** All five were authenticated but unlimited: each was
+  one Redis round trip that an authenticated caller could poll as fast as it
+  liked. This closes the last open item from the pre-release audit's security
+  findings.
+- **`POST /devices/:deviceID/add-job` is now limited too, closing a real
+  bypass.** MCP task creation is deliberately limited at creation time
+  (unbounded queue growth being the resource protected), but `add-job`
+  creates the same jobs over HTTP and was not limited at all — so the MCP
+  limit could be sidestepped by choosing the other door. The three HTTP job
+  *read* routes (`get-job`, `get-job-history`, `remove-job`) are gated as
+  well; `docs/cross-cutting-matrix.md` had asserted a limit for all four that
+  the route stack never actually applied.
+- **Reads share the existing per-apiKey budget** rather than getting a flag
+  of their own. A client that polls `tasks/get` while a task runs draws down
+  the same allowance its tool calls use. No new CLI flag.
+- **New error code `RATE_LIMIT_EXCEEDED`** (both locales). HTTP denials
+  answer **429**, not the 500 the pre-existing limiters produce via
+  `lib/session.js`; `invoke-action`'s existing 500 is unchanged. MCP denials
+  keep each surface's existing shape — a tool error for
+  `countinghouse_check_balance`, a JSON-RPC error for `tasks/*`.
+- **Unchanged: the limiter still fails open** — flag unset, no metering
+  provider, unresolved key, or Redis down all pass the request through, as
+  every pre-existing rate-limit call site already did.
+- Not covered, deliberately: both direct-peer-channel paths (unchanged
+  decision) and `tools/list`.
+- Test: `test/auth/15-read-path-rate-limits.js`.
+
 ### Removed — the dead device-callback entry path
 
 - **`/callbacks/:deviceID/*` is gone**, together with
