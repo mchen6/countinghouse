@@ -113,5 +113,6 @@
   "CTX_CALL_UNBOUND": "ctx.call is unavailable: nothing is bound for this module -- declare the address in \"countinghouse.calls\" (package.json) AND add the module's friendlyName to some identity's \"runsModules\" in the auth config; both are required",
   "CTX_CALL_UNDECLARED": "ctx.call refused: this address is not declared in the module's \"countinghouse.calls\" (package.json)",
   "CTX_CALL_BAD_ADDRESS": "ctx.call refused: the address is malformed, expected <module>/<service>.<action>",
-  "CTX_CALL_UNRESOLVED": "ctx.call refused: the address does not resolve against the target module's spec"
+  "CTX_CALL_UNRESOLVED": "ctx.call refused: the address does not resolve against the target module's spec",
+  "TOOL_SCHEMA_RESOLVE_FAIL": "Tool schema resolution failed"
 }

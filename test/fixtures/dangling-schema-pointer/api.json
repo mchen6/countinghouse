@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "dangling-schema-pointer-device",
+    "manufacturer": "countinghouse",
+    "modelDescription": "fixture whose declared input schema pointer resolves to nothing",
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:pointerService": {
+        "actionList": [
+          {
+            "name": "danglingInput",
+            "description": "Declares an input schema pointer that does not exist in schema.json, so resolving it fails and tools/list falls back to the permissive default schema.",
+            "input": {
+              "schema": "/pointerService/danglingInput/nosuchkey"
+            },
+            "output": {
+              "schema": "/pointerService/danglingInput/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

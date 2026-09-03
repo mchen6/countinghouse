@@ -113,5 +113,6 @@
   "CTX_CALL_UNBOUND": "ctx.call 不可用：该模块没有任何可用的组合绑定 -- 需要同时在 package.json 的 \"countinghouse.calls\" 中声明该地址，并在鉴权配置中把模块的 friendlyName 加入某个身份的 \"runsModules\"，两者缺一不可",
   "CTX_CALL_UNDECLARED": "ctx.call 已拒绝：该地址未在模块的 \"countinghouse.calls\"（package.json）中声明",
   "CTX_CALL_BAD_ADDRESS": "ctx.call 已拒绝：地址格式错误，应为 <module>/<service>.<action>",
-  "CTX_CALL_UNRESOLVED": "ctx.call 已拒绝：该地址无法在目标模块的 spec 中解析到"
+  "CTX_CALL_UNRESOLVED": "ctx.call 已拒绝：该地址无法在目标模块的 spec 中解析到",
+  "TOOL_SCHEMA_RESOLVE_FAIL": "工具 schema 解析失败"
 }
