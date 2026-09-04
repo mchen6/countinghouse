@@ -1,6 +1,7 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
 const request = require('supertest');
+const assert  = require('assert');
 
 // Covers the 7.0.0 removal of the IoT-era entry paths. None was a working
 // feature when it was removed; this file exists so that reinstating any of
@@ -143,5 +144,35 @@ describe('auth 16b: the vestigial flag-gated surface is gone', function() {
 
   it('GET /load-profile is 404', (done) => {
     request(urlFlags).get('/load-profile').set('X-CH-Key', BOB).expect(404, done);
+  });
+});
+
+// device_access_token was CDIF-era device-connect state. ensureDeviceState
+// took it and never read it, lib/device-auth.js (which would have issued one)
+// was imported by nothing, and /connect (which would have handed one out) is
+// removed above. Nothing observable changes when it goes -- so this asserts
+// the plumbing itself is gone, which is the only thing that can regress.
+describe('auth 16c: the inert device_access_token plumbing is gone', () => {
+  const fsSync = require('fs');
+  const pathMod = require('path');
+  const ROOT_DIR = pathMod.join(__dirname, '..', '..');
+
+  it('lib/device-auth.js no longer exists', () => {
+    assert.strictEqual(fsSync.existsSync(pathMod.join(ROOT_DIR, 'lib', 'device-auth.js')), false);
+  });
+
+  it('no route reads device_access_token', () => {
+    const files = ['invoke-action.js', 'get-spec.js', 'schema.js'];
+    for (const f of files) {
+      const src = fsSync.readFileSync(pathMod.join(ROOT_DIR, 'lib', 'routes', f), 'utf8');
+      assert.ok(src.indexOf('device_access_token') === -1,
+        `lib/routes/${f} still reads device_access_token`);
+    }
+  });
+
+  it('ensureDeviceState takes no token parameter', () => {
+    const src = fsSync.readFileSync(pathMod.join(ROOT_DIR, 'lib', 'device-manager.js'), 'utf8');
+    assert.ok(/ensureDeviceState = function\(deviceID, callback\)/.test(src),
+      'ensureDeviceState should now be (deviceID, callback)');
   });
 });
