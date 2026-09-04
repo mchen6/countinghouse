@@ -87,3 +87,61 @@ describe('auth 16: the dead IoT-era entry paths are gone', function() {
     request(url).get('/device-list').set('X-CH-Key', ALICE).expect(200, done);
   });
 });
+
+// Started WITH the flags that used to mount these, because that is the case
+// that could regress silently. --simOpenStackAPI mounted the OpenStack
+// simulation with no userAuth at all ("openstack api simulation don't do
+// user auth"), one flag away from live; --loadProfile mounted /load-profile.
+// Both flags are gone in 7.0.0, so a server given them must still boot and
+// must not mount anything.
+const PORT_FLAGS  = 9548;
+const urlFlags    = `http://127.0.0.1:${PORT_FLAGS}`;
+const FLAGS_AUTH  = `/tmp/countinghouse-test-auth-16b-${process.pid}.json`;
+const BOB         = `bob-key-16b-${process.pid}`;
+
+describe('auth 16b: the vestigial flag-gated surface is gone', function() {
+  this.timeout(0);
+
+  before(function(done) {
+    this.timeout(0);
+
+    const config = {};
+    config[BOB] = {userName: 'bob', devices: ['*']};
+    fs.writeFileSync(FLAGS_AUTH, JSON.stringify(config));
+
+    console.log('starting countinghouse WITH --simOpenStackAPI --loadProfile (both now no-ops)...');
+    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT_FLAGS
+         } --authProvider file --authConfigPath ${FLAGS_AUTH
+         } --simOpenStackAPI --loadProfile` +
+         ` --loadModule ./pre-installed-packages/echo-device-module`,
+         (err, stdout, stderr) => { console.log(err); });
+    setTimeout(() => { done(); }, 13000);
+  });
+
+  after((done) => {
+    try { fs.unlinkSync(FLAGS_AUTH); } catch (e) {}
+    exec(`pkill -f "framework.js.*${FLAGS_AUTH}"`, () => { done(); });
+  });
+
+  // An unknown flag must not stop the server booting -- otherwise the 404s
+  // below would pass for the wrong reason, and an operator upgrading with the
+  // old flag in their startup script would get a dead server instead of a
+  // route that quietly no longer exists.
+  it('the server still boots when given the removed flags', (done) => {
+    request(urlFlags).get('/balance').set('X-CH-Key', BOB).expect(200, done);
+  });
+
+  it('POST /v2/:tenantID/servers is 404', (done) => {
+    request(urlFlags).post('/v2/tenant-1/servers')
+                     .set('Content-Type', 'application/json')
+                     .send({name: 'x'}).expect(404, done);
+  });
+
+  it('DELETE /v2/:tenantID/servers/:serverID is 404', (done) => {
+    request(urlFlags).delete('/v2/tenant-1/servers/server-1').expect(404, done);
+  });
+
+  it('GET /load-profile is 404', (done) => {
+    request(urlFlags).get('/load-profile').set('X-CH-Key', BOB).expect(404, done);
+  });
+});
