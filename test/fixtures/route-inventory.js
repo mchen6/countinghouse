@@ -1,13 +1,22 @@
-// Prints the sorted list of every HTTP path lib/route-manager.js mounts, one
-// JSON array on stdout. Run as its own process by
-// test/module-loading/11-route-inventory.js -- requiring route-manager in the
-// mocha process leaves open handles, and the module-loading glob runs without
-// --exit, so an in-process version would stall the suite.
+// Prints the sorted list of every HTTP path lib/route-manager.js's
+// installNormalRoutes mounts, one JSON array on stdout. Run as its own
+// process by test/module-loading/11-route-inventory.js -- requiring
+// route-manager in the mocha process leaves open handles, and the
+// module-loading glob runs without --exit, so an in-process version would
+// stall the suite.
 //
 // installNormalRoutes is called against a stub rather than a real
 // RouteManager: the route modules only build routers at mount time and do not
 // touch mm/cdifInterface until a request arrives, so stubs are enough to get a
-// faithful mount table without booting a server or binding a port.
+// faithful mount table without booting a server or binding a port -- the
+// stub's prototype is RouteManager.prototype, but the RouteManager
+// constructor itself never runs.
+//
+// Coverage this gives: every mount made by installNormalRoutes, which today
+// is all of them. It would NOT see a mount added directly in the
+// RouteManager constructor, or one framework.js adds to routeManager.app
+// after construction -- neither exists today, but either would need its own
+// guard, not an extension of this one.
 const events  = require('events');
 const express = require('express');
 const path    = require('path');

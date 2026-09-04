@@ -96,6 +96,14 @@ the auth config.
   mounted routes against `test/fixtures/route-inventory.json`, so a new
   entry path fails the suite until it is declared and given its
   cross-cutting-matrix row.
+- **The `start-allow-discover` npm script is gone**, along with the
+  `--allowDiscover` flag it passed — the flag was removed earlier in this
+  section, leaving the script to boot an ordinary server under a name that
+  promised discovery it no longer performed.
+- **`devicePresentation` is gone from the device spec schema.** Its only
+  reader, `CHDevice.prototype.getDeviceRootUrl`, was deleted with the dead
+  entry paths above; the field was already inert — the route that would
+  have reached it never worked, so nothing read it.
 - Tests: `test/auth/16-removed-iot-routes.js`,
   `test/module-loading/11-route-inventory.js`.
 
