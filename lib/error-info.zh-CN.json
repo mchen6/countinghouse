@@ -114,5 +114,6 @@
   "CTX_CALL_UNDECLARED": "ctx.call 已拒绝：该地址未在模块的 \"countinghouse.calls\"（package.json）中声明",
   "CTX_CALL_BAD_ADDRESS": "ctx.call 已拒绝：地址格式错误，应为 <module>/<service>.<action>",
   "CTX_CALL_UNRESOLVED": "ctx.call 已拒绝：该地址无法在目标模块的 spec 中解析到",
-  "RATE_LIMIT_EXCEEDED": "超出速率限制：该 apiKey 的请求过于频繁，请稍后重试"
+  "RATE_LIMIT_EXCEEDED": "超出速率限制：该 apiKey 的请求过于频繁，请稍后重试",
+  "TOOL_SCHEMA_RESOLVE_FAIL": "工具 schema 解析失败"
 }

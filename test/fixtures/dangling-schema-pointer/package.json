@@ -1,0 +1,8 @@
+{
+  "name": "dangling-schema-pointer",
+  "version": "1.0.0",
+  "description": "fixture: an action whose declared schema pointer does not exist in schema.json",
+  "dependencies": {},
+  "author": "countinghouse tests",
+  "license": "Apache-2.0"
+}
