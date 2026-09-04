@@ -91,6 +91,28 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
     .send({jsonrpc: '2.0', id: Date.now(), method: method, params: params})
     .end((err, res) => cb(err, res && res.body));
 
+  // Waits for the server to report that many completed discoveries, by
+  // watching the log this describe already captures.
+  //
+  // Deliberately NOT a retry of the assertion itself: re-issuing the tool
+  // call until it stops returning CTX_CALL_NOT_READY would turn "composition
+  // never settles" -- the exact regression the test below exists to catch --
+  // into a slow green run. This waits on the signal that composition is
+  // about to be delivered, then asserts once.
+  const waitForDiscoveries = (n, cb) => {
+    const deadline = Date.now() + 30000;
+    const poll = () => {
+      const seen = (log.match(/all module discovered/g) || []).length;
+      if (seen >= n) return cb(null);
+      if (Date.now() > deadline) {
+        return cb(new Error(`only ${seen} of ${n} discovery completions in 30s. ` +
+          `Server output was:\n${log.slice(-1500)}`));
+      }
+      setTimeout(poll, 100);
+    };
+    poll();
+  };
+
   before((done) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-bare-'));
     const authPath = path.join(dir, 'auth.json');
@@ -115,7 +137,28 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
         path: path.join(ROOT, 'test', 'fixtures', 'compose-callee'), name: 'compose-callee'}}, () => {
         mcp('tools/call', {name: 'countinghouse_load_module', arguments: {
           path: path.join(ROOT, 'test', 'fixtures', 'compose-caller'), name: 'compose-caller'}}, () => {
-          setTimeout(done, 4000);   // let verification settle
+          // The composition verdict cannot arrive until the worker's
+          // discovery window closes: lib/sandbox.js holds 'discover-device'
+          // open for a hardcoded 5000ms per load before replying to the
+          // parent, and only that reply lets the main thread emit
+          // 'allmodulediscovered' -> verifyComposition -> setComposition.
+          // The flat 4000ms wait that used to sit here was therefore always
+          // shorter than the thing it was waiting for, so this test could
+          // never pass in --workerThread mode -- it was not flaky, it was
+          // off by a second against a constant it never looked at.
+          //
+          // Wait for the signal instead of guessing a duration: one "all
+          // module discovered" at startup (the bare instance -- describe 08
+          // above asserts exactly that line) plus one per runtime load.
+          //
+          // The trailing margin covers only what happens after that signal:
+          // verifyComposition resolving each declared address and relaying
+          // the verdict into the worker thread. Measured at well under a
+          // second; 3s is slack, and no longer has to absorb the 5s window.
+          waitForDiscoveries(3, (err) => {
+            if (err != null) return done(err);
+            setTimeout(done, 3000);
+          });
         });
       });
     }, 10000);
