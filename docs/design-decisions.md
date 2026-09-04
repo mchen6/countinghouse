@@ -467,10 +467,10 @@ class style,     for..in over the prototype:  18 keys  (only the inherited membe
 
 The failure mode is what makes this a blocker rather than a chore. The loop
 would not throw and would not iterate zero times — it would keep finding the 18
-EventEmitter members and silently stop covering exactly the 12 methods that
+EventEmitter members and silently stop covering exactly the 11 methods that
 matter: `setAction`, `initServices`, `getDeviceSpec`, `connect`, `disconnect`,
 `getHWAddress`, `deviceControl`, `updateDeviceSpec`,
-`getDeviceRootUrl`, `getDeviceRootSchema`, `destroyCdifDevice`,
+`getDeviceRootSchema`, `destroyCdifDevice`,
 `resolveSchemaFromPath`. A module
 could then override `setAction` or `deviceControl`, which it cannot today, and
 no test would notice. All five bundled modules go through this helper.

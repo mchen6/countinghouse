@@ -1,0 +1,22 @@
+[
+  "/balance",
+  "/device-list",
+  "/devices/:deviceID",
+  "/devices/:deviceID/add-job",
+  "/devices/:deviceID/download-package",
+  "/devices/:deviceID/get-job",
+  "/devices/:deviceID/get-job-history",
+  "/devices/:deviceID/get-spec",
+  "/devices/:deviceID/invoke-action",
+  "/devices/:deviceID/package-info",
+  "/devices/:deviceID/remove-job",
+  "/devices/:deviceID/schema/(.*)",
+  "/get-module-device-list",
+  "/load-module",
+  "/mcp",
+  "/reload-module",
+  "/restart-module",
+  "/shutdown",
+  "/unload-module",
+  "/verify-module"
+]

@@ -61,6 +61,52 @@ the auth config.
 - "No schema declared" stays silent — that is legitimate and common.
 - Test: `test/module-loading/10-schema-pointer-not-silent.js`.
 
+### Removed — the IoT-era HTTP surface
+
+- **The dead entry paths are gone**: `/devices/:deviceID/connect` and
+  `/disconnect` (both called a `CdifInterface` method that was never
+  defined, so every POST threw `TypeError`), `/discover` and
+  `/stop-discover` (mounted only under `allowDiscover`, which
+  `cli-options.js` hardcoded to `false`), and
+  `/devices/:deviceID/presentation` (dead twice over — nothing emitted the
+  event that mounts it, and the mount handler called an undefined method).
+  Breaking on paper; no behavior change in fact.
+- **The vestigial flag-gated surface is gone**, and this one *is* a
+  behavior change: the OpenStack simulation (`--simOpenStackAPI`) and
+  `/load-profile` (`--loadProfile`), together with both flags. The
+  OpenStack routes were mounted with **no authentication at all** and
+  hardcoded a single 2015 vendor target; `/load-profile` was the only
+  reader of the `loadLevel` counter, which goes with it. **Unknown flags
+  are ignored**, so a startup script still passing either one boots
+  normally and simply gets no route.
+- **`device_access_token` plumbing removed.** `ensureDeviceState` took the
+  token and never read it, `lib/device-auth.js` was imported by nothing,
+  and `/connect` — which would have issued one — is removed above. A
+  client still sending the field is unaffected: it was already ignored.
+- **Error codes removed** (both locales): `PRESENTATION_NOT_SUPPORTED`,
+  `GET_DEVICE_ROOTURL_FAIL`, `PARSE_DEVICE_ROOTURL_FAIL`.
+- **Capability genuinely lost:** the OpenStack-shaped simulation shim.
+  Nothing else here worked.
+- **Not removed, deliberately:** `/devices/:deviceID/package-info`,
+  `/download-package`, `/verify-module` and `/get-module-device-list`.
+  They are untested and undocumented, but they are also the only existing
+  bones of the publish/listing story, so they wait on that design rather
+  than being pre-decided here.
+- **New guard:** `test/module-loading/11-route-inventory.js` diffs the
+  mounted routes against `test/fixtures/route-inventory.json`, so a new
+  entry path fails the suite until it is declared and given its
+  cross-cutting-matrix row.
+- **The `start-allow-discover` npm script is gone**, along with the
+  `--allowDiscover` flag it passed — the flag was removed earlier in this
+  section, leaving the script to boot an ordinary server under a name that
+  promised discovery it no longer performed.
+- **`devicePresentation` is gone from the device spec schema.** Its only
+  reader, `CHDevice.prototype.getDeviceRootUrl`, was deleted with the dead
+  entry paths above; the field was already inert — the route that would
+  have reached it never worked, so nothing read it.
+- Tests: `test/auth/16-removed-iot-routes.js`,
+  `test/module-loading/11-route-inventory.js`.
+
 ### Removed — the dead device-callback entry path
 
 - **`/callbacks/:deviceID/*` is gone**, together with

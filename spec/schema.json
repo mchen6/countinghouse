@@ -72,9 +72,6 @@
         "userAuth": {
           "type": "boolean"
         },
-        "devicePresentation": {
-          "type": "boolean"
-        },
         "powerIndex": {
           "type": "number",
           "minimum": 0

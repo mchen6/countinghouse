@@ -59,3 +59,10 @@ v6-module-api-and-es6-design.md
 # is a test fixture that is meant to be tracked.
 /countinghouse-*.tgz
 docs/*.tgz
+
+# Subagent-driven-development scratch: per-plan ledger, task briefs, implementer
+# reports and review packages. Working state for an in-flight plan, superseded by
+# git history once the plan lands -- and several tasks in these plans commit with
+# `git add -A`, which would otherwise sweep the ledger into the commit it is
+# tracking.
+.superpowers/
