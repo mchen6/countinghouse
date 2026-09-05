@@ -41,7 +41,7 @@
 | `docs/cross-cutting-matrix.md` | Per-path guarantee record | 4 |
 | `server.json`, `docs/security-model.md`, `CHANGELOG.md` | Positioning and the record | 5 |
 
-Deleted: `lib/routes/verify-module.js`, `lib/routes/download-device-package.js`, `example/publish-api.js`.
+Deleted: `lib/routes/verify-module.js`, `lib/routes/download-device-package.js`. (`example/publish-api.js` was originally listed here; it is untracked, so there is nothing to delete — see Task 3 Step 1.)
 
 ---
 
@@ -400,7 +400,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `lib/cli-options.js`, `package.json`
-- Delete: `example/publish-api.js`
+- (Originally listed `example/publish-api.js` for deletion. Corrected: that file is NOT tracked — `.gitignore:25` covers `example/` since commit 182db48 — so there is nothing to delete. See Step 1.)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -419,11 +419,16 @@ Expected: no references outside the file itself, and `request in deps: false` �
 
 - [ ] **Step 2: Delete it**
 
+**Nothing to delete.** `example/` has been gitignored and untracked since commit
+`182db48`, so `git rm` would fail and a plain `rm` would destroy maintainer-local
+material while producing no diff. Confirm and move on:
+
 ```bash
-git rm example/publish-api.js
+git check-ignore -v example/publish-api.js   # expect: .gitignore:25:example/
+git cat-file -e HEAD:example/publish-api.js || echo "not tracked — nothing to remove"
 ```
 
-`nano` stays a dependency — `lib/couchdb-adapter/couchdb-auth-provider.js` and `lib/couchdb-adapter/init-db.js` both use it. Verify:
+`nano` is NOT in `dependencies` at all (verified 2026-09-04) and does not resolve, even though `lib/couchdb-adapter/couchdb-auth-provider.js:33` and `init-db.js:43` require it — both lazily, inside functions, which is why the suite passes and `test/auth/04-couchdb-provider.js` is among the 3 pending. That is a pre-existing defect, out of scope here; the point for this task is simply that there is no `nano` entry to remove. Verify:
 
 ```bash
 grep -rln "require('nano')" lib/ | grep -v node_modules
@@ -473,10 +478,10 @@ Same command as Task 1 Step 10. Expected: **450 passing**, 3 pending, 0 failing 
 git add -A
 git commit -m "remove(7.0.0): the CouchDB publish remnant and --regUrl
 
-example/publish-api.js was the 2015 publish path: nano/CouchDB, a
-hardcoded /home/mchen6/tmp tarball path, and a require of 'request',
-which is not in this project's dependencies -- so it could not run even
-if something invoked it. Nothing did.
+The 2015 CouchDB publish path (example/publish-api.js) needed no removal
+here: commit 182db48 untracked all of example/, so it already sits
+outside what this repo ships. Recorded so the next reader does not
+re-derive it.
 
 --regUrl defaulted to http://127.0.0.1:8037/, the old kappa private
 registry, and its only reader was the verifyModule method removed
@@ -662,9 +667,10 @@ Under the existing `## 7.0.0 (unreleased)` heading in `CHANGELOG.md`, add a sect
   verifier (superseded by `countinghouse_validate_module`, which runs in a
   child process, cross-checks the handler map, and reports every problem);
   `GET /devices/:deviceID/download-package` and its chain (npm serves
-  packages now); `example/publish-api.js`; and `--regUrl`, the old private
-  registry default. Six error codes and two dependencies (`tar`,
-  `npm-registry-client`) went with them.
+  packages now); and `--regUrl`, the old private registry default. Six
+  error codes and two dependencies (`tar`, `npm-registry-client`) went with
+  them. (The 2015 CouchDB publish script needed no removal — `example/` has
+  been untracked since 182db48.)
 - **Kept**: `/get-module-device-list` and `/devices/:deviceID/package-info`,
   which now have tests and cross-cutting-matrix rows for the first time.
 - **Consequence for payments**: settlement is between an operator and

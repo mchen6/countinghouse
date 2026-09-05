@@ -199,8 +199,13 @@ verification behavior that has nothing to do with the route.
   `getdevicepackagemodulepath` event — it packaged a loaded module for
   someone to download, which was CEAMS's download step. Under D3 npm serves
   packages; nothing consumes this.
-- `example/publish-api.js` — the `nano`/CouchDB publish remnant, with a
-  hardcoded `/home/mchen6/tmp/...` path.
+- ~~`example/publish-api.js`~~ — **not removed, and nothing to remove.**
+  Written into this spec in error: the file is *not tracked*. Commit
+  `182db48` (2026-08-17) added `example/` to `.gitignore` and untracked the
+  whole directory, deliberately leaving the files on disk. So the 2015
+  `nano`/CouchDB publish path already sits outside what this repo ships, and
+  deleting it would produce no diff while destroying maintainer-local
+  material. Corrected 2026-09-04 after the error was caught mid-implementation.
 - `--regUrl` — the private-registry default (D3).
 
 **`/get-module-device-list` stays.** It answers "what does module X expose"
@@ -253,7 +258,8 @@ Modified: `lib/route-manager.js`, `lib/module-manager.js`,
 `test/fixtures/route-inventory.json`.
 
 Removed: `lib/routes/verify-module.js`,
-`lib/routes/download-device-package.js`, `example/publish-api.js`.
+`lib/routes/download-device-package.js`. (`example/publish-api.js` is untracked —
+see Removals.)
 
 Added: a regression/coverage test for the removed and surviving package
 routes.
