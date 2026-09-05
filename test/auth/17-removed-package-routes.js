@@ -64,4 +64,42 @@ describe('auth 17: the CEAMS-era package routes with no consumer are gone', func
                 .set('X-CH-Key', ADMIN)
                 .expect(404, done);
   });
+
+  // The two package routes that survive. Both are covered here because Task 4
+  // adds their cross-cutting-matrix rows, and a row asserting behavior that
+  // nothing tests is worse than a blank cell.
+
+  it('POST /get-module-device-list returns a loaded module device list', (done) => {
+    request(url).post('/get-module-device-list')
+                .set('X-CH-Key', ADMIN)
+                .set('Content-Type', 'application/json')
+                .send({name: 'echo-device-module'})
+                .expect(200, (err, res) => {
+      if (err) return done(err);
+      if (!Array.isArray(res.body) && typeof(res.body) !== 'object') {
+        return done(new Error(`expected a device list object/array, got: ${JSON.stringify(res.body)}`));
+      }
+      return done();
+    });
+  });
+
+  it('GET /devices/:deviceID/package-info returns the module name and version', (done) => {
+    request(url).get('/device-list').set('X-CH-Key', ADMIN).expect(200, (listErr, listRes) => {
+      if (listErr) return done(listErr);
+      const first = Array.isArray(listRes.body) ? listRes.body[0] : null;
+      const deviceID = (first && first.device && first.device.deviceID) ? first.device.deviceID : null;
+      if (deviceID == null) {
+        return done(new Error(`could not find a deviceID in /device-list: ${JSON.stringify(listRes.body).slice(0, 400)}`));
+      }
+      return request(url).get(`/devices/${deviceID}/package-info`)
+                         .set('X-CH-Key', ADMIN)
+                         .expect(200, (err, res) => {
+        if (err) return done(err);
+        if (res.body == null || typeof(res.body.name) !== 'string' || typeof(res.body.version) !== 'string') {
+          return done(new Error(`expected {name, version} strings, got: ${JSON.stringify(res.body)}`));
+        }
+        return done();
+      });
+    });
+  });
 });
