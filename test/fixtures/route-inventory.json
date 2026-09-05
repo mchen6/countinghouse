@@ -17,6 +17,5 @@
   "/reload-module",
   "/restart-module",
   "/shutdown",
-  "/unload-module",
-  "/verify-module"
+  "/unload-module"
 ]

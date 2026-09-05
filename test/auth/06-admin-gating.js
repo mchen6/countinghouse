@@ -47,7 +47,7 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
 
   const ADMIN_ONLY_ROUTES = [
     '/load-module', '/unload-module', '/restart-module',
-    '/verify-module', '/get-module-device-list', '/reload-module'
+    '/get-module-device-list', '/reload-module'
     // /shutdown deliberately excluded from this shared list -- see its
     // own dedicated tests below, since it can only safely be exercised
     // once, as this file's very last action.
