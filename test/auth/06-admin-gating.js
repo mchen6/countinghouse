@@ -7,8 +7,8 @@ const url = 'http://127.0.0.1:9527';
 // Standalone-only, same reason as 01-file-provider-tools-list-filtering.js:
 // needs a real (non---debug) server, since --debug bypasses AuthProvider
 // (and therefore the admin check) entirely -- this is the test for the
-// gate itself. Covers all 7 module-lifecycle routes (lib/route-manager.js):
-// /load-module, /unload-module, /restart-module, /verify-module,
+// gate itself. Covers all 6 module-lifecycle routes (lib/route-manager.js):
+// /load-module, /unload-module, /restart-module,
 // /get-module-device-list, /reload-module, /shutdown -- previously gated
 // by --debug/--verifyModule at mount time (nonexistent otherwise), now
 // always mounted and gated per-request by lib/routes/admin-only.js.
@@ -47,7 +47,7 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
 
   const ADMIN_ONLY_ROUTES = [
     '/load-module', '/unload-module', '/restart-module',
-    '/verify-module', '/get-module-device-list', '/reload-module'
+    '/get-module-device-list', '/reload-module'
     // /shutdown deliberately excluded from this shared list -- see its
     // own dedicated tests below, since it can only safely be exercised
     // once, as this file's very last action.

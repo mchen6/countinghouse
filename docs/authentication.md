@@ -197,9 +197,8 @@ independent capability, `admin`.
 | `POST /unload-module` | Unload a loaded module |
 | `POST /restart-module` | Restart a loaded module's worker |
 | `POST /reload-module` | Reload a module in place |
-| `POST /verify-module` | Structurally verify a module package |
 | `POST /shutdown` | Stop the server process |
-| `GET /get-module-device-list` | List the devices a named module provides |
+| `POST /get-module-device-list` | List the devices a named module provides |
 
 Treat an admin key as an operator credential, not a tenant credential:
 `/load-module` takes a filesystem path and runs whatever module is there,

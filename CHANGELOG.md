@@ -153,6 +153,37 @@ the auth config.
   'redirecting'` is driven by a module's `_connect` returning a `redirectObj`
   and never depended on any of the above.
 
+### Changed — countinghouse is a runtime, not a marketplace
+
+- **The project description is corrected** in `server.json` and
+  `package.json`. It claimed to be a "monetization/marketplace backend";
+  it is a multi-tenant runtime for MCP tools with metering and per-key
+  access control. The marketplace half never existed in this repo.
+- **Modules are distributed over npm**, to whichever npm-compatible
+  registry an operator configures. countinghouse builds no publish,
+  storage or browse machinery: `npm publish` is the publish story, and
+  the operator installs with the tooling they already have. **The runtime
+  never fetches code over the network.**
+- **Removed with no replacement**: `POST /verify-module` and its tarball
+  verifier (superseded by `countinghouse_validate_module`, which runs in a
+  child process, cross-checks the handler map, and reports every problem);
+  `GET /devices/:deviceID/download-package` and its chain (npm serves
+  packages now); and `--regUrl`, the old private registry default. Six
+  error codes and two dependencies (`tar`, `npm-registry-client`) went with
+  them. (The 2015 CouchDB publish script needed no removal — `example/` has
+  been untracked since 182db48.)
+- **Kept**: `/get-module-device-list` and `/devices/:deviceID/package-info`,
+  which now have tests and cross-cutting-matrix rows for the first time.
+- **`USER_HAS_NO_DEVICE`'s message no longer sends users to a marketplace
+  that doesn't exist.** It now says the apiKey lacks access and points at
+  the operator's auth config, the last user-visible instance of the claim
+  this section fixes.
+- **Consequence for payments**: settlement is between an operator and
+  their own users. Module authors are not paid through countinghouse, and
+  there is no revenue share, payout or escrow.
+- Background and the full reasoning:
+  `docs/superpowers/specs/2026-09-04-marketplace-backend-design.md`.
+
 ## 6.1.0
 
 Two new subsystems, both additive: a toolchain for authoring modules, and an

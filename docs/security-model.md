@@ -44,8 +44,8 @@ spawned from `lib/module-manager.js`'s `loadModuleByWorker`). This gives:
   native addon (`.node` file) available in `node_modules`. Native code runs
   with full process privileges and is not constrained by the V8
   isolate boundary that separates JS heaps — a native addon can access
-  process memory directly. `verify-module` (see below) does not inspect or
-  restrict native dependencies.
+  process memory directly. `countinghouse_validate_module` (see below) does
+  not inspect or restrict native dependencies.
 - **`process` is fully reachable.** Nothing strips or proxies the `process`
   global inside a worker. A module can call `process.exit()` (killing its
   own worker, a self-inflicted denial of service, not a platform compromise
@@ -61,27 +61,55 @@ spawned from `lib/module-manager.js`'s `loadModuleByWorker`). This gives:
   handler blocks that worker's own event loop for other pending
   callbacks/messages until it returns (it does not block the main thread or
   other workers' event loops, since each worker has its own).
-- **No code-signing or provenance check.** See `verify-module` below —
-  "verify" here means structural conformance, not authorship or integrity
-  attestation.
+- **No code-signing or provenance check.** See `countinghouse_validate_module`
+  below — "validate" here means structural conformance, not authorship or
+  integrity attestation.
 
 ## Current mitigations inventory
 
 These are real, and worth being specific about rather than waving at
 "we have security measures":
 
-- **Module structural verification** (`lib/routes/verify-module.js` →
-  `ModuleManager.prototype.verifyModule`, `lib/module-manager.js`). Before a
-  module is installed, its `package.json`, `api.json`, and `schema.json` are
-  extracted and parsed, and the API spec is checked against the framework's
-  own JSON Schema 2020-12 meta-schema (`lib/validator.js`, via `ajv`) for
+- **Module structural verification** (`countinghouse_validate_module`, an
+  MCP tool gated on `--authoringTools` plus an admin key,
+  `lib/mcp/gateway.js`; the check itself runs via `bin/countinghouse-validate.js`
+  in a disposable child process, `lib/module-validator.js`). Before a module
+  is loaded, its `api.json`, `schema.json`, and handler map are extracted
+  and cross-checked against each other and against the framework's own
+  JSON Schema 2020-12 meta-schema (`lib/validator.js`, via `ajv`) for
   structural conformance — well-formed service/action lists, unique action
-  names, resolvable schema pointers. **This is not
-  a security scan.** It does not inspect the module's actual JS source, does
-  not check its `node_modules` dependency tree for known vulnerabilities,
-  and does not verify a signature or checksum against a trusted publisher.
-  A structurally valid `api.json` sitting next to arbitrary, unreviewed JS
-  is exactly what this check would accept.
+  names, resolvable schema pointers, handlers that actually exist for every
+  declared action — and every problem found is reported, not just the
+  first. **Doing this requires actually running the module's own code.**
+  `loadExported` (`lib/module-validator.js:61`) calls `require()` on the
+  module's main entry, and `resolveHandlerMap`
+  (`lib/module-validator.js:180`) calls `require()` on every handler file —
+  there is no way to resolve the handler map without loading the JS that
+  defines it. That `require()` happens inside a disposable,
+  timeout-bounded child process (`execFile` with `VALIDATE_CHILD_TIMEOUT_MS`,
+  `lib/mcp/gateway.js`), not the long-lived gateway process, so a hang, a
+  crash, or a `process.exit()` during that load only takes down the one-off
+  child, not the server answering every other tenant's requests at the same
+  time. The tool itself is gated behind `--authoringTools` plus an admin
+  key, the same gate every other authoring tool uses. That exposure is also
+  not new relative to what an admin can already do: `countinghouse_load_module`,
+  reachable by the identical admin-gated population, `require()`s a module's
+  code directly into the live gateway process with no child-process
+  isolation at all — its own `LOAD_MODULE_TIMEOUT_MS` only bounds how long
+  the tool call waits for a callback, it does not stop a synchronous hang
+  inside that `require()` from blocking the process itself.
+  `countinghouse_validate_module`'s child-process boundary is strictly
+  safer than that, not a new hole opened next to an otherwise-clean tool.
+  **None of this makes it a security scan, though.** It does not audit or
+  review the module's code for malicious behavior, does not check its
+  `node_modules` dependency tree for known vulnerabilities, and does not
+  verify a signature or checksum against a trusted publisher. Running the
+  code is a side effect of resolving the handler map, not a review of what
+  that code does — a structurally valid `api.json` next to arbitrary,
+  actively malicious JS passes this check exactly as cleanly as an honest
+  module would. (This mechanism superseded the earlier HTTP-based
+  module-verification route, removed in the marketplace-backend cleanup;
+  see `docs/superpowers/specs/2026-09-04-marketplace-backend-design.md`.)
 - **Schema validation at the invocation boundary**
   (`Service.prototype.validateActionCall`, `lib/service.js`, backed by
   `lib/validator.js`'s `ajv` 2020-12 compiler). Every `tools/call` /
@@ -159,15 +187,19 @@ or micro-VM isolation.
 ## Positioning
 
 **"Worker-thread isolation + module review (verify/publish)" fits a
-semi-trusted marketplace model** — modules are vetted by the platform
-operator (structural verification, and in practice, human review) before
-being listed, not open to anonymous, unreviewed code execution. It does
-**not** provide hard isolation equivalent to containers, gVisor, or
-micro-VMs, and should not be marketed as such. The honest pitch is: this is
-a reasonable, low-overhead boundary for a curated marketplace of modules
-from developers the platform has a relationship with, not a boundary
+semi-trusted, operator-vetted third-party module model** — modules are
+vetted by the platform operator (structural verification, and in practice,
+human review) before being loaded, not open to anonymous, unreviewed code
+execution. It does **not** provide hard isolation equivalent to containers,
+gVisor, or micro-VMs, and should not be marketed as such. The honest pitch
+is: this is a reasonable, low-overhead boundary for modules from developers
+the operator has a relationship with and has reviewed, not a boundary
 suitable for running arbitrary, adversarial, unreviewed code from the open
-internet.
+internet. (countinghouse itself runs no marketplace — modules are
+distributed over npm — so "marketplace" described the trust posture, not a
+feature of this project; see
+`docs/superpowers/specs/2026-09-04-marketplace-backend-design.md` for why
+the framing changed.)
 
 ## Roadmap
 
