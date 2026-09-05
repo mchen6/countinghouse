@@ -553,7 +553,7 @@ These assert *current, working* behavior, so they should pass immediately — th
 mocha ./test/auth/17-removed-package-routes.js
 ```
 
-Expected: 6 passing. Both new cases should pass on the first run — they describe behavior that already works.
+Expected: 5 passing (2 from Task 1, 1 from Task 2, 2 added here). Both new cases should pass on the first run — they describe behavior that already works.
 
 **If either fails**, do not adjust the assertion to match whatever the route returned. Read the route (`lib/routes/get-module-device-list.js`, `lib/routes/get-device-package-info.js`) and find out why; a surviving route that does not work is a finding worth reporting, and would change whether the spec should have kept it.
 
