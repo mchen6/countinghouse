@@ -1,7 +1,7 @@
 {
   "name": "countinghouse",
   "version": "6.1.0",
-  "description": "Multi-tenant runtime and monetization/marketplace backend for MCP tools",
+  "description": "Multi-tenant runtime for MCP tools, with metering and per-key access control",
   "bin": {
     "countinghouse": "./bin/countinghouse",
     "cth": "./bin/countinghouse",
@@ -43,7 +43,6 @@
     "agent",
     "tools",
     "metering",
-    "marketplace",
     "multi-tenant",
     "runtime"
   ],
