@@ -80,15 +80,36 @@ These are real, and worth being specific about rather than waving at
   structural conformance — well-formed service/action lists, unique action
   names, resolvable schema pointers, handlers that actually exist for every
   declared action — and every problem found is reported, not just the
-  first. **This is not
-  a security scan.** It does not inspect the module's actual JS source, does
-  not check its `node_modules` dependency tree for known vulnerabilities,
-  and does not verify a signature or checksum against a trusted publisher.
-  A structurally valid `api.json` sitting next to arbitrary, unreviewed JS
-  is exactly what this check would accept. (This mechanism superseded the
-  earlier HTTP-based module-verification route, removed in the
-  marketplace-backend cleanup; see
-  `docs/superpowers/specs/2026-09-04-marketplace-backend-design.md`.)
+  first. **Doing this requires actually running the module's own code.**
+  `loadExported` (`lib/module-validator.js:61`) calls `require()` on the
+  module's main entry, and `resolveHandlerMap`
+  (`lib/module-validator.js:180`) calls `require()` on every handler file —
+  there is no way to resolve the handler map without loading the JS that
+  defines it. That `require()` happens inside a disposable,
+  timeout-bounded child process (`execFile` with `VALIDATE_CHILD_TIMEOUT_MS`,
+  `lib/mcp/gateway.js`), not the long-lived gateway process, so a hang, a
+  crash, or a `process.exit()` during that load only takes down the one-off
+  child, not the server answering every other tenant's requests at the same
+  time. The tool itself is gated behind `--authoringTools` plus an admin
+  key, the same gate every other authoring tool uses. That exposure is also
+  not new relative to what an admin can already do: `countinghouse_load_module`,
+  reachable by the identical admin-gated population, `require()`s a module's
+  code directly into the live gateway process with no child-process
+  isolation at all — its own `LOAD_MODULE_TIMEOUT_MS` only bounds how long
+  the tool call waits for a callback, it does not stop a synchronous hang
+  inside that `require()` from blocking the process itself.
+  `countinghouse_validate_module`'s child-process boundary is strictly
+  safer than that, not a new hole opened next to an otherwise-clean tool.
+  **None of this makes it a security scan, though.** It does not audit or
+  review the module's code for malicious behavior, does not check its
+  `node_modules` dependency tree for known vulnerabilities, and does not
+  verify a signature or checksum against a trusted publisher. Running the
+  code is a side effect of resolving the handler map, not a review of what
+  that code does — a structurally valid `api.json` next to arbitrary,
+  actively malicious JS passes this check exactly as cleanly as an honest
+  module would. (This mechanism superseded the earlier HTTP-based
+  module-verification route, removed in the marketplace-backend cleanup;
+  see `docs/superpowers/specs/2026-09-04-marketplace-backend-design.md`.)
 - **Schema validation at the invocation boundary**
   (`Service.prototype.validateActionCall`, `lib/service.js`, backed by
   `lib/validator.js`'s `ajv` 2020-12 compiler). Every `tools/call` /
