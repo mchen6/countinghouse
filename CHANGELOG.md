@@ -8,7 +8,29 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
-## 7.0.0 (unreleased)
+## 7.0.0
+
+The "deployable and defensible" release. It closes the last open item from
+the pre-release security audit, removes the entry paths inherited from the
+2015 IoT device gateway this project grew out of, and settles what
+countinghouse actually is.
+
+Most of it is subtraction. Four HTTP entry paths and a whole OAuth subsystem
+are gone, and **every one of them was already broken** — each called a method
+that was never defined, or sat behind a flag hardcoded to `false`. The
+breaking changes to the HTTP surface therefore remove almost no working
+behavior; what they remove is the appearance of it. Two guards now keep that
+from recurring: a route inventory that fails the suite until a new entry path
+is declared, and an error log where an unresolvable tool schema used to be
+downgraded in silence.
+
+**Not in this release, and originally planned for it:** real payment
+settlement, and a second composite example. The 7.0.0 scope was first drawn
+around six items; four are here. Settlement lands on the module format and
+the auth config, both inside this file's definition of the public surface, so
+it is expected to need its own major. That is a deliberate re-scope, not an
+oversight — the alternative was holding these security fixes behind an
+open-ended payments design.
 
 ### Security — the authenticated read paths are now rate limited
 

@@ -1,6 +1,6 @@
 {
   "name": "countinghouse",
-  "version": "6.1.0",
+  "version": "7.0.0",
   "description": "Multi-tenant runtime for MCP tools, with metering and per-key access control",
   "bin": {
     "countinghouse": "./bin/countinghouse",
