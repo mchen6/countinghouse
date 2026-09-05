@@ -1,8 +1,17 @@
 # Project Context
 
-This is a Node.js API hosting framework being refactored and rebranded
-(new name TBD) as: a multi-tenant runtime + monetization/marketplace
-backend for MCP tools.
+countinghouse is a self-hosted, multi-tenant MCP tool runtime, refactored
+and rebranded from a Node.js API hosting framework. It hosts third-party
+modules distributed over npm, under operator review, and its own
+contributions are validation against the runtime's contract and metered,
+per-key access control.
+
+**It is not a marketplace, and must not describe itself as one.** It builds
+no publish, storage or browse machinery — npm is the marketplace, and the
+runtime never fetches code over the network. That was decided in 7.0.0;
+the reasoning, and what it forecloses (module authors are not paid through
+countinghouse), is in
+docs/superpowers/specs/2026-09-04-marketplace-backend-design.md.
 
 ## Authoritative plan
 The original sprint-by-sprint working plan
