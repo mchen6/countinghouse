@@ -3,7 +3,6 @@
   "/device-list",
   "/devices/:deviceID",
   "/devices/:deviceID/add-job",
-  "/devices/:deviceID/download-package",
   "/devices/:deviceID/get-job",
   "/devices/:deviceID/get-job-history",
   "/devices/:deviceID/get-spec",

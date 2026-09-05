@@ -58,4 +58,10 @@ describe('auth 17: the CEAMS-era package routes with no consumer are gone', func
                 .send({name: '/tmp/whatever.tgz', path: '/tmp'})
                 .expect(404, done);
   });
+
+  it('GET /devices/:deviceID/download-package is 404', (done) => {
+    request(url).get('/devices/some-device-id/download-package')
+                .set('X-CH-Key', ADMIN)
+                .expect(404, done);
+  });
 });
