@@ -78,8 +78,8 @@ explicitly not a boundary for "arbitrary, adversarial, unreviewed code from
 the open internet," because the isolation is "same process, separate heap."
 
 **Consequence:** a frictionless install-anything-from-anywhere flow is ruled
-out. It would contradict the project's own honest security positioning. This
-is why remote install is opt-in and gated (D4).
+out. It would contradict the project's own honest security positioning. It is
+the main reason D4 leaves obtaining code entirely to the operator.
 
 ### D3 — Distribution: npm, registry-agnostic
 
@@ -107,31 +107,34 @@ MCP server. The MCP registry answers "how do I find countinghouse," not "how
 do I find a module for it." Conflating the two is a category error this
 design explicitly avoids.
 
-### D4 — Two install paths, one default
+### D4 — One install path: the operator installs, the runtime never fetches
 
-**Default, and the documented path:** the operator runs
-`npm install <pkg> --registry <theirs>` into the module directory
-(`options.modulePath`, default `~/countinghouse_modules`), then validates and
-loads. **The runtime never touches the network.** This keeps
-fetch-then-execute — the classic supply-chain hole — out of the server
-entirely, which matters because `countinghouse_load_module` already
+The operator runs `npm install <pkg> --registry <theirs>` into the module
+directory (`options.modulePath`, default `~/countinghouse_modules`), then
+loads it. **countinghouse never touches the network to obtain code.**
+
+This keeps fetch-then-execute — the classic supply-chain hole — out of the
+server entirely, which matters because `countinghouse_load_module` already
 `require()`s a caller-supplied path unsandboxed in the main gateway process.
+Adding a network fetch immediately upstream of that would compound the one
+genuinely dangerous thing the runtime already does.
 
-**Opt-in:** a new `countinghouse_install_module` tool does name → live tool
-in one call, behind three constraints:
+**Remote install was designed and deliberately not built.** A
+`countinghouse_install_module` tool taking `{name, version}` — gated behind
+an off-by-default flag, an explicitly configured registry, and mandatory
+validation — was specified and then retired before implementation. The
+reasoning: it is ergonomic surface, not capability. Everything it would do,
+the operator can already do with `npm install` followed by the existing
+`countinghouse_load_module`, using tools they already trust and already
+have. The gated version would have added a fetch-then-execute path, three
+new configuration knobs, and its own security-gating tests, to save one
+shell command that the operator running third-party code should arguably be
+typing deliberately anyway.
 
-1. **New flag `--allowRemoteInstall`, off by default.** Gated exactly like
-   the existing authoring tools (`lib/mcp/gateway.js`): with the flag off the
-   tool answers **identically to an unknown tool**, so its existence is not
-   an oracle; an authenticated non-admin caller gets `ADMIN_REQUIRED`.
-2. **Validation is mandatory on this path**, not advisory. Any problem the
-   validator reports refuses the load. The operator path may skip validation;
-   this one may not, because it is the path where countinghouse itself
-   fetched the code.
-3. **The registry must be explicitly configured** — a new `--moduleRegistry
-   <url>`. Flag on with no registry set refuses. There is deliberately no
-   implicit default, so no operator silently installs from wherever npm
-   happens to point.
+If it is ever wanted, the constraints it needs are recorded above and should
+be reinstated together: off by default, registry explicitly configured with
+no implicit fallback, and validation mandatory on that path specifically —
+because it is the path where countinghouse itself fetched the code.
 
 ### D5 — Payments (#3) reframed: the operator bills their own users
 
@@ -163,31 +166,7 @@ framing — D2 confirms it rather than changing it — but its phrase
 "marketplace model" is clarified to mean operator-vetted third-party
 modules, not a marketplace this project operates.
 
-### 2. `countinghouse_install_module`
-
-Input `{name: string, version?: string}`. Registry comes from
-`--moduleRegistry`, never from the caller — a caller-supplied registry would
-let an admin-keyed request pull from anywhere, defeating D4.3.
-
-Sequence: resolve the target directory under `options.modulePath` → fetch via
-npm into it → run the validator (§3) → on a clean result, load through the
-existing `countinghouse_load_module` path → record provenance (§4) → return
-the loaded tool names, reusing `countinghouse_load_module`'s existing output
-shape including `discoveryComplete`.
-
-Any validator problem aborts before load, and the tool returns the validator's
-full problem list — every problem, each naming its stage and the way out,
-which is what that validator already produces.
-
-**Which npm binary.** `bin/countinghouse-validate.js` is already invoked via
-`process.execPath` rather than PATH, with an in-code comment explaining that
-the child must run under the exact Node binary already running the gateway.
-The same care applies here: resolve npm as
-`path.join(path.dirname(process.execPath), 'npm')`, fall back to `npm` on
-PATH only if that does not exist, and **log the resolved path** at install
-time so which npm ran is a recorded fact rather than an inference.
-
-### 3. One validator
+### 2. One validator
 
 Everything consolidates on `lib/module-validator.js`, reached through
 `bin/countinghouse-validate.js --json` in a child process — the shape
@@ -211,22 +190,10 @@ and gates `--debug --verifyModule` reporting at
 `lib/countinghouse-util.js:174,283`. Removing the flag would break module
 verification behavior that has nothing to do with the route.
 
-### 4. Provenance
-
-An operator running third-party code must be able to answer "what am I
-running, and where did it come from?" Each loaded module records: `name`,
-`version`, `source` (an absolute local path, or the registry URL it was
-fetched from), and whether it was validated at load.
-
-`/devices/:deviceID/package-info` today returns only `{name, version}`
-(`lib/routes/get-device-package-info.js`). It is extended to carry the
-provenance record — which turns one of the four routes A3 deliberately
-deferred into a route with a real job.
-
-### 5. Removals
+### 3. Removals
 
 - `/verify-module` and `ModuleManager.prototype.verifyModule` — superseded
-  (§3).
+  (§2).
 - `/devices/:deviceID/download-package`, `CdifInterface.getDevicePackageModulePath`,
   `DeviceManager.onGetDevicePackageModulePath` and the
   `getdevicepackagemodulepath` event — it packaged a loaded module for
@@ -256,41 +223,40 @@ Recorded so it is a decision rather than an omission:
 - **Anonymous, unreviewed module execution stays unsupported** (D2). Changing
   that requires the isolation hardening in `docs/security-model.md`'s roadmap
   first, not a new install path.
+- **The runtime never fetches code over the network** (D4). Obtaining a module
+  is the operator's action, taken with their own tooling. Reinstating remote
+  install means reinstating all three of D4's constraints together.
 
 ## Testing
 
-- **Gating**: `--allowRemoteInstall` off ⇒ `countinghouse_install_module`
-  answers exactly like an unknown tool, including for an unresolvable
-  identity; flag on + authenticated non-admin ⇒ `ADMIN_REQUIRED`. Mirrors
-  `test/auth/06-admin-gating.js` and the authoring-tool tests.
-- **Registry required**: flag on, `--moduleRegistry` unset ⇒ install refuses
-  with a distinct code, and nothing is fetched.
-- **Validation is a gate**: installing a package with a known defect (a
-  fixture with a dangling schema pointer or an undeclared handler) must fail
-  and must leave nothing loaded — asserted by `tools/list` being unchanged
-  afterwards, not merely by the tool's return value.
-- **Provenance**: a module installed remotely reports its registry as
-  `source`; one loaded from a path reports that path.
-- **Removed routes 404**, in the shape of `test/auth/16-removed-iot-routes.js`.
+- **Removed routes 404**, in the established shape of
+  `test/auth/14-removed-callback-routes.js` and
+  `test/auth/16-removed-iot-routes.js` — including a guard case proving the
+  server is up, so a 404 cannot pass for the wrong reason.
+- **The surviving routes still work**: `/get-module-device-list` returns a
+  loaded module's device list, and `/devices/:deviceID/package-info` returns
+  `{name, version}`. Neither has ever had a test; removing their neighbours
+  is the right moment to add one, and without it their matrix rows would
+  assert behavior nothing checks.
 - **The route-inventory guard will fail until the golden is regenerated** —
   `test/module-loading/11-route-inventory.js`. That is the guard working as
-  intended, and this is its first real exercise.
+  intended, and this is its first real exercise since it shipped.
+- **No new tests for gating or registries**: D4 builds nothing that needs
+  them.
 
 ## Files
 
-Added: `lib/routes/` — none (the install path is an MCP tool, not an HTTP
-route); the tool definition in `lib/mcp/tool-registry.js` and its handler in
-`lib/mcp/gateway.js`; a provenance record in `lib/module-manager.js`.
-
-Modified: `lib/mcp/tool-registry.js`, `lib/mcp/gateway.js`,
-`lib/cli-options.js`, `lib/module-manager.js`, `lib/route-manager.js`,
-`lib/routes/get-device-package-info.js`, `lib/countinghouse-interface.js`,
-`lib/device-manager.js`, `server.json`, `package.json`,
+Modified: `lib/route-manager.js`, `lib/module-manager.js`,
+`lib/countinghouse-interface.js`, `lib/device-manager.js`,
+`lib/cli-options.js`, `server.json`, `package.json`,
 `docs/cross-cutting-matrix.md`, `docs/security-model.md`, `CHANGELOG.md`,
 `test/fixtures/route-inventory.json`.
 
 Removed: `lib/routes/verify-module.js`,
 `lib/routes/download-device-package.js`, `example/publish-api.js`.
+
+Added: a regression/coverage test for the removed and surviving package
+routes.
 
 ## What #3 inherits
 
