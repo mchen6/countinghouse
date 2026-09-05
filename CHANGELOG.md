@@ -174,6 +174,10 @@ the auth config.
   been untracked since 182db48.)
 - **Kept**: `/get-module-device-list` and `/devices/:deviceID/package-info`,
   which now have tests and cross-cutting-matrix rows for the first time.
+- **`USER_HAS_NO_DEVICE`'s message no longer sends users to a marketplace
+  that doesn't exist.** It now says the apiKey lacks access and points at
+  the operator's auth config, the last user-visible instance of the claim
+  this section fixes.
 - **Consequence for payments**: settlement is between an operator and
   their own users. Module authors are not paid through countinghouse, and
   there is no revenue share, payout or escrow.

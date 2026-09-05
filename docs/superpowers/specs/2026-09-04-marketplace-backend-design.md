@@ -39,9 +39,9 @@ approved, and approved users could then invoke that package's APIs.
 What survived in countinghouse: the *verify* end and the *enforcement* end.
 An AuthProvider entry's per-apiKey `devices: [...]` list is exactly the
 "author approved this user for this package" state, just hand-edited instead
-of produced by a workflow — the error text for `USER_HAS_NO_DEVICE` still
-reads "please add it from the app marketplace". What did not survive:
-storage, browse, and the request/approve workflow.
+of produced by a workflow — the error text for `USER_HAS_NO_DEVICE` used to
+read "please add it from the app marketplace" until this branch corrected
+it. What did not survive: storage, browse, and the request/approve workflow.
 
 ## The answer
 

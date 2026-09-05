@@ -74,7 +74,7 @@
   "SYSTEM_ERROR_SMSTMPLDB_NA": "Template database unavailable",
   "SYSTEM_ERROR_USER_UNAUTHORIZED": "User unauthorized",
   "SYSTEM_ERROR_UNKNOWN_USER": "Unknown user",
-  "USER_HAS_NO_DEVICE": "This app is not in the user's app list, please add it from the app marketplace",
+  "USER_HAS_NO_DEVICE": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config",
   "ADMIN_REQUIRED": "This operation requires an admin apiKey",
   "INVALID_BALANCE_FORMAT": "Invalid user balance data format",
   "NO_PRICE_RECORD": "Invalid user API count format",
