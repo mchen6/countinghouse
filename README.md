@@ -54,6 +54,11 @@ cd countinghouse && npm install
 npm run demo:repo-review
 ```
 
+Working on countinghouse itself rather than trying it out?
+[`docs/development-setup.md`](https://github.com/mchen6/countinghouse/blob/master/docs/development-setup.md)
+covers running the test suite, enabling the tracked git hooks (they need one
+config line after cloning), and the two guards that are designed to fail on you.
+
 That loads four modules: one composite tool that reads a repository, scans it
 for credentials and audits its dependencies, plus the three inner tools it
 calls. Point an MCP client at it:
