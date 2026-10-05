@@ -8,6 +8,30 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
+## 7.0.1 (unreleased)
+
+### Fixed — two ways a composite's hops were billed wrongly
+
+Both were found by running `ctx.call` hops concurrently, which no composite in
+the tree did.
+
+- **Overlapping charges overwrote each other.** `recordCall` read the balance
+  and wrote it back as two Redis round trips, so calls that overlapped all
+  read the same balance and all wrote the same result: ten concurrent hops at
+  cost 1 moved the caller's balance by 2. The same race let a free-call quota
+  of 5 serve 20 overlapping calls. The deduction is now a single atomic step.
+  This applied to every charge on one key, not only to hops — any two calls
+  metered at the same moment could lose one.
+- **`--directPeerChannels` billed the composing module, not the caller.** The
+  peer-invoke message was built without the billing identity, so the callee
+  fell back to the identity the channel was granted under. Hops made through
+  `ctx.call` or `ctx.serviceClient` were charged to the module's own identity
+  and the caller paid only for the outer call. The default, main-thread-routed
+  path was not affected.
+
+An operator who ran composites with `--directPeerChannels` will find those
+hops on the module identity's balance rather than on callers'.
+
 ## 7.0.0
 
 The "deployable and defensible" release. It closes the last open item from

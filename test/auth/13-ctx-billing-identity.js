@@ -14,16 +14,33 @@
 // The decisive assertion is the negative one. It is easy to write a test that
 // merely shows the call works; what matters is *whose balance moved*. So the
 // internal identity is given a balance too, and asserted not to have paid.
+//
+// Run once per hop path. The two paths meter in different places -- the
+// main-thread-routed one in DeviceManager.prototype.
+// sendInvokeActionMessageToWorker, --directPeerChannels in the callee worker
+// via PeerChannelBroker.prototype.handleMeteringRequest -- so the billing
+// identity has to survive two different trips. For a long time only the first
+// was checked here, and the second dropped it: PeerChannel.prototype.
+// _sendInvoke built the peer-invoke message without the billingKey it had been
+// handed, the callee fell back to the grant identity, and every hop was
+// charged to the module instead of the caller.
 const assert  = require('assert');
 const fs      = require('fs');
 const exec    = require('child_process').exec;
 const request = require('supertest');
 
-const PORT      = 9593;
-const url       = `http://127.0.0.1:${PORT}`;
-const AUTH_PATH = `/tmp/countinghouse-test-auth-13-${process.pid}.json`;
+const PATHS = [
+  {label: 'main-thread-routed',   port: 9593, flags: ''},
+  {label: '--directPeerChannels', port: 9598, flags: ' --directPeerChannels'}
+];
 
-const CALLER       = `caller-13-${process.pid}`;
+PATHS.forEach((hopPath, index) => {
+
+const PORT      = hopPath.port;
+const url       = `http://127.0.0.1:${PORT}`;
+const AUTH_PATH = `/tmp/countinghouse-test-auth-13-${index}-${process.pid}.json`;
+
+const CALLER       = `caller-13-${index}-${process.pid}`;
 const AS_IDENTITY  = 'ctx-compose-internal';   // must match the fixture's `as`
 const ECHO_DEVICE  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
 
@@ -40,7 +57,7 @@ function writeAuth() {
 function startServer(done) {
   writeAuth();
   exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
-       } --authProvider file --authConfigPath ${AUTH_PATH} --mcpToolCallCost 1` +
+       } --authProvider file --authConfigPath ${AUTH_PATH} --mcpToolCallCost 1${hopPath.flags}` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +
        ` --loadModule ./test/fixtures/ctx-compose-module`,
        (err) => { console.log(err); });
@@ -84,7 +101,7 @@ function callCompose(cb) {
   });
 }
 
-describe('auth 13: inner hops are authorized as the module, billed to the caller', function() {
+describe(`auth 13: inner hops are authorized as the module, billed to the caller (${hopPath.label})`, function() {
   this.timeout(0);
 
   before(function(done) {
@@ -132,7 +149,7 @@ describe('auth 13: inner hops are authorized as the module, billed to the caller
               const internalPaid = internalBefore - internalAfter;
 
               // outer invoke charge + one inner hop
-              assert.ok(callerPaid >= 2,
+              assert.strictEqual(callerPaid, 2,
                 `caller should pay the outer call and the inner hop, paid ${callerPaid}`);
 
               // the point of the split: the fixed internal identity stops
@@ -146,4 +163,6 @@ describe('auth 13: inner hops are authorized as the module, billed to the caller
       });
     });
   });
+});
+
 });
