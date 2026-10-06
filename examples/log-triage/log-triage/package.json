@@ -1,0 +1,20 @@
+{
+  "name": "log-triage",
+  "version": "1.0.0",
+  "description": "a composite tool whose bill follows its input: one tools/call lists a log directory, reads and masks each file in-process, clusters the errors, and returns counts and masked samples plus a per-hop bill -- never a raw log line",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "log-read/readService.list",
+      "log-read/readService.read",
+      "pii-redact/redactService.redact",
+      "error-cluster/clusterService.cluster"
+    ]
+  }
+}

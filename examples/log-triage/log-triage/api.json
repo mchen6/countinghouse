@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "log-triage",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Triages a directory of application logs by composing three other hosted tools -- log-read, pii-redact and error-cluster -- inside a single tool call. Raw log lines are read, masked and clustered in-process and then discarded: they are never part of this tool's response, and this tool's output schema has no field that could carry one. Unlike a fixed-shape composite, the number of internal hops grows with the number of log files read, each hop is metered to the caller, and the caller caps the total with `maxFiles`.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:triageService": {
+        "actionList": [
+          {
+            "name": "triage",
+            "description": "Reads the .log files in a directory and returns the largest groups of warnings and errors, with personal data masked. Defaults to the demo's generated sample logs, so it can be called with no arguments once those exist. COST: this tool makes one internal call to list the directory, two per file read (read, then mask) and one to cluster, so reading N files costs 2N + 2 internal calls plus this call itself, all charged to you. `maxFiles` (default 8, maximum 32) caps how many files are read, which fixes the worst case at 2 x maxFiles + 3 before you call; files beyond the cap are not read and are listed as skipped. The response has three parts. `findings` is the report: which files were read and skipped, how many values of each personal-data type were masked, line counts per level, and the top clusters with a masked sample each. `bill` is one metering record per internal call. `cost` restates the total and the cap. TWO SCOPE LIMITS TO PASS ON WHEN REPORTING RESULTS: masking is demo-grade regex matching over five patterns, so a zero count is not evidence the logs hold no personal data; and clustering only groups messages that are identical apart from numbers and identifiers.",
+            "input": {
+              "schema": "/triageService/triage/input"
+            },
+            "output": {
+              "schema": "/triageService/triage/output"
+            },
+            "fault": {
+              "schema": "/fault/triageService/triage/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
