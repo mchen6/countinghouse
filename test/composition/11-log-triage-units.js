@@ -139,4 +139,24 @@ describe('log-triage units: log-read', () => {
     await rejectsInvalid(read({dir: dir, name: 'b.log', maxBytes: 0}));
     await rejectsInvalid(read({dir: dir, name: 'b.log', maxBytes: 1.5}));
   });
+
+  it('read accepts every name list returns, including spaces, a leading dot and non-ASCII', async () => {
+    const odd = path.join(tmpRoot, 'odd');
+    fs.mkdirSync(odd);
+    const names = ['my app.log', '.hidden.log', 'caf\u00e9.log'];
+    for (const n of names) fs.writeFileSync(path.join(odd, n), `line of ${n}\n`);
+
+    const listed = (await list({dir: odd})).output.files.map((f) => f.name);
+    assert.deepStrictEqual(listed, names.slice().sort());
+
+    for (const n of listed) {
+      assert.deepStrictEqual((await read({dir: odd, name: n})).output.lines, [`line of ${n}`]);
+    }
+  });
+
+  it('read rejects a backslash, a NUL and the bare name ".log"', async () => {
+    for (const name of ['a\\b.log', 'a\0b.log', '.log']) {
+      await rejectsInvalid(read({dir: dir, name: name}));
+    }
+  });
 });

@@ -8,9 +8,14 @@ const DEFAULT_DIR = path.resolve(__dirname, '..', '..', '..', 'sample-logs');
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 
-// A bare file name: no separator can appear, so path.join below cannot leave
-// the directory. The leading-character rule keeps ".log" and dotfiles out.
-const NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*\.log$/;
+// A bare file name: no separator or NUL can appear, so path.join below cannot
+// leave the directory. Every name `list` can return (any regular *.log file
+// but ".log" itself) is accepted here too.
+function isBareLogName(name) {
+  return typeof name === 'string' &&
+         name.endsWith('.log') && name !== '.log' &&
+         !/[/\\\0]/.test(name);
+}
 
 module.exports = async (input) => {
   const opts = input || {};
@@ -18,7 +23,7 @@ module.exports = async (input) => {
   if (opts.dir != null && (typeof opts.dir !== 'string' || opts.dir === '')) {
     throw new DeviceError('ARGUMENTS_INVALID', 'dir must be a non-empty string');
   }
-  if (typeof opts.name !== 'string' || !NAME_RE.test(opts.name)) {
+  if (!isBareLogName(opts.name)) {
     throw new DeviceError('ARGUMENTS_INVALID', 'name must be a bare file name ending in .log');
   }
 
