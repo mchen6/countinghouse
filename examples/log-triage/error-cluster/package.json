@@ -1,0 +1,12 @@
+{
+  "name": "error-cluster",
+  "version": "1.0.0",
+  "description": "groups WARN and ERROR log lines that differ only in numbers and identifiers. Part of the log-triage composite demo.",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0"
+}

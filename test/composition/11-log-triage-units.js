@@ -212,3 +212,83 @@ describe('log-triage units: pii-redact', () => {
     await assert.rejects(redact({}), (err) => err.code === 'ARGUMENTS_INVALID');
   });
 });
+
+describe('log-triage units: error-cluster', () => {
+  const cluster = require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js'));
+
+  const LINES = [
+    '2026-09-01T00:00:01.000Z INFO request completed in 12ms status=200 path=/api/orders/4821',
+    '2026-09-01T00:00:02.000Z ERROR upstream timeout after 3000ms calling inventory-service request=9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0',
+    '2026-09-01T00:00:03.000Z WARN slow query took 812ms table=orders',
+    '2026-09-01T00:00:04.000Z ERROR upstream timeout after 29999ms calling inventory-service request=00112233-4455-6677-8899-aabbccddeeff',
+    '2026-09-01T00:00:05.000Z DEBUG cache hit key=session:deadbeef',
+    '    at Worker.run (/srv/app/worker.js:41:17)',
+    '',
+    '2026-09-01T00:00:06.000Z WARN slow query took 9000ms table=orders',
+    '2026-09-01T00:00:07.000Z ERROR upstream timeout after 5ms calling inventory-service request=0a0b0c0d-0e0f-1011-1213-141516171819',
+    '2026-09-01T00:00:08.000Z ERROR job 0123456789ab exceeded max attempts, moved to dead letter queue'
+  ];
+
+  it('counts levels and unparsed lines', async () => {
+    const {output} = await cluster({lines: LINES});
+
+    assert.strictEqual(output.lineCount, 10);
+    assert.strictEqual(output.unparsed, 2);
+    assert.deepStrictEqual(output.byLevel, {DEBUG: 1, INFO: 1, WARN: 2, ERROR: 4});
+  });
+
+  it('merges WARN and ERROR lines that differ only in numbers, hex strings and UUIDs', async () => {
+    const {output} = await cluster({lines: LINES});
+
+    assert.strictEqual(output.clusterCount, 3);
+    assert.deepStrictEqual(output.clusters, [
+      {template: 'upstream timeout after #ms calling inventory-service request=#', level: 'ERROR', count: 3,
+       firstSeen: '2026-09-01T00:00:02.000Z', lastSeen: '2026-09-01T00:00:07.000Z',
+       sample: 'upstream timeout after 3000ms calling inventory-service request=9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0'},
+      {template: 'slow query took #ms table=orders', level: 'WARN', count: 2,
+       firstSeen: '2026-09-01T00:00:03.000Z', lastSeen: '2026-09-01T00:00:06.000Z',
+       sample: 'slow query took 812ms table=orders'},
+      {template: 'job # exceeded max attempts, moved to dead letter queue', level: 'ERROR', count: 1,
+       firstSeen: '2026-09-01T00:00:08.000Z', lastSeen: '2026-09-01T00:00:08.000Z',
+       sample: 'job 0123456789ab exceeded max attempts, moved to dead letter queue'}
+    ]);
+  });
+
+  it('breaks count ties by template, so the order is stable', async () => {
+    const {output} = await cluster({lines: [
+      '2026-09-01T00:00:01.000Z WARN zebra crossed',
+      '2026-09-01T00:00:02.000Z WARN apple fell'
+    ]});
+
+    assert.deepStrictEqual(output.clusters.map((c) => c.template), ['apple fell', 'zebra crossed']);
+  });
+
+  it('keeps only topClusters clusters but still reports how many there were', async () => {
+    const {output} = await cluster({lines: LINES, topClusters: 1});
+
+    assert.strictEqual(output.clusters.length, 1);
+    assert.strictEqual(output.clusters[0].count, 3);
+    assert.strictEqual(output.clusterCount, 3);
+  });
+
+  it('caps template and sample at 160 characters', async () => {
+    const {output} = await cluster({lines: [`2026-09-01T00:00:01.000Z ERROR ${'x'.repeat(500)}`]});
+
+    assert.strictEqual(output.clusters[0].template.length, 160);
+    assert.strictEqual(output.clusters[0].sample.length, 160);
+  });
+
+  it('returns zeroes and no clusters for no lines', async () => {
+    const {output} = await cluster({lines: []});
+
+    assert.deepStrictEqual(output, {lineCount: 0, unparsed: 0, byLevel: {DEBUG: 0, INFO: 0, WARN: 0, ERROR: 0},
+                                    clusterCount: 0, clusters: []});
+  });
+
+  it('rejects bad lines and an out-of-range topClusters', async () => {
+    const invalid = (err) => err.code === 'ARGUMENTS_INVALID';
+    await assert.rejects(cluster({lines: 'nope'}), invalid);
+    await assert.rejects(cluster({lines: [], topClusters: 0}), invalid);
+    await assert.rejects(cluster({lines: [], topClusters: 51}), invalid);
+  });
+});

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "clusterService": {
+    "cluster": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "title": "log lines to cluster",
+            "description": "Shaped to accept pii-redact's `lines` array unchanged.",
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "topClusters": {
+            "title": "how many clusters to return",
+            "description": "Largest first. Defaults to 10.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": ["lines"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "lineCount": {"title": "lines received", "type": "integer"},
+          "unparsed":  {"title": "lines that are not `<ISO timestamp> <LEVEL> <message>`", "type": "integer"},
+          "byLevel": {
+            "title": "parsed lines per level",
+            "type": "object",
+            "properties": {
+              "DEBUG": {"type": "integer"},
+              "INFO":  {"type": "integer"},
+              "WARN":  {"type": "integer"},
+              "ERROR": {"type": "integer"}
+            },
+            "required": ["DEBUG", "INFO", "WARN", "ERROR"],
+            "additionalProperties": false
+          },
+          "clusterCount": {"title": "distinct clusters found, before the topClusters cut", "type": "integer"},
+          "clusters": {
+            "title": "largest clusters first",
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "template":  {"title": "message with variable parts shown as #", "type": "string", "maxLength": 160},
+                "level":     {"type": "string", "enum": ["WARN", "ERROR"]},
+                "count":     {"type": "integer"},
+                "firstSeen": {"type": "string", "maxLength": 40},
+                "lastSeen":  {"type": "string", "maxLength": 40},
+                "sample":    {"title": "one message from the cluster, as supplied", "type": "string", "maxLength": 160}
+              },
+              "required": ["template", "level", "count", "firstSeen", "lastSeen", "sample"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["lineCount", "unparsed", "byLevel", "clusterCount", "clusters"],
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "fault": {
+    "clusterService": {
+      "cluster": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {"title": "specific error reason", "type": "string"},
+            "info":   {"title": "detailed error info", "type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

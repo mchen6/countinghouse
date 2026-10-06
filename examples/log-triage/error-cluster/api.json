@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "error-cluster",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Groups warning and error log lines into clusters of the same message. Lines are expected in the form `<ISO timestamp> <LEVEL> <message>`; two messages fall into one cluster when they are identical after every number, long hex string and UUID is replaced by a placeholder. It is a pure-function leaf in the log-triage composite demo: it reads no files and keeps no state.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:clusterService": {
+        "actionList": [
+          {
+            "name": "cluster",
+            "description": "Clusters the WARN and ERROR lines among the log lines you supply and returns the largest clusters first: for each, the message template with variable parts shown as #, the level, how many lines matched, the first and last timestamp seen, and one sample message. Also returns a line count per level and how many lines did not parse as `<ISO timestamp> <LEVEL> <message>` -- stack-trace continuation lines and blank lines land there. The sample is copied from the input as-is, so hand this tool lines that have already been masked if they may hold personal data.",
+            "input": {
+              "schema": "/clusterService/cluster/input"
+            },
+            "output": {
+              "schema": "/clusterService/cluster/output"
+            },
+            "fault": {
+              "schema": "/fault/clusterService/cluster/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
