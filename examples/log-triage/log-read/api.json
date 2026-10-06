@@ -1,0 +1,49 @@
+{
+  "device": {
+    "friendlyName": "log-read",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Lists and reads the *.log files directly inside one directory. It is the bulk-data leaf of the log-triage composite demo and the only module in that chain that touches the disk: it returns raw log lines, unmasked, which is exactly why the demo exposes the composite to callers and not this module.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:readService": {
+        "actionList": [
+          {
+            "name": "list",
+            "description": "Lists the regular files ending in .log directly inside a directory, sorted by name, with each file's size in bytes. Not recursive, and symbolic links are left out. Defaults to the log-triage demo's generated sample directory. Returns at most 256 entries.",
+            "input": {
+              "schema": "/readService/list/input"
+            },
+            "output": {
+              "schema": "/readService/list/output"
+            },
+            "fault": {
+              "schema": "/fault/readService/list/fault"
+            }
+          },
+          {
+            "name": "read",
+            "description": "Returns the raw lines of one .log file. `name` must be a bare file name ending in .log, as returned by `list`: a name containing a path separator is refused, and so is a symbolic link, so this action cannot be steered outside the directory it was given. A file larger than `maxBytes` is read up to the last complete line that fits and reported as truncated. The lines are returned unmasked -- anything sensitive in the file is in the response.",
+            "input": {
+              "schema": "/readService/read/input"
+            },
+            "output": {
+              "schema": "/readService/read/output"
+            },
+            "fault": {
+              "schema": "/fault/readService/read/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

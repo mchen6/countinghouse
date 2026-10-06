@@ -59,3 +59,84 @@ describe('log-triage units: generate-logs', () => {
     for (const value of gen.allPlantedValues()) assert.ok(text.includes(value), `missing ${value}`);
   });
 });
+
+describe('log-triage units: log-read', () => {
+  const list = require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js'));
+  const read = require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js'));
+
+  let dir = null;
+
+  before(() => {
+    dir = path.join(tmpRoot, 'read');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'b.log'), 'one\ntwo\nthree\n');
+    fs.writeFileSync(path.join(dir, 'a.log'), 'alpha\r\nbeta\r\n');
+    fs.writeFileSync(path.join(dir, 'empty.log'), '');
+    fs.writeFileSync(path.join(dir, 'no-newline.log'), 'x\ny');
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'not a log');
+    fs.mkdirSync(path.join(dir, 'nested.log'));
+    fs.writeFileSync(path.join(tmpRoot, 'outside.txt'), 'SECRET OUTSIDE\n');
+    fs.symlinkSync(path.join(tmpRoot, 'outside.txt'), path.join(dir, 'link.log'));
+  });
+
+  async function rejectsInvalid(promise) {
+    await assert.rejects(promise, (err) => err.code === 'ARGUMENTS_INVALID');
+  }
+
+  it('list returns only regular *.log files, sorted by name, with sizes', async () => {
+    const {output} = await list({dir: dir});
+
+    assert.strictEqual(output.dir, dir);
+    assert.deepStrictEqual(output.files, [
+      {name: 'a.log', bytes: 13},
+      {name: 'b.log', bytes: 14},
+      {name: 'empty.log', bytes: 0},
+      {name: 'no-newline.log', bytes: 3}
+    ]);
+  });
+
+  it('list rejects a directory that does not exist', async () => {
+    await rejectsInvalid(list({dir: path.join(tmpRoot, 'nope')}));
+  });
+
+  it('read returns the lines of one file', async () => {
+    const {output} = await read({dir: dir, name: 'b.log'});
+
+    assert.deepStrictEqual(output, {name: 'b.log', bytes: 14, lineCount: 3, truncated: false,
+                                    lines: ['one', 'two', 'three']});
+  });
+
+  it('read strips the carriage return from CRLF lines', async () => {
+    const {output} = await read({dir: dir, name: 'a.log'});
+    assert.deepStrictEqual(output.lines, ['alpha', 'beta']);
+  });
+
+  it('read handles an empty file and a file with no trailing newline', async () => {
+    assert.deepStrictEqual((await read({dir: dir, name: 'empty.log'})).output.lines, []);
+    assert.deepStrictEqual((await read({dir: dir, name: 'no-newline.log'})).output.lines, ['x', 'y']);
+  });
+
+  it('read stops at the last complete line inside maxBytes and says so', async () => {
+    const {output} = await read({dir: dir, name: 'b.log', maxBytes: 9});   // "one\ntwo\nt"
+
+    assert.deepStrictEqual(output.lines, ['one', 'two']);
+    assert.strictEqual(output.truncated, true);
+    assert.strictEqual(output.bytes, 14);
+  });
+
+  it('read rejects any name that is not a bare *.log file name', async () => {
+    for (const name of ['../outside.txt', '../read/b.log', 'sub/b.log', 'notes.txt', '.log', '', 'b.log/', 42]) {
+      await rejectsInvalid(read({dir: dir, name: name}));
+    }
+  });
+
+  it('read rejects a symlink and a directory even when they are named *.log', async () => {
+    await rejectsInvalid(read({dir: dir, name: 'link.log'}));
+    await rejectsInvalid(read({dir: dir, name: 'nested.log'}));
+  });
+
+  it('read rejects a non-positive or non-integer maxBytes', async () => {
+    await rejectsInvalid(read({dir: dir, name: 'b.log', maxBytes: 0}));
+    await rejectsInvalid(read({dir: dir, name: 'b.log', maxBytes: 1.5}));
+  });
+});

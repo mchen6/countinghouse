@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "readService": {
+    "list": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "title": "directory to list",
+            "description": "Defaults to examples/log-triage/sample-logs, which `node examples/log-triage/generate-logs.js` fills.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "dir": {"title": "the resolved directory that was listed", "type": "string"},
+          "files": {
+            "title": "regular *.log files, sorted by name",
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name":  {"title": "file name, no directory part", "type": "string"},
+                "bytes": {"title": "file size in bytes", "type": "integer"}
+              },
+              "required": ["name", "bytes"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["dir", "files"],
+        "additionalProperties": false
+      }
+    },
+    "read": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "title": "directory the file is in",
+            "description": "Same default as `list`.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "name": {
+            "title": "bare file name ending in .log",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "maxBytes": {
+            "title": "byte budget for the read",
+            "description": "Defaults to 1048576. A larger file is cut at the last complete line that fits.",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "name":      {"title": "file name as requested", "type": "string"},
+          "bytes":     {"title": "size of the whole file on disk", "type": "integer"},
+          "lineCount": {"title": "number of lines returned", "type": "integer"},
+          "truncated": {"title": "whether maxBytes cut the read short", "type": "boolean"},
+          "lines": {
+            "title": "raw lines, line terminators removed",
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "required": ["name", "bytes", "lineCount", "truncated", "lines"],
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "fault": {
+    "readService": {
+      "list": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {"title": "specific error reason", "type": "string"},
+            "info":   {"title": "detailed error info", "type": "string"}
+          }
+        }
+      },
+      "read": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {"title": "specific error reason", "type": "string"},
+            "info":   {"title": "detailed error info", "type": "string"}
+          }
+        }
+      }
+    }
+  }
+}
