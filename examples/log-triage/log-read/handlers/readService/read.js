@@ -7,6 +7,7 @@ const path = require('path');
 const DEFAULT_DIR = path.resolve(__dirname, '..', '..', '..', 'sample-logs');
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
+const MAX_MAX_BYTES     = 16 * 1024 * 1024;   // same ceiling as schema.json
 
 // A bare file name: no separator or NUL can appear, so path.join below cannot
 // leave the directory. Every name `list` can return (any regular *.log file
@@ -30,6 +31,9 @@ module.exports = async (input) => {
   const maxBytes = (opts.maxBytes != null) ? opts.maxBytes : DEFAULT_MAX_BYTES;
   if (!Number.isInteger(maxBytes) || maxBytes < 1) {
     throw new DeviceError('ARGUMENTS_INVALID', `maxBytes must be a positive integer, got ${JSON.stringify(opts.maxBytes)}`);
+  }
+  if (maxBytes > MAX_MAX_BYTES) {
+    throw new DeviceError('ARGUMENTS_INVALID', `maxBytes must be at most ${MAX_MAX_BYTES} (16 MiB), got ${maxBytes}`);
   }
 
   const dir  = path.resolve(opts.dir != null ? opts.dir : DEFAULT_DIR);

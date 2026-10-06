@@ -65,6 +65,8 @@ module.exports = async (input, ctx) => {
   const listed  = await hop('log-read/list', null, 'log-read/readService.list', dirInput);
   const all     = listed.output.files;
   const chosen  = all.slice(0, maxFiles);
+  // log-read/list returns at most 256 files, so `skipped` cannot exceed the
+  // output schema's maxItems (256).
   const skipped = all.slice(maxFiles).map((f) => f.name);
 
   // --- per file: read, then redact -- the chains run concurrently ---------
@@ -131,7 +133,7 @@ module.exports = async (input, ctx) => {
     output: {
       findings: {
         summary: summary.slice(0, 1000),
-        files:   {dir: listed.output.dir, read: chains.map((c) => c.file), skipped: skipped.slice(0, 256)},
+        files:   {dir: listed.output.dir, read: chains.map((c) => c.file), skipped: skipped},
         pii:     pii,
         levels:  {DEBUG: clustered.byLevel.DEBUG, INFO: clustered.byLevel.INFO,
                   WARN: clustered.byLevel.WARN, ERROR: clustered.byLevel.ERROR,

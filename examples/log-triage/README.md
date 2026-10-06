@@ -21,8 +21,10 @@ data decides it.
    both hop paths: see [Verifying the bill](#verifying-the-bill).
 
 2. **Raw log lines stay in the runtime.** Lines are read, masked and clustered
-   in-process. The response carries counts and one masked sample per cluster,
-   and the output schema has no field that could hold a line: every output
+   in-process. The response cannot carry the files' lines in bulk: it holds
+   counts and at most `topClusters` (up to 50) masked samples of up to 160
+   characters each. A line of 160 characters or fewer can therefore appear
+   whole, masked, as a cluster `sample`. The output schema bounds this: every output
    string is either `maxLength`-capped or a fixed enum (the cluster `level`),
    every array has a `maxItems`, and `additionalProperties` is `false`
    throughout. The widest field that carries text from a log line is a
@@ -59,10 +61,14 @@ curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
         "name":"log_triage_triageservice_triage","arguments":{"maxFiles":2}}}'
 ```
 
-`demo-key` is a demo credential committed on purpose, usable only against a
-server you started yourself on `127.0.0.1`. It is granted the composite and
-nothing else; the three inner modules are granted to `log-triage-internal`,
-the identity the composite's hops are authorized as.
+Both keys in [`auth.json`](auth.json) are demo credentials, committed on
+purpose and usable only against a server you started yourself on `127.0.0.1`.
+`demo-key` is granted the composite and nothing else; the three inner modules
+are granted to `log-triage-internal`, the identity the composite's hops are
+authorized as. `log-triage-internal` is itself an API key: presented as
+`X-CH-Key`, it can call the three leaf tools directly, including `log-read`'s
+`read`, which returns unmasked lines. Replace both keys before the server is
+reachable from anywhere but localhost.
 
 Every planted value in the sample logs is fake by construction: `example.com`
 addresses, the `203.0.113.0/24` documentation range, `555` phone numbers, the
@@ -269,7 +275,9 @@ Read `bill` with one thing in mind: it is ordered by position — list, then
 read and redact for each file in name order, then cluster — not by when each
 hop finished. The per-file chains run concurrently, so `balance` is each hop's
 own running balance and does not step down evenly through the list. `cost`
-is the part to read for totals.
+is the part to read for totals. Balances persist in Redis across runs, so the
+`balance` values you see will differ from this sample; the `charged` values
+and hop counts will not.
 
 ## Verifying the bill
 
@@ -315,8 +323,12 @@ The suite runs the same script (`test/composition/10-log-triage-example.js`).
 expressions. It knows nothing about names, postal addresses or national
 identifiers, and any format outside those five patterns passes through
 untouched — into the cluster samples, and so into the response. A zero count
-proves nothing. It also over-matches: any run of 13 or more digits is masked
+proves nothing. It also over-matches: any run of 13 to 19 digits is masked
 as a card number.
+
+**Directories with more than 256 logs are only partly covered.** `log-read`'s
+`list` returns at most 256 files, so in a larger directory the rest are neither
+read nor reported as skipped.
 
 **The cap is the caller's, not the platform's.** `maxFiles` bounds the bill
 because the composite honours it. The platform itself applies its balance

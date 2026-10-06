@@ -140,6 +140,10 @@ describe('log-triage units: log-read', () => {
     await rejectsInvalid(read({dir: dir, name: 'b.log', maxBytes: 1.5}));
   });
 
+  it('read rejects a maxBytes above the 16 MiB ceiling', async () => {
+    await rejectsInvalid(read({dir: dir, name: 'b.log', maxBytes: 16777217}));
+  });
+
   it('read accepts every name list returns, including spaces, a leading dot and non-ASCII', async () => {
     const odd = path.join(tmpRoot, 'odd');
     fs.mkdirSync(odd);
@@ -205,6 +209,17 @@ describe('log-triage units: pii-redact', () => {
     assert.strictEqual(output.lines.length, lines.length);
     for (const value of gen.allPlantedValues()) assert.ok(!joined.includes(value), `leaked ${value}`);
     for (const type of Object.keys(gen.PLANTED_PII)) assert.ok(output.counts[type] > 0, `no ${type} counted`);
+  });
+
+  it('masks a long run of e-mail characters with no @ in linear time', async () => {
+    const line  = 'a'.repeat(200000);
+    const start = Date.now();
+    const {output} = await redact({lines: [line]});
+    const ms    = Date.now() - start;
+
+    assert.strictEqual(output.lines[0], line);
+    assert.strictEqual(output.counts.email, 0);
+    assert.ok(ms < 2000, `took ${ms} ms`);
   });
 
   it('rejects input whose lines are not all strings', async () => {

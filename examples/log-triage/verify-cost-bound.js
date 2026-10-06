@@ -36,6 +36,11 @@ const PATHS = [
   {label: 'directPeerChannels', port: 9597, flags: ['--directPeerChannels']}
 ];
 
+// The server child currently running, and the temp root: both are cleaned up
+// on SIGINT/SIGTERM so an interrupted run leaves nothing behind.
+let currentServer = null;
+let tempRoot      = null;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function startServer(port, authPath, flags) {
@@ -49,6 +54,7 @@ function startServer(port, authPath, flags) {
       '--loadModule', path.join(__dirname, 'log-triage')].concat(flags);
 
     const server = spawn(process.execPath, args, {cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe']});
+    currentServer = server;   // visible to the signal handler from the first moment
     let out = '';
     let settled = false;
 
@@ -58,6 +64,14 @@ function startServer(port, authPath, flags) {
       server.kill('SIGKILL');
       reject(new Error(`server on ${port} never finished discovery:\n${out.slice(-2000)}`));
     }, 60000);
+
+    // A child that dies before it is ready fails the start at once.
+    server.on('exit', (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`server on ${port} exited before it was ready (code=${code} signal=${signal}):\n${out.slice(-2000)}`));
+    });
 
     const onData = (buf) => {
       out += buf.toString();
@@ -178,6 +192,19 @@ async function verifyPath(p, dirs) {
       const balances = m.out.bill.map((b) => b.balance);
       assert.strictEqual(new Set(balances).size, hops, `per-hop balances repeat: ${JSON.stringify(balances)}`);
 
+      // The bill is ordered by position, not by completion time.
+      const expectedNames = dirs.names.slice(0, c.n);
+      const expectedTools = ['log-read/list']
+        .concat(...expectedNames.map(() => ['log-read/read', 'pii-redact/redact']))
+        .concat('error-cluster/cluster');
+      assert.deepStrictEqual(m.out.bill.map((b) => b.tool), expectedTools,
+        `maxFiles=${c.maxFiles}: bill order`);
+      assert.deepStrictEqual(m.out.findings.files.read.map((f) => f.name), expectedNames,
+        `maxFiles=${c.maxFiles}: files read, in name order`);
+      if (c.maxFiles === 3) {
+        assert.deepStrictEqual(m.out.findings.files.skipped, dirs.names.slice(3));
+      }
+
       assert.strictEqual(m.out.findings.files.read.length, c.n);
       assert.strictEqual(m.out.findings.files.skipped.length, FILE_COUNT - c.n);
       assert.strictEqual(m.callerPaid, hops + 1, `maxFiles=${c.maxFiles}: caller must pay ${hops + 1}`);
@@ -205,19 +232,31 @@ async function verifyPath(p, dirs) {
     console.log(`[3] empty directory: hops=1 caller paid=${empty.callerPaid}`);
   } finally {
     server.kill('SIGKILL');
+    currentServer = null;
     await sleep(1500);
   }
 }
 
+function cleanupAndExit() {
+  if (currentServer != null) currentServer.kill('SIGKILL');
+  if (tempRoot != null) fs.rmSync(tempRoot, {recursive: true, force: true});
+  process.exit(130);
+}
+process.on('SIGINT', cleanupAndExit);
+process.on('SIGTERM', cleanupAndExit);
+
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'log-triage-verify-'));
-  const dirs = {root: root, logs: path.join(root, 'logs'), empty: path.join(root, 'empty')};
-
-  gen.generate({dir: dirs.logs, files: FILE_COUNT, lines: 200, seed: 1});
-  fs.mkdirSync(dirs.empty);
+  const dirs = {root: root, logs: path.join(root, 'logs'), empty: path.join(root, 'empty'), names: []};
+  tempRoot = root;
 
   let failed = null;
   try {
+    gen.generate({dir: dirs.logs, files: FILE_COUNT, lines: 200, seed: 1});
+    fs.mkdirSync(dirs.empty);
+    dirs.names = fs.readdirSync(dirs.logs).filter((n) => n.endsWith('.log')).sort();
+    assert.strictEqual(dirs.names.length, FILE_COUNT);
+
     for (const p of PATHS) await verifyPath(p, dirs);
     console.log('\nRESULT: on both hop paths the caller paid 2N + 3 for N files, the cap held, ' +
                 'the module identity paid nothing, and no planted value was returned.');

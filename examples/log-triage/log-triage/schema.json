@@ -23,9 +23,10 @@
           },
           "maxBytesPerFile": {
             "title": "byte budget per file",
-            "description": "Passed through to log-read. Defaults to 1048576.",
+            "description": "Passed through to log-read. Defaults to 1048576; at most 16777216 (16 MiB).",
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 16777216
           },
           "topClusters": {
             "title": "how many clusters to report",
