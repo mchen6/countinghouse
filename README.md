@@ -89,6 +89,11 @@ Full walkthrough, the honest comparison against code execution, and a recorded
 round trip from Claude Code: [`examples/repo-review/`](https://github.com/mchen6/countinghouse/blob/master/examples/repo-review/README.md).
 For the mechanism on a toy payload, [`docs/composite-tools.md`](https://github.com/mchen6/countinghouse/blob/master/docs/composite-tools.md).
 
+A second worked example, [`examples/log-triage/`](https://github.com/mchen6/countinghouse/blob/master/examples/log-triage/README.md),
+shows the other shape: a composite whose metered hop count grows with its
+input — two hops per log file — and is capped by the caller. Start it with
+`npm run demo:log-triage`.
+
 Installing from npm instead of cloning gets you the runtime and the bundled
 demo modules, without the repo's example directory:
 

@@ -24,6 +24,8 @@ Point an agent at a repository and ask it to find hardcoded credentials. The sca
 
 But the number is only the demonstration. The guarantee is the output schema: open the spec and look at what the tool can return — findings, counts, a bill. There is no field that can hold source code. Not "the model didn't send it this time." There is no shape for it to travel in.
 
+`examples/log-triage` is the same idea with a bill that moves: it triages a directory of logs with two metered hops per file, run concurrently, and the caller sets the most it can cost before calling.
+
 ## Code execution deserves a fair hearing
 
 The model writing a script for a sandbox to run keeps intermediate data out of the context window too, and the strawman version of this comparison is not worth anyone's time. The real differences are narrower and more interesting than speed.

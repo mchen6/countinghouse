@@ -47,7 +47,10 @@ the auth config (`runsModules`). Everything — address resolution, the
 identity binding, and the grant to each target — is verified once at load
 time, so a misconfigured chain fails the module at startup rather than on
 first call. `examples/repo-review/repo-review` is the live example: it calls
-`repo-scan`, `secret-detect` and `dep-audit` this way. Full reference:
+`repo-scan`, `secret-detect` and `dep-audit` this way.
+`examples/log-triage/log-triage` is the example with concurrent hops: it
+starts a read-then-redact chain per file with `Promise.all`, and each hop is
+still metered once. Full reference:
 [`module-development.md`](module-development.md#calling-other-modules).
 
 **`ctx.serviceClient(opts, cb)` — call by deviceID, the escape hatch.**
