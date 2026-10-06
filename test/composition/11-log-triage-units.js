@@ -160,3 +160,55 @@ describe('log-triage units: log-read', () => {
     }
   });
 });
+
+describe('log-triage units: pii-redact', () => {
+  const redact = require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js'));
+
+  it('replaces each PII type with its tag and counts it', async () => {
+    const {output} = await redact({lines: [
+      'user login email=alice.nguyen@example.com from 203.0.113.7',
+      'sms verification sent to +1-202-555-0143',
+      'payment declined for card 4111 1111 1111 1111 order=4821',
+      'outbound call header Authorization: Bearer tk_demo_9f8e7d6c5b4a39281706f5e4d3c2b1a0'
+    ]});
+
+    assert.deepStrictEqual(output.lines, [
+      'user login email=<email> from <ipv4>',
+      'sms verification sent to <phone>',
+      'payment declined for card <card> order=4821',
+      'outbound call header Authorization: <token>'
+    ]);
+    assert.deepStrictEqual(output.counts, {email: 1, ipv4: 1, phone: 1, card: 1, bearerToken: 1});
+  });
+
+  it('leaves a line with no PII untouched, timestamp and numbers included', async () => {
+    const line = '2026-09-01T00:00:12.345Z WARN slow query took 8123ms table=orders';
+    const {output} = await redact({lines: [line]});
+
+    assert.deepStrictEqual(output.lines, [line]);
+    assert.deepStrictEqual(output.counts, {email: 0, ipv4: 0, phone: 0, card: 0, bearerToken: 0});
+  });
+
+  it('counts every occurrence on a line', async () => {
+    const {output} = await redact({lines: ['from 203.0.113.7 to 203.0.113.42 cc bob.ortiz@example.com']});
+
+    assert.strictEqual(output.lines[0], 'from <ipv4> to <ipv4> cc <email>');
+    assert.strictEqual(output.counts.ipv4, 2);
+  });
+
+  it('leaves no planted value in a full generated file set, and keeps the line count', async () => {
+    const files = gen.generate({dir: path.join(tmpRoot, 'redact'), files: 4, lines: 300, seed: 3});
+    const lines = readAll(files).split('\n').slice(0, -1);
+    const {output} = await redact({lines: lines});
+    const joined = output.lines.join('\n');
+
+    assert.strictEqual(output.lines.length, lines.length);
+    for (const value of gen.allPlantedValues()) assert.ok(!joined.includes(value), `leaked ${value}`);
+    for (const type of Object.keys(gen.PLANTED_PII)) assert.ok(output.counts[type] > 0, `no ${type} counted`);
+  });
+
+  it('rejects input whose lines are not all strings', async () => {
+    await assert.rejects(redact({lines: ['ok', 7]}), (err) => err.code === 'ARGUMENTS_INVALID');
+    await assert.rejects(redact({}), (err) => err.code === 'ARGUMENTS_INVALID');
+  });
+});

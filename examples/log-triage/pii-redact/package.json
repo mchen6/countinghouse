@@ -1,0 +1,12 @@
+{
+  "name": "pii-redact",
+  "version": "1.0.0",
+  "description": "DEMO-GRADE regex masking of personal data in supplied log lines -- not a PII scanner. Part of the log-triage composite demo.",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mchen6",
+  "license": "Apache-2.0"
+}

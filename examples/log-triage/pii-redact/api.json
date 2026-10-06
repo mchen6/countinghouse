@@ -1,0 +1,36 @@
+{
+  "device": {
+    "friendlyName": "pii-redact",
+    "manufacturer": "countinghouse",
+    "modelDescription": "DEMO-GRADE masking of personal data in text lines it is handed. It applies five regular expressions -- e-mail addresses, IPv4 addresses, phone numbers, card-like digit runs and bearer tokens -- and replaces each match with a fixed tag. It is a worked example of a pure-function leaf in the log-triage composite demo, NOT a privacy product: it knows nothing about names, postal addresses, national identifiers or any format outside those five patterns. Do not use it as the redaction step for real logs.",
+    "publishAudit": true,
+    "iconList": [
+      {
+        "mimetype": "image/png",
+        "width": 88,
+        "height": 88,
+        "depth": 8,
+        "url": "/images/API.png"
+      }
+    ],
+    "serviceList": {
+      "urn:countinghouse-com:serviceID:redactService": {
+        "actionList": [
+          {
+            "name": "redact",
+            "description": "Masks personal data in the lines you supply and returns the same lines, same order and same count, with every match replaced by a tag: <email>, <ipv4>, <phone>, <card> or <token>. A match is replaced whole, so no character of the matched value survives. Also returns how many matches of each type were replaced. Takes lines as an argument rather than reading disk, which makes it a pure function of its input. IMPORTANT, state this if you report results: matching is regex-only and demo-grade, so a count of zero is not evidence that the text holds no personal data.",
+            "input": {
+              "schema": "/redactService/redact/input"
+            },
+            "output": {
+              "schema": "/redactService/redact/output"
+            },
+            "fault": {
+              "schema": "/fault/redactService/redact/fault"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "redactService": {
+    "redact": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "title": "lines to mask",
+            "description": "Shaped to accept log-read's `lines` array unchanged.",
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "required": ["lines"],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "title": "the same lines with every match replaced by a tag",
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "counts": {
+            "title": "matches replaced, per type",
+            "type": "object",
+            "properties": {
+              "email":       {"type": "integer"},
+              "ipv4":        {"type": "integer"},
+              "phone":       {"type": "integer"},
+              "card":        {"type": "integer"},
+              "bearerToken": {"type": "integer"}
+            },
+            "required": ["email", "ipv4", "phone", "card", "bearerToken"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["lines", "counts"],
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "fault": {
+    "redactService": {
+      "redact": {
+        "fault": {
+          "type": "object",
+          "properties": {
+            "reason": {"title": "specific error reason", "type": "string"},
+            "info":   {"title": "detailed error info", "type": "string"}
+          }
+        }
+      }
+    }
+  }
+}
