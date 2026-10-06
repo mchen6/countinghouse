@@ -22,12 +22,13 @@ data decides it.
 
 2. **Raw log lines stay in the runtime.** Lines are read, masked and clustered
    in-process. The response carries counts and one masked sample per cluster,
-   and the output schema has no field that could hold a line: every string in
-   it has a `maxLength`, every array a `maxItems`, and `additionalProperties`
-   is `false` throughout. The only fields that carry log-derived text are each
-   cluster's `template` and `sample`, capped at 160 characters; the other
-   strings are file names, paths, timestamps, tool and identity names, and the
-   summary sentence.
+   and the output schema has no field that could hold a line: every output
+   string is either `maxLength`-capped or a fixed enum (the cluster `level`),
+   every array has a `maxItems`, and `additionalProperties` is `false`
+   throughout. The widest field that carries text from a log line is a
+   cluster's masked `template` or `sample`, capped at 160 characters; the
+   cluster `firstSeen` and `lastSeen` timestamps, also taken from log lines,
+   are capped at 40.
 
 ## The four modules
 
