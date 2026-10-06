@@ -8,6 +8,17 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
+## 7.1.0 (unreleased)
+
+### Added
+
+- `examples/log-triage` — a second composite example, whose bill follows its
+  input. It triages a directory of logs with one `list` hop, a concurrent
+  read-then-redact chain per file and one `cluster` hop: `2N + 2` metered hops
+  for `N` files, capped by the caller's `maxFiles`. `npm run demo:log-triage`
+  starts it; `examples/log-triage/verify-cost-bound.js` asserts the bill on
+  both hop paths, and the suite runs that script.
+
 ## 7.0.1 (unreleased)
 
 ### Fixed — two ways a composite's hops were billed wrongly
@@ -31,17 +42,6 @@ the tree did.
 
 An operator who ran composites with `--directPeerChannels` will find those
 hops on the module identity's balance rather than on callers'.
-
-## 7.1.0 (unreleased)
-
-### Added
-
-- `examples/log-triage` — a second composite example, whose bill follows its
-  input. It triages a directory of logs with one `list` hop, a concurrent
-  read-then-redact chain per file and one `cluster` hop: `2N + 2` metered hops
-  for `N` files, capped by the caller's `maxFiles`. `npm run demo:log-triage`
-  starts it; `examples/log-triage/verify-cost-bound.js` asserts the bill on
-  both hop paths, and the suite runs that script.
 
 ## 7.0.0
 
