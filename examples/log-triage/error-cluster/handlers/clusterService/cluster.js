@@ -11,7 +11,9 @@ const DEFAULT_TOP_CLUSTERS = 10;
 const MAX_TOP_CLUSTERS     = 50;
 const MAX_TEXT             = 160;
 
-const LINE_RE = /^(\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2}))\s+(DEBUG|INFO|WARN|ERROR)\s+(.*)$/;
+// The timestamp group is bounded so that firstSeen and lastSeen always fit the
+// schema's 40 characters: 10 (date) + 1 (T) + at most 22 + at most 6 (offset) = 39.
+const LINE_RE = /^(\d{4}-\d{2}-\d{2}T[0-9:.]{1,22}(?:Z|[+-]\d{2}:\d{2}))\s+(DEBUG|INFO|WARN|ERROR)\s+(.*)$/;
 
 // UUIDs first: left to the other two, one UUID would become five '#'.
 const UUID_RE   = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;

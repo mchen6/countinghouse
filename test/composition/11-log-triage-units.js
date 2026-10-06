@@ -285,6 +285,18 @@ describe('log-triage units: error-cluster', () => {
                                     clusterCount: 0, clusters: []});
   });
 
+  it('treats a line whose timestamp is longer than the schema allows as unparsed', async () => {
+    const long = await cluster({lines: [`2026-09-01T00:00:01.${'1'.repeat(100)}Z ERROR boom`]});
+
+    assert.strictEqual(long.output.unparsed, 1);
+    assert.strictEqual(long.output.byLevel.ERROR, 0);
+    assert.deepStrictEqual(long.output.clusters, []);
+
+    const normal = await cluster({lines: ['2026-09-01T00:00:01.123+02:00 ERROR boom']});
+    assert.strictEqual(normal.output.unparsed, 0);
+    assert.strictEqual(normal.output.clusters[0].firstSeen, '2026-09-01T00:00:01.123+02:00');
+  });
+
   it('rejects bad lines and an out-of-range topClusters', async () => {
     const invalid = (err) => err.code === 'ARGUMENTS_INVALID';
     await assert.rejects(cluster({lines: 'nope'}), invalid);
