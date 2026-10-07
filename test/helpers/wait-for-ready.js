@@ -85,10 +85,12 @@ function waitForReady(child, opts, done) {
   }, timeoutMs);
 }
 
-// Same contract for a server whose output was redirected to a file by the
-// shell (`... > server.log 2>&1`), where there is no pipe to listen on: poll
-// the file instead.
-function waitForReadyInFile(logPath, opts, done) {
+// Same contract over output the caller already has, read through getText()
+// each time: a log string a test accumulates itself, or a file. `count` is
+// what makes this the right tool after a module is loaded at run time -- the
+// server logs the line again after each later discovery pass, so a test that
+// started one server and then loaded two modules waits for the third line.
+function waitForReadyInText(getText, opts, done) {
   if (typeof opts === 'function') { done = opts; opts = {}; }
   opts = opts || {};
 
@@ -97,19 +99,26 @@ function waitForReadyInFile(logPath, opts, done) {
   const deadline  = Date.now() + timeoutMs;
 
   (function poll() {
-    let out = '';
-    try { out = fs.readFileSync(logPath, 'utf8'); } catch (e) { /* not created yet */ }
+    const out = getText();
 
     if (countOccurrences(out, READY_LINE) >= wanted) return done();
     if (Date.now() > deadline) {
       return done(new Error(`server was not ready within ${timeoutMs} ms (saw "${READY_LINE}" ${
-        countOccurrences(out, READY_LINE)} of ${wanted} time(s) in ${logPath}); last output:\n${
-        out.slice(-TAIL_CHARS)}`));
+        countOccurrences(out, READY_LINE)} of ${wanted} time(s)); last output:\n${out.slice(-TAIL_CHARS)}`));
     }
-    return setTimeout(poll, 200);
+    return setTimeout(poll, 100);
   })();
+}
+
+// For a server whose output was redirected to a file by the shell
+// (`... > server.log 2>&1`), where there is no pipe to listen on.
+function waitForReadyInFile(logPath, opts, done) {
+  return waitForReadyInText(() => {
+    try { return fs.readFileSync(logPath, 'utf8'); } catch (e) { return ''; /* not created yet */ }
+  }, opts, done);
 }
 
 module.exports = waitForReady;
 module.exports.inFile = waitForReadyInFile;
+module.exports.inText = waitForReadyInText;
 module.exports.READY_LINE = READY_LINE;

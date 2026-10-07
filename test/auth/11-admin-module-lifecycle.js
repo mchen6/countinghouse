@@ -43,6 +43,7 @@ function toolNames(key, cb) {
 
 describe('auth 11: the documented admin workflow works with authentication ON (no --debug)', function() {
   this.timeout(0);
+  let serverOut = '';
 
   before(function(done) {
     this.timeout(0);
@@ -56,10 +57,12 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
     console.log('starting countinghouse WITHOUT --debug, for admin module-lifecycle test...');
     // deliberately starts with only echo-device-module -- transform-demo is
     // loaded later, over HTTP, by the admin key
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    const server = exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); }), done);
+         (err, stdout, stderr) => { console.log(err); });
+    server.stdout.on('data', (chunk) => { serverOut += chunk; });
+    waitForReady(server, done);
   });
 
   after((done) => {
@@ -115,7 +118,10 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
           }
         });
 
-        setTimeout(done, 4000); // let the worker come up and the device register
+        // One ready line at startup, a second once the run-time load has
+        // been discovered and verified -- the worker is up and the device
+        // registered by then, however long that took.
+        waitForReady.inText(() => serverOut, {count: 2}, done);
       });
   });
 
