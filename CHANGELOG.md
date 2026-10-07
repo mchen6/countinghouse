@@ -18,6 +18,16 @@ the auth config.
   call against the same hops made by a client. Measured on a one-CPU VM and
   framed accordingly.
 
+### Changed
+
+- **Under `--withPM2`, the `ready` message to the parent process is sent when
+  the server is ready, not when its modules are discovered.** It now goes out
+  together with the `countinghouse ready` log line, after every composing
+  module's verdict has been delivered, so a supervisor waiting on it is not
+  told the server is up before `ctx.call` works. With the file AuthProvider
+  the old message was about a millisecond early. Passing `--withPM2` to a
+  server that has no parent process no longer throws.
+
 ## 7.1.0
 
 A second composite example, direct peer channels as the default hop path,

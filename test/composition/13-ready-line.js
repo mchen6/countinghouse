@@ -17,6 +17,7 @@ const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
+const fork    = require('child_process').fork;
 
 const waitForReady = require('../helpers/wait-for-ready');
 
@@ -24,6 +25,7 @@ const ROOT     = path.join(__dirname, '..', '..');
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 
 const PORT       = 9599;
+const PORT_PM2   = 9604;
 const CALLER_KEY = 'compose-caller-internal';
 
 describe('composition 13: the server says when it is ready', function() {
@@ -72,6 +74,61 @@ describe('composition 13: the server says when it is ready', function() {
   });
 
   it('a composite called the instant the line appears makes its hop', () => {
+    assert.ifError(firstCall.err);
+    const text = JSON.stringify(firstCall.body);
+    assert.ok(!/CTX_CALL_NOT_READY/.test(text), `ctx.call was not ready: ${text}`);
+    assert.strictEqual(firstCall.body.result.isError, false, `expected a successful call, got ${text}`);
+  });
+});
+
+// Under --withPM2 the server also tells its parent process it is ready, which
+// is what PM2's wait_ready (or any supervisor that forked it) acts on. That
+// message has to carry the same promise as the log line. It used to be sent
+// at "all module discovered", before the composition verdicts, so a
+// supervisor could route traffic to a server whose composites still answered
+// CTX_CALL_NOT_READY.
+describe('composition 13b: the --withPM2 ready message means the same thing', function() {
+  this.timeout(60000);
+
+  let server    = null;
+  let firstCall = null;
+
+  before((done) => {
+    server = fork(path.join(ROOT, 'framework.js'), [
+      '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT_PM2),
+      '--mcpToolCallCost', '1',
+      '--debug', '--debugKey', CALLER_KEY,
+      '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
+      '--loadModule', path.join(FIXTURES, 'compose-callee'),
+      '--loadModule', path.join(FIXTURES, 'compose-caller'),
+      '--withPM2'
+    ], {silent: true});
+
+    server.stdout.on('data', () => {});   // keep the pipe drained
+    server.stderr.on('data', () => {});
+
+    const timer = setTimeout(() => done(new Error('no ready message within 45 s')), 45000);
+
+    server.once('message', (message) => {
+      clearTimeout(timer);
+      if (message !== 'ready') return done(new Error(`expected 'ready', got ${JSON.stringify(message)}`));
+
+      request(`http://127.0.0.1:${PORT_PM2}`)
+        .post('/mcp')
+        .set('X-CH-Key', CALLER_KEY)
+        .set('Accept', 'application/json, text/event-stream')
+        .send({jsonrpc: '2.0', id: 1, method: 'tools/call',
+               params: {name: 'compose_caller_callerservice_viacall', arguments: {n: 21}}})
+        .end((callErr, res) => {
+          firstCall = {err: callErr, body: (res != null) ? res.body : null};
+          return done();
+        });
+    });
+  });
+
+  after(() => { if (server != null) server.kill('SIGKILL'); });
+
+  it('a composite called the instant the message arrives makes its hop', () => {
     assert.ifError(firstCall.err);
     const text = JSON.stringify(firstCall.body);
     assert.ok(!/CTX_CALL_NOT_READY/.test(text), `ctx.call was not ready: ${text}`);
