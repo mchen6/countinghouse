@@ -22,9 +22,11 @@ data decides it.
 
 2. **Raw log lines stay in the runtime.** Lines are read, masked and clustered
    in-process. The response cannot carry the files' lines in bulk: it holds
-   counts and at most `topClusters` (up to 50) masked samples of up to 160
-   characters each. A line of 160 characters or fewer can therefore appear
-   whole, masked, as a cluster `sample`. The output schema bounds this: every output
+   counts and at most `topClusters` (up to 50) clusters, each with one masked
+   template and one masked sample of up to 160 characters. The message of a
+   `WARN` or `ERROR` line (timestamp and level stripped) of 160 characters or
+   fewer can therefore appear whole, masked, as a cluster `sample`. The
+   output schema bounds this: every output
    string is either `maxLength`-capped or a fixed enum (the cluster `level`),
    every array has a `maxItems`, and `additionalProperties` is `false`
    throughout. The widest field that carries text from a log line is a

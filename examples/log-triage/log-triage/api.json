@@ -2,7 +2,7 @@
   "device": {
     "friendlyName": "log-triage",
     "manufacturer": "countinghouse",
-    "modelDescription": "Triages a directory of application logs by composing three other hosted tools -- log-read, pii-redact and error-cluster -- inside a single tool call. Raw log lines are read, masked and clustered in-process and then discarded: the response cannot carry the files' lines in bulk: at most `topClusters` (up to 50) masked samples of up to 160 characters each, plus counts. Unlike a fixed-shape composite, the number of internal hops grows with the number of log files read, each hop is metered to the caller, and the caller caps the total with `maxFiles`.",
+    "modelDescription": "Triages a directory of application logs by composing three other hosted tools -- log-read, pii-redact and error-cluster -- inside a single tool call. Raw log lines are read, masked and clustered in-process and then discarded, so the response cannot carry the files' lines in bulk. It holds counts and at most `topClusters` (up to 50) clusters, each with one masked template and one masked sample of up to 160 characters. Unlike a fixed-shape composite, the number of internal hops grows with the number of log files read, each hop is metered to the caller, and the caller caps the total with `maxFiles`.",
     "publishAudit": true,
     "iconList": [
       {

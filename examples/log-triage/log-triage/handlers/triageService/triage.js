@@ -1,5 +1,6 @@
 // log-triage: one MCP tools/call, 2N + 2 in-process hops for N log files, and
-// a response that cannot contain a raw log line.
+// a response that carries no lines in bulk: counts plus at most topClusters
+// masked cluster templates and samples.
 //
 // What this adds over examples/repo-review is the shape of the bill.
 // repo-review makes three hops on every call; here the hop count is decided by

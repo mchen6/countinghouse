@@ -42,7 +42,7 @@
         "type": "object",
         "properties": {
           "findings": {
-            "title": "the triage report; contains no raw log line",
+            "title": "the triage report: counts and masked cluster templates and samples",
             "type": "object",
             "properties": {
               "summary": {"title": "one-paragraph human-readable summary", "type": "string", "maxLength": 1000},

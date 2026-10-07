@@ -1,7 +1,7 @@
 {
   "name": "log-triage",
   "version": "1.0.0",
-  "description": "a composite tool whose bill follows its input: one tools/call lists a log directory, reads and masks each file in-process, clusters the errors, and returns counts and masked samples plus a per-hop bill -- never a raw log line",
+  "description": "a composite tool whose bill follows its input: one tools/call lists a log directory, reads and masks each file in-process, clusters the errors, and returns counts and at most topClusters masked cluster templates and samples plus a per-hop bill -- never the log lines in bulk",
   "dependencies": {},
   "devDependencies": {},
   "scripts": {
