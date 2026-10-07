@@ -222,6 +222,74 @@ describe('log-triage units: pii-redact', () => {
     assert.ok(ms < 2000, `took ${ms} ms`);
   });
 
+  // The e-mail pattern's lookbehind must not change what is masked: these
+  // expectations are the original, lookbehind-free pattern's global replace.
+  const ORIGINAL_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+  async function emailOnly(input) {
+    const {output} = await redact({lines: [input]});
+    return {line: output.lines[0], count: output.counts.email};
+  }
+
+  it('masks an address that directly follows another address', async () => {
+    const literals = [
+      ['GET /invite?to=alice@example.com%20bob@example.org', 'GET /invite?to=<email><email>', 2],
+      ['alice@example.com_bob@example.org', '<email><email>', 2]
+    ];
+    for (const [input, expected, count] of literals) {
+      assert.strictEqual(input.replace(ORIGINAL_EMAIL, '<email>'), expected);
+      assert.deepStrictEqual(await emailOnly(input), {line: expected, count: count});
+    }
+
+    for (const input of ['a@b.co1x@c.org', 'a@b.com.x@c.org', 'a@b.com+x@c.org', 'a@b.com-x@c.org', 'a@b.com%2Cx@c.org']) {
+      assert.deepStrictEqual(await emailOnly(input), {
+        line: input.replace(ORIGINAL_EMAIL, '<email>'),
+        count: input.match(ORIGINAL_EMAIL).length
+      });
+    }
+  });
+
+  it('masks e-mail addresses exactly as the original pattern does on ordinary shapes', async () => {
+    const inputs = [
+      'alice@example.com logged in',
+      'contact alice@example.com',
+      'contact alice@example.com now',
+      'email=alice@example.com',
+      'from <alice@example.com>',
+      'cc (alice@example.com)',
+      'user:alice@example.com',
+      'to "alice@example.com" ok',
+      'a@example.com,b@example.org',
+      'a@example.com;b@example.org',
+      'see /home/alice@example.com/files',
+      'alice@example.com bob@example.org',
+      'nothing to mask on this line',
+      'bad address alice@localhost here',
+      'lone @ sign and x@ and @y.com',
+      ''
+    ];
+    for (const input of inputs) {
+      assert.deepStrictEqual(await emailOnly(input), {
+        line: input.replace(ORIGINAL_EMAIL, '<email>'),
+        count: (input.match(ORIGINAL_EMAIL) || []).length
+      }, JSON.stringify(input));
+    }
+  });
+
+  it('masks a long chain of adjacent addresses in linear time', async () => {
+    const line  = 'a@b.co'.repeat(20000);
+    const start = Date.now();
+    const {output} = await redact({lines: [line]});
+    const ms    = Date.now() - start;
+
+    // Not 20,000 tags: the original pattern's domain takes the next local part's
+    // first letter ("a@b.coa"), so it masks every other address.
+    assert.strictEqual(output.lines[0], line.replace(ORIGINAL_EMAIL, '<email>'));
+    assert.strictEqual(output.counts.email, line.match(ORIGINAL_EMAIL).length);
+    assert.strictEqual(output.counts.email, 10000);
+    assert.ok(ms < 2000, `took ${ms} ms`);
+  });
+
   it('rejects input whose lines are not all strings', async () => {
     await assert.rejects(redact({lines: ['ok', 7]}), (err) => err.code === 'ARGUMENTS_INVALID');
     await assert.rejects(redact({}), (err) => err.code === 'ARGUMENTS_INVALID');
