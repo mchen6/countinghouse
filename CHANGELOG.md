@@ -8,7 +8,16 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
-## 7.1.0 (unreleased)
+## 7.1.0
+
+A second composite example, direct peer channels as the default hop path,
+and two billing fixes found while building the example.
+
+**One change alters what an unchanged command line does:** module-to-module
+hops now take the direct path, which checks authorization when a channel
+opens instead of on every hop. Read "Changed" below before upgrading;
+`--no-directPeerChannels` keeps the 7.0.0 behaviour. Operators who run
+composites should also read "Fixed": both bugs were present in 7.0.0.
 
 ### Added
 
@@ -50,8 +59,6 @@ the auth config.
 
   Pass `--no-directPeerChannels` to keep the 7.0.0 behaviour. See
   `docs/direct-peer-channels.md`, "What the default means for an operator".
-
-## 7.0.1 (unreleased)
 
 ### Fixed — two ways a composite's hops were billed wrongly
 
