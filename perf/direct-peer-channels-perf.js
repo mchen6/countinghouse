@@ -1,5 +1,5 @@
-// Cross-worker call benchmark: main-thread-routed (--directPeerChannels off,
-// the default) vs direct peer channel (--directPeerChannels on). See
+// Cross-worker call benchmark: main-thread-routed (--no-directPeerChannels)
+// vs direct peer channel (the default since 7.1.0). See
 // docs/direct-peer-channels-design.md section 4 and docs/direct-peer-channels.md
 // for the results this produces and how to read them.
 //
@@ -54,7 +54,7 @@ function startServer(directPeerChannels) {
       '--loadModule', './pre-installed-packages/perf-callee-demo',
       '--loadModule', './pre-installed-packages/perf-caller-demo'
     ];
-    if (directPeerChannels === true) args.push('--directPeerChannels');
+    args.push(directPeerChannels === true ? '--directPeerChannels' : '--no-directPeerChannels');
 
     const child = cp.spawn('node', args, {cwd: path.resolve(__dirname, '..'), stdio: 'ignore'});
     child.on('error', reject);

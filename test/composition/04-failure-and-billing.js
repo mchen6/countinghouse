@@ -303,28 +303,28 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
   });
 }
 
-describe('composition 04: failure and billing (--directPeerChannels off)', function() {
+describe('composition 04: failure and billing (--no-directPeerChannels)', function() {
   this.timeout(40000);
   let server = null;
   let stdoutBuf = '';
   const base = `http://127.0.0.1:${PORT_FLAG_OFF}`;
 
   before((done) => {
-    server = startServer(PORT_FLAG_OFF, [], (chunk) => { stdoutBuf += chunk; }, done);
+    server = startServer(PORT_FLAG_OFF, ['--no-directPeerChannels'], (chunk) => { stdoutBuf += chunk; }, done);
   });
   after(() => { if (server != null) server.kill('SIGKILL'); });
 
   runFailureAndBillingAssertions(() => base, () => stdoutBuf);
 });
 
-describe('composition 04b: failure and billing (--directPeerChannels on)', function() {
+describe('composition 04b: failure and billing (direct peer channels, the default)', function() {
   this.timeout(40000);
   let server = null;
   let stdoutBuf = '';
   const base = `http://127.0.0.1:${PORT_FLAG_ON}`;
 
   before((done) => {
-    server = startServer(PORT_FLAG_ON, ['--directPeerChannels'], (chunk) => { stdoutBuf += chunk; }, done);
+    server = startServer(PORT_FLAG_ON, [], (chunk) => { stdoutBuf += chunk; }, done);
   });
   after(() => { if (server != null) server.kill('SIGKILL'); });
 

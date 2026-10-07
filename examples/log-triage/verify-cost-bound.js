@@ -32,8 +32,8 @@ const TOOL        = 'log_triage_triageservice_triage';
 const FILE_COUNT  = 8;
 
 const PATHS = [
-  {label: 'main-thread-routed', port: 9596, flags: []},
-  {label: 'directPeerChannels', port: 9597, flags: ['--directPeerChannels']}
+  {label: 'main-thread-routed', port: 9596, flags: ['--no-directPeerChannels']},
+  {label: 'directPeerChannels', port: 9597, flags: []}
 ];
 
 // The server child currently running, and the temp root: both are cleaned up

@@ -21,8 +21,8 @@ simulation).
 | `--authProvider file\|sqlite\|couchdb` | `file` | AuthProvider backend — see [Authentication](authentication.md). `sqlite` needs the optional `sqlite3` native module, whose prebuilt binary requires glibc >= 2.38 and so does not load on e.g. Ubuntu 22.04; `file` (the default) and `couchdb` need no native modules. See [authentication.md](authentication.md#sqlite). |
 | `--authConfigPath <path>` | backend-specific | Config file/db path for the selected AuthProvider backend. |
 | `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](authentication.md#admin-keys). |
-| `--directPeerChannels` | off | Route worker-to-worker calls directly instead of through the main thread — see [`direct-peer-channels.md`](direct-peer-channels.md). |
-| `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path. |
+| `--no-directPeerChannels` | direct channels on | Route worker-to-worker calls through the main thread instead of directly. Direct peer channels are the default since 7.1.0 (`--directPeerChannels`, still accepted, is now a no-op) — see [`direct-peer-channels.md`](direct-peer-channels.md) for what the two paths check and when. |
+| `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path (the default path). |
 | `--mcpToolCallCost <n>` | `0` | Cost recorded via `MeteringProvider.recordCall` for every MCP `tools/call`. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |

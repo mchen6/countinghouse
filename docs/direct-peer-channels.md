@@ -1,9 +1,10 @@
 # Direct peer channels
 
-This document describes the `--directPeerChannels` opt-in path: worker
-threads that need to call each other's devices connect directly over a
-`MessageChannel` port pair instead of routing every call through the main
-thread. It also carries the benchmark numbers that justify building it —
+This document describes the direct-peer-channel path: worker threads that
+need to call each other's devices connect directly over a `MessageChannel`
+port pair instead of routing every call through the main thread. It is the
+default since 7.1.0 and was opt-in (`--directPeerChannels`) before;
+`--no-directPeerChannels` restores main-thread routing. It also carries the benchmark numbers that justify building it —
 the only public performance numbers this project should cite for
 cross-worker calls going forward (see "Retired numbers" at the end).
 
@@ -23,7 +24,7 @@ regardless of how many workers are actually running.
 
 ## The fix
 
-With `--directPeerChannels` on, the first time worker A calls a device
+On the direct path, the first time worker A calls a device
 hosted by worker B, the main thread still brokers the connection — it
 resolves which worker hosts the target device, checks that A's module is
 authorized to call it, and hands each side one end of a new
@@ -38,9 +39,36 @@ unloads, or crashes — see [`design-decisions.md`](design-decisions.md#direct-p
 versus the main-thread-routed one.
 
 `ServiceClient.invoke()`'s external contract — callback signature, error
-shape, timeout behavior — is unchanged either way. `--directPeerChannels`
-is off by default; turning it on only changes which internal path a
-cross-worker call takes.
+shape, timeout behavior — is unchanged either way; the flag only changes
+which internal path a cross-worker call takes.
+
+### What the default means for an operator
+
+Making this path the default (7.1.0) is a trade, not a free speed-up, and
+the two paths do not check the same things at the same moments:
+
+- **Authorization is checked when a channel opens, not on every hop.** On
+  the main-thread-routed path each hop passes `userAuth` before it is
+  routed. Here the same check runs once, at brokering time, and the channel
+  it grants is good for every device the callee worker hosts (D3).
+- **A grant revoked while the server runs does not close an open channel.**
+  Channels are invalidated when a worker reloads, unloads or crashes (D4),
+  and by nothing else. With the default file-based AuthProvider this cannot
+  arise, because the auth file is read once at startup. With the sqlite or
+  CouchDB provider, where grants can be revoked live, a module identity
+  whose grant on an inner device is revoked keeps reaching that device over
+  a channel it already holds until the worker restarts; on the
+  main-thread-routed path the revocation applies to the next hop. This is
+  read from the code (`PeerChannelBroker`'s only invalidation callers are
+  the worker-lifecycle ones) and has no test of its own.
+- **Module code can see four more error codes:** `PEER_GONE`,
+  `PEER_CHANNEL_TIMEOUT`, `PEER_SELF_TARGET`, `PEER_NO_HANDLER`.
+- **Billing is identical on both paths**, and per-hop rate limiting is
+  enforced on neither; see `docs/cross-cutting-matrix.md`.
+
+An operator who needs per-hop authorization or immediate revocation between
+modules should run with `--no-directPeerChannels`. The benchmark sections
+below say how little that costs for most workloads.
 
 ## Benchmark: main-thread-routed vs. direct peer channel
 

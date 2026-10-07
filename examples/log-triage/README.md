@@ -287,8 +287,9 @@ and hop counts will not.
 node examples/log-triage/verify-cost-bound.js
 ```
 
-The script starts its own non-`--debug`, multi-tenant server, once on the
-default hop path and once with `--directPeerChannels`, and asserts for each:
+The script starts its own non-`--debug`, multi-tenant server, once with
+`--no-directPeerChannels` (hops routed through the main thread) and once on
+the default hop path (direct peer channels), and asserts for each:
 the caller sees exactly one tool; for `maxFiles` of 1, 3, 8 and 32 over eight
 files the hop count is `2N + 2`, every hop is charged once and billed to the
 caller, and the caller's balance moved by exactly `2N + 3` while the module

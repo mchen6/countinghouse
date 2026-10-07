@@ -42,8 +42,8 @@ Cross-worker calls (module A invoking module B's action) can be metered in
 two conceptually different places: the calling module can meter itself
 explicitly, or the platform can meter the call automatically at the point
 where it crosses from one worker to another. Early on, only the second
-existed on the opt-in `--directPeerChannels` path — the main-thread-routed
-(default) path had no automatic metering, so `composite-demo` (see
+existed on the then opt-in `--directPeerChannels` path — the main-thread-routed
+(then default) path had no automatic metering, so `composite-demo` (see
 [`composite-tools.md`](composite-tools.md)) metered itself explicitly to
 produce its per-hop bill.
 
@@ -94,7 +94,14 @@ not expected to deviate from without deliberately revisiting them.
   deliberate trade — per-call authorization would reintroduce a main-thread
   round trip for every call, defeating the point of the direct path — not
   an oversight. Revocation happens through invalidation (D4): a port that
-  should no longer work is closed, not left valid but unchecked.
+  should no longer work is closed, not left valid but unchecked. **That
+  covers worker lifecycle only.** Nothing invalidates a port when a grant
+  is revoked in the AuthProvider while the server runs, so with a backend
+  that allows live revocation (sqlite, CouchDB) a revoked module identity
+  keeps its open ports until the worker restarts. This mattered less while
+  the path was opt-in; it is the default since 7.1.0, and
+  [`direct-peer-channels.md`](direct-peer-channels.md) states it for
+  operators.
 
   **A port is possession of a *worker*, not of a device.** This follows
   from D1 (ports are keyed by worker pair and reused for every device that
@@ -117,7 +124,7 @@ not expected to deviate from without deliberately revisiting them.
   subsequent grant) or one port per device (simple, but gives up D1's
   reuse). Neither is done today; the constraint is documented rather than
   assumed away. See [`cross-cutting-matrix.md`](cross-cutting-matrix.md)'s
-  `--directPeerChannels` row for the same fact stated per-concern.
+  direct-channel row for the same fact stated per-concern.
 - **D4 — lifecycle: ports are invalidated on reload, unload, and crash.**
   This is treated as the most important of the five, because silent
   staleness is worse than a fast, explicit error. Two independent

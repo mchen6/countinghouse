@@ -30,7 +30,7 @@ const exec    = require('child_process').exec;
 const request = require('supertest');
 
 const PATHS = [
-  {label: 'main-thread-routed',   port: 9593, flags: ''},
+  {label: 'main-thread-routed',   port: 9593, flags: ' --no-directPeerChannels'},
   {label: '--directPeerChannels', port: 9598, flags: ' --directPeerChannels'}
 ];
 

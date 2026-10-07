@@ -144,9 +144,18 @@ These are real, and worth being specific about rather than waving at
   longer a hard dependency). This is caller-identity authorization, not
   module sandboxing — it constrains which apiKey can invoke which device's
   actions, not what a loaded module's own code can do once its handler
-  runs (that's the worker-thread boundary described above). Two things
+  runs (that's the worker-thread boundary described above). Three things
   worth being explicit about, in the spirit of this document's own rule
   against overstating guarantees:
+  - **Between modules, the check runs when a channel opens, not on every
+    hop.** Since 7.1.0 a module calling another module's device does so over
+    a direct peer channel by default. `userAuth` runs once, at brokering
+    time; the channel it grants then reaches every device the callee worker
+    hosts, and it is not closed when a grant is revoked while the server
+    runs — only when a worker reloads, unloads or crashes.
+    `--no-directPeerChannels` restores the per-hop check on the main thread.
+    See [`direct-peer-channels.md`](direct-peer-channels.md) and D3 in
+    [`design-decisions.md`](design-decisions.md#direct-peer-channels-five-decisions-d1d5).
   - **`FileAuthProvider`'s zero-config first run generates and prints a
     wildcard-access demo key** if no `auth.json` exists yet, specifically
     so a fresh checkout is immediately usable. This is meant for local

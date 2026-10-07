@@ -195,9 +195,9 @@ flowchart TB
 
 Modules call each other over the same message channel the runtime already uses
 to route every action call, so one `tools/call` fans out into several metered
-inner hops without intermediate data leaving the process. With
-`--directPeerChannels` those hops go worker-to-worker directly, skipping the
-main thread — see [`docs/direct-peer-channels.md`](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md).
+inner hops without intermediate data leaving the process. Those hops go
+worker-to-worker directly by default, skipping the main thread
+(`--no-directPeerChannels` routes them through it instead) — see [`docs/direct-peer-channels.md`](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md).
 The rationale behind this and other architecture decisions is collected in
 [`docs/design-decisions.md`](https://github.com/mchen6/countinghouse/blob/master/docs/design-decisions.md).
 

@@ -191,13 +191,13 @@ describe('direct-peer-channels 06: composite-demo does not double-bill (--direct
   });
 });
 
-describe('direct-peer-channels 06b: composite-demo does not double-bill (--directPeerChannels off)', function() {
+describe('direct-peer-channels 06b: composite-demo does not double-bill (--no-directPeerChannels)', function() {
   this.timeout(0);
 
   before(function(done) {
     this.timeout(0);
-    console.log('starting countinghouse without --directPeerChannels for double-billing regression test...');
-    exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); });
+    console.log('starting countinghouse with --no-directPeerChannels for double-billing regression test...');
+    exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --no-directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); });
     setTimeout(() => { done(); }, 13000);
   });
 

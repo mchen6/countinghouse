@@ -81,14 +81,13 @@ see [In-composition metering](#in-composition-metering).
 
 Both inner calls are ordinary cross-worker invocations, through whichever
 path `ServiceClient.invoke()` is currently configured to use. By default
-that's the main-thread-routed path: composite-demo's worker sends an
-`invokeforeignaction`-style message to the main thread, which routes it to
-the target module's worker and relays the reply back — exactly the
-mechanism any two modules already use to call each other today. With
-`--directPeerChannels` on, the same calls instead go directly
-worker-to-worker over a `MessageChannel`, bypassing the main thread
-entirely — see [`direct-peer-channels.md`](direct-peer-channels.md) for
-how that path works. Either way, composite-demo's own code is unchanged:
+(since 7.1.0) the calls go directly worker-to-worker over a
+`MessageChannel`, bypassing the main thread entirely — see
+[`direct-peer-channels.md`](direct-peer-channels.md) for how that path
+works. With `--no-directPeerChannels` they take the main-thread-routed path
+instead: composite-demo's worker sends an `invokeforeignaction`-style
+message to the main thread, which routes it to the target module's worker
+and relays the reply back. Either way, composite-demo's own code is unchanged:
 which path is taken is entirely `ServiceClient`'s concern, transparent to
 the module calling it.
 
@@ -174,7 +173,7 @@ calls is expected, not an error.
 **Billing authority principle**: platform automatic metering is the sole
 thing that ever deducts balance for a cross-worker call — on *both* the
 main-thread-routed path (`DeviceManager.prototype.sendInvokeActionMessageToWorker`)
-and the opt-in `--directPeerChannels` path
+and the direct-peer-channel path (the default since 7.1.0)
 (`PeerChannelBroker.prototype.handleMeteringRequest`), unconditionally.
 Every module composing other modules' actions (like this one) gets billing
 for free, automatically, once per hop, without calling anything itself —
@@ -186,8 +185,8 @@ all.
 `.fault` — the callee's own structured fault payload, when it supplied one —
 was already identical on both paths. Its `.code`, the locale-independent
 `CHError`/`DeviceError` code, was not: it rode through on the
-`--directPeerChannels` path but arrived `null` on the main-thread-routed
-(default) path, because only `--directPeerChannels`' own dispatch carried it
+direct-peer-channel path but arrived `null` on the main-thread-routed
+(then default) path, because only the direct channel's own dispatch carried it
 across the worker boundary. `DeviceManager.prototype.sendInvokeActionMessageToWorker`
 now sends `errCode` alongside `errMsg` on its reply envelope the same way, so
 a caller (including `ctx.call`'s own rejection — see
@@ -337,8 +336,8 @@ to read. A production composition feature would need to address these:
   constraint.
 - **Fixed: metering coverage on the cross-worker call path is now
   centralized on both paths, and composite-demo no longer double-bills.**
-  Originally, only the opt-in `--directPeerChannels` path metered a
-  cross-worker call automatically; the main-thread-routed (default) path
+  Originally, only the then opt-in `--directPeerChannels` path metered a
+  cross-worker call automatically; the main-thread-routed (then default) path
   didn't, so composite-demo metered itself explicitly via
   `CHUtil.recordCall`. Once `--directPeerChannels`'s automatic metering
   was added (D5), turning the flag on made composite-demo double-bill

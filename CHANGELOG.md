@@ -19,6 +19,27 @@ the auth config.
   starts it; `examples/log-triage/verify-cost-bound.js` asserts the bill on
   both hop paths, and the suite runs that script.
 
+### Changed — direct peer channels are the default
+
+- **Module-to-module hops now go worker-to-worker directly unless
+  `--no-directPeerChannels` is passed.** `--directPeerChannels` was opt-in
+  through 7.0.0; it is still accepted and now changes nothing. An unchanged
+  command line therefore takes a different hop path after upgrading.
+  `ServiceClient.invoke()` and `ctx.call` keep the same signature, error
+  shape and timeout behaviour, and billing is identical on both paths, but
+  two things differ and an operator should choose knowingly:
+  - **Authorization between modules is checked when a channel opens, not on
+    every hop**, and a channel is good for every device its callee worker
+    hosts. A grant revoked while the server runs (possible with the sqlite
+    and CouchDB AuthProviders, not with the default file one) does not close
+    a channel that is already open; it takes effect when that worker
+    restarts. On the main-thread-routed path it applies to the next hop.
+  - **Module code can receive four more error codes:** `PEER_GONE`,
+    `PEER_CHANNEL_TIMEOUT`, `PEER_SELF_TARGET`, `PEER_NO_HANDLER`.
+
+  Pass `--no-directPeerChannels` to keep the 7.0.0 behaviour. See
+  `docs/direct-peer-channels.md`, "What the default means for an operator".
+
 ## 7.0.1 (unreleased)
 
 ### Fixed — two ways a composite's hops were billed wrongly
