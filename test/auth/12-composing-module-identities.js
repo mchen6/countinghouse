@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // Standalone-only, non---debug, multi-tenant auth.json.
@@ -45,11 +46,10 @@ function writeAuth(path, withGrants) {
 }
 
 function startServer(authPath, done) {
-  exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+  waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${authPath
        }${MODULES.map((m) => { return ` --loadModule ${m}`; }).join('')}`,
-       (err, stdout, stderr) => { console.log(err); });
-  setTimeout(done, 14000);
+       (err, stdout, stderr) => { console.log(err); }), done);
 }
 
 function stopServer(authPath, done) {

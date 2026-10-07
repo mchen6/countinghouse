@@ -107,14 +107,14 @@ function startServer() {
 // code ctx.call uses for exactly this window, as opposed to the CTX_CALL_*
 // codes that mean the configuration is actually wrong.
 // test/composition/03-declaration.js hit the same ordering and waits for the
-// server's own "all module discovered" log line plus a settle buffer instead
-// -- same fix, here.
+// server's own "countinghouse ready" log line, which it prints once that
+// work is done -- same fix, here.
 function waitForAllModulesDiscovered(child, deadlineMs) {
   const deadline = Date.now() + deadlineMs;
   return new Promise((resolve, reject) => {
     (function poll() {
-      if (/all module discovered/i.test(child.log)) return setTimeout(resolve, 2500);
-      if (Date.now() > deadline) return reject(new Error('"all module discovered" never appeared in server output'));
+      if (/countinghouse ready/.test(child.log)) return resolve();
+      if (Date.now() > deadline) return reject(new Error('"countinghouse ready" never appeared in server output'));
       setTimeout(poll, 100);
     })();
   });

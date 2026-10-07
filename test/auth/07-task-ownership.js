@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // Standalone-only, same reason as 01-file-provider-tools-list-filtering.js
@@ -61,11 +62,10 @@ describe('auth 07: MCP tasks/* and the HTTP job routes enforce per-tenant job ow
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for task-ownership test...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

@@ -31,6 +31,7 @@ const path    = require('path');
 const net     = require('net');
 const spawn   = require('child_process').spawn;
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -76,8 +77,11 @@ function startServer(port, extraArgs, done) {
     const args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(port),
                   '--debugKey', 'aabbcc'].concat(extraArgs);
     const server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args,
-                         {cwd: ROOT, stdio: 'ignore', detached: true});
-    setTimeout(() => done(server), 6000);
+                         {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
+    waitForReady(server, (readyErr) => {
+      if (readyErr) throw readyErr;
+      done(server);
+    });
   });
 }
 
@@ -464,10 +468,9 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
       config[NON_ADMIN_KEY] = {userName: 'authoring-non-admin', devices: ['*']}; // no admin field: not admin
       fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
-      exec(`"${path.join(ROOT, 'bin', 'countinghouse')}" --bindAddr 127.0.0.1 --port ${PORT} ` +
+      waitForReady(exec(`"${path.join(ROOT, 'bin', 'countinghouse')}" --bindAddr 127.0.0.1 --port ${PORT} ` +
            `--authProvider file --authConfigPath ${AUTH_CONFIG_PATH} --authoringTools`,
-           {cwd: ROOT}, (execErr) => { if (execErr) console.log(execErr); });
-      setTimeout(() => done(), 13000);
+           {cwd: ROOT}, (execErr) => { if (execErr) console.log(execErr); }), done);
     });
   });
 

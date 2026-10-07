@@ -120,8 +120,8 @@ function startServer(done) {
     // sendSetCompositionMessage -- before compose-caller's ctx.call is
     // actually usable. The older "new device online" trigger fired too
     // early for that extra work to have finished yet.
-    if (/all module discovered/i.test(out)) {
-      setTimeout(done, 2500);
+    if (/countinghouse ready/.test(out)) {
+      done();
       server.stdout.removeListener('data', onData);
     }
   };
@@ -275,8 +275,8 @@ function startSingleThreadServer(done) {
   let out = '';
   const onData = (buf) => {
     out += buf.toString();
-    if (/all module discovered/i.test(out)) {
-      setTimeout(done, 2500);
+    if (/countinghouse ready/.test(out)) {
+      done();
       singleThreadServer.stdout.removeListener('data', onData);
     }
   };

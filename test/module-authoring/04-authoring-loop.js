@@ -10,6 +10,7 @@ const assert  = require('assert');
 const path    = require('path');
 const net     = require('net');
 const spawn   = require('child_process').spawn;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const ROOT    = path.join(__dirname, '..', '..');
@@ -73,8 +74,8 @@ describe('the authoring loop', function() {
       server = spawn(path.join(ROOT, 'bin', 'countinghouse'),
                      ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT),
                       '--debugKey', 'aabbcc', '--authoringTools', '--workerThread'],
-                     {cwd: ROOT, stdio: 'ignore', detached: true});
-      setTimeout(done, 8000);
+                     {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
+      waitForReady(server, done);
     });
   });
   after(() => { stopServer(server); });

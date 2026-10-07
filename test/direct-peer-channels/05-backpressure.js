@@ -1,5 +1,6 @@
 const fs = require('fs');
 const exec = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const url = 'http://127.0.0.1:9527';
@@ -24,8 +25,7 @@ describe('direct-peer-channels 05: backpressure queueing is correct, not just fa
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse with --directPeerChannelsMaxConcurrency 2...');
-    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --directPeerChannels --directPeerChannelsMaxConcurrency 2 --loadModule ./pre-installed-packages/perf-callee-demo --loadModule ./pre-installed-packages/perf-caller-demo', (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+    waitForReady(exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --directPeerChannels --directPeerChannelsMaxConcurrency 2 --loadModule ./pre-installed-packages/perf-callee-demo --loadModule ./pre-installed-packages/perf-caller-demo', (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

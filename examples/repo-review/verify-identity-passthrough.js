@@ -39,7 +39,7 @@ function writeAuth() {
 
 function startServer(cb) {
   writeAuth();
-  exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+  const server = exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${AUTH_PATH} --mcpToolCallCost 1` +
        ' --loadModule ./examples/repo-review/repo-scan' +
        ' --loadModule ./examples/repo-review/secret-detect' +
@@ -48,7 +48,20 @@ function startServer(cb) {
        // Anchored to the repo root rather than the caller's cwd, so this runs
        // the same from anywhere -- every path above is repo-relative.
        {cwd: REPO_ROOT}, () => {});
-  setTimeout(cb, 16000);
+
+  // Wait for the server's own ready line -- every module discovered and the
+  // composite's verdict delivered -- rather than a fixed number of seconds.
+  let out = '';
+  let done = false;
+  const finish = (err) => { if (!done) { done = true; clearTimeout(timer); cb(err); } };
+  const timer = setTimeout(() => {
+    finish(new Error(`server on ${PORT} was not ready within 90 s:\n${out.slice(-2000)}`));
+  }, 90000);
+  server.stdout.on('data', (chunk) => {
+    out += chunk;
+    if (/countinghouse ready/.test(out)) finish();
+  });
+  server.on('exit', (code) => { finish(new Error(`server exited (code ${code}) before it was ready:\n${out.slice(-2000)}`)); });
 }
 
 function balanceOf(key, cb) {
@@ -109,7 +122,9 @@ function cleanup(cb) {
 }
 
 console.log('starting countinghouse WITHOUT --debug, multi-tenant, 4 modules...');
-startServer(() => {
+startServer((startErr) => {
+  if (startErr) return fail('server did not start', startErr);
+
   listTools(CALLER, (err, names) => {
     if (err) return fail('tools/list failed', err);
     const deviceTools = names.filter((n) => n !== 'countinghouse_check_balance');

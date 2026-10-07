@@ -17,6 +17,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const http   = require('http');
 const exec   = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const PORT = 9584;
 const LOG  = `/tmp/countinghouse-test-handler-map-${process.pid}.log`;
@@ -33,7 +34,7 @@ function startServer(done) {
        ` --loadModule ./test/fixtures/handler-map-module` +
        ` --loadModule ./test/fixtures/handler-map-convention` +
        ` > ${LOG} 2>&1`, () => {});
-  setTimeout(done, 14000);
+  waitForReady.inFile(LOG, done);
 }
 
 function errorRecords() {

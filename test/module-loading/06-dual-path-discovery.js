@@ -21,17 +21,17 @@
 const assert = require('assert');
 const http   = require('http');
 const exec   = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const PORT   = 9586;
 const DEVICE_COUNT = 3;
 
 function startServer(done) {
-  exec(`DYNAMIC_DEVICE_COUNT=${DEVICE_COUNT} NODE_PATH=./lib node ./framework.js --debug` +
+  waitForReady(exec(`DYNAMIC_DEVICE_COUNT=${DEVICE_COUNT} NODE_PATH=./lib node ./framework.js --debug` +
        ` --bindAddr 127.0.0.1 --port ${PORT} --debugKey aabbcc` +
        ` --loadModule ./test/fixtures/dynamic-discovery-module` +
        ` --loadModule ./test/fixtures/handler-map-module` +
-       ` > /dev/null 2>&1`, () => {});
-  setTimeout(done, 14000);
+       ` 2> /dev/null`, () => {}), done);
 }
 
 function rpc(body, cb) {

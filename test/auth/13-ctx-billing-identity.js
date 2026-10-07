@@ -27,6 +27,7 @@
 const assert  = require('assert');
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const PATHS = [
@@ -56,12 +57,11 @@ function writeAuth() {
 
 function startServer(done) {
   writeAuth();
-  exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+  waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${AUTH_PATH} --mcpToolCallCost 1${hopPath.flags}` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +
        ` --loadModule ./test/fixtures/ctx-compose-module`,
-       (err) => { console.log(err); });
-  setTimeout(done, 14000);
+       (err) => { console.log(err); }), done);
 }
 
 function balanceOf(key, cb) {

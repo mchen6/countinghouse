@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // Covers audit leftover #6 (7.0.0 / A1): the authenticated *read* paths had
@@ -105,12 +106,11 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()));
 
     console.log('starting countinghouse WITHOUT --debug, --apiKeyRateLimit, for read-path rate-limit test...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --apiKeyRateLimit ${LIMIT
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {
@@ -247,11 +247,10 @@ describe('auth 15b: without --apiKeyRateLimit nothing is limited', function() {
     fs.writeFileSync(OPEN_CONFIG_PATH, JSON.stringify(authConfig()));
 
     console.log('starting countinghouse WITHOUT --apiKeyRateLimit, to check the paths stay open...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${OPEN_PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${OPEN_PORT
          } --authProvider file --authConfigPath ${OPEN_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

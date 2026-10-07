@@ -73,9 +73,9 @@ function startServer(modulePaths, done) {
   server.stderr.on('data', onData);
 
   const check = setInterval(() => {
-    if (/all module discovered/i.test(out)) {
+    if (/countinghouse ready/.test(out)) {
       clearInterval(check);
-      setTimeout(() => done(out), 2500);
+      done(out);
     }
   }, 100);
 }

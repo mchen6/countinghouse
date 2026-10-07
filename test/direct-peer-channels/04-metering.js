@@ -1,5 +1,6 @@
 const fs = require('fs');
 const exec = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const url = 'http://127.0.0.1:9527';
@@ -35,8 +36,7 @@ describe('direct-peer-channels 04: automatic metering on the direct path (D5)', 
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse with --mcpToolCallCost 1 to make recordCall\'s effect assertable...');
-    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --mcpToolCallCost 1 --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+    waitForReady(exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --mcpToolCallCost 1 --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

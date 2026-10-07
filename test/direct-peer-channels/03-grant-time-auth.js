@@ -1,5 +1,6 @@
 const fs = require('fs');
 const exec = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const url = 'http://127.0.0.1:9527';
@@ -27,15 +28,8 @@ describe('direct-peer-channels 03: grant-time authorization (D3)', function() {
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse with a debugKey that does NOT match echo-device-client-module\'s baked-in appKey...');
-    exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey not-aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); });
-    // test1.js/test2.js's shared-server harness gets away with a 5000ms
-    // wait here because their much larger describe tree (30+ nested test
-    // files) adds enough of its own setup time before the first real HTTP
-    // call fires; this file's single, immediate test doesn't have that
-    // slack, and sequentially discovering 2 modules (each with its own
-    // fixed ~5s discovery window, see sandbox.js's 'discover-device'
-    // handling) can take longer than 5s in total on its own.
-    setTimeout(() => { done(); }, 13000);
+    const server = exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey not-aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); });
+    waitForReady(server, done);
   });
 
   after((done) => {

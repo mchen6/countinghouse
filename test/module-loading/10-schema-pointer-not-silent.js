@@ -20,6 +20,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const http   = require('http');
 const exec   = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const PORT             = 9575;
 const LOG              = `/tmp/countinghouse-test-schema-pointer-${process.pid}.log`;
@@ -44,7 +45,7 @@ function startServer(done) {
        } --loadModule ./test/fixtures/dangling-schema-pointer` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +
        ` > ${LOG} 2>&1`, () => {});
-  setTimeout(done, 12000);
+  waitForReady.inFile(LOG, done);
 }
 
 function errorRecords() {

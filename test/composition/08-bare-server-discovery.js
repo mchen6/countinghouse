@@ -24,6 +24,7 @@
 const assert = require('assert');
 const path   = require('path');
 const spawn  = require('child_process').spawn;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PORT = 9562;   // verified unused across test/ and examples/
@@ -43,9 +44,10 @@ describe('composition 08: a bare server completes discovery', function() {
     server.stdout.on('data', (c) => { log += c.toString(); });
     server.stderr.on('data', (c) => { log += c.toString(); });
 
-    // Generous: the assertion is about whether the line EVER appears, so a
-    // slow start must not be mistaken for the bug.
-    setTimeout(done, 12000);
+    // The ready line is logged after "all module discovered" (see
+    // 13-ready-line.js), so the assertion below is about a server that has
+    // finished starting, however long that took.
+    waitForReady(server, done);
   });
 
   after((done) => {

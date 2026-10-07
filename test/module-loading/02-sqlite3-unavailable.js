@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // sqlite3 is an optionalDependency, and the failure mode that matters is not
@@ -35,12 +36,11 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse with sqlite3 made unloadable, --authProvider file...');
-    exec(`node -r ${PRELOAD} ./framework.js --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`node -r ${PRELOAD} ./framework.js --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --mcpToolCallCost 1` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
-         () => {});
-    setTimeout(done, 13000);
+         () => {}), done);
   });
 
   after((done) => {

@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // Standalone-only, non---debug, multi-tenant auth.json.
@@ -55,11 +56,10 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
     console.log('starting countinghouse WITHOUT --debug, for admin module-lifecycle test...');
     // deliberately starts with only echo-device-module -- transform-demo is
     // loaded later, over HTTP, by the admin key
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

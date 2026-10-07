@@ -19,6 +19,15 @@ the auth config.
   starts it; `examples/log-triage/verify-cost-bound.js` asserts the bill on
   both hop paths, and the suite runs that script.
 
+- **The server logs `countinghouse ready` when it can serve.** The line is
+  written once every preloaded module is discovered and every composing
+  module's verdict has been delivered to its worker, which is the point from
+  which `ctx.call` stops answering `CTX_CALL_NOT_READY`; it is written again
+  after each later discovery pass, such as a module loaded at run time. "all
+  module discovered" is logged earlier and was never that signal. A deploy
+  script can wait on the new line; the test suite and the example verify
+  scripts now do, in place of fixed startup sleeps.
+
 ### Changed — direct peer channels are the default
 
 - **Module-to-module hops now go worker-to-worker directly unless

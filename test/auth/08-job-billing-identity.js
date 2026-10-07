@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // Standalone-only, non---debug: this is about *whose* balance moves, which
@@ -47,12 +48,11 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
     // a nonzero cost is what makes recordCall's effect observable as a
     // balance delta at all -- with the default 0 every assertion below would
     // pass trivially whether or not the fix works.
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --mcpToolCallCost 1` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

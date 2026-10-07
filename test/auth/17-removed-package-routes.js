@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 // The CEAMS-era package routes. countinghouse was the verification half of
@@ -34,11 +35,10 @@ describe('auth 17: the CEAMS-era package routes with no consumer are gone', func
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse for removed-package-route test...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

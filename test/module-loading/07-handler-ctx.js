@@ -11,6 +11,7 @@
 const assert = require('assert');
 const http   = require('http');
 const exec   = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const handlerCtx = require('../../lib/handler-ctx');
 
@@ -73,12 +74,11 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse in --workerThread mode for ctx.caller...');
-    exec(`NODE_PATH=./lib node ./framework.js --debug --workerThread` +
+    waitForReady(exec(`NODE_PATH=./lib node ./framework.js --debug --workerThread` +
          ` --bindAddr 127.0.0.1 --port ${PORT} --debugKey aabbcc` +
          ` --loadModule ./test/fixtures/handler-map-module` +
          ` --loadModule ./test/fixtures/handler-map-convention` +
-         ` > /dev/null 2>&1`, () => {});
-    setTimeout(done, 14000);
+         ` 2> /dev/null`, () => {}), done);
   });
 
   after((done) => {

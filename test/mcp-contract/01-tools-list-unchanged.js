@@ -22,6 +22,7 @@ const path   = require('path');
 const http   = require('http');
 const net    = require('net');
 const spawn  = require('child_process').spawn;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const PORT    = 9531;
 const ROOT    = path.join(__dirname, '..', '..');
@@ -79,8 +80,8 @@ function startServer(done) {
     const args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
     modules.forEach((m) => { args.push('--loadModule', path.join(PKG_DIR, m)); });
 
-    server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true});
-    setTimeout(done, 8000);
+    server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
+    waitForReady(server, done);
   });
 }
 

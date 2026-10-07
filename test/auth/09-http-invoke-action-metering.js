@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const redis   = require('redis');
 
@@ -79,14 +80,13 @@ describe('auth 09: HTTP invoke-action is metered, with the same record MCP tools
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --mcpToolCallCost 1, for HTTP metering test...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --mcpToolCallCost 1` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
+         (err, stdout, stderr) => { console.log(err); }), done);
 
     redisClient = redis.createClient('redis://127.0.0.1:6379', {db: 0});
-    setTimeout(() => { done(); }, 13000);
   });
 
   after((done) => {

@@ -1,4 +1,5 @@
 const exec = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const url = 'http://127.0.0.1:9527';
@@ -178,8 +179,7 @@ describe('direct-peer-channels 06: composite-demo does not double-bill (--direct
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse with --directPeerChannels for double-billing regression test...');
-    exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {
@@ -197,8 +197,7 @@ describe('direct-peer-channels 06b: composite-demo does not double-bill (--no-di
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse with --no-directPeerChannels for double-billing regression test...');
-    exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --no-directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey ${INTERNAL_API_KEY} --mcpToolCallCost 1 --no-directPeerChannels ${loadModuleArgs()}`, (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

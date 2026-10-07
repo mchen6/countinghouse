@@ -62,7 +62,7 @@ function startServer(port, authPath, flags) {
       if (settled) return;
       settled = true;
       server.kill('SIGKILL');
-      reject(new Error(`server on ${port} never finished discovery:\n${out.slice(-2000)}`));
+      reject(new Error(`server on ${port} was never ready:\n${out.slice(-2000)}`));
     }, 60000);
 
     // A child that dies before it is ready fails the start at once.
@@ -75,13 +75,13 @@ function startServer(port, authPath, flags) {
 
     const onData = (buf) => {
       out += buf.toString();
-      // Composition is verified after discovery completes and the verdict is
-      // then relayed into the composing module's worker, so "all module
-      // discovered" is the earliest useful signal, not the finish line.
-      if (!settled && /all module discovered/i.test(out)) {
+      // The server logs this once every module is discovered and each
+      // composing module's verdict has reached its worker -- the point from
+      // which ctx.call works. "all module discovered" comes earlier.
+      if (!settled && /countinghouse ready/.test(out)) {
         settled = true;
         clearTimeout(timer);
-        setTimeout(() => resolve(server), 2500);
+        resolve(server);
       }
     };
     server.stdout.on('data', onData);

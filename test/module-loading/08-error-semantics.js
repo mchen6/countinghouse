@@ -20,6 +20,7 @@
 const assert = require('assert');
 const http   = require('http');
 const exec   = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 
 const PORT = 9595;
 
@@ -51,10 +52,9 @@ describe('module-loading 08: handler failure classification and style detection'
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse for the error-semantics matrix...');
-    exec(`NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ${PORT
          } --debugKey aabbcc --loadModule ./test/fixtures/error-semantics-module` +
-         ` > /dev/null 2>&1`, () => {});
-    setTimeout(done, 13000);
+         ` 2> /dev/null`, () => {}), done);
   });
 
   after((done) => {

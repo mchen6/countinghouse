@@ -63,8 +63,8 @@ function startServer(done) {
 
   const onData = (buf) => {
     serverLog += buf.toString();
-    if (/all module discovered/i.test(serverLog)) {
-      setTimeout(done, 2500);
+    if (/countinghouse ready/.test(serverLog)) {
+      done();
       server.stdout.removeListener('data', onData);
       server.stderr.removeListener('data', onData);
     }

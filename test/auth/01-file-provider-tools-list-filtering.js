@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 
 const url = 'http://127.0.0.1:9527';
@@ -35,10 +36,9 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for AuthProvider e2e test...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/transform-demo`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

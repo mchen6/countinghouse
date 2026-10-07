@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const assert  = require('assert');
 
@@ -36,11 +37,10 @@ describe('auth 16: the dead IoT-era entry paths are gone', function() {
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, for removed IoT-route test...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {
@@ -111,12 +111,11 @@ describe('auth 16b: the vestigial flag-gated surface is gone', function() {
     fs.writeFileSync(FLAGS_AUTH, JSON.stringify(config));
 
     console.log('starting countinghouse WITH --simOpenStackAPI --loadProfile (both now no-ops)...');
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT_FLAGS
+    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT_FLAGS
          } --authProvider file --authConfigPath ${FLAGS_AUTH
          } --simOpenStackAPI --loadProfile` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
-         (err, stdout, stderr) => { console.log(err); });
-    setTimeout(() => { done(); }, 13000);
+         (err, stdout, stderr) => { console.log(err); }), done);
   });
 
   after((done) => {

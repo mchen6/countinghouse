@@ -183,9 +183,9 @@ function startServer(port, extraArgs, onLine, done) {
     const chunk = buf.toString();
     out += chunk;
     if (onLine != null) onLine(chunk);
-    if (!startupSeen && /all module discovered/i.test(out)) {
+    if (!startupSeen && /countinghouse ready/.test(out)) {
       startupSeen = true;
-      setTimeout(done, 2500); // same margin 02-ctx-call.js gives verifyComposition's post-discovery work
+      done();
     }
   };
   server.stdout.on('data', onData);

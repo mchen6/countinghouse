@@ -148,8 +148,8 @@ function startServer(done) {
   let out = '';
   const onData = (buf) => {
     out += buf.toString();
-    if (/all module discovered/i.test(out)) {
-      setTimeout(done, 2500);
+    if (/countinghouse ready/.test(out)) {
+      done();
       server.stdout.removeListener('data', onData);
     }
   };

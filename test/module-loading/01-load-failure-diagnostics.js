@@ -1,5 +1,6 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
+const waitForReady = require('../helpers/wait-for-ready');
 
 // A module that fails to load used to disappear silently: the log said
 // "module: <name>@1.0.0 loaded" and then nothing ever appeared in tools/list,
@@ -42,7 +43,7 @@ function startAndCapture(modulePath, port, logPath, done) {
   exec(`NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ${port
        } --loadModule ${modulePath} > ${logPath} 2>&1`,
        () => {});
-  setTimeout(done, 11000);
+  waitForReady.inFile(logPath, done);
 }
 
 function errorRecords(logPath) {
