@@ -8,6 +8,16 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
+## Unreleased
+
+### Added
+
+- `docs/log-triage-performance.md` and `perf/log-triage-perf.js` — how the
+  log-triage composite's latency follows its input on both hop paths, what
+  the runtime adds over the same work done in one process, and one composite
+  call against the same hops made by a client. Measured on a one-CPU VM and
+  framed accordingly.
+
 ## 7.1.0
 
 A second composite example, direct peer channels as the default hop path,

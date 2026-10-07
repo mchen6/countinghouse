@@ -347,6 +347,9 @@ in other chains may complete — and be charged — after the first failure.
 **Concurrency helps the reads more than the masking.** Each module runs in one
 worker thread. The `read` hops overlap because they wait on I/O; the `redact`
 hops are CPU-bound work in a single worker and run roughly one after another.
+[`docs/log-triage-performance.md`](../../docs/log-triage-performance.md) has
+the measurements: masking is over half of the handlers' time, and latency
+grows linearly with the files read.
 
 **`log-read` reads the directory it is given.** A file name is confined to
 that directory — no path separators, no symbolic links — but `dir` itself is

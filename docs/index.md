@@ -24,7 +24,7 @@ Point an agent at a repository and ask it to find hardcoded credentials. The sca
 
 But the number is only the demonstration. The guarantee is the output schema: open the spec and look at what the tool can return — findings, counts, a bill. There is no field that can hold source code. Not "the model didn't send it this time." There is no shape for it to travel in.
 
-`examples/log-triage` is the same idea with a bill that moves: it triages a directory of logs with two metered hops per file, run concurrently, and the caller sets the most it can cost before calling.
+`examples/log-triage` is the same idea with a bill that moves: it triages a directory of logs with two metered hops per file, run concurrently, and the caller sets the most it can cost before calling. [`log-triage-performance.md`](log-triage-performance.md) measures it: latency against input size, what the runtime adds, and one composite call against the same hops made by a client.
 
 ## Code execution deserves a fair hearing
 
