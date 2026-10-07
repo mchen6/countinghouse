@@ -22,6 +22,7 @@ simulation).
 | `--authConfigPath <path>` | backend-specific | Config file/db path for the selected AuthProvider backend. |
 | `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](authentication.md#admin-keys). |
 | `--no-directPeerChannels` | direct channels on | Route worker-to-worker calls through the main thread instead of directly. Direct peer channels are the default since 7.1.0 (`--directPeerChannels`, still accepted, is now a no-op) — see [`direct-peer-channels.md`](direct-peer-channels.md) for what the two paths check and when. |
+| `--peerChannelAuthRecheckSeconds <n>` | `5` | How often the authorization behind each open peer channel is re-checked, so a grant revoked while the server runs closes the channel. `0` turns the re-check off. |
 | `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path (the default path). |
 | `--mcpToolCallCost <n>` | `0` | Cost recorded via `MeteringProvider.recordCall` for every MCP `tools/call`. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |

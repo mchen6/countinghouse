@@ -40,9 +40,11 @@ the auth config.
   - **Authorization between modules is checked when a channel opens, not on
     every hop**, and a channel is good for every device its callee worker
     hosts. A grant revoked while the server runs (possible with the sqlite
-    and CouchDB AuthProviders, not with the default file one) does not close
-    a channel that is already open; it takes effect when that worker
-    restarts. On the main-thread-routed path it applies to the next hop.
+    and CouchDB AuthProviders, not with the default file one) closes the
+    channel on the broker's next re-check, every
+    `--peerChannelAuthRecheckSeconds` (new, 5 by default; `0` turns it off),
+    so a revoked module identity can keep reaching a device for up to that
+    long. On the main-thread-routed path it applies to the next hop.
   - **Module code can receive four more error codes:** `PEER_GONE`,
     `PEER_CHANNEL_TIMEOUT`, `PEER_SELF_TARGET`, `PEER_NO_HANDLER`.
 

@@ -151,9 +151,11 @@ These are real, and worth being specific about rather than waving at
     hop.** Since 7.1.0 a module calling another module's device does so over
     a direct peer channel by default. `userAuth` runs once, at brokering
     time; the channel it grants then reaches every device the callee worker
-    hosts, and it is not closed when a grant is revoked while the server
-    runs — only when a worker reloads, unloads or crashes.
-    `--no-directPeerChannels` restores the per-hop check on the main thread.
+    hosts. A grant revoked while the server runs closes the channel on the
+    broker's next re-check (`--peerChannelAuthRecheckSeconds`, 5 by
+    default), so a revoked module identity can keep reaching a device for up
+    to that long. `--no-directPeerChannels` restores the per-hop check on
+    the main thread, with no such window.
     See [`direct-peer-channels.md`](direct-peer-channels.md) and D3 in
     [`design-decisions.md`](design-decisions.md#direct-peer-channels-five-decisions-d1d5).
   - **`FileAuthProvider`'s zero-config first run generates and prints a

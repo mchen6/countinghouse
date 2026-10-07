@@ -51,23 +51,29 @@ the two paths do not check the same things at the same moments:
   the main-thread-routed path each hop passes `userAuth` before it is
   routed. Here the same check runs once, at brokering time, and the channel
   it grants is good for every device the callee worker hosts (D3).
-- **A grant revoked while the server runs does not close an open channel.**
-  Channels are invalidated when a worker reloads, unloads or crashes (D4),
-  and by nothing else. With the default file-based AuthProvider this cannot
-  arise, because the auth file is read once at startup. With the sqlite or
-  CouchDB provider, where grants can be revoked live, a module identity
-  whose grant on an inner device is revoked keeps reaching that device over
-  a channel it already holds until the worker restarts; on the
-  main-thread-routed path the revocation applies to the next hop. This is
-  read from the code (`PeerChannelBroker`'s only invalidation callers are
-  the worker-lifecycle ones) and has no test of its own.
+- **A grant revoked while the server runs closes the channel within
+  seconds, not on the next hop.** Nothing tells the server about a
+  revocation (the sqlite CLI writes the db file from another process), so
+  the broker re-runs the authorization check for every grant behind an open
+  channel on a timer, `--peerChannelAuthRecheckSeconds`, 5 by default. On a
+  denial, or when the AuthProvider cannot be reached, it closes the channel
+  on both workers; the caller's next hop is brokered again and refused with
+  the ordinary authorization error, and calls in flight when the channel
+  closes fail with `PEER_GONE`. A revoked module identity can therefore keep
+  reaching a device for up to one interval; on the main-thread-routed path
+  the revocation applies to the very next hop. Restoring the grant needs no
+  restart. `0` turns the re-check off, and an open channel then outlives a
+  revocation until its worker restarts. With the file AuthProvider none of
+  this can arise, because the auth file is read once at startup. Test:
+  `test/auth/19-peer-channel-revocation.js`, against sqlite and its real
+  CLI.
 - **Module code can see four more error codes:** `PEER_GONE`,
   `PEER_CHANNEL_TIMEOUT`, `PEER_SELF_TARGET`, `PEER_NO_HANDLER`.
 - **Billing is identical on both paths**, and per-hop rate limiting is
   enforced on neither; see `docs/cross-cutting-matrix.md`.
 
-An operator who needs per-hop authorization or immediate revocation between
-modules should run with `--no-directPeerChannels`. The benchmark sections
+An operator who needs per-hop authorization, or revocation with no window
+at all, should run with `--no-directPeerChannels`. The benchmark sections
 below say how little that costs for most workloads.
 
 ## Benchmark: main-thread-routed vs. direct peer channel

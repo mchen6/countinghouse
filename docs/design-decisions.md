@@ -94,14 +94,16 @@ not expected to deviate from without deliberately revisiting them.
   deliberate trade — per-call authorization would reintroduce a main-thread
   round trip for every call, defeating the point of the direct path — not
   an oversight. Revocation happens through invalidation (D4): a port that
-  should no longer work is closed, not left valid but unchecked. **That
-  covers worker lifecycle only.** Nothing invalidates a port when a grant
-  is revoked in the AuthProvider while the server runs, so with a backend
-  that allows live revocation (sqlite, CouchDB) a revoked module identity
-  keeps its open ports until the worker restarts. This mattered less while
-  the path was opt-in; it is the default since 7.1.0, and
-  [`direct-peer-channels.md`](direct-peer-channels.md) states it for
-  operators.
+  should no longer work is closed, not left valid but unchecked. Worker
+  lifecycle closes ports through D4. A grant revoked in the AuthProvider
+  while the server runs (possible with sqlite and CouchDB) is a different
+  event, and one the server is never told about, so since 7.1.0 the broker
+  re-runs this same check for every open grant every
+  `--peerChannelAuthRecheckSeconds` (5 by default) and closes the port on a
+  denial. Before that, a revoked module identity kept its open ports until
+  the worker restarted, which mattered less while the path was opt-in.
+  Per-call re-checking was considered and rejected for the reason above;
+  the timer bounds the window instead of removing it.
 
   **A port is possession of a *worker*, not of a device.** This follows
   from D1 (ports are keyed by worker pair and reused for every device that
