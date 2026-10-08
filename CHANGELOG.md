@@ -8,6 +8,19 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
+## 7.1.2 (unreleased)
+
+### Security — `package-info` is rate limited
+
+- **`GET /devices/:deviceID/package-info` now enforces `--apiKeyRateLimit`.**
+  The 7.0.0 read-path work gated `/balance`, `tasks/*` and the job routes and
+  left this one out; `docs/cross-cutting-matrix.md` recorded the cell as
+  empty. It shares the per-apiKey budget the other reads and tool calls draw
+  on, and a denial answers HTTP **429** with `code: RATE_LIMIT_EXCEEDED`.
+- **No change unless `--apiKeyRateLimit` is set.** The limiter still fails
+  open, as at every other call site.
+- Test: `test/auth/15-read-path-rate-limits.js`.
+
 ## 7.1.1
 
 Two leftovers from the PM2 era are removed, and the log-triage example gets

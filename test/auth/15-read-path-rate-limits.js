@@ -205,6 +205,41 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     });
   });
 
+  // The one device-scoped read the 7.0.0 work left out: it sat behind
+  // userAuth like its neighbours, and docs/cross-cutting-matrix.md recorded
+  // its rate-limit cell as "none".
+  it('HTTP GET /package-info: a single call within budget still succeeds', (done) => {
+    drain(() => {
+      request(url).get(`/devices/${DEVICE_ID}/package-info`).set('X-CH-Key', ALICE)
+        .expect(200, (err, res) => {
+          if (err) return done(err);
+          if (typeof res.body.name !== 'string' || typeof res.body.version !== 'string') {
+            return done(new Error(`expected a package name and version, got: ${JSON.stringify(res.body)}`));
+          }
+          return done();
+        });
+    });
+  });
+
+  it('HTTP GET /package-info: a burst is denied with 429 RATE_LIMIT_EXCEEDED', (done) => {
+    drain(() => {
+      burst(BURST, (cb) => request(url).get(`/devices/${DEVICE_ID}/package-info`).set('X-CH-Key', ALICE).end(cb), (responses) => {
+        const denied = httpDenials(responses);
+        if (denied.length === 0) {
+          return done(new Error(`no /package-info request in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.status))}`));
+        }
+        const body = denied[0].res.body;
+        if (body.code !== 'RATE_LIMIT_EXCEEDED') {
+          return done(new Error(`expected code RATE_LIMIT_EXCEEDED, got: ${JSON.stringify(body)}`));
+        }
+        if (body.name !== undefined || body.version !== undefined) {
+          return done(new Error(`a denied request must not answer with package info: ${JSON.stringify(body)}`));
+        }
+        return done();
+      });
+    });
+  });
+
   it('HTTP /add-job: a burst is denied with 429 (was: an unlimited way to queue jobs)', (done) => {
     drain(() => {
       burst(BURST, (cb) => addJobReq(url, ALICE).end(cb), (responses) => {
