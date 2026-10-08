@@ -8,15 +8,18 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
-## Unreleased
+## 7.1.1
 
-### Added
+Two leftovers from the PM2 era are removed, and the log-triage example gets
+a performance report.
 
-- `docs/log-triage-performance.md` and `perf/log-triage-perf.js` — how the
-  log-triage composite's latency follows its input on both hop paths, what
-  the runtime adds over the same work done in one process, and one composite
-  call against the same hops made by a client. Measured on a one-CPU VM and
-  framed accordingly.
+**If a supervisor waits for this server's `ready` process message, read
+"Removed" before upgrading**: that message is gone, and the
+`countinghouse ready` log line added in 7.1.0 is what to wait for. By this
+file's own definition a removed CLI flag is a breaking change. It ships as a
+patch because `--withPM2` was never documented, a command line that still
+passes it starts unchanged, and nothing in the project consumed what it
+produced; the same goes for the IPC listener removed with it.
 
 ### Removed
 
@@ -35,6 +38,21 @@ the auth config.
   path, never gated by `--withPM2`, never documented, and absent from
   `docs/cross-cutting-matrix.md`. Use the admin-gated HTTP module-lifecycle
   routes or `countinghouse_load_module`.
+
+### Added
+
+- `docs/log-triage-performance.md` and `perf/log-triage-perf.js` — how the
+  log-triage composite's latency follows its input on both hop paths, what
+  the runtime adds over the same work done in one process, and one composite
+  call against the same hops made by a client. Measured on a one-CPU VM and
+  framed accordingly.
+
+### Tests
+
+- No fixed startup wait of four seconds or more remains in the suite or the
+  example scripts. The waits after a run-time module load now follow the
+  ready line too, and the cluster-mode tests wait on it in place of the
+  removed `ready` message.
 
 ## 7.1.0
 
