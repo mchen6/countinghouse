@@ -8,7 +8,7 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
-## 7.1.2 (unreleased)
+## 7.1.2
 
 ### Security — `package-info` is rate limited
 
