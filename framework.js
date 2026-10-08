@@ -75,7 +75,7 @@ var routeManager = new RouteManager(mm);
 
 var dm = routeManager.cdifInterface.deviceManager;
 
-monitor.init(mm, dm);
+monitor.init();
 
 var redisAPI = require('./lib/redis-api');
 redisAPI.init();

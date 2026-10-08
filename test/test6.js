@@ -18,9 +18,14 @@ describe("Start benchmarking in single-thread mode", function () {
     "--loadModule",
     "./pre-installed-packages/echo-device-module",
     "--loadModule",
-    "./pre-installed-packages/echo-device-client-module",
-    "--withPM2"
+    "./pre-installed-packages/echo-device-client-module"
   ], {silent: true});
+
+  // the sub-tests wait for the server's ready line in this (see
+  // test/helpers/wait-for-ready.js); captured from the moment of the fork
+  child.log = '';
+  child.stdout.on('data', (chunk) => { child.log += chunk; });
+  child.stderr.on('data', (chunk) => { child.log += chunk; });
 
   testFiles.forEach((file) => {
     require(`./benchmark/${file}`)(child, true);

@@ -1,17 +1,15 @@
 
 const request = require('supertest');
+const waitForReady = require('../helpers/wait-for-ready');
 const url = 'http://127.0.0.1:9527';
 
 
 module.exports = function (cp, isSingleThread) {
-  describe('Test all modules discovered event', function() {
+  describe('Test the server reports ready', function() {
     this.timeout(0);
 
-    it('should receive ready event after all modules loaded', (done) => {
-      cp.on('message', message => {
-        if (message !== 'ready') return done(new Error('didnt receive ready message'));
-        return done();
-      });
+    it('should log the ready line after all modules loaded', (done) => {
+      waitForReady.inText(() => cp.log, done);
     });
   });
 };

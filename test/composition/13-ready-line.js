@@ -81,57 +81,84 @@ describe('composition 13: the server says when it is ready', function() {
   });
 });
 
-// Under --withPM2 the server also tells its parent process it is ready, which
-// is what PM2's wait_ready (or any supervisor that forked it) acts on. That
-// message has to carry the same promise as the log line. It used to be sent
-// at "all module discovered", before the composition verdicts, so a
-// supervisor could route traffic to a server whose composites still answered
-// CTX_CALL_NOT_READY.
-describe('composition 13b: the --withPM2 ready message means the same thing', function() {
+// --withPM2 is gone. It dated from when this server ran under PM2 as CDIF: it
+// made the server send its parent process a 'ready' message at startup and a
+// heap-statistics message every ten seconds. Nothing reads either any more,
+// and the log line above is the readiness signal. A leftover --withPM2 on a
+// command line is ignored like any other unknown flag, so what this pins is
+// that the server stays silent on the IPC channel a supervisor gives it.
+describe('composition 13b: --withPM2 is removed', function() {
   this.timeout(60000);
 
-  let server    = null;
-  let firstCall = null;
+  let server     = null;
+  const messages = [];
 
   before((done) => {
     server = fork(path.join(ROOT, 'framework.js'), [
       '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT_PM2),
-      '--mcpToolCallCost', '1',
-      '--debug', '--debugKey', CALLER_KEY,
+      '--debug', '--debugKey', CALLER_KEY, '--apiMonitor',
       '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
       '--loadModule', path.join(FIXTURES, 'compose-callee'),
       '--loadModule', path.join(FIXTURES, 'compose-caller'),
       '--withPM2'
     ], {silent: true});
 
-    server.stdout.on('data', () => {});   // keep the pipe drained
-    server.stderr.on('data', () => {});
-
-    const timer = setTimeout(() => done(new Error('no ready message within 45 s')), 45000);
-
-    server.once('message', (message) => {
-      clearTimeout(timer);
-      if (message !== 'ready') return done(new Error(`expected 'ready', got ${JSON.stringify(message)}`));
-
-      request(`http://127.0.0.1:${PORT_PM2}`)
-        .post('/mcp')
-        .set('X-CH-Key', CALLER_KEY)
-        .set('Accept', 'application/json, text/event-stream')
-        .send({jsonrpc: '2.0', id: 1, method: 'tools/call',
-               params: {name: 'compose_caller_callerservice_viacall', arguments: {n: 21}}})
-        .end((callErr, res) => {
-          firstCall = {err: callErr, body: (res != null) ? res.body : null};
-          return done();
-        });
-    });
+    server.on('message', (message) => { messages.push(message); });
+    waitForReady(server, {timeoutMs: 45000}, done);
   });
 
   after(() => { if (server != null) server.kill('SIGKILL'); });
 
-  it('a composite called the instant the message arrives makes its hop', () => {
-    assert.ifError(firstCall.err);
-    const text = JSON.stringify(firstCall.body);
-    assert.ok(!/CTX_CALL_NOT_READY/.test(text), `ctx.call was not ready: ${text}`);
-    assert.strictEqual(firstCall.body.result.isError, false, `expected a successful call, got ${text}`);
+  it('a forked server sends its parent nothing on the way to ready', (done) => {
+    // give a message sent in the same tick as the ready line time to arrive
+    setTimeout(() => {
+      assert.deepStrictEqual(messages, []);
+      done();
+    }, 500);
+  });
+
+  // The same PM2 era left a listener in lib/monitor.js that loaded, unloaded
+  // or restarted a module when the parent process said so over IPC -- an
+  // entry path with no row in docs/cross-cutting-matrix.md, never gated by
+  // the flag. Loading a module at run time is what the admin-gated HTTP
+  // routes and the countinghouse_load_module tool are for.
+  //
+  // An absence can only be watched for, so this polls for as long as a
+  // run-time load takes several times over (measured at about 7 s) and
+  // fails the moment the module's tool shows up.
+  it('a module-load message from the parent process is ignored', function(done) {
+    this.timeout(30000);
+
+    server.send({data: {loadModule: {
+      path: path.join(ROOT, 'pre-installed-packages', 'transform-demo'), name: 'transform-demo'}}});
+
+    const deadline = Date.now() + 15000;
+    (function poll() {
+      request(`http://127.0.0.1:${PORT_PM2}`)
+        .post('/mcp')
+        .set('X-CH-Key', CALLER_KEY)
+        .set('Accept', 'application/json, text/event-stream')
+        .send({jsonrpc: '2.0', id: 2, method: 'tools/list', params: {}})
+        .end((err, res) => {
+          if (err) return done(err);
+          const names = res.body.result.tools.map((t) => t.name);
+          if (names.some((n) => n.indexOf('transform_demo') === 0)) {
+            return done(new Error(`the parent's message loaded a module: ${JSON.stringify(names)}`));
+          }
+          if (Date.now() > deadline) return done();
+          return setTimeout(poll, 500);
+        });
+    })();
+  });
+
+  it('the option and the heap-statistics relay no longer exist', () => {
+    const options = require('../../lib/cli-options');
+    options.setOptions({withPM2: true});
+    assert.strictEqual(options.withPM2, undefined);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(options.getOptions(), 'withPM2'), false);
+    options.setOptions({});
+
+    assert.strictEqual(require('../../lib/monitor').sendHeapStatMessageToParentController, undefined);
+    assert.strictEqual(require('../../lib/monitor').onProcessMessage, undefined);
   });
 });

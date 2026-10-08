@@ -18,15 +18,23 @@ the auth config.
   call against the same hops made by a client. Measured on a one-CPU VM and
   framed accordingly.
 
-### Changed
+### Removed
 
-- **Under `--withPM2`, the `ready` message to the parent process is sent when
-  the server is ready, not when its modules are discovered.** It now goes out
-  together with the `countinghouse ready` log line, after every composing
-  module's verdict has been delivered, so a supervisor waiting on it is not
-  told the server is up before `ctx.call` works. With the file AuthProvider
-  the old message was about a millisecond early. Passing `--withPM2` to a
-  server that has no parent process no longer throws.
+- **`--withPM2`.** The flag dated from when this server ran under PM2 as
+  CDIF. It made the server send its parent process a `ready` message at
+  startup and a heap-statistics message every ten seconds; nothing in the
+  project reads either. Both are gone, with the collection that fed the
+  second (a ten-second timer per worker under `--apiMonitor`). The flag was
+  never in the CLI reference. A command line that still passes it starts as
+  before, since unknown flags are ignored, but **a supervisor waiting for
+  the `ready` message will no longer receive one**: wait for the
+  `countinghouse ready` log line instead.
+- **Module control over the parent-process IPC channel.** `lib/monitor.js`
+  listened for messages from the process that started the server and
+  loaded, unloaded or restarted a module on request. It was another PM2-era
+  path, never gated by `--withPM2`, never documented, and absent from
+  `docs/cross-cutting-matrix.md`. Use the admin-gated HTTP module-lifecycle
+  routes or `countinghouse_load_module`.
 
 ## 7.1.0
 

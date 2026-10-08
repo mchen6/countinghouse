@@ -1,5 +1,6 @@
 
 const request = require('supertest');
+const waitForReady = require('../helpers/wait-for-ready');
 const benchrest = require('bench-rest');
 const url = 'http://127.0.0.1:9527';
 
@@ -26,8 +27,8 @@ module.exports = function (cp, isSingleThread) {
     };
 
     it('perform benchmarking', (done) => {
-      cp.on('message', message => {
-        if (message !== 'ready') return done(new Error('didnt receive ready message'));
+      waitForReady.inText(() => cp.log, (readyErr) => {
+        if (readyErr != null) return done(readyErr);
 
         benchrest(flow, runOptions)
         .on('error', (err, ctxName) => { return done(err); })

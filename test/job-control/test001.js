@@ -1,4 +1,5 @@
 const request = require('supertest');
+const waitForReady = require('../helpers/wait-for-ready');
 const url = 'http://127.0.0.1:9527';
 
 const Queue       = require('bullmq').Queue;
@@ -14,9 +15,8 @@ module.exports = function (cp, isSingleThread) {
     this.timeout(0);
 
     it('should complete added job after module is loaded', (done) => {
-      cp.on('message', message => {
-
-        if (message === 'ready') {
+      waitForReady.inText(() => cp.log, (readyErr) => {
+        if (readyErr != null) return done(readyErr);
 
           queueEvents.on('failed', (args) => {
             return done(new Error(args.failedReason));
@@ -42,7 +42,6 @@ module.exports = function (cp, isSingleThread) {
           }).catch((err) => {
             console.log(`job add error:${err.message}`);
           });
-        }
       });
     });
   });
