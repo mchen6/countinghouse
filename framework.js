@@ -34,6 +34,15 @@ if (options.moduleSandbox === 'off') {
   logger.I('module sandbox: mode ' + options.moduleSandbox);
 }
 
+if (options.modulePolicy != null) {
+  try {
+    require('./lib/module-policy').load(options.modulePolicy);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
+  }
+}
+
 var monitor       = require('./lib/monitor');
 
 logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options));
