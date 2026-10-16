@@ -1,0 +1,5 @@
+{
+  "name": "sandbox-load-trap",
+  "version": "1.0.0",
+  "countinghouse": {"permissions": {"env": ["LOAD_TRAP"], "limits": {"maxBlockMs": 1000}}}
+}

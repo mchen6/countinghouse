@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "sandbox-load-trap",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "ends or blocks its own worker while loading, when LOAD_TRAP says so",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:trapService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Prove the module is up.",
+            "input": {
+              "schema": "/trapService/ping/input"
+            },
+            "output": {
+              "schema": "/trapService/ping/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
