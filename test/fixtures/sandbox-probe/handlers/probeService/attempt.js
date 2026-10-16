@@ -24,6 +24,9 @@ const ATTEMPTS = {
   requestUri:       () => new Promise((resolve, reject) => {
     CHUtil.request({url: 'http://allowed.example.test/', uri: 'http://127.0.0.1:1/', timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
   }),
+  requestHar:       () => new Promise((resolve, reject) => {
+    CHUtil.request({url: 'http://allowed.example.test/', har: {url: 'http://127.0.0.1:1/', method: 'GET'}, timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
+  }),
   requestBaseUrl:   () => new Promise((resolve, reject) => {
     CHUtil.request({baseUrl: 'http://127.0.0.1:1', uri: '/x', timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
   })

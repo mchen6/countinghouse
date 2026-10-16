@@ -4,6 +4,7 @@
 // built-in block.
 const assert = require('assert');
 const path   = require('path');
+const {normaliseRequestOptions} = require('../../lib/module-lockdown');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 
 const KEY   = 'aabbcc';
@@ -14,7 +15,7 @@ const OUTSIDE_FILE = path.join(ROOT, 'lib', 'cli-options.js');
 const ROUTES = [
   ['dlopen'], ['binding'], ['kill'], ['getBuiltinModule'], ['child_process'], ['worker_threads'],
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
-  ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl']
+  ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar']
 ];
 
 function serverArgs(mode) {
@@ -85,6 +86,60 @@ describe('sandbox 05: worker lockdown', function() {
       assert.strictEqual(r.isError, false, JSON.stringify(r));
       assert.strictEqual(r.structuredContent.output.n, 42, JSON.stringify(r));
       assert.ok(!/violation builtin/.test(server.output), server.output.slice(-3000));
+    });
+  });
+
+  describe('normaliseRequestOptions (enforce side of CHUtil.request)', () => {
+    const NET = [{host: 'allowed.example.test'}];
+    const norm = (opts, onRedirect) => normaliseRequestOptions(opts, NET, onRedirect || (() => {}));
+
+    it('turns a string into uri', () => {
+      const r = norm('http://allowed.example.test/a');
+      assert.strictEqual(r.refusal, null);
+      assert.strictEqual(r.options.uri, 'http://allowed.example.test/a');
+      assert.strictEqual(typeof(r.options.followRedirect), 'function');
+    });
+    it('refuses a forbidden host, in a string too', () => {
+      assert.strictEqual(norm('http://127.0.0.1:1/').refusal, '127.0.0.1:1');
+      assert.strictEqual(norm({uri: 'http://127.0.0.1:1/'}).refusal, '127.0.0.1:1');
+    });
+    it('refuses har, baseUrl and proxy', () => {
+      ['har', 'baseUrl', 'proxy'].forEach((key) => {
+        const r = norm({url: 'http://allowed.example.test/', [key]: 'http://x.test/'});
+        assert.strictEqual(r.refusal, key);
+      });
+    });
+    it('prefers uri to url, and moves url into uri', () => {
+      assert.strictEqual(norm({url: 'http://allowed.example.test/', uri: 'http://127.0.0.1:1/'}).refusal, '127.0.0.1:1');
+      const r = norm({url: 'http://allowed.example.test/x', timeout: 5});
+      assert.strictEqual(r.options.uri, 'http://allowed.example.test/x');
+      assert.ok(!('url' in r.options));
+      assert.strictEqual(r.options.timeout, 5);
+    });
+    it('uses the href of a URL object, and refuses a non-string target', () => {
+      const r = norm({uri: new URL('http://allowed.example.test/u')});
+      assert.strictEqual(r.options.uri, 'http://allowed.example.test/u');
+      assert.strictEqual(norm({uri: {href: 7}}).refusal, 'invalid');
+      assert.strictEqual(norm({}).refusal, 'invalid');
+    });
+    it('disables proxies and drops disableUrlEncoding', () => {
+      const r = norm({uri: 'http://allowed.example.test/', disableUrlEncoding: true});
+      assert.ok(Object.prototype.hasOwnProperty.call(r.options, 'proxy'));
+      assert.strictEqual(r.options.proxy, null);
+      assert.ok(!('disableUrlEncoding' in r.options));
+    });
+    it('keeps followRedirect false, and does not mutate the caller\'s options', () => {
+      const given = {uri: 'http://allowed.example.test/', followRedirect: false};
+      assert.strictEqual(norm(given).options.followRedirect, false);
+      assert.deepStrictEqual(given, {uri: 'http://allowed.example.test/', followRedirect: false});
+    });
+    it('the redirect guard refuses a forbidden target and reports it', () => {
+      const seen = [];
+      const guard = norm('http://allowed.example.test/', (t) => seen.push(t)).options.followRedirect;
+      const self = {uri: {href: 'http://allowed.example.test/start'}};
+      assert.strictEqual(guard.call(self, {headers: {location: 'http://127.0.0.1:1/x'}}), false);
+      assert.deepStrictEqual(seen, ['127.0.0.1:1']);
+      assert.strictEqual(guard.call(self, {headers: {location: '/next'}}), true);
     });
   });
 });
