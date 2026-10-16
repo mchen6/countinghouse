@@ -70,6 +70,49 @@ describe('sandbox 03: tree checks', () => {
     assert.deepStrictEqual(r.problems, []);
     assert.match(r.warnings[0], /node_modules\/s.*postinstall/);
   });
+
+  it('reports a directory symlink that leaves the module', () => {
+    const d = mk({'package.json': {name: 'm'}});
+    const outside = mk({'x.node': 'bin'});
+    fs.symlinkSync(outside, path.join(d, 'vendor'));
+    assert.match(checkTree(d).problems.join('\n'), /vendor is a symlink to .*, outside the module/);
+  });
+
+  it('reports a file symlink that leaves the module', () => {
+    const d = mk({'package.json': {name: 'm'}, 'lib/keep': ''});
+    const outside = mk({'x.node': 'bin'});
+    fs.symlinkSync(path.join(outside, 'x.node'), path.join(d, 'lib', 'x.node'));
+    assert.match(checkTree(d).problems.join('\n'), /lib\/x\.node is a symlink to .*, outside the module/);
+  });
+
+  it('accepts a symlink that stays inside the module, and ignores a dangling one', () => {
+    const d = mk({'package.json': {name: 'm'}, 'lib/a.js': ''});
+    fs.symlinkSync('./lib', path.join(d, 'alias'));
+    fs.symlinkSync('./nowhere', path.join(d, 'dangling'));
+    assert.deepStrictEqual(checkTree(d), {problems: [], warnings: []});
+  });
+
+  it('reports a directory it cannot read', function() {
+    if (process.getuid && process.getuid() === 0) return this.skip();
+    const d = mk({'package.json': {name: 'm'}, 'locked/f': ''});
+    const locked = path.join(d, 'locked');
+    fs.chmodSync(locked, 0);
+    try {
+      assert.match(checkTree(d).problems.join('\n'), /cannot read locked: EACCES/);
+    } finally {
+      fs.chmodSync(locked, 0o755);
+    }
+  });
+
+  it('reports a dependency whose package.json cannot be parsed', () => {
+    const d = mk({
+      'package.json': {name: 'm', dependencies: {bad: '1'}},
+      'node_modules/bad/package.json': '{not json'
+    });
+    const r = checkTree(d);
+    assert.strictEqual(r.problems.length, 1, r.problems.join('\n'));
+    assert.match(r.problems[0], /node_modules\/bad\/package\.json cannot be parsed/);
+  });
 });
 
 describe('sandbox 03: the validator reports them', () => {
