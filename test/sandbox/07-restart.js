@@ -2,6 +2,8 @@
 // get MODULE_RESTARTING / MODULE_SUSPENDED; the tool stays listed; operator
 // actions never count (Review Focus 4); off keeps today's behaviour.
 const assert = require('assert');
+const fs     = require('fs');
+const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 
@@ -93,6 +95,76 @@ describe('sandbox 07: restart and suspend', function() {
     });
   });
 
+  describe('operator unload and racing restarts', () => {
+    let server = null;
+    before(async () => {
+      server = await startServer(9613, ['--debug', '--debugKey', KEY, '--workerThread', '--loadModule', HOG]);
+    });
+    after(() => stopServer(server));
+
+    it('an unload while the worker exits is not counted, and the module is gone', async () => {
+      await mcpCall(9613, KEY, tool('exit'), {});
+      await post(9613, KEY, '/unload-module', {name: 'sandbox-hog'});
+      await new Promise((resolve) => setTimeout(resolve, 4500));
+      const r = await post(9613, KEY, '/get-module-device-list', {name: 'sandbox-hog'});
+      assert.ok(r.body == null || r.body.sandbox == null, JSON.stringify(r.body));
+      assert.strictEqual(await listed(9613), false);
+    });
+
+    it('unloading a restarting module succeeds and leaves nothing behind', async () => {
+      await post(9613, KEY, '/load-module', {path: HOG, name: 'sandbox-hog', version: '1.0.0'});
+      await waitFor(pingOk(9613), 15000, 'ping after load');
+      await mcpCall(9613, KEY, tool('exit'), {});
+      await waitFor(async () => ((await status(9613)) || {}).state === 'restarting', 5000, 'restarting');
+      const u = await post(9613, KEY, '/unload-module', {name: 'sandbox-hog'});
+      assert.ok(u.body != null && u.body.unloaded === true, JSON.stringify(u.body));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      assert.strictEqual(await listed(9613), false);
+    });
+
+    it('an operator restart racing the supervisor restart leaves one worker', async () => {
+      await post(9613, KEY, '/load-module', {path: HOG, name: 'sandbox-hog', version: '1.0.0'});
+      await waitFor(pingOk(9613), 15000, 'ping after load');
+      await mcpCall(9613, KEY, tool('exit'), {});
+      await waitFor(async () => ((await status(9613)) || {}).state === 'restarting', 5000, 'restarting');
+      // the 1 s restart timer fires about now
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      await post(9613, KEY, '/restart-module', {path: HOG, name: 'sandbox-hog', version: '1.0.0'});
+      await waitFor(pingOk(9613), 15000, 'ping');
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const s = await status(9613);
+      assert.strictEqual(s.state, 'running');
+      assert.strictEqual(s.exits.length, 0);
+      assert.ok(await pingOk(9613)());
+    });
+  });
+
+  describe('a restart that fails', () => {
+    let server = null;
+    let copy = null;
+    before(async () => {
+      copy = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-hog-'));
+      fs.cpSync(HOG, copy, {recursive: true});
+      server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--loadModule', copy]);
+    });
+    after(() => {
+      stopServer(server);
+      if (copy != null) fs.rmSync(copy, {recursive: true, force: true});
+    });
+
+    it('is retried with backoff and ends suspended', async () => {
+      await waitFor(pingOk(9614), 15000, 'ping');
+      // break the copy so every restart spawn fails
+      fs.writeFileSync(path.join(copy, 'package.json'), '{ not json');
+      await mcpCall(9614, KEY, tool('exit'), {});
+      const s = await waitFor(async () => {
+        const st = await status(9614);
+        return st != null && st.state === 'suspended' ? st : null;
+      }, 20000, 'suspended after failed restarts');
+      assert.ok(s.exits.some((e) => e.reason.indexOf('restart failed') === 0), JSON.stringify(s.exits));
+    });
+  });
+
   describe('under off', () => {
     let server = null;
     before(async () => {
@@ -105,6 +177,19 @@ describe('sandbox 07: restart and suspend', function() {
       await new Promise((resolve) => setTimeout(resolve, 4000));
       const r = await mcpCall(9612, KEY, tool('ping'), {});
       assert.notStrictEqual(r.isError, false, JSON.stringify(r));
+    });
+
+    it('calls in flight are not failed with MODULE_RESTARTING', async () => {
+      await post(9612, KEY, '/load-module', {path: HOG, name: 'sandbox-hog', version: '1.0.0'});
+      await waitFor(pingOk(9612), 15000, 'ping after load');
+      const outcomes = [];
+      const track = (p) => p.then((r) => outcomes.push(r), () => {});
+      // flood keeps a call in flight when the worker exits 50 ms after exit replies
+      track(mcpCall(9612, KEY, tool('exit'), {}));
+      track(mcpCall(9612, KEY, tool('flood'), {}));
+      track(mcpCall(9612, KEY, tool('ping'), {}));
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      assert.ok(!outcomes.some((r) => r.structuredContent != null && r.structuredContent.code === 'MODULE_RESTARTING'), JSON.stringify(outcomes));
     });
   });
 });

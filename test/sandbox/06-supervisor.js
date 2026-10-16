@@ -96,4 +96,32 @@ describe('sandbox 06: module supervisor', () => {
     h.advance(5000);
     assert.strictEqual(h.restarts.length, 1);
   });
+
+  it('suspend() puts a restarting module straight into suspended and cancels its timer', () => {
+    const h = harness();
+    h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
+    h.sup.exited('m', 'crash: a', SPECS);
+    assert.strictEqual(h.sup.suspend('m', 'restart refused: x'), true);
+    h.advance(5000);
+    assert.strictEqual(h.restarts.length, 0);
+    const s = h.sup.status('m');
+    assert.strictEqual(s.state, 'suspended');
+    assert.strictEqual(s.lastReason, 'restart refused: x');
+    assert.strictEqual(h.sup.suspend('nope', 'x'), false);
+  });
+
+  it('isCurrent() is false for a record that clear() or a newer record replaced', () => {
+    const h = harness();
+    h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
+    h.sup.exited('m', 'crash: a', SPECS);
+    h.advance(1000);
+    const rec = h.restarts[0];
+    assert.ok(rec != null);
+    const record = h.sup.records.m;
+    assert.strictEqual(h.sup.isCurrent('m', record), true);
+    h.sup.clear('m');
+    assert.strictEqual(h.sup.isCurrent('m', record), false);
+    h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
+    assert.strictEqual(h.sup.isCurrent('m', record), false);
+  });
 });
