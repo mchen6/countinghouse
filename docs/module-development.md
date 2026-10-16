@@ -219,9 +219,10 @@ until the operator adds an entry for it; under `audit` the declaration is
 granted. **In this release only `env` and `limits` change what your code
 can do.** `fs` and `net` are validated and logged, and take effect when the
 file and network brokers ship, so declare them now and expect to need them.
-Calls through `CHUtil.request` and `CHUtil.createSOAPClient` are already
-checked against the effective `net` entries; under `enforce`,
-`CHUtil.request` accepts only the ordinary request options (`method`,
+Targets of `CHUtil.request` and `CHUtil.createSOAPClient` are already checked
+against the effective `net` entries: under `audit` a disallowed target is
+logged and the request still goes ahead; only `enforce` refuses it. Under
+`enforce`, `CHUtil.request` also accepts only the ordinary request options (`method`,
 `headers`, `body`, `json`, `qs`, `timeout`, ... but not `baseUrl`, `proxy`,
 `agent`, `har` and similar) and checks every redirect.
 
@@ -262,7 +263,8 @@ terminated, as is one whose worker exits or errors (an uncaught exception
 is caught and logged, and does not end the worker). Then:
 
 - Calls in flight fail at once with **`MODULE_RESTARTING`** and the reason.
-- The module is restarted after 1 s, then 2 s, 4 s, ... up to 60 s. Calls
+- The module is restarted after 1 s, then 2 s (the 3rd exit within 10
+  minutes suspends it instead, see below). Calls
   meanwhile get `MODULE_RESTARTING` with the time of the next attempt. Your
   tools stay in `tools/list`; callers should retry after the time given.
 - After 3 exits in 10 minutes the module is suspended and calls get

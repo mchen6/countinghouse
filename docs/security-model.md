@@ -105,8 +105,9 @@ external memory every second and terminates it over the limit) and
 if there is no reply for that long), each with a 256 / 256 / 10000 default
 ceiling. A worker-to-main message rate limit (`--moduleMessageRate`, default
 2000/s) answers excess messages with `RATE_LIMITED` instead of killing the
-worker. A worker that ends unexpectedly is restarted with backoff (1 s,
-doubling, capped at 60 s) and suspended after 3 exits in 10 minutes; calls get
+worker. A worker that ends unexpectedly is restarted after 1 s, then 2 s, and
+suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
+which the current threshold never reaches); calls get
 `MODULE_RESTARTING` or `MODULE_SUSPENDED` while the tools stay listed. This
 bounds memory, blocking and crash loops. It does not bound CPU use that
 yields to the event loop, disk, or network traffic.
@@ -160,8 +161,11 @@ above.
   and the module registry database). `--allow-addons` is added for the SQLite
   auth provider, or whenever no `--loadModule` is given (the module registry
   database uses `sqlite3`); it puts native code in the **main thread**
-  outside the permission model. `--allow-worker` is always added, and Node
-  documents that as weakening the model. `--permission` needs Node >= 22.13
+  outside the permission model. `--allow-child-process` is added when
+  `--authoringTools` is on (`countinghouse_validate_module` runs the module in
+  a child process), which lets the whole process start children outside the
+  permission model. `--allow-worker` is always added, and Node documents that
+  as weakening the model. `--permission` needs Node >= 22.13
   or >= 23.5.
 - **Resource limits can misfire.** A main thread stalled longer than
   `maxBlockMs` (a long synchronous task, or a paused VM) can make a healthy
@@ -306,8 +310,12 @@ these are the checks that predate them and still apply:
 Node 24 has no network permission, so under `--hardened` outbound network is
 left to the OS. A unit along these lines (adjust paths, addresses and
 ports) gives the process a read-only file system apart from its module
-directory, no new privileges, a private `/tmp`, a memory ceiling, and
-outbound traffic only to the addresses you list:
+directory, no new privileges, a private `/tmp`, a memory ceiling, and a
+network filter. The filter (`IPAddressDeny`/`IPAddressAllow`) applies to
+packets in both directions for the whole service, not only outbound
+connections: remote MCP clients reaching the listen port are dropped unless
+their networks are allowed, and a local DNS resolver must be allowed if
+hostnames are used anywhere (Redis URL, module hosts):
 
 ```ini
 [Service]
@@ -319,7 +327,14 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 MemoryMax=2G
 IPAddressDeny=any
-IPAddressAllow=127.0.0.1 # Redis; add CouchDB and operator-approved hosts
+# Redis, and loopback clients
+IPAddressAllow=127.0.0.1
+# Networks your MCP clients connect from
+#IPAddressAllow=10.0.0.0/8
+# Local DNS resolver (systemd-resolved)
+#IPAddressAllow=127.0.0.53
+# CouchDB and operator-approved module hosts, by address
+#IPAddressAllow=192.0.2.10
 ```
 
 `IPAddressAllow` takes addresses and networks, not host names, so the hosts

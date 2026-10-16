@@ -32,7 +32,7 @@ simulation).
 | `--moduleSandbox off\|audit\|enforce` | `audit` with `--workerThread`; `off` without it | Module sandbox mode: `off` is no lockdown, limits or policy; `audit` logs violations and lets them through; `enforce` blocks them. Resource limits apply in `audit` too. Explicit `audit` or `enforce` without `--workerThread` is a startup error. See [Security model](security-model.md). |
 | `--modulePolicy <file>` | none | JSON file of operator ceilings and per-module entries that narrow what each module's `countinghouse.permissions` declaration grants. Re-read when a module restarts. See [Declaring permissions](module-development.md#declaring-permissions). |
 | `--moduleMessageRate <n>` | `2000` | Messages per second a module's worker may send to the main thread (Redis commands included); beyond it, calls fail with `RATE_LIMITED`. |
-| `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread` and Node >= 22.13 / 23.5). Every module must live under `--modulePath` (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. |
+| `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread` and Node >= 22.13 / 23.5). Every module must live under `--modulePath` (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. `--authoringTools` adds `--allow-child-process`, which lets the whole process start children outside the permission model. |
 | `--locale <locale>` | `en-US` | Error message locale (`zh-CN` also available). |
 
 ## HTTP API surface

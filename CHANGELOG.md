@@ -20,9 +20,10 @@ the auth config.
 - **Declared permissions** (`countinghouse.permissions` in a module's
   `package.json`) narrowed by an operator **`--modulePolicy`** file. `env`
   and limits apply now; `fs` and `net` take effect with parts 2 and 3.
-  `CHUtil.request` and `CHUtil.createSOAPClient` are checked against the
-  effective `net` entries; under `enforce`, `CHUtil.request` accepts only an
-  allowlist of options.
+  Targets of `CHUtil.request` and `CHUtil.createSOAPClient` are checked
+  against the effective `net` entries: under `audit` a disallowed target is
+  logged and the request goes ahead; only `enforce` refuses it, and then
+  `CHUtil.request` accepts only an allowlist of options.
 - **A module worker's environment holds only the approved variables**
   (no `NODE_PATH`, none of the server's secrets).
 - **Resource limits**: JS heap, memory outside the heap, a blocked event
@@ -45,7 +46,7 @@ the auth config.
 ### Changed
 
 - **A module whose worker crashes now restarts** (under `audit` and
-  `enforce`): 1 s, 2 s, ... up to 60 s, suspended after 3 exits in 10
+  `enforce`): after 1 s, then 2 s, and suspended on the 3rd exit within 10
   minutes. Calls meanwhile get `MODULE_RESTARTING` or `MODULE_SUSPENDED`
   and the tools stay listed. `--moduleSandbox off` keeps the old behaviour,
   where a crashed module stays down. Uncaught exceptions are still caught
