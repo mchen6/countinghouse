@@ -185,6 +185,7 @@ describe('sandbox 07: restart and suspend', function() {
       await new Promise((resolve) => setTimeout(resolve, 4000));
       const r = await mcpCall(9612, KEY, tool('ping'), {});
       assert.notStrictEqual(r.isError, false, JSON.stringify(r));
+      assert.ok(server.output.includes('unloaded due to reason: WORKER EXIT WITH CODE: 3'), server.output.slice(-2000));
     });
 
     it('calls in flight are not failed with MODULE_RESTARTING', async () => {
