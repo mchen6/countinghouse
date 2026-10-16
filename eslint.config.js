@@ -56,5 +56,16 @@ module.exports = [
       'prefer-template': 'error',
       'no-prototype-builtins': 'error'
     }
+  },
+
+  // framework.js is the entry point and returns at top level when --hardened
+  // hands startup to the re-launched child (lib/hardened-launch.js).
+  {
+    files: ['framework.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      parserOptions: {ecmaFeatures: {globalReturn: true}}
+    }
   }
 ];

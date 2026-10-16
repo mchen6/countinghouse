@@ -13,6 +13,18 @@ process.on('warning', function(e) {
 
 options.setOptions(argv);
 
+// --hardened: run the real server as a child under --permission. The child
+// sees process.permission and falls through to normal startup.
+if (options.hardened === true && process.permission == null) {
+  if (options.workerThread !== true) {
+    console.error('--hardened needs --workerThread: module workers are what it protects the process from');
+    process.exit(2);
+  }
+  var hardenedLaunch = require('./lib/hardened-launch');
+  hardenedLaunch.relaunch(hardenedLaunch.permissionFlags(options, __dirname, process.cwd()));
+  return;
+}
+
 var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
 
@@ -32,6 +44,9 @@ if (options.moduleSandbox === 'off') {
     : 'module sandbox: off -- it needs --workerThread; module code runs with the full privileges of this process');
 } else {
   logger.I('module sandbox: mode ' + options.moduleSandbox);
+}
+if (options.hardened === true) {
+  logger.I('module sandbox: hardened -- running under --permission; modules must live under ' + options.modulePath);
 }
 
 if (options.modulePolicy != null) {
