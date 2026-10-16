@@ -71,8 +71,16 @@ describe('sandbox 07: restart and suspend', function() {
       assert.ok(server.output.includes('module sandbox: sandbox-hog suspended'), server.output.slice(-2000));
     });
 
+    it('a restart with a wrong path leaves the suspended module as it was', async () => {
+      const r = await post(9611, KEY, '/restart-module', {path: path.join(ROOT, 'no-such-module'), name: 'sandbox-hog', version: '1.0.0'});
+      assert.ok(JSON.stringify(r.body).includes('INVALID_MODULE_PATH'), JSON.stringify(r));
+      assert.strictEqual((await status(9611)).state, 'suspended');
+      assert.strictEqual(await listed(9611), true);
+    });
+
+    // No path or version: the recorded ones are used.
     it('an operator restart clears the suspension', async () => {
-      await post(9611, KEY, '/restart-module', {path: HOG, name: 'sandbox-hog', version: '1.0.0'});
+      await post(9611, KEY, '/restart-module', {name: 'sandbox-hog'});
       await waitFor(pingOk(9611), 15000, 'ping after operator restart');
       const s = await status(9611);
       assert.strictEqual(s.state, 'running');

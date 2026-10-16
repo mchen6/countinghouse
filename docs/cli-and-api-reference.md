@@ -59,6 +59,11 @@ of the next restart attempt in milliseconds since the epoch (or `null`); and
 restarting or suspended is still answered, with an empty `deviceList`. The
 key is absent under `--moduleSandbox off`.
 
+**`POST /restart-module`** takes `{name, path, version}`; `path` and `version`
+may be left out to restart the module from where it was last loaded, which
+is how a suspended module is brought back. A `path` that does not exist is
+refused with `INVALID_MODULE_PATH` before anything is unloaded.
+
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly
 which guarantee (auth, schema validation, metering, rate limiting,
