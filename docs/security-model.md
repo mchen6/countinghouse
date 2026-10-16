@@ -103,9 +103,10 @@ what is on disk at load time, not a review of what the code does.
 
 **4. Resource limits, restart and suspend.** `heapMb` (V8
 `resourceLimits`), `externalMb` (the main thread polls the worker's
-external memory every second and terminates it over the limit) and
-`maxBlockMs` (the main thread pings the worker every second and terminates it
-if there is no reply for that long), each with a 256 / 256 / 10000 default
+external memory and terminates it over the limit) and `maxBlockMs` (the main
+thread pings the worker and terminates it if a ping goes unanswered for that
+long), checked every second or twice per `maxBlockMs` if that is shorter,
+each with a 256 / 256 / 10000 default
 ceiling. A worker-to-main message rate limit (`--moduleMessageRate`, default
 2000/s) answers excess messages with `RATE_LIMITED` instead of killing the
 worker. A worker that ends unexpectedly is restarted after 1 s, then 2 s, and
@@ -170,9 +171,12 @@ above.
   permission model. `--allow-worker` is always added, and Node documents that
   as weakening the model. `--permission` needs Node >= 22.13
   or >= 23.5.
-- **Resource limits can misfire.** A main thread stalled longer than
-  `maxBlockMs` (a long synchronous task, or a paused VM) can make a healthy
-  worker look blocked, and it is then terminated and restarted.
+- **Resource limits can misfire.** When the main thread's own check runs
+  late (a long synchronous task, or a paused VM), it restarts the clock
+  instead of blaming the worker. A main thread that is busy without
+  stalling, with a backlog of messages ahead of the reply, can still make a
+  healthy worker look blocked under a small `maxBlockMs`, and it is then
+  terminated and restarted.
 - **Uncaught exceptions in a worker do not end it.** `lib/sandbox.js` catches
   and logs them, as it always has. The restart policy applies to workers
   that actually end: `process.exit`, the heap limit, kills by the external
