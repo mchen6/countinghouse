@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
-const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, post} = require('../helpers/sandbox-server');
 
 const KEY = 'aabbcc';
 
@@ -42,6 +42,23 @@ describe('sandbox 09: --hardened', function() {
     const r = await mcpCall(9614, KEY, 'countinghouse_load_module',
       {path: path.join(ROOT, 'test', 'fixtures', 'handler-map-convention'), name: 'handler-map-convention', version: '1.0.0'});
     assert.strictEqual(r.structuredContent.code, 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(r));
+  });
+
+  it('refuses a module outside --modulePath on restart, reload, and through a symlink', async () => {
+    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--authoringTools',
+      '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
+    const outside = path.join(ROOT, 'test', 'fixtures', 'sandbox-probe');
+    fs.symlinkSync(outside, path.join(root, 'linked-probe'));
+    const restart = await post(9614, KEY, '/restart-module', {path: outside, name: 'sandbox-probe', version: '1.0.0'});
+    assert.ok(JSON.stringify(restart.body).includes('MODULE_PATH_OUTSIDE_ROOT'), JSON.stringify(restart));
+    const reload = await post(9614, KEY, '/reload-module', {path: outside});
+    assert.ok(JSON.stringify(reload.body).includes('MODULE_PATH_OUTSIDE_ROOT'), JSON.stringify(reload));
+    const linked = await mcpCall(9614, KEY, 'countinghouse_load_module',
+      {path: path.join(root, 'linked-probe'), name: 'sandbox-probe', version: '1.0.0'});
+    assert.strictEqual(linked.structuredContent.code, 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(linked));
+    // The running module was left alone by all three.
+    const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_env', {});
+    assert.strictEqual(r.isError, false, JSON.stringify(r));
   });
 
   // Review Focus 5.
