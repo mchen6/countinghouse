@@ -163,6 +163,13 @@ describe('sandbox 02: the policy file', function() {
     assert.throws(() => policy.load(file), /modules\.m\.approve/);
   });
 
+  // The file holds env values; the error is logged and printed at startup.
+  it('does not quote the file in a JSON syntax error', () => {
+    const file = path.join(dir, 'syntax.json');
+    fs.writeFileSync(file, '{"modules": {"m": {"env": {"K": sekret123}}}}');
+    assert.throws(() => policy.load(file), (e) => /--modulePolicy/.test(e.message) && !/sekret123/.test(e.message));
+  });
+
   it('rejects a null JSON file with a named error', () => {
     const file = path.join(dir, 'null.json');
     fs.writeFileSync(file, 'null');
