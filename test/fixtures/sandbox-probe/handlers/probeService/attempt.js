@@ -24,6 +24,7 @@ const ATTEMPTS = {
   requestUri:       () => new Promise((resolve, reject) => {
     CHUtil.request({url: 'http://allowed.example.test/', uri: 'http://127.0.0.1:1/', timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
   }),
+  createRequireDir: () => require('module').createRequire(require('path').join(__dirname, '/'))('./attempt.js'),
   requestHar:       () => new Promise((resolve, reject) => {
     CHUtil.request({url: 'http://allowed.example.test/', har: {url: 'http://127.0.0.1:1/', method: 'GET'}, timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
   }),

@@ -39,6 +39,11 @@ describe('sandbox 05: worker lockdown', function() {
       });
     });
 
+    it('a createRequire on the module directory (trailing slash) still resolves inside it', async () => {
+      const r = await mcpCall(9608, KEY, TOOL, {what: 'createRequireDir'});
+      assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null});
+    });
+
     it('uses Node\'s own error codes', async () => {
       const notFound = await mcpCall(9608, KEY, TOOL, {what: 'child_process'});
       assert.strictEqual(notFound.structuredContent.output.code, 'MODULE_NOT_FOUND');
@@ -122,11 +127,27 @@ describe('sandbox 05: worker lockdown', function() {
       assert.strictEqual(norm({uri: {href: 7}}).refusal, 'invalid');
       assert.strictEqual(norm({}).refusal, 'invalid');
     });
-    it('disables proxies and drops disableUrlEncoding', () => {
-      const r = norm({uri: 'http://allowed.example.test/', disableUrlEncoding: true});
+    it('disables proxies', () => {
+      const r = norm({uri: 'http://allowed.example.test/'});
       assert.ok(Object.prototype.hasOwnProperty.call(r.options, 'proxy'));
       assert.strictEqual(r.options.proxy, null);
-      assert.ok(!('disableUrlEncoding' in r.options));
+    });
+    it('refuses every key that is not on the allowlist', () => {
+      ['followAllRedirects', 'socketPath', 'urlParser', 'lookup', 'agentOptions', 'agents', 'agent', 'pool',
+        'disableUrlEncoding', 'localAddress', 'forever'].forEach((key) => {
+        const r = norm({uri: 'http://allowed.example.test/', followRedirect: false, [key]: {}});
+        assert.strictEqual(r.refusal, key);
+        assert.strictEqual(r.options, null);
+      });
+    });
+    it('passes allowlisted keys into the copy', () => {
+      const r = norm({uri: 'http://allowed.example.test/', method: 'POST', headers: {a: 'b'}, json: true, qs: {q: 1}, timeout: 9});
+      assert.strictEqual(r.refusal, null);
+      assert.strictEqual(r.options.method, 'POST');
+      assert.deepStrictEqual(r.options.headers, {a: 'b'});
+      assert.strictEqual(r.options.json, true);
+      assert.deepStrictEqual(r.options.qs, {q: 1});
+      assert.strictEqual(r.options.timeout, 9);
     });
     it('keeps followRedirect false, and does not mutate the caller\'s options', () => {
       const given = {uri: 'http://allowed.example.test/', followRedirect: false};
