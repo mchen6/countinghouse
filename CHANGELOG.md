@@ -8,6 +8,37 @@ This project follows [semantic versioning](https://semver.org/), where the
 public surface is the CLI flags, the MCP contract, the module format, and
 the auth config.
 
+## Unreleased
+
+### Fixed — a reload runs the module's current code
+
+- **Under `--workerThread`, reloading a module restarts it in a new worker.**
+  Loading an already-loaded module (`POST /load-module`,
+  `countinghouse_load_module`) used to re-evaluate it inside the same worker,
+  where everything its files `require()`d still came from that worker's
+  require cache: after editing a helper and reloading, the handler was new
+  and the helper was old. A new worker starts with an empty cache, fresh
+  globals, and none of the old code's timers or sockets.
+- **`POST /reload-module` no longer runs module code in the main thread**
+  under `--workerThread`; it restarts the module's worker too.
+- **Single-thread mode:** a reload drops the module directory's files from
+  the require cache first, so it also runs the current code.
+- **Unloading waits for the worker's acknowledgement** instead of a fixed 3
+  seconds, which remains the upper bound for a worker that never answers.
+
+### Changed — `CHUtil.loadFile` is a plain `require()`
+
+- **The `rewire` dependency is removed.** `CHUtil.loadFile(path)` now
+  returns the same object on repeated calls instead of compiling a new copy
+  each time. Existing calls need no change.
+- **Release-mode console silencing covers the whole worker.** Without
+  `--debug`, module console output was dropped per file by rewire, so a
+  module's dependencies kept printing; now the worker's `console` is
+  silenced before any module code loads. In single-thread mode module
+  console output is no longer silenced, since that mode is for local
+  development.
+- Test: `test/module-loading/12-reload-fresh-code.js`.
+
 ## 7.1.2
 
 ### Security — `package-info` is rate limited

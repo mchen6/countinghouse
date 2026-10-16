@@ -70,7 +70,6 @@
     "postman-request": "^2.88.1-postman.49",
     "redis": "^3.1.2",
     "redis-commands": "^1.6.0",
-    "rewire": "^2.5.2",
     "rimraf": "^2.5.4",
     "rolling-rate-limiter": "^0.1.10",
     "semver": "^5.3.0",

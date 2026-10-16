@@ -95,9 +95,9 @@ describe('CHUtil.queryDeviceSpec', () => {
   // isMainThread is Node's own worker_threads.isMainThread, captured once
   // at require time -- true for this (or any) plain test process, so the
   // worker-child branch cannot be reached by calling the CHUtil required
-  // above no matter what is stubbed on it. rewire (already a real
-  // dependency of lib/countinghouse-util.js itself, for loadFile) was
-  // tried first and rejected: it cannot override a `const` binding
+  // above no matter what is stubbed on it. rewire (then a dependency of
+  // lib/countinghouse-util.js, for loadFile) was tried first and
+  // rejected: it cannot override a `const` binding
   // ("Assignment to constant variable"), which is exactly how
   // isMainThread is declared. So this runs the real function inside a
   // real worker thread instead -- eval:true, no extra file needed -- which

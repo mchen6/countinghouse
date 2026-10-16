@@ -196,7 +196,7 @@ independent capability, `admin`.
 | `POST /load-module` | Load a module from a filesystem path into the running server |
 | `POST /unload-module` | Unload a loaded module |
 | `POST /restart-module` | Restart a loaded module's worker |
-| `POST /reload-module` | Reload a module in place |
+| `POST /reload-module` | Reload a module from its current code (under `--workerThread`, a restart in a new worker) |
 | `POST /shutdown` | Stop the server process |
 | `POST /get-module-device-list` | List the devices a named module provides |
 
