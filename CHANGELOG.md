@@ -13,7 +13,8 @@ the auth config.
 ### Added — module sandbox, part 1
 
 - **`--moduleSandbox off|audit|enforce`** (default `audit` under
-  `--workerThread`, `off` without it). In each module's worker: no native
+  `--workerThread` on Node >= 22.16, `off` otherwise; an explicit mode on an
+  older Node is a startup error). In each module's worker: no native
   code, no process controls, `require` limited to built-ins and the module's
   own directory, `child_process`/`cluster`/`worker_threads`/`inspector`/
   `wasi`/`v8` blocked. `audit` logs violations; `enforce` blocks them.

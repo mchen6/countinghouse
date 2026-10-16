@@ -16,6 +16,10 @@ options.setOptions(argv);
 // --hardened: run the real server as a child under --permission. The child
 // sees process.permission and falls through to normal startup.
 if (options.hardened === true && process.permission == null) {
+  if (!require('./lib/sandbox-support').hasPermissionModel()) {
+    console.error('--hardened needs Node ' + require('./lib/sandbox-support').PERMISSION_MIN_NODE + ' or later for --permission (this is ' + process.version + ')');
+    process.exit(2);
+  }
   if (options.workerThread !== true) {
     console.error('--hardened needs --workerThread: module workers are what it protects the process from');
     process.exit(2);
@@ -34,14 +38,25 @@ if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
   process.exit(2);
 }
+if (options.moduleSandbox !== 'off' && options.moduleSandboxMissing.length > 0) {
+  console.error('--moduleSandbox ' + options.moduleSandbox + ' needs Node ' + require('./lib/sandbox-support').MIN_NODE +
+    ' or later (this is ' + process.version + ', missing ' + options.moduleSandboxMissing.join(', ') + ')');
+  process.exit(2);
+}
 if (options.moduleSandbox !== 'off' && options.workerThread !== true) {
   console.error('--moduleSandbox ' + options.moduleSandbox + ' needs --workerThread: the sandbox applies to module workers');
   process.exit(2);
 }
 if (options.moduleSandbox === 'off') {
-  logger.I(options.moduleSandboxExplicit
+  var offReason = 'it needs --workerThread';
+  if (options.moduleSandboxExplicit) offReason = null;
+  else if (options.workerThread === true) {
+    offReason = 'it needs Node ' + require('./lib/sandbox-support').MIN_NODE + ' or later (this is ' + process.version +
+      ', missing ' + options.moduleSandboxMissing.join(', ') + ')';
+  }
+  logger.I(offReason == null
     ? 'module sandbox: off (--moduleSandbox off) -- module code runs with the full privileges of this process'
-    : 'module sandbox: off -- it needs --workerThread; module code runs with the full privileges of this process');
+    : 'module sandbox: off -- ' + offReason + '; module code runs with the full privileges of this process');
 } else {
   logger.I('module sandbox: mode ' + options.moduleSandbox);
 }

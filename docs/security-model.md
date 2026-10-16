@@ -51,6 +51,9 @@ Each layer below says what it stops and what it does not.
 
 **Modes.** `--moduleSandbox off|audit|enforce` (default `audit` under
 `--workerThread`; `off` without it, since the sandbox needs worker mode).
+The sandbox needs Node 22.16 or later (`module.registerHooks` and Worker
+`getHeapStatistics`). On an older Node the default is `off`, the startup log
+says why, and an explicit `audit` or `enforce` is a startup error.
 `off` is today's behaviour. In `audit` every check runs, a violation is
 logged once per (module, rule, target) and the operation goes ahead. In
 `enforce` a violation is blocked with the error Node itself would throw
