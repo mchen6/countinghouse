@@ -15,6 +15,25 @@ options.setOptions(argv);
 
 var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
+
+// Module sandbox mode checks. An explicit mode that cannot work is a startup
+// error; the default quietly downgrades (lib/cli-options.js).
+if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
+  console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
+  process.exit(2);
+}
+if (options.moduleSandbox !== 'off' && options.workerThread !== true) {
+  console.error('--moduleSandbox ' + options.moduleSandbox + ' needs --workerThread: the sandbox applies to module workers');
+  process.exit(2);
+}
+if (options.moduleSandbox === 'off') {
+  logger.I(options.moduleSandboxExplicit
+    ? 'module sandbox: off (--moduleSandbox off) -- module code runs with the full privileges of this process'
+    : 'module sandbox: off -- it needs --workerThread; module code runs with the full privileges of this process');
+} else {
+  logger.I('module sandbox: mode ' + options.moduleSandbox);
+}
+
 var monitor       = require('./lib/monitor');
 
 logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options));
