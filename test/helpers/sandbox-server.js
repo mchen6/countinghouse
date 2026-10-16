@@ -11,7 +11,8 @@ const waitForReady = require('./wait-for-ready');
 const ROOT = path.join(__dirname, '..', '..');
 
 // opts.expectExit: resolve as soon as the process exits instead of waiting
-// for the ready line -- for startup-refusal tests.
+// for the ready line -- for startup-refusal tests. A server that starts
+// instead is killed after 20 s, so a failing test does not leak it.
 // opts.env: extra environment variables for the server.
 // opts.cwd: the server's working directory (default: the repo root).
 function startServer(port, args, opts) {
@@ -27,7 +28,11 @@ function startServer(port, args, opts) {
     server.stdout.on('data', (chunk) => { server.output += chunk.toString(); });
     server.stderr.on('data', (chunk) => { server.output += chunk.toString(); });
     if (opts.expectExit === true) {
-      server.on('exit', (code) => { server.exitCode = code; resolve(server); });
+      const timer = setTimeout(() => {
+        stopServer(server);
+        reject(new Error(`server did not exit; last output: ${server.output.slice(-2000)}`));
+      }, 20000);
+      server.on('exit', (code) => { clearTimeout(timer); server.exitCode = code; resolve(server); });
       return;
     }
     server.on('exit', (code) => { server.exitCode = code; });
