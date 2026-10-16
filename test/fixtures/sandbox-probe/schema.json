@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "attempt": {
+      "input": {"type": "object", "properties": {"what": {"type": "string"}, "arg": {"type": "string"}}, "required": ["what"]},
+      "output": {"type": "object", "properties": {"outcome": {"type": "string"}, "code": {"type": ["string", "null"]}}}
+    },
+    "env": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"env": {"type": "object"}}}
+    }
+  }
+}

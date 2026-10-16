@@ -1,0 +1,10 @@
+{
+  "name": "sandbox-probe",
+  "version": "1.0.0",
+  "countinghouse": {
+    "permissions": {
+      "net": [{"host": "allowed.example.test"}],
+      "env": ["PROBE_FROM_POLICY", "PROBE_FROM_SERVER", "PROBE_UNAPPROVED"]
+    }
+  }
+}

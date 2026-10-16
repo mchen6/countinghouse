@@ -1,0 +1,17 @@
+{
+  "device": {
+    "friendlyName": "sandbox-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "tries each thing the module sandbox blocks, and reports whether it was blocked",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "attempt", "description": "Try one blocked operation.",
+           "input": {"schema": "/probeService/attempt/input"}, "output": {"schema": "/probeService/attempt/output"}},
+          {"name": "env", "description": "Report the environment the module sees.",
+           "input": {"schema": "/probeService/env/input"}, "output": {"schema": "/probeService/env/output"}}
+        ]
+      }
+    }
+  }
+}
