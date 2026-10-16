@@ -214,9 +214,9 @@ nothing. One that needs more declares it in `package.json`, beside
 
 A declaration is a request. The operator's `--modulePolicy` file can grant it
 as declared or narrow it, never widen it. Under `--moduleSandbox enforce` a
-module that declares `fs` or `net` gets nothing outside its own directory
-until the operator adds an entry for it; under `audit` the declaration is
-granted. **In this release only `env` and `limits` change what your code
+module that declares `fs`, `net` or `env` gets none of them until the
+operator adds an entry for it: no access outside its own directory, and no
+environment variables at all. Under `audit` the declaration is granted. **In this release only `env` and `limits` change what your code
 can do.** `fs` and `net` are validated and logged, and take effect when the
 file and network brokers ship, so declare them now and expect to need them.
 Targets of `CHUtil.request` and `CHUtil.createSOAPClient` are already checked
@@ -231,13 +231,14 @@ whole tree, must be installed inside the module's own directory. Install
 with `npm install --prefix <module>` (or run `npm install` inside it), and
 ship that `node_modules`. A dependency that resolves outside the module is
 a problem `countinghouse-validate` reports and `enforce` refuses to load.
-The module's worker can `require` built-ins and files under its own
-directory, nothing else (not countinghouse's `lib/`, not global folders, not
-other modules).
+Under `enforce` the module's worker can `require` built-ins and files under
+its own directory, nothing else (not countinghouse's `lib/`, not global
+folders, not other modules); under `audit` such a `require` works and is
+logged.
 
 **No native addons.** A `.node` file, a `binding.gyp`, or `"gypfile": true`
 anywhere in the tree is refused under `enforce`, and loading native code at
-run time throws. Use a pure-JavaScript replacement: `bcryptjs` is the usual
+run time throws under `enforce` (under `audit` it works and is logged). Use a pure-JavaScript replacement: `bcryptjs` is the usual
 one for `bcrypt`. Dependencies with `preinstall`, `install` or `postinstall`
 scripts are reported as warnings by `countinghouse-validate`.
 
@@ -253,8 +254,9 @@ environment; a name with neither is absent. Read them with
 `audit` it works and is logged). `module` is reduced to `builtinModules`,
 `isBuiltin` and a `createRequire` limited to your directory.
 `process.dlopen`, `process.binding`, `process.kill`, `process.abort`,
-`process.chdir` and the `process.set*id` family throw; `process.exit` still
-works and ends only your module. `fs`, `net`, `http` and similar still
+`process.chdir` and the `process.set*id` family throw under `enforce`; under
+`audit` they work and are logged, so `process.kill` can still signal the
+server. `process.exit` works in both and ends only your module. `fs`, `net`, `http` and similar still
 work in this release, and the first use of each is logged.
 
 **Limits, restart and suspend.** A module that exceeds its heap limit, its
