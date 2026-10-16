@@ -13,12 +13,13 @@ const ROOT = path.join(__dirname, '..', '..');
 // opts.expectExit: resolve as soon as the process exits instead of waiting
 // for the ready line -- for startup-refusal tests.
 // opts.env: extra environment variables for the server.
+// opts.cwd: the server's working directory (default: the repo root).
 function startServer(port, args, opts) {
   opts = opts || {};
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath,
       [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(args),
-      {cwd: ROOT,
+      {cwd: opts.cwd || ROOT,
        env: Object.assign({}, process.env, {NODE_PATH: path.join(ROOT, 'lib')}, opts.env || {}),
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
     server.output = '';

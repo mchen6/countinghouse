@@ -52,6 +52,22 @@ describe('sandbox 09: --hardened', function() {
     assert.strictEqual(r.isError, false, JSON.stringify(r));
   });
 
+  // The default file auth provider reads ./auth.json, and writes it with a
+  // demo key on first run; neither may be blocked by the permission model.
+  it('starts with the default file auth, first run and after', async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-hardened-cwd-'));
+    try {
+      for (const run of ['first', 'second']) {
+        server = await startServer(9614, ['--workerThread', '--hardened', '--modulePath', root], {cwd: cwd});
+        assert.ok(fs.existsSync(path.join(cwd, 'auth.json')), `${run} run: ${server.output.slice(-2000)}`);
+        stopServer(server);
+        server = null;
+      }
+    } finally {
+      fs.rmSync(cwd, {recursive: true, force: true});
+    }
+  });
+
   it('needs --workerThread', async () => {
     server = await startServer(9614, ['--debug', '--hardened', '--modulePath', root], {expectExit: true});
     assert.strictEqual(server.exitCode, 2);

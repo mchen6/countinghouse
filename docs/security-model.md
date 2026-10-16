@@ -326,7 +326,8 @@ hostnames are used anywhere (Redis URL, module hosts):
 
 ```ini
 [Service]
-ExecStart=/usr/bin/node /opt/countinghouse/framework.js --workerThread --hardened --moduleSandbox enforce --modulePolicy /etc/countinghouse/policy.json
+ExecStart=/usr/bin/node /opt/countinghouse/framework.js --workerThread --hardened --moduleSandbox enforce --modulePolicy /etc/countinghouse/policy.json --modulePath /var/lib/countinghouse/modules --authConfigPath /var/lib/countinghouse/auth/auth.json
+WorkingDirectory=/var/lib/countinghouse
 User=countinghouse
 ProtectSystem=strict
 ReadWritePaths=/var/lib/countinghouse/modules /var/lib/countinghouse/auth
@@ -345,7 +346,12 @@ IPAddressAllow=127.0.0.1
 ```
 
 `IPAddressAllow` takes addresses and networks, not host names, so the hosts
-modules are approved to call have to be listed by address.
+modules are approved to call have to be listed by address. `--modulePath`
+and `--authConfigPath` point into the two `ReadWritePaths`: their defaults
+(`$HOME/countinghouse_modules`, `./auth.json`) are read-only under
+`ProtectSystem=strict`, and the file auth provider writes `auth.json` with a
+demo key on first run. Both directories must exist and belong to the
+service user.
 
 ## Honest comparison
 
