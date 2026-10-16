@@ -1,0 +1,73 @@
+{
+  "device": {
+    "friendlyName": "sandbox-hog",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "uses more than its limits allow, or ends its own worker, so the module sandbox can be seen reacting",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:hogService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Prove the module is up.",
+            "input": {
+              "schema": "/hogService/ping/input"
+            },
+            "output": {
+              "schema": "/hogService/ping/output"
+            }
+          },
+          {
+            "name": "heap",
+            "description": "Grow the JS heap until the worker is stopped.",
+            "input": {
+              "schema": "/hogService/heap/input"
+            },
+            "output": {
+              "schema": "/hogService/heap/output"
+            }
+          },
+          {
+            "name": "external",
+            "description": "Hold Buffers outside the JS heap past externalMb.",
+            "input": {
+              "schema": "/hogService/external/input"
+            },
+            "output": {
+              "schema": "/hogService/external/output"
+            }
+          },
+          {
+            "name": "block",
+            "description": "Block the event loop for good.",
+            "input": {
+              "schema": "/hogService/block/input"
+            },
+            "output": {
+              "schema": "/hogService/block/output"
+            }
+          },
+          {
+            "name": "exit",
+            "description": "End the worker with process.exit.",
+            "input": {
+              "schema": "/hogService/exit/input"
+            },
+            "output": {
+              "schema": "/hogService/exit/output"
+            }
+          },
+          {
+            "name": "flood",
+            "description": "Send many Redis commands at once.",
+            "input": {
+              "schema": "/hogService/flood/input"
+            },
+            "output": {
+              "schema": "/hogService/flood/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

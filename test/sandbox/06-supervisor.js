@@ -87,4 +87,13 @@ describe('sandbox 06: module supervisor', () => {
     assert.strictEqual(s.state, 'running');
     assert.strictEqual(s.exits.length, 1);
   });
+
+  it('a second exit before the restart cancels the pending restart timer', () => {
+    const h = harness();
+    h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
+    h.sup.exited('m', 'crash: a', SPECS);
+    h.sup.exited('m', 'crash: b', SPECS);
+    h.advance(5000);
+    assert.strictEqual(h.restarts.length, 1);
+  });
 });

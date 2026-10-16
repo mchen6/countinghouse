@@ -1,0 +1,5 @@
+{
+  "name": "sandbox-hog",
+  "version": "1.0.0",
+  "countinghouse": {"permissions": {"limits": {"heapMb": 64, "externalMb": 64, "maxBlockMs": 2000}}}
+}
