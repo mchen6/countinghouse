@@ -6,7 +6,12 @@ const ATTEMPTS = {
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),
   kill:             () => process.kill(process.pid, 0),
-  getBuiltinModule: () => process.getBuiltinModule('child_process'),
+  getBuiltinModule: () => {
+    if (process.getBuiltinModule('child_process') === undefined) throw new Error('countinghouse module sandbox: getBuiltinModule returned undefined');
+  },
+  _kill:            () => process._kill(process.pid, 0),
+  dataImport:       (arg) => import(`data:text/javascript,export {default} from ${JSON.stringify(require('url').pathToFileURL(arg).href)}`),
+  reducedCreateRequire: () => require('module').createRequire('/tmp/x.js')('/tmp'),
   child_process:    () => require('child_process'),
   worker_threads:   () => require('worker_threads'),
   v8:               () => require('v8'),
@@ -15,6 +20,12 @@ const ATTEMPTS = {
   loadFileOutside:  (arg) => CHUtil.loadFile(arg),
   request:          (arg) => new Promise((resolve, reject) => {
     CHUtil.request({url: arg, timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
+  }),
+  requestUri:       () => new Promise((resolve, reject) => {
+    CHUtil.request({url: 'http://allowed.example.test/', uri: 'http://127.0.0.1:1/', timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
+  }),
+  requestBaseUrl:   () => new Promise((resolve, reject) => {
+    CHUtil.request({baseUrl: 'http://127.0.0.1:1', uri: '/x', timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
   })
 };
 
