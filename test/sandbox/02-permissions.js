@@ -49,6 +49,14 @@ describe('sandbox 02: permission declarations', () => {
     assert.deepStrictEqual(r.declared.limits, {});
     assert.strictEqual(r.problems.length, 7, r.problems.join('\n'));
   });
+
+  it('rejects prototype-polluting access values like "constructor"', () => {
+    const r = perms.parseDeclaration(pkg({
+      fs: [{path: '/var/log/app', access: 'constructor'}]
+    }));
+    assert.deepStrictEqual(r.declared.fs, []);
+    assert.ok(r.problems.some((p) => p.includes('access')), r.problems.join('\n'));
+  });
 });
 
 describe('sandbox 02: narrowing by the operator policy', () => {
@@ -118,6 +126,24 @@ describe('sandbox 02: narrowing by the operator policy', () => {
     assert.strictEqual(perms.hostAllowed(net, 'a.b.example.org', 80), false);
     assert.strictEqual(perms.hostAllowed(net, 'example.org', 80), false);
   });
+
+  it('rejects non-normalized and relative fs paths in policy', () => {
+    const r = perms.narrow(declared, {
+      fs: [{path: '/var/log/app/../../../etc', access: 'r'}, {path: 'relative/path', access: 'r'}]
+    }, {}, 'enforce');
+    assert.deepStrictEqual(r.fs, []);
+    assert.strictEqual(r.ignored.length, 2, r.ignored.join('\n'));
+  });
+
+  it('returns deep copies of fs and net so mutations do not corrupt the declaration', () => {
+    const r = perms.narrow(declared, null, {}, 'audit');
+    // Mutate the returned values
+    r.fs[0].path = '/etc';
+    r.net[0].host = 'evil.com';
+    // Original declared should be unchanged
+    assert.strictEqual(declared.fs[0].path, '/var/log/app');
+    assert.strictEqual(declared.net[0].host, 'api.example.com');
+  });
 });
 
 describe('sandbox 02: the policy file', function() {
@@ -135,6 +161,31 @@ describe('sandbox 02: the policy file', function() {
     const file = path.join(dir, 'bad.json');
     fs.writeFileSync(file, JSON.stringify({modules: {m: {approve: 'yes'}}}));
     assert.throws(() => policy.load(file), /modules\.m\.approve/);
+  });
+
+  it('rejects a null JSON file with a named error', () => {
+    const file = path.join(dir, 'null.json');
+    fs.writeFileSync(file, 'null');
+    assert.throws(() => policy.load(file), /--modulePolicy/);
+  });
+
+  it('rejects a null modules entry with a named error', () => {
+    const file = path.join(dir, 'null-entry.json');
+    fs.writeFileSync(file, JSON.stringify({modules: {m: null}}));
+    assert.throws(() => policy.load(file), /--modulePolicy/);
+  });
+
+  it('rejects invalid limit values in ceilings', () => {
+    const file = path.join(dir, 'bad-limits.json');
+    fs.writeFileSync(file, JSON.stringify({limits: {heapMb: 0}}));
+    assert.throws(() => policy.load(file), /limits\.heapMb/);
+  });
+
+  it('returns modules with null prototype so constructor lookup is safe', () => {
+    const file = path.join(dir, 'ok-constructor.json');
+    fs.writeFileSync(file, JSON.stringify({limits: {}, modules: {}}));
+    const p = policy.load(file);
+    assert.strictEqual(p.modules.constructor, undefined);
   });
 
   it('stops startup on a missing policy file', async () => {
