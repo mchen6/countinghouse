@@ -54,7 +54,7 @@ if (options.moduleSandbox === 'off') {
     offReason = 'it needs Node ' + require('./lib/sandbox-support').MIN_NODE + ' or later (this is ' + process.version +
       ', missing ' + options.moduleSandboxMissing.join(', ') + ')';
   }
-  logger.I(offReason == null
+  logger.W(offReason == null
     ? 'module sandbox: off (--moduleSandbox off) -- module code runs with the full privileges of this process'
     : 'module sandbox: off -- ' + offReason + '; module code runs with the full privileges of this process');
 } else {
