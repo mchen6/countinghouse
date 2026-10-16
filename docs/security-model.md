@@ -155,10 +155,12 @@ above.
   connections with `net`/`http`/`https`/`fetch`, until parts 2 and 3.
 - **The module worker's environment holds only approved variables.** That
   includes no `NODE_PATH`, so a module cannot reach countinghouse's `lib/` by
-  bare name. This replaces the old situation where every secret in the
-  server's environment was visible to every module; it is a property of how
-  the worker is created, so it applies in `audit` as well as `enforce` and is
-  absent only under `--moduleSandbox off`.
+  bare name. Before, every secret in the server's environment was in every
+  module's `process.env`. This keeps them out of `process.env`, not out of
+  reach: until the fs broker (part 2) a module can still read the process's
+  environment from `/proc/self/environ`, which only `--hardened` blocks. It
+  is a property of how the worker is created, so it applies in `audit` as
+  well as `enforce` and is absent only under `--moduleSandbox off`.
 - **`--hardened` limits.** Node's permission model follows symlinks, so a
   symlink inside `--modulePath` that points elsewhere is readable, and write
   access covers all of `--modulePath` (including other modules' directories

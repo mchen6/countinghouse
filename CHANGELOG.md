@@ -25,13 +25,11 @@ the auth config.
   against the effective `net` entries: under `audit` a disallowed target is
   logged and the request goes ahead; only `enforce` refuses it, and then
   `CHUtil.request` accepts only an allowlist of options.
-- **A module worker's environment holds only the approved variables**
-  (no `NODE_PATH`, none of the server's secrets).
 - **Resource limits**: JS heap, memory outside the heap, a blocked event
   loop (`heapMb`, `externalMb`, `maxBlockMs`), and a worker message rate
   (`--moduleMessageRate`).
-- **`--hardened`**: re-launches under Node's permission model; every module
-  must live under `--modulePath`.
+- **`--hardened`** (Node >= 22.13): re-launches under Node's permission
+  model; every module must live under `--modulePath`.
 - `countinghouse-validate` reports dependencies outside the module, native
   code, and (as warnings) install scripts.
 - A `sandbox` status key on `POST /get-module-device-list`, and the error
@@ -40,18 +38,41 @@ the auth config.
 - Known gaps, documented in `docs/security-model.md`: module code can still
   reach countinghouse's loaded modules through `require.cache` and
   `createRequire`; `fs` and network are not yet brokered, so `CHUtil.request`'s
-  host check is not a network boundary; `--hardened` follows symlinks and
-  needs `--allow-addons` for SQLite auth. This is a strong barrier, not a
-  hard boundary against code written to defeat it.
+  host check is not a network boundary, and a module can read files the
+  process can read, `/proc/self/environ` included, unless `--hardened` is
+  on; `--hardened` follows symlinks and needs `--allow-addons` for SQLite
+  auth. This is a strong barrier, not a hard boundary against code written
+  to defeat it.
 
-### Changed
+### Changed — what the default `audit` mode does to existing modules
 
-- **A module whose worker crashes now restarts** (under `audit` and
-  `enforce`): after 1 s, then 2 s, and suspended on the 3rd exit within 10
-  minutes. Calls meanwhile get `MODULE_RESTARTING` or `MODULE_SUSPENDED`
-  and the tools stay listed. `--moduleSandbox off` keeps the old behaviour,
-  where a crashed module stays down. Uncaught exceptions are still caught
-  inside the worker and do not end it.
+These apply under `--workerThread` on Node >= 22.16 unless
+`--moduleSandbox off` is given.
+
+- **A module worker's `process.env` holds only the variables the module
+  declares** (`countinghouse.permissions.env`), with values from the policy
+  file or the server's environment. A module that read other variables, or
+  relied on `NODE_PATH`, sees them unset. This keeps secrets out of
+  `process.env`, not out of reach: see the known gaps above.
+- **Resource limits can end a worker**: over 256 MB of JS heap or of
+  external memory, or an event loop blocked for 10 s, by default (the
+  module may ask for less; the operator's policy sets the ceiling). More
+  than 2000 messages a second to the main thread are refused with
+  `RATE_LIMITED`.
+- **A module whose worker ends now restarts**: after 1 s, then 2 s,
+  and suspended on the 3rd exit within 10 minutes. Calls
+  meanwhile get `MODULE_RESTARTING` or `MODULE_SUSPENDED` and the tools stay
+  listed. `--moduleSandbox off` keeps the old behaviour, where a crashed
+  module stays down. Uncaught exceptions are still caught inside the worker
+  and do not end it.
+- **Violations are logged**, once per module, rule and target, and each
+  module's effective permissions are logged when its worker starts.
+
+### Fixed — a worker that ends while loading
+
+- **A load fails when the module's worker ends before the module has
+  loaded**, with the exit reason, instead of never answering. This applies
+  under `--moduleSandbox off` too.
 
 ### Fixed — a reload runs the module's current code
 
