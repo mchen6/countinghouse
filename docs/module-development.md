@@ -185,6 +185,100 @@ curl -X POST http://127.0.0.1:9527/load-module \
 You do **not** need `--debug` for either. `--debug` disables authentication
 for the whole server; it is not how you get access to an endpoint.
 
+## Declaring permissions
+
+Under `--workerThread`, each module runs inside the module sandbox
+([`security-model.md`](security-model.md) says what that does and does not
+guarantee). A module that stays inside its own directory needs to declare
+nothing. One that needs more declares it in `package.json`, beside
+`countinghouse.calls`:
+
+```json
+"countinghouse": {
+  "calls": ["…"],
+  "permissions": {
+    "fs":     [ { "path": "/var/log/app", "access": "r" } ],
+    "net":    [ { "host": "api.example.com", "ports": [443] } ],
+    "env":    [ "WEATHER_API_KEY" ],
+    "limits": { "heapMb": 128, "externalMb": 128, "maxBlockMs": 5000 }
+  }
+}
+```
+
+| Field | Rules |
+|---|---|
+| `fs` | Paths outside the module only. Absolute, normalized, no `..`. `access` is `r` or `rw`. `/`, `/app`, `/data`, `/tmp` and anything under them are reserved and cannot be declared. |
+| `net` | `host` is a hostname or a `*.`-prefixed wildcard (one leading label only); `ports` is optional, integers 1-65535. |
+| `env` | Environment variable names (`[A-Z_][A-Z0-9_]*`). |
+| `limits` | What the module asks for; all optional: `heapMb` (JS heap), `externalMb` (Buffers and typed arrays), `maxBlockMs` (how long the event loop may be blocked). The operator's ceiling applies; the default ceilings are 256, 256 and 10000. |
+
+A declaration is a request. The operator's `--modulePolicy` file can grant it
+as declared or narrow it, never widen it. Under `--moduleSandbox enforce` a
+module that declares `fs` or `net` gets nothing outside its own directory
+until the operator adds an entry for it; under `audit` the declaration is
+granted. **In this release only `env` and `limits` change what your code
+can do.** `fs` and `net` are validated and logged, and take effect when the
+file and network brokers ship, so declare them now and expect to need them.
+Calls through `CHUtil.request` and `CHUtil.createSOAPClient` are already
+checked against the effective `net` entries; under `enforce`,
+`CHUtil.request` accepts only the ordinary request options (`method`,
+`headers`, `body`, `json`, `qs`, `timeout`, ... but not `baseUrl`, `proxy`,
+`agent`, `har` and similar) and checks every redirect.
+
+**Self-contained.** Every dependency of your module, followed through the
+whole tree, must be installed inside the module's own directory. Install
+with `npm install --prefix <module>` (or run `npm install` inside it), and
+ship that `node_modules`. A dependency that resolves outside the module is
+a problem `countinghouse-validate` reports and `enforce` refuses to load.
+The module's worker can `require` built-ins and files under its own
+directory, nothing else (not countinghouse's `lib/`, not global folders, not
+other modules).
+
+**No native addons.** A `.node` file, a `binding.gyp`, or `"gypfile": true`
+anywhere in the tree is refused under `enforce`, and loading native code at
+run time throws. Use a pure-JavaScript replacement: `bcryptjs` is the usual
+one for `bcrypt`. Dependencies with `preinstall`, `install` or `postinstall`
+scripts are reported as warnings by `countinghouse-validate`.
+
+**Environment variables.** The worker's `process.env` holds only the names
+you declared in `env` and the operator approved. The value comes from the
+operator's policy entry if it sets one, otherwise from the server's own
+environment; a name with neither is absent. Read them with
+`process.env.NAME` as usual.
+
+**Blocked built-ins.** `child_process`, `cluster`, `worker_threads`,
+`inspector` (and `inspector/promises`), `wasi` and `v8` are unavailable:
+`require` of them fails with `MODULE_NOT_FOUND` under `enforce` (under
+`audit` it works and is logged). `module` is reduced to `builtinModules`,
+`isBuiltin` and a `createRequire` limited to your directory.
+`process.dlopen`, `process.binding`, `process.kill`, `process.abort`,
+`process.chdir` and the `process.set*id` family throw; `process.exit` still
+works and ends only your module. `fs`, `net`, `http` and similar still
+work in this release, and the first use of each is logged.
+
+**Limits, restart and suspend.** A module that exceeds its heap limit, its
+external memory limit, or blocks its event loop longer than `maxBlockMs` is
+terminated, as is one whose worker exits or errors (an uncaught exception
+is caught and logged, and does not end the worker). Then:
+
+- Calls in flight fail at once with **`MODULE_RESTARTING`** and the reason.
+- The module is restarted after 1 s, then 2 s, 4 s, ... up to 60 s. Calls
+  meanwhile get `MODULE_RESTARTING` with the time of the next attempt. Your
+  tools stay in `tools/list`; callers should retry after the time given.
+- After 3 exits in 10 minutes the module is suspended and calls get
+  **`MODULE_SUSPENDED`** with the last reason, until an operator runs
+  `POST /restart-module`. A restart that the sandbox refuses (because the
+  module's `package.json` or the policy changed, under `enforce`) suspends
+  it at once.
+
+Your module also sends at most `--moduleMessageRate` messages per second
+(default 2000) to the main thread, and Redis commands count; beyond that
+calls fail with `RATE_LIMITED`. Cache what you can.
+
+Check a module with `countinghouse-validate` before loading it: it reports
+permission syntax, dependencies outside the module, native code and install
+scripts.
+
 ## Calling other modules
 
 ### `ctx.call` — by name (the default)

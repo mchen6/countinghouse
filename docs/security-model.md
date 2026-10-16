@@ -11,7 +11,9 @@ it invites integrations that assume guarantees the runtime doesn't provide.
 countinghouse runs third-party npm packages ("device modules") as tools
 callable by MCP clients and agents. The runtime treats these modules as
 **semi-trusted, not sandboxed-for-arbitrary-code**: each module executes
-with the full privileges of the Node.js process's OS user. There is no
+with the privileges of the Node.js process's OS user, narrowed by an
+in-process sandbox that is a strong barrier, not a hard boundary (see
+below). With `--moduleSandbox off` there is no narrowing at all. There is no
 attempt to run modules from parties the platform operator hasn't reviewed.
 
 Each module runs inside its own `worker_threads.Worker` (`lib/sandbox.js`,
@@ -28,47 +30,170 @@ spawned from `lib/module-manager.js`'s `loadModuleByWorker`). This gives:
   arbitrary main-thread object references.
 - **Crash containment at the worker level.** `module-manager.js` listens for
   `worker.on('error', ...)` and `worker.on('exit', ...)` and unloads the
-  corresponding module rather than letting an uncaught exception take down
-  the whole process.
+  corresponding module rather than letting a worker's end take down the
+  whole process. Under `--moduleSandbox audit` and `enforce` the module is
+  then restarted with backoff, or suspended after repeated exits; with
+  `off` it stays down.
 
-### What this explicitly does NOT provide
+### What the module sandbox adds, and what it does not stop
 
+Since the module sandbox (part 1 of 4, design in
+[`superpowers/specs/2026-10-15-module-sandbox-foundation-design.md`](superpowers/specs/2026-10-15-module-sandbox-foundation-design.md))
+there are layers on top of the worker boundary. They are enforced **inside
+the same process as the code they restrict**:
+
+> It is a strong barrier against accidents, buggy or exploited
+> dependencies, and ordinary malware. It is not a hard boundary against code
+> written specifically to defeat it.
+
+One overlooked internal API, or one V8 bug, gets past the in-process layers.
+Each layer below says what it stops and what it does not.
+
+**Modes.** `--moduleSandbox off|audit|enforce` (default `audit` under
+`--workerThread`; `off` without it, since the sandbox needs worker mode).
+`off` is today's behaviour. In `audit` every check runs, a violation is
+logged once per (module, rule, target) and the operation goes ahead. In
+`enforce` a violation is blocked with the error Node itself would throw
+(`ERR_ACCESS_DENIED`, `MODULE_NOT_FOUND`) and logged. Resource limits apply
+in `audit` as well, because logging a runaway allocation does not stop it.
+
+**1. Worker lockdown** (`lib/module-lockdown.js`, run once per worker before
+any module code). Stops:
+
+- native code: `process.dlopen`, the `.node` loader, `process.binding`,
+  `process._linkedBinding`;
+- process controls: `process.kill`, `abort`, `chdir`, `setuid`/`setgid` and
+  the like (`process.exit` stays; it ends only that module's worker);
+- `require` of anything but built-ins and files inside the module's own
+  directory (`MODULE_NOT_FOUND` otherwise);
+- the built-ins `child_process`, `cluster`, `worker_threads`, `inspector`,
+  `wasi` and `v8`; `module` is replaced by a reduced version
+  (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside the
+  module's directory); `module.registerHooks`/`register` are locked so no
+  later hook can run ahead of the boundary;
+- `CHUtil.loadFile` outside the module's own directory.
+
+Each override is non-writable and non-configurable. `fs`, `net`, `http` and
+the like stay usable until parts 2 and 3; the first `require` of each is
+logged (as "uses") in both modes so operators learn which modules will need
+permissions.
+
+**2. Declared permissions and the operator policy.** A module declares
+`countinghouse.permissions` (`fs`, `net`, `env`, `limits`) in its
+`package.json`; the operator's `--modulePolicy` file can only narrow that,
+never widen it (a wider entry is reported and ignored). **In part 1 only
+`env` and `limits` have an effect on a module's own code**, plus the host
+check on `CHUtil.request` and `CHUtil.createSOAPClient` described below. `fs`
+and the rest of `net` are parsed, validated and logged as effective
+permissions, and take effect when parts 2 (file broker) and 3 (HTTP broker)
+ship. Until then a module can still `require('fs')` and read what the
+process user can read.
+
+**3. Load-time checks and the validator** (`lib/module-tree-check.js`,
+`countinghouse-validate`). A module must be self-contained (every dependency,
+through the whole tree, resolves inside the module's directory), must not
+contain native code (`.node`, `binding.gyp`, `"gypfile": true`), and must
+have valid permissions; install scripts are warned about. In `enforce` a
+failing module is refused with `MODULE_SANDBOX_REFUSED`; in `audit` the
+failures are logged and the module loads. This is a structural check of
+what is on disk at load time, not a review of what the code does.
+
+**4. Resource limits, restart and suspend.** `heapMb` (V8
+`resourceLimits`), `externalMb` (the main thread polls the worker's
+external memory every second and terminates it over the limit) and
+`maxBlockMs` (the main thread pings the worker every second and terminates it
+if there is no reply for that long), each with a 256 / 256 / 10000 default
+ceiling. A worker-to-main message rate limit (`--moduleMessageRate`, default
+2000/s) answers excess messages with `RATE_LIMITED` instead of killing the
+worker. A worker that ends unexpectedly is restarted with backoff (1 s,
+doubling, capped at 60 s) and suspended after 3 exits in 10 minutes; calls get
+`MODULE_RESTARTING` or `MODULE_SUSPENDED` while the tools stay listed. This
+bounds memory, blocking and crash loops. It does not bound CPU use that
+yields to the event loop, disk, or network traffic.
+
+**5. `--hardened`.** Re-launches the server under Node's permission model
+(`--permission`) with read access to the install directory, `--modulePath`
+and the configured config files, and write access to `--modulePath` (and the
+SQLite auth directory). This applies to the whole process, **main thread
+included**, so it limits what any module can reach on the host (for example
+`/proc/self/environ` and `/proc/self/mem`) but cannot separate a module from
+countinghouse's own data in the directories it may read. Every module must
+live under `--modulePath`. Node 24 has no network permission, so outbound
+network is left to the OS; a systemd unit example is in
+[the example below](#hardening-with-systemd).
+
+### What this explicitly does NOT provide (accepted gaps and limits)
+
+The following are known, accepted in part 1, and not hidden by the layers
+above.
+
+- **Module code can borrow countinghouse's already-loaded modules.**
+  Through `require.cache`, `module.constructor.createRequire`, or a
+  `vm.Script` given a countinghouse filename together with dynamic
+  `import()`, module code can obtain modules countinghouse loaded before the
+  lockdown, and through them reach files outside the module's root. The
+  `require` boundary stops the ordinary routes, not these. Part 2's
+  virtualization of `require` and the file system revisits it. Until then the
+  `CHUtil` surface and everything else loaded before lockdown are part of the
+  review checklist for every change to `lib/countinghouse-util.js`.
+- **The `CHUtil.request` host check is not the network boundary.** The check
+  on `CHUtil.request` (and `CHUtil.createSOAPClient`) governs only that
+  convenience route. In part 1 a module can still use Node's `http` or `net`
+  directly; that is only logged as "uses". Code running in the module's
+  worker can also interfere with objects in that same worker, including the
+  wrappers themselves. The network boundary is part 3's main-thread broker,
+  not this check. Under `enforce`, `CHUtil.request` accepts only an allowlist
+  of options and refuses `baseUrl`, `proxy`, `har` and the like, so that the
+  host checked is the host contacted; redirects are checked hop by hop.
+- **No file or network permission is enforced in part 1.** See layer 2.
+  A module can read and write what the process user can, and open outbound
+  connections with `net`/`http`/`https`/`fetch`, until parts 2 and 3.
+- **The module worker's environment holds only approved variables.** That
+  includes no `NODE_PATH`, so a module cannot reach countinghouse's `lib/` by
+  bare name. This replaces the old situation where every secret in the
+  server's environment was visible to every module; it is a property of how
+  the worker is created, so it applies in `audit` as well as `enforce` and is
+  absent only under `--moduleSandbox off`.
+- **`--hardened` limits.** Node's permission model follows symlinks, so a
+  symlink inside `--modulePath` that points elsewhere is readable, and write
+  access covers all of `--modulePath` (including other modules' directories
+  and the module registry database). `--allow-addons` is added for the SQLite
+  auth provider, or whenever no `--loadModule` is given (the module registry
+  database uses `sqlite3`); it puts native code in the **main thread**
+  outside the permission model. `--allow-worker` is always added, and Node
+  documents that as weakening the model. `--permission` needs Node >= 22.13
+  or >= 23.5.
+- **Resource limits can misfire.** A main thread stalled longer than
+  `maxBlockMs` (a long synchronous task, or a paused VM) can make a healthy
+  worker look blocked, and it is then terminated and restarted.
+- **Uncaught exceptions in a worker do not end it.** `lib/sandbox.js` catches
+  and logs them, as it always has. The restart policy applies to workers
+  that actually end: `process.exit`, the heap limit, kills by the external
+  memory or blocked-loop limits, and worker errors.
+- **A restart refused under `enforce` suspends the module at once.** If
+  `package.json` or the policy changed so that the module no longer passes
+  (for example it gained a native dependency), the restart is refused with
+  `MODULE_SANDBOX_REFUSED` and the module is suspended without retries. An
+  operator `POST /restart-module` tries again.
 - **No OS-level isolation.** `worker_threads` share the same process, same
-  OS user, same filesystem view, and same network stack as the main thread.
-  A module can `require('fs')` and read/write anything the process user can
-  reach, `require('net')`/`require('http')`/`fetch` and make arbitrary
-  outbound connections, and `require('child_process')` and spawn processes.
-  None of this is blocked. There is no `--experimental-permission` model or
-  equivalent applied to worker threads.
-- **No native-module-escape protection.** A module can `require()` any
-  native addon (`.node` file) available in `node_modules`. Native code runs
-  with full process privileges and is not constrained by the V8
-  isolate boundary that separates JS heaps — a native addon can access
-  process memory directly. `countinghouse_validate_module` (see below) does
-  not inspect or restrict native dependencies.
-- **`process` is fully reachable.** Nothing strips or proxies the `process`
-  global inside a worker. A module can call `process.exit()` (killing its
-  own worker, a self-inflicted denial of service, not a platform compromise
-  by itself), read `process.env` (any secrets passed via environment
-  variables are visible to every loaded module), and inspect
-  `process.versions`/`process.platform`/etc. for fingerprinting.
-- **No resource quotas.** `new Worker(__dirname + '/sandbox.js')`
-  (`lib/module-manager.js`) is called with no `resourceLimits` option. A
-  module can allocate memory or burn CPU without any per-worker cap; on this
-  point `worker_threads` provides no more containment than spawning an
-  unbounded loop on the main thread would. There is no cooperative
-  preemption either — a synchronous CPU-bound loop in one worker's action
-  handler blocks that worker's own event loop for other pending
-  callbacks/messages until it returns (it does not block the main thread or
-  other workers' event loops, since each worker has its own).
+  OS user and same network stack as the main thread. Outside `--hardened`
+  nothing limits which files the process may open.
+- **Native code in the main thread is outside all of this.** The lockdown
+  stops module code from loading native addons; the server's own addons
+  (`sqlite3`, when used) are not constrained.
+- **Everything runs in the same process as the code it restricts.** A bug in V8, in Node's loader hooks, or
+  an internal API this work overlooked gets past it. Operators who run code
+  from parties they have not reviewed need a process, container or VM
+  boundary on top (see the comparison below).
 - **No code-signing or provenance check.** See `countinghouse_validate_module`
-  below — "validate" here means structural conformance, not authorship or
+  below: "validate" means structural conformance, not authorship or
   integrity attestation.
 
 ## Current mitigations inventory
 
 These are real, and worth being specific about rather than waving at
-"we have security measures":
+"we have security measures". The sandbox layers above come first in effect;
+these are the checks that predate them and still apply:
 
 - **Module structural verification** (`countinghouse_validate_module`, an
   MCP tool gated on `--authoringTools` plus an admin key,
@@ -176,11 +301,35 @@ These are real, and worth being specific about rather than waving at
     current silent skip) is a real design decision, not implied by
     anything already decided.
 
+### Hardening with systemd
+
+Node 24 has no network permission, so under `--hardened` outbound network is
+left to the OS. A unit along these lines (adjust paths, addresses and
+ports) gives the process a read-only file system apart from its module
+directory, no new privileges, a private `/tmp`, a memory ceiling, and
+outbound traffic only to the addresses you list:
+
+```ini
+[Service]
+ExecStart=/usr/bin/node /opt/countinghouse/framework.js --workerThread --hardened --moduleSandbox enforce --modulePolicy /etc/countinghouse/policy.json
+User=countinghouse
+ProtectSystem=strict
+ReadWritePaths=/var/lib/countinghouse/modules /var/lib/countinghouse/auth
+NoNewPrivileges=yes
+PrivateTmp=yes
+MemoryMax=2G
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1 # Redis; add CouchDB and operator-approved hosts
+```
+
+`IPAddressAllow` takes addresses and networks, not host names, so the hosts
+modules are approved to call have to be listed by address.
+
 ## Honest comparison
 
 | Approach | Isolation strength | Density / cold start | Operational cost |
 |---|---|---|---|
-| **worker_threads** (current) | Separate V8 heap + execution context; shared OS process, filesystem, network, `process` | Very high density (threads, not processes); near-zero cold start | Minimal — no extra infra |
+| **worker_threads** (current, with the module sandbox) | Separate V8 heap + execution context; in-process lockdown, permissions and limits on top; shared OS process, filesystem and network until parts 2-3 | Very high density (threads, not processes); near-zero cold start | Minimal — no extra infra |
 | Linux containers (Docker/OCI, no extra sandboxing) | Separate filesystem/network namespace, cgroup resource limits; shared host kernel | High density; cold start ~100ms–1s | Moderate — container orchestration |
 | gVisor (or similar user-space kernel) | Syscalls intercepted/emulated by a sandboxed kernel; strong defense against kernel-exploit-based escape | Medium density; cold start adds tens of ms over a bare container | Moderate-high — gVisor runtime + monitoring |
 | Micro-VMs (Firecracker, etc.) | Full hardware-virtualized isolation; separate kernel per tenant | Lower density than containers; cold start ~100ms+ (improving) | High — VM-level infra, harder multi-tenant bin-packing |
@@ -214,24 +363,27 @@ the framing changed.)
 
 ## Roadmap
 
-None of the following are implemented today; they're the concrete next
-steps to move past "shared process" isolation without adopting a full
-container/VM model:
+The module sandbox is delivered in four parts; the design is
+[`superpowers/specs/2026-10-15-module-sandbox-foundation-design.md`](superpowers/specs/2026-10-15-module-sandbox-foundation-design.md).
+**Part 1 (foundation) is what this document describes.** The rest is not
+implemented:
 
-- **Per-worker resource limits.** `new Worker(...)` accepts a
-  `resourceLimits` option (`maxOldGenerationSizeMb`,
-  `maxYoungGenerationSizeMb`, `codeRangeSizeMb`, `stackSizeMb`) that is
-  currently unused. Setting these would at least bound memory runaway per
-  module and turn an unbounded OOM risk into a per-worker crash the existing
-  `worker.on('exit', ...)` handler already cleans up.
-- **seccomp/landlock, or a container shell around the whole process.**
-  Neither restricts what one worker can do relative to another (they share
-  a process), but either would meaningfully shrink what *any* module can
-  reach on the host — e.g., landlock-restricting filesystem access to only
-  the paths a module legitimately needs, or running the whole countinghouse
-  process inside a locked-down container as a floor under the current
-  worker-thread model rather than a replacement for it.
-- **A hybrid mode**: worker_threads for trusted/first-party modules (where
-  the current low-overhead model is the right tradeoff), with an opt-in
-  process- or container-per-module mode for modules the operator wants
-  stronger isolation for, at the cost of density and cold-start.
+- **Part 2: file broker and virtual root.** `fs` and `fs/promises` routed
+  through the main thread; a per-module virtual root (`/app`, `/data`,
+  `/tmp`, declared mounts) with `__dirname` and `require` virtualized;
+  out-of-root access answers `ENOENT` and is logged on the host; file
+  quotas; an explicit uninstall that deletes the module's private data. This
+  is what makes the declared `fs` permissions take effect and is expected to
+  close the `require.cache` / `createRequire` routes described above.
+- **Part 3: HTTP(S) broker.** `fetch`, `http` and `https` through the main
+  thread, DNS done by the broker, the destination checked after resolution,
+  private ranges and localhost denied unless approved, request quotas. This
+  is what makes the declared `net` permissions take effect.
+- **Part 4: raw TCP/TLS relay.** `net` and `tls` through the main thread;
+  UDP stays denied.
+
+Beyond the programme, as before: a **hybrid mode** with an opt-in process- or
+container-per-module mode for modules the operator wants stronger isolation
+for, at the cost of density and cold-start, or a container or microVM shell
+around the whole process. The sandbox does not replace either; it is the
+in-process layer that remains useful under both.

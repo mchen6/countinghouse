@@ -10,6 +10,47 @@ the auth config.
 
 ## Unreleased
 
+### Added — module sandbox, part 1
+
+- **`--moduleSandbox off|audit|enforce`** (default `audit` under
+  `--workerThread`, `off` without it). In each module's worker: no native
+  code, no process controls, `require` limited to built-ins and the module's
+  own directory, `child_process`/`cluster`/`worker_threads`/`inspector`/
+  `wasi`/`v8` blocked. `audit` logs violations; `enforce` blocks them.
+- **Declared permissions** (`countinghouse.permissions` in a module's
+  `package.json`) narrowed by an operator **`--modulePolicy`** file. `env`
+  and limits apply now; `fs` and `net` take effect with parts 2 and 3.
+  `CHUtil.request` and `CHUtil.createSOAPClient` are checked against the
+  effective `net` entries; under `enforce`, `CHUtil.request` accepts only an
+  allowlist of options.
+- **A module worker's environment holds only the approved variables**
+  (no `NODE_PATH`, none of the server's secrets).
+- **Resource limits**: JS heap, memory outside the heap, a blocked event
+  loop (`heapMb`, `externalMb`, `maxBlockMs`), and a worker message rate
+  (`--moduleMessageRate`).
+- **`--hardened`**: re-launches under Node's permission model; every module
+  must live under `--modulePath`.
+- `countinghouse-validate` reports dependencies outside the module, native
+  code, and (as warnings) install scripts.
+- A `sandbox` status key on `POST /get-module-device-list`, and the error
+  codes `MODULE_SANDBOX_REFUSED`, `MODULE_RESTARTING`, `MODULE_SUSPENDED`,
+  `RATE_LIMITED` and `MODULE_PATH_OUTSIDE_ROOT`.
+- Known gaps, documented in `docs/security-model.md`: module code can still
+  reach countinghouse's loaded modules through `require.cache` and
+  `createRequire`; `fs` and network are not yet brokered, so `CHUtil.request`'s
+  host check is not a network boundary; `--hardened` follows symlinks and
+  needs `--allow-addons` for SQLite auth. This is a strong barrier, not a
+  hard boundary against code written to defeat it.
+
+### Changed
+
+- **A module whose worker crashes now restarts** (under `audit` and
+  `enforce`): 1 s, 2 s, ... up to 60 s, suspended after 3 exits in 10
+  minutes. Calls meanwhile get `MODULE_RESTARTING` or `MODULE_SUSPENDED`
+  and the tools stay listed. `--moduleSandbox off` keeps the old behaviour,
+  where a crashed module stays down. Uncaught exceptions are still caught
+  inside the worker and do not end it.
+
 ### Fixed — a reload runs the module's current code
 
 - **Under `--workerThread`, reloading a module restarts it in a new worker.**

@@ -29,6 +29,10 @@ simulation).
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |
 | `--deviceConfigPath <path>` | `./config/devices` | Directory of per-module device config files (one `<moduleName>.json` each). |
+| `--moduleSandbox off\|audit\|enforce` | `audit` with `--workerThread`; `off` without it | Module sandbox mode: `off` is no lockdown, limits or policy; `audit` logs violations and lets them through; `enforce` blocks them. Resource limits apply in `audit` too. Explicit `audit` or `enforce` without `--workerThread` is a startup error. See [Security model](security-model.md). |
+| `--modulePolicy <file>` | none | JSON file of operator ceilings and per-module entries that narrow what each module's `countinghouse.permissions` declaration grants. Re-read when a module restarts. See [Declaring permissions](module-development.md#declaring-permissions). |
+| `--moduleMessageRate <n>` | `2000` | Messages per second a module's worker may send to the main thread (Redis commands included); beyond it, calls fail with `RATE_LIMITED`. |
+| `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread` and Node >= 22.13 / 23.5). Every module must live under `--modulePath` (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. |
 | `--locale <locale>` | `en-US` | Error message locale (`zh-CN` also available). |
 
 ## HTTP API surface
@@ -42,6 +46,18 @@ simulation).
 | `GET /devices/:deviceID/get-spec`, `.../schema` | Platform | A device's `api.json` / resolved JSON Schema 2020-12 documents. |
 | `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. |
 | `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
+
+**`sandbox` key on `POST /get-module-device-list`.** With the module sandbox
+on (`--moduleSandbox audit` or `enforce`), the response for a module carries
+`sandbox: {state, lastReason, exits, nextRestartAt, violations}`: `state` is
+`running`, `restarting` or `suspended`; `lastReason` is why the worker last
+exited (`heap limit`, `external memory limit`, `blocked event loop`,
+`crash: <message>`, `exit code <n>`), or `null`; `exits` lists the exits in
+the current 10-minute window as `{at, reason}`; `nextRestartAt` is the time
+of the next restart attempt in milliseconds since the epoch (or `null`); and
+`violations` counts the module's logged sandbox violations. A module that is
+restarting or suspended is still answered, with an empty `deviceList`. The
+key is absent under `--moduleSandbox off`.
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly
