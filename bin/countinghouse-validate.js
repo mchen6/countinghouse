@@ -90,6 +90,7 @@ moduleValidator.validateModule(target, (err, result) => {
 
   if (result.ok === true) {
     console.log(`ok: ${result.module} -- no problems found`);
+    (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
     process.exit(0);
   }
 
@@ -98,5 +99,6 @@ moduleValidator.validateModule(target, (err, result) => {
     console.log(`  [${p.stage}] ${p.message}`);
     if (p.fix != null) console.log(`      fix: ${p.fix}`);
   });
+  (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
   process.exit(1);
 });
