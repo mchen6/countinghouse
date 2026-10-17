@@ -54,6 +54,7 @@ the auth config.
 - A module's device config (`--deviceConfigPath`) is read by the main
   thread and handed to the worker.
 - HTTP/2 `respondWithFile` is not available to modules (see Known issues).
+- Anything a module left in `/tmp` is gone after a restart.
 
 ### Added — module sandbox, part 2 (in progress)
 
@@ -79,6 +80,23 @@ the auth config.
   compile cache, and source maps. `repl` and `trace_events` leave the
   built-in allowlist. `process.loadEnvFile` reads through the broker, in
   every mode.
+
+- **A disk quota for each module's `/data` and `/tmp`** (one pool):
+  `diskMb` (default 1024) and `diskEntries` (default 100000), declared in
+  the module's `limits` and narrowed by `--modulePolicy` like the other
+  limits. Under `enforce` a write past it is `ENOSPC`; under `audit` it is
+  allowed and logged at 75 % and 100 %; under `off` it is not counted.
+- **`/tmp` is emptied whenever a module's worker starts**, never through a
+  link. Under `enforce`, a module whose data holds a symlink with an
+  absolute target, or a hard link whose other name is outside its data,
+  does not start until the operator removes it (the log names the entries
+  and says how). Restarts, reloads and uninstalls of one module are
+  serialised, and a new worker starts only once the old one's file
+  operations have finished (at most 35 s).
+- **`POST /uninstall-module {name, keepData}`** (admin key) deletes a
+  module's data and its registry entry, never its code. It is refused while
+  the module is loaded, restarting or suspended (`MODULE_LOADED`); unload it
+  first.
 
 ### Known issues — 8.0.0
 
