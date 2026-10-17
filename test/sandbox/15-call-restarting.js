@@ -6,16 +6,22 @@ const path = require('path');
 require('../../lib/cli-options').setOptions({});
 const CHError = require('../../lib/countinghouse-error').CHError;
 
-// userAuth stand-in: the key 'owner' may call dev-b, anything else may not.
-const userAuthFile = path.join(__dirname, '..', '..', 'lib', 'user-auth.js');
-require.cache[userAuthFile] = {id: userAuthFile, filename: userAuthFile, loaded: true,
-  exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, cb) => {
-    if (appKey === 'owner') return cb(null, {});
-    const err = new Error('not your device'); err.code = 'DEVICE_ACCESS_DENIED';
-    return cb(err);
-  }};
 const DeviceManager = require('../../lib/device-manager');
-const PeerChannelBroker = require('../../lib/peer-channel-broker');
+
+// userAuth stand-in: the key 'owner' may call dev-b, anything else may not.
+// Installed only while these tests run. The broker binds userAuth when it is
+// loaded, and another test file may have loaded it already, so a fresh copy
+// is loaded with the stub in place; both are restored afterwards.
+const LIB = path.join(__dirname, '..', '..', 'lib');
+const userAuthFile = path.join(LIB, 'user-auth.js');
+const brokerFile = path.join(LIB, 'peer-channel-broker.js');
+function stubUserAuth(deviceID, appKey, cb) {
+  if (appKey === 'owner') return cb(null, {});
+  const err = new Error('not your device'); err.code = 'DEVICE_ACCESS_DENIED';
+  return cb(err);
+}
+let PeerChannelBroker = null;
+let saved = null;
 
 function fakeDm(restarting) {
   const dm = Object.create(DeviceManager.prototype);
@@ -31,6 +37,21 @@ function callerWM() {
 }
 
 describe('sandbox 15: calls to a restarting module', () => {
+  before(() => {
+    saved = {userAuth: require.cache[userAuthFile], broker: require.cache[brokerFile]};
+    require.cache[userAuthFile] = {id: userAuthFile, filename: userAuthFile, loaded: true,
+      exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, cb) => stubUserAuth(deviceID, appKey, cb)};
+    delete require.cache[brokerFile];
+    PeerChannelBroker = require(brokerFile);
+  });
+  after(() => {
+    ['userAuth', 'broker'].forEach((k) => {
+      const file = (k === 'userAuth') ? userAuthFile : brokerFile;
+      if (saved[k] != null) require.cache[file] = saved[k];
+      else delete require.cache[file];
+    });
+  });
+
   it('routed path: answers MODULE_RESTARTING', () => {
     const wm = callerWM();
     fakeDm(true).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-b', 'svc', 'act', {}, 5, wm);
