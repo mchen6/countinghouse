@@ -4,7 +4,8 @@
 // built-in block.
 const assert = require('assert');
 const path   = require('path');
-const {normaliseRequestOptions} = require('../../lib/module-lockdown');
+const Module = require('module');
+const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTINS} = require('../../lib/module-lockdown');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 
 const KEY   = 'aabbcc';
@@ -15,7 +16,8 @@ const OUTSIDE_FILE = path.join(ROOT, 'lib', 'cli-options.js');
 const ROUTES = [
   ['dlopen'], ['binding'], ['kill'], ['getBuiltinModule'], ['child_process'], ['worker_threads'],
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
-  ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar']
+  ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
+  ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine']
 ];
 
 function serverArgs(mode) {
@@ -162,5 +164,30 @@ describe('sandbox 05: worker lockdown', function() {
       assert.deepStrictEqual(seen, ['127.0.0.1:1']);
       assert.strictEqual(guard.call(self, {headers: {location: '/next'}}), true);
     });
+  });
+});
+
+describe('sandbox 05: the built-in allowlist', () => {
+  const REFUSED = ['child_process', 'cluster', 'worker_threads', 'inspector', 'inspector/promises', 'v8', 'wasi',
+    'sqlite', 'test', 'test/reporters', 'sea'];
+
+  it('refuses each left-out built-in, with or without node:', () => {
+    REFUSED.forEach((id) => {
+      assert.strictEqual(builtinAllowed(id), false, id);
+      assert.strictEqual(builtinAllowed(`node:${id}`), false, `node:${id}`);
+    });
+    assert.strictEqual(builtinAllowed('node:fs'), true);
+  });
+
+  it('refuses a built-in it has never heard of', () => {
+    assert.strictEqual(builtinAllowed('node:some_future_builtin'), false);
+  });
+
+  // Fails when a Node upgrade adds a built-in: read it, then add it to the
+  // allowlist or to REFUSED here.
+  it('accounts for every built-in this Node has', () => {
+    const unaccounted = Module.builtinModules.map((id) => id.replace(/^node:/, ''))
+      .filter((id) => !ALLOWED_BUILTINS.has(id) && REFUSED.indexOf(id) === -1);
+    assert.deepStrictEqual(unaccounted, []);
   });
 });

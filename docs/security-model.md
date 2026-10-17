@@ -64,13 +64,18 @@ in `audit` as well, because logging a runaway allocation does not stop it.
 any module code). Stops:
 
 - native code: `process.dlopen`, the `.node` loader, `process.binding`,
-  `process._linkedBinding`;
+  `process._linkedBinding`, and OpenSSL engines (`crypto.setEngine`, the TLS
+  options `privateKeyEngine` and `clientCertEngine`);
 - process controls: `process.kill`, `abort`, `chdir`, `setuid`/`setgid` and
   the like (`process.exit` stays; it ends only that module's worker);
 - `require` of anything but built-ins and files inside the module's own
   directory (`MODULE_NOT_FOUND` otherwise);
-- the built-ins `child_process`, `cluster`, `worker_threads`, `inspector`,
-  `wasi` and `v8`; `module` is replaced by a reduced version
+- every built-in not on a written-out allowlist (Node 24.21's built-ins,
+  less `child_process`, `cluster`, `worker_threads`, `inspector`, `v8`,
+  `wasi`, `sqlite` (its `loadExtension` loads native code), `test` (its
+  `run()` starts unsandboxed child processes) and `sea`), through `require`,
+  `import()` and `process.getBuiltinModule` alike, so a built-in a later Node
+  adds is refused until it has been reviewed; `module` is replaced by a reduced version
   (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside the
   module's directory); `module.registerHooks`/`register` are locked so no
   later hook can run ahead of the boundary;

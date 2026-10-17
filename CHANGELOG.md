@@ -16,8 +16,9 @@ the auth config.
   `--workerThread` on Node >= 22.16, `off` otherwise; an explicit mode on an
   older Node is a startup error). In each module's worker: no native
   code, no process controls, `require` limited to built-ins and the module's
-  own directory, `child_process`/`cluster`/`worker_threads`/`inspector`/
-  `wasi`/`v8` blocked. `audit` logs violations; `enforce` blocks them.
+  own directory, built-ins limited to an allowlist (no `child_process`,
+  `cluster`, `worker_threads`, `inspector`, `wasi`, `v8`, `node:sqlite`,
+  `node:test`, or anything newer than Node 24.21), no OpenSSL engines. `audit` logs violations; `enforce` blocks them.
 - **Declared permissions** (`countinghouse.permissions` in a module's
   `package.json`) narrowed by an operator **`--modulePolicy`** file. `env`
   and limits apply now; `fs` and `net` take effect with parts 2 and 3.

@@ -13,6 +13,15 @@ const ATTEMPTS = {
   dataImport:       (arg) => import(`data:text/javascript,export {default} from ${JSON.stringify(require('url').pathToFileURL(arg).href)}`),
   reducedCreateRequire: () => require('module').createRequire('/tmp/x.js')('/tmp'),
   child_process:    () => require('child_process'),
+  sqlite:           () => require('node:sqlite'),
+  nodeTest:         () => require('node:test'),
+  importSqlite:     () => import('node:sqlite'),
+  getBuiltinSqlite: () => {
+    if (process.getBuiltinModule('node:sqlite') === undefined) throw new Error('countinghouse module sandbox: getBuiltinModule returned undefined');
+  },
+  tlsEngine:        () => require('tls').createSecureContext({privateKeyEngine: '/nonexistent/engine.so', privateKeyIdentifier: 'x'}),
+  clientCertEngine: () => require('tls').createSecureContext({clientCertEngine: '/nonexistent/engine.so'}),
+  cryptoEngine:     () => require('crypto').setEngine('/nonexistent/engine.so'),
   worker_threads:   () => require('worker_threads'),
   v8:               () => require('v8'),
   registerHooks:    () => module.constructor.registerHooks({resolve: (s, c, n) => n(s, c)}),

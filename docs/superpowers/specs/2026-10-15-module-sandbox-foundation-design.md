@@ -233,7 +233,9 @@ it.
    directory. Everything else — `NODE_PATH` (which `bin/countinghouse` sets
    to countinghouse's `lib/`), global folders, other modules — gets
    `MODULE_NOT_FOUND`, logged on the host.
-4. **Built-ins blocked or reduced:**
+4. **Built-ins blocked or reduced.** Enforced as an allowlist written out from
+   Node 24.21's built-ins less the blocked ones below, so a built-in a later
+   Node adds is refused until reviewed (amended after review, 2026-10-17):
 
    | Module | Why | Treatment |
    |---|---|---|
@@ -241,6 +243,10 @@ it.
    | `worker_threads` | `parentPort` lets a module send raw broker messages as if it were countinghouse's worker code | blocked |
    | `inspector`, `wasi` | debugger access; a second runtime | blocked |
    | `v8` | `setFlagsFromString` can switch protections off | blocked |
+   | `sqlite` | `loadExtension` loads native code | blocked |
+   | `test`, `test/reporters` | `run()` starts child processes outside every check | blocked |
+   | `sea` | no use in a module | blocked |
+   | `crypto`, `tls` | OpenSSL engines (`setEngine`, `privateKeyEngine`, `clientCertEngine`) load native code | engine loading blocked |
    | `module` | `Module._load`, `_extensions`, `registerHooks` bypass the boundary | reduced: `builtinModules`, `isBuiltin`, and a `createRequire` that stays inside the boundary |
 
    `fs`, `net`, `http` and the like stay usable until parts 2 and 3. The first

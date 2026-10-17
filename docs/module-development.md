@@ -249,11 +249,14 @@ environment; a name with neither is absent. Read them with
 `process.env.NAME` as usual.
 
 **Blocked built-ins.** `child_process`, `cluster`, `worker_threads`,
-`inspector` (and `inspector/promises`), `wasi` and `v8` are unavailable:
+`inspector` (and `inspector/promises`), `wasi`, `v8`, `node:sqlite`,
+`node:test` and `node:sea`, and any built-in newer than Node 24.21, are
+unavailable:
 `require` of them fails with `MODULE_NOT_FOUND` under `enforce` (under
 `audit` it works and is logged). `module` is reduced to `builtinModules`,
 `isBuiltin` and a `createRequire` limited to your directory.
-`process.dlopen`, `process.binding`, `process.kill`, `process.abort`,
+OpenSSL engines (`crypto.setEngine`, `privateKeyEngine`, `clientCertEngine`)
+count as native code. `process.dlopen`, `process.binding`, `process.kill`, `process.abort`,
 `process.chdir` and the `process.set*id` family throw under `enforce`; under
 `audit` they work and are logged, so `process.kill` can still signal the
 server. `process.exit` works in both and ends only your module. `fs`, `net`, `http` and similar still
