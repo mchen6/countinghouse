@@ -299,7 +299,10 @@ to read. A production composition feature would need to address these:
   `CHUtil.createServiceClient` and both hop paths (main-thread-routed and
   `--directPeerChannels`) carry a `billingKey` alongside `appKey`; when it is
   absent it falls back to `appKey`, which is exactly the old one-key
-  behaviour, so nothing existing changed shape.
+  behaviour, so nothing existing changed shape. The `billingKey` comes from
+  the composing module's worker and the main thread does not check it
+  against the outer caller, so code in that module can name another key
+  (see [Security model](security-model.md)).
 
   Keeping `as` explicit and required is deliberate. Threading the caller
   through *both* questions would have been the obvious reading of "pass the

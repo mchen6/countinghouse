@@ -37,8 +37,11 @@ the auth config.
   codes `MODULE_SANDBOX_REFUSED`, `MODULE_RESTARTING`, `MODULE_SUSPENDED`,
   `RATE_LIMITED` and `MODULE_PATH_OUTSIDE_ROOT`.
 - Known gaps, documented in `docs/security-model.md`: module code can still
-  reach countinghouse's loaded modules through `require.cache` and
-  `createRequire`; `fs` and network are not yet brokered, so `CHUtil.request`'s
+  reach countinghouse's loaded modules through `require.cache`,
+  `createRequire`, and a `vm.Script` with dynamic `import()`; it can send
+  the main thread any worker message, so the main thread trusts the caller
+  and billing key a cross-module call states (as before), and bounds those
+  messages on its own side; `fs` and network are not yet brokered, so `CHUtil.request`'s
   host check is not a network boundary, and a module can read files the
   process can read, `/proc/self/environ` included, unless `--hardened` is
   on; `--hardened` follows symlinks and needs `--allow-addons` for SQLite

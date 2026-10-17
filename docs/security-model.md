@@ -146,6 +146,22 @@ above.
   virtualization of `require` and the file system revisits it. Until then the
   `CHUtil` surface and everything else loaded before lockdown are part of the
   review checklist for every change to `lib/countinghouse-util.js`.
+- **Module code can talk to the main thread as if it were countinghouse.**
+  The worker's own channel to the main thread is reachable from module code
+  (`CHUtil.ci.deviceManager.workerMessage`, `CHUtil.redis.clientInstance`,
+  `require.cache`), so a module can send any worker message itself. The main
+  thread therefore bounds those messages on its own side:
+  `--moduleMessageRate` applies to all of them except two, each bounded
+  differently. Violation reports are capped at 100 per worker. A
+  `peer-self-invalidate` is acted on at most once per event-loop turn. A
+  refused `peer-channel-request` is answered with a `RATE_LIMITED` deny.
+  What the main thread does not check (true before the sandbox too) is the
+  identity a worker states. A cross-module call routed through the main
+  thread (`invokeforeignaction`) carries the caller's `appKey`, `billingKey`
+  and target, and the main thread trusts them. So module code can call a
+  device its `countinghouse.calls` does not declare (the `CTX_CALL_UNDECLARED`
+  check runs only in the worker) and can choose which key a hop is billed
+  to.
 - **The `CHUtil.request` host check is not the network boundary.** The check
   on `CHUtil.request` (and `CHUtil.createSOAPClient`) governs only that
   convenience route. In part 1 a module can still use Node's `http` or `net`
