@@ -2,8 +2,18 @@
 // MODULE_RESTARTING / MODULE_SUSPENDED, on both hop paths, like a client
 // call does. A device nobody knows keeps its old answer.
 const assert = require('assert');
+const path = require('path');
 require('../../lib/cli-options').setOptions({});
 const CHError = require('../../lib/countinghouse-error').CHError;
+
+// userAuth stand-in: the key 'owner' may call dev-b, anything else may not.
+const userAuthFile = path.join(__dirname, '..', '..', 'lib', 'user-auth.js');
+require.cache[userAuthFile] = {id: userAuthFile, filename: userAuthFile, loaded: true,
+  exports: (req, res, deviceID, appKey, serviceID, actionName, localCB, cb) => {
+    if (appKey === 'owner') return cb(null, {});
+    const err = new Error('not your device'); err.code = 'DEVICE_ACCESS_DENIED';
+    return cb(err);
+  }};
 const DeviceManager = require('../../lib/device-manager');
 const PeerChannelBroker = require('../../lib/peer-channel-broker');
 
@@ -23,9 +33,26 @@ function callerWM() {
 describe('sandbox 15: calls to a restarting module', () => {
   it('routed path: answers MODULE_RESTARTING', () => {
     const wm = callerWM();
-    fakeDm(true).sendInvokeActionMessageToWorker('k', 'k', 'dev-b', 'svc', 'act', {}, 5, wm);
+    fakeDm(true).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-b', 'svc', 'act', {}, 5, wm);
     assert.strictEqual(wm.sent[0].errCode, 'MODULE_RESTARTING', JSON.stringify(wm.sent));
     assert.strictEqual(wm.sent[0].msgID, 5);
+  });
+
+  // Only a caller allowed to call the device learns it is restarting, and
+  // why: the reason can be a crash message.
+  it('routed path: a caller without access gets the access error, not the restart', () => {
+    const wm = callerWM();
+    fakeDm(true).sendInvokeActionMessageToWorker('stranger', 'stranger', 'dev-b', 'svc', 'act', {}, 5, wm);
+    assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
+    assert.ok(!/exit code 3/.test(JSON.stringify(wm.sent)));
+  });
+
+  it('direct peer channels: a caller without access gets the access error, not the restart', () => {
+    const wm = callerWM();
+    const broker = Object.create(PeerChannelBroker.prototype);
+    broker.dm = fakeDm(true);
+    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'stranger'}, wm);
+    assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 
   it('routed path: an unknown device is answered as before', () => {
@@ -38,7 +65,7 @@ describe('sandbox 15: calls to a restarting module', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(true);
-    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'k'}, wm);
+    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'owner'}, wm);
     assert.strictEqual(wm.sent[0].errCode, 'MODULE_RESTARTING', JSON.stringify(wm.sent));
   });
 
