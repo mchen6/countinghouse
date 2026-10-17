@@ -59,7 +59,19 @@ Made by the user during design:
     refused** in every mode (`MODULE_NAME_MISMATCH`).
 11. **Uninstall** is a new admin route that deletes a module's data unless
     told to keep it.
-12. Earlier, part 1 design: out-of-namespace access is `ENOENT` to the module
+12. **Countinghouse installed under `/app` is refused under `--workerThread`**
+    (amendment, 2026-10-17, found while planning part 2's plan 3). Modules see
+    their files as `/app/...`, and Node keys loaded code (`require.cache`,
+    the ES module map) by that path, so a countinghouse whose own code lives
+    under `/app` would share entries with its modules, and a module could be
+    handed countinghouse's own module objects. No hook can separate them. The
+    start-up check uses the install directory's real path and exits 2 with
+    advice (install elsewhere, e.g. `/opt/countinghouse`, or use
+    `--no-workerThread`); a worker also refuses a load if any code it has
+    loaded lives under `/app`. Single-thread mode, and modules or data under
+    `/app`, are unaffected. The user chose refusal over renaming the virtual
+    root.
+13. Earlier, part 1 design: out-of-namespace access is `ENOENT` to the module
     plus a host log line; outside paths are declared `r`/`rw` in
     `countinghouse.permissions.fs` and narrowed by the operator; modules stay
     standard npm packages.
@@ -364,7 +376,8 @@ environment for `audit` and `enforce` only.
    data under `--moduleDataPath`). It also tells operators to check, before
    upgrading, for registry entries, `load_module` calls and composite
    `runsModules` bindings whose name differs from the module's package.json
-   name, which 8.0.0 refuses.
+   name, which 8.0.0 refuses, and for countinghouse installed under `/app`,
+   which 8.0.0 refuses under `--workerThread` (decision 12).
 5. **The part 1 spec is amended:** `off` runs the broker, and part 2 adds a
    hop to every file call; and a load whose request name differs from its
    package.json name is refused in every mode (the user approved all three).
@@ -458,7 +471,9 @@ upgrade section, and the part 1 spec amendment.
 - **Quota:** sparse files, entries, reservation under concurrency, `EXDEV`.
 - **Main-thread protection:** caps, `EMFILE`, chunked reads,
   `UV_THREADPOOL_SIZE=4`.
-- **Collisions:** the install and data paths under `/app`, `/data` and `/tmp`.
+- **Collisions:** the module and data paths under `/tmp`; countinghouse
+  installed under `/app` refused (decision 12), by unit tests of the check,
+  since an install at `/app` needs root on a test machine.
 - **Lifecycle:** restart while operations are in flight, uninstall racing a
   load, worker end during a sync wait.
 - **Single-thread prefix:** `'use strict'` files, hashbang files, a file with
