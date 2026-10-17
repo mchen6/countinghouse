@@ -3,6 +3,11 @@
   "$id": "#/",
   "type": "object",
   "probeService": {
+    "fsResults": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"realpath": {"type": "string"}, "mkdtemp": {"type": "string"}, "parent": {"type": "string"}, "relative": {"type": "boolean"}, "mkdirFirst": {"type": ["string", "null"]}}}
+    },
+
     "write": {
       "input": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}, "repeat": {"type": "integer", "minimum": 1, "maximum": 1000000}}, "required": ["path", "content"]},
       "output": {"type": "object", "properties": {"ok": {"type": "boolean"}, "code": {"type": ["string", "null"]}}}

@@ -73,6 +73,8 @@ if (options.moduleSandbox === 'off') {
 }
 if (options.workerThread !== true) {
   logger.W('single-thread mode (--no-workerThread) is for debugging modules: no module sandbox, and not for production');
+  // Modules still see /app, /data and /tmp through their fs and os (part 2 spec, section 6).
+  require('./lib/single-thread-facade').install();
 }
 if (options.hardened === true) {
   logger.I('module sandbox: hardened -- running under --permission; modules must live under ' + options.modulePath);

@@ -6,7 +6,8 @@
     "serviceList": {
       "urn:countinghouse-test:serviceID:probeService": {
         "actionList": [
-          {"name": "where", "description": "Report the handler's URL and imports.", "input": {"schema": "/probeService/where/input"}, "output": {"schema": "/probeService/where/output"}}
+          {"name": "where", "description": "Report the handler's URL and imports.", "input": {"schema": "/probeService/where/input"}, "output": {"schema": "/probeService/where/output"}},
+          {"name": "readOwn", "description": "Read its own package.json with named fs imports.", "input": {"schema": "/probeService/readOwn/input"}, "output": {"schema": "/probeService/readOwn/output"}}
         ]
       }
     }
