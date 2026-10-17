@@ -13,9 +13,10 @@
 ## Global Constraints
 
 - Virtual paths in **every** `--moduleSandbox` mode under `--workerThread` (off included): the identity hook, `process.cwd() === '/app'`, `os.tmpdir() === '/tmp'`, and the broker's `cwd: '/app'`. L2's refusals and reports, and the other-routes refusals, follow the mode (`enforce` refuses, `audit` reports, `off` neither).
-- An absolute specifier under `/app` always means the module's `/app`, even from countinghouse code; countinghouse requires its own files relatively (a test scans `lib/`).
+- Virtual and host are told apart by identity, not spelling (review C2): a parent URL is the module's only if the identity hook issued it; a `/app` specifier means the module's `/app` only from a module parent; countinghouse names module files with `identity.moduleSpecifier('/app/...')` (`countinghouse-module:/...`). Node's caches are keyed by filename, so a worker refuses to load a module when any countinghouse code it has loaded lives under `/app` (`codeUnderVroot`), with advice; the main thread checks the install directory at start-up under `--workerThread` and exits 2 with the same advice.
+- Boot grant (review C1): from `patch.install` until `set-options`, realpath/stat and reads under `<installDir>/lib`, `<installDir>/node_modules` and `<installDir>/package.json` are served by the original fs (countinghouse's own boot `require`s; no module code runs in that window). It is released at `set-options`, before the identity hook installs.
 - L1 grants are by path, never by time: realpath/stat/exists originals only for paths under the roots the requesting parent may reach, during that resolve; `readFileSync`/`openSync` originals only for the one checked target, during its load. The grant controller is returned by `patch.install()` to `lib/sandbox.js` and passed to `identity.install()`; it is never exported.
-- L2: from `set-options` on, a countinghouse parent may reach only `lib/`, `node_modules/` and `package.json` under the install directory, plus the module root; a module parent only the module root. Boot `require`s before `set-options` are unbounded by design.
+- L2 (non-`file:` parents, such as `data:` modules or a missing `parentURL`, count as module parents — review M1): from `set-options` on, a countinghouse parent may reach only `lib/`, `node_modules/` and `package.json` under the install directory, plus the module root; a module parent only the module root. Boot `require`s before `set-options` are unbounded by design.
 - The re-entry guard recognises only the hook's own inner call (the exact `(specifier, parentURL)` pair).
 - **Task 4 deletes `ENFORCE_FILE_DECISIONS` (and `FsBroker`'s `enforceFileDecisions` option) and `hostServed()` in the same commit**, and runs the collision tests after both are gone (series ledger, from plan 2b's agreement).
 - Under `--hardened`, no main-thread or worker path may do an async operation on a grant root itself (Node 24's prefix-grant refusal, plan 2b); L1's grants act on files inside, which is fine.
@@ -25,7 +26,7 @@
 
 1. A module that builds paths from `__dirname` and reads its own files with `fs` — must work in `off`, `audit` and `enforce` (Task 3 test, Task 4 wired tests).
 2. A module whose `package.json` says `"type": "module"` — its `.js` files must load as ES modules through the virtual URLs (Task 3 test).
-3. Countinghouse installed at `/app`, or a module loaded from `/tmp` — no collision between virtual and host paths (Task 4 collision tests, after the gate and `hostServed` are gone).
+3. A module loaded from `/tmp` with its data under `/tmp` — no collision between virtual and host paths (Task 4 collision tests, after the gate and `hostServed` are gone); countinghouse installed under `/app` (including as `/app/node_modules/countinghouse`) — refused at start-up with advice, never silently mixed (Task 3 unit tests).
 4. A getter on `Object.prototype` that runs during a resolve and calls `require('/abs/outside/file')` — must get `MODULE_NOT_FOUND` under `enforce`, never original-fs access (Task 3 test).
 5. `module.parent.require`, `require.cache[lib].require`, `Module._load(path, cmModule)`, `Module.prototype.require.call(cmModule, path)` and a `vm.Script` `import()` — none may read a file outside the allowed roots under `enforce` (Task 3 test).
 
@@ -43,6 +44,7 @@
 - Produces: `createForWorker(...)` → `{broker, bridge, namespace, dirs, moduleRoot, installDir}`.
 
 - [ ] **Step 1: Survey.** Run `grep -n "fs\.\|process.cwd()\|os.tmpdir()" lib/module-manager.js lib/handler-map.js lib/device-config.js lib/countinghouse-util.js lib/countinghouse-device.js lib/device-manager.js lib/handler-ctx.js lib/sandbox.js lib/redis-api.js lib/worker-message.js` and classify every hit that can run in a worker after `set-options`: (a) uses the module's path, which becomes `/app` (fine through the broker), (b) reads a countinghouse or operator file by host path (must move to the main thread), (c) main thread only. Write the table in the ledger. Expected (b): `device-config.js` only. Any other (b) is handled in this task the same way and reported to the reviewer.
+  Extend it (reviews I2 and C2): (d) every `path.resolve(` and `fs.*` call in `lib/` that can run in a worker after `set-options` with a possibly relative argument (it now resolves against `/app`); (e) every read by countinghouse or its dependencies of countinghouse's own files by host path after `set-options` (now a broker request, `ENOENT` under `enforce`) — `grep -rn "__dirname" lib` and the dependencies the worker requires after `set-options` (`node -e` the worker's `require.cache` keys at `set-options` against those loaded afterwards); (f) the `node_modules` countinghouse requires in the worker after `set-options` that may resolve relative paths (bunyan, redis, bullmq and others found). Each hit is fixed in this task (moved before `set-options`, made absolute against the install directory and granted, or moved to the main thread) or listed with why it is safe; write "none found" explicitly for an empty class.
 
 - [ ] **Step 2: Write the failing test** — `test/device-config/02-from-main-thread.js`: a server with `--workerThread --moduleSandbox enforce --deviceConfigPath <dir>` where `<dir>/fs-probe.json` holds `{"greeting": "hi"}`, and a fixture handler that returns `global.DeviceConfig`. Add to `test/fixtures/fs-probe` a handler `handlers/probeService/config.js`:
 
@@ -114,7 +116,7 @@ git commit -m "feat(fs-broker): device config from the main thread" -m "Co-Autho
 - Test: `test/fs-broker/11-grants.js`, `test/fs-broker/scripts/grants.js`
 
 **Interfaces:**
-- Produces: `patch.install(client, settings)` returns `{fs, promises, fileHandle, grant}` where `grant = {originals: {readFileSync}, resolving(roots: string[]) → release(), reading(file: string) → release()}`. While a `resolving` grant is active, `realpathSync` (and `.native`), `statSync`, `lstatSync` and `existsSync` of an **absolute** path under one of its roots are served by the original fs; while a `reading` grant is active, `readFileSync` and `openSync` of exactly that file are (descriptors from `openSync` tracked as today). Releases remove exactly what they added; grants nest.
+- Produces: `patch.install(client, settings)` returns `{fs, promises, fileHandle, grant}` where `grant = {originals: {readFileSync}, resolving(roots: string[]) → release(), reading(file: string) → release(), boot(roots: string[]) → release()}`. `boot` grants both the stat keys and the read keys (`readFileSync`, `openSync`) for any path under its roots (review C1); `lib/sandbox.js` calls `grant.boot([<installDir>/lib, <installDir>/node_modules, <installDir>/package.json])` right after `patch.install` and releases it in `set-options` before installing identity. While a `resolving` grant is active, `realpathSync` (and `.native`), `statSync`, `lstatSync` and `existsSync` of an **absolute** path under one of its roots are served by the original fs; while a `reading` grant is active, `readFileSync` and `openSync` of exactly that file are (descriptors from `openSync` tracked as today). Releases remove exactly what they added; grants nest.
 
 - [ ] **Step 1: Write the failing test.** `test/fs-broker/scripts/grants.js`:
 
@@ -138,16 +140,20 @@ module.exports = async (fs, root, ctx) => {
   out.otherNotGranted = (() => { try { fs.readFileSync(path.join(dir, 'g.txt'), 'utf8'); return 'read'; } catch (e) { return e.code; } })();
   release();
   out.originalsRead = grant.originals.readFileSync(file, 'utf8');
+  release = grant.boot([dir]);
+  out.bootRead = fs.readFileSync(path.join(dir, 'g.txt'), 'utf8');
+  release();
+  out.afterBoot = (() => { try { fs.readFileSync(path.join(dir, 'g.txt'), 'utf8'); return 'read'; } catch (e) { return e.code; } })();
   out.grantNotExported = Object.keys(ctx.patch).includes('grant') === false;
   return out;
 };
 ```
 
-`test/fs-broker/11-grants.js` runs it with `runBrokered(S('grants.js'), {mode: 'enforce', extra: {dir}})` against a directory created under `os.homedir()` holding `f.txt` (`'granted'`) and `g.txt`, with a broker whose `enforce` is live for this test (pass `enforceFileDecisions: true` through `runBrokered`'s options; Task 4 removes the option), and asserts: `realpathGranted: true`, `readNotGranted: 'ENOENT'` (a resolve grant does not grant reads), `readGranted: 'granted'`, `otherNotGranted: 'ENOENT'`, `originalsRead: 'granted'`, `grantNotExported: true`. Add `enforceFileDecisions` pass-through to `test/helpers/brokered-worker.js` for now.
+`test/fs-broker/11-grants.js` runs it with `runBrokered(S('grants.js'), {mode: 'enforce', extra: {dir}})` against a directory created under `os.homedir()` holding `f.txt` (`'granted'`) and `g.txt`, with a broker whose `enforce` is live for this test (pass `enforceFileDecisions: true` through `runBrokered`'s options; Task 4 removes the option), and asserts: `realpathGranted: true`, `readNotGranted: 'ENOENT'` (a resolve grant does not grant reads), `readGranted: 'granted'`, `otherNotGranted: 'ENOENT'`, `originalsRead: 'granted'`, `bootRead` equal to `g.txt`'s content, `afterBoot: 'ENOENT'`, `grantNotExported: true`. Add `enforceFileDecisions` pass-through to `test/helpers/brokered-worker.js` for now.
 
 - [ ] **Step 2: Run it to verify it fails** — `npx mocha --exit test/fs-broker/11-grants.js` → `ctx.handled.grant` is undefined.
 
-- [ ] **Step 3: Implement** in `lib/fs-broker/patch.js`: a `grants = {roots: [], files: []}` state; `granted(key, value)` true when the path argument is an absolute string (or `file:` URL) and either `key` is one of `realpathSync`, `realpath`, `statSync`, `stat`, `lstatSync`, `lstat`, `existsSync`, `exists` and the path is under an active root, or `key` is `readFileSync` or `openSync` and the path is an active file. In `routed()`, serve with the original when `hostServed(a[i]) || granted(key, a[i])` (Task 4 removes `hostServed`). Return `grant` from `install()`:
+- [ ] **Step 3: Implement** in `lib/fs-broker/patch.js`: a `grants = {roots: [], files: [], bootRoots: []}` state; `granted(key, value)` true when the path argument is an absolute string (or `file:` URL) and either `key` is one of `realpathSync`, `realpath`, `statSync`, `stat`, `lstatSync`, `lstat`, `existsSync`, `exists` and the path is under an active root, or `key` is `readFileSync` or `openSync` and the path is an active file. `boot` pushes its roots to a third list, `grants.bootRoots`, matched for both key sets. In `routed()`, serve with the original when `hostServed(a[i]) || granted(key, a[i])` (Task 4 removes `hostServed`). `lib/sandbox.js`: keep `const fsGrant = …install(...).grant` and `let releaseBoot = fsGrant.boot([...])` (the roots from `workerData.installDir`); `set-options` calls `releaseBoot()` before the identity install (Task 3). Return `grant` from `install()`:
 
 ```js
   const grant = {
@@ -160,6 +166,11 @@ module.exports = async (fs, root, ctx) => {
     reading(file) {
       grants.files.push(String(file));
       return () => { const i = grants.files.lastIndexOf(String(file)); if (i >= 0) grants.files.splice(i, 1); };
+    },
+    boot(roots) {
+      const mine = roots.map(String);
+      grants.bootRoots.push(...mine);
+      return () => { mine.forEach((r) => { const i = grants.bootRoots.lastIndexOf(r); if (i >= 0) grants.bootRoots.splice(i, 1); }); };
     }
   };
   handled.grant = grant;
@@ -172,7 +183,7 @@ module.exports = async (fs, root, ctx) => {
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/fs-broker/patch.js test/fs-broker/11-grants.js test/fs-broker/scripts/grants.js test/helpers/brokered-worker.js
+git add lib/fs-broker/patch.js lib/sandbox.js test/fs-broker/11-grants.js test/fs-broker/scripts/grants.js test/helpers/brokered-worker.js
 git commit -m "feat(fs-broker): path-scoped original-fs grants for the loader (L1)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -186,7 +197,7 @@ git commit -m "feat(fs-broker): path-scoped original-fs grants for the loader (L
 
 **Interfaces:**
 - Consumes: `grant` (Task 2), `workerData.moduleRoot`/`installDir` (Task 1).
-- Produces: `require('./fs-broker/identity')` → `{install({moduleRoot, installDir, mode, grant, report}), mapper(moduleRoot), VROOT}`.
+- Produces: `require('./fs-broker/identity')` → `{install({moduleRoot, installDir, mode, grant, report}), mapper(moduleRoot, issued: Set), moduleSpecifier(virtualPath), codeUnderVroot(installDir, loadedFiles), VROOT, MODULE_SPECIFIER}`. `install` throws when `codeUnderVroot` finds anything.
 
 - [ ] **Step 1: Write the failing tests.** `fs-probe` gains `handlers/probeService/where.js`:
 
@@ -203,7 +214,7 @@ module.exports = async () => {
 };
 ```
 
-(`api.json` action `where`, schema output with those string properties.) An ES-module fixture `test/fixtures/esm-probe` (`package.json` `{"name": "esm-probe", "version": "1.0.0", "type": "module"}`; one action `where` whose handler is an ES module importing `../../lib/helper.js` and returning `import.meta.url`, `import.meta.dirname` and the helper's value). The handler-map loader must accept `export default` (it already does: `loaded.default`).
+(`api.json` action `where`, schema output with those string properties.) An ES-module fixture `test/fixtures/esm-probe` (`package.json` `{"name": "esm-probe", "version": "1.0.0", "type": "module"}`; one action `where` whose handler is an ES module importing `../../lib/helper.js` and returning `import.meta.url`, `import.meta.dirname` and the helper's value, and `dep`, the value of `import dep from 'plain-dep'`). `test/fixtures/esm-probe/node_modules/plain-dep/{package.json,index.js}`: a `package.json` with no `"type"` (`{"name": "plain-dep", "version": "1.0.0", "main": "index.js"}`) and a CommonJS `index.js` (`module.exports = 'plain';`) — it must load as CommonJS inside a `"type": "module"` package (review I1); un-ignore that one directory in `.gitignore` if `node_modules` is ignored. The handler-map loader must accept `export default` (it already does: `loaded.default`).
 
 `test/fs-broker/12-identity.js` (port 9630; tell the reviewer):
 
@@ -247,34 +258,49 @@ describe('fs-broker 12: virtual identity', function() {
     assert.strictEqual(r.url, 'file:///app/handlers/probeService/where.js');
     assert.strictEqual(r.dirname, '/app/handlers/probeService');
     assert.strictEqual(r.helper, 'helped');
+    assert.strictEqual(r.dep, 'plain');
   });
 
-  it('countinghouse requires its own files relatively (so an install at /app is unambiguous)', () => {
-    const offenders = [];
-    for (const f of fs.readdirSync(path.join(ROOT, 'lib'), {recursive: true})) {
-      if (!String(f).endsWith('.js')) continue;
-      const src = fs.readFileSync(path.join(ROOT, 'lib', String(f)), 'utf8');
-      if (/require\((path\.join\(__dirname|`\$\{__dirname\}|__dirname\s*\+)/.test(src)) offenders.push(f);
-    }
-    assert.deepStrictEqual(offenders, []);
+  it('countinghouse installed at /app: its own parents stay host, issued module parents map to the module', () => {
+    const issued = new Set(['file:///app/index.js']);
+    const m = identity.mapper('/app/modules/x', issued);
+    const ch = m.parent('file:///app/lib/handler-ctx.js');
+    assert.deepStrictEqual(ch, {host: '/app/lib/handler-ctx.js', fromModule: false});
+    assert.strictEqual(m.specifier('./x', ch), '/app/lib/x.js');
+    assert.strictEqual(m.specifier('/app/lib/x.js', ch), '/app/lib/x.js', 'a bare /app from countinghouse is a host path');
+    const mod = m.parent('file:///app/index.js');
+    assert.deepStrictEqual(mod, {host: '/app/modules/x/index.js', fromModule: true});
+    assert.strictEqual(m.specifier('/app/lib/y.js', mod), '/app/modules/x/lib/y.js');
+    assert.strictEqual(m.specifier(identity.moduleSpecifier('/app/package.json'), ch), '/app/modules/x/package.json');
+    assert.deepStrictEqual(m.parent('data:text/javascript,1'), {host: null, fromModule: true});
+    assert.deepStrictEqual(m.parent(undefined), {host: null, fromModule: true});
   });
 
-  it('maps /app to the module even when countinghouse lives at /app', () => {
-    const m = identity.mapper('/app/modules/x');
-    assert.strictEqual(m.toHost('/app/lib/a.js'), '/app/modules/x/lib/a.js');
-    assert.strictEqual(m.isModuleHost('/app/lib/a.js'), false);
-    assert.strictEqual(m.toVirtual('/app/modules/x/index.js'), '/app/index.js');
+  it('refuses when countinghouse code is under /app (Node caches are keyed by filename)', () => {
+    assert.deepStrictEqual(identity.codeUnderVroot('/opt/ch', ['/opt/ch/lib/a.js']), []);
+    assert.deepStrictEqual(identity.codeUnderVroot('/app', []), ['/app']);
+    assert.deepStrictEqual(identity.codeUnderVroot('/opt/ch', ['/app/node_modules/countinghouse/lib/a.js']),
+      ['/app/node_modules/countinghouse/lib/a.js']);
+    assert.deepStrictEqual(identity.codeUnderVroot('/application', []), []);
   });
 });
 ```
 
-Route tests (Review Focus 4 and 5) — a fixture `test/fixtures/route-probe` whose single action `attempt` takes `{what}` and tries one route, returning `{outcome: 'read'|'refused', code}`: `parentRequire` (`module.parent.require(<auth file>)`), `cacheRequire` (`require.cache[Object.keys(require.cache).find((k) => k.includes('/lib/'))].require(<auth file>)` when such a key is visible), `moduleLoad` (`module.constructor._load(<auth file>, module.parent)`), `protoRequire` (`module.constructor.prototype.require.call(module.parent, <auth file>)`), `vmImport` (a `vm.Script` with a countinghouse `filename` and `importModuleDynamically` doing `import(<auth file URL>)`), and `getter` (define `Object.prototype.parentURL` as a getter that calls `require(<auth file>)` and records the result, then `require('./read')`). `<auth file>` is a JSON file the test writes under `os.homedir()` (outside every root) and passes via the server's environment (`ROUTE_PROBE_TARGET`, declared in the fixture's `countinghouse.permissions.env`). Add to `12-identity.js`:
+Route tests (Review Focus 4 and 5) — a fixture `test/fixtures/route-probe` whose single action `attempt` takes `{what}` and tries one route, returning `{outcome: 'read'|'refused', code}`: `parentRequire` (`module.parent.require(<auth file>)`), `cacheRequire` (`require.cache[Object.keys(require.cache).find((k) => k.includes('/lib/'))].require(<auth file>)`; it returns `{outcome: 'no-key'}` when no such key is visible, and the test asserts it is visible, so the route test cannot pass vacuously — review I3), `moduleLoad` (`module.constructor._load(<auth file>, module.parent)`), `protoRequire` (`module.constructor.prototype.require.call(module.parent, <auth file>)`), `vmImport` (a `vm.Script` with a countinghouse `filename` and `importModuleDynamically` doing `import(<auth file URL>)`), and `getter` (define `Object.prototype.parentURL` as a getter that calls `require(<auth file>)` and records the result, then `require('./read')`). `<auth file>` is a JSON file the test writes under `os.homedir()` (outside every root) and passes via the server's environment (`ROUTE_PROBE_TARGET`, declared in the fixture's `countinghouse.permissions.env`). Add to `12-identity.js`:
 
 ```js
-  ['parentRequire', 'cacheRequire', 'moduleLoad', 'protoRequire', 'vmImport', 'getter'].forEach((what) => {
-    it(`enforce: ${what} cannot read a file outside the allowed roots`, async () => {
-      const target = fs.mkdtempSync(path.join(require('os').homedir(), '.ch-route-'));
-      const file = path.join(target, 'secret.json');
+  // Two targets (review I3): one outside everything, and one inside the
+  // install directory but outside lib/, node_modules/ and package.json,
+  // where <installDir>/auth.json lives.
+  const targets = {
+    home: () => { const d = fs.mkdtempSync(path.join(require('os').homedir(), '.ch-route-')); return {file: path.join(d, 'secret.json'), cleanup: d}; },
+    installDir: () => { const f = path.join(ROOT, `.ch-route-secret-${process.pid}.json`); return {file: f, cleanup: f}; }
+  };
+  ['parentRequire', 'cacheRequire', 'moduleLoad', 'protoRequire', 'vmImport', 'getter'].forEach((what) => Object.keys(targets).forEach((where) => {
+    it(`enforce: ${what} cannot read a secret in ${where}`, async () => {
+      const t = targets[where]();
+      const target = t.cleanup;
+      const file = t.file;
       fs.writeFileSync(file, '{"secret": true}');
       try {
         base = mkdtemp('identity-');
@@ -287,14 +313,14 @@ Route tests (Review Focus 4 and 5) — a fixture `test/fixtures/route-probe` who
         fs.rmSync(target, {recursive: true, force: true});
       }
     });
-  });
+  }));
 ```
 
 (Until Task 4 removes the gate, a refusal comes from L2 — the resolve is bounded — not from the broker; that is what these tests pin.)
 
 - [ ] **Step 2: Run them to verify they fail** (tell the reviewer first) — `npx mocha --exit test/fs-broker/12-identity.js`: the identity assertions fail (host paths), the ES-module test fails, the route tests read the file.
 
-- [ ] **Step 3: Implement** — `lib/fs-broker/identity.js` (the whole file):
+- [ ] **Step 3: Implement** — `lib/fs-broker/identity.js` (the whole file, as revised after review: C2 identity, I1 nearest package.json, M1, M2, the `/app` code refusal):
 
 ```js
 // Module identity in a module worker (docs/superpowers/specs/2026-10-17-
@@ -305,10 +331,18 @@ Route tests (Review Focus 4 and 5) — a fixture `test/fixtures/route-probe` who
 // Installed at set-options, after part 1's lockdown, in every mode, so its
 // hooks run first: it maps virtual specifiers and parents to host paths,
 // lets the next hooks (part 1's boundary, Node's resolver) work on host
-// paths, and maps the result back. An absolute specifier under /app always
-// means the module's /app, even from countinghouse's own code, which
-// requires its own files relatively (test/fs-broker/12-identity.js checks),
-// so countinghouse installed at /app is not ambiguous.
+// paths, and maps the result back.
+//
+// Virtual and host paths are told apart by identity, not by spelling
+// (review C2): a parent URL is virtual only if this hook issued it, a "/app"
+// specifier means the module's /app only from module code, and countinghouse
+// names module files with MODULE_SPECIFIER ("countinghouse-module:/...").
+// That settles which file a resolve means. It cannot settle Node's caches:
+// require.cache and the ESM module map are keyed by filename and URL, so a
+// module file issued as /app/lib/x.js and a countinghouse file at host
+// /app/lib/x.js would share one entry, and the module would be handed
+// countinghouse's own module object. So install() refuses when any code
+// already loaded in this worker lives under /app (codeUnderVroot).
 //
 // The loader calls the public fs (realpathSync, readFileSync) at call time;
 // those calls are served by the original fs only for paths the patch grants
@@ -320,19 +354,38 @@ const path = require('path');
 const url = require('url');
 
 const VROOT = '/app';
+const MODULE_SPECIFIER = 'countinghouse-module:';
 
 function inside(p, root) {
   return p === root || p.startsWith(`${root}/`);
 }
 
-// Pure path arithmetic, exported for the collision tests.
-function mapper(moduleRoot) {
-  return {
+// Pure path and URL arithmetic, exported for the collision tests.
+// issued: the virtual URLs this hook has returned for module files.
+function mapper(moduleRoot, issued) {
+  const m = {
     isVirtual: (p) => inside(p, VROOT),
     toHost: (v) => moduleRoot + v.slice(VROOT.length),
     toVirtual: (h) => VROOT + h.slice(moduleRoot.length),
-    isModuleHost: (h) => inside(h, moduleRoot)
+    isModuleHost: (h) => inside(h, moduleRoot),
+    // A parent URL is the module's only if this hook issued it.
+    parent(parentURL) {
+      if (typeof(parentURL) !== 'string') return {host: null, fromModule: true};
+      if (issued.has(parentURL)) return {host: m.toHost(url.fileURLToPath(parentURL)), fromModule: true};
+      if (!parentURL.startsWith('file:')) return {host: null, fromModule: true};   // data: and the like are module code (review M1)
+      const host = url.fileURLToPath(parentURL);
+      return {host: host, fromModule: m.isModuleHost(host)};
+    },
+    // What a specifier names, given its parent.
+    specifier(s, parent) {
+      if (s.startsWith(MODULE_SPECIFIER)) return m.toHost(VROOT + s.slice(MODULE_SPECIFIER.length));
+      let t = s.startsWith('file:') ? url.fileURLToPath(s) : s;
+      if (parent.fromModule && m.isVirtual(t)) return m.toHost(t);
+      if (parent.host != null && (t === '.' || t === '..' || t.startsWith('./') || t.startsWith('../'))) t = path.resolve(path.dirname(parent.host), t);
+      return t;
+    }
   };
+  return m;
 }
 
 function notFound(specifier) {
@@ -341,9 +394,21 @@ function notFound(specifier) {
   return err;
 }
 
+// The loaded files (require.cache keys) that live under /app, plus the
+// install directory itself if it does.
+function codeUnderVroot(installDir, loadedFiles) {
+  return [installDir].concat(loadedFiles).filter((f) => typeof(f) === 'string' && inside(f, VROOT));
+}
+
 function install(cfg) {
+  const clash = codeUnderVroot(cfg.installDir, Object.keys(require.cache));
+  if (clash.length > 0) {
+    throw new Error(`countinghouse's own code is under ${VROOT} (${clash[0]}), where module workers show each module its ` +
+      `own files; install countinghouse elsewhere (for example /opt/countinghouse) or run with --no-workerThread`);
+  }
   const moduleRoot = cfg.moduleRoot;
-  const m = mapper(moduleRoot);
+  const issued = new Set();
+  const m = mapper(moduleRoot, issued);
   const grant = cfg.grant;
   const originals = grant.originals;
   const enforce = (cfg.mode === 'enforce');
@@ -351,12 +416,6 @@ function install(cfg) {
   const countinghouseRoots = ['lib', 'node_modules', 'package.json'].map((p) => path.join(cfg.installDir, p));
   const typeCache = new Map();
   let inner = null;   // the exact (specifier, parentURL) of this hook's own createRequire().resolve
-
-  function hostOf(parentURL) {
-    if (typeof(parentURL) !== 'string' || !parentURL.startsWith('file:')) return null;
-    const p = url.fileURLToPath(parentURL);
-    return m.isVirtual(p) ? m.toHost(p) : p;
-  }
 
   // L2: from set-options on, every resolve is bounded, whoever the parent is.
   function bound(hostPath, fromModule, specifier) {
@@ -366,17 +425,20 @@ function install(cfg) {
     if (enforce) throw notFound(String(specifier).slice(0, 200));
   }
 
-  // "type" from the nearest package.json inside the module root.
+  // "type" from the nearest package.json, as Node decides it: the first one
+  // found going up wins, and one without "type" means commonjs (review I1).
   function packageType(hostFile) {
     for (let dir = path.dirname(hostFile); inside(dir, moduleRoot); dir = path.dirname(dir)) {
       if (typeCache.has(dir)) return typeCache.get(dir);
-      let type = null;
-      try { type = JSON.parse(originals.readFileSync(path.join(dir, 'package.json'), 'utf8')).type || null; } catch (e) { type = null; }
-      if (type != null || dir === moduleRoot) {
-        typeCache.set(dir, type || 'commonjs');
-        return type || 'commonjs';
+      let raw = null;
+      try { raw = originals.readFileSync(path.join(dir, 'package.json'), 'utf8'); } catch (e) { raw = null; }
+      if (raw != null) {
+        let type = 'commonjs';
+        try { type = JSON.parse(raw).type === 'module' ? 'module' : 'commonjs'; } catch (e) { type = 'commonjs'; }
+        typeCache.set(dir, type);
+        return type;
       }
-      if (dir === path.dirname(dir)) break;
+      if (dir === moduleRoot || dir === path.dirname(dir)) break;
     }
     return 'commonjs';
   }
@@ -393,18 +455,18 @@ function install(cfg) {
     resolve(specifier, context, nextResolve) {
       if (inner != null && inner.specifier === specifier && inner.parentURL === context.parentURL) return nextResolve(specifier, context);
       if (Module.isBuiltin(specifier)) return nextResolve(specifier, context);
-      const hostParent = hostOf(context.parentURL);
-      const fromModule = hostParent != null && m.isModuleHost(hostParent);
-      let s = specifier;
-      if (s.startsWith('file:')) s = url.fileURLToPath(s);
-      if (m.isVirtual(s)) s = m.toHost(s);
-      else if (hostParent != null && (s === '.' || s === '..' || s.startsWith('./') || s.startsWith('../'))) s = path.resolve(path.dirname(hostParent), s);
+      const parent = m.parent(context.parentURL);
+      const hostParent = parent.host;
+      const fromModule = parent.fromModule;
+      const s = m.specifier(specifier, parent);
       const roots = fromModule ? [moduleRoot] : [moduleRoot].concat(countinghouseRoots);
       let hostResolved = null;
       let format;
       const release = grant.resolving(roots);
       try {
-        if (fromModule && Array.isArray(context.conditions) && context.conditions.includes('require')) {
+        if (fromModule && hostParent != null && Array.isArray(context.conditions) && context.conditions.includes('require')) {
+          // require.resolve(s, {paths}) is resolved against the parent here;
+          // its paths option is not honoured (review M2, documented).
           // Node's CommonJS resolver works from the parent Module object, whose
           // filename is virtual, so module-parent CommonJS requests are
           // resolved here against the host parent.
@@ -425,14 +487,16 @@ function install(cfg) {
       // Native addons keep their host URL: Node loads them from disk itself
       // (part 1 refuses them under enforce and reports them under audit).
       if (m.isModuleHost(hostResolved) && path.extname(hostResolved) !== '.node') {
-        return {url: url.pathToFileURL(m.toVirtual(hostResolved)).href, format: format, shortCircuit: true};
+        const virtual = url.pathToFileURL(m.toVirtual(hostResolved)).href;
+        issued.add(virtual);
+        return {url: virtual, format: format, shortCircuit: true};
       }
       return {url: url.pathToFileURL(hostResolved).href, format: format, shortCircuit: true};
     },
     load(hookUrl, context, nextLoad) {
       if (typeof(hookUrl) === 'string' && hookUrl.startsWith('file:')) {
         const p = url.fileURLToPath(hookUrl);
-        if (m.isVirtual(p)) {
+        if (issued.has(hookUrl)) {
           const host = m.toHost(p);
           const format = formatOf(host);
           const source = originals.readFileSync(host, format === 'commonjs' ? undefined : 'utf8');
@@ -452,7 +516,13 @@ function install(cfg) {
   Object.defineProperty(os, 'tmpdir', {value: () => '/tmp', writable: false, configurable: false, enumerable: true});
 }
 
-module.exports = {install, mapper, VROOT};
+// How countinghouse's own worker code names a module file (module-manager,
+// handler-map): never a bare "/app", which from countinghouse code is a host path.
+function moduleSpecifier(virtualPath) {
+  return MODULE_SPECIFIER + String(virtualPath).slice(VROOT.length);
+}
+
+module.exports = {install, mapper, moduleSpecifier, codeUnderVroot, VROOT, MODULE_SPECIFIER};
 ```
 
   - `lib/sandbox.js`: keep the grant controller from `patch.install` in a module-local `const`; in `set-options`, after part 1's lockdown block, when `fsWorkerData.fsBridge != null`:
@@ -463,14 +533,17 @@ module.exports = {install, mapper, VROOT};
       mode: options.moduleSandbox, grant: fsGrant, report: (rule, target) => wm.sendSandboxViolationToParent(rule, target)});
     ```
   - `lib/module-lockdown.js`: in the reduced `createRequire` and in the `CHUtil.loadFile` lock, map a path under `/app` to the module root before the `inside()` check (`const host = (p === '/app' || p.startsWith('/app/')) ? root + p.slice(4) : p;`).
-  - `lib/module-manager.js`: the load-module message's `path` becomes `'/app'` (the worker's countinghouse code then reads `/app/package.json` and `/app/handlers` through the broker, and requires `/app` through the identity hook — no privileged request, review A4).
+  - `lib/module-manager.js`: the load-module message's `path` becomes `'/app'`. The worker's countinghouse code reads `/app/package.json` and `/app/handlers` through the broker (fs is virtual-only there, so no ambiguity), and requires module files only through `identity.moduleSpecifier(...)` — in `instantiateModule` and `lib/handler-map.js`'s handler `require`s/`import()`s — never a bare `/app` path (review C2). No privileged request (review A4).
+  - `lib/sandbox.js` `set-options`: `releaseBoot()` before `identity.install(...)`; an `install` throw (code under `/app`) fails the module load with its message.
+  - `framework.js`: under `--workerThread`, if `identity.codeUnderVroot(realDir(INSTALL_DIR), [])` is non-empty, print the same advice and exit 2.
+  - Ledger: `require.resolve(s, {paths})` from module code ignores `paths` (review M2); recorded for plan 5's docs.
 
 - [ ] **Step 4: Run the tests** — `npx mocha --exit test/fs-broker/12-identity.js test/sandbox/05-lockdown.js test/fs-broker/09-wired.js` → all passing. A route test that still reads the file is a real gap: stop and send it to the reviewer with the route and the path it took.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/fs-broker/identity.js lib/sandbox.js lib/module-lockdown.js lib/module-manager.js test/fs-broker/12-identity.js test/fixtures/fs-probe test/fixtures/esm-probe test/fixtures/route-probe
+git add framework.js lib/fs-broker/identity.js lib/sandbox.js lib/module-lockdown.js lib/module-manager.js lib/handler-map.js test/fs-broker/12-identity.js test/fixtures/fs-probe test/fixtures/esm-probe test/fixtures/route-probe
 git commit -m "feat(fs-broker): virtual module identity and a bounded loader (L1, L2)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -531,9 +604,13 @@ describe('fs-broker 13: virtual and host paths do not collide', function() {
 });
 ```
 
-(Countinghouse installed at `/app` cannot be created on a test machine without root; Task 3's mapper test and the `lib/` scan cover it. Say so in the ledger.)
+(Countinghouse installed at `/app` cannot be created on a test machine without root. It is refused, not supported, because Node's module caches are keyed by filename; Task 3's mapper and `codeUnderVroot` unit tests cover the identity rule and the refusal. Ledger exactly that.)
 
-- [ ] **Step 2: Run them to verify they fail** (tell the reviewer first) — the enforce test writes the file (the gate), and the collision test's last assertion reads the host file (interim routing serves the module's own install directory by host path).
+Two more tests in `test/fs-broker/11-grants.js`, under live `enforce`:
+- **Plain boot (review C1):** a worker boots and loads `fs-probe` under `--moduleSandbox enforce` with no `outside` lines for countinghouse's own files — `09-wired.js`'s enforce test above starts such a server; add `assert.ok(!server.output.includes(`file outside ${ROOT}`))` to it.
+- **ESM dependency of a countinghouse parent (review I4):** `test/fs-broker/scripts/esm-dep.js` builds, under `test/.tmp`, a fake install directory `ch/` with `lib/parent.js` (`module.exports = () => import('esm-dep').then((m) => m.default);`) and `node_modules/esm-dep/{package.json ("type": "module", "exports": "./index.js"), index.js (export default 'esm-ok')}`, a module root `mod/`, calls `grant.boot` then releases it, installs identity with `{installDir: ch, moduleRoot: mod, mode: 'enforce'}`, and returns `await require(ch + '/lib/parent.js')()`. Expected `'esm-ok'` — the ESM loader's `openSync` → `readSync` of the target under `grant.reading`.
+
+- [ ] **Step 2: Run them to verify they fail** (tell the reviewer first) — the enforce test writes the file (the gate), and the collision test's last assertion reads the host file (interim routing serves the module's own install directory by host path). After Step 3's deletions, run `09-wired.js` again before anything else and check deliberately that the plain worker boot under `enforce` works (the boot grant replaces `hostServed` for countinghouse's own boot requires — review C1).
 
 - [ ] **Step 3: Implement — one commit for both deletions.**
   - `broker.js`: delete `ENFORCE_FILE_DECISIONS` and its comment; `this.enforce = (opts.mode === 'enforce');`.
