@@ -192,7 +192,10 @@ describe('ctx.call: success and refusal, against the real spawned server', funct
 // worker-thread hop, so it cannot be asserted through the spawned server.
 // No mocking: buildCtx and setComposition are the exact functions Task 5's
 // load-time verification and every real handler invocation use.
-describe('ctx.call: guard clause messages (in-process, same production code)', () => {
+describe('ctx.call: guard clause messages (in-process, same production code)', function() {
+  // The first ctx.call in this process loads handler-ctx's dependencies
+  // cold; on a busy 1-CPU machine that has taken longer than mocha's 2 s.
+  this.timeout(10000);
   function fakeDevice() {
     return {deviceID: 'unit-test-device', spec: {device: {friendlyName: 'compose-caller'}}};
   }
