@@ -1,8 +1,8 @@
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const ns = require('../../lib/fs-broker/namespace');
+const {mkdtemp} = require('../helpers/test-tmp');
 
 // Paths that do not exist: prepare() keeps them as they are (real = host).
 const CFG = {
@@ -45,9 +45,9 @@ describe('fs-broker 02: namespace', () => {
   });
 
   it('a declared root that is a file is listed as a file', async () => {
-    // Not under os.tmpdir(): /tmp is itself a virtual root, and the validator
+    // Not under os.tmpdir() (test/helpers/test-tmp.js): /tmp is itself a virtual root, and the validator
     // forbids declaring paths there.
-    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.ch-ns-')));
+    const base = mkdtemp('ns-');
     try {
       fs.writeFileSync(path.join(base, 'w.conf'), 'x');
       const n = await prepared(Object.assign({}, CFG, {declared: [{path: path.join(base, 'w.conf'), access: 'r'}]}));
@@ -91,7 +91,7 @@ describe('fs-broker 02: namespace', () => {
 
   // /home -> /var/home on Fedora Silverblue/CoreOS: textually disjoint, really the same.
   it('refuses an overlap that only shows after resolving symlinks', async () => {
-    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ns-')));
+    const base = mkdtemp('ns-');
     try {
       fs.mkdirSync(path.join(base, 'var', 'home', 'u', 'data'), {recursive: true});
       fs.symlinkSync(path.join(base, 'var', 'home'), path.join(base, 'home'));
@@ -106,7 +106,7 @@ describe('fs-broker 02: namespace', () => {
   });
 
   it('a root whose host path is a symlink maps its real paths back too', async () => {
-    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ns-')));
+    const base = mkdtemp('ns-');
     try {
       fs.mkdirSync(path.join(base, 'real-data'));
       fs.symlinkSync(path.join(base, 'real-data'), path.join(base, 'data-link'));

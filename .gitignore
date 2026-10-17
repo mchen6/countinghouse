@@ -66,3 +66,6 @@ docs/*.tgz
 # `git add -A`, which would otherwise sweep the ledger into the commit it is
 # tracking.
 .superpowers/
+
+# test trees (test/helpers/test-tmp.js)
+test/.tmp/
