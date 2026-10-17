@@ -48,6 +48,7 @@ module.exports = async (fs, root, ctx) => {
   out.disposable = fs.existsSync(tmp.path);
   tmp.remove();
   try { fs.watch(root); } catch (e) { out.watch = e.code; }
+  try { new fs.Utf8Stream({fd: 1}); } catch (e) { out.utf8Stream = e.code; }
   const fh2 = await fsp.open(j('h.txt'), 'r');
   out.fhStream = await new Promise((r, x) => { let s = ''; fh2.createReadStream({encoding: 'utf8'}).on('data', (c) => { s += c; }).on('end', () => r(s)).on('error', x); });
   await fh2.close();

@@ -40,6 +40,7 @@ describe('fs-broker 07: the worker patch', function() {
     assert.strictEqual(r.blob, 'hello world');
     assert.strictEqual(r.disposable, true);
     assert.strictEqual(r.watch, 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM');
+    assert.strictEqual(r.utf8Stream, 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM');
     assert.strictEqual(r.bigRead, 17 * 1024 * 1024);
     assert.strictEqual(r.fhStream, 'handle');
     assert.strictEqual(r.noEntry, true);
