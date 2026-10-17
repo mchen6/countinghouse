@@ -39,8 +39,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     });
   });
 
-  // Outside the namespace, and outside countinghouse's install dir (which the
-  // interim host routing serves itself until plan 3) and /tmp (virtual).
+  // Outside the namespace and outside /tmp (virtual).
   function outsidePath() {
     const dir = fs.mkdtempSync(path.join(os.homedir(), '.ch-wired-'));
     outsideDirs.push(dir);
@@ -56,11 +55,24 @@ describe('fs-broker 09: module workers use the broker', function() {
     await waitFor(async () => server.output.includes(`module sandbox: fs-probe file outside ${outside}`), 5000, 'outside log line');
   });
 
-  it('enforce behaves as audit for files until plan 3 (the gate)', async () => {
+  it('enforce refuses a path outside the namespace (ENOENT) and logs it', async () => {
     server = await start('enforce');
     const outside = outsidePath();
     const w = await mcpCall(9626, KEY, tool('write'), {path: outside, content: 'o'});
-    assert.strictEqual(w.structuredContent.output.ok, true, JSON.stringify(w));
+    assert.deepStrictEqual(w.structuredContent.output, {ok: false, code: 'ENOENT'}, JSON.stringify(w));
+    assert.strictEqual(fs.existsSync(outside), false);
+    await waitFor(async () => server.output.includes(`module sandbox: fs-probe file outside ${outside}`), 5000, 'outside log line');
+    // The worker booted and loaded the module with countinghouse's own code
+    // read under the boot grant, not through the broker (review C1).
+    [ROOT, fs.realpathSync(ROOT)].forEach((r) => assert.ok(!server.output.includes(`file outside ${r}`), server.output));
+  });
+
+  // Only what module code did is reported in the module's name: countinghouse's
+  // own boot (and its dependencies' probing) is not (reviewer, plan 3 Task 3).
+  it('audit: a worker that only loads its module reports no outside access', async () => {
+    server = await start('audit');
+    await mcpCall(9626, KEY, tool('read'), {path: '/data/none'});
+    assert.ok(!server.output.includes('module sandbox: fs-probe file outside'), server.output);
   });
 
   it('data survives a restart of the module', async () => {
@@ -71,7 +83,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     await waitFor(async () => (await mcpCall(9626, KEY, tool('read'), {path: '/data/keep'})).structuredContent.output.content === 'kept', 15000, 'read after restart');
   });
 
-  // Review K1: a module loaded from under /tmp, and data under /tmp, still work.
+  // A module loaded from under /tmp, and data under /tmp, still work.
   ['off', 'audit'].forEach((mode) => {
     it(`${mode}: a module loaded from under /tmp still loads and works`, async () => {
       const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsprobe-'));

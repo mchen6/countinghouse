@@ -102,15 +102,7 @@ describe('fs-broker 12: virtual identity', function() {
         server = await start('enforce', 'route-probe');
         const res = await mcpCall(9630, 'k', 'route_probe_probeservice_attempt', {what: what, target: t.file});
         const r = res.structuredContent != null ? res.structuredContent.output : res;
-        // Until plan 3's Task 4, enforce still lets the broker pass a read
-        // outside the namespace (logged), and the install directory is still
-        // served by host path: the getter's direct read may succeed those
-        // ways, but never through a loader grant. Task 4 removes this.
-        if (what === 'getter' && r.outcome === 'read') {
-          assert.ok(where === 'installDir' || server.output.includes(`file outside ${t.file}`), `read without the broker: ${JSON.stringify(res)}`);
-        } else {
-          assert.strictEqual(r.outcome, 'refused', JSON.stringify(res));
-        }
+        assert.strictEqual(r.outcome, 'refused', JSON.stringify(res));
       } finally {
         fs.rmSync(t.cleanup, {recursive: true, force: true});
       }

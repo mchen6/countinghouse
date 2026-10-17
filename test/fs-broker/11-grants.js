@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {runBrokered} = require('../helpers/brokered-worker');
+const {mkdtemp} = require('../helpers/test-tmp');
 
 const S = (name) => path.join(__dirname, 'scripts', name);
 
@@ -16,7 +17,7 @@ describe('fs-broker 11: path-scoped original-fs grants (L1)', function() {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.ch-grants-')));
     fs.writeFileSync(path.join(dir, 'f.txt'), 'granted');
     fs.writeFileSync(path.join(dir, 'g.txt'), 'booted');
-    const m = await runBrokered(S('grants.js'), {mode: 'enforce', enforceFileDecisions: true, extra: {dir}});
+    const m = await runBrokered(S('grants.js'), {mode: 'enforce', extra: {dir}});
     assert.strictEqual(m.ok, true, JSON.stringify(m));
     const r = m.r;
     assert.strictEqual(r.before, 'ENOENT');
@@ -29,5 +30,19 @@ describe('fs-broker 11: path-scoped original-fs grants (L1)', function() {
     assert.strictEqual(r.bootRead, 'booted');
     assert.strictEqual(r.afterBoot, 'ENOENT');
     assert.strictEqual(r.grantNotExported, true);
+  });
+
+  it('a countinghouse parent imports an ES-module dependency under live enforce (review I4)', async () => {
+    dir = mkdtemp('esm-dep-');
+    const ch = path.join(dir, 'ch');
+    const mod = path.join(dir, 'mod');
+    fs.mkdirSync(path.join(ch, 'lib'), {recursive: true});
+    fs.mkdirSync(path.join(ch, 'node_modules', 'esm-dep'), {recursive: true});
+    fs.mkdirSync(mod);
+    fs.writeFileSync(path.join(ch, 'lib', 'parent.js'), "module.exports = () => import('esm-dep').then((m) => m.default);\n");
+    fs.writeFileSync(path.join(ch, 'node_modules', 'esm-dep', 'package.json'), JSON.stringify({name: 'esm-dep', type: 'module', exports: './index.js'}));
+    fs.writeFileSync(path.join(ch, 'node_modules', 'esm-dep', 'index.js'), "export default 'esm-ok';\n");
+    const m = await runBrokered(S('esm-dep.js'), {mode: 'enforce', extra: {ch, mod}});
+    assert.deepStrictEqual(m, {ok: true, r: 'esm-ok'}, JSON.stringify(m));
   });
 });

@@ -50,20 +50,4 @@ describe('fs-broker 07: the worker patch', function() {
     assert.deepStrictEqual(r.globAbs, ['/data/d/e/f.txt']);
   });
 
-  // Review K1: a host path under /tmp (a module loaded from there, say) is the
-  // virtual /tmp unless it lies inside a host root.
-  it('serves host paths inside the host roots with the original fs, until plan 3', async () => {
-    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-k1-')));
-    try {
-      const file = path.join(dir, 'f');
-      fs.writeFileSync(file, 'host');
-      const served = await runBrokered(S('k1.js'), {hostRoots: [dir], extra: {file}});
-      assert.deepStrictEqual(served, {ok: true, r: {content: 'host', viaFd: 'host'}});
-      const remapped = await runBrokered(S('k1.js'), {hostRoots: [fs.realpathSync(path.join(__dirname, '..', '..'))], extra: {file}});
-      assert.strictEqual(remapped.ok, false);
-      assert.strictEqual(remapped.e.code, 'ENOENT');
-    } finally {
-      fs.rmSync(dir, {recursive: true, force: true});
-    }
-  });
 });

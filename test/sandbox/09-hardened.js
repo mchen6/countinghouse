@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
-const {ROOT, startServer, stopServer, mcpCall, post} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 
 const KEY = 'aabbcc';
 
@@ -100,6 +100,29 @@ describe('sandbox 09: --hardened', function() {
       const r = await mcpCall(9614, KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
       assert.deepStrictEqual(r.structuredContent.output, {content: 'hardened', code: null});
       assert.strictEqual(fs.readFileSync(path.join(data, 'fs-probe', 'data', 'x'), 'utf8'), 'hardened');
+    } finally {
+      fs.rmSync(data, {recursive: true, force: true});
+    }
+  });
+
+  // Load, restart and file I/O under --hardened with enforce live: every
+  // main-thread and worker path, with the loader's grants acting on files
+  // inside the grant roots, never on a root itself (plan 3, Task 4).
+  it('a module restarts and still reads /data under --hardened (enforce)', async () => {
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(root, 'fs-probe'), {recursive: true});
+    const data = `${fs.realpathSync(ROOT)}_data-${process.pid}`;
+    try {
+      server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+        '--modulePath', root, '--moduleDataPath', data, '--loadModule', path.join(root, 'fs-probe')]);
+      await mcpCall(9614, KEY, 'fs_probe_probeservice_write', {path: '/data/x', content: 'kept'});
+      const restarted = await post(9614, KEY, '/restart-module', {name: 'fs-probe'});
+      assert.strictEqual(restarted.status, 200, JSON.stringify(restarted.body));
+      await waitFor(async () => {
+        const r = await mcpCall(9614, KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
+        return r.structuredContent != null && r.structuredContent.output.content === 'kept';
+      }, 15000, 'read after restart');
+      const where = await mcpCall(9614, KEY, 'fs_probe_probeservice_where', {});
+      assert.strictEqual(where.structuredContent.output.dirname, '/app/handlers/probeService', JSON.stringify(where));
     } finally {
       fs.rmSync(data, {recursive: true, force: true});
     }

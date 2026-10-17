@@ -14,8 +14,13 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
   if (workerData.fsBridge != null) {
     ctx.patch = require(path.join(LIB, 'patch'));
     ctx.handled = ctx.patch.install(require(path.join(LIB, 'client')).createClient(workerData.fsBridge),
-      {hostRoots: workerData.hostRoots, consoleWrite: (fd, buf) => ctx.consoleLines.push(`${fd}:${Buffer.from(buf).toString()}`)});
+      {consoleWrite: (fd, buf) => ctx.consoleLines.push(`${fd}:${Buffer.from(buf).toString()}`)});
   }
-  return require(workerData.script)(require('fs'), workerData.root, ctx);
+  // The script and what it requires load from the repo under a boot grant,
+  // as countinghouse's own code does before set-options (lib/sandbox.js).
+  const releaseBoot = ctx.handled != null ? ctx.handled.grant.boot([workerData.repo]) : () => {};
+  let run;
+  try { run = require(workerData.script); } finally { releaseBoot(); }
+  return run(require('fs'), workerData.root, ctx);
 })().then((r) => parentPort.postMessage({ok: true, r: r}),
   (e) => parentPort.postMessage({ok: false, e: {code: e && e.code, message: String(e && e.message), stack: String(e && e.stack)}}));

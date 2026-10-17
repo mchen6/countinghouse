@@ -14,7 +14,7 @@ async function setup(mode, extra) {
   const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
   await ns.prepare();
   const broker = new FsBroker(Object.assign({name: 'm', mode: mode, namespace: ns, cwd: '/',
-    report: (r, t) => reports.push(`${r} ${t}`), enforceFileDecisions: true}, extra || {}));
+    report: (r, t) => reports.push(`${r} ${t}`)}, extra || {}));
   return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
 

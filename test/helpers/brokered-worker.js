@@ -21,17 +21,14 @@ async function runBrokered(script, opts) {
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   Object.entries(opts.files || {}).forEach(([name, content]) => fs.writeFileSync(path.join(dirs.data, name), content));
   let bridge = null;
-  // hostRoots: the repo by default, so the script itself loads by host path (review K1)
-  const data = {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {},
-    hostRoots: opts.hostRoots != null ? opts.hostRoots : [fs.realpathSync(REPO)]};
+  // repo: the worker entry loads the script under a boot grant over it
+  const data = {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {}, repo: fs.realpathSync(REPO)};
   let transferList = [];
   if (usePatch) {
     const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
     await ns.prepare();
     const scheduler = new FsScheduler({globalCap: 3});
-    // enforceFileDecisions: live enforce for one test until plan 3's Task 4 removes the gate
     const broker = new FsBroker({name: 't', mode: opts.mode || 'audit', namespace: ns, cwd: process.cwd(), report: () => {},
-      enforceFileDecisions: opts.enforceFileDecisions,
       schedule: (fn) => scheduler.submit('t', fn)});
     bridge = createBridge({broker, scheduler, key: 't'});
     data.fsBridge = bridge.transfer;

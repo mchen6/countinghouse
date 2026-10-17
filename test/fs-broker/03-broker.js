@@ -24,7 +24,7 @@ async function setup(mode, opts) {
   await namespace.prepare();
   const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/',
     report: (rule, target) => reports.push(`${rule} ${target}`),
-    enforceFileDecisions: opts.enforceFileDecisions != null ? opts.enforceFileDecisions : true, hooks: opts.hooks});
+    hooks: opts.hooks});
   return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
 
@@ -79,13 +79,6 @@ describe('fs-broker 03: broker operations', function() {
     try {
       await t.broker.handle('stat', [path.join(t.dirs.outside, 'secret')]);
       assert.deepStrictEqual(t.reports, []);
-    } finally { await t.done(); }
-  });
-
-  it('the plan 3 gate: enforce behaves as audit while enforceFileDecisions is false', async () => {
-    const t = await setup('enforce', {enforceFileDecisions: false});
-    try {
-      assert.strictEqual((await t.broker.handle('stat', [path.join(t.dirs.outside, 'secret')])).fields.size, 2);
     } finally { await t.done(); }
   });
 
