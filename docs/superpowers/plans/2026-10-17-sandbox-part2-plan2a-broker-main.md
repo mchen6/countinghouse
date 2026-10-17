@@ -4,7 +4,7 @@
 
 **Goal:** Build everything the file broker needs on the main thread — per-module data directories, the virtual namespace, the operation executor with its checks, and the scheduler that protects the libuv threadpool — as plain modules tested in-process, ready for plan 2b to connect to workers.
 
-**Architecture:** Four new files under `lib/`, none wired into the running server yet (plan 2b does that). `module-data.js` names and creates data directories. `fs-broker/namespace.js` turns a path a module gave into a decision (one of the virtual roots, a synthesised ancestor, or outside). `fs-broker/broker.js` (`FsBroker`) runs one primitive file operation for one worker: decide, check on the host, run, verify, and answer with Node-shaped errors and virtual paths. `fs-broker/scheduler.js` (`FsScheduler`) shares a global cap on operations in flight fairly between workers.
+**Architecture:** Four new files under `lib/`, none wired into the running server yet (plan 2b does that). `module-data.js` names and creates data directories. `fs-broker/namespace.js` (prepared once per worker: every root and protected path realpath'd) turns a path a module gave into a decision (one of the virtual roots, a synthesised ancestor, or outside). `fs-broker/broker.js` (`FsBroker`) runs one primitive file operation for one worker: decide, check on the host, run, verify, and answer with Node-shaped errors and virtual paths. `fs-broker/scheduler.js` (`FsScheduler`) shares a global cap on operations in flight fairly between workers.
 
 **Tech Stack:** Node.js >= 22.16 (`fs/promises`), mocha.
 
@@ -65,6 +65,20 @@ describe('fs-broker 01: module data directories', () => {
     assert.strictEqual(md.dirsFor('/srv/data', 'x').root, '/srv/data/x');
   });
 
+  it('leaves an existing --moduleDataPath\'s mode alone', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-md-'));
+    try {
+      const store = path.join(root, 'store');
+      fs.mkdirSync(store);
+      fs.chmodSync(store, 0o750);
+      const d = await md.ensureDirs(store, 'x');
+      assert.strictEqual(fs.statSync(store).mode & 0o777, 0o750);
+      assert.strictEqual(fs.statSync(d.root).mode & 0o777, 0o700);
+    } finally {
+      fs.rmSync(root, {recursive: true, force: true});
+    }
+  });
+
   it('creates the directories with mode 0700', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-md-'));
     try {
@@ -100,7 +114,9 @@ const path = require('path');
 
 // A name must map to exactly one directory under the data path and never
 // leave it: one segment, or "@scope/name"; no empty, dot-leading or "@"-only
-// segments; no backslash or NUL. Distinct names give distinct paths.
+// segments; no backslash or NUL. Distinct names give distinct paths on a
+// case-sensitive file system (Linux, the target); on macOS "Foo" and "foo"
+// would share one, which npm's lowercase rule makes rare.
 function safeName(name) {
   if (typeof(name) !== 'string' || name.length === 0 || name.length > 214) return false;
   if (name.includes('\0') || name.includes('\\')) return false;
@@ -121,16 +137,18 @@ function dirsFor(dataRoot, name) {
 }
 
 // mkdir's mode is filtered by the umask, so each directory this creates is
-// chmod'ed to 0700 afterwards.
+// chmod'ed to 0700 afterwards. Directories that already exist (an operator's
+// --moduleDataPath set to 0750 for a backup group, say) are left alone.
 async function ensureDirs(dataRoot, name) {
   const d = dirsFor(dataRoot, name);
-  const base = path.resolve(dataRoot);
-  const chain = [base];
-  for (let p = path.dirname(d.root); p !== base && p.startsWith(base + path.sep); p = path.dirname(p)) chain.splice(1, 0, p);
-  chain.push(d.root, d.data, d.tmp);
-  for (const p of chain) {
-    await fs.promises.mkdir(p, {recursive: true, mode: 0o700});
-    await fs.promises.chmod(p, 0o700);
+  for (const target of [d.data, d.tmp]) {
+    const first = await fs.promises.mkdir(target, {recursive: true, mode: 0o700});
+    if (first == null) continue;
+    // mkdir returned the first directory it created; chmod it and every one below it
+    for (let p = target; ; p = path.dirname(p)) {
+      await fs.promises.chmod(p, 0o700);
+      if (p === first) break;
+    }
   }
   return d;
 }
@@ -141,7 +159,7 @@ module.exports = {safeName, dirsFor, ensureDirs};
 - [ ] **Step 4: Run it to verify it passes**
 
 Run: `npx mocha test/fs-broker/01-module-data.js`
-Expected: 5 passing.
+Expected: 6 passing.
 
 - [ ] **Step 5: The option and `--hardened`.**
   - `lib/cli-options.js`, after the `modulePath` line:
@@ -164,7 +182,7 @@ Expected: 5 passing.
 - [ ] **Step 6: Run the tests** (tell the reviewer first: 09 uses port 9614)
 
 Run: `npx mocha test/fs-broker/01-module-data.js && npx mocha --exit test/sandbox/09-hardened.js`
-Expected: 6 passing; 09 all passing.
+Expected: 7 passing; 09 all passing.
 
 - [ ] **Step 7: Commit**
 
@@ -184,28 +202,39 @@ Also add `./test/fs-broker/*.js` to the `npm test` script in `package.json`, ins
 
 **Interfaces:**
 - Consumes: nothing from Task 1 at run time (paths are passed in).
-- Produces: `createNamespace({moduleRoot, dataDir, tmpDir, declared: [{path, access: 'r'|'rw'}], protectedPaths: [string]})` → `{roots, refused: [{path, reason}], resolve(p, cwd) → Resolution, toVirtual(hostPath) → string|null}` where `Resolution` is one of
-  - `{kind: 'root', virtual, host, root}` with `root = {vroot, host, access: 'r'|'rw', writable: boolean, quota: boolean, name: 'app'|'data'|'tmp'|'declared'}`,
-  - `{kind: 'ancestor', virtual, children: [string]}`,
-  - `{kind: 'outside', virtual, host}`;
-  and `toVirtualPath(p)` (module function) → normalised absolute POSIX path from a string, `Buffer` or `file:` URL.
+- Produces: `createNamespace({moduleRoot, dataDir, tmpDir, declared: [{path, access: 'r'|'rw'}], protectedPaths: [string]})` → a namespace object; **`await ns.prepare()` before use** (realpaths every root and protected path once, decides refusals, records each root's type). After `prepare()`: `ns.roots` (each `{vroot, host, real, type: 'dir'|'file'|'missing', access, writable, quota, name: 'app'|'data'|'tmp'|'declared'}`), `ns.refused: [{path, reason}]`, `ns.resolve(p, cwd) → Resolution`, `ns.rootForReal(realHostPath) → root|null` (longest `real` match), `ns.toVirtual(hostPath) → string|null` (accepts `real` and `host` forms).
+- `Resolution`: `{kind: 'root', virtual, host, root}` · `{kind: 'ancestor', virtual, children: [{name, type}]}` · `{kind: 'outside', virtual, host}`.
+- Module function `toVirtualPath(p, cwd)` → normalised absolute POSIX path from a string, `Buffer` or `file:` URL.
 
 - [ ] **Step 1: Write the failing test** — `test/fs-broker/02-namespace.js`:
 
 ```js
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const ns = require('../../lib/fs-broker/namespace');
 
+// Paths that do not exist: prepare() keeps them as they are (real = host).
 const CFG = {
   moduleRoot: '/srv/modules/weather', dataDir: '/srv/data/weather/data', tmpDir: '/srv/data/weather/tmp',
   declared: [{path: '/var/log/app', access: 'rw'}, {path: '/etc/weather', access: 'r'}],
   protectedPaths: ['/srv/countinghouse', '/srv/modules', '/srv/data', '/srv/countinghouse/auth.json']
 };
 
-describe('fs-broker 02: namespace', () => {
-  const n = ns.createNamespace(CFG);
+async function prepared(cfg) {
+  const n = ns.createNamespace(cfg);
+  await n.prepare();
+  return n;
+}
 
-  it('maps the three virtual roots and declared paths, longest match first', () => {
+function pick(r) {
+  return {kind: r.kind, host: r.host, name: r.root.name, writable: r.root.writable};
+}
+
+describe('fs-broker 02: namespace', () => {
+  it('maps the three virtual roots and declared paths, longest match first', async () => {
+    const n = await prepared(CFG);
     assert.deepStrictEqual(pick(n.resolve('/app/handlers/x.js', '/')), {kind: 'root', host: '/srv/modules/weather/handlers/x.js', name: 'app', writable: false});
     assert.deepStrictEqual(pick(n.resolve('/data', '/')), {kind: 'root', host: '/srv/data/weather/data', name: 'data', writable: true});
     assert.deepStrictEqual(pick(n.resolve('/tmp/a/../b', '/')), {kind: 'root', host: '/srv/data/weather/tmp/b', name: 'tmp', writable: true});
@@ -213,50 +242,90 @@ describe('fs-broker 02: namespace', () => {
     assert.deepStrictEqual(pick(n.resolve('/etc/weather/k', '/')), {kind: 'root', host: '/etc/weather/k', name: 'declared', writable: false});
   });
 
-  it('does not treat a sibling with a common prefix as inside a root', () => {
+  it('does not treat a sibling with a common prefix as inside a root', async () => {
+    const n = await prepared(CFG);
     assert.strictEqual(n.resolve('/database/x', '/').kind, 'outside');
     assert.strictEqual(n.resolve('/apps', '/').kind, 'outside');
   });
 
-  it('synthesises ancestors that list only the next component', () => {
-    assert.deepStrictEqual(n.resolve('/', '/'), {kind: 'ancestor', virtual: '/', children: ['app', 'data', 'etc', 'tmp', 'var']});
-    assert.deepStrictEqual(n.resolve('/var/log', '/'), {kind: 'ancestor', virtual: '/var/log', children: ['app']});
+  it('synthesises ancestors that list only the next component, with its type', async () => {
+    const n = await prepared(CFG);
+    assert.deepStrictEqual(n.resolve('/', '/'), {kind: 'ancestor', virtual: '/',
+      children: [{name: 'app', type: 'dir'}, {name: 'data', type: 'dir'}, {name: 'etc', type: 'dir'}, {name: 'tmp', type: 'dir'}, {name: 'var', type: 'dir'}]});
+    assert.deepStrictEqual(n.resolve('/var/log', '/'), {kind: 'ancestor', virtual: '/var/log', children: [{name: 'app', type: 'dir'}]});
   });
 
-  it('a declared root that covers an ancestor answers as that root', () => {
-    const m = ns.createNamespace(Object.assign({}, CFG, {declared: [{path: '/var', access: 'r'}, {path: '/var/log/app', access: 'rw'}]}));
-    assert.strictEqual(m.resolve('/var/log', '/').kind, 'root');
-    assert.strictEqual(m.resolve('/var/log/app/x', '/').root.writable, true);
+  it('a declared root that is a file is listed as a file', async () => {
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ns-')));
+    try {
+      fs.writeFileSync(path.join(base, 'w.conf'), 'x');
+      const n = await prepared(Object.assign({}, CFG, {declared: [{path: path.join(base, 'w.conf'), access: 'r'}]}));
+      const parent = n.resolve(base, '/');
+      assert.deepStrictEqual(parent.children, [{name: 'w.conf', type: 'file'}]);
+    } finally { fs.rmSync(base, {recursive: true, force: true}); }
   });
 
-  it('resolves relative paths against the given cwd', () => {
+  it('a declared root that covers an ancestor answers as that root', async () => {
+    const n = await prepared(Object.assign({}, CFG, {declared: [{path: '/var', access: 'r'}, {path: '/var/log/app', access: 'rw'}]}));
+    assert.strictEqual(n.resolve('/var/log', '/').kind, 'root');
+    assert.strictEqual(n.resolve('/var/log/app/x', '/').root.writable, true);
+  });
+
+  it('resolves relative paths against the given cwd', async () => {
+    const n = await prepared(CFG);
     assert.strictEqual(n.resolve('handlers/x.js', '/app').host, '/srv/modules/weather/handlers/x.js');
     assert.strictEqual(n.resolve('x', '/home/u').kind, 'outside');
   });
 
-  it('accepts Buffers and file: URLs', () => {
+  it('accepts Buffers and file: URLs', async () => {
+    const n = await prepared(CFG);
     assert.strictEqual(n.resolve(Buffer.from('/data/x'), '/').host, '/srv/data/weather/data/x');
     assert.strictEqual(n.resolve(new URL('file:///tmp/y'), '/').host, '/srv/data/weather/tmp/y');
   });
 
-  it('maps host paths back to virtual ones', () => {
+  it('maps host paths back to virtual ones', async () => {
+    const n = await prepared(CFG);
     assert.strictEqual(n.toVirtual('/srv/data/weather/tmp/q'), '/tmp/q');
     assert.strictEqual(n.toVirtual('/srv/modules/weather'), '/app');
     assert.strictEqual(n.toVirtual('/var/log/app/x'), '/var/log/app/x');
     assert.strictEqual(n.toVirtual('/etc/passwd'), null);
   });
 
-  it('refuses a declared path that overlaps a protected path, either way round', () => {
-    const m = ns.createNamespace(Object.assign({}, CFG, {declared: [{path: '/srv', access: 'r'}, {path: '/srv/data/other', access: 'rw'}, {path: '/opt/ok', access: 'r'}]}));
-    assert.deepStrictEqual(m.refused.map((r) => r.path), ['/srv', '/srv/data/other']);
-    assert.strictEqual(m.resolve('/srv/data/other/x', '/').kind, 'outside');
-    assert.strictEqual(m.resolve('/opt/ok/x', '/').kind, 'root');
+  it('refuses a declared path that overlaps a protected path, either way round', async () => {
+    const n = await prepared(Object.assign({}, CFG, {declared: [{path: '/srv', access: 'r'}, {path: '/srv/data/other', access: 'rw'}, {path: '/opt/ok', access: 'r'}]}));
+    assert.deepStrictEqual(n.refused.map((r) => r.path), ['/srv', '/srv/data/other']);
+    assert.strictEqual(n.resolve('/srv/data/other/x', '/').kind, 'outside');
+    assert.strictEqual(n.resolve('/opt/ok/x', '/').kind, 'root');
+  });
+
+  // /home -> /var/home on Fedora Silverblue/CoreOS: textually disjoint, really the same.
+  it('refuses an overlap that only shows after resolving symlinks', async () => {
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ns-')));
+    try {
+      fs.mkdirSync(path.join(base, 'var', 'home', 'u', 'data'), {recursive: true});
+      fs.symlinkSync(path.join(base, 'var', 'home'), path.join(base, 'home'));
+      fs.mkdirSync(path.join(base, 'elsewhere'));
+      fs.symlinkSync(path.join(base, 'var', 'home', 'u'), path.join(base, 'elsewhere', 'into-home'));
+      const n = await prepared(Object.assign({}, CFG, {
+        protectedPaths: [path.join(base, 'home', 'u', 'data')],
+        declared: [{path: path.join(base, 'var'), access: 'r'}, {path: path.join(base, 'elsewhere', 'into-home'), access: 'rw'}]
+      }));
+      assert.deepStrictEqual(n.refused.map((r) => r.path).sort(), [path.join(base, 'elsewhere', 'into-home'), path.join(base, 'var')].sort());
+    } finally { fs.rmSync(base, {recursive: true, force: true}); }
+  });
+
+  it('a root whose host path is a symlink maps its real paths back too', async () => {
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ns-')));
+    try {
+      fs.mkdirSync(path.join(base, 'real-data'));
+      fs.symlinkSync(path.join(base, 'real-data'), path.join(base, 'data-link'));
+      const n = await prepared(Object.assign({}, CFG, {dataDir: path.join(base, 'data-link')}));
+      assert.strictEqual(n.toVirtual(path.join(base, 'real-data', 'sub', 'x')), '/data/sub/x');
+      assert.strictEqual(n.toVirtual(path.join(base, 'data-link', 'sub', 'x')), '/data/sub/x');
+      assert.strictEqual(n.rootForReal(path.join(base, 'real-data', 'y')).name, 'data');
+    } finally { fs.rmSync(base, {recursive: true, force: true}); }
   });
 });
-
-function pick(r) {
-  return {kind: r.kind, host: r.host, name: r.root.name, writable: r.root.writable};
-}
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -270,7 +339,10 @@ Expected: FAIL, `Cannot find module`.
 // A module's file namespace (docs/superpowers/specs/2026-10-17-module-
 // sandbox-fs-broker-design.md, section 1): /app, /data, /tmp and declared
 // paths, the synthesised directories above them, and everything else
-// ("outside"). Pure path arithmetic; the broker does the host checks.
+// ("outside"). prepare() resolves every root and protected path once, at
+// spawn; resolve() is then pure path arithmetic, and the broker does the
+// per-request host checks against the prepared real paths.
+const fsp = require('fs/promises');
 const path = require('path').posix;
 const url = require('url');
 
@@ -288,40 +360,79 @@ function toVirtualPath(p, cwd) {
   return path.resolve(cwd || '/', s);
 }
 
-function createNamespace(cfg) {
-  const refused = [];
-  const declared = (cfg.declared || []).filter((d) => {
-    const clash = (cfg.protectedPaths || []).find((p) => inside(p, d.path) || inside(d.path, p));
-    if (clash != null) refused.push({path: d.path, reason: `overlaps countinghouse's ${clash}`});
-    return clash == null;
-  });
-  const roots = [
-    {vroot: '/app', host: cfg.moduleRoot, access: 'r', writable: false, quota: false, name: 'app'},
-    {vroot: '/data', host: cfg.dataDir, access: 'rw', writable: true, quota: true, name: 'data'},
-    {vroot: '/tmp', host: cfg.tmpDir, access: 'rw', writable: true, quota: true, name: 'tmp'}
-  ].concat(declared.map((d) => ({vroot: d.path, host: d.path, access: d.access, writable: d.access === 'rw', quota: false, name: 'declared'})));
-  // longest first, so /var/log/app wins over /var
-  roots.sort((a, b) => b.vroot.length - a.vroot.length);
-  const byHost = roots.slice().sort((a, b) => b.host.length - a.host.length);
+async function realOf(p) {
+  try { return await fsp.realpath(p); } catch (e) { return p; }
+}
 
-  function resolve(p, cwd) {
+async function typeOf(p) {
+  try { return (await fsp.stat(p)).isDirectory() ? 'dir' : 'file'; } catch (e) { return 'missing'; }
+}
+
+function createNamespace(cfg) {
+  const self = {roots: [], refused: [], prepared: false};
+  let byVroot = [];
+  let byReal = [];
+  let byHost = [];
+
+  self.prepare = async function() {
+    const protectedReal = [];
+    for (const p of cfg.protectedPaths || []) protectedReal.push({text: p, real: await realOf(p)});
+    const kept = [];
+    for (const d of cfg.declared || []) {
+      const real = await realOf(d.path);
+      const clash = protectedReal.find((p) => inside(p.text, d.path) || inside(d.path, p.text) ||
+        inside(p.real, real) || inside(real, p.real));
+      if (clash != null) self.refused.push({path: d.path, reason: `overlaps countinghouse's ${clash.text}`});
+      else kept.push(d);
+    }
+    const base = [
+      {vroot: '/app', host: cfg.moduleRoot, access: 'r', writable: false, quota: false, name: 'app'},
+      {vroot: '/data', host: cfg.dataDir, access: 'rw', writable: true, quota: true, name: 'data'},
+      {vroot: '/tmp', host: cfg.tmpDir, access: 'rw', writable: true, quota: true, name: 'tmp'}
+    ].concat(kept.map((d) => ({vroot: d.path, host: d.path, access: d.access, writable: d.access === 'rw', quota: false, name: 'declared'})));
+    for (const r of base) {
+      r.real = await realOf(r.host);
+      r.type = await typeOf(r.host);
+    }
+    self.roots = base;
+    byVroot = base.slice().sort((a, b) => b.vroot.length - a.vroot.length);
+    byReal = base.slice().sort((a, b) => b.real.length - a.real.length);
+    byHost = base.slice().sort((a, b) => b.host.length - a.host.length);
+    self.prepared = true;
+  };
+
+  self.resolve = function(p, cwd) {
+    if (!self.prepared) throw new Error('namespace used before prepare()');
     const v = toVirtualPath(p, cwd);
-    const root = roots.find((r) => inside(v, r.vroot));
+    const root = byVroot.find((r) => inside(v, r.vroot));
     if (root != null) return {kind: 'root', virtual: v, host: root.host + v.slice(root.vroot.length), root: root};
-    const below = roots.filter((r) => inside(r.vroot, v) && r.vroot !== v);
+    const below = byVroot.filter((r) => inside(r.vroot, v) && r.vroot !== v);
     if (below.length > 0) {
-      const children = Array.from(new Set(below.map((r) => r.vroot.slice(v === '/' ? 1 : v.length + 1).split('/')[0]))).sort();
+      const seen = new Map();
+      below.forEach((r) => {
+        const rest = r.vroot.slice(v === '/' ? 1 : v.length + 1).split('/');
+        const name = rest[0];
+        const type = (rest.length === 1 && r.type === 'file') ? 'file' : 'dir';
+        if (!seen.has(name) || type === 'dir') seen.set(name, type);
+      });
+      const children = Array.from(seen.keys()).sort().map((name) => ({name: name, type: seen.get(name)}));
       return {kind: 'ancestor', virtual: v, children: children};
     }
     return {kind: 'outside', virtual: v, host: v};
-  }
+  };
 
-  function toVirtual(hostPath) {
-    const root = byHost.find((r) => inside(hostPath, r.host));
-    return root == null ? null : root.vroot + hostPath.slice(root.host.length);
-  }
+  self.rootForReal = function(realPath) {
+    return byReal.find((r) => inside(realPath, r.real)) || null;
+  };
 
-  return {roots, refused, resolve, toVirtual};
+  self.toVirtual = function(hostPath) {
+    const viaReal = byReal.find((r) => inside(hostPath, r.real));
+    if (viaReal != null) return viaReal.vroot + hostPath.slice(viaReal.real.length);
+    const viaHost = byHost.find((r) => inside(hostPath, r.host));
+    return viaHost == null ? null : viaHost.vroot + hostPath.slice(viaHost.host.length);
+  };
+
+  return self;
 }
 
 module.exports = {createNamespace, toVirtualPath, inside};
@@ -330,7 +441,7 @@ module.exports = {createNamespace, toVirtualPath, inside};
 - [ ] **Step 4: Run it to verify it passes**
 
 Run: `npx mocha test/fs-broker/02-namespace.js`
-Expected: 8 passing.
+Expected: 11 passing.
 
 - [ ] **Step 5: Commit**
 
@@ -347,15 +458,19 @@ git commit -m "feat(fs-broker): the virtual namespace" -m "Co-Authored-By: Claud
 - Create: `lib/fs-broker/broker.js`, `lib/fs-broker/errors.js`, `lib/fs-broker/rwlock.js`, `test/fs-broker/03-broker.js`
 
 **Interfaces:**
-- Consumes: `createNamespace`, `inside` (Task 2).
-- Produces: `new FsBroker({name, mode: 'off'|'audit'|'enforce', namespace, cwd, report(rule, virtualPath), enforceFileDecisions?, hooks?})` with
-  - `handle(op: string, args: Array) → Promise<result>` — rejects with a Node-shaped error (`errors.nodeError`);
+- Consumes: `createNamespace` (prepared), `ns.rootForReal`, `ns.toVirtual`, `inside` (Task 2).
+- Produces: `new FsBroker({name, mode: 'off'|'audit'|'enforce', namespace /* prepared */, cwd, report(rule, virtualPath), enforceFileDecisions?, hooks?})` with
+  - `handle(op: string, args: Array) → Promise<result>` — rejects with a Node-shaped error;
   - `closeAll() → Promise<void>`;
-  - the op names and result shapes listed in Step 3's `OPS` table; `stat`-like results are `{kind: 'stats', bigint, fields}`, `readdir` with `withFileTypes` returns `[{name, type, parentPath}]` with `type` one of `'file'|'dir'|'symlink'|'other'`.
-  - `hooks.afterCheck(op, host)` — test-only seam, called between the host check and the operation (Review Focus 5); not passed in production.
-- Produces: `errors.nodeError(code, syscall, vpath, dest?)` → `Error` with `code`, negative `errno`, `syscall`, `path`, `dest`.
+  - op names, lock modes, `follow` flags and result shapes as in the `OPS` table (Step 4). `stat`-like results are `{kind: 'stats', bigint, fields}`; `readdir` with `withFileTypes` returns `[{name, type, parentPath}]`, `type` one of `'file'|'dir'|'symlink'|'other'`.
+  - `hooks.afterCheck(syscall, host) → void|Promise` — test-only seam, awaited between the host check and the operation, inside the operation's lock (Review Focus 5, lock tests); not passed in production.
+- Produces: `errors.nodeError(code, syscall, vpath, dest?)`; `errors.rewrite(err, syscall, placed, destPlaced, namespace)` — any error out of a host operation, re-addressed: `E*` codes become a fresh `nodeError`; anything else (`ERR_FS_EISDIR`, `ERR_FS_CP_*` …) keeps its `code` with host paths scrubbed to virtual ones in `message`, `path` and `dest`.
 
-- [ ] **Step 1: Write the failing tests** — `test/fs-broker/03-broker.js`. Each test builds a real directory tree in a temp dir and a broker over it:
+**Lock rule (spec section 3):** operations that resolve a path take the module's lock shared; operations that create, remove, rename or change metadata of a path take it exclusive; `open` is exclusive only when it can create or replace (`w`, `a`, `x` flags, or `O_CREAT`/`O_TRUNC`/`O_EXCL`); descriptor operations take no path lock and are ordered per descriptor.
+
+**Follow rule:** operations that act on a symlink itself (`lstat`, `readlink`, `unlink`, `rm`, `rmdir`, `rename`, `link`, `symlink`, `lchown`, `lutimes`, `mkdir`, `mkdtemp`) are checked through their parent's realpath and the leaf's `lstat`; the others follow the leaf. Either way, the root that contains the **real** location decides access: a link from `/data` into a declared `r` directory is not writable.
+
+- [ ] **Step 1: Write the failing tests** — `test/fs-broker/03-broker.js`:
 
 ```js
 const assert = require('assert');
@@ -365,32 +480,49 @@ const path = require('path');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker} = require('../../lib/fs-broker/broker');
 
-function setup(mode, opts) {
+async function setup(mode, opts) {
+  opts = opts || {};
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-broker-')));
-  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), outside: path.join(base, 'outside')};
+  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'),
+    outside: path.join(base, 'outside'), ro: path.join(base, 'ro')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   fs.writeFileSync(path.join(dirs.app, 'index.js'), 'module.exports = 1;');
   fs.writeFileSync(path.join(dirs.outside, 'secret'), 'no');
+  fs.writeFileSync(path.join(dirs.ro, 'config'), 'ro');
+  if (opts.dataIsLink) {
+    fs.renameSync(dirs.data, path.join(base, 'real-data'));
+    fs.symlinkSync(path.join(base, 'real-data'), dirs.data);
+  }
   const reports = [];
-  const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
-  const broker = new FsBroker(Object.assign({name: 'm', mode: mode, namespace: namespace, cwd: '/',
-    report: (rule, target) => reports.push(`${rule} ${target}`), enforceFileDecisions: true}, opts || {}));
+  const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp,
+    declared: [{path: dirs.ro, access: 'r'}], protectedPaths: []});
+  await namespace.prepare();
+  const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/',
+    report: (rule, target) => reports.push(`${rule} ${target}`),
+    enforceFileDecisions: opts.enforceFileDecisions != null ? opts.enforceFileDecisions : true, hooks: opts.hooks});
   return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
+
+function gate() {
+  let open;
+  const p = new Promise((r) => { open = r; });
+  return {wait: () => p, open: open};
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 30));
 
 describe('fs-broker 03: broker operations', function() {
   this.timeout(10000);
 
   it('writes, reads and lists inside /data, answering virtual paths', async () => {
-    const t = setup('enforce');
+    const t = await setup('enforce');
     try {
       const fd = await t.broker.handle('open', ['/data/a.txt', 'w', 0o644]);
       assert.ok(fd >= 3);
       assert.strictEqual(await t.broker.handle('write', [fd, Buffer.from('hello'), null]), 5);
       await t.broker.handle('close', [fd]);
       const rfd = await t.broker.handle('open', ['/data/a.txt', 'r']);
-      const buf = await t.broker.handle('read', [rfd, 100, 0]);
-      assert.strictEqual(Buffer.from(buf).toString(), 'hello');
+      assert.strictEqual(Buffer.from(await t.broker.handle('read', [rfd, 100, 0])).toString(), 'hello');
       await t.broker.handle('close', [rfd]);
       assert.deepStrictEqual(await t.broker.handle('readdir', ['/data', {withFileTypes: true}]), [{name: 'a.txt', type: 'file', parentPath: '/data'}]);
       assert.strictEqual(await t.broker.handle('realpath', ['/data/a.txt']), '/data/a.txt');
@@ -399,7 +531,7 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('enforce: outside is ENOENT with a virtual path, and is reported', async () => {
-    const t = setup('enforce');
+    const t = await setup('enforce');
     try {
       const secret = path.join(t.dirs.outside, 'secret');
       await assert.rejects(t.broker.handle('stat', [secret]), (e) => e.code === 'ENOENT' && e.path === secret && e.errno < 0 && e.syscall === 'stat');
@@ -408,18 +540,17 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('audit: outside passes through and is reported once', async () => {
-    const t = setup('audit');
+    const t = await setup('audit');
     try {
       const secret = path.join(t.dirs.outside, 'secret');
-      const st = await t.broker.handle('stat', [secret]);
-      assert.strictEqual(st.fields.size, 2);
+      assert.strictEqual((await t.broker.handle('stat', [secret])).fields.size, 2);
       await t.broker.handle('stat', [secret]);
       assert.strictEqual(t.reports.filter((r) => r === `outside ${secret}`).length, 1);
     } finally { await t.done(); }
   });
 
   it('off: outside passes through silently', async () => {
-    const t = setup('off');
+    const t = await setup('off');
     try {
       await t.broker.handle('stat', [path.join(t.dirs.outside, 'secret')]);
       assert.deepStrictEqual(t.reports, []);
@@ -427,44 +558,82 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('the plan 3 gate: enforce behaves as audit while enforceFileDecisions is false', async () => {
-    const t = setup('enforce', {enforceFileDecisions: false});
+    const t = await setup('enforce', {enforceFileDecisions: false});
     try {
-      const st = await t.broker.handle('stat', [path.join(t.dirs.outside, 'secret')]);
-      assert.strictEqual(st.fields.size, 2);
+      assert.strictEqual((await t.broker.handle('stat', [path.join(t.dirs.outside, 'secret')])).fields.size, 2);
     } finally { await t.done(); }
   });
 
   it('enforce: /app is read-only (EROFS); audit allows and reports it', async () => {
-    const e = setup('enforce');
+    const e = await setup('enforce');
     try {
       await assert.rejects(e.broker.handle('open', ['/app/index.js', 'w']), (err) => err.code === 'EROFS' && err.path === '/app/index.js');
     } finally { await e.done(); }
-    const a = setup('audit');
+    const a = await setup('audit');
     try {
-      const fd = await a.broker.handle('open', ['/app/new.js', 'w']);
-      await a.broker.handle('close', [fd]);
+      await a.broker.handle('close', [await a.broker.handle('open', ['/app/new.js', 'w'])]);
       assert.ok(a.reports.includes('readonly /app/new.js'), a.reports.join('\n'));
     } finally { await a.done(); }
   });
 
-  it('a symlink planted in /data that points outside: enforce ENOENT, audit reports escape', async () => {
-    const e = setup('enforce');
+  it('a symlink planted in /data that points outside: reading through it is refused under enforce, reported under audit', async () => {
+    const e = await setup('enforce');
     try {
       fs.symlinkSync(path.join(e.dirs.outside, 'secret'), path.join(e.dirs.data, 'link'));
       await assert.rejects(e.broker.handle('open', ['/data/link', 'r']), (err) => err.code === 'ENOENT' && err.path === '/data/link');
     } finally { await e.done(); }
-    const a = setup('audit');
+    const a = await setup('audit');
     try {
       fs.symlinkSync(path.join(a.dirs.outside, 'secret'), path.join(a.dirs.data, 'link'));
-      const fd = await a.broker.handle('open', ['/data/link', 'r']);
-      await a.broker.handle('close', [fd]);
+      await a.broker.handle('close', [await a.broker.handle('open', ['/data/link', 'r'])]);
       assert.ok(a.reports.includes('escape /data/link'), a.reports.join('\n'));
     } finally { await a.done(); }
   });
 
+  it('the same link can be lstat\'d, read as a link and removed under enforce', async () => {
+    const t = await setup('enforce');
+    try {
+      const target = path.join(t.dirs.outside, 'secret');
+      fs.symlinkSync(target, path.join(t.dirs.data, 'link'));
+      assert.strictEqual((await t.broker.handle('lstat', ['/data/link'])).fields.mode & 0o170000, 0o120000);
+      assert.strictEqual(await t.broker.handle('readlink', ['/data/link']), target);
+      await t.broker.handle('unlink', ['/data/link']);
+      assert.strictEqual(fs.existsSync(path.join(t.dirs.data, 'link')), false);
+    } finally { await t.done(); }
+  });
+
+  it('readlink maps an absolute target inside a root back to its virtual path', async () => {
+    const t = await setup('enforce');
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
+      fs.symlinkSync(path.join(t.dirs.data, 'f'), path.join(t.dirs.data, 'abs'));
+      assert.strictEqual(await t.broker.handle('readlink', ['/data/abs']), '/data/f');
+    } finally { await t.done(); }
+  });
+
+  it('the real target\'s root decides access: a link from /data into a declared r directory is not writable', async () => {
+    const e = await setup('enforce');
+    try {
+      fs.symlinkSync(path.join(e.dirs.ro, 'config'), path.join(e.dirs.data, 'cfg'));
+      await assert.rejects(e.broker.handle('open', ['/data/cfg', 'w']), (err) => err.code === 'EROFS' && err.path === '/data/cfg');
+      await e.broker.handle('close', [await e.broker.handle('open', ['/data/cfg', 'r'])]);
+    } finally { await e.done(); }
+  });
+
+  it('a /data that is itself a symlink answers canonical virtual paths', async () => {
+    const t = await setup('enforce', {dataIsLink: true});
+    try {
+      await t.broker.handle('mkdir', ['/data/sub', {}]);
+      await t.broker.handle('close', [await t.broker.handle('open', ['/data/sub/x', 'w'])]);
+      assert.strictEqual(await t.broker.handle('realpath', ['/data/sub/x']), '/data/sub/x');
+      assert.deepStrictEqual(await t.broker.handle('readdir', ['/data', {withFileTypes: true, recursive: true}]),
+        [{name: 'sub', type: 'dir', parentPath: '/data'}, {name: 'x', type: 'file', parentPath: '/data/sub'}]);
+    } finally { await t.done(); }
+  });
+
   it('a root itself cannot be removed or renamed (EBUSY), in every mode', async () => {
     for (const mode of ['off', 'audit', 'enforce']) {
-      const t = setup(mode);
+      const t = await setup(mode);
       try {
         await assert.rejects(t.broker.handle('rm', ['/data', {recursive: true, force: true}]), (e) => e.code === 'EBUSY', mode);
         await assert.rejects(t.broker.handle('rename', ['/tmp', '/data/t']), (e) => e.code === 'EBUSY', mode);
@@ -475,7 +644,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('link rules in every mode: hard links only within one writable root, symlinks only relative and inside', async () => {
     for (const mode of ['off', 'audit', 'enforce']) {
-      const t = setup(mode);
+      const t = await setup(mode);
       try {
         await assert.rejects(t.broker.handle('link', ['/app/index.js', '/data/x.js']), (e) => e.code === 'EPERM', mode);
         await assert.rejects(t.broker.handle('symlink', ['/etc', '/data/l']), (e) => e.code === 'EPERM', mode);
@@ -489,7 +658,7 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('chmod strips setuid, setgid and sticky bits', async () => {
-    const t = setup('off');
+    const t = await setup('off');
     try {
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
       await t.broker.handle('chmod', ['/data/f', 0o7755]);
@@ -498,7 +667,7 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('descriptors: numbered from 3, at most 256, unknown or 0-2 are EBADF', async () => {
-    const t = setup('enforce');
+    const t = await setup('enforce');
     try {
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
       const fds = [];
@@ -510,17 +679,17 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('read and write are capped at 16 MB per call', async () => {
-    const t = setup('enforce');
+    const t = await setup('enforce');
     try {
       const fd = await t.broker.handle('open', ['/data/big', 'w']);
-      await assert.rejects(t.broker.handle('write', [fd, Buffer.alloc(16 * 1024 * 1024 + 1), null]), (e) => e.code === 'EINVAL' || e.code === 'ERR_OUT_OF_RANGE');
-      await assert.rejects(t.broker.handle('read', [fd, 16 * 1024 * 1024 + 1, 0]), (e) => e.code === 'EINVAL' || e.code === 'ERR_OUT_OF_RANGE');
+      await assert.rejects(t.broker.handle('write', [fd, Buffer.alloc(16 * 1024 * 1024 + 1), null]), (e) => e.code === 'EINVAL');
+      await assert.rejects(t.broker.handle('read', [fd, 16 * 1024 * 1024 + 1, 0]), (e) => e.code === 'EINVAL');
     } finally { await t.done(); }
   });
 
   it('verify after open: a file swapped for a symlink between check and open is refused under enforce', async () => {
-    const t = setup('enforce', {hooks: {afterCheck: (op, host) => {
-      if (op === 'open' && host.endsWith('/swap')) {
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
+      if (syscall === 'open' && host.endsWith('/swap')) {
         fs.rmSync(host);
         fs.symlinkSync(path.join(path.dirname(path.dirname(host)), 'outside', 'secret'), host);
       }
@@ -532,42 +701,82 @@ describe('fs-broker 03: broker operations', function() {
   });
 
   it('errors from the host carry the virtual path, never the host path', async () => {
-    const t = setup('enforce');
+    const t = await setup('enforce');
     try {
       await assert.rejects(t.broker.handle('stat', ['/data/missing']), (e) => e.code === 'ENOENT' && e.path === '/data/missing' &&
         !e.message.includes(t.base) && e.message.includes('/data/missing'));
     } finally { await t.done(); }
   });
 
-  it('enforce: synthesised ancestors list only the next component and cannot be written', async () => {
-    const t = setup('enforce');
+  it('non-E* errors keep their code and lose the host path', async () => {
+    const t = await setup('enforce');
     try {
-      assert.deepStrictEqual(await t.broker.handle('readdir', ['/', {}]), ['app', 'data', 'tmp']);
+      fs.mkdirSync(path.join(t.dirs.data, 'd'));
+      await assert.rejects(t.broker.handle('rm', ['/data/d', {}]), (e) => e.code === 'ERR_FS_EISDIR' && !e.message.includes(t.base) && e.message.includes('/data/d'));
+    } finally { await t.done(); }
+  });
+
+  it('enforce: synthesised ancestors list only the next component and cannot be written', async () => {
+    const t = await setup('enforce');
+    try {
+      const names = await t.broker.handle('readdir', ['/', {}]);
+      assert.ok(['app', 'data', 'tmp'].every((n) => names.includes(n)), names.join(','));
       assert.strictEqual((await t.broker.handle('stat', ['/'])).fields.mode & 0o170000, 0o040000);
       await assert.rejects(t.broker.handle('mkdir', ['/new', {}]), (e) => e.code === 'EROFS');
     } finally { await t.done(); }
   });
 
   it('closeAll closes every open descriptor', async () => {
-    const t = setup('enforce');
+    const t = await setup('enforce');
     fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
     const fd = await t.broker.handle('open', ['/data/f', 'r']);
     await t.broker.closeAll();
-    await assert.rejects(t.broker.handle('read', [fd, 1, 0]), (e) => e.code === 'EBADF');
+    await assert.rejects(t.broker.handle('read', [fd, 1, 0]), (e) => e.code === 'EBADF' || e.code === 'EIO');
     fs.rmSync(t.base, {recursive: true, force: true});
   });
 
-  it('a module cannot race itself: mutations are serialised behind reads', async () => {
-    const t = setup('enforce');
+  it('a mutation waits for a read that holds the lock (deterministic)', async () => {
+    const g = gate();
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => (syscall === 'stat' && host.endsWith('/f') ? g.wait() : null)}});
     try {
-      const order = [];
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
-      await Promise.all([
-        t.broker.handle('stat', ['/data/f']).then(() => order.push('stat')),
-        t.broker.handle('rename', ['/data/f', '/data/g']).then(() => order.push('rename')),
-        t.broker.handle('stat', ['/data/g']).then(() => order.push('stat2'))
-      ]);
-      assert.deepStrictEqual(order, ['stat', 'rename', 'stat2']);
+      const stat = t.broker.handle('stat', ['/data/f']);
+      await tick();
+      const rename = t.broker.handle('rename', ['/data/f', '/data/g']);
+      await tick();
+      assert.ok(fs.existsSync(path.join(t.dirs.data, 'f')), 'rename ran while a read held the lock');
+      g.open();
+      await stat;
+      await rename;
+      assert.ok(fs.existsSync(path.join(t.dirs.data, 'g')));
+    } finally { await t.done(); }
+  });
+
+  it('reads share the lock: a read-only open is not held up by a paused stat', async () => {
+    const g = gate();
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => (syscall === 'stat' ? g.wait() : null)}});
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
+      const stat = t.broker.handle('stat', ['/data/f']);
+      await tick();
+      const fd = await t.broker.handle('open', ['/data/f', 'r']);
+      await t.broker.handle('close', [fd]);
+      g.open();
+      await stat;
+    } finally { await t.done(); }
+  });
+
+  it('descriptor operations take no path lock: a write proceeds while a mutation is paused', async () => {
+    const g = gate();
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall) => (syscall === 'mkdir' ? g.wait() : null)}});
+    try {
+      const fd = await t.broker.handle('open', ['/data/f', 'w']);
+      const mkdir = t.broker.handle('mkdir', ['/data/d', {}]);
+      await tick();
+      assert.strictEqual(await t.broker.handle('write', [fd, Buffer.from('x'), null]), 1);
+      await t.broker.handle('close', [fd]);
+      g.open();
+      await mkdir;
     } finally { await t.done(); }
   });
 });
@@ -589,12 +798,13 @@ const TEXT = {
   ENOENT: 'no such file or directory', EROFS: 'read-only file system', EPERM: 'operation not permitted',
   EBUSY: 'resource busy or locked', EMFILE: 'too many open files', EBADF: 'bad file descriptor',
   EXDEV: 'cross-device link not permitted', ETIMEDOUT: 'connection timed out', EIO: 'i/o error',
-  EINVAL: 'invalid argument', EACCES: 'permission denied', EISDIR: 'illegal operation on a directory'
+  EINVAL: 'invalid argument', EACCES: 'permission denied', EISDIR: 'illegal operation on a directory',
+  EEXIST: 'file already exists', ENOTDIR: 'not a directory', ENOTEMPTY: 'directory not empty', ELOOP: 'too many symbolic links encountered'
 };
 
 function nodeError(code, syscall, vpath, dest) {
   const where = vpath != null ? ` '${vpath}'${dest != null ? ` -> '${dest}'` : ''}` : '';
-  const err = new Error(`${code}: ${TEXT[code] || code}, ${syscall}${where}`);
+  const err = new Error(`${code}: ${TEXT[code] || code.toLowerCase()}, ${syscall}${where}`);
   err.code = code;
   err.errno = -(os.constants.errno[code] || 0);
   err.syscall = syscall;
@@ -603,21 +813,40 @@ function nodeError(code, syscall, vpath, dest) {
   return err;
 }
 
-// A real error from the host operation, re-addressed to the module's paths.
-function fromHost(e, syscall, vpath, dest) {
-  if (e == null || typeof(e.code) !== 'string' || !/^E[A-Z]+$/.test(e.code)) return e;
-  return nodeError(e.code, e.syscall || syscall, vpath, dest);
+function scrub(text, placed, dest, namespace) {
+  let s = String(text);
+  [placed, dest].forEach((p) => { if (p != null && p.host != null && p.host !== p.virtual) s = s.split(p.host).join(p.virtual); });
+  const roots = (namespace != null ? namespace.roots : []).slice().sort((a, b) => b.real.length - a.real.length);
+  roots.forEach((r) => {
+    if (r.real !== r.vroot) s = s.split(r.real).join(r.vroot);
+    if (r.host !== r.vroot) s = s.split(r.host).join(r.vroot);
+  });
+  return s;
 }
 
-module.exports = {nodeError, fromHost};
+// Any error out of a host operation, re-addressed to the module's paths.
+function rewrite(e, syscall, placed, dest, namespace) {
+  if (e == null || typeof(e) !== 'object') return e;
+  const vpath = placed != null ? placed.virtual : undefined;
+  const vdest = dest != null ? dest.virtual : undefined;
+  if (typeof(e.code) === 'string' && /^E[A-Z0-9]+$/.test(e.code)) return nodeError(e.code, e.syscall || syscall, vpath, vdest);
+  const out = new Error(scrub(e.message, placed, dest, namespace));
+  if (e.code != null) out.code = e.code;
+  if (e.syscall != null) out.syscall = e.syscall;
+  if (vpath != null) out.path = vpath;
+  if (vdest != null) out.dest = vdest;
+  return out;
+}
+
+module.exports = {nodeError, rewrite, scrub};
 ```
 
 `lib/fs-broker/rwlock.js`:
 
 ```js
 // One module's read/write lock: path-resolving operations share it,
-// mutations take it alone, in arrival order, so a module cannot race itself
-// between the broker's check and the operation.
+// path mutations take it alone, in arrival order, so a module cannot race
+// itself between the broker's check and the operation.
 class RwLock {
   constructor() {
     this.readers = 0;
@@ -663,7 +892,7 @@ const fsp = require('fs/promises');
 const fs = require('fs');
 const posix = require('path').posix;
 const {inside} = require('./namespace');
-const {nodeError, fromHost} = require('./errors');
+const {nodeError, rewrite} = require('./errors');
 const {RwLock} = require('./rwlock');
 
 // Plan 3 gate (plan 2a, Global Constraints): while false, enforce makes the
@@ -674,11 +903,11 @@ const MAX_IO = 16 * 1024 * 1024;
 const MAX_REPORTS = 100;
 const ANCESTOR_STATS = {dev: 0, ino: 0, mode: 0o040555, nlink: 1, uid: 0, gid: 0, rdev: 0, size: 0, blksize: 4096, blocks: 0,
   atimeMs: 0, mtimeMs: 0, ctimeMs: 0, birthtimeMs: 0};
+const STAT_KEYS = ['dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'rdev', 'size', 'blksize', 'blocks', 'atimeMs', 'mtimeMs', 'ctimeMs', 'birthtimeMs'];
 
 function statsOut(st, bigint) {
   const f = {};
-  ['dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'rdev', 'size', 'blksize', 'blocks', 'atimeMs', 'mtimeMs', 'ctimeMs', 'birthtimeMs']
-    .forEach((k) => { f[k] = st[k]; });
+  STAT_KEYS.forEach((k) => { f[k] = st[k]; });
   if (bigint) ['atimeNs', 'mtimeNs', 'ctimeNs', 'birthtimeNs'].forEach((k) => { f[k] = st[k]; });
   return {kind: 'stats', bigint: bigint === true, fields: f};
 }
@@ -688,6 +917,18 @@ function direntType(d) {
   if (d.isDirectory()) return 'dir';
   if (d.isSymbolicLink()) return 'symlink';
   return 'other';
+}
+
+function openFlags(flags) {
+  if (typeof(flags) === 'number') {
+    const c = fs.constants;
+    return {
+      writes: (flags & (c.O_WRONLY | c.O_RDWR | c.O_CREAT | c.O_TRUNC | c.O_APPEND)) !== 0,
+      creates: (flags & (c.O_CREAT | c.O_TRUNC | c.O_EXCL)) !== 0
+    };
+  }
+  const f = String(flags == null ? 'r' : flags);
+  return {writes: /[wax+]/.test(f), creates: /[wax]/.test(f)};
 }
 
 class FsBroker {
@@ -720,74 +961,82 @@ class FsBroker {
     const spec = OPS[op];
     if (spec == null) throw nodeError('EINVAL', op);
     if (this.closed) throw nodeError('EIO', op);
-    const exclusive = spec.mutates === true;
+    const a = args || [];
+    const mode = (typeof(spec.lock) === 'function') ? spec.lock(a) : spec.lock;
+    if (mode === 'none') return spec.run.call(this, a);
+    const exclusive = (mode === 'exclusive');
     await this.lock.acquire(exclusive);
     try {
-      return await spec.run.call(this, args || []);
+      return await spec.run.call(this, a);
     } finally {
       this.lock.release(exclusive);
     }
   }
 
-  // Resolve one path argument for an operation that wants 'r' or 'w'.
-  // Returns {res, host, virtual} or throws the module-facing error.
-  async place(p, want, syscall) {
-    let res;
-    try { res = this.ns.resolve(p, this.cwd); } catch (e) { throw e; }
+  // Place one path argument for an operation that wants 'r' or 'w'.
+  // Returns {res, host, virtual, root, ident} or throws the module-facing error.
+  async place(p, want, syscall, follow) {
+    const res = this.ns.resolve(p, this.cwd);
     const v = res.virtual;
     if (res.kind === 'ancestor') {
-      if (this.enforce) {
-        if (want === 'w') throw nodeError('EROFS', syscall, v);
-        return {res, host: null, virtual: v};
-      }
-      return {res: {kind: 'outside', virtual: v, host: v}, host: v, virtual: v};
+      if (!this.enforce) return {res: {kind: 'outside', virtual: v, host: v}, host: v, virtual: v};
+      if (want === 'w') throw nodeError('EROFS', syscall, v);
+      return {res, host: null, virtual: v};
     }
     if (res.kind === 'outside') {
-      if (this.enforce) {
-        this.report('outside', v);
-        throw nodeError('ENOENT', syscall, v);
-      }
       this.report('outside', v);
+      if (this.enforce) throw nodeError('ENOENT', syscall, v);
       return {res, host: v, virtual: v};
     }
-    if (want === 'w' && !res.root.writable) {
-      if (this.enforce) {
-        this.report('readonly', v);
-        throw nodeError('EROFS', syscall, v);
-      }
-      this.report('readonly', v);
+    const placed = {res, host: res.host, virtual: v, root: res.root, ident: null};
+    const chk = await this.checkHost(placed, syscall, follow !== false);
+    if (chk.escape) {
+      this.report('escape', v);
+      if (this.enforce) throw nodeError('ENOENT', syscall, v);
+    } else {
+      placed.root = chk.root;
+      placed.ident = chk.ident;
     }
-    const ident = await this.checkHost(res, syscall);
-    return {res, host: res.host, virtual: v, ident};
+    if (want === 'w' && !placed.root.writable) {
+      this.report('readonly', v);
+      if (this.enforce) throw nodeError('EROFS', syscall, v);
+    }
+    if (this.hooks.afterCheck) await this.hooks.afterCheck(syscall, res.host);
+    return placed;
   }
 
-  // The real target must stay inside its root (or a declared root). Returns
-  // the identity to verify after open: the existing target's dev+ino, or
-  // {parent} for a target that does not exist yet.
-  async checkHost(res, syscall) {
-    const rootReal = await fsp.realpath(res.root.host).catch(() => res.root.host);
-    const allowed = [rootReal].concat(await Promise.all(this.ns.roots.filter((r) => r.name === 'declared')
-      .map((r) => fsp.realpath(r.host).catch(() => r.host))));
-    let target = res.host;
-    let real;
-    let ident;
-    try {
-      real = await fsp.realpath(target);
-      const st = await fsp.stat(real);
-      ident = {dev: st.dev, ino: st.ino};
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw fromHost(e, syscall, res.virtual);
-      target = posix.dirname(res.host);
-      real = await fsp.realpath(target).catch(() => null);
-      ident = {parent: real};
-      if (real == null) return ident;   // the operation itself will answer ENOENT
+  // Where the object the operation acts on really is, and which root holds
+  // it. Following ops resolve the leaf; no-follow ops (acting on a link
+  // itself) resolve the parent and lstat the leaf. Returns {root, ident},
+  // or {escape: true} when the real location is in no root.
+  async checkHost(placed, syscall, follow) {
+    const res = placed.res;
+    const isRootItself = (res.virtual === res.root.vroot);
+    let realLoc = null;
+    let ident = null;
+    const viaParent = async() => {
+      const parentReal = await fsp.realpath(posix.dirname(res.host)).catch(() => null);
+      if (parentReal == null) return false;   // the operation itself answers ENOENT
+      realLoc = posix.join(parentReal, posix.basename(res.host));
+      const st = await fsp.lstat(realLoc).catch(() => null);
+      ident = (st != null && !follow) ? {dev: st.dev, ino: st.ino} : {parent: parentReal};
+      return true;
+    };
+    if (follow || isRootItself) {
+      try {
+        realLoc = await fsp.realpath(res.host);
+        const st = await fsp.stat(realLoc);
+        ident = {dev: st.dev, ino: st.ino};
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw rewrite(e, syscall, placed, null, this.ns);
+        if (!(await viaParent())) return {root: res.root, ident: null};
+      }
+    } else if (!(await viaParent())) {
+      return {root: res.root, ident: null};
     }
-    if (!allowed.some((a) => inside(real, a))) {
-      this.report('escape', res.virtual);
-      if (this.enforce) throw nodeError('ENOENT', syscall, res.virtual);
-      return null;
-    }
-    return ident;
+    const root = this.ns.rootForReal(realLoc);
+    if (root == null) return {escape: true};
+    return {root: root, ident: ident};
   }
 
   async verifyOpened(fh, placed, syscall) {
@@ -795,15 +1044,14 @@ class FsBroker {
     let ok = true;
     if (placed.ident.parent !== undefined) {
       const parentReal = await fsp.realpath(posix.dirname(placed.host)).catch(() => null);
-      ok = parentReal != null && parentReal === placed.ident.parent;
+      ok = (parentReal != null && parentReal === placed.ident.parent);
     } else {
       const st = await fh.stat();
-      ok = st.dev === placed.ident.dev && st.ino === placed.ident.ino;
+      ok = (st.dev === placed.ident.dev && st.ino === placed.ident.ino);
     }
     if (ok && process.platform === 'linux') {
       const link = await fsp.readlink(`/proc/self/fd/${fh.fd}`).catch(() => null);
-      const rootReal = await fsp.realpath(placed.res.root.host).catch(() => placed.res.root.host);
-      if (link != null && !inside(link, rootReal)) ok = false;
+      if (link != null && this.ns.rootForReal(link) == null) ok = false;
     }
     if (!ok) {
       await fh.close().catch(() => {});
@@ -828,6 +1076,10 @@ class FsBroker {
     return v != null ? v : placed.virtual;
   }
 
+  run(placed, syscall, fn, dest) {
+    return fn().catch((e) => { throw rewrite(e, syscall, placed, dest, this.ns); });
+  }
+
   async closeAll() {
     this.closed = true;
     const all = Array.from(this.fds.values());
@@ -836,134 +1088,195 @@ class FsBroker {
   }
 }
 
-// Each operation: mutates (takes the lock alone) and run(args). Paths are
-// placed first; host errors are re-addressed with fromHost.
+const SHARED = 'shared';
+const EXCL = 'exclusive';
+const NONE = 'none';
+
+// Each operation: lock mode (or a function of its args), and run(args).
 const OPS = {
-  async access(a) { const p = await this.place(a[0], 'r', 'access'); return ancestorOr(this, p, true, () => fsp.access(p.host, a[1]).then(() => true), 'access'); },
-  async exists(a) {
-    try { const p = await this.place(a[0], 'r', 'access'); if (p.host == null) return true; await fsp.access(p.host); return true; } catch (e) { return false; }
-  },
-  async stat(a) { const p = await this.place(a[0], 'r', 'stat'); return ancestorOr(this, p, statsOut(ANCESTOR_STATS, false), () => fsp.stat(p.host, {bigint: !!(a[1] && a[1].bigint)}).then((s) => statsOut(s, !!(a[1] && a[1].bigint))), 'stat'); },
-  async lstat(a) { const p = await this.place(a[0], 'r', 'lstat'); return ancestorOr(this, p, statsOut(ANCESTOR_STATS, false), () => fsp.lstat(p.host, {bigint: !!(a[1] && a[1].bigint)}).then((s) => statsOut(s, !!(a[1] && a[1].bigint))), 'lstat'); },
-  async realpath(a) { const p = await this.place(a[0], 'r', 'realpath'); return ancestorOr(this, p, p.virtual, () => fsp.realpath(p.host).then((r) => this.out(r, p)), 'realpath'); },
-  async readlink(a) { const p = await this.place(a[0], 'r', 'readlink'); return run(p, 'readlink', () => fsp.readlink(p.host)); },
-  async readdir(a) {
+  access: {lock: SHARED, async run(a) {
+    const p = await this.place(a[0], 'r', 'access');
+    if (p.host == null) return true;
+    return this.run(p, 'access', () => fsp.access(p.host, a[1]).then(() => true));
+  }},
+  exists: {lock: SHARED, async run(a) {
+    try {
+      const p = await this.place(a[0], 'r', 'access');
+      if (p.host != null) await fsp.access(p.host);
+      return true;
+    } catch (e) { return false; }
+  }},
+  stat: {lock: SHARED, async run(a) {
+    const p = await this.place(a[0], 'r', 'stat');
+    const big = !!(a[1] && a[1].bigint);
+    if (p.host == null) return statsOut(ANCESTOR_STATS, false);
+    return this.run(p, 'stat', () => fsp.stat(p.host, {bigint: big}).then((s) => statsOut(s, big)));
+  }},
+  lstat: {lock: SHARED, async run(a) {
+    const p = await this.place(a[0], 'r', 'lstat', false);
+    const big = !!(a[1] && a[1].bigint);
+    if (p.host == null) return statsOut(ANCESTOR_STATS, false);
+    return this.run(p, 'lstat', () => fsp.lstat(p.host, {bigint: big}).then((s) => statsOut(s, big)));
+  }},
+  realpath: {lock: SHARED, async run(a) {
+    const p = await this.place(a[0], 'r', 'realpath');
+    if (p.host == null) return p.virtual;
+    return this.run(p, 'realpath', () => fsp.realpath(p.host).then((r) => this.out(r, p)));
+  }},
+  readlink: {lock: SHARED, async run(a) {
+    const p = await this.place(a[0], 'r', 'readlink', false);
+    return this.run(p, 'readlink', async() => {
+      const target = await fsp.readlink(p.host);
+      if (!posix.isAbsolute(target)) return target;
+      const v = this.ns.toVirtual(target);
+      return v != null ? v : target;
+    });
+  }},
+  readdir: {lock: SHARED, async run(a) {
     const p = await this.place(a[0], 'r', 'scandir');
     const opts = a[1] || {};
     if (p.host == null) {
-      const names = p.res.children;
-      return opts.withFileTypes ? names.map((n) => ({name: n, type: 'dir', parentPath: p.virtual})) : names;
+      const kids = p.res.children;
+      return opts.withFileTypes ? kids.map((k) => ({name: k.name, type: k.type, parentPath: p.virtual})) : kids.map((k) => k.name);
     }
-    return run(p, 'scandir', async () => {
+    return this.run(p, 'scandir', async() => {
       const list = await fsp.readdir(p.host, {withFileTypes: !!opts.withFileTypes, recursive: !!opts.recursive});
       if (!opts.withFileTypes) return list.map(String);
       return list.map((d) => ({name: d.name, type: direntType(d), parentPath: this.out(d.parentPath || p.host, p)}));
     });
-  },
-  async statfs(a) { const p = await this.place(a[0], 'r', 'statfs'); return run(p, 'statfs', () => fsp.statfs(p.host).then((s) => Object.assign({}, s))); },
-
-  mkdir: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'mkdir'); return run(p, 'mkdir', () => fsp.mkdir(p.host, a[1]).then((r) => (r == null ? undefined : this.out(r, p)))); }},
-  mkdtemp: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'mkdtemp'); return run(p, 'mkdtemp', () => fsp.mkdtemp(p.host).then((r) => this.out(r, p))); }},
-  rmdir: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'rmdir'); if (this.isRoot(p)) throw nodeError('EBUSY', 'rmdir', p.virtual); return run(p, 'rmdir', () => fsp.rmdir(p.host)); }},
-  rm: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'rm'); if (this.isRoot(p)) throw nodeError('EBUSY', 'rm', p.virtual); return run(p, 'rm', () => fsp.rm(p.host, a[1])); }},
-  unlink: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'unlink'); if (this.isRoot(p)) throw nodeError('EBUSY', 'unlink', p.virtual); return run(p, 'unlink', () => fsp.unlink(p.host)); }},
-  rename: {mutates: true, async run(a) {
-    const from = await this.place(a[0], 'w', 'rename');
-    const to = await this.place(a[1], 'w', 'rename');
-    if (this.isRoot(from) || this.isRoot(to)) throw nodeError('EBUSY', 'rename', from.virtual, to.virtual);
-    if (from.res.kind === 'root' && to.res.kind === 'root' && from.res.root !== to.res.root) throw nodeError('EXDEV', 'rename', from.virtual, to.virtual);
-    return run(from, 'rename', () => fsp.rename(from.host, to.host), to.virtual);
   }},
-  copyFile: {mutates: true, async run(a) {
+  statfs: {lock: SHARED, async run(a) {
+    const p = await this.place(a[0], 'r', 'statfs');
+    return this.run(p, 'statfs', () => fsp.statfs(p.host).then((s) => Object.assign({}, s)));
+  }},
+
+  mkdir: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'mkdir', false);
+    return this.run(p, 'mkdir', () => fsp.mkdir(p.host, a[1]).then((r) => (r == null ? undefined : this.out(r, p))));
+  }},
+  mkdtemp: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'mkdtemp', false);
+    return this.run(p, 'mkdtemp', () => fsp.mkdtemp(p.host).then((r) => this.out(r, p)));
+  }},
+  rmdir: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'rmdir', false);
+    if (this.isRoot(p)) throw nodeError('EBUSY', 'rmdir', p.virtual);
+    return this.run(p, 'rmdir', () => fsp.rmdir(p.host));
+  }},
+  rm: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'rm', false);
+    if (this.isRoot(p)) throw nodeError('EBUSY', 'rm', p.virtual);
+    return this.run(p, 'rm', () => fsp.rm(p.host, a[1]));
+  }},
+  unlink: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'unlink', false);
+    if (this.isRoot(p)) throw nodeError('EBUSY', 'unlink', p.virtual);
+    return this.run(p, 'unlink', () => fsp.unlink(p.host));
+  }},
+  rename: {lock: EXCL, async run(a) {
+    const from = await this.place(a[0], 'w', 'rename', false);
+    const to = await this.place(a[1], 'w', 'rename', false);
+    if (this.isRoot(from) || this.isRoot(to)) throw nodeError('EBUSY', 'rename', from.virtual, to.virtual);
+    if (from.res.kind === 'root' && to.res.kind === 'root' && from.root !== to.root) throw nodeError('EXDEV', 'rename', from.virtual, to.virtual);
+    return this.run(from, 'rename', () => fsp.rename(from.host, to.host), to);
+  }},
+  copyFile: {lock: EXCL, async run(a) {
     const from = await this.place(a[0], 'r', 'copyfile');
     const to = await this.place(a[1], 'w', 'copyfile');
-    return run(from, 'copyfile', () => fsp.copyFile(from.host, to.host, a[2]), to.virtual);
+    return this.run(from, 'copyfile', () => fsp.copyFile(from.host, to.host, a[2]), to);
   }},
-  link: {mutates: true, async run(a) {
-    const from = await this.place(a[0], 'r', 'link');
-    const to = await this.place(a[1], 'w', 'link');
+  link: {lock: EXCL, async run(a) {
+    const from = await this.place(a[0], 'r', 'link', false);
+    const to = await this.place(a[1], 'w', 'link', false);
     const touches = from.res.kind === 'root' || to.res.kind === 'root';
-    if (touches && !(from.res.kind === 'root' && to.res.kind === 'root' && from.res.root === to.res.root && to.res.root.writable)) {
+    if (touches && !(from.res.kind === 'root' && to.res.kind === 'root' && from.root === to.root && to.root.writable)) {
       throw nodeError('EPERM', 'link', from.virtual, to.virtual);
     }
-    return run(from, 'link', () => fsp.link(from.host, to.host), to.virtual);
+    return this.run(from, 'link', () => fsp.link(from.host, to.host), to);
   }},
-  symlink: {mutates: true, async run(a) {
+  symlink: {lock: EXCL, async run(a) {
     const target = String(a[0]);
-    const at = await this.place(a[1], 'w', 'symlink');
+    const at = await this.place(a[1], 'w', 'symlink', false);
     if (at.res.kind === 'root') {
       const resolved = posix.resolve(posix.dirname(at.virtual), target);
       if (posix.isAbsolute(target) || !inside(resolved, at.res.root.vroot)) throw nodeError('EPERM', 'symlink', target, at.virtual);
     }
-    return run(at, 'symlink', () => fsp.symlink(target, at.host, a[2]), at.virtual);
+    return this.run(at, 'symlink', () => fsp.symlink(target, at.host, a[2]));
   }},
-  chmod: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'chmod'); return run(p, 'chmod', () => fsp.chmod(p.host, Number(a[1]) & 0o777)); }},
-  chown: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'chown'); return run(p, 'chown', () => fsp.chown(p.host, a[1], a[2])); }},
-  lchown: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'lchown'); return run(p, 'lchown', () => fsp.lchown(p.host, a[1], a[2])); }},
-  utimes: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'utime'); return run(p, 'utime', () => fsp.utimes(p.host, a[1], a[2])); }},
-  lutimes: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'lutime'); return run(p, 'lutime', () => fsp.lutimes(p.host, a[1], a[2])); }},
-  truncate: {mutates: true, async run(a) { const p = await this.place(a[0], 'w', 'open'); return run(p, 'open', () => fsp.truncate(p.host, a[1])); }},
+  chmod: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'chmod');
+    return this.run(p, 'chmod', () => fsp.chmod(p.host, Number(a[1]) & 0o777));
+  }},
+  chown: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'chown');
+    return this.run(p, 'chown', () => fsp.chown(p.host, a[1], a[2]));
+  }},
+  lchown: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'lchown', false);
+    return this.run(p, 'lchown', () => fsp.lchown(p.host, a[1], a[2]));
+  }},
+  utimes: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'utime');
+    return this.run(p, 'utime', () => fsp.utimes(p.host, a[1], a[2]));
+  }},
+  lutimes: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'lutime', false);
+    return this.run(p, 'lutime', () => fsp.lutimes(p.host, a[1], a[2]));
+  }},
+  truncate: {lock: EXCL, async run(a) {
+    const p = await this.place(a[0], 'w', 'open');
+    return this.run(p, 'open', () => fsp.truncate(p.host, a[1]));
+  }},
 
-  open: {mutates: true, async run(a) {
-    const flags = a[1] == null ? 'r' : a[1];
-    const writes = typeof(flags) === 'number' ? (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_APPEND)) !== 0
-      : /[wa+]/.test(flags);
-    const p = await this.place(a[0], writes ? 'w' : 'r', 'open');
+  open: {lock: (a) => (openFlags(a[1]).creates ? EXCL : SHARED), async run(a) {
+    const fl = openFlags(a[1]);
+    const p = await this.place(a[0], fl.writes ? 'w' : 'r', 'open');
     if (p.host == null) throw nodeError('EISDIR', 'open', p.virtual);
     if (this.fds.size >= MAX_FDS) throw nodeError('EMFILE', 'open', p.virtual);
-    if (this.hooks.afterCheck) this.hooks.afterCheck('open', p.host);
     let fh;
-    try { fh = await fsp.open(p.host, flags, a[2]); } catch (e) { throw fromHost(e, 'open', p.virtual); }
+    try { fh = await fsp.open(p.host, a[1] == null ? 'r' : a[1], a[2]); } catch (e) { throw rewrite(e, 'open', p, null, this.ns); }
     await this.verifyOpened(fh, p, 'open');
     const fd = this.nextFd++;
-    this.fds.set(fd, {fh, virtual: p.virtual, chain: Promise.resolve()});
+    this.fds.set(fd, {fh, virtual: p.virtual, placed: p, chain: Promise.resolve()});
     return fd;
   }},
-  async close(a) {
+  close: {lock: NONE, async run(a) {
     const e = this.fdEntry(a[0], 'close');
     this.fds.delete(a[0]);
     await e.chain;
     await e.fh.close().catch(() => {});
-  },
-  async read(a) {
+  }},
+  read: {lock: NONE, async run(a) {
     const e = this.fdEntry(a[0], 'read');
     const length = Number(a[1]);
     if (!(length >= 0) || length > MAX_IO) throw nodeError('EINVAL', 'read', e.virtual);
-    return serial(e, async () => {
+    return serial(e, async() => {
       const buf = Buffer.alloc(length);
-      const r = await e.fh.read(buf, 0, length, a[2] == null ? null : a[2]).catch((err) => { throw fromHost(err, 'read', e.virtual); });
+      const r = await e.fh.read(buf, 0, length, a[2] == null ? null : a[2]).catch((err) => { throw rewrite(err, 'read', e.placed, null, this.ns); });
       return buf.subarray(0, r.bytesRead);
     });
-  },
-  write: {mutates: true, async run(a) {
+  }},
+  write: {lock: NONE, async run(a) {
     const e = this.fdEntry(a[0], 'write');
     const buf = Buffer.from(a[1]);
     if (buf.length > MAX_IO) throw nodeError('EINVAL', 'write', e.virtual);
-    return serial(e, async () => {
-      const r = await e.fh.write(buf, 0, buf.length, a[2] == null ? null : a[2]).catch((err) => { throw fromHost(err, 'write', e.virtual); });
+    return serial(e, async() => {
+      const r = await e.fh.write(buf, 0, buf.length, a[2] == null ? null : a[2]).catch((err) => { throw rewrite(err, 'write', e.placed, null, this.ns); });
       return r.bytesWritten;
     });
   }},
-  async fstat(a) { const e = this.fdEntry(a[0], 'fstat'); return serial(e, () => e.fh.stat({bigint: !!(a[1] && a[1].bigint)}).then((s) => statsOut(s, !!(a[1] && a[1].bigint)))); },
-  ftruncate: {mutates: true, async run(a) { const e = this.fdEntry(a[0], 'ftruncate'); return serial(e, () => e.fh.truncate(a[1])); }},
-  async fsync(a) { const e = this.fdEntry(a[0], 'fsync'); return serial(e, () => e.fh.sync()); },
-  async fdatasync(a) { const e = this.fdEntry(a[0], 'fdatasync'); return serial(e, () => e.fh.datasync()); },
-  fchmod: {mutates: true, async run(a) { const e = this.fdEntry(a[0], 'fchmod'); return serial(e, () => e.fh.chmod(Number(a[1]) & 0o777)); }},
-  fchown: {mutates: true, async run(a) { const e = this.fdEntry(a[0], 'fchown'); return serial(e, () => e.fh.chown(a[1], a[2])); }},
-  futimes: {mutates: true, async run(a) { const e = this.fdEntry(a[0], 'futime'); return serial(e, () => e.fh.utimes(a[1], a[2])); }}
+  fstat: {lock: NONE, async run(a) {
+    const e = this.fdEntry(a[0], 'fstat');
+    const big = !!(a[1] && a[1].bigint);
+    return serial(e, () => e.fh.stat({bigint: big}).then((s) => statsOut(s, big)));
+  }},
+  ftruncate: {lock: NONE, async run(a) { const e = this.fdEntry(a[0], 'ftruncate'); return serial(e, () => e.fh.truncate(a[1])); }},
+  fsync: {lock: NONE, async run(a) { const e = this.fdEntry(a[0], 'fsync'); return serial(e, () => e.fh.sync()); }},
+  fdatasync: {lock: NONE, async run(a) { const e = this.fdEntry(a[0], 'fdatasync'); return serial(e, () => e.fh.datasync()); }},
+  fchmod: {lock: NONE, async run(a) { const e = this.fdEntry(a[0], 'fchmod'); return serial(e, () => e.fh.chmod(Number(a[1]) & 0o777)); }},
+  fchown: {lock: NONE, async run(a) { const e = this.fdEntry(a[0], 'fchown'); return serial(e, () => e.fh.chown(a[1], a[2])); }},
+  futimes: {lock: NONE, async run(a) { const e = this.fdEntry(a[0], 'futime'); return serial(e, () => e.fh.utimes(a[1], a[2])); }}
 };
-
-// Normalise: a plain async function is a non-mutating op.
-Object.keys(OPS).forEach((k) => { if (typeof(OPS[k]) === 'function') OPS[k] = {mutates: false, run: OPS[k]}; });
-
-function run(placed, syscall, fn, dest) {
-  return fn().catch((e) => { throw fromHost(e, syscall, placed.virtual, dest); });
-}
-
-function ancestorOr(broker, placed, synthesised, fn, syscall) {
-  if (placed.host == null) return Promise.resolve(synthesised);
-  return run(placed, syscall, fn);
-}
 
 // Operations on one descriptor run in order.
 function serial(entry, fn) {
@@ -975,10 +1288,12 @@ function serial(entry, fn) {
 module.exports = {FsBroker, OPS, MAX_IO, MAX_FDS};
 ```
 
+Known residual, ledgered for plan 4 (review M3): `copyFile` and `rename` write to a destination without verify-after-open; a pre-existing dangling absolute link at the destination would be followed. Module code cannot create one (link rules), and plan 4's spawn check refuses `/data`/`/tmp` holding one under `enforce`; plan 4 tests it.
+
 - [ ] **Step 5: Run the tests**
 
 Run: `npx mocha test/fs-broker/03-broker.js`
-Expected: all passing (17). When a test fails, debug the broker (superpowers:systematic-debugging), do not loosen the test; a test that turns out to contradict the spec is a ruling for the ledger and the reviewer.
+Expected: 24 passing. When a test fails, debug the broker (superpowers:systematic-debugging), do not loosen the test; a test that turns out to contradict the spec is a ruling for the ledger and the reviewer.
 
 - [ ] **Step 6: Commit**
 
@@ -1159,6 +1474,8 @@ Place the `file broker:` line directly after the `module sandbox:` lines and bef
 const {execFileSync} = require('child_process');
 const path = require('path');
 
+// Checks the startup log line (what framework.js set and the cap it derived),
+// not the pool libuv actually created: libuv reads the variable itself.
 describe('fs-broker 04: threadpool size at startup', function() {
   this.timeout(30000);
   // A missing --modulePolicy file makes startup exit 2 right after the log
@@ -1205,4 +1522,7 @@ git commit -m "feat(fs-broker): scheduler sharing the threadpool between workers
 
 - [ ] **Step 1:** Run `npx mocha --exit test/fs-broker/*.js` and `npm run lint`. Expected: all passing, lint clean.
 - [ ] **Step 2:** Send the reviewer the plan's commit range and the result. No full suite: nothing in this plan is wired into the server except the startup threadpool line and the new option, both covered by their tests and by the full suite at the end of plan 2b.
-- [ ] **Step 3:** Write plan 2b.
+- [ ] **Step 3:** Write plan 2b, carrying these notes from the plan 2a review:
+  - submit to the scheduler only the host I/O, after the module's lock is held, so a module's lock queue cannot park global slots;
+  - `cp` of a tree containing absolute symlinks fails with `EPERM` under the link rules — document it;
+  - `fsync` of a directory (write-file-atomic opens the parent with `r`) works on real roots only; a synthesised ancestor answers `EISDIR`.
