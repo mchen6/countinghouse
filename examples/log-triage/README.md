@@ -51,11 +51,14 @@ Needs a running Redis.
 npm run demo:log-triage
 ```
 
-That first writes eight sample log files to `examples/log-triage/sample-logs/`
+That first writes eight sample log files into `log-read`'s own data directory,
+`$HOME/countinghouse_module_data/log-read/data/sample-logs/`
 ([`generate-logs.js`](generate-logs.js): seeded, so the files are byte-identical
-on every machine, and git-ignored), then starts the server with
-[`auth.json`](auth.json). Keep log directories out of `/tmp`: from 8.0.0 a
-module's `/tmp` is its own private directory, not the host's. Call it with the demo key:
+on every machine), then starts the server with [`auth.json`](auth.json).
+`log-read` sees that directory as `/data/sample-logs`: from 8.0.0 a module sees
+its own directory as `/app`, its data as `/data` and a private `/tmp`, so the
+demo needs no file permission in any `--moduleSandbox` mode. Call it with the
+demo key:
 
 ```sh
 curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
@@ -77,6 +80,29 @@ Every planted value in the sample logs is fake by construction: `example.com`
 addresses, the `203.0.113.0/24` documentation range, `555` phone numbers, the
 standard test card number.
 
+### Your own logs, and `--moduleSandbox enforce`
+
+Pass `"dir"` to read another directory. Under the default `audit` mode a
+directory outside the module's namespace is read and logged
+(`module sandbox: log-read file outside …`); under `enforce` it is
+`ENOENT` until it is declared and approved. Keep log directories out of
+`/tmp` (a module's `/tmp` is its own) and out of countinghouse's install
+directory (it cannot be declared). For logs in `/var/log/myapp`, add to
+`log-read/package.json`:
+
+```json
+"countinghouse": {"permissions": {"fs": [{"path": "/var/log/myapp", "access": "r"}]}}
+```
+
+approve it in the file passed as `--modulePolicy`:
+
+```json
+{"modules": {"log-read": {"approve": "as-declared"}}}
+```
+
+and call the composite with `"dir": "/var/log/myapp"`. Declared paths keep
+their host names; only `/app`, `/data` and `/tmp` are virtual.
+
 ## Expected output
 
 `maxFiles: 2` over the eight sample files — six hops, six files skipped:
@@ -84,9 +110,9 @@ standard test card number.
 ```json
 {
     "findings": {
-        "summary": "Read 2 of 8 log file(s) under /path/to/countinghouse/examples/log-triage/sample-logs (6 skipped by maxFiles=2): 800 lines, 133 ERROR and 171 WARN, 0 unparsed. The 304 warning and error lines fall into 12 cluster(s); the 10 largest are listed. Masked 264 personal-data value(s) before clustering; masking is demo-grade regex matching, so a zero count is not evidence the logs hold none. This call made 6 internal hop(s) against a worst case of 6.",
+        "summary": "Read 2 of 8 log file(s) under /data/sample-logs (6 skipped by maxFiles=2): 800 lines, 133 ERROR and 171 WARN, 0 unparsed. The 304 warning and error lines fall into 12 cluster(s); the 10 largest are listed. Masked 264 personal-data value(s) before clustering; masking is demo-grade regex matching, so a zero count is not evidence the logs hold none. This call made 6 internal hop(s) against a worst case of 6.",
         "files": {
-            "dir": "/path/to/countinghouse/examples/log-triage/sample-logs",
+            "dir": "/data/sample-logs",
             "read": [
                 {
                     "name": "app-01.log",

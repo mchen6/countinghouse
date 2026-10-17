@@ -9,7 +9,7 @@
         "properties": {
           "dir": {
             "title": "directory of .log files to triage",
-            "description": "Defaults to examples/log-triage/sample-logs, which `node examples/log-triage/generate-logs.js` fills. Not recursive.",
+            "description": "Defaults to /data/sample-logs, log-read's own data directory, which `npm run demo:log-triage` fills. Not recursive.",
             "type": "string",
             "minLength": 1,
             "maxLength": 4096

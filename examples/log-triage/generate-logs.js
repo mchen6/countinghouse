@@ -138,6 +138,13 @@ if (require.main === module) {
       process.exit(2);
     }
   }
+  // By default, into log-read's own /data under the default --moduleDataPath,
+  // which is where the module finds them as /data/sample-logs (8.0.0).
+  if (opts.dir == null) {
+    const base = path.join(process.env[process.platform === 'win32' ? 'USERPROFILE' : 'HOME'], 'countinghouse_module_data');
+    opts.dir = path.join(require('../../lib/module-data').dirsFor(base, 'log-read').data, 'sample-logs');
+    fs.mkdirSync(opts.dir, {recursive: true, mode: 0o700});
+  }
   const written = generate(opts);
-  console.log(`wrote ${written.length} log file(s) to ${path.dirname(written[0] || path.resolve(opts.dir || path.join(__dirname, 'sample-logs')))}`);
+  console.log(`wrote ${written.length} log file(s) to ${path.resolve(opts.dir)}`);
 }

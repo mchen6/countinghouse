@@ -41,6 +41,19 @@ the auth config.
   container root) set `--moduleDataPath` to a writable directory before
   upgrading, or modules fail to load with `cannot create the module data
   directory`.
+- **Modules see their own directory as `/app`**, in every mode under
+  `--workerThread`: `__dirname`, `__filename`, `require.resolve`,
+  `import.meta`, stack traces, `process.cwd()` (`/app`) and `os.tmpdir()`
+  (`/tmp`). A module that builds paths from `__dirname` keeps working; one
+  that logs or compares host paths sees `/app/...` instead.
+- **countinghouse must not be installed under `/app`** under
+  `--workerThread`: startup exits with status 2 if its real install path is
+  there, because modules see their own files at `/app` and Node keys loaded
+  code by path. Install it elsewhere (for example `/opt/countinghouse`) or
+  run with `--no-workerThread`. Modules and data under `/app` are fine.
+- A module's device config (`--deviceConfigPath`) is read by the main
+  thread and handed to the worker.
+- HTTP/2 `respondWithFile` is not available to modules (see Known issues).
 
 ### Added — module sandbox, part 2 (in progress)
 
@@ -49,8 +62,33 @@ the auth config.
   module code loads, and a per-worker broker answers every call. Each module
   gets private `/data` and `/tmp` directories under the new
   **`--moduleDataPath`** (default `$HOME/countinghouse_module_data`); `/tmp`
-  is the module's own, no longer the host's. The file checks are not
-  enforced yet; until they are, `enforce` behaves like `audit` for files.
+  is the module's own, no longer the host's. Under `enforce`, paths outside
+  the namespace are `ENOENT`, `/app` and read-only declared paths are
+  `EROFS`, and the link rules apply in every mode.
+- **The loader is bounded**: from the moment a worker is set up, the loader
+  and countinghouse's own worker code reach only the module's directory and
+  countinghouse's code (`lib/`, `node_modules/`, `package.json`,
+  `spec/schema.json`); `module.parent.require`, `require.cache[...].require`,
+  `Module._load` and similar routes cannot read anything else. Refused under
+  `enforce`, logged under `audit`.
+- **Other routes to files and descriptors**, refused under `enforce` and
+  logged under `audit`: adopting a descriptor or handle
+  (`new net.Socket({fd})`, `server.listen({fd})` or `listen(handle)` on any
+  `net`, `http`, `https`, `http2` or `tls` server, `dgram` `bind({fd})`,
+  `tty` streams, HTTP/2 `respondWithFD`), diagnostic report writes, the
+  compile cache, and source maps. `repl` and `trace_events` leave the
+  built-in allowlist. `process.loadEnvFile` reads through the broker, in
+  every mode.
+
+### Known issues — 8.0.0
+
+- HTTP/2 `respondWithFile` is not available to modules
+  (`ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`): it hands the file's descriptor to
+  native code, which cannot read a brokered one. Read the file with `fs` and
+  stream it yourself.
+- The `__filename` and stack frames of a CommonJS file that an ES module
+  imports directly show its host path, not `/app/...` (a Node 24 limit);
+  what that file requires is virtual again.
 
 ### Added — module sandbox, part 1
 

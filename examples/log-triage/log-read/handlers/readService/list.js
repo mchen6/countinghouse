@@ -3,8 +3,11 @@
 const fs   = require('fs');
 const path = require('path');
 
-// examples/log-triage/log-read/handlers/readService/ -> up three.
-const DEFAULT_DIR = path.resolve(__dirname, '..', '..', '..', 'sample-logs');
+// log-read's own data directory, where `npm run demo:log-triage` writes the
+// sample logs: a module sees its directory as /app and its data as /data,
+// in every --moduleSandbox mode (countinghouse 8.0.0), so the demo needs no
+// file permission even under enforce.
+const DEFAULT_DIR = '/data/sample-logs';
 
 const MAX_FILES = 256;
 
