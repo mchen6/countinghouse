@@ -29,7 +29,9 @@ async function runBrokered(script, opts) {
     const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
     await ns.prepare();
     const scheduler = new FsScheduler({globalCap: 3});
+    // enforceFileDecisions: live enforce for one test until plan 3's Task 4 removes the gate
     const broker = new FsBroker({name: 't', mode: opts.mode || 'audit', namespace: ns, cwd: process.cwd(), report: () => {},
+      enforceFileDecisions: opts.enforceFileDecisions,
       schedule: (fn) => scheduler.submit('t', fn)});
     bridge = createBridge({broker, scheduler, key: 't'});
     data.fsBridge = bridge.transfer;
