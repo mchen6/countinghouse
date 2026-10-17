@@ -107,9 +107,20 @@ describe('sandbox 02: narrowing by the operator policy', () => {
     assert.strictEqual(r.ignored.length, 4, r.ignored.join('\n'));
   });
 
+  it('parses and narrows the disk limits', () => {
+    const parsed = perms.parseDeclaration(pkg({limits: {diskMb: 64, diskEntries: 500}}));
+    assert.deepStrictEqual(parsed.problems, []);
+    const eff = perms.narrow(parsed.declared, {approve: 'as-declared', limits: {diskMb: 32}}, {}, 'enforce');
+    assert.strictEqual(eff.limits.diskMb, 32);
+    assert.strictEqual(eff.limits.diskEntries, 500);
+    const defaults = perms.narrow(perms.parseDeclaration({name: 'm', version: '1.0.0'}).declared, null, {}, 'audit');
+    assert.strictEqual(defaults.limits.diskMb, 1024);
+    assert.strictEqual(defaults.limits.diskEntries, 100000);
+  });
+
   it('takes the smallest of request, top-level ceiling and entry ceiling', () => {
     const r = perms.narrow(declared, {approve: 'as-declared', limits: {heapMb: 300}}, {heapMb: 400, maxBlockMs: 2000}, 'audit');
-    assert.deepStrictEqual(r.limits, {heapMb: 300, externalMb: 256, maxBlockMs: 2000});
+    assert.deepStrictEqual(r.limits, {heapMb: 300, externalMb: 256, maxBlockMs: 2000, diskMb: 1024, diskEntries: 100000});
   });
 
   it('resolves env values: override, then server env, then absent', () => {
