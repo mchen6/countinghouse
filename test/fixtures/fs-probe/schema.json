@@ -15,6 +15,14 @@
       "input": {"type": "object"},
       "output": {"type": "object", "properties": {"config": {"type": ["object", "null"]}}}
     },
+    "slowWrite": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"ok": {"type": "boolean"}, "code": {"type": ["string", "null"]}}}
+    },
+    "exit": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"ok": {"type": "boolean"}, "code": {"type": ["string", "null"]}}}
+    },
     "where": {
       "input": {"type": "object"},
       "output": {"type": "object", "properties": {"dirname": {"type": "string"}, "filename": {"type": "string"}, "cwd": {"type": "string"}, "tmpdir": {"type": "string"}, "resolve": {"type": "string"}, "dirResolve": {"type": "string"}, "frame": {"type": "string"}, "own": {"type": "string"}}}
