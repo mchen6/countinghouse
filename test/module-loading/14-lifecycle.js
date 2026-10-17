@@ -27,6 +27,19 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
     assert.strictEqual(passed, true);
   });
 
+  it('settling gives up waiting for a broker that never goes idle, after the bound, and says what is stuck (review)', async () => {
+    const {boundedIdle} = require('../../lib/module-lifecycle');
+    const lines = [];
+    const stuck = {inFlight: 2, idle: () => new Promise(() => {})};
+    const started = Date.now();
+    await boundedIdle(stuck, 50, (line) => lines.push(line), 'm');
+    assert.ok(Date.now() - started >= 45);
+    assert.deepStrictEqual(lines, ['file broker: m not idle after 0.05 s (2 operations still running in the host); continuing']);
+    const quiet = [];
+    await boundedIdle({inFlight: 0, idle: () => Promise.resolve()}, 50, (line) => quiet.push(line), 'm');
+    assert.deepStrictEqual(quiet, []);
+  });
+
   it('the broker delay hook is ignored without the test-only variable (review M1)', () => {
     const {testDelayMs} = require('../../lib/fs-broker/broker');
     assert.strictEqual(testDelayMs({COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500'}), 0);
