@@ -124,6 +124,45 @@ describe('fs-broker 09: module workers use the broker', function() {
     }
   });
 
+  it('enforce: a hard link made through the broker inside /data does not stop a restart (review I4)', async () => {
+    server = await start('enforce');
+    await mcpCall(9626, KEY, tool('write'), {path: '/data/a', content: 'x'});
+    fs.linkSync(path.join(base, 'store', 'fs-probe', 'data', 'a'), path.join(base, 'store', 'fs-probe', 'data', 'b'));   // as link() inside one root would
+    const r1 = await post(9626, KEY, '/restart-module', {name: 'fs-probe'});
+    assert.strictEqual(r1.status, 200, JSON.stringify(r1.body));
+    await waitFor(async () => (await mcpCall(9626, KEY, tool('read'), {path: '/data/b'})).structuredContent.output.content === 'x', 15000, 'read after restart');
+  });
+
+  it('enforce: a planted absolute symlink or hard link under the data directory refuses the load, naming it', async () => {
+    const store = path.join(base, 'store');
+    fs.mkdirSync(path.join(store, 'fs-probe', 'data'), {recursive: true});
+    fs.symlinkSync('/nonexistent-ch-target', path.join(store, 'fs-probe', 'data', 'dest'));   // a dangling copyFile/rename destination (plan 2a M3)
+    server = await start('enforce');
+    await waitFor(async () => server.output.includes('links that could lead outside'), 15000, 'refusal');
+    assert.ok(server.output.includes('/data/dest'), server.output.slice(-2000));
+    const r = await mcpCall(9626, KEY, tool('read'), {path: '/data/x'});
+    assert.ok(/unknown tool/.test(JSON.stringify(r)), 'the module must not have loaded');
+  });
+
+  it('audit: the same entry is logged and the module loads', async () => {
+    const store = path.join(base, 'store');
+    fs.mkdirSync(path.join(store, 'fs-probe', 'data'), {recursive: true});
+    fs.symlinkSync('/nonexistent-ch-target', path.join(store, 'fs-probe', 'data', 'dest'));
+    server = await start('audit');
+    const w = await mcpCall(9626, KEY, tool('write'), {path: '/data/x', content: 'y'});
+    assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null});
+    assert.ok(server.output.includes('/data/dest'), server.output.slice(-2000));
+  });
+
+  it('every mode: /tmp is emptied when the worker starts', async () => {
+    const store = path.join(base, 'store');
+    fs.mkdirSync(path.join(store, 'fs-probe', 'tmp'), {recursive: true});
+    fs.writeFileSync(path.join(store, 'fs-probe', 'tmp', 'old'), 'stale');
+    server = await start('off');
+    const r = await mcpCall(9626, KEY, tool('read'), {path: '/tmp/old'});
+    assert.deepStrictEqual(r.structuredContent.output, {content: null, code: 'ENOENT'});
+  });
+
   it('logs the broker\'s capacity at startup in worker mode', async () => {
     server = await start('audit');
     assert.ok(/file broker: up to \d+ module file operations in flight/.test(server.output), server.output.slice(-2000));
