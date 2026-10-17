@@ -111,6 +111,9 @@
   "MODULE_RESTARTING": "模块的 worker 已停止（资源限制或崩溃），正在重启 -- 请在给出的时间之后重试；原因见服务器日志",
   "MODULE_SUSPENDED": "模块因 worker 反复退出已被暂停 -- 需要运维人员排除原因（见服务器日志）后用 POST /restart-module 重启",
   "RATE_LIMITED": "该模块发往主线程的消息过多 -- 请降低频率，或请运维人员调高 --moduleMessageRate",
+  "MODULE_NAME_INVALID": "不是有效的 npm 包名 -- 请使用模块 package.json 中的名称（例如 \"my-module\" 或 \"@scope/my-module\"）",
+  "MODULE_LOADED": "模块已加载、正在重启或已被暂停 -- 请先卸载（POST /unload-module），再执行 uninstall",
+  "MODULE_DATA_NOT_DIRECTORY": "模块的数据目录不是真正的目录（是链接或文件）-- 已保持原样；请在 --moduleDataPath 下手动删除",
   "MODULE_PATH_OUTSIDE_ROOT": "使用 --hardened 时，所有模块都必须位于 --modulePath 之下 -- 请把模块移到那里或从那里加载",
   "MODULE_NAME_MISMATCH": "加载请求中的模块名与其 package.json 中的名称不一致 -- 请使用 package.json 中的名称加载"
 }

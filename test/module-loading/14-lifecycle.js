@@ -40,6 +40,16 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
     assert.deepStrictEqual(quiet, []);
   });
 
+  it('settleAfterExit always settles, even when closing the bridge fails (review, plan 4 Task 5)', async () => {
+    const {settleAfterExit} = require('../../lib/module-lifecycle');
+    const lines = [];
+    let settled = false;
+    await settleAfterExit({exited: Promise.resolve(), closeBridge: () => Promise.reject(new Error('close failed')),
+      broker: {inFlight: 0, idle: () => Promise.resolve()}, name: 'm', log: (l) => lines.push(l), onSettled: () => { settled = true; }});
+    assert.strictEqual(settled, true);
+    assert.deepStrictEqual(lines, ['close failed']);
+  });
+
   it('the broker delay hook is ignored without the test-only variable (review M1)', () => {
     const {testDelayMs} = require('../../lib/fs-broker/broker');
     assert.strictEqual(testDelayMs({COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500'}), 0);
