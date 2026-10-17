@@ -99,6 +99,23 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
+  it('a truncating open swapped toward another file is refused before anything is truncated', async () => {
+    let victim = null;
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
+      if (syscall === 'open' && host.endsWith('/target')) {
+        fs.rmSync(host);
+        fs.symlinkSync(victim, host);
+      }
+    }}});
+    try {
+      victim = path.join(t.base, 'victim');
+      fs.writeFileSync(victim, 'keep me');
+      fs.writeFileSync(path.join(t.dirs.data, 'target'), 'x');
+      await assert.rejects(t.broker.handle('open', ['/data/target', 'w']), (e) => e.code === 'ENOENT');
+      assert.strictEqual(fs.readFileSync(victim, 'utf8'), 'keep me');
+    } finally { await t.done(); }
+  });
+
   it('a listing past maxEntries is ENOBUFS, recursive or not', async () => {
     const t = await setup('enforce', {maxEntries: 3});
     try {
