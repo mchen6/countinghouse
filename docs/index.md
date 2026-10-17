@@ -60,7 +60,7 @@ Reviving it wasn't free, and specifics matter, because "we were doing MCP before
 
 ## Try it
 
-Needs Node 20+ and a running Redis.
+Needs Node 22.16+ and a running Redis.
 
 ```bash
 git clone https://github.com/mchen6/countinghouse.git
