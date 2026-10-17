@@ -533,10 +533,10 @@ agent can validate a design, write the module, validate it, load it and call
 it without a human editing JSON. The four tools are
 `countinghouse_validate_plan`, `countinghouse_validate_module`,
 `countinghouse_load_module` and `countinghouse_call_tool`; they are admin-only
-and absent from `tools/list` unless the flag is set. Also start it with
-`--workerThread`: `countinghouse_load_module` runs a module's main entry
-directly in the runtime, and `--workerThread` is what turns a crash or
-`process.exit()` there into a reported failure instead of taking the whole
+and absent from `tools/list` unless the flag is set. Keep the default worker
+mode: `countinghouse_load_module` runs a module's main entry in the runtime,
+and worker mode is what turns a crash or `process.exit()` there into a
+reported failure. Under `--no-workerThread` the same crash takes the whole
 server down.
 
 The repo ships the skill that drives them at

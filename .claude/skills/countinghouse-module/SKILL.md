@@ -82,10 +82,10 @@ Without a running server, `npx countinghouse-validate ./my-module` is the same
 check from a shell (exit 0 clean, 1 problems, 2 unusable path).
 
 The authoring tools need the runtime started with `--authoringTools` and an
-admin key. If they are missing from `tools/list`, that is why. Also start it
-with `--workerThread`: a module whose main entry crashes or calls
-`process.exit()` during `countinghouse_load_module` is a reported failure
-under `--workerThread`, but takes the whole runtime down without it.
+admin key. If they are missing from `tools/list`, that is why. Keep the
+default worker mode: a module whose main entry crashes or calls
+`process.exit()` during `countinghouse_load_module` is a reported failure in
+worker mode, but takes the whole runtime down under `--no-workerThread`.
 
 ## When it does not appear in tools/list
 
