@@ -1,0 +1,15 @@
+{
+  "device": {
+    "friendlyName": "fs-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "writes and reads files so the file broker can be seen working",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "write", "description": "Write a file.", "input": {"schema": "/probeService/write/input"}, "output": {"schema": "/probeService/write/output"}},
+          {"name": "read", "description": "Read a file.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}}
+        ]
+      }
+    }
+  }
+}

@@ -53,6 +53,25 @@ describe('fs-broker 01: module data directories', () => {
     assert.ok(flags.includes('--allow-fs-write=/d'), flags.join(' '));
   });
 
+  // Node grants a subtree only for a directory that exists when it starts, so
+  // --hardened creates --moduleDataPath before relaunching under --permission.
+  it('--hardened creates a missing --moduleDataPath (0700) before the relaunch, and leaves an existing one alone', () => {
+    const {prepareGrants} = require('../../lib/hardened-launch');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-md-'));
+    try {
+      const missing = path.join(root, 'a', 'store');
+      prepareGrants({moduleDataPath: missing}, '/');
+      assert.strictEqual(fs.statSync(missing).mode & 0o777, 0o700);
+      const existing = path.join(root, 'existing');
+      fs.mkdirSync(existing);
+      fs.chmodSync(existing, 0o750);
+      prepareGrants({moduleDataPath: existing}, '/');
+      assert.strictEqual(fs.statSync(existing).mode & 0o777, 0o750);
+    } finally {
+      fs.rmSync(root, {recursive: true, force: true});
+    }
+  });
+
   it('throws for an unsafe name', () => {
     assert.throws(() => md.dirsFor('/srv/data', '../etc'), /cannot be used as a data directory name/);
   });

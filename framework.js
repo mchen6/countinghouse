@@ -40,6 +40,13 @@ if (options.hardened === true && process.permission == null) {
     process.exit(2);
   }
   var hardenedLaunch = require('./lib/hardened-launch');
+  try {
+    hardenedLaunch.prepareGrants(options, process.cwd());
+  } catch (e) {
+    console.error('--hardened: cannot create the module data directory ' + options.moduleDataPath + ': ' + e.message +
+      ' -- set --moduleDataPath to a writable directory');
+    process.exit(2);
+  }
   hardenedLaunch.relaunch(hardenedLaunch.permissionFlags(options, __dirname, process.cwd()));
   return;
 }
@@ -71,8 +78,10 @@ if (options.hardened === true) {
   logger.I('module sandbox: hardened -- running under --permission; modules must live under ' + options.modulePath);
 }
 
-logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
-  ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
+if (options.workerThread === true) {
+  logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
+    ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
+}
 
 if (options.modulePolicy != null) {
   try {

@@ -62,7 +62,7 @@ describe('fs-broker 04: threadpool size at startup', function() {
     delete env.UV_THREADPOOL_SIZE;
     Object.assign(env, extraEnv);
     try {
-      execFileSync(process.execPath, [path.join(__dirname, '..', '..', 'framework.js'), '--no-workerThread', '--debug',
+      execFileSync(process.execPath, [path.join(__dirname, '..', '..', 'framework.js'), '--workerThread', '--debug',
         '--bindAddr', '127.0.0.1', '--port', '9625', '--modulePolicy', '/nonexistent/policy.json'],
       {env: env, stdio: 'pipe', timeout: 15000});
       return '';

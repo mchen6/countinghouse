@@ -45,6 +45,8 @@ module.exports = async (fs, root) => {
     fs.closeSync(fd);
     return b.toString();
   });
+  // Real fs in a worker warns "File descriptor N closed but not opened in
+  // unmanaged mode" for this double close: Node's own warning, expected.
   await step('close twice', () => { const fd = fs.openSync(j('o'), 'r'); fs.closeSync(fd); fs.closeSync(fd); });
   await step('open dir for write', () => fs.openSync(root, 'w'));
   await step('append', () => { fs.appendFileSync(j('o'), '!'); return fs.readFileSync(j('o'), 'utf8'); });

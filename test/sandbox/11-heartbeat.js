@@ -49,4 +49,16 @@ describe('sandbox 11: heartbeat', function() {
     await sleep(800);
     assert.strictEqual(w.killed, false, `killed: ${wm.killReason}`);
   });
+
+  it('a worker waiting on a sync file call is not blocked', async () => {
+    const {w, wm} = fakeWorker(() => false);   // never answers pings
+    let busy = true;
+    stop = workerLimits.watch(w, wm, Object.assign({maxBlockMs: 300}, LIMITS), {busy: () => busy});
+    await sleep(900);
+    assert.strictEqual(w.killed, false, `killed: ${wm.killReason}`);
+    busy = false;
+    const t0 = Date.now();
+    while (!w.killed && Date.now() - t0 < 3000) await sleep(20);
+    assert.strictEqual(wm.killReason, 'blocked event loop');
+  });
 });

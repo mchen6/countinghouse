@@ -54,7 +54,8 @@ npm run demo:log-triage
 That first writes eight sample log files to `examples/log-triage/sample-logs/`
 ([`generate-logs.js`](generate-logs.js): seeded, so the files are byte-identical
 on every machine, and git-ignored), then starts the server with
-[`auth.json`](auth.json). Call it with the demo key:
+[`auth.json`](auth.json). Keep log directories out of `/tmp`: from 8.0.0 a
+module's `/tmp` is its own private directory, not the host's. Call it with the demo key:
 
 ```sh
 curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \

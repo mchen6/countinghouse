@@ -246,7 +246,9 @@ process.on('SIGINT', cleanupAndExit);
 process.on('SIGTERM', cleanupAndExit);
 
 (async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'log-triage-verify-'));
+  // Not under os.tmpdir(): from 8.0.0 a module's /tmp is its own private
+  // directory (module sandbox part 2), so log-read could not see host /tmp.
+  const root = fs.mkdtempSync(path.join(os.homedir(), '.log-triage-verify-'));
   const dirs = {root: root, logs: path.join(root, 'logs'), empty: path.join(root, 'empty'), names: []};
   tempRoot = root;
 
