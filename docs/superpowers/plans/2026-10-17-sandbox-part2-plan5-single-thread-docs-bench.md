@@ -14,7 +14,7 @@
 
 - Single-thread mode stays debug-only and unsandboxed: the facade translates paths, nothing more (no namespace refusal, no quota, no link rules). Startup's existing warning stays.
 - Written from the current worker-mode behaviour (reviewer, end of plan 4), not the old section 6 text: `/tmp` is emptied and the data directories created at each module load; the device config is read on the main thread as it always was in this mode; a virtual absolute specifier from module code maps to that module's root (worker mode's rule, without `countinghouse-module:` because countinghouse code here names host paths); `CHUtil.loadFile('/app/…')` maps through the calling module's root.
-- Documented differences from worker mode (the docs list exactly these): `process.cwd()` stays real; stack frames, `module.filename`, `require.cache` keys and `require.resolve` stay host; ES modules' `import.meta.*` stays host; paths given to non-`fs` APIs are not translated; a module can require countinghouse's own dependencies through `NODE_PATH`; no checks, quota, link rules or other-routes locks.
+- Documented differences from worker mode (the docs list exactly these): `process.cwd()` stays real; stack frames, `module.filename`, `require.cache` keys and `require.resolve` stay host; ES modules' `import.meta.*` stays host; paths given to non-`fs` APIs are not translated; `opendir`'s `Dir.path` and its entries, `glob`'s results and its `cwd` option, and error *messages* (not `err.path`/`err.dest`) keep host paths; `process.getBuiltinModule('fs')` returns the real `fs` (it cannot tell which module asks); on a file's first code line, columns after the identity prefix are shifted; a module can require countinghouse's own dependencies through `NODE_PATH`; no checks, quota, link rules or other-routes locks (reviews M2, M3, I2).
 - Spec text is the user's: Task 6 proposes all amendments in one batch and changes the spec only with the user's approval, as decision 12 went. Docs never contradict the spec after the merge.
 - Any task that adds an HTTP route lists `docs/cross-cutting-matrix.md` and `test/fixtures/route-inventory.json` (none planned here).
 - Do not run the full `npm test` except in the last task. Kill stray servers by PID. Commit trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -23,6 +23,7 @@
 
 1. A module file starting with a hashbang, then `'use strict'`, then a comment — the prefix must keep strict mode, keep the hashbang parsing, and keep every line number (Task 2 unit test).
 2. Two modules loaded together in single-thread mode, each reading its own `package.json` through `path.join(__dirname, …)` — each gets its own, and `require.cache` holds both under distinct host keys (Task 2 wired test).
+2b. An ES-module module doing `import {readFileSync} from 'node:fs'` in single-thread mode — the named import must work and translate (review I1; Task 1 test).
 3. A module calling `fs.realpath('/data')`, `fs.mkdtemp('/tmp/x-')` and `fs.readdir('/data', {withFileTypes: true})` in single-thread mode — results come back virtual (Task 1 test).
 4. Countinghouse's own `fs` use in single-thread mode — never translated (the facade is per module parent; Task 1 test reads a countinghouse file by host path from countinghouse code after a module loaded).
 5. The benchmarks run on a loaded one-CPU VM — each reports the median of repeated runs and the machine, and the docs quote them as "on this machine", not as guarantees (Task 4).
@@ -43,6 +44,8 @@
   - a file left in `<store>/fs-probe/tmp/old` before start is gone (`read '/tmp/old'` → `ENOENT`);
   - `where`: `tmpdir === '/tmp'`, `own === 'fs-probe'` (its `__dirname` read works, Task 2 makes `__dirname` virtual — here it is still host, and the read must work either way);
   - a new fixture action `fsResults` in `fs-probe` returning `{realpath: fs.realpathSync('/data'), mkdtemp: <a fs.mkdtempSync('/tmp/x-') result with the random suffix replaced by '*'>, parent: fs.readdirSync('/data', {withFileTypes: true})[0].parentPath, relative: fs.existsSync('package.json')}` → `{realpath: '/data', mkdtemp: '/tmp/x-*', parent: '/data', relative: true}` (relative paths resolve against `/app`);
+  - `esm-probe` loaded too (single-thread): a new action `readOwn` in an ES-module handler doing `import {readFileSync, realpathSync} from 'node:fs'` returns `{name: JSON.parse(readFileSync('/app/package.json', 'utf8')).name, real: realpathSync.native('/data')}` → `{name: 'esm-probe', real: '/data'}` (review I1, M3);
+  - `fsResults` also returns `symlinkTarget: (fs.symlinkSync('/data/x', '/data/l'), fs.readlinkSync('/data/l'))` and `mkdirFirst: fs.mkdirSync('/data/a/b', {recursive: true})` → `symlinkTarget` is the host path of `<store>/fs-probe/data/x` as written on disk, i.e. the test asserts `fs.readlinkSync(<store>/fs-probe/data/l)` on the host equals `<store>/fs-probe/data/x` (the absolute target was translated, review M1), and `mkdirFirst === '/data/a'` (review M2);
   - countinghouse's own fs is untouched: after the module loaded, the test calls a debug route that reads a countinghouse file by host path — `GET /package-info` of the device works (it reads package.json on the main thread); assert 200.
 - [ ] **Step 2: Run** (tell the reviewer: 9636) → FAIL (data written to the host's `/data`, i.e. `EACCES`/`ENOENT`; `/tmp/old` still there).
 - [ ] **Step 3: Implement** `lib/single-thread-facade.js`:
@@ -66,9 +69,12 @@ const inside = (p, root) => p === root || p.startsWith(`${root}/`);
 const KINDS = {fs: 'fs', 'node:fs': 'fs', 'fs/promises': 'fs/promises', 'node:fs/promises': 'fs/promises', os: 'os', 'node:os': 'os'};
 
 function register(hostRoot, info) { modules.set(hostRoot, info); }
+// The longest registered root containing the file: a module shipped inside
+// another loaded package belongs to itself (review M4).
 function rootOf(hostFile) {
-  for (const root of modules.keys()) if (inside(hostFile, root)) return root;
-  return null;
+  let best = null;
+  for (const root of modules.keys()) if (inside(hostFile, root) && (best == null || root.length > best.length)) best = root;
+  return best;
 }
 
 function toHost(root, p) {
@@ -92,7 +98,7 @@ function toVirtual(root, h) {
 
 // Which arguments are paths: the first, and the second for two-path calls.
 const TWO_PATHS = new Set(['rename', 'renameSync', 'copyFile', 'copyFileSync', 'link', 'linkSync', 'cp', 'cpSync']);
-const RESULT_PATH = new Set(['realpath', 'realpathSync', 'mkdtemp', 'mkdtempSync']);
+const RESULT_PATH = new Set(['realpath', 'realpathSync', 'mkdtemp', 'mkdtempSync', 'mkdir', 'mkdirSync']);
 const pathLike = (v) => typeof(v) === 'string' || v instanceof URL || Buffer.isBuffer(v);
 
 function translateError(root, e) {
@@ -112,9 +118,13 @@ function translateResult(root, key, r) {
 function wrapFn(root, key, fn, target) {
   return function(...a) {
     const n = TWO_PATHS.has(key) ? 2 : 1;
-    // symlink's first argument is the target text: translated only when absolute
-    for (let i = 0; i < n && i < a.length; i++) if (pathLike(a[i]) && !(key.startsWith('symlink') && i === 0)) a[i] = toHost(root, Buffer.isBuffer(a[i]) ? a[i].toString() : a[i]);
-    if (key.startsWith('symlink') && a.length > 1) a[1] = toHost(root, a[1]);
+    if (key.startsWith('symlink')) {
+      // the target text: translated only when absolute (a relative target stays relative, review M1)
+      if (pathLike(a[0]) && path.isAbsolute(String(a[0]))) a[0] = toHost(root, String(a[0]));
+      if (a.length > 1 && pathLike(a[1])) a[1] = toHost(root, a[1]);
+    } else {
+      for (let i = 0; i < n && i < a.length; i++) if (pathLike(a[i])) a[i] = toHost(root, Buffer.isBuffer(a[i]) ? a[i].toString() : a[i]);
+    }
     const last = a[a.length - 1];
     if (typeof(last) === 'function' && !key.endsWith('Sync')) {
       a[a.length - 1] = (e, r, ...more) => last(translateError(root, e), translateResult(root, key, r), ...more);
@@ -137,6 +147,8 @@ function forModule(root, kind) {
     const real = kind === 'fs' ? fs : fs.promises;
     f = Object.create(null);
     for (const k of Object.keys(real)) f[k] = typeof(real[k]) === 'function' && !/^[A-Z]/.test(k) ? wrapFn(root, k, real[k], real) : real[k];
+    // realpath.native / realpathSync.native (review M3)
+    ['realpath', 'realpathSync'].forEach((k) => { if (f[k] != null && real[k] && typeof(real[k].native) === 'function') f[k].native = wrapFn(root, k, real[k].native, real); });
     if (kind === 'fs') f.promises = forModule(root, 'fs/promises');
   }
   facades.set(key, f);
@@ -152,16 +164,22 @@ function install() {
       const parent = typeof(context.parentURL) === 'string' && context.parentURL.startsWith('file:') ? url.fileURLToPath(context.parentURL) : null;
       const root = parent != null ? rootOf(parent) : null;
       if (root != null && KINDS[specifier] != null) {
-        return {url: `countinghouse-facade:${KINDS[specifier]}?${encodeURIComponent(root)}`, format: 'commonjs', shortCircuit: true};
+        // An import gets an ES-module facade with named exports; cjs-module-lexer
+        // cannot see names through a computed module.exports (review I1).
+        const esm = Array.isArray(context.conditions) && context.conditions.includes('import') && !context.conditions.includes('require');
+        return {url: `countinghouse-facade:${KINDS[specifier]}?${encodeURIComponent(root)}${esm ? '&esm' : ''}`, format: esm ? 'module' : 'commonjs', shortCircuit: true};
       }
       if (root != null && (specifier === '/app' || specifier.startsWith('/app/'))) return nextResolve(root + specifier.slice(4), context);
       return nextResolve(specifier, context);
     },
     load(hookUrl, context, nextLoad) {
       if (hookUrl.startsWith('countinghouse-facade:')) {
-        const [kind, root] = hookUrl.slice('countinghouse-facade:'.length).split('?');
-        return {format: 'commonjs', shortCircuit: true,
-          source: `module.exports = require(${JSON.stringify(__filename)}).forModule(${JSON.stringify(decodeURIComponent(root))}, ${JSON.stringify(kind)});`};
+        const [kind, query] = hookUrl.slice('countinghouse-facade:'.length).split('?');
+        const [rootEnc, esm] = query.split('&');
+        const get = `require(${JSON.stringify(__filename)}).forModule(${JSON.stringify(decodeURIComponent(rootEnc))}, ${JSON.stringify(kind)})`;
+        if (esm !== 'esm') return {format: 'commonjs', shortCircuit: true, source: `module.exports = ${get};`};
+        const names = Object.keys(forModule(decodeURIComponent(rootEnc), kind)).filter((k) => /^[A-Za-z_$][\w$]*$/.test(k) && k !== 'default');
+        return {format: 'module', shortCircuit: true, source: `import {createRequire} from 'node:module';\nconst require = createRequire(${JSON.stringify(__filename)});\nconst f = ${get};\nexport default f;\n${names.map((k) => `export const ${k} = f.${k};`).join('\n')}\n`};
       }
       return nextLoad(hookUrl, context);
     }
@@ -220,12 +238,30 @@ describe('single-thread 02: the identity prefix', () => {
     assert.strictEqual(prefixed.split('\n').length, 1);
     assert.strictEqual(run(prefixed), '/app/index.js');
   });
+
+  it('a string that starts an expression is not a directive (review I2)', () => {
+    assert.deepStrictEqual(run(facade.prefixSource("module.exports = 'abc'.split('').length + __dirname.length;", '/app/a.js')), 3 + '/app'.length);
+    const src = "'abc'.split('');\nmodule.exports = __dirname;";
+    assert.strictEqual(run(facade.prefixSource(src, '/app/lib/a.js')), '/app/lib');
+  });
+
+  it('"use strict" followed by a line starting with ( is not a directive (no ASI there)', () => {
+    const src = '"use strict"\n(function() {})();\nmodule.exports = __dirname;';
+    assert.strictEqual(run(facade.prefixSource(src, '/app/lib/a.js')), '/app/lib');
+  });
+
+  it('a BOM before the hashbang', () => {
+    const src = '\uFEFF#!/usr/bin/env node\nmodule.exports = __dirname;';
+    const prefixed = facade.prefixSource(src, '/app/bin/x.js');
+    assert.ok(prefixed.startsWith('\uFEFF#!/usr/bin/env node\n'));
+    assert.strictEqual(prefixed.split('\n').length, 2);
+  });
 });
 ```
 
   Wired (port 9636): `fs-probe` and `fs-probe-twin` loaded together with `--no-workerThread`; each one's `where` returns `dirname === '/app/handlers/probeService'` and `own` equal to its own package name; `CHUtil.loadFile`-style loading works (the existing handler-map loader goes through `CHUtil.loadFile`, so both modules loading at all proves it); the `where` output's `filename` is `/app/handlers/probeService/where.js` while `resolve` stays a host path (a documented difference: assert it starts with the fixture's host path).
 - [ ] **Step 2: Run** → FAIL (`prefixSource` missing; `dirname` host).
-- [ ] **Step 3: Implement.** `prefixSource(source, virtualFile)`: keep a leading `#!…` line as is; then skip the directive prologue — whitespace, `//` and `/* */` comments, and string-literal statements (`'…';` / `"…";`) — on the first code line, and insert, on that same line right after the prologue, `var __filename = <json>, __dirname = <json>;` (so strict mode stays first and the line count is unchanged; `var` rebinds the wrapper's parameters). The load hook: for a `file:` URL whose path is inside a registered root and whose format is CommonJS (`.cjs`, or `.js` under a package without `"type": "module"`), read the source with `fs.readFileSync` and return `{format: 'commonjs', source: prefixSource(src, toVirtual(root, hostPath)), shortCircuit: true}`. `CHUtil.loadFile(name)`: when `name` is virtual (`/app…`) and single-thread mode is on, map it with `facade.toHost(facade.rootOf(callerFile), name)`, where `callerFile` is the first stack frame outside `lib/countinghouse-util.js` (debug-only mode; documented).
+- [ ] **Step 3: Implement.** `prefixSource(source, virtualFile)`: keep a leading BOM and a `#!…` line as they are; then skip the directive prologue — whitespace, `//` and `/* */` comments, and string literals that are directives. A string literal is a directive only when the next token after spaces and comments is `;`, `}` or the end of the file, or a line break followed by a token that cannot continue an expression (not one of `( [ . \` + - * / % , ? = < > & | ^ !` and not `in`/`instanceof`); when unsure, the prologue stops before that string (a misplaced prefix only costs a non-strict `var` before a non-directive; review I2). Insert on the first code line, and insert, on that same line right after the prologue, `var __filename = <json>, __dirname = <json>;` (so strict mode stays first and the line count is unchanged; `var` rebinds the wrapper's parameters). The load hook: for a `file:` URL whose path is inside a registered root and whose format is CommonJS (`.cjs`, or `.js` under a package without `"type": "module"`), read the source with `fs.readFileSync` and return `{format: 'commonjs', source: prefixSource(src, toVirtual(root, hostPath)), shortCircuit: true}`. `CHUtil.loadFile(name)`: when `name` is virtual (`/app…`) and single-thread mode is on, map it with `facade.toHost(facade.rootOf(callerFile), name)`, where `callerFile` comes from the CallSite API, not `err.stack` (modules install `Error.prepareStackTrace`, e.g. source-map-support; review I3): save `Error.prepareStackTrace`, set it to `(e, frames) => frames`, `Error.captureStackTrace(holder, loadFile)`, restore it in `finally`, and take `getFileName()` of the first frame outside `lib/countinghouse-util.js`. Test: a fixture module (`test/fixtures/stack-rewriter`, a copy of `fs-probe` whose `index.js` sets `Error.prepareStackTrace = () => 'rewritten'` before loading its handlers) still loads its handlers in single-thread mode.
 - [ ] **Step 4: Run** `npx mocha --exit test/single-thread/*.js test/test2.js` → passing.
 - [ ] **Step 5: Commit** `feat(single-thread): modules see their own /app paths in __filename and __dirname`.
 
@@ -262,7 +298,7 @@ describe('single-thread 02: the identity prefix', () => {
 - Modify: `docs/security-model.md`, `docs/module-development.md`, `docs/cli-and-api-reference.md`, `examples/log-triage/README.md`
 - Create: `docs/upgrading-to-8.md`
 
-- [ ] **Step 1: `docs/security-model.md`** — rewrite, not append (end-of-plan-3 gate): the layers (part 1's lockdown, part 2's broker and virtual namespace, the bounded loader, the lifecycle lock, `--hardened`), the modes (`off` runs the broker and the link rules; `audit` logs; `enforce` refuses), and the gaps: everything in the spec's "Gaps that remain", plus what plans 3–4 found — Unix-socket paths until part 4; under `audit`/`off` the loader lookups and outside reads are not hidden; the host path leaks through `__filename` and stack frames of a CommonJS file imported directly by an ES module (Node 24); a module may learn whether a host path exists, and its type, under `audit` and `off` (under `enforce` the loader's lookups answer missing); HTTP/2 `respondWithFile` is not available; the quota is approximate in the safe direction; the 35 s settle bound; descriptor numbers modules see are `0x10000000 + n`. The systemd example adds `--moduleDataPath` to `ReadWritePaths`. Code roots: countinghouse's own entries and its dependency closure, never a whole `node_modules`; countinghouse installed under `/app` is refused.
+- [ ] **Step 1: `docs/security-model.md`** — rewrite, not append (end-of-plan-3 gate): the layers (part 1's lockdown, part 2's broker and virtual namespace, the bounded loader, the lifecycle lock, `--hardened`), the modes (`off` runs the broker and the link rules; `audit` logs; `enforce` refuses), and the gaps: everything in the spec's "Gaps that remain", plus what plans 3–4 found — Unix-socket paths until part 4; under `audit`/`off` the loader lookups and outside reads are not hidden; the host path leaks through `__filename` and stack frames of a CommonJS file imported directly by an ES module (Node 24); a module may learn whether a host path exists, and its type, under `audit` and `off` (under `enforce` the loader's lookups answer missing); HTTP/2 `respondWithFile` is not available; the quota is approximate in the safe direction; the 35 s settle bound; descriptor numbers modules see are `0x10000000 + n`. The systemd example adds `--moduleDataPath` to `ReadWritePaths`. Code roots: countinghouse's own entries and its dependency closure, never a whole `node_modules`; countinghouse installed under `/app` is refused — precisely, code countinghouse itself loaded may not live under `/app`; modules and data there are fine (decision 12). Under `--hardened`'s limits: the Node permission-model bug (a granted directory is refused when another grant extends its name; affects Node 20-26), linked if filed, described if still pending (review M6).
 - [ ] **Step 2: `docs/module-development.md`** — the namespace (`/app`, `/data`, `/tmp`, declared paths; `__dirname` is `/app/...`, `process.cwd()` is `/app`); writing data under `/data` or `/tmp` and declaring outside paths; the disk limits; "fs takes effect now" replaces "when the file and network brokers ship"; `respondWithFile` (read the file with `fs` and stream it); single-thread differences (Task 1–2's list); descriptor numbers; the upgrade guide pointer.
 - [ ] **Step 3: `docs/cli-and-api-reference.md`** — `--moduleDataPath`, `diskMb`/`diskEntries`, `POST /uninstall-module {name, keepData}` and its errors (`MODULE_NAME_INVALID`, `MODULE_LOADED`, `MODULE_DATA_NOT_DIRECTORY`, `REMOVE_MODULE_INFO_FAIL`), `MODULE_NAME_MISMATCH`, the `/app` install refusal (exit 2).
 - [ ] **Step 4: `examples/log-triage/README.md`** — with a non-default `--moduleDataPath`, run `node examples/log-triage/generate-logs.js --dir <moduleDataPath>/log-read/data/sample-logs` (the option exists).
@@ -282,6 +318,8 @@ describe('single-thread 02: the identity prefix', () => {
   6. Single-thread mode (section 6) as built in Tasks 1–2.
   7. The other-routes table gains HTTP/2 `respondWithFD` (refused under `enforce`) and the sweep's result.
   8. The spawn link check flags links that can lead outside (hard links with a name outside `/data` and `/tmp`, absolute symlinks), not every hard link; the settle wait is bounded at 35 s.
+  9. The boot window: from worker start to `set-options`, countinghouse's code is served under a boot grant; anything else it touches is answered `ENOENT` and logged once as countinghouse's own, in every mode (review M5).
+  10. Single-thread mode empties `/tmp` and creates the data directories at every module load (review M5).
   Apply exactly what the user approves; record the rest as declined in the ledger.
 - [ ] **Step 2: The part 1 amendment** (spec section 5, item 5, still owed): in `docs/superpowers/specs/2026-10-15-module-sandbox-foundation-design.md`, a dated "Amended by part 2" section — `off` runs the file broker and adds a hop to every file call; a load whose request name differs from its package.json name is refused in every mode. The user approved these in the part 2 design; the reviewer checks the wording.
 - [ ] **Step 3:** CHANGELOG: the upgrade section links `docs/upgrading-to-8.md` and quotes the measured cost; "module sandbox, part 2 (in progress)" becomes "module sandbox, part 2".
