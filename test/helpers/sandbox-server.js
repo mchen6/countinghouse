@@ -48,14 +48,24 @@ function stopServer(server) {
   try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
 }
 
-function mcpCall(port, key, name, args) {
+// An "unknown tool" answer throws, so a mistyped (or wrongly cased: tool
+// names are lowercased) name fails the test that wrote it instead of passing
+// silently. opts.allowUnknownTool: for tests that expect a tool to be missing.
+function mcpCall(port, key, name, args, opts) {
   return new Promise((resolve, reject) => {
     request(`http://127.0.0.1:${port}`)
       .post('/mcp')
       .set('X-CH-Key', key)
       .set('Accept', 'application/json, text/event-stream')
       .send({jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: {name: name, arguments: args || {}}})
-      .end((err, res) => (err ? reject(err) : resolve(res.body.result || res.body.error)));
+      .end((err, res) => {
+        if (err) return reject(err);
+        const answer = res.body.result || res.body.error;
+        if (res.body.error != null && /^unknown tool/.test(String(res.body.error.message)) && !(opts && opts.allowUnknownTool)) {
+          return reject(new Error(`mcpCall: ${res.body.error.message} -- tool names are lowercase; pass {allowUnknownTool: true} if the test expects it missing`));
+        }
+        return resolve(answer);
+      });
   });
 }
 

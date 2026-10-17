@@ -86,7 +86,7 @@ describe('sandbox 17: POST /uninstall-module', function() {
 
   it('unload, then uninstall while the old broker is still settling: waits, then succeeds (review I5)', async () => {
     server = await start('audit', {COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500'});
-    await mcpCall(PORT, KEY, tool('slowWrite'), {});
+    assert.deepStrictEqual((await mcpCall(PORT, KEY, tool('slowwrite'), {})).structuredContent.output, {ok: true, code: null});
     assert.strictEqual((await post(PORT, KEY, '/unload-module', {name: 'fs-probe'})).status, 200);
     const r = await uninstall({name: 'fs-probe'});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
@@ -96,7 +96,7 @@ describe('sandbox 17: POST /uninstall-module', function() {
 
   it('refuses while the module is restarting', async () => {
     server = await start('audit');
-    await mcpCall(PORT, KEY, tool('exit'), {});
+    assert.deepStrictEqual((await mcpCall(PORT, KEY, tool('exit'), {})).structuredContent.output, {ok: true, code: null});
     await waitFor(async () => server.output.includes('restarting in'), 15000, 'supervisor restarting');
     const r = await uninstall({name: 'fs-probe'});
     assert.strictEqual(r.body.code, 'MODULE_LOADED', JSON.stringify(r.body));

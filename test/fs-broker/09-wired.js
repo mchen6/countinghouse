@@ -140,7 +140,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     server = await start('enforce');
     await waitFor(async () => server.output.includes('links that could lead outside'), 15000, 'refusal');
     assert.ok(server.output.includes('/data/dest'), server.output.slice(-2000));
-    const r = await mcpCall(9626, KEY, tool('read'), {path: '/data/x'});
+    const r = await mcpCall(9626, KEY, tool('read'), {path: '/data/x'}, {allowUnknownTool: true});
     assert.ok(/unknown tool/.test(JSON.stringify(r)), 'the module must not have loaded');
   });
 
