@@ -12,9 +12,8 @@ describe('device-config 02: config reaches a worker from the main thread', funct
 
   ['off', 'enforce'].forEach((mode) => {
     it(`${mode}: the module sees its config without reading the file itself`, async () => {
-      // Outside the install directory (served by host path until plan 3's
-      // Task 4) and outside /tmp (the module's own /tmp), so a worker-side
-      // read would go to the broker and be logged.
+      // Outside the install directory and outside /tmp (the module's own
+      // /tmp), so a worker-side read would go to the broker and be logged.
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-devcfg-'));
       fs.writeFileSync(path.join(base, 'fs-probe.json'), JSON.stringify({greeting: 'hi'}));
       server = await startServer(9629, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
