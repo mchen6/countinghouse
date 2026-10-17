@@ -70,6 +70,37 @@ const ATTEMPTS = {
       req.end();
     });
   }),
+  // Not available to modules in any mode (user decision, plan 3): it hands
+  // a broker descriptor to native code, which cannot read it.
+  http2RespondFile: () => new Promise((resolve, reject) => {
+    const http2 = require('http2');
+    const server = http2.createServer();
+    let client = null;
+    const done = (fn, v) => { if (client) client.close(); server.close(); fn(v); };
+    server.on('stream', (stream) => {
+      try { stream.respondWithFile('/app/package.json'); done(resolve); } catch (e) { done(reject, e); }
+    });
+    server.listen(0, '127.0.0.1', () => {
+      client = http2.connect(`http://127.0.0.1:${server.address().port}`);
+      client.on('error', () => {});
+      const req = client.request({':path': '/'});
+      req.on('error', () => {});
+      req.end();
+    });
+  }),
+  // The guarded net.Socket still subclasses and still recognises Node's own
+  // sockets (review, Task 5).
+  socketClass:      () => {
+    const net = require('net');
+    class Sub extends net.Socket {}
+    const sub = new Sub();
+    const internal = net.createConnection({port: 1, host: '127.0.0.1'});
+    internal.on('error', () => {});
+    const ok = sub instanceof Sub && sub instanceof net.Socket && internal instanceof net.Socket && internal instanceof net.Stream;
+    sub.destroy();
+    internal.destroy();
+    if (!ok) throw Object.assign(new Error('the guarded net.Socket broke subclassing or instanceof'), {code: 'PROXY_BROKEN'});
+  },
   // Writes by native code, outside the broker (to directories that do not
   // exist, so audit writes nothing).
   report:           () => process.report.writeReport('/nonexistent-ch-probe/r.json'),

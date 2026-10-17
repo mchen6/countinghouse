@@ -53,6 +53,11 @@ describe('sandbox 05: worker lockdown', function() {
       assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null}, JSON.stringify(r));
     });
 
+    it('http2 respondWithFile is not available', async () => {
+      const r = await mcpCall(9608, KEY, TOOL, {what: 'http2RespondFile'});
+      assert.deepStrictEqual(r.structuredContent.output, {outcome: 'blocked', code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'}, JSON.stringify(r));
+    });
+
     it('uses Node\'s own error codes', async () => {
       const notFound = await mcpCall(9608, KEY, TOOL, {what: 'child_process'});
       assert.strictEqual(notFound.structuredContent.output.code, 'MODULE_NOT_FOUND');
@@ -76,6 +81,16 @@ describe('sandbox 05: worker lockdown', function() {
     it('process.loadEnvFile reads through the broker', async () => {
       const r = await mcpCall(9609, KEY, TOOL, {what: 'loadEnvFile'});
       assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
+    it('the guarded net.Socket still subclasses and recognises Node\'s own sockets', async () => {
+      const r = await mcpCall(9609, KEY, TOOL, {what: 'socketClass'});
+      assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
+    it('http2 respondWithFile is not available', async () => {
+      const r = await mcpCall(9609, KEY, TOOL, {what: 'http2RespondFile'});
+      assert.deepStrictEqual(r.structuredContent.output, {outcome: 'blocked', code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'}, JSON.stringify(r));
     });
 
     it('logs a repeated violation once', async () => {
@@ -176,6 +191,19 @@ describe('sandbox 05: worker lockdown', function() {
       assert.deepStrictEqual(seen, ['127.0.0.1:1']);
       assert.strictEqual(guard.call(self, {headers: {location: '/next'}}), true);
     });
+  });
+});
+
+// The file broker runs in every mode, so its limits do too.
+describe('sandbox 05: off', function() {
+  this.timeout(120000);
+  let server = null;
+  before(async () => { server = await startServer(9610, serverArgs('off')); });
+  after(() => stopServer(server));
+
+  it('http2 respondWithFile is not available', async () => {
+    const r = await mcpCall(9610, KEY, TOOL, {what: 'http2RespondFile'});
+    assert.deepStrictEqual(r.structuredContent.output, {outcome: 'blocked', code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'}, JSON.stringify(r));
   });
 });
 
