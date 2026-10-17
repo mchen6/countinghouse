@@ -292,6 +292,20 @@ describe('single-thread 02: the identity prefix', () => {
 
 ---
 
+### Task 4b: Broker optimisations A, B, C (user decision, 2026-10-17)
+
+The benchmarks at `dab69d0` (docs/benchmarks/sandbox-part2.md) put brokered file I/O at roughly 30-50× the direct path on this 1-CPU VM, with 21/25/29 pool jobs per benchmark round under `off`/`audit`/`enforce`, of which about 9 are the operations. The user chose to optimise all three ways before 8.0.0. Each is its own commit, with a failing test first and before/after numbers from `perf/fs-broker-ops-count.js` (pool jobs and bridge calls per round) and `perf/fs-broker-io-perf.js 250`.
+
+**A. No host checks under `off`.** `--moduleSandbox off` decides nothing about files, so `place()` skips `checkHost()` there: `placed.root` is the namespace root the virtual path names (`res.root`), `placed.ident` is null, and `verifyOpened()` already returns at once without enforce. The link rules, `EXDEV`, `EBUSY` on roots and the special-file check after open keep running in every mode (they use virtual paths and `placed.root`, or the opened descriptor). Test: `perf/fs-broker-ops-count.js` gains an assertion mode (`--check`) used by a new `test/fs-broker/18-op-budget.js`: under `off` one round makes no `realpath` or `lstat` calls, and the existing link-rule and `EXDEV` tests under `off` (03, 05) still pass.
+
+**B. `writeFile` and `appendFile` as one brokered call.** A broker op `writeFile [path, data, flag, mode]` (lock: exclusive when the flag creates, as `open`'s rule) runs `open` → `write` (all of `data`, at most 16 MB) → `close` inside the broker, so the quota, the post-open verify and the special-file check all apply unchanged. The patch's `writeFileSync`/`appendFileSync` and their callback and promise forms use it for a path (not a descriptor or a FileHandle) with data at most 16 MB and no `flush` or `signal` option; anything else keeps today's open/write/close path. Tests: `08-differential.js` already compares `writeFile`/`appendFile` results with real `fs` (it must stay green); `18-op-budget.js`: a `writeFileSync` is one bridge call; `16-quota.js` gains a `writeFile` past `diskMb` → `ENOSPC`.
+
+**C. A per-broker cache of directory real paths.** `checkHost()`'s `realpath` of a path's parent directory (and of a directory itself) is served from a cache keyed by host path, so a module working in one directory does not resolve it again on every call. Safety rules: (1) every operation that takes the exclusive lock clears the whole cache before it runs (mkdir, rmdir, rm, rename, unlink, symlink, link, creating opens) — the module cannot change its own tree under a stale entry; (2) entries expire after 1000 ms, bounding how long a host process's change goes unseen (host-process races stay the documented gap); (3) at most 1024 entries; (4) the cache is never used for the file a call names when the call follows links (`follow`) — only directories; (5) under `enforce`, `verifyOpened()` (fstat identity plus `/proc/self/fd`) still checks every opened descriptor against its real location, so an open can never land outside through a stale entry. Tests in `test/fs-broker/19-realpath-cache.js`: repeated stats in one directory make one `realpath` of it; a module `rename` of a directory, an `rm`, and a `symlink` replacing a directory each clear the cache so the next call sees the new tree; an entry older than 1000 ms is resolved again; under `enforce`, a directory swapped by the host for a symlink to outside, inside the cache window, still cannot be opened (verify catches it: `ENOENT` and an `escape` report) — the stat-level case is the documented host race.
+
+After A-C: re-run the benchmarks, update docs/benchmarks/sandbox-part2.md with before/after tables (the `dab69d0` numbers kept as "before"), and mark every cost figure Task 5 quotes with the commit it was measured at (reviewer).
+
+---
+
 ### Task 5: Docs
 
 **Files:**
