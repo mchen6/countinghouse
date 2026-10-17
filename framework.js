@@ -1,3 +1,8 @@
+// Brokered file operations from module workers share libuv's threadpool with
+// countinghouse's own DNS lookups, crypto and zlib. 16 threads unless the
+// operator chose otherwise; it must be set before the pool is first used.
+if (process.env.UV_THREADPOOL_SIZE == null) process.env.UV_THREADPOOL_SIZE = '16';
+
 var argv          = require('minimist')(process.argv.slice(1));
 var options       = require('./lib/cli-options');
 var fs            = require('fs');
@@ -65,6 +70,9 @@ if (options.workerThread !== true) {
 if (options.hardened === true) {
   logger.I('module sandbox: hardened -- running under --permission; modules must live under ' + options.modulePath);
 }
+
+logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
+  ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
 
 if (options.modulePolicy != null) {
   try {
