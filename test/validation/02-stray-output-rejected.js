@@ -85,7 +85,7 @@ describe('validation 02: a module returning an undeclared argument is refused, e
     assertPortFree((err) => {
       if (err) return done(err);
       server = spawn(path.join(ROOT, 'bin', 'countinghouse'),
-        ['--no-workerThread', '--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', KEY,
+        ['--workerThread', '--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', KEY,
          '--loadModule', path.join(ROOT, 'test', 'fixtures', 'stray-output-module')],
         {cwd: ROOT, stdio: 'ignore', detached: true});
 

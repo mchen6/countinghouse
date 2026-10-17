@@ -40,7 +40,7 @@ function startServer(done) {
   config[KEY] = {userName: 'schema-pointer-test', devices: ['*']};
   fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
-  exec(`NODE_PATH=./lib node ./framework.js --no-workerThread --bindAddr 127.0.0.1 --port ${PORT
+  exec(`NODE_PATH=./lib node ./framework.js --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
        } --loadModule ./test/fixtures/dangling-schema-pointer` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +

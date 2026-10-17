@@ -117,6 +117,30 @@ describe('sandbox 17: POST /uninstall-module', function() {
     assert.deepStrictEqual(r.structuredContent.output, expected, JSON.stringify({un: un.body, r}));
   });
 
+  // Registry mode (no --loadModule): the entry is removed, and reported only
+  // when there was one (plan 4 follow-up; carried to plan 5).
+  it('registry mode: removes the registry entry and says whether there was one', async function() {
+    let sqlite3 = null;
+    try { sqlite3 = require('sqlite3'); } catch (e) { return this.skip(); }
+    base = mkdtemp('uninstall-');
+    const modulesDir = path.join(base, 'modules');
+    fs.mkdirSync(modulesDir);
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit',
+      '--modulePath', modulesDir, '--moduleDataPath', store()]);
+    const db = new sqlite3.Database(path.join(modulesDir, 'countinghouse-modules.db'));
+    await new Promise((resolve, reject) => db.run("CREATE TABLE IF NOT EXISTS module_info(name TEXT PRIMARY KEY, version TEXT, path TEXT, deviceList TEXT)",
+      (e) => (e ? reject(e) : db.run("INSERT INTO module_info(name, version, path, deviceList) VALUES ('ghost-mod', '1.0.0', '/nonexistent', '[]')",
+        (e2) => (e2 ? reject(e2) : resolve())))));
+    await new Promise((resolve) => db.close(resolve));
+    fs.mkdirSync(path.join(store(), 'ghost-mod', 'data'), {recursive: true});
+    const first = await uninstall({name: 'ghost-mod'});
+    assert.strictEqual(first.status, 200, JSON.stringify(first.body));
+    assert.deepStrictEqual({removed: first.body.registryEntryRemoved, deleted: first.body.dataDeleted}, {removed: true, deleted: true});
+    const second = await uninstall({name: 'ghost-mod'});
+    assert.strictEqual(second.status, 200, JSON.stringify(second.body));
+    assert.deepStrictEqual({removed: second.body.registryEntryRemoved, deleted: second.body.dataDeleted}, {removed: false, deleted: false});
+  });
+
   it('needs an admin key', async () => {
     base = mkdtemp('uninstall-');
     const auth = path.join(base, 'auth.json');

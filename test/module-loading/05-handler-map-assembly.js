@@ -26,7 +26,7 @@ const LOG  = `/tmp/countinghouse-test-handler-map-${process.pid}.log`;
 // through bunyan when bunyan is on PATH, and this file reads the log as JSON.
 // Same reasoning as 01 and 03.
 function startServer(done) {
-  exec(`NODE_PATH=./lib node ./framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
+  exec(`NODE_PATH=./lib node ./framework.js --workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
        } --debugKey aabbcc` +
        ` --loadModule ./test/fixtures/handler-map-missing-action` +
        ` --loadModule ./test/fixtures/handler-map-undeclared-action` +
