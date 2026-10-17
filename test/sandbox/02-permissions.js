@@ -162,6 +162,16 @@ describe('sandbox 02: the policy file', function() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-policy-'));
   after(() => fs.rmSync(dir, {recursive: true, force: true}));
 
+  it('loads the disk limits at the top level and per module, and narrows with them (review, plan 4 Task 1)', () => {
+    const file = path.join(dir, 'disk.json');
+    fs.writeFileSync(file, JSON.stringify({limits: {diskMb: 512, diskEntries: 2000},
+      modules: {m: {approve: 'as-declared', limits: {diskMb: 64, diskEntries: 300}}}}));
+    const p = policy.load(file);
+    const eff = perms.narrow(perms.parseDeclaration(pkg({limits: {diskMb: 100}})).declared, p.modules.m, p.limits, 'enforce');
+    assert.strictEqual(eff.limits.diskMb, 64);
+    assert.strictEqual(eff.limits.diskEntries, 300);
+  });
+
   it('loads a valid file', () => {
     const file = path.join(dir, 'ok.json');
     fs.writeFileSync(file, JSON.stringify({limits: {heapMb: 128}, modules: {m: {approve: 'as-declared'}}}));
