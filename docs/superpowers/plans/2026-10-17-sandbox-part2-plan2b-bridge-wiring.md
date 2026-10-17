@@ -16,9 +16,10 @@
 - **Every mode under `--workerThread` runs the broker** (`off`, `audit`, `enforce`); single-thread mode does not (plan 5 gives it a facade).
 - Bridge: two ports per worker; the sync side waits on a shared `Int32Array` counter that the main thread bumps (`Atomics.add`) after posting each sync reply, and the worker reads the counter **before** draining the port, then waits on the value it read. Replies whose `id` does not match are discarded. Every outcome, refusals included, comes back on the bridge.
 - Deadlines: broker 30 s → `ETIMEDOUT`; worker backstop 35 s → `EIO`. An operation past its deadline keeps its scheduler slot until the host operation really returns; a worker with 2 such stuck operations gets `EIO` for every new request until one returns (review F1).
-- Special files: opening anything that is not a regular file or a directory (FIFO, socket, character or block device) is `EPERM` under live `enforce`; otherwise it is reported (`special`) and opened with `O_NONBLOCK` added, so it cannot block a pool thread at `open` (review F1).
+- Special files (review F1, I2): **every** open adds `O_NONBLOCK` (no effect on regular files on Linux), with string flags converted through a complete table; after opening, a descriptor that is not a regular file or directory (FIFO, socket, device) is `EPERM` under live `enforce`, otherwise reported (`special`) and kept, already non-blocking. `copyFile` (and `cp`, built on it) refuses a source that is not a regular file with `EPERM` in **every** mode — it protects the main thread, it is not policy. A `readdir` returns at most 100 000 entries, recursive included, then `ENOBUFS` (review I5).
 - The module's lock is taken before a scheduler slot is requested; lock waiters never hold slots (review M6).
-- Interim until plan 3 (removed there): `outside` is not reported for paths under the module's own install directory or countinghouse's install directory — that is the loader reading code by host path, which plan 3 makes virtual.
+- **Interim until plan 3 (review K1), removed there:** the worker patch serves paths whose real location is inside the module's own install directory or countinghouse's (`workerData.hostRoots`) with the original `fs`, before anything reaches the broker — the loader and countinghouse's worker code still name files by host path, and a host path under `/app`, `/data` or `/tmp` would otherwise be remapped into the module's roots (countinghouse installed at `/app`, a module loaded from `/tmp`). Descriptors from the original `fs` are tracked and routed back to it; broker descriptors are shown to module code above `FD_BASE = 0x10000000`, so the two never collide. Plan 3 replaces this with its per-target grant.
+- A data directory that cannot be created fails the load with `cannot create the module data directory <path>: … -- set --moduleDataPath to a writable directory` (review I6). Two spawns of one module can overlap (supervisor restart against an operator load) and briefly share a data directory; plan 4's per-name lifecycle lock closes that (ledgered).
 - `fs` file descriptors 1 and 2 go to the worker's console path (`process.stdout`/`stderr`), silenced in release mode like `console`.
 - The `file broker: up to N …` startup line is logged only when worker mode runs the broker.
 - Do not run the full `npm test` except in the last task. Kill stray servers by PID. Test trees under `test/.tmp` (`test/helpers/test-tmp.js`). Commit trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -33,15 +34,15 @@
 
 ---
 
-### Task 1: Broker additions — scheduling, `readFile`, special files, quiet loader paths
+### Task 1: Broker additions — scheduling, `readFile`, special files, listing cap
 
 **Files:**
-- Modify: `lib/fs-broker/broker.js`
+- Modify: `lib/fs-broker/broker.js`, `lib/fs-broker/errors.js`
 - Create: `test/fs-broker/05-broker-2b.js`
 
 **Interfaces:**
-- Consumes: plan 2a's `FsBroker`, `OPS`, `openFlags` (module-internal).
-- Produces: `FsBroker` options `schedule(fn: () => Promise) → Promise` (default runs `fn` directly) and `quiet: [hostPath]`; new op `readFile(path, flag) → Buffer` (whole file; `EFBIG` past 16 MB so the worker falls back to chunked reads).
+- Consumes: plan 2a's `FsBroker`, `OPS`.
+- Produces: `FsBroker` options `schedule(fn: () => Promise) → Promise` (default runs `fn` directly) and `maxEntries` (default 100 000); new op `readFile(path, flag) → Buffer` (whole file; `EFBIG` past 16 MB so the worker falls back to chunked reads); `open` always non-blocking with a post-open special-file check; `copyFile` copying through descriptors.
 
 - [ ] **Step 1: Write the failing tests** — `test/fs-broker/05-broker-2b.js`:
 
@@ -56,7 +57,7 @@ const {mkdtemp} = require('../helpers/test-tmp');
 
 async function setup(mode, extra) {
   const base = mkdtemp('broker2b-');
-  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), outside: path.join(base, 'outside')};
+  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   const reports = [];
   const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
@@ -65,6 +66,14 @@ async function setup(mode, extra) {
     report: (r, t) => reports.push(`${r} ${t}`), enforceFileDecisions: true}, extra || {}));
   return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
+
+const quick = async(fn) => {
+  const t0 = Date.now();
+  let out;
+  try { out = {ok: await fn()}; } catch (e) { out = {code: e.code}; }
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
+  return out;
+};
 
 describe('fs-broker 05: broker additions for the bridge', function() {
   this.timeout(10000);
@@ -98,33 +107,56 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
-  it('enforce: a FIFO is EPERM; audit: it is reported and opened without blocking', async () => {
-    const e = await setup('enforce');
+  it('enforce: a FIFO is EPERM, without blocking', async () => {
+    const t = await setup('enforce');
     try {
-      execFileSync('mkfifo', [path.join(e.dirs.data, 'pipe')]);
-      await assert.rejects(e.broker.handle('open', ['/data/pipe', 'r']), (err) => err.code === 'EPERM' && err.path === '/data/pipe');
-    } finally { await e.done(); }
-    const a = await setup('audit');
-    try {
-      execFileSync('mkfifo', [path.join(a.dirs.data, 'pipe')]);
-      const t0 = Date.now();
-      const fd = await a.broker.handle('open', ['/data/pipe', 'r']);
-      assert.ok(Date.now() - t0 < 2000, 'open of a FIFO with no writer did not block');
-      await a.broker.handle('close', [fd]);
-      assert.ok(a.reports.includes('special /data/pipe'), a.reports.join('\n'));
-    } finally { await a.done(); }
+      execFileSync('mkfifo', [path.join(t.dirs.data, 'pipe')]);
+      assert.deepStrictEqual(await quick(() => t.broker.handle('open', ['/data/pipe', 'r'])), {code: 'EPERM'});
+      assert.strictEqual(t.broker.fds.size, 0);
+    } finally { await t.done(); }
   });
 
-  it('does not report outside for quiet paths (loader traffic until plan 3), but still reports others', async () => {
+  it('audit: a FIFO is reported and opened without blocking, whatever the flags', async () => {
     const t = await setup('audit');
     try {
-      fs.writeFileSync(path.join(t.dirs.outside, 'lib.js'), '1');
-      const quiet = new FsBroker({name: 'm', mode: 'audit', namespace: t.broker.ns, cwd: '/',
-        report: (r, x) => t.reports.push(`${r} ${x}`), quiet: [t.dirs.outside]});
-      await quiet.handle('stat', [path.join(t.dirs.outside, 'lib.js')]);
-      assert.deepStrictEqual(t.reports, []);
-      await quiet.handle('stat', [t.base]);
-      assert.deepStrictEqual(t.reports, [`outside ${t.base}`]);
+      execFileSync('mkfifo', [path.join(t.dirs.data, 'pipe')]);
+      const r = await quick(() => t.broker.handle('open', ['/data/pipe', 'r']));
+      await t.broker.handle('close', [r.ok]);
+      const as = await quick(() => t.broker.handle('open', ['/data/pipe', 'as']));
+      assert.ok(as.ok != null || as.code === 'ENXIO', JSON.stringify(as));   // no reader: ENXIO at once
+      assert.ok(t.reports.includes('special /data/pipe'), t.reports.join('\n'));
+    } finally { await t.done(); }
+  });
+
+  it('copyFile refuses a FIFO source in every mode, without blocking', async () => {
+    for (const mode of ['off', 'audit', 'enforce']) {
+      const t = await setup(mode);
+      try {
+        execFileSync('mkfifo', [path.join(t.dirs.data, 'pipe')]);
+        assert.deepStrictEqual(await quick(() => t.broker.handle('copyFile', ['/data/pipe', '/data/copy'])), {code: 'EPERM'}, mode);
+      } finally { await t.done(); }
+    }
+  });
+
+  it('copyFile copies content and honours COPYFILE_EXCL', async () => {
+    const t = await setup('enforce');
+    try {
+      fs.writeFileSync(path.join(t.dirs.data, 'a'), 'abc');
+      await t.broker.handle('copyFile', ['/data/a', '/data/b', 0]);
+      assert.strictEqual(fs.readFileSync(path.join(t.dirs.data, 'b'), 'utf8'), 'abc');
+      await assert.rejects(t.broker.handle('copyFile', ['/data/a', '/data/b', fs.constants.COPYFILE_EXCL]), (e) => e.code === 'EEXIST' && e.path === '/data/a');
+    } finally { await t.done(); }
+  });
+
+  it('a listing past maxEntries is ENOBUFS, recursive or not', async () => {
+    const t = await setup('enforce', {maxEntries: 3});
+    try {
+      fs.mkdirSync(path.join(t.dirs.data, 'sub'));
+      ['a', 'b', 'sub/c', 'sub/d'].forEach((f) => fs.writeFileSync(path.join(t.dirs.data, f), 'x'));
+      assert.strictEqual((await t.broker.handle('readdir', ['/data', {}])).length, 3);
+      await assert.rejects(t.broker.handle('readdir', ['/data', {recursive: true}]), (e) => e.code === 'ENOBUFS');
+      fs.writeFileSync(path.join(t.dirs.data, 'e'), 'x');
+      await assert.rejects(t.broker.handle('readdir', ['/data', {}]), (e) => e.code === 'ENOBUFS');
     } finally { await t.done(); }
   });
 });
@@ -132,43 +164,81 @@ describe('fs-broker 05: broker additions for the bridge', function() {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `npx mocha test/fs-broker/05-broker-2b.js`
-Expected: FAIL — `schedule` is never called, `readFile` is `EINVAL`, the FIFO is not refused (the enforce `open` blocks until mocha's timeout: run with `--timeout 5000` and expect that test to fail by timeout), quiet paths are reported.
+Run: `npx mocha --timeout 5000 test/fs-broker/05-broker-2b.js`
+Expected: FAIL — `schedule` is never called, `readFile` is `EINVAL`, the FIFO tests block until the timeout, `copyFile` from a FIFO blocks, listings are not capped.
 
 - [ ] **Step 3: Implement** in `lib/fs-broker/broker.js`:
-  - Constructor: `this.schedule = opts.schedule || ((fn) => fn());` and `this.quiet = (opts.quiet || []).map(String);`.
-  - `handle`: replace the two `spec.run.call(this, a)` calls with `this.schedule(() => spec.run.call(this, a))` (the `none` branch and inside the locked `try`), so a scheduler slot is requested only after the lock is held.
-  - `place`, in the `outside` branch: report only when the path is not under a quiet root:
+  - Constructor: `this.schedule = opts.schedule || ((fn) => fn());` and `this.maxEntries = opts.maxEntries || 100000;`.
+  - `handle`: replace both `spec.run.call(this, a)` calls with `this.schedule(() => spec.run.call(this, a))`, so a scheduler slot is requested only after the lock is held.
+  - Replace `openFlags` with a complete flag table and a numeric form:
     ```js
-    if (!this.quiet.some((q) => inside(v, q))) this.report('outside', v);
-    ```
-  - Special files, in `OPS.open.run` right after `place` and the `EISDIR` check:
-    ```js
-    let flags = a[1] == null ? 'r' : a[1];
-    const st = await fsp.stat(p.host).catch(() => null);
-    if (st != null && !st.isFile() && !st.isDirectory()) {
-      this.report('special', p.virtual);
-      if (this.enforce) throw nodeError('EPERM', 'open', p.virtual);
-      flags = nonBlocking(flags);
+    // Node's string flags (lib/internal/fs/utils.js stringToFlags), as a table.
+    const FLAG_TABLE = {
+      r: 'O_RDONLY', rs: 'O_RDONLY|O_SYNC', sr: 'O_RDONLY|O_SYNC', 'r+': 'O_RDWR', 'rs+': 'O_RDWR|O_SYNC', 'sr+': 'O_RDWR|O_SYNC',
+      w: 'O_TRUNC|O_CREAT|O_WRONLY', wx: 'O_TRUNC|O_CREAT|O_WRONLY|O_EXCL', xw: 'O_TRUNC|O_CREAT|O_WRONLY|O_EXCL',
+      'w+': 'O_TRUNC|O_CREAT|O_RDWR', 'wx+': 'O_TRUNC|O_CREAT|O_RDWR|O_EXCL', 'xw+': 'O_TRUNC|O_CREAT|O_RDWR|O_EXCL',
+      a: 'O_APPEND|O_CREAT|O_WRONLY', ax: 'O_APPEND|O_CREAT|O_WRONLY|O_EXCL', xa: 'O_APPEND|O_CREAT|O_WRONLY|O_EXCL',
+      as: 'O_APPEND|O_CREAT|O_WRONLY|O_SYNC', sa: 'O_APPEND|O_CREAT|O_WRONLY|O_SYNC',
+      'a+': 'O_APPEND|O_CREAT|O_RDWR', 'ax+': 'O_APPEND|O_CREAT|O_RDWR|O_EXCL', 'xa+': 'O_APPEND|O_CREAT|O_RDWR|O_EXCL',
+      'as+': 'O_APPEND|O_CREAT|O_RDWR|O_SYNC', 'sa+': 'O_APPEND|O_CREAT|O_RDWR|O_SYNC'
+    };
+    function numericFlags(flags) {
+      if (typeof(flags) === 'number') return flags;
+      const spec = FLAG_TABLE[flags == null ? 'r' : String(flags)];
+      if (spec == null) throw nodeError('EINVAL', 'open');
+      return spec.split('|').reduce((n, k) => n | fs.constants[k], 0);
     }
-    ```
-    and pass `flags` to `fsp.open`. Add the helper near `openFlags`:
-    ```js
-    // FIFOs, sockets and devices could block a threadpool thread at open or
-    // read; open them non-blocking (review F1).
-    const STRING_FLAGS = {r: 'O_RDONLY', 'r+': 'O_RDWR', 'rs+': 'O_RDWR', w: 'O_WRONLY|O_CREAT|O_TRUNC', 'w+': 'O_RDWR|O_CREAT|O_TRUNC',
-      a: 'O_WRONLY|O_CREAT|O_APPEND', 'a+': 'O_RDWR|O_CREAT|O_APPEND'};
-    function nonBlocking(flags) {
+    function openFlags(flags) {
+      const n = numericFlags(flags);
       const c = fs.constants;
-      let n = flags;
-      if (typeof(flags) === 'string') {
-        if (STRING_FLAGS[flags] == null) return flags;
-        n = STRING_FLAGS[flags].split('|').reduce((acc, k) => acc | c[k], 0);
-      }
-      return n | c.O_NONBLOCK;
+      return {
+        writes: (n & (c.O_WRONLY | c.O_RDWR | c.O_CREAT | c.O_TRUNC | c.O_APPEND)) !== 0,
+        creates: (n & (c.O_CREAT | c.O_TRUNC | c.O_EXCL)) !== 0
+      };
     }
     ```
-  - New op, after `open`:
+  - `OPS.open.run`: open with `numericFlags(a[1]) | fs.constants.O_NONBLOCK`, and after `verifyOpened` add:
+    ```js
+    // Every open is non-blocking, so a FIFO, socket or device cannot block a
+    // pool thread at open; what it turned out to be decides the rest (review I2).
+    const st = await fh.stat();
+    if (!st.isFile() && !st.isDirectory()) {
+      this.report('special', p.virtual);
+      if (this.enforce) { await fh.close().catch(() => {}); throw nodeError('EPERM', 'open', p.virtual); }
+    }
+    ```
+  - `OPS.copyFile.run`, replacing `fsp.copyFile` (which opens the source inside libuv, where a FIFO would block):
+    ```js
+    copyFile: {lock: EXCL, async run(a) {
+      const from = await this.place(a[0], 'r', 'copyfile');
+      const to = await this.place(a[1], 'w', 'copyfile');
+      const c = fs.constants;
+      const excl = (Number(a[2] || 0) & c.COPYFILE_EXCL) !== 0;
+      let src = null;
+      let dst = null;
+      try {
+        src = await fsp.open(from.host, c.O_RDONLY | c.O_NONBLOCK).catch((e) => { throw rewrite(e, 'copyfile', from, to, this.ns); });
+        const st = await src.stat();
+        // every mode: a FIFO or device source would block a pool thread
+        if (!st.isFile()) throw nodeError('EPERM', 'copyfile', from.virtual, to.virtual);
+        await this.verifyOpened(src, from, 'copyfile', false);
+        dst = await fsp.open(to.host, c.O_WRONLY | c.O_CREAT | c.O_TRUNC | c.O_NONBLOCK | (excl ? c.O_EXCL : 0), st.mode & 0o777)
+          .catch((e) => { throw rewrite(e, 'copyfile', from, to, this.ns); });
+        await this.verifyOpened(dst, to, 'copyfile', true);
+        const buf = Buffer.alloc(1024 * 1024);
+        for (;;) {
+          const r = await src.read(buf, 0, buf.length, null);
+          if (r.bytesRead === 0) break;
+          await dst.write(buf, 0, r.bytesRead);
+        }
+      } finally {
+        if (src) await src.close().catch(() => {});
+        if (dst) await dst.close().catch(() => {});
+      }
+    }},
+    ```
+  - `OPS.readdir.run`: cap the entries. Non-recursive: after `fsp.readdir`, `if (list.length > this.maxEntries) throw nodeError('ENOBUFS', 'scandir', p.virtual);`. Recursive: replace `fsp.readdir(..., {recursive: true})` with a breadth-first walk of non-recursive `fsp.readdir(dir, {withFileTypes: true})` calls that throws `ENOBUFS` as soon as the count passes `this.maxEntries`, producing `{name, type, parentPath: this.out(dir, p)}` entries (with types) or relative names `sub/x` (without), in the order Node uses (each directory's entries, then its subdirectories).
+  - New op `readFile`, after `open`:
     ```js
     readFile: {lock: (a) => (openFlags(a[1]).creates ? EXCL : SHARED), async run(a) {
       const fd = await OPS.open.run.call(this, [a[0], a[1] == null ? 'r' : a[1]]);
@@ -191,18 +261,18 @@ Expected: FAIL — `schedule` is never called, `readFile` is `EINVAL`, the FIFO 
       }
     }},
     ```
-    and add `EFBIG: 'file too large'` to `TEXT` in `lib/fs-broker/errors.js`.
+  - `lib/fs-broker/errors.js` `TEXT`: add `EFBIG: 'file too large', ENOBUFS: 'no buffer space available', ENXIO: 'no such device or address'`.
 
 - [ ] **Step 4: Run the tests**
 
 Run: `npx mocha test/fs-broker/05-broker-2b.js test/fs-broker/03-broker.js`
-Expected: all passing (5 new, 25 from plan 2a).
+Expected: all passing (8 new, 25 from plan 2a).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/fs-broker/broker.js lib/fs-broker/errors.js test/fs-broker/05-broker-2b.js
-git commit -m "feat(fs-broker): scheduling hook, readFile, non-blocking special files, quiet loader paths" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat(fs-broker): scheduling hook, readFile, non-blocking opens, special files, listing cap" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -224,7 +294,7 @@ git commit -m "feat(fs-broker): scheduling hook, readFile, non-blocking special 
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {Worker} = require('worker_threads');
+const {Worker, receiveMessageOnPort} = require('worker_threads');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker} = require('../../lib/fs-broker/broker');
 const {FsScheduler} = require('../../lib/fs-broker/scheduler');
@@ -247,6 +317,7 @@ async function harness(opts) {
   const bridge = createBridge({broker, scheduler, key, deadlineMs: opts.deadlineMs, maxStuck: opts.maxStuck});
   return {base, dirs, broker, scheduler, bridge,
     run(body) {
+      if (this.worker) throw new Error('one run() per harness: a bridge\'s ports can be transferred once');
       const code = `const {workerData, parentPort} = require('worker_threads');
         const client = require(${JSON.stringify(CLIENT)}).createClient(workerData.t, {backstopMs: workerData.backstop || 35000});
         (async () => { ${body} })().then((r) => parentPort.postMessage({ok: true, r}), (e) => parentPort.postMessage({ok: false, e: {code: e.code, message: e.message, path: e.path}}));`;
@@ -284,19 +355,34 @@ describe('fs-broker 06: the bridge', function() {
     } finally { await h.done(); }
   });
 
-  it('a call past the broker deadline gets ETIMEDOUT, and the next call still works (stale reply discarded)', async () => {
-    let release;
-    const h = await harness({deadlineMs: 200, hooks: {afterCheck: (syscall, host) => (host.endsWith('/slow') ? new Promise((r) => { release = r; }) : null)}});
+  it('a call past the broker deadline gets ETIMEDOUT; the late reply is discarded and the next call in the same worker gets its own', async () => {
+    const h = await harness({deadlineMs: 200,
+      hooks: {afterCheck: (syscall, host) => (host.endsWith('/slow') ? new Promise((r) => setTimeout(r, 400)) : null)}});
     try {
+      fs.writeFileSync(path.join(h.dirs.data, 'ok'), 'fine');
       const m = await h.run(`
         let code = null;
         try { client.sync('stat', ['/data/slow']); } catch (e) { code = e.code; }
-        return code;`);
-      assert.deepStrictEqual(m, {ok: true, r: 'ETIMEDOUT'});
-      release();
-      await new Promise((r) => setTimeout(r, 50));
-      const n = await h.run(`return Buffer.from(client.sync('readFile', ['/data/ok', 'r'])).toString();`);
-      assert.ok(n.ok === false && n.e.code === 'ENOENT', JSON.stringify(n));
+        await new Promise((r) => setTimeout(r, 400));   // the slow call's late reply lands meanwhile
+        let second;
+        try { second = Buffer.from(client.sync('readFile', ['/data/ok', 'r'])).toString(); } catch (e) { second = e.code; }
+        return {code, second};`);
+      assert.deepStrictEqual(m, {ok: true, r: {code: 'ETIMEDOUT', second: 'fine'}});
+    } finally { await h.done(); }
+  });
+
+  it('refuses a second sync request while one is in flight (a waiting worker cannot send two)', async () => {
+    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.endsWith('/wait') ? new Promise((r) => setTimeout(r, 300)) : null)}});
+    try {
+      const port = h.bridge.transfer.syncPort;
+      port.postMessage({id: 1, op: 'stat', args: ['/data/wait']});
+      port.postMessage({id: 2, op: 'stat', args: ['/data']});
+      await new Promise((r) => setTimeout(r, 700));
+      const got = [];
+      let msg;
+      while ((msg = receiveMessageOnPort(port)) !== undefined) got.push(msg.message);
+      assert.deepStrictEqual(got.find((x) => x.id === 2).error.code, 'EIO', JSON.stringify(got));
+      assert.strictEqual(got.find((x) => x.id === 1).error.code, 'ENOENT');
     } finally { await h.done(); }
   });
 
@@ -489,6 +575,9 @@ function createBridge(opts) {
   }
 
   syncCh.port1.on('message', (m) => {
+    // A worker waiting on a sync call cannot send another; a second one in
+    // flight is not a real wait, and must not extend the heartbeat exemption.
+    if (inFlight > 0) return reply(syncCh.port1, m.id, false, nodeError('EIO', m.op), true);
     inFlight++;
     exec(m.op, m.args)
       .then((r) => reply(syncCh.port1, m.id, true, r, true), (e) => reply(syncCh.port1, m.id, false, e, true))
@@ -520,7 +609,7 @@ module.exports = {createBridge};
 - [ ] **Step 5: Run the tests**
 
 Run: `npx mocha --exit test/fs-broker/06-bridge.js`
-Expected: 6 passing. No stray worker threads (mocha exits).
+Expected: 7 passing. No stray worker threads (mocha exits).
 
 - [ ] **Step 6: Commit**
 
@@ -534,12 +623,12 @@ git commit -m "feat(fs-broker): the bridge between module workers and their brok
 ### Task 3: The worker patch
 
 **Files:**
-- Create: `lib/fs-broker/patch.js`, `test/helpers/brokered-worker.js`, `test/helpers/brokered-worker-entry.js`, `test/fs-broker/scripts/keys.js`, `test/fs-broker/scripts/behaviour.js`, `test/fs-broker/07-patch.js`
+- Create: `lib/fs-broker/patch.js`, `test/helpers/brokered-worker.js`, `test/helpers/brokered-worker-entry.js`, `test/fs-broker/scripts/keys.js`, `test/fs-broker/scripts/behaviour.js`, `test/fs-broker/scripts/k1.js`, `test/fs-broker/07-patch.js`
 
 **Interfaces:**
 - Consumes: `createClient` (Task 2), `createBridge`, `FsBroker` with `schedule` and `readFile` (Task 1).
-- Produces: `require('./fs-broker/patch')` → `{install(client, {consoleWrite?}) → handled: {fs: Set, promises: Set, fileHandle: Set}, setConsoleSilenced(boolean), PASSTHROUGH: {fs: [...], promises: [...]}}`.
-- Produces (tests): `runBrokered(scriptPath, {patch = true, mode = 'audit', files = {}}) → Promise<{ok, r} | {ok: false, e}>` in `test/helpers/brokered-worker.js`. With `patch`, the script runs in a worker whose `fs` is patched against a broker over a fresh tree and gets `root = '/data'`; without, the same script runs in a plain worker with `root` = the tree's real data directory. `files` are written into the data directory first. The script is `module.exports = async (fs, root, ctx) => result`, `ctx = {handled, patch, realFileHandleKeys, consoleLines}`.
+- Produces: `require('./fs-broker/patch')` → `{install(client, {hostRoots?, consoleWrite?}) → handled: {fs: Set, promises: Set, fileHandle: Set}, setConsoleSilenced(boolean), PASSTHROUGH: {fs: [...], promises: [...]}, FD_BASE}`.
+- Produces (tests): `runBrokered(scriptPath, {patch = true, mode = 'audit', files = {}}) → Promise<{ok, r} | {ok: false, e}>` in `test/helpers/brokered-worker.js`. With `patch`, the script runs in a worker whose `fs` is patched against a broker over a fresh tree and gets `root = '/data'`; without, the same script runs in a plain worker with `root` = the tree's real data directory. `files` are written into the data directory first. The script is `module.exports = async (fs, root, ctx) => result`, `ctx = {handled, patch, realFileHandleKeys, consoleLines, extra}`; options `hostRoots` (default: the repo's real path) and `extra` (passed to the script).
 
 - [ ] **Step 1: Write the harness.** `test/helpers/brokered-worker-entry.js`:
 
@@ -556,10 +645,11 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
   const fh = await require('fs/promises').open(__filename);
   ctx.realFileHandleKeys = Object.getOwnPropertyNames(Object.getPrototypeOf(fh));
   await fh.close();
+  ctx.extra = workerData.extra || {};
   if (workerData.fsBridge != null) {
     ctx.patch = require(path.join(LIB, 'patch'));
     ctx.handled = ctx.patch.install(require(path.join(LIB, 'client')).createClient(workerData.fsBridge),
-      {consoleWrite: (fd, buf) => ctx.consoleLines.push(`${fd}:${Buffer.from(buf).toString()}`)});
+      {hostRoots: workerData.hostRoots, consoleWrite: (fd, buf) => ctx.consoleLines.push(`${fd}:${Buffer.from(buf).toString()}`)});
   }
   return require(workerData.script)(require('fs'), workerData.root, ctx);
 })().then((r) => parentPort.postMessage({ok: true, r: r}),
@@ -592,14 +682,16 @@ async function runBrokered(script, opts) {
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   Object.entries(opts.files || {}).forEach(([name, content]) => fs.writeFileSync(path.join(dirs.data, name), content));
   let bridge = null;
-  const data = {script: script, root: dirs.data, fsBridge: null};
+  // hostRoots: the repo by default, so the script itself loads by host path (review K1)
+  const data = {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {},
+    hostRoots: opts.hostRoots != null ? opts.hostRoots : [fs.realpathSync(REPO)]};
   let transferList = [];
   if (usePatch) {
     const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
     await ns.prepare();
     const scheduler = new FsScheduler({globalCap: 3});
     const broker = new FsBroker({name: 't', mode: opts.mode || 'audit', namespace: ns, cwd: process.cwd(), report: () => {},
-      schedule: (fn) => scheduler.submit('t', fn), quiet: [REPO]});
+      schedule: (fn) => scheduler.submit('t', fn)});
     bridge = createBridge({broker, scheduler, key: 't'});
     data.fsBridge = bridge.transfer;
     data.root = '/data';
@@ -690,6 +782,16 @@ module.exports = async (fs, root, ctx) => {
   out.disposable = fs.existsSync(tmp.path);
   tmp.remove();
   try { fs.watch(root); } catch (e) { out.watch = e.code; }
+  const fh2 = await fsp.open(j('h.txt'), 'r');
+  out.fhStream = await new Promise((r, x) => { let s = ''; fh2.createReadStream({encoding: 'utf8'}).on('data', (c) => { s += c; }).on('end', () => r(s)).on('error', x); });
+  await fh2.close();
+  out.noEntry = fs.statSync(j('missing'), {throwIfNoEntry: false}) === undefined;
+  out.fsync1 = fs.fsyncSync(1) === undefined;
+  const rfd = fs.openSync(j('a.txt'), 'r');
+  out.brokerFd = rfd >= ctx.patch.FD_BASE;
+  try { fs.readSync(rfd, Buffer.alloc(2), 0, 5, 0); } catch (e) { out.readRange = e.code; }
+  fs.closeSync(rfd);
+  out.globAbs = fs.globSync(`${root}/d/**/*.txt`).sort();
   const big = Buffer.alloc(17 * 1024 * 1024, 1);
   fs.writeFileSync(j('big.bin'), big);
   out.bigRead = fs.readFileSync(j('big.bin')).length;
@@ -697,10 +799,25 @@ module.exports = async (fs, root, ctx) => {
 };
 ```
 
+`test/fs-broker/scripts/k1.js`:
+
+```js
+// Reads a file by host path, by name and through a descriptor.
+module.exports = async (fs, root, ctx) => {
+  const fd = fs.openSync(ctx.extra.file, 'r');
+  const b = Buffer.alloc(4);
+  fs.readSync(fd, b, 0, 4, 0);
+  fs.closeSync(fd);
+  return {content: fs.readFileSync(ctx.extra.file, 'utf8'), viaFd: b.toString()};
+};
+```
+
 `test/fs-broker/07-patch.js`:
 
 ```js
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {runBrokered} = require('../helpers/brokered-worker');
 
@@ -741,6 +858,29 @@ describe('fs-broker 07: the worker patch', function() {
     assert.strictEqual(r.disposable, true);
     assert.strictEqual(r.watch, 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM');
     assert.strictEqual(r.bigRead, 17 * 1024 * 1024);
+    assert.strictEqual(r.fhStream, 'handle');
+    assert.strictEqual(r.noEntry, true);
+    assert.strictEqual(r.fsync1, true);
+    assert.strictEqual(r.brokerFd, true);
+    assert.strictEqual(r.readRange, 'ERR_OUT_OF_RANGE');
+    assert.deepStrictEqual(r.globAbs, ['/data/d/e/f.txt']);
+  });
+
+  // Review K1: a host path under /tmp (a module loaded from there, say) is the
+  // virtual /tmp unless it lies inside a host root.
+  it('serves host paths inside the host roots with the original fs, until plan 3', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-k1-')));
+    try {
+      const file = path.join(dir, 'f');
+      fs.writeFileSync(file, 'host');
+      const served = await runBrokered(S('k1.js'), {hostRoots: [dir], extra: {file}});
+      assert.deepStrictEqual(served, {ok: true, r: {content: 'host', viaFd: 'host'}});
+      const remapped = await runBrokered(S('k1.js'), {hostRoots: [fs.realpathSync(path.join(__dirname, '..', '..'))], extra: {file}});
+      assert.strictEqual(remapped.ok, false);
+      assert.strictEqual(remapped.e.code, 'ENOENT');
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
   });
 });
 ```
@@ -750,7 +890,7 @@ describe('fs-broker 07: the worker patch', function() {
 Run: `npx mocha --exit test/fs-broker/07-patch.js`
 Expected: FAIL, `Cannot find module '…/lib/fs-broker/patch'` reported by the worker.
 
-- [ ] **Step 4: Implement** — `lib/fs-broker/patch.js` (the whole file; the `EFBIG` fallback in `readFileSyncImpl`/`readFileImpl` falls back to `open` + chunked reads + `close`):
+- [ ] **Step 4: Implement** — `lib/fs-broker/patch.js` (the whole file: three forms per operation from `define()`, Node's argument shapes for descriptors including `ERR_OUT_OF_RANGE`, `throwIfNoEntry`, the `EFBIG` fallback to chunked reads, fds 1/2 to the console (writes) or no-ops (`close`/`fsync`/`fdatasync`), a FileHandle closed on garbage collection, `cp` with Node's `force`/`errorOnExist` semantics and `ERR_FS_CP_EINVAL`, a level-by-level `glob` with absolute patterns, and the interim host routing from review K1):
 
 ```js
 // Module worker side of the file broker (docs/superpowers/specs/2026-10-17-
@@ -759,18 +899,29 @@ Expected: FAIL, `Cannot find module '…/lib/fs-broker/patch'` reported by the w
 // or dependency code loads, with versions that ask the main thread's broker.
 // Sync calls go over the blocking bridge, callback and promise calls over the
 // async channel (lib/fs-broker/client.js). Anything not handled here throws,
-// so a method a later Node adds fails closed (test/fs-broker/07-patch-keys.js).
+// so a method a later Node adds fails closed (test/fs-broker/07-patch.js).
+//
+// Interim until plan 3 (review K1): paths whose real location is inside the
+// module's install directory or countinghouse's (settings.hostRoots) are
+// served by the original fs, as before this patch, because the loader and
+// countinghouse's worker code still name files by host path. Plan 3 replaces
+// this with its per-target grant and deletes hostServed().
 const fs = require('fs');
 const fsp = require('fs/promises');
 const pathMod = require('path');
+const url = require('url');
 const {EventEmitter} = require('events');
 
 const MAX_IO = 16 * 1024 * 1024;
+// Broker descriptors are shown to module code above FD_BASE, so they never
+// collide with real descriptors from the original fs (hostServed paths).
+const FD_BASE = 0x10000000;
 const STATS_PROTO = Object.getPrototypeOf(fs.statSync(__filename));
 const BIGINT_STATS_PROTO = Object.getPrototypeOf(fs.statSync(__filename, {bigint: true}));
 const DIRENT_TYPE = {file: fs.constants.UV_DIRENT_FILE, dir: fs.constants.UV_DIRENT_DIR,
   symlink: fs.constants.UV_DIRENT_LINK, other: fs.constants.UV_DIRENT_UNKNOWN};
 const toUnixTimestamp = fs._toUnixTimestamp;
+const GLOB_CHARS = /[*?[\]{}!]/;
 
 let consoleSilenced = false;
 function setConsoleSilenced(v) { consoleSilenced = (v === true); }
@@ -784,6 +935,12 @@ function unavailable(what) {
 function argType(name, value) {
   const err = new TypeError(`The "${name}" argument must be of type string or an instance of Buffer or URL. Received ${typeof(value)}`);
   err.code = 'ERR_INVALID_ARG_TYPE';
+  return err;
+}
+
+function outOfRange(name, value) {
+  const err = new RangeError(`The value of "${name}" is out of range. Received ${value}`);
+  err.code = 'ERR_OUT_OF_RANGE';
   return err;
 }
 
@@ -843,78 +1000,148 @@ function splitCb(args) {
   return {args: Array.prototype.slice.call(args, 0, -1), cb: cb};
 }
 
+function cpError(code, message) {
+  const e = new Error(message);
+  e.code = code;
+  return e;
+}
+
 function install(client, settings) {
+  settings = settings || {};
   const sync = client.sync;
   const call = client.async;
-  const consoleWrite = (settings && settings.consoleWrite) || ((fd, buf) => (fd === 1 ? process.stdout : process.stderr).write(buf));
+  const consoleWrite = settings.consoleWrite || ((fd, buf) => (fd === 1 ? process.stdout : process.stderr).write(buf));
+  const hostRoots = (settings.hostRoots || []).map(String);
+  const origFs = Object.assign({}, fs);
+  const origFsp = Object.assign({}, fsp);
+  const realFds = new Set();
   const handled = {fs: new Set(), promises: new Set(), fileHandle: new Set()};
 
-  function lock(obj, key, value, set) {
-    Object.defineProperty(obj, key, {value: value, writable: false, configurable: false, enumerable: true});
+  const toBroker = (fd) => (typeof(fd) === 'number' && fd >= FD_BASE ? fd - FD_BASE : -1);
+  const fromBroker = (fd) => fd + FD_BASE;
+
+  function hostServed(v) {
+    if (hostRoots.length === 0) return false;
+    let s;
+    try { s = p(v); } catch (e) { return false; }
+    if (s.startsWith('file:')) { try { s = url.fileURLToPath(s); } catch (e) { return false; } }
+    const abs = pathMod.resolve(s);
+    let real;
+    try {
+      real = origFs.realpathSync(abs);
+    } catch (e) {
+      try { real = pathMod.join(origFs.realpathSync(pathMod.dirname(abs)), pathMod.basename(abs)); } catch (e2) { return false; }
+    }
+    return hostRoots.some((r) => real === r || real.startsWith(`${r}/`));
+  }
+
+  function callOrig(key, orig, a) {
+    if (key === 'openSync') { const fd = orig.apply(fs, a); realFds.add(fd); return fd; }
+    if (key === 'open' && typeof(a[a.length - 1]) === 'function') {
+      const cb = a[a.length - 1];
+      a[a.length - 1] = (e, fd) => { if (!e) realFds.add(fd); cb(e, fd); };
+    }
+    if (key === 'closeSync' || key === 'close') realFds.delete(a[0]);
+    return orig.apply(fs, a);
+  }
+
+  // route: {paths: [argIndex...], fd: argIndex} -- when every listed path is
+  // host-served, or the descriptor came from the original fs, call the original.
+  function routed(obj, key, value, route) {
+    if (route == null) return value;
+    const orig = (obj === fs ? origFs : origFsp)[key];
+    if (typeof(orig) !== 'function') return value;
+    return function(...a) {
+      if (route.fd != null && typeof(a[route.fd]) === 'number' && realFds.has(a[route.fd])) return callOrig(key, orig, a);
+      if (route.paths != null && route.paths.length > 0 && route.paths.every((i) => a[i] != null && typeof(a[i]) !== 'number' && hostServed(a[i]))) {
+        return obj === fs ? callOrig(key, orig, a) : orig.apply(fsp, a);
+      }
+      return value.apply(this, a);
+    };
+  }
+
+  function lock(obj, key, value, set, route) {
+    Object.defineProperty(obj, key, {value: routed(obj, key, value, route), writable: false, configurable: false, enumerable: true});
     set.add(key);
   }
 
-  // One operation, three forms. spec: {args(...a) -> [op, args], out(result, ...a) -> value}
+  // One operation, three forms. spec: {args(...a) -> [op, args], out(result, ...a) -> value,
+  // route, noEntry (index of an options argument honouring throwIfNoEntry), consoleNoop}
   function define(name, spec) {
     const syncName = `${name}Sync`;
-    const syncFn = function(...a) { return spec.out(sync(...spec.args(...a)), ...a); };
+    const syncFn = function(...a) {
+      if (spec.consoleNoop && (a[0] === 1 || a[0] === 2)) return undefined;
+      try {
+        return spec.out(sync(...spec.args(...a)), ...a);
+      } catch (e) {
+        if (spec.noEntry != null && e.code === 'ENOENT' && a[spec.noEntry] != null && a[spec.noEntry].throwIfNoEntry === false) return undefined;
+        throw e;
+      }
+    };
     const cbFn = function(...all) {
       const {args, cb} = splitCb(all);
+      if (spec.consoleNoop && (args[0] === 1 || args[0] === 2)) return process.nextTick(cb, null);
       let req;
       try { req = spec.args(...args); } catch (e) { return process.nextTick(cb, e); }
       call(...req).then((r) => cb(null, spec.out(r, ...args)), (e) => cb(e));
     };
     const promiseFn = async function(...a) { return spec.out(await call(...spec.args(...a)), ...a); };
     if (spec.native) { syncFn.native = syncFn; cbFn.native = cbFn; }
-    if (spec.sync !== false) lock(fs, syncName, syncFn, handled.fs);
-    if (spec.callback !== false) lock(fs, name, cbFn, handled.fs);
-    if (spec.promise !== false) lock(fsp, name, promiseFn, handled.promises);
+    if (spec.sync !== false) lock(fs, syncName, syncFn, handled.fs, spec.route);
+    if (spec.callback !== false) lock(fs, name, cbFn, handled.fs, spec.route);
+    if (spec.promise !== false) lock(fsp, name, promiseFn, handled.promises, spec.route);
   }
 
   const none = () => undefined;
+  const P0 = {paths: [0]};
+  const P01 = {paths: [0, 1]};
+  const P1 = {paths: [1]};
+  const F0 = {fd: 0};
+  const bfd = (fd) => toBroker(fd);
 
-  define('access', {args: (path, m) => ['access', [p(path), m]], out: none});
-  define('stat', {args: (path, o) => ['stat', [p(path), opts(o)]], out: stats});
-  define('lstat', {args: (path, o) => ['lstat', [p(path), opts(o)]], out: stats});
-  define('fstat', {args: (fd, o) => ['fstat', [fd, opts(o)]], out: stats, promise: false});
-  define('statfs', {args: (path, o) => ['statfs', [p(path), opts(o)]], out: (r) => r});
-  define('realpath', {args: (path) => ['realpath', [p(path)]], out: (r, path, o) => str(r, opts(o).encoding), native: true});
-  define('readlink', {args: (path) => ['readlink', [p(path)]], out: (r, path, o) => str(r, opts(o).encoding)});
+  define('access', {args: (path, m) => ['access', [p(path), m]], out: none, route: P0});
+  define('stat', {args: (path, o) => ['stat', [p(path), opts(o)]], out: stats, route: P0, noEntry: 1});
+  define('lstat', {args: (path, o) => ['lstat', [p(path), opts(o)]], out: stats, route: P0, noEntry: 1});
+  define('fstat', {args: (fd, o) => ['fstat', [bfd(fd), opts(o)]], out: stats, promise: false, route: F0});
+  define('statfs', {args: (path, o) => ['statfs', [p(path), opts(o)]], out: (r) => r, route: P0});
+  define('realpath', {args: (path) => ['realpath', [p(path)]], out: (r, path, o) => str(r, opts(o).encoding), native: true, route: P0});
+  define('readlink', {args: (path) => ['readlink', [p(path)]], out: (r, path, o) => str(r, opts(o).encoding), route: P0});
   define('readdir', {
     args: (path, o) => { const x = opts(o); return ['readdir', [p(path), {withFileTypes: !!x.withFileTypes, recursive: !!x.recursive}]]; },
-    out: (r, path, o) => { const x = opts(o); return x.withFileTypes ? r.map(dirent) : r.map((n) => str(n, x.encoding)); }
+    out: (r, path, o) => { const x = opts(o); return x.withFileTypes ? r.map(dirent) : r.map((n) => str(n, x.encoding)); },
+    route: P0
   });
-  define('mkdir', {args: (path, o) => { const x = (typeof(o) === 'object' && o != null) ? o : {mode: o}; return ['mkdir', [p(path), {recursive: !!x.recursive, mode: mode(x.mode, 0o777)}]]; }, out: (r) => r});
-  define('mkdtemp', {args: (prefix) => ['mkdtemp', [p(prefix, 'prefix')]], out: (r, prefix, o) => str(r, opts(o).encoding)});
-  define('rmdir', {args: (path, o) => ['rmdir', [p(path), o]], out: none});
-  define('rm', {args: (path, o) => ['rm', [p(path), opts(o)]], out: none});
-  define('unlink', {args: (path) => ['unlink', [p(path)]], out: none});
-  define('rename', {args: (a, b) => ['rename', [p(a, 'oldPath'), p(b, 'newPath')]], out: none});
-  define('copyFile', {args: (a, b, m) => ['copyFile', [p(a, 'src'), p(b, 'dest'), m]], out: none});
-  define('link', {args: (a, b) => ['link', [p(a, 'existingPath'), p(b, 'newPath')]], out: none});
-  define('symlink', {args: (target, path, type) => ['symlink', [p(target, 'target'), p(path), type]], out: none});
-  define('chmod', {args: (path, m) => ['chmod', [p(path), mode(m)]], out: none});
-  define('chown', {args: (path, uid, gid) => ['chown', [p(path), uid, gid]], out: none});
-  define('lchown', {args: (path, uid, gid) => ['lchown', [p(path), uid, gid]], out: none});
-  define('utimes', {args: (path, at, mt) => ['utimes', [p(path), toUnixTimestamp(at), toUnixTimestamp(mt)]], out: none});
-  define('lutimes', {args: (path, at, mt) => ['lutimes', [p(path), toUnixTimestamp(at), toUnixTimestamp(mt)]], out: none});
-  define('truncate', {args: (path, len) => (typeof(path) === 'number' ? ['ftruncate', [path, len || 0]] : ['truncate', [p(path), len || 0]]), out: none});
-  define('open', {args: (path, flags, m) => ['open', [p(path), flags == null ? 'r' : flags, mode(m, 0o666)]], out: (fd) => fd, promise: false});
-  define('close', {args: (fd) => ['close', [fd]], out: none, promise: false});
-  define('fsync', {args: (fd) => ['fsync', [fd]], out: none, promise: false});
-  define('fdatasync', {args: (fd) => ['fdatasync', [fd]], out: none, promise: false});
-  define('ftruncate', {args: (fd, len) => ['ftruncate', [fd, len || 0]], out: none, promise: false});
-  define('fchmod', {args: (fd, m) => ['fchmod', [fd, mode(m)]], out: none, promise: false});
-  define('fchown', {args: (fd, uid, gid) => ['fchown', [fd, uid, gid]], out: none, promise: false});
-  define('futimes', {args: (fd, at, mt) => ['futimes', [fd, toUnixTimestamp(at), toUnixTimestamp(mt)]], out: none, promise: false});
+  define('mkdir', {args: (path, o) => { const x = (typeof(o) === 'object' && o != null) ? o : {mode: o}; return ['mkdir', [p(path), {recursive: !!x.recursive, mode: mode(x.mode, 0o777)}]]; }, out: (r) => r, route: P0});
+  define('mkdtemp', {args: (prefix) => ['mkdtemp', [p(prefix, 'prefix')]], out: (r, prefix, o) => str(r, opts(o).encoding), route: P0});
+  define('rmdir', {args: (path, o) => ['rmdir', [p(path), o]], out: none, route: P0});
+  define('rm', {args: (path, o) => ['rm', [p(path), opts(o)]], out: none, route: P0});
+  define('unlink', {args: (path) => ['unlink', [p(path)]], out: none, route: P0});
+  define('rename', {args: (a, b) => ['rename', [p(a, 'oldPath'), p(b, 'newPath')]], out: none, route: P01});
+  define('copyFile', {args: (a, b, m) => ['copyFile', [p(a, 'src'), p(b, 'dest'), m]], out: none, route: P01});
+  define('link', {args: (a, b) => ['link', [p(a, 'existingPath'), p(b, 'newPath')]], out: none, route: P01});
+  define('symlink', {args: (target, path, type) => ['symlink', [p(target, 'target'), p(path), type]], out: none, route: P1});
+  define('chmod', {args: (path, m) => ['chmod', [p(path), mode(m)]], out: none, route: P0});
+  define('chown', {args: (path, uid, gid) => ['chown', [p(path), uid, gid]], out: none, route: P0});
+  define('lchown', {args: (path, uid, gid) => ['lchown', [p(path), uid, gid]], out: none, route: P0});
+  define('utimes', {args: (path, at, mt) => ['utimes', [p(path), toUnixTimestamp(at), toUnixTimestamp(mt)]], out: none, route: P0});
+  define('lutimes', {args: (path, at, mt) => ['lutimes', [p(path), toUnixTimestamp(at), toUnixTimestamp(mt)]], out: none, route: P0});
+  define('truncate', {args: (path, len) => (typeof(path) === 'number' ? ['ftruncate', [bfd(path), len || 0]] : ['truncate', [p(path), len || 0]]), out: none, route: {paths: [0], fd: 0}});
+  define('open', {args: (path, flags, m) => ['open', [p(path), flags == null ? 'r' : flags, mode(m, 0o666)]], out: fromBroker, promise: false, route: P0});
+  define('close', {args: (fd) => ['close', [bfd(fd)]], out: none, promise: false, route: F0, consoleNoop: true});
+  define('fsync', {args: (fd) => ['fsync', [bfd(fd)]], out: none, promise: false, route: F0, consoleNoop: true});
+  define('fdatasync', {args: (fd) => ['fdatasync', [bfd(fd)]], out: none, promise: false, route: F0, consoleNoop: true});
+  define('ftruncate', {args: (fd, len) => ['ftruncate', [bfd(fd), len || 0]], out: none, promise: false, route: F0});
+  define('fchmod', {args: (fd, m) => ['fchmod', [bfd(fd), mode(m)]], out: none, promise: false, route: F0});
+  define('fchown', {args: (fd, uid, gid) => ['fchown', [bfd(fd), uid, gid]], out: none, promise: false, route: F0});
+  define('futimes', {args: (fd, at, mt) => ['futimes', [bfd(fd), toUnixTimestamp(at), toUnixTimestamp(mt)]], out: none, promise: false, route: F0});
 
   // exists: the callback gets one argument, a boolean.
-  lock(fs, 'existsSync', (path) => { try { return sync('exists', [p(path)]); } catch (e) { return false; } }, handled.fs);
+  lock(fs, 'existsSync', (path) => { try { return sync('exists', [p(path)]); } catch (e) { return false; } }, handled.fs, P0);
   lock(fs, 'exists', (path, cb) => {
     let req;
     try { req = p(path); } catch (e) { return process.nextTick(cb, false); }
     call('exists', [req]).then((r) => cb(r), () => cb(false));
-  }, handled.fs);
+  }, handled.fs, P0);
 
   // read / write on descriptors, with Node's argument shapes.
   function readArgs(fd, buffer, offset, length, position) {
@@ -927,7 +1154,9 @@ function install(client, settings) {
       offset = o.offset; length = o.length; position = o.position;
     }
     offset = offset || 0;
+    if (offset < 0 || offset > buffer.byteLength) throw outOfRange('offset', offset);
     length = (length == null) ? buffer.byteLength - offset : length;
+    if (length < 0 || length > buffer.byteLength - offset) throw outOfRange('length', length);
     return {buffer, offset, length: Math.min(length, MAX_IO), position: (position == null || position === -1) ? null : Number(position)};
   }
   function fillRead(r, a) {
@@ -954,7 +1183,7 @@ function install(client, settings) {
     let done = 0;
     while (done < buf.length) {
       const chunk = buf.subarray(done, done + MAX_IO);
-      done += sync('write', [fd, chunk, position == null ? null : position + done]);
+      done += sync('write', [bfd(fd), chunk, position == null ? null : position + done]);
     }
     return done;
   }
@@ -963,31 +1192,31 @@ function install(client, settings) {
     let done = 0;
     while (done < buf.length) {
       const chunk = buf.subarray(done, done + MAX_IO);
-      done += await call('write', [fd, chunk, position == null ? null : position + done]);
+      done += await call('write', [bfd(fd), chunk, position == null ? null : position + done]);
     }
     return done;
   }
 
-  lock(fs, 'readSync', (fd, ...rest) => { const a = readArgs(fd, ...rest); return fillRead(sync('read', [fd, a.length, a.position]), a); }, handled.fs);
+  lock(fs, 'readSync', (fd, ...rest) => { const a = readArgs(fd, ...rest); return fillRead(sync('read', [bfd(fd), a.length, a.position]), a); }, handled.fs, F0);
   lock(fs, 'read', (fd, ...all) => {
     const {args, cb} = splitCb(all);
     let a;
     try { a = readArgs(fd, ...(args.length > 0 ? args : [{}])); } catch (e) { return process.nextTick(cb, e); }
-    call('read', [fd, a.length, a.position]).then((r) => cb(null, fillRead(r, a), a.buffer), (e) => cb(e));
-  }, handled.fs);
-  lock(fs, 'writeSync', (fd, ...rest) => { const w = writeArgs(fd, ...rest); return writeChunks(fd, w.buf, w.position); }, handled.fs);
+    call('read', [bfd(fd), a.length, a.position]).then((r) => cb(null, fillRead(r, a), a.buffer), (e) => cb(e));
+  }, handled.fs, F0);
+  lock(fs, 'writeSync', (fd, ...rest) => { const w = writeArgs(fd, ...rest); return writeChunks(fd, w.buf, w.position); }, handled.fs, F0);
   lock(fs, 'write', (fd, data, ...all) => {
     const {args, cb} = splitCb(all);
     let w;
     try { w = writeArgs(fd, data, ...args); } catch (e) { return process.nextTick(cb, e); }
     writeChunksAsync(fd, w.buf, w.position).then((n) => cb(null, n, data), (e) => cb(e));
-  }, handled.fs);
+  }, handled.fs, F0);
   function vec(buffers) { return Buffer.concat(buffers.map((b) => toBuffer(b))); }
-  lock(fs, 'writevSync', (fd, buffers, position) => writeChunks(fd, vec(buffers), position), handled.fs);
+  lock(fs, 'writevSync', (fd, buffers, position) => writeChunks(fd, vec(buffers), position), handled.fs, F0);
   lock(fs, 'writev', (fd, buffers, ...all) => {
     const {args, cb} = splitCb(all);
     writeChunksAsync(fd, vec(buffers), args[0]).then((n) => cb(null, n, buffers), (e) => cb(e));
-  }, handled.fs);
+  }, handled.fs, F0);
   function scatter(r, buffers) {
     const b = Buffer.from(r);
     let off = 0;
@@ -999,18 +1228,18 @@ function install(client, settings) {
     return b.length;
   }
   const total = (buffers) => Math.min(buffers.reduce((n, b) => n + b.byteLength, 0), MAX_IO);
-  lock(fs, 'readvSync', (fd, buffers, position) => scatter(sync('read', [fd, total(buffers), position == null ? null : position]), buffers), handled.fs);
+  lock(fs, 'readvSync', (fd, buffers, position) => scatter(sync('read', [bfd(fd), total(buffers), position == null ? null : position]), buffers), handled.fs, F0);
   lock(fs, 'readv', (fd, buffers, ...all) => {
     const {args, cb} = splitCb(all);
-    call('read', [fd, total(buffers), args[0] == null ? null : args[0]]).then((r) => cb(null, scatter(r, buffers), buffers), (e) => cb(e));
-  }, handled.fs);
+    call('read', [bfd(fd), total(buffers), args[0] == null ? null : args[0]]).then((r) => cb(null, scatter(r, buffers), buffers), (e) => cb(e));
+  }, handled.fs, F0);
 
   // Whole files: a path goes to the broker's readFile (one round trip, up to
   // 16 MB, chunked past it); a descriptor reads from its current position.
   function readAllFd(fd) {
     const parts = [];
     for (;;) {
-      const r = Buffer.from(sync('read', [fd, MAX_IO, null]));
+      const r = Buffer.from(sync('read', [bfd(fd), MAX_IO, null]));
       if (r.length === 0) break;
       parts.push(r);
     }
@@ -1019,7 +1248,7 @@ function install(client, settings) {
   async function readAllFdAsync(fd) {
     const parts = [];
     for (;;) {
-      const r = Buffer.from(await call('read', [fd, MAX_IO, null]));
+      const r = Buffer.from(await call('read', [bfd(fd), MAX_IO, null]));
       if (r.length === 0) break;
       parts.push(r);
     }
@@ -1034,8 +1263,8 @@ function install(client, settings) {
       if (e.code !== 'EFBIG') throw e;
     }
     // past 16 MB: chunked reads the worker assembles
-    const fd = sync('open', [p(path), x.flag, 0o666]);
-    try { return enc(readAllFd(fd), x.encoding); } finally { sync('close', [fd]); }
+    const fd = fromBroker(sync('open', [p(path), x.flag, 0o666]));
+    try { return enc(readAllFd(fd), x.encoding); } finally { sync('close', [bfd(fd)]); }
   }
   async function readFileImpl(path, o) {
     const x = opts(o, {flag: 'r'});
@@ -1046,15 +1275,15 @@ function install(client, settings) {
     } catch (e) {
       if (e.code !== 'EFBIG') throw e;
     }
-    const fd = await call('open', [p(path), x.flag, 0o666]);
-    try { return enc(await readAllFdAsync(fd), x.encoding); } finally { await call('close', [fd]); }
+    const fd = fromBroker(await call('open', [p(path), x.flag, 0o666]));
+    try { return enc(await readAllFdAsync(fd), x.encoding); } finally { await call('close', [bfd(fd)]); }
   }
   function writeFileSyncImpl(path, data, o, defFlag) {
     const x = opts(o, {flag: defFlag, mode: 0o666});
     const buf = toBuffer(data, x.encoding);
     if (typeof(path) === 'number') { writeChunks(path, buf, null); return; }
-    const fd = sync('open', [p(path), x.flag, mode(x.mode)]);
-    try { writeChunks(fd, buf, null); } finally { sync('close', [fd]); }
+    const fd = fromBroker(sync('open', [p(path), x.flag, mode(x.mode)]));
+    try { writeChunks(fd, buf, null); } finally { sync('close', [bfd(fd)]); }
   }
   async function writeFileImpl(path, data, o, defFlag) {
     const x = opts(o, {flag: defFlag, mode: 0o666});
@@ -1066,25 +1295,38 @@ function install(client, settings) {
     const buf = toBuffer(data, x.encoding);
     if (typeof(path) === 'number') { await writeChunksAsync(path, buf, null); return; }
     if (path instanceof BrokeredFileHandle) { await writeChunksAsync(path.fd, buf, null); return; }
-    const fd = await call('open', [p(path), x.flag, mode(x.mode)]);
-    try { await writeChunksAsync(fd, buf, null); } finally { await call('close', [fd]); }
+    const fd = fromBroker(await call('open', [p(path), x.flag, mode(x.mode)]));
+    try { await writeChunksAsync(fd, buf, null); } finally { await call('close', [bfd(fd)]); }
   }
-  lock(fs, 'readFileSync', readFileSyncImpl, handled.fs);
-  lock(fs, 'readFile', (path, ...all) => { const {args, cb} = splitCb(all); readFileImpl(path, args[0]).then((r) => cb(null, r), (e) => cb(e)); }, handled.fs);
-  lock(fsp, 'readFile', readFileImpl, handled.promises);
-  lock(fs, 'writeFileSync', (path, data, o) => writeFileSyncImpl(path, data, o, 'w'), handled.fs);
-  lock(fs, 'writeFile', (path, data, ...all) => { const {args, cb} = splitCb(all); writeFileImpl(path, data, args[0], 'w').then(() => cb(null), (e) => cb(e)); }, handled.fs);
-  lock(fsp, 'writeFile', (path, data, o) => writeFileImpl(path, data, o, 'w'), handled.promises);
-  lock(fs, 'appendFileSync', (path, data, o) => writeFileSyncImpl(path, data, o, 'a'), handled.fs);
-  lock(fs, 'appendFile', (path, data, ...all) => { const {args, cb} = splitCb(all); writeFileImpl(path, data, args[0], 'a').then(() => cb(null), (e) => cb(e)); }, handled.fs);
-  lock(fsp, 'appendFile', (path, data, o) => writeFileImpl(path, data, o, 'a'), handled.promises);
+  const FILE = {paths: [0], fd: 0};
+  lock(fs, 'readFileSync', readFileSyncImpl, handled.fs, FILE);
+  lock(fs, 'readFile', (path, ...all) => { const {args, cb} = splitCb(all); readFileImpl(path, args[0]).then((r) => cb(null, r), (e) => cb(e)); }, handled.fs, FILE);
+  lock(fsp, 'readFile', readFileImpl, handled.promises, P0);
+  lock(fs, 'writeFileSync', (path, data, o) => writeFileSyncImpl(path, data, o, 'w'), handled.fs, FILE);
+  lock(fs, 'writeFile', (path, data, ...all) => { const {args, cb} = splitCb(all); writeFileImpl(path, data, args[0], 'w').then(() => cb(null), (e) => cb(e)); }, handled.fs, FILE);
+  lock(fsp, 'writeFile', (path, data, o) => writeFileImpl(path, data, o, 'w'), handled.promises, P0);
+  lock(fs, 'appendFileSync', (path, data, o) => writeFileSyncImpl(path, data, o, 'a'), handled.fs, FILE);
+  lock(fs, 'appendFile', (path, data, ...all) => { const {args, cb} = splitCb(all); writeFileImpl(path, data, args[0], 'a').then(() => cb(null), (e) => cb(e)); }, handled.fs, FILE);
+  lock(fsp, 'appendFile', (path, data, o) => writeFileImpl(path, data, o, 'a'), handled.promises, P0);
 
-  // FileHandle (fs.promises.open).
+  // FileHandle (fs.promises.open). Like Node's own, one that is never closed
+  // is closed when it is garbage-collected, with a warning (review M4).
+  const unclosed = new FinalizationRegistry((fd) => {
+    process.emitWarning('Closing a file handle on garbage collection (countinghouse file broker)');
+    call('close', [bfd(fd)]).catch(() => {});
+  });
   class BrokeredFileHandle extends EventEmitter {
-    constructor(fd) { super(); this._fd = fd; }
+    constructor(fd) { super(); this._fd = fd; unclosed.register(this, fd, this); }
     get fd() { return this._fd; }
     getAsyncId() { return -1; }
-    async close() { if (this._fd < 0) return; const fd = this._fd; this._fd = -1; await call('close', [fd]); this.emit('close'); }
+    async close() {
+      if (this._fd < 0) return;
+      const fd = this._fd;
+      this._fd = -1;
+      unclosed.unregister(this);
+      await call('close', [bfd(fd)]);
+      this.emit('close');
+    }
     async [Symbol.asyncDispose]() { await this.close(); }
     async read(buffer, offset, length, position) {
       if (buffer == null || (!ArrayBuffer.isView(buffer) && typeof(buffer) === 'object')) {
@@ -1093,29 +1335,29 @@ function install(client, settings) {
         offset = o.offset; length = o.length; position = o.position;
       }
       const a = readArgs(this._fd, buffer, offset, length, position);
-      const n = fillRead(await call('read', [this._fd, a.length, a.position]), a);
+      const n = fillRead(await call('read', [bfd(this._fd), a.length, a.position]), a);
       return {bytesRead: n, buffer: a.buffer};
     }
     async write(data, ...rest) { const w = writeArgs(this._fd, data, ...rest); return {bytesWritten: await writeChunksAsync(this._fd, w.buf, w.position), buffer: data}; }
-    async readv(buffers, position) { return {bytesRead: scatter(await call('read', [this._fd, total(buffers), position == null ? null : position]), buffers), buffers}; }
+    async readv(buffers, position) { return {bytesRead: scatter(await call('read', [bfd(this._fd), total(buffers), position == null ? null : position]), buffers), buffers}; }
     async writev(buffers, position) { return {bytesWritten: await writeChunksAsync(this._fd, vec(buffers), position), buffers}; }
     readFile(o) { return readFileImpl(this, o); }
     writeFile(data, o) { return writeFileImpl(this, data, o, 'w'); }
     appendFile(data, o) { return writeFileImpl(this, data, o, 'a'); }
-    async stat(o) { return stats(await call('fstat', [this._fd, opts(o)])); }
-    async truncate(len) { await call('ftruncate', [this._fd, len || 0]); }
-    async sync() { await call('fsync', [this._fd]); }
-    async datasync() { await call('fdatasync', [this._fd]); }
-    async chmod(m) { await call('fchmod', [this._fd, mode(m)]); }
-    async chown(uid, gid) { await call('fchown', [this._fd, uid, gid]); }
-    async utimes(at, mt) { await call('futimes', [this._fd, toUnixTimestamp(at), toUnixTimestamp(mt)]); }
+    async stat(o) { return stats(await call('fstat', [bfd(this._fd), opts(o)])); }
+    async truncate(len) { await call('ftruncate', [bfd(this._fd), len || 0]); }
+    async sync() { await call('fsync', [bfd(this._fd)]); }
+    async datasync() { await call('fdatasync', [bfd(this._fd)]); }
+    async chmod(m) { await call('fchmod', [bfd(this._fd), mode(m)]); }
+    async chown(uid, gid) { await call('fchown', [bfd(this._fd), uid, gid]); }
+    async utimes(at, mt) { await call('futimes', [bfd(this._fd), toUnixTimestamp(at), toUnixTimestamp(mt)]); }
     createReadStream(o) { return fs.createReadStream(null, Object.assign({}, o, {fd: this._fd, autoClose: false})); }
     createWriteStream(o) { return fs.createWriteStream(null, Object.assign({}, o, {fd: this._fd, autoClose: false})); }
     readLines(o) { return require('readline').createInterface({input: this.createReadStream(o), crlfDelay: Infinity}); }
     readableWebStream() { return require('stream').Readable.toWeb(this.createReadStream()); }
   }
   Object.getOwnPropertyNames(BrokeredFileHandle.prototype).forEach((k) => handled.fileHandle.add(k));
-  lock(fsp, 'open', async(path, flags, m) => new BrokeredFileHandle(await call('open', [p(path), flags == null ? 'r' : flags, mode(m, 0o666)])), handled.promises);
+  lock(fsp, 'open', async(path, flags, m) => new BrokeredFileHandle(fromBroker(await call('open', [p(path), flags == null ? 'r' : flags, mode(m, 0o666)]))), handled.promises, P0);
 
   // Directories as streams of entries (fs.opendir).
   function makeDir(path, entries) {
@@ -1136,29 +1378,45 @@ function install(client, settings) {
     });
     return dir;
   }
-  lock(fs, 'opendirSync', (path, o) => makeDir(p(path), sync('readdir', [p(path), {withFileTypes: true, recursive: !!(o && o.recursive)}]).map(dirent)), handled.fs);
+  lock(fs, 'opendirSync', (path, o) => makeDir(p(path), sync('readdir', [p(path), {withFileTypes: true, recursive: !!(o && o.recursive)}]).map(dirent)), handled.fs, P0);
   lock(fs, 'opendir', (path, ...all) => {
     const {args, cb} = splitCb(all);
     call('readdir', [p(path), {withFileTypes: true, recursive: !!(args[0] && args[0].recursive)}]).then((r) => cb(null, makeDir(p(path), r.map(dirent))), (e) => cb(e));
-  }, handled.fs);
-  lock(fsp, 'opendir', async(path, o) => makeDir(p(path), (await call('readdir', [p(path), {withFileTypes: true, recursive: !!(o && o.recursive)}])).map(dirent)), handled.promises);
+  }, handled.fs, P0);
+  lock(fsp, 'opendir', async(path, o) => makeDir(p(path), (await call('readdir', [p(path), {withFileTypes: true, recursive: !!(o && o.recursive)}])).map(dirent)), handled.promises, P0);
 
   // cp: a recursive copy built on the primitives, so every step is checked.
-  // A tree holding absolute symlinks fails with EPERM under the link rules.
+  // Node's semantics: force overwrites (whatever errorOnExist says); without
+  // force an existing destination is skipped, or an error with errorOnExist;
+  // a destination inside the source is refused. A tree holding absolute
+  // symlinks fails with EPERM under the link rules.
   function cpPlan(src, dest, o) {
-    return {src: p(src, 'src'), dest: p(dest, 'dest'), o: Object.assign({force: true, recursive: false}, o || {})};
+    const plan = {src: pathMod.posix.resolve(p(src, 'src')), dest: pathMod.posix.resolve(p(dest, 'dest')), o: Object.assign({force: true, recursive: false}, o || {})};
+    if (plan.dest === plan.src || plan.dest.startsWith(`${plan.src}/`)) {
+      throw cpError('ERR_FS_CP_EINVAL', `Invalid src or dest: cp returned EINVAL (cannot copy ${plan.src} to a subdirectory of self ${plan.dest})`);
+    }
+    return plan;
+  }
+  function cpFile(srcPath, destPath, o, exists) {
+    if (exists && !o.force) {
+      if (o.errorOnExist) throw cpError('ERR_FS_CP_EEXIST', `Target already exists: cp returned EEXIST (${destPath} already exists)`);
+      return null;
+    }
+    return 0;
   }
   function cpSyncImpl(src, dest, o) {
     if (typeof(o.filter) === 'function' && !o.filter(src, dest)) return;
     const st = stats(sync(o.dereference ? 'stat' : 'lstat', [src, {}]));
     if (st.isDirectory()) {
-      if (!o.recursive) { const e = new Error(`Recursive option is required to copy a directory: ${src}`); e.code = 'ERR_FS_EISDIR'; throw e; }
+      if (!o.recursive) throw cpError('ERR_FS_EISDIR', `Recursive option is required to copy a directory: ${src}`);
       sync('mkdir', [dest, {recursive: true}]);
       for (const name of sync('readdir', [src, {}])) cpSyncImpl(pathMod.posix.join(src, name), pathMod.posix.join(dest, name), o);
-    } else if (st.isSymbolicLink()) {
-      sync('symlink', [sync('readlink', [src]), dest]);
     } else {
-      sync('copyFile', [src, dest, (o.force === false || o.errorOnExist) ? fs.constants.COPYFILE_EXCL : 0]);
+      const exists = sync('exists', [dest]);
+      if (cpFile(src, dest, o, exists) === null) return;
+      if (exists) sync('unlink', [dest]);
+      if (st.isSymbolicLink()) sync('symlink', [sync('readlink', [src]), dest]);
+      else sync('copyFile', [src, dest, 0]);
     }
     if (o.preserveTimestamps) sync('utimes', [dest, toUnixTimestamp(st.atime), toUnixTimestamp(st.mtime)]);
   }
@@ -1166,60 +1424,115 @@ function install(client, settings) {
     if (typeof(o.filter) === 'function' && !(await o.filter(src, dest))) return;
     const st = stats(await call(o.dereference ? 'stat' : 'lstat', [src, {}]));
     if (st.isDirectory()) {
-      if (!o.recursive) { const e = new Error(`Recursive option is required to copy a directory: ${src}`); e.code = 'ERR_FS_EISDIR'; throw e; }
+      if (!o.recursive) throw cpError('ERR_FS_EISDIR', `Recursive option is required to copy a directory: ${src}`);
       await call('mkdir', [dest, {recursive: true}]);
       for (const name of await call('readdir', [src, {}])) await cpImpl(pathMod.posix.join(src, name), pathMod.posix.join(dest, name), o);
-    } else if (st.isSymbolicLink()) {
-      await call('symlink', [await call('readlink', [src]), dest]);
     } else {
-      await call('copyFile', [src, dest, (o.force === false || o.errorOnExist) ? fs.constants.COPYFILE_EXCL : 0]);
+      const exists = await call('exists', [dest]);
+      if (cpFile(src, dest, o, exists) === null) return;
+      if (exists) await call('unlink', [dest]);
+      if (st.isSymbolicLink()) await call('symlink', [await call('readlink', [src]), dest]);
+      else await call('copyFile', [src, dest, 0]);
     }
     if (o.preserveTimestamps) await call('utimes', [dest, toUnixTimestamp(st.atime), toUnixTimestamp(st.mtime)]);
   }
-  lock(fs, 'cpSync', (src, dest, o) => { const c = cpPlan(src, dest, o); cpSyncImpl(c.src, c.dest, c.o); }, handled.fs);
-  lock(fs, 'cp', (src, dest, ...all) => { const {args, cb} = splitCb(all); const c = cpPlan(src, dest, args[0]); cpImpl(c.src, c.dest, c.o).then(() => cb(null), (e) => cb(e)); }, handled.fs);
-  lock(fsp, 'cp', (src, dest, o) => { const c = cpPlan(src, dest, o); return cpImpl(c.src, c.dest, c.o); }, handled.promises);
+  lock(fs, 'cpSync', (src, dest, o) => { const c = cpPlan(src, dest, o); cpSyncImpl(c.src, c.dest, c.o); }, handled.fs, P01);
+  lock(fs, 'cp', (src, dest, ...all) => {
+    const {args, cb} = splitCb(all);
+    let c;
+    try { c = cpPlan(src, dest, args[0]); } catch (e) { return process.nextTick(cb, e); }
+    cpImpl(c.src, c.dest, c.o).then(() => cb(null), (e) => cb(e));
+  }, handled.fs, P01);
+  lock(fsp, 'cp', async(src, dest, o) => { const c = cpPlan(src, dest, o); return cpImpl(c.src, c.dest, c.o); }, handled.promises, P01);
 
-  // glob: walk with readdir and match with path.matchesGlob.
-  function globMatch(entries, patterns, o) {
-    const exclude = o.exclude;
+  // glob: one non-recursive readdir per directory level, starting from the
+  // pattern's literal prefix, descending only as deep as the pattern can
+  // match ('**' unbounded). Absolute patterns give absolute results.
+  function globPlan(pattern, o) {
+    const x = Object.assign({}, o || {});
+    x.cwd = x.cwd != null ? p(x.cwd, 'cwd') : process.cwd();
+    const pats = (Array.isArray(pattern) ? pattern : [pattern]).map((pat) => {
+      const abs = pathMod.posix.isAbsolute(pat);
+      const segs = pat.split('/').filter((s, i) => !(abs && i === 0 && s === ''));
+      const lit = [];
+      while (lit.length < segs.length - 1 && !GLOB_CHARS.test(segs[lit.length])) lit.push(segs[lit.length]);
+      const rest = segs.slice(lit.length);
+      const base = abs ? `/${lit.join('/')}` : pathMod.posix.join(x.cwd, ...lit);
+      return {pat, abs, base, depth: rest.includes('**') ? Infinity : rest.length};
+    });
+    return {x, pats};
+  }
+  function globKeep(x, pl, full, d, out, seen) {
+    const shown = pl.abs ? full : pathMod.posix.relative(x.cwd, full);
+    if (seen.has(shown) || !pathMod.matchesGlob(shown, pl.pat)) return;
+    if (typeof(x.exclude) === 'function' && x.exclude(x.withFileTypes ? d : shown)) return;
+    if (Array.isArray(x.exclude) && x.exclude.some((e) => pathMod.matchesGlob(shown, e))) return;
+    seen.add(shown);
+    out.push(x.withFileTypes ? d : shown);
+  }
+  function globSyncImpl(pattern, o) {
+    const {x, pats} = globPlan(pattern, o);
     const out = [];
-    for (const e of entries) {
-      const rel = pathMod.posix.relative(o.cwd, pathMod.posix.join(e.parentPath, e.name));
-      if (!patterns.some((pat) => pathMod.matchesGlob(rel, pat))) continue;
-      if (typeof(exclude) === 'function' && exclude(o.withFileTypes ? dirent(e) : rel)) continue;
-      if (Array.isArray(exclude) && exclude.some((pat) => pathMod.matchesGlob(rel, pat))) continue;
-      out.push(o.withFileTypes ? dirent(e) : rel);
+    const seen = new Set();
+    for (const pl of pats) {
+      const queue = [[pl.base, 1]];
+      while (queue.length > 0) {
+        const [dir, level] = queue.shift();
+        let entries;
+        try { entries = sync('readdir', [dir, {withFileTypes: true}]); } catch (e) { continue; }
+        for (const e of entries) {
+          const d = dirent(e);
+          const full = pathMod.posix.join(dir, e.name);
+          globKeep(x, pl, full, d, out, seen);
+          if (e.type === 'dir' && level < pl.depth) queue.push([full, level + 1]);
+        }
+      }
     }
     return out;
   }
-  function globOpts(pattern, o) {
-    const x = Object.assign({}, o || {});
-    x.cwd = x.cwd != null ? p(x.cwd, 'cwd') : process.cwd();
-    return {patterns: Array.isArray(pattern) ? pattern : [pattern], x: x};
+  async function globAsyncImpl(pattern, o) {
+    const {x, pats} = globPlan(pattern, o);
+    const out = [];
+    const seen = new Set();
+    for (const pl of pats) {
+      const queue = [[pl.base, 1]];
+      while (queue.length > 0) {
+        const [dir, level] = queue.shift();
+        let entries;
+        try { entries = await call('readdir', [dir, {withFileTypes: true}]); } catch (e) { continue; }
+        for (const e of entries) {
+          const d = dirent(e);
+          const full = pathMod.posix.join(dir, e.name);
+          globKeep(x, pl, full, d, out, seen);
+          if (e.type === 'dir' && level < pl.depth) queue.push([full, level + 1]);
+        }
+      }
+    }
+    return out;
   }
-  lock(fs, 'globSync', (pattern, o) => { const g = globOpts(pattern, o); return globMatch(sync('readdir', [g.x.cwd, {withFileTypes: true, recursive: true}]), g.patterns, g.x); }, handled.fs);
+  const globHost = (o) => (o != null && o.cwd != null && hostServed(o.cwd));
+  lock(fs, 'globSync', (pattern, o) => (globHost(o) ? origFs.globSync(pattern, o) : globSyncImpl(pattern, o)), handled.fs);
   lock(fs, 'glob', (pattern, ...all) => {
     const {args, cb} = splitCb(all);
-    const g = globOpts(pattern, args[0]);
-    call('readdir', [g.x.cwd, {withFileTypes: true, recursive: true}]).then((r) => cb(null, globMatch(r, g.patterns, g.x)), (e) => cb(e));
+    if (globHost(args[0])) return origFs.glob(pattern, ...all);
+    globAsyncImpl(pattern, args[0]).then((r) => cb(null, r), (e) => cb(e));
   }, handled.fs);
   lock(fsp, 'glob', (pattern, o) => {
-    const g = globOpts(pattern, o);
-    return (async function* () { for (const m of globMatch(await call('readdir', [g.x.cwd, {withFileTypes: true, recursive: true}]), g.patterns, g.x)) yield m; })();
+    if (globHost(o)) return origFsp.glob(pattern, o);
+    return (async function* () { for (const m of await globAsyncImpl(pattern, o)) yield m; })();
   }, handled.promises);
 
-  lock(fs, 'openAsBlob', async(path, o) => new Blob([await readFileImpl(path)], {type: (o && o.type) || ''}), handled.fs);
+  lock(fs, 'openAsBlob', async(path, o) => new Blob([await readFileImpl(path)], {type: (o && o.type) || ''}), handled.fs, P0);
   lock(fs, 'mkdtempDisposableSync', (prefix) => {
     const path = sync('mkdtemp', [p(prefix, 'prefix')]);
     const remove = () => sync('rm', [path, {recursive: true, force: true}]);
     return {path: path, remove: remove, [Symbol.dispose]: remove};
-  }, handled.fs);
+  }, handled.fs, P0);
   lock(fsp, 'mkdtempDisposable', async(prefix) => {
     const path = await call('mkdtemp', [p(prefix, 'prefix')]);
     const remove = () => call('rm', [path, {recursive: true, force: true}]);
     return {path: path, remove: remove, [Symbol.asyncDispose]: remove};
-  }, handled.promises);
+  }, handled.promises, P0);
 
   // Watching is not offered (spec decision 2); Utf8Stream is not brokered.
   ['watch', 'watchFile'].forEach((k) => lock(fs, k, () => { throw unavailable(`fs.${k}`); }, handled.fs));
@@ -1234,25 +1547,25 @@ function install(client, settings) {
 
 // Exports that are data or classes, not file operations. ReadStream and
 // WriteStream look fs methods up at call time, so they use the patched ones.
+// A function joins this list only with the reviewer's agreement.
 const PASSTHROUGH = {
   fs: ['Dir', 'Dirent', 'FileReadStream', 'FileWriteStream', 'ReadStream', 'Stats', 'WriteStream', '_toUnixTimestamp',
-    'constants', 'promises', 'createReadStream', 'createWriteStream', 'lchmod', 'lchmodSync',
-    'F_OK', 'R_OK', 'W_OK', 'X_OK'],
+    'constants', 'promises', 'createReadStream', 'createWriteStream', 'lchmod', 'lchmodSync'],
   promises: ['constants']
 };
 
-module.exports = {install, setConsoleSilenced, PASSTHROUGH};
+module.exports = {install, setConsoleSilenced, PASSTHROUGH, FD_BASE};
 ```
 
 - [ ] **Step 5: Run the tests**
 
 Run: `npx mocha --exit test/fs-broker/07-patch.js`
-Expected: 2 passing. A failing assertion is a patch bug (debug it); a key reported by `keys.js` is a method the patch must handle or, if it is data or a class, add to `PASSTHROUGH` with a comment saying why — ask the reviewer before adding a function to `PASSTHROUGH`.
+Expected: 3 passing. A failing assertion is a patch bug (debug it); a key reported by `keys.js` is a method the patch must handle or, if it is data or a class, add to `PASSTHROUGH` with a comment saying why — ask the reviewer before adding a function to `PASSTHROUGH`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add lib/fs-broker/patch.js test/helpers/brokered-worker.js test/helpers/brokered-worker-entry.js test/fs-broker/scripts/keys.js test/fs-broker/scripts/behaviour.js test/fs-broker/07-patch.js
+git add lib/fs-broker/patch.js test/helpers/brokered-worker.js test/helpers/brokered-worker-entry.js test/fs-broker/scripts/keys.js test/fs-broker/scripts/behaviour.js test/fs-broker/scripts/k1.js test/fs-broker/07-patch.js
 git commit -m "feat(fs-broker): the worker patch, failing closed" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -1325,6 +1638,14 @@ module.exports = async (fs, root) => {
   await step('access', () => fs.accessSync(j('g'), fs.constants.R_OK));
   await step('exists', () => [fs.existsSync(j('g')), fs.existsSync(j('c'))]);
   await step('utimes', () => { fs.utimesSync(j('g'), 1000, 2000); return fs.statSync(j('g')).mtimeMs; });
+  await step('stat throwIfNoEntry', () => fs.statSync(j('nope'), {throwIfNoEntry: false}) === undefined);
+  await step('lstat throwIfNoEntry', () => fs.lstatSync(j('nope'), {throwIfNoEntry: false}) === undefined);
+  await step('cp file', () => { fs.cpSync(j('g'), j('cpd')); return fs.readFileSync(j('cpd'), 'utf8'); });
+  await step('cp force + errorOnExist overwrites', () => { fs.cpSync(j('o'), j('cpd'), {force: true, errorOnExist: true}); return fs.readFileSync(j('cpd'), 'utf8'); });
+  await step('cp without force skips', () => { fs.cpSync(j('g'), j('cpd'), {force: false}); return fs.readFileSync(j('cpd'), 'utf8'); });
+  await step('cp without force, errorOnExist', () => fs.cpSync(j('g'), j('cpd'), {force: false, errorOnExist: true}));
+  await step('cp into itself', () => { fs.mkdirSync(j('cs')); fs.cpSync(j('cs'), j('cs', 'sub'), {recursive: true}); });
+  await step('glob absolute', () => fs.globSync(j('*')).map(rel).sort());
   return steps;
 };
 ```
@@ -1375,7 +1696,7 @@ git commit -m "test(fs-broker): brokered fs gives the same results and error cod
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: `require('./fs-broker').createForWorker({name, mode, modulePath, declared, options, report}) → Promise<{broker, bridge, namespace, dirs}>`; `protectedPaths(options) → [string]`; `watch(worker, workerMessage, limits, {busy})`.
+- Produces: `require('./fs-broker').createForWorker({name, mode, modulePath, declared, options, report}) → Promise<{broker, bridge, namespace, dirs, hostRoots}>`; `protectedPaths(options) → [string]`; `watch(worker, workerMessage, limits, {busy})`.
 
 - [ ] **Step 1: Write the failing tests.** The heartbeat case in `test/sandbox/11-heartbeat.js` (append inside its `describe`):
 
@@ -1472,6 +1793,7 @@ module.exports = async (input) => {
 // Every module worker's fs goes through its broker, in every mode.
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
@@ -1527,6 +1849,47 @@ describe('fs-broker 09: module workers use the broker', function() {
     await waitFor(async () => (await mcpCall(9626, KEY, tool('read'), {path: '/data/keep'})).structuredContent.output.content === 'kept', 15000, 'read after restart');
   });
 
+  // Review K1: a module loaded from under /tmp, and data under /tmp, still work.
+  ['off', 'audit'].forEach((mode) => {
+    it(`${mode}: a module loaded from under /tmp still loads and works`, async () => {
+      const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsprobe-'));
+      fs.cpSync(PROBE, copy, {recursive: true});
+      try {
+        server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', mode,
+          '--moduleDataPath', path.join(base, 'store'), '--loadModule', copy]);
+        const w = await mcpCall(9626, KEY, tool('write'), {path: '/data/x', content: 'from tmp'});
+        assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null}, JSON.stringify(w));
+      } finally {
+        fs.rmSync(copy, {recursive: true, force: true});
+      }
+    });
+  });
+
+  it('a --moduleDataPath under /tmp works', async () => {
+    const store = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-store-'));
+    try {
+      server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleDataPath', store, '--loadModule', PROBE]);
+      await mcpCall(9626, KEY, tool('write'), {path: '/data/x', content: 'y'});
+      assert.strictEqual(fs.readFileSync(path.join(store, 'fs-probe', 'data', 'x'), 'utf8'), 'y');
+    } finally {
+      fs.rmSync(store, {recursive: true, force: true});
+    }
+  });
+
+  it('a data directory that cannot be created fails the load and says what to do', async () => {
+    const ro = path.join(base, 'ro');
+    fs.mkdirSync(ro);
+    fs.chmodSync(ro, 0o500);
+    try {
+      server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--authoringTools',
+        '--moduleDataPath', path.join(ro, 'store')]);
+      const r = await mcpCall(9626, KEY, 'countinghouse_load_module', {path: PROBE, name: 'fs-probe', version: '1.0.0'});
+      assert.ok(/set --moduleDataPath to a writable directory/.test(JSON.stringify(r)), JSON.stringify(r));
+    } finally {
+      fs.chmodSync(ro, 0o700);
+    }
+  });
+
   it('logs the broker\'s capacity at startup in worker mode', async () => {
     server = await start('audit');
     assert.ok(/file broker: up to \d+ module file operations in flight/.test(server.output), server.output.slice(-2000));
@@ -1576,7 +1939,16 @@ function protectedPaths(options) {
 }
 
 async function createForWorker(cfg) {
-  const dirs = await moduleData.ensureDirs(cfg.options.moduleDataPath, cfg.name);
+  let dirs;
+  try {
+    dirs = await moduleData.ensureDirs(cfg.options.moduleDataPath, cfg.name);
+  } catch (e) {
+    // Every mode creates it, so a read-only $HOME (systemd ProtectHome, a
+    // read-only container root) must say what to do (review I6).
+    let where = cfg.options.moduleDataPath;
+    try { where = moduleData.dirsFor(cfg.options.moduleDataPath, cfg.name).root; } catch (e2) { /* unsafe name: keep the base */ }
+    throw new Error(`cannot create the module data directory ${where}: ${e.message} -- set --moduleDataPath to a writable directory`);
+  }
   const moduleRoot = await fsp.realpath(path.resolve(cfg.modulePath));
   const namespace = createNamespace({moduleRoot: moduleRoot, dataDir: dirs.data, tmpDir: dirs.tmp,
     declared: cfg.declared || [], protectedPaths: protectedPaths(cfg.options)});
@@ -1585,9 +1957,11 @@ async function createForWorker(cfg) {
   const key = `${cfg.name}#${++spawned}`;
   const sched = sharedScheduler();
   const broker = new FsBroker({name: cfg.name, mode: cfg.mode, namespace: namespace, cwd: process.cwd(), report: cfg.report,
-    schedule: (fn) => sched.submit(key, fn), quiet: [moduleRoot, INSTALL_DIR]});
+    schedule: (fn) => sched.submit(key, fn)});
   const bridge = createBridge({broker: broker, scheduler: sched, key: key});
-  return {broker, bridge, namespace, dirs};
+  // Interim until plan 3 (review K1): the worker serves these by host path itself.
+  const hostRoots = [moduleRoot, await fsp.realpath(INSTALL_DIR)];
+  return {broker, bridge, namespace, dirs, hostRoots};
 }
 
 module.exports = {createForWorker, protectedPaths, sharedScheduler, INSTALL_DIR};
@@ -1597,12 +1971,14 @@ module.exports = {createForWorker, protectedPaths, sharedScheduler, INSTALL_DIR}
     ```js
     // File broker (module sandbox part 2): patch fs before anything else
     // loads, so nothing in this worker holds an unbrokered fs.
-    const fsBridge = (require('worker_threads').workerData || {}).fsBridge;
-    if (fsBridge != null) require('./fs-broker/patch').install(require('./fs-broker/client').createClient(fsBridge));
+    const fsWorkerData = require('worker_threads').workerData || {};
+    if (fsWorkerData.fsBridge != null) {
+      require('./fs-broker/patch').install(require('./fs-broker/client').createClient(fsWorkerData.fsBridge), {hostRoots: fsWorkerData.hostRoots});
+    }
     ```
     and in `set-options`, next to the console silencing: `require('./fs-broker/patch').setConsoleSilenced(options.debug !== true);`.
   - `lib/module-manager.js` `spawnModuleWorker`: after the sandbox block, wrap the rest of the function body (from `const worker = new Worker(` to the end) in `const startWorker = (fsb) => { … };`, and inside it:
-    - create the worker with `Object.assign({}, sandbox != null ? sandbox.workerOptions : {}, {workerData: {fsBridge: fsb.bridge.transfer}, transferList: fsb.bridge.transferList})`;
+    - create the worker with `Object.assign({}, sandbox != null ? sandbox.workerOptions : {}, {workerData: {fsBridge: fsb.bridge.transfer, hostRoots: fsb.hostRoots}, transferList: fsb.bridge.transferList})`;
     - right after, `worker.once('exit', () => { fsb.bridge.close().catch((e) => LOG.E(e)); });`;
     - pass `{busy: () => fsb.bridge.syncInFlight() > 0}` as the fourth argument of `workerLimits.watch`.
     Then end `spawnModuleWorker` with:
@@ -1610,7 +1986,16 @@ module.exports = {createForWorker, protectedPaths, sharedScheduler, INSTALL_DIR}
     require('./fs-broker').createForWorker({name: name, mode: options.moduleSandbox, modulePath: modulePath,
       declared: sandbox != null ? sandbox.fs : [], options: options,
       report: (rule, target) => LOG.I(`module sandbox: ${name} file ${rule} ${target}`)
-    }).then(startWorker, (e) => callback(new CHError('LOAD_MODULE_FAIL', name, `file broker: ${e.message}`)));
+    }).then((fsb) => {
+      // A synchronous throw in startWorker (new Worker refusing its options,
+      // say) must still answer the load and release the broker (review I1).
+      try {
+        startWorker(fsb);
+      } catch (e) {
+        fsb.bridge.close().catch(() => {});
+        callback(new CHError('LOAD_MODULE_FAIL', name, e.message));
+      }
+    }, (e) => callback(new CHError('LOAD_MODULE_FAIL', name, `file broker: ${e.message}`)));
     ```
   - `framework.js`: guard the `file broker:` line with `if (options.workerThread === true)`, and change `test/fs-broker/04-scheduler.js`'s startup test to pass `--workerThread` instead of `--no-workerThread`.
   - Sweep: `grep -n "moduleSandbox !== 'off'\|sandbox != null\|sandbox == null" lib/*.js` and confirm none of those branches is something the broker needs under `off` (the broker is created for every worker regardless of `sandbox`; the heartbeat watcher only runs with limits, i.e. not under `off`, which is part 1's behaviour and fine). Write what you found in the ledger.
@@ -1636,6 +2021,6 @@ git commit -m "feat(fs-broker): every module worker's fs goes through its broker
 
 ### Task 6: CHANGELOG, full suite, hand-off
 
-- [ ] **Step 1: CHANGELOG.** Under `## Unreleased`, a new section `### Added — module sandbox, part 2 (in progress)` with: "**File access from module workers goes through the main thread**, in every `--moduleSandbox` mode under `--workerThread`: `fs` is patched before any module code loads, and a per-worker broker answers every call. Each module gets private `/data` and `/tmp` directories under the new **`--moduleDataPath`** (default `$HOME/countinghouse_module_data`). The file checks are not enforced yet; until they are, `enforce` behaves like `audit` for files." and, under `### Changed — 8.0.0 platform`: "`UV_THREADPOOL_SIZE` defaults to 16 (set it yourself to override)." Plan 5 rewrites these into the final upgrade section.
+- [ ] **Step 1: CHANGELOG.** Under `## Unreleased`, a new section `### Added — module sandbox, part 2 (in progress)` with: "**File access from module workers goes through the main thread**, in every `--moduleSandbox` mode under `--workerThread`: `fs` is patched before any module code loads, and a per-worker broker answers every call. Each module gets private `/data` and `/tmp` directories under the new **`--moduleDataPath`** (default `$HOME/countinghouse_module_data`). The file checks are not enforced yet; until they are, `enforce` behaves like `audit` for files." and, under `### Changed — 8.0.0 platform`: "`UV_THREADPOOL_SIZE` defaults to 16 (set it yourself to override)." and "**Every module now needs a writable `--moduleDataPath`**, in every mode: the default is `$HOME/countinghouse_module_data`, so where `$HOME` is read-only (systemd `ProtectHome` or `ProtectSystem=strict`, a read-only container root) set `--moduleDataPath` to a writable directory before upgrading, or modules fail to load with `cannot create the module data directory`." Plan 5 rewrites these into the final upgrade section.
 - [ ] **Step 2:** Tell the reviewer, then run the full suite: `npm test > .superpowers/part2-plan2b-suite.log 2>&1; echo "exit=$?" >> .superpowers/part2-plan2b-suite.log` (about 35 minutes or more; keep the machine idle). Expected: `exit=0`. A failure goes to the reviewer with its output and your diagnosis before any fix.
 - [ ] **Step 3:** Commit the CHANGELOG, send the reviewer the plan's commit range and the suite result, and write plan 3.
