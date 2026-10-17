@@ -54,7 +54,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
       options: {moduleDataPath: path.join(base, 'store'), modulePath: base}, report: () => {}});
     try {
       assert.strictEqual(fsb.namespace.roots.find((r) => r.name === 'app').host, mod);
-      assert.strictEqual(fsb.hostRoots[0], mod);
+      assert.strictEqual(fsb.moduleRoot, mod);
     } finally {
       await fsb.bridge.close();
     }

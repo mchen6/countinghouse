@@ -7,7 +7,8 @@
       "urn:countinghouse-test:serviceID:probeService": {
         "actionList": [
           {"name": "write", "description": "Write a file.", "input": {"schema": "/probeService/write/input"}, "output": {"schema": "/probeService/write/output"}},
-          {"name": "read", "description": "Read a file.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}}
+          {"name": "read", "description": "Read a file.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}},
+          {"name": "config", "description": "Return the module's device config.", "input": {"schema": "/probeService/config/input"}, "output": {"schema": "/probeService/config/output"}}
         ]
       }
     }
