@@ -24,6 +24,13 @@ the auth config.
     pass `--no-workerThread` if you do not want them;
   - modules in worker threads, so direct peer channels are used;
   - the module sandbox in its default `audit` mode (see below).
+- **A load must use the module's package.json name** (`MODULE_NAME_MISMATCH`
+  otherwise), in every mode, single-thread included; `POST /load-module`
+  may omit `name` and then uses it. The module sandbox's policy is looked
+  up by that name. Before upgrading, check registry entries, `load_module`
+  calls and composite `runsModules` bindings for names that differ from the
+  module's package.json. A module that fails to load at startup is now
+  logged with the reason.
 - **The job worker needs Redis 5.0 or later** (BullMQ; 6.2 recommended). On
   an older Redis, which 7.x ran on as long as jobs were not used, a plain
   start now logs BullMQ's version error and jobs do not run.

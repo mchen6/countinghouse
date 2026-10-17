@@ -111,5 +111,6 @@
   "MODULE_RESTARTING": "The module's worker stopped (a resource limit or a crash) and is restarting -- retry after the time given; the server log has the reason",
   "MODULE_SUSPENDED": "The module was suspended after repeated worker exits -- an operator must fix the cause (see the server log) and restart it with POST /restart-module",
   "RATE_LIMITED": "This module sent too many messages to the main thread -- slow down, or ask the operator to raise --moduleMessageRate",
-  "MODULE_PATH_OUTSIDE_ROOT": "With --hardened, every module must live under --modulePath -- move the module there or load it from there"
+  "MODULE_PATH_OUTSIDE_ROOT": "With --hardened, every module must live under --modulePath -- move the module there or load it from there",
+  "MODULE_NAME_MISMATCH": "The load request names a module differently from its package.json -- load it under its package.json name"
 }

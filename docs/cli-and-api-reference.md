@@ -47,6 +47,8 @@ simulation).
 | `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. |
 | `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
 
+**Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
+
 **`sandbox` key on `POST /get-module-device-list`.** With the module sandbox
 on (`--moduleSandbox audit` or `enforce`), the response for a module carries
 `sandbox: {state, lastReason, exits, nextRestartAt, violations}`: `state` is
