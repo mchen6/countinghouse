@@ -113,6 +113,15 @@ describe('fs-broker 16: the disk quota', function() {
     } finally { await t.done(); }
   });
 
+  it('a brokered writeFile past diskMb is ENOSPC and writes nothing (plan 5 Task 4b, B)', async () => {
+    const t = await setup('enforce', {quota: {maxBytes: 1000, maxEntries: 100}});
+    try {
+      await assert.rejects(t.broker.handle('writeFile', ['/data/big', Buffer.alloc(2000), 'w', 0o666]), (e) => e.code === 'ENOSPC');
+      await t.broker.handle('writeFile', ['/data/ok', Buffer.alloc(500), 'w', 0o666]);
+      assert.strictEqual(fs.statSync(path.join(t.dirs.data, 'ok')).size, 500);
+    } finally { await t.done(); }
+  });
+
   it('declared paths and off are not counted', async () => {
     const t = await setup('off', {quota: null});
     try {

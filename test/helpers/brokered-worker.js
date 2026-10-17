@@ -21,6 +21,7 @@ async function runBrokered(script, opts) {
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   Object.entries(opts.files || {}).forEach(([name, content]) => fs.writeFileSync(path.join(dirs.data, name), content));
   let bridge = null;
+  const ops = {};
   // repo: the worker entry loads the script under a boot grant over it
   const data = {script: script, root: dirs.data, fsBridge: null, extra: opts.extra || {}, repo: fs.realpathSync(REPO)};
   let transferList = [];
@@ -30,6 +31,11 @@ async function runBrokered(script, opts) {
     const scheduler = new FsScheduler({globalCap: 3});
     const broker = new FsBroker({name: 't', mode: opts.mode || 'audit', namespace: ns, cwd: process.cwd(), report: () => {},
       schedule: (fn) => scheduler.submit('t', fn)});
+    // countOps: how many broker operations of each kind the script caused
+    if (opts.countOps) {
+      const handle = broker.handle.bind(broker);
+      broker.handle = (op, args) => { ops[op] = (ops[op] || 0) + 1; return handle(op, args); };
+    }
     bridge = createBridge({broker, scheduler, key: 't'});
     data.fsBridge = bridge.transfer;
     data.root = '/data';
@@ -37,7 +43,8 @@ async function runBrokered(script, opts) {
   }
   const worker = new Worker(ENTRY, {workerData: data, transferList: transferList});
   try {
-    return await new Promise((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject); });
+    const m = await new Promise((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject); });
+    return opts.countOps ? Object.assign(m, {ops: ops}) : m;
   } finally {
     await worker.terminate();
     if (bridge) await bridge.close();

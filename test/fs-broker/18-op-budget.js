@@ -66,6 +66,14 @@ describe('fs-broker 18: the broker\'s work per call', function() {
     } finally { await t.done(); }
   });
 
+  it('writeFileSync and appendFileSync are one brokered call each (plan 5 Task 4b, B)', async () => {
+    const {runBrokered} = require('../helpers/brokered-worker');
+    const m = await runBrokered(path.join(__dirname, 'scripts', 'write-once.js'), {mode: 'enforce', countOps: true});
+    assert.strictEqual(m.ok, true, JSON.stringify(m));
+    assert.strictEqual(m.r, 'hello world');
+    assert.deepStrictEqual({writeFile: m.ops.writeFile, open: m.ops.open || 0, write: m.ops.write || 0}, {writeFile: 2, open: 0, write: 0}, JSON.stringify(m.ops));
+  });
+
   it('enforce still checks every path and verifies every open', async () => {
     const t = await broker('enforce');
     try {
