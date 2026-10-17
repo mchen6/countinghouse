@@ -116,7 +116,8 @@ describe('fs-broker 06: the bridge', function() {
     const h = await harness({hooks: {afterCheck: (syscall, host) => (host.endsWith('/wait') ? new Promise((r) => { release = r; }) : null)}});
     try {
       const pending = h.run(`try { client.sync('stat', ['/data/wait']); } catch (e) { return e.code; } return 'ok';`);
-      await new Promise((r) => setTimeout(r, 200));
+      // Wait for the worker to start and send it (slow on a loaded machine).
+      for (let waited = 0; h.bridge.syncInFlight() === 0 && waited < 10000; waited += 20) await new Promise((r) => setTimeout(r, 20));
       assert.strictEqual(h.bridge.syncInFlight(), 1);
       release();
       await pending;
