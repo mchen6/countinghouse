@@ -58,6 +58,14 @@ module.exports = [
     }
   },
 
+  // An ES-module fixture: its package.json says "type": "module", which is
+  // what test/fs-broker/12-identity.js tests.
+  {
+    files: ['test/fixtures/esm-probe/**/*.js'],
+    ignores: ['test/fixtures/esm-probe/node_modules/**'],
+    languageOptions: {sourceType: 'module'}
+  },
+
   // framework.js is the entry point and returns at top level when --hardened
   // hands startup to the re-launched child (lib/hardened-launch.js).
   {

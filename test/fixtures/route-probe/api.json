@@ -1,0 +1,14 @@
+{
+  "device": {
+    "friendlyName": "route-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "tries the routes around the bounded loader",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "attempt", "description": "Try one route to a file.", "input": {"schema": "/probeService/attempt/input"}, "output": {"schema": "/probeService/attempt/output"}}
+        ]
+      }
+    }
+  }
+}

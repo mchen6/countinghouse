@@ -79,6 +79,14 @@ if (options.hardened === true) {
 }
 
 if (options.workerThread === true) {
+  // Spec decision 12: modules see their own files under /app, and Node keys
+  // loaded code by path, so countinghouse itself must not live there.
+  var identity = require('./lib/fs-broker/identity');
+  var vrootClash = identity.codeUnderVroot(require('./lib/fs-broker').realDir(__dirname), []);
+  if (vrootClash.length > 0) {
+    console.error(identity.underVrootMessage(vrootClash));
+    process.exit(2);
+  }
   logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
     ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
 }

@@ -8,7 +8,8 @@
         "actionList": [
           {"name": "write", "description": "Write a file.", "input": {"schema": "/probeService/write/input"}, "output": {"schema": "/probeService/write/output"}},
           {"name": "read", "description": "Read a file.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}},
-          {"name": "config", "description": "Return the module's device config.", "input": {"schema": "/probeService/config/input"}, "output": {"schema": "/probeService/config/output"}}
+          {"name": "config", "description": "Return the module's device config.", "input": {"schema": "/probeService/config/input"}, "output": {"schema": "/probeService/config/output"}},
+          {"name": "where", "description": "Report what the module sees of its own location.", "input": {"schema": "/probeService/where/input"}, "output": {"schema": "/probeService/where/output"}}
         ]
       }
     }

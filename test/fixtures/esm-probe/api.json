@@ -1,0 +1,14 @@
+{
+  "device": {
+    "friendlyName": "esm-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "an ES-module package, for the virtual identity tests",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "where", "description": "Report the handler's URL and imports.", "input": {"schema": "/probeService/where/input"}, "output": {"schema": "/probeService/where/output"}}
+        ]
+      }
+    }
+  }
+}

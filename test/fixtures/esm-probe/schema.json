@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "where": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"url": {"type": "string"}, "dirname": {"type": "string"}, "helper": {"type": "string"}, "dep": {"type": "string"}, "depFile": {"type": "string"}}}
+    }
+  }
+}

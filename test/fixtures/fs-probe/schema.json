@@ -14,6 +14,10 @@
     "config": {
       "input": {"type": "object"},
       "output": {"type": "object", "properties": {"config": {"type": ["object", "null"]}}}
+    },
+    "where": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"dirname": {"type": "string"}, "filename": {"type": "string"}, "cwd": {"type": "string"}, "tmpdir": {"type": "string"}, "resolve": {"type": "string"}, "dirResolve": {"type": "string"}, "frame": {"type": "string"}, "own": {"type": "string"}}}
     }
   }
 }
