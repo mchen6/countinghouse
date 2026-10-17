@@ -15,13 +15,15 @@ const ROOT = path.join(__dirname, '..', '..');
 // instead is killed after 20 s, so a failing test does not leak it.
 // opts.env: extra environment variables for the server.
 // opts.cwd: the server's working directory (default: the repo root).
+// opts.root: a countinghouse installed somewhere else (default: this repo).
 function startServer(port, args, opts) {
   opts = opts || {};
+  const root = opts.root || ROOT;
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath,
-      [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(args),
-      {cwd: opts.cwd || ROOT,
-       env: Object.assign({}, process.env, {NODE_PATH: path.join(ROOT, 'lib')}, opts.env || {}),
+      [path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(args),
+      {cwd: opts.cwd || root,
+       env: Object.assign({}, process.env, {NODE_PATH: path.join(root, 'lib')}, opts.env || {}),
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
     server.output = '';
     server.exitCode = null;
