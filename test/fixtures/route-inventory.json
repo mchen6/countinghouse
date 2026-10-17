@@ -16,5 +16,6 @@
   "/reload-module",
   "/restart-module",
   "/shutdown",
+  "/uninstall-module",
   "/unload-module"
 ]
