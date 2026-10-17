@@ -22,7 +22,7 @@ const express = require('express');
 const path    = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-require(path.join(ROOT, 'lib', 'cli-options')).setOptions({});
+require(path.join(ROOT, 'lib', 'cli-options')).setOptions({workerThread: false});
 const RouteManager = require(path.join(ROOT, 'lib', 'route-manager'));
 
 const fake = Object.create(RouteManager.prototype);

@@ -3,7 +3,7 @@
 // (CHUtil.ci.deviceManager.workerMessage, require.cache) and send any
 // command itself.
 const assert = require('assert');
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const WorkerMessage = require('../../lib/worker-message');
 const DeviceManager = require('../../lib/device-manager');
 

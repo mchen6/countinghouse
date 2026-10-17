@@ -14,7 +14,7 @@ describe('sandbox 01: modes', function() {
   });
 
   it('downgrades the default to off without --workerThread, and says why', async () => {
-    server = await startServer(9605, ['--debug', '--debugKey', 'aabbcc']);
+    server = await startServer(9605, ['--no-workerThread', '--debug', '--debugKey', 'aabbcc']);
     assert.ok(server.output.includes('module sandbox: off -- it needs --workerThread'), server.output.slice(-2000));
   });
 
@@ -24,7 +24,7 @@ describe('sandbox 01: modes', function() {
   });
 
   it('refuses an explicit enforce without --workerThread', async () => {
-    server = await startServer(9605, ['--debug', '--moduleSandbox', 'enforce'], {expectExit: true});
+    server = await startServer(9605, ['--no-workerThread', '--debug', '--moduleSandbox', 'enforce'], {expectExit: true});
     assert.strictEqual(server.exitCode, 2);
     assert.ok(server.output.includes('--moduleSandbox enforce needs --workerThread'), server.output);
   });

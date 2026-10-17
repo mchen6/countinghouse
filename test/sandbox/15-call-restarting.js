@@ -3,7 +3,7 @@
 // call does. A device nobody knows keeps its old answer.
 const assert = require('assert');
 const path = require('path');
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const CHError = require('../../lib/countinghouse-error').CHError;
 
 const DeviceManager = require('../../lib/device-manager');

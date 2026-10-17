@@ -86,7 +86,7 @@ describe('sandbox 09: --hardened', function() {
   });
 
   it('needs --workerThread', async () => {
-    server = await startServer(9614, ['--debug', '--hardened', '--modulePath', root], {expectExit: true});
+    server = await startServer(9614, ['--no-workerThread', '--debug', '--hardened', '--modulePath', root], {expectExit: true});
     assert.strictEqual(server.exitCode, 2);
     assert.ok(server.output.includes('--hardened needs --workerThread'), server.output);
   });

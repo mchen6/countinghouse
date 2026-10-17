@@ -40,7 +40,7 @@ const LOG_LEGACY   = `${SP}-legacy.log`;
 // server's log as data rather than talking to its API, so it is the only one
 // that cares. NODE_PATH mirrors what bin/countinghouse and the npm scripts set.
 function startAndCapture(modulePath, port, logPath, done) {
-  exec(`NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ${port
+  exec(`NODE_PATH=./lib node ./framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port ${port
        } --loadModule ${modulePath} > ${logPath} 2>&1`,
        () => {});
   waitForReady.inFile(logPath, done);
@@ -75,7 +75,7 @@ describe('module-loading 01: a module that fails to load says why, with a locata
 
     after((done) => {
       try { fs.unlinkSync(LOG_NO_INDEX); } catch (e) {}
-      exec('pkill -f "framework.js --debug --bindAddr 127.0.0.1 --port 9571"', () => { done(); });
+      exec('pkill -f "framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port 9571"', () => { done(); });
     });
 
     it('logs an error naming the module (previously: no error at any level)', () => {
@@ -107,7 +107,7 @@ describe('module-loading 01: a module that fails to load says why, with a locata
 
     after((done) => {
       try { fs.unlinkSync(LOG_INVALID); } catch (e) {}
-      exec('pkill -f "framework.js --debug --bindAddr 127.0.0.1 --port 9572"', () => { done(); });
+      exec('pkill -f "framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port 9572"', () => { done(); });
     });
 
     it('logs an error naming the module and the failing stage', () => {
@@ -154,7 +154,7 @@ describe('module-loading 01: a module that fails to load says why, with a locata
 
     after((done) => {
       try { fs.unlinkSync(LOG_LEGACY); } catch (e) {}
-      exec('pkill -f "framework.js --debug --bindAddr 127.0.0.1 --port 9573"', () => { done(); });
+      exec('pkill -f "framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port 9573"', () => { done(); });
     });
 
     it('names the module and the failing stage', () => {

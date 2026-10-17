@@ -123,10 +123,10 @@ describe('auth 19b: --peerChannelAuthRecheckSeconds', () => {
   const options = require('../../lib/cli-options');
 
   // every other file in this mocha process expects the bare defaults
-  after(() => { options.setOptions({}); });
+  after(() => { options.setOptions({workerThread: false}); });
 
   function parsed(argv) {
-    options.setOptions(argv);
+    options.setOptions(Object.assign({workerThread: false}, argv));
     return options.peerChannelAuthRecheckSeconds;
   }
 
@@ -138,7 +138,7 @@ describe('auth 19b: --peerChannelAuthRecheckSeconds', () => {
     assert.strictEqual(parsed({peerChannelAuthRecheckSeconds: 'soon'}), 5);
   });
   it('reaches a worker unchanged', () => {
-    options.setOptions({peerChannelAuthRecheckSeconds: 0});
+    options.setOptions({peerChannelAuthRecheckSeconds: 0, workerThread: false});
     assert.strictEqual(options.getOptions().peerChannelAuthRecheckSeconds, 0);
   });
 });

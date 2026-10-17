@@ -18,13 +18,13 @@ const minimist = require('minimist');
 const options = require('../../lib/cli-options');
 
 function parse(args) {
-  options.setOptions(minimist(args));
+  options.setOptions(minimist(['--no-workerThread'].concat(args)));
   return options;
 }
 
 describe('composition 12: --directPeerChannels is the default', () => {
   // every other file in this mocha process expects the bare defaults
-  after(() => { options.setOptions({}); });
+  after(() => { options.setOptions({workerThread: false}); });
 
   it('is on when no flag is given', () => {
     assert.strictEqual(parse([]).directPeerChannels, true);

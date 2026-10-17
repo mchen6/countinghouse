@@ -9,6 +9,14 @@ if (!nodeVersion.supported(process.version)) {
   process.exit(2);
 }
 
+// Test suite only (test/helpers/require-thread-flag.js): every test server
+// must say which thread mode it wants.
+if (process.env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG === '1' &&
+    !process.argv.some((a) => a === '--no-workerThread' || a === '--workerThread' || a.startsWith('--workerThread='))) {
+  console.error('no thread flag given (pass --workerThread or --no-workerThread)');
+  process.exit(3);
+}
+
 process.on('uncaughtException', function(e) {
   console.error('Error: ' + e.stack);
 });

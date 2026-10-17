@@ -153,10 +153,10 @@ describe('composition 13b: --withPM2 is removed', function() {
 
   it('the option and the heap-statistics relay no longer exist', () => {
     const options = require('../../lib/cli-options');
-    options.setOptions({withPM2: true});
+    options.setOptions({withPM2: true, workerThread: false});
     assert.strictEqual(options.withPM2, undefined);
     assert.strictEqual(Object.prototype.hasOwnProperty.call(options.getOptions(), 'withPM2'), false);
-    options.setOptions({});
+    options.setOptions({workerThread: false});
 
     assert.strictEqual(require('../../lib/monitor').sendHeapStatMessageToParentController, undefined);
     assert.strictEqual(require('../../lib/monitor').onProcessMessage, undefined);

@@ -11,7 +11,7 @@ const os        = require('os');
 const path      = require('path');
 const spawnSync = require('child_process').spawnSync;
 
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const FileAuthProvider = require('../../lib/auth/file-provider');
 
 function tmpAuthFile(config) {

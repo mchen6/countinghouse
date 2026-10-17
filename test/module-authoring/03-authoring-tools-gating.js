@@ -74,10 +74,10 @@ function assertPortFree(port, callback) {
 function startServer(port, extraArgs, done) {
   assertPortFree(port, (err) => {
     if (err) throw err;
-    const args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(port),
+    const args = ['--no-workerThread', '--debug', '--bindAddr', '127.0.0.1', '--port', String(port),
                   '--debugKey', 'aabbcc'].concat(extraArgs);
     const server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args,
-                         {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
+                         {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true}); // args: --no-workerThread
     waitForReady(server, (readyErr) => {
       if (readyErr) throw readyErr;
       done(server);
@@ -468,7 +468,7 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
       config[NON_ADMIN_KEY] = {userName: 'authoring-non-admin', devices: ['*']}; // no admin field: not admin
       fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
-      waitForReady(exec(`"${path.join(ROOT, 'bin', 'countinghouse')}" --bindAddr 127.0.0.1 --port ${PORT} ` +
+      waitForReady(exec(`"${path.join(ROOT, 'bin', 'countinghouse')}" --no-workerThread --bindAddr 127.0.0.1 --port ${PORT} ` +
            `--authProvider file --authConfigPath ${AUTH_CONFIG_PATH} --authoringTools`,
            {cwd: ROOT}, (execErr) => { if (execErr) console.log(execErr); }), done);
     });

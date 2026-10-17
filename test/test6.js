@@ -10,6 +10,7 @@ describe("Start benchmarking in single-thread mode", function () {
   this.timeout(0);
   console.log('starting countinghouse...');
   child = cp.fork("./framework.js", [
+    "--no-workerThread",
     "--bindAddr",
     "127.0.0.1",
     "--debug",

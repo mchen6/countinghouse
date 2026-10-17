@@ -90,7 +90,7 @@ const spawn   = require('child_process').spawn;
 // blows up trying to resolve a hostname. Same pattern as
 // test/module-authoring/01-module-validator.js and
 // test/composition/05-module-identity.js.
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const handlerCtx = require('../../lib/handler-ctx');
 
 const PORT = 9556;

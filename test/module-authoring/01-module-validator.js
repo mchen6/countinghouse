@@ -8,7 +8,7 @@
 const assert = require('assert');
 const path   = require('path');
 
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const moduleValidator = require('../../lib/module-validator');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');

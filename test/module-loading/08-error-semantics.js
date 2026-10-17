@@ -52,7 +52,7 @@ describe('module-loading 08: handler failure classification and style detection'
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse for the error-semantics matrix...');
-    waitForReady(exec(`NODE_PATH=./lib node ./framework.js --debug --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(exec(`NODE_PATH=./lib node ./framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
          } --debugKey aabbcc --loadModule ./test/fixtures/error-semantics-module` +
          ` 2> /dev/null`, () => {}), done);
   });

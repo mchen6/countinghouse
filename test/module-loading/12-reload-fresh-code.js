@@ -40,6 +40,7 @@ function setGreeting(dir, word) {
 // fixture's console marker.
 function startServer(port, extraArgs, done) {
   const server = spawn(process.execPath,
+    // every caller's extraArgs carries --workerThread or --no-workerThread
     [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(extraArgs),
     {cwd: ROOT, env: Object.assign({}, process.env, {NODE_PATH: path.join(ROOT, 'lib')}),
      stdio: ['ignore', 'pipe', 'ignore'], detached: true});
@@ -167,7 +168,7 @@ describe('module reload runs the current code', function() {
 
     before((done) => {
       dir = copyFixture();
-      startServer(PORT, ['--debug', '--debugKey', KEY, '--authoringTools'], (err, s) => {
+      startServer(PORT, ['--no-workerThread', '--debug', '--debugKey', KEY, '--authoringTools'], (err, s) => {
         server = s;
         done(err);
       });

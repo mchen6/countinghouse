@@ -77,10 +77,10 @@ function startServer(done) {
       return fs.statSync(path.join(PKG_DIR, f)).isDirectory();
     }).sort();
 
-    const args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
+    const args = ['--no-workerThread', '--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
     modules.forEach((m) => { args.push('--loadModule', path.join(PKG_DIR, m)); });
 
-    server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
+    server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true}); // args: --no-workerThread
     waitForReady(server, done);
   });
 }

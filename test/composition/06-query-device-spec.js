@@ -18,7 +18,7 @@ const assert = require('assert');
 const path   = require('path');
 const Worker = require('worker_threads').Worker;
 
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const CHUtil   = require('../../lib/countinghouse-util');
 const CHDevice = require('../../lib/countinghouse-device');
 
@@ -115,7 +115,7 @@ describe('CHUtil.queryDeviceSpec', () => {
 
       const workerSrc = `
         const {parentPort} = require('worker_threads');
-        require(${JSON.stringify(cliOptionsPath)}).setOptions({});
+        require(${JSON.stringify(cliOptionsPath)}).setOptions({workerThread: false});
         const CHUtil = require(${JSON.stringify(chUtilPath)});
         const DEVICE_ID = ${JSON.stringify(DEVICE_ID)};
         const SPEC = ${JSON.stringify(SPEC)};

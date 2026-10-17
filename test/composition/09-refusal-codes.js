@@ -32,7 +32,7 @@ const assert = require('assert');
 
 // Before requiring anything that reaches lib/countinghouse-util.js -- same
 // reason as test/composition/02-ctx-call.js's copy of this line.
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const handlerCtx = require('../../lib/handler-ctx');
 
 function fakeDevice() {

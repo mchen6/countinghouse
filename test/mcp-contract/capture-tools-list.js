@@ -21,7 +21,7 @@ const modules = fs.readdirSync(PKG_DIR).filter((f) => {
   return fs.statSync(path.join(PKG_DIR, f)).isDirectory();
 }).sort();
 
-const args = ['--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
+const args = ['--no-workerThread', '--debug', '--bindAddr', '127.0.0.1', '--port', String(PORT), '--debugKey', 'aabbcc'];
 modules.forEach((m) => {
   args.push('--loadModule', path.join(PKG_DIR, m));
 });
@@ -36,7 +36,7 @@ if (require.main !== module) {
 // detached so the whole process group can be killed: bin/countinghouse is a
 // /bin/sh wrapper that runs node as a child (and pipes it into bunyan), so
 // killing the returned pid alone leaves the server listening.
-const server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true});
+const server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args, {cwd: ROOT, stdio: 'ignore', detached: true}); // args: --no-workerThread
 
 function stopServer() {
   try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }

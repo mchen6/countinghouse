@@ -36,7 +36,7 @@ const spawn   = require('child_process').spawn;
 
 // Same reasoning as 02-ctx-call.js and friends: something downstream reaches
 // lib/countinghouse-util.js at require time, which needs options.redisUrl.
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 
 const PORT      = 9561;
 const FIXTURES  = path.join(__dirname, '..', 'fixtures');
@@ -52,6 +52,7 @@ let serverLog = '';
 function startServer(done) {
   server = spawn(process.execPath, [
     path.join(__dirname, '..', '..', 'framework.js'),
+    '--no-workerThread',
     // --debug/--debugKey bypasses AuthProvider entirely (lib/user-auth.js) --
     // this test is about device registration, not composition/auth, so no
     // --authConfigPath is needed.

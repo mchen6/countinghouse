@@ -13,7 +13,7 @@
 // stdio 'pipe', or fork() with {silent: true}.
 //
 //   const waitForReady = require('../helpers/wait-for-ready');
-//   before((done) => { waitForReady(exec('"./bin/countinghouse" ...'), done); });
+//   before((done) => { waitForReady(exec('"./bin/countinghouse" --no-workerThread ...'), done); });
 //
 // done(err) is called exactly once: with nothing when the line has been seen
 // `count` times, or with an Error carrying the tail of the server's output

@@ -30,9 +30,9 @@ const assert = require('assert');
 // Outside of framework.js's normal startup nothing calls that, so requiring
 // device-manager.js cold throws before this file's own tests even run.
 // bin/countinghouse-validate.js hits the same problem for the same reason
-// and fixes it the same way: call setOptions({}) for its defaults (real
+// and fixes it the same way: call setOptions({workerThread: false}) for its defaults (real
 // redisUrl 'redis://127.0.0.1:6379') before requiring anything downstream.
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 
 // Likewise, the conflict branch under test logs via LOG.E(), which calls
 // into a bunyan logger that only exists after LOG.createLogger() runs --

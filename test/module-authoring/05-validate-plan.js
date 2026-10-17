@@ -3,7 +3,7 @@
 // cheap early failure instead of a slow one after writing four files.
 const assert = require('assert');
 
-require('../../lib/cli-options').setOptions({});
+require('../../lib/cli-options').setOptions({workerThread: false});
 const planValidator = require('../../lib/plan-validator');
 const callAddress   = require('../../lib/call-address');
 

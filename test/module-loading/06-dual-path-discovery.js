@@ -27,7 +27,7 @@ const PORT   = 9586;
 const DEVICE_COUNT = 3;
 
 function startServer(done) {
-  waitForReady(exec(`DYNAMIC_DEVICE_COUNT=${DEVICE_COUNT} NODE_PATH=./lib node ./framework.js --debug` +
+  waitForReady(exec(`DYNAMIC_DEVICE_COUNT=${DEVICE_COUNT} NODE_PATH=./lib node ./framework.js --no-workerThread --debug` +
        ` --bindAddr 127.0.0.1 --port ${PORT} --debugKey aabbcc` +
        ` --loadModule ./test/fixtures/dynamic-discovery-module` +
        ` --loadModule ./test/fixtures/handler-map-module` +

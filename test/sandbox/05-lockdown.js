@@ -29,7 +29,7 @@ describe('sandbox 05: worker lockdown', function() {
 
   describe('enforce', () => {
     let server = null;
-    before(async () => { server = await startServer(9608, serverArgs('enforce')); });
+    before(async () => { server = await startServer(9608, serverArgs('enforce')); }); // serverArgs passes --workerThread
     after(() => stopServer(server));
 
     ROUTES.forEach(([what, arg]) => {
@@ -56,7 +56,7 @@ describe('sandbox 05: worker lockdown', function() {
 
   describe('audit', () => {
     let server = null;
-    before(async () => { server = await startServer(9609, serverArgs('audit')); });
+    before(async () => { server = await startServer(9609, serverArgs('audit')); }); // serverArgs passes --workerThread
     after(() => stopServer(server));
 
     ROUTES.forEach(([what, arg]) => {
