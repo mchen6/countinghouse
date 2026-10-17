@@ -3,6 +3,11 @@
   "$id": "#/",
   "type": "object",
   "probeService": {
+    "ioBench": {
+      "input": {"type": "object", "properties": {"rounds": {"type": "integer", "minimum": 1, "maximum": 100000}}, "required": ["rounds"]},
+      "output": {"type": "object", "properties": {"ms": {"type": "number"}}}
+    },
+
     "fsResults": {
       "input": {"type": "object"},
       "output": {"type": "object", "properties": {"realpath": {"type": "string"}, "mkdtemp": {"type": "string"}, "parent": {"type": "string"}, "relative": {"type": "boolean"}, "mkdirFirst": {"type": ["string", "null"]}}}
