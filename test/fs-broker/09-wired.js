@@ -163,6 +163,30 @@ describe('fs-broker 09: module workers use the broker', function() {
     assert.deepStrictEqual(r.structuredContent.output, {content: null, code: 'ENOENT'});
   });
 
+  it('enforce: the policy\'s diskMb reaches the broker in megabytes (ENOSPC past 1 MB)', async () => {
+    const policy = path.join(base, 'policy.json');
+    fs.writeFileSync(policy, JSON.stringify({modules: {'fs-probe': {approve: 'as-declared', limits: {diskMb: 1}}}}));
+    server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'enforce', '--modulePolicy', policy,
+      '--moduleDataPath', path.join(base, 'store'), '--loadModule', PROBE]);
+    const small = await mcpCall(9626, KEY, tool('write'), {path: '/data/small', content: '0123456789', repeat: 50000});   // 500 KB
+    assert.deepStrictEqual(small.structuredContent.output, {ok: true, code: null}, JSON.stringify(small));
+    const big = await mcpCall(9626, KEY, tool('write'), {path: '/data/big', content: '0123456789', repeat: 200000});      // 2 MB
+    assert.deepStrictEqual(big.structuredContent.output, {ok: false, code: 'ENOSPC'}, JSON.stringify(big));
+  });
+
+  it('enforce: the policy\'s disk limits reach the broker (ENOSPC past diskEntries)', async () => {
+    const policy = path.join(base, 'policy.json');
+    fs.writeFileSync(policy, JSON.stringify({modules: {'fs-probe': {approve: 'as-declared', limits: {diskEntries: 2}}}}));
+    server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'enforce', '--modulePolicy', policy,
+      '--moduleDataPath', path.join(base, 'store'), '--loadModule', PROBE]);
+    for (const f of ['a', 'b']) {
+      const w = await mcpCall(9626, KEY, tool('write'), {path: `/data/${f}`, content: f});
+      assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null}, JSON.stringify(w));
+    }
+    const third = await mcpCall(9626, KEY, tool('write'), {path: '/data/c', content: 'c'});
+    assert.deepStrictEqual(third.structuredContent.output, {ok: false, code: 'ENOSPC'}, JSON.stringify(third));
+  });
+
   it('logs the broker\'s capacity at startup in worker mode', async () => {
     server = await start('audit');
     assert.ok(/file broker: up to \d+ module file operations in flight/.test(server.output), server.output.slice(-2000));
