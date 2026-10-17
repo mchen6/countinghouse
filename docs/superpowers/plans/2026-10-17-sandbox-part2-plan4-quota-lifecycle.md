@@ -15,9 +15,9 @@
 - New limits `diskMb` (default ceiling 1024) and `diskEntries` (default ceiling 100000), declared in `countinghouse.permissions.limits` and narrowed by the policy exactly as part 1's limits are. One pool for `/data` and `/tmp`; declared paths and `/app` are never counted.
 - Modes: `enforce` answers `ENOSPC` when a reservation would pass a limit; `audit` allows it and logs once per threshold crossing (75 % and 100 %, each re-armed when usage drops back below it); `off` does not count (no measuring walk, no reservations).
 - `/tmp` is emptied at every spawn, in every mode, before the module loads. Never through a link: if the `/tmp` root itself is not a real directory, the spawn fails and says so.
-- The spawn link check (a regular file with more than one link, or a symlink with an absolute target, anywhere under `/data` or `/tmp`) refuses the load under `enforce`, naming at most 10 entries and how many more, and is logged under `audit`. `off` does not walk.
+- The spawn link check refuses links that can lead outside (spec section 3, review I4): a symlink with an absolute target, or a regular file with more names than the walk found under `/data` and `/tmp` (`st.nlink` greater than its tally, so a link exists outside). Hard links the link rules allowed inside one root are fine. It refuses the load under `enforce`, naming at most 10 entries and how many more, and is logged under `audit`. `off` does not walk.
 - Counting is logical size: positional writes and `ftruncate` up count to the new length; sparse files count their length. Each inode's bytes once (hard links inside a root); each name is one entry (files, directories, symlinks).
-- The lifecycle lock is per verified package name. A spawn waits for the previous broker of that name to settle before emptying `/tmp`. An operator spawn that finds a live worker of the same name terminates it first (loading a loaded module restarts it); a supervisor spawn (`stillWanted` given) that finds one gives way with `restart superseded by an operator action`.
+- The lifecycle lock is per verified package name. A spawn waits for the previous broker of that name to settle before emptying `/tmp`. A tracked worker is *live* until it exits; it *settles* later, once its broker is idle (review I5). Only a live worker counts as "loaded" for the supervisor's give-way rule and uninstall's pre-check; spawn and uninstall both wait for settle under the lock. An operator spawn that finds a live worker of the same name terminates it first (loading a loaded module restarts it); a supervisor spawn (`stillWanted` given) that finds one gives way with `restart superseded by an operator action`.
 - Uninstall: admin key; `name` checked by `module-data.safeName` before any path is built; refused while the module is loaded, restarting or suspended; never deletes code under `--modulePath`; never follows a link (the data root itself must be a real directory).
 - First commit of Task 1 fixes the stale comment at `test/device-config/02-from-main-thread.js:15` (end-of-plan-3 gate).
 - Do not run the full `npm test` except in the last task. Kill stray servers by PID. Commit trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -71,7 +71,7 @@ Run `npx mocha --exit test/sandbox/02-permissions.js -g "disk limits"` → FAIL 
 - Modify: `lib/fs-broker/index.js` (calls it before `namespace.prepare()`)
 
 **Interfaces:**
-- Produces: `spawnWalk.emptyTmp(tmpDir) → Promise<void>`; `spawnWalk.measure([[dataDir, '/data'], [tmpDir, '/tmp']], {maxListed}) → Promise<{bytes, entries, links: string[], moreLinks: number}>`; `createForWorker` result gains `usage: {bytes, entries} | null`.
+- Produces: `spawnWalk.emptyTmp(tmpDir) → Promise<void>`; `spawnWalk.measure([[hostDir, vroot], …], {maxListed, whollyInside})` — `whollyInside: true` (used by `rm`, Task 3) counts a file's bytes only when every one of its links was found in the walk; `spawnWalk.measure([[dataDir, '/data'], [tmpDir, '/tmp']], {maxListed}) → Promise<{bytes, entries, links: string[], moreLinks: number}>`; `createForWorker` result gains `usage: {bytes, entries} | null`.
 
 - [ ] **Step 1: Write the failing tests** — `test/fs-broker/15-spawn-walk.js`:
 
@@ -110,22 +110,37 @@ describe('fs-broker 15: the spawn walk', function() {
     assert.strictEqual(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
   });
 
-  it('measures logical bytes once per inode and one entry per name, and lists hard links and absolute symlinks', async () => {
+  it('measures logical bytes once per inode and one entry per name, and lists absolute symlinks and links that lead outside', async () => {
     base = mkdtemp('walk-');
     const data = path.join(base, 'data');
     const tmp = path.join(base, 'tmp');
     fs.mkdirSync(path.join(data, 'sub'), {recursive: true});
     fs.mkdirSync(tmp);
     fs.writeFileSync(path.join(data, 'a'), Buffer.alloc(1000));
-    fs.linkSync(path.join(data, 'a'), path.join(data, 'sub', 'a2'));       // hard link: bytes once, two entries
+    fs.linkSync(path.join(data, 'a'), path.join(data, 'sub', 'a2'));       // hard link inside: bytes once, two entries, not listed
+    outside = fs.mkdtempSync(path.join(os.homedir(), '.ch-walk-outside-'));
+    fs.writeFileSync(path.join(outside, 'o'), Buffer.alloc(10));
+    fs.linkSync(path.join(outside, 'o'), path.join(data, 'out'));           // a link whose other name is outside: listed
     const sparse = fs.openSync(path.join(data, 'sparse'), 'w'); fs.ftruncateSync(sparse, 5000); fs.closeSync(sparse);
     fs.symlinkSync('a', path.join(data, 'rel'));                               // relative: fine
     fs.symlinkSync('/etc/hostname', path.join(data, 'abs'));                   // absolute: listed
     const r = await walk.measure([[data, '/data'], [tmp, '/tmp']], {maxListed: 10});
-    assert.strictEqual(r.bytes, 6000);
-    assert.strictEqual(r.entries, 6);   // sub, a, sub/a2, sparse, rel, abs
-    assert.deepStrictEqual(r.links.sort(), ['/data/abs', '/data/a', '/data/sub/a2'].sort());
+    assert.strictEqual(r.bytes, 6010);
+    assert.strictEqual(r.entries, 7);   // sub, a, sub/a2, out, sparse, rel, abs
+    assert.deepStrictEqual(r.links.sort(), ['/data/abs', '/data/out'].sort());
     assert.strictEqual(r.moreLinks, 0);
+  });
+
+  it('whollyInside counts a file\'s bytes only when all its links are inside the walked tree (review I1)', async () => {
+    base = mkdtemp('walk-');
+    const data = path.join(base, 'data');
+    fs.mkdirSync(path.join(data, 'd'), {recursive: true});
+    fs.writeFileSync(path.join(data, 'big'), Buffer.alloc(1000));
+    fs.linkSync(path.join(data, 'big'), path.join(data, 'd', 'x'));
+    fs.writeFileSync(path.join(data, 'd', 'own'), Buffer.alloc(30));
+    const sub = await walk.measure([[path.join(data, 'd'), '/data/d']], {whollyInside: true});
+    assert.strictEqual(sub.bytes, 30, 'd/x shares its inode with /data/big, which stays');
+    assert.strictEqual(sub.entries, 2);
   });
 });
 ```
@@ -133,6 +148,15 @@ describe('fs-broker 15: the spawn walk', function() {
 and wired tests appended to `test/fs-broker/09-wired.js` (port 9626):
 
 ```js
+  it('enforce: a hard link made through the broker inside /data does not stop a restart (review I4)', async () => {
+    server = await start('enforce');
+    await mcpCall(9626, KEY, tool('write'), {path: '/data/a', content: 'x'});
+    fs.linkSync(path.join(base, 'store', 'fs-probe', 'data', 'a'), path.join(base, 'store', 'fs-probe', 'data', 'b'));   // as link() inside one root would
+    const r1 = await post(9626, KEY, '/restart-module', {name: 'fs-probe'});
+    assert.strictEqual(r1.status, 200, JSON.stringify(r1.body));
+    await waitFor(async () => (await mcpCall(9626, KEY, tool('read'), {path: '/data/b'})).structuredContent.output.content === 'x', 15000, 'read after restart');
+  });
+
   it('enforce: a planted absolute symlink or hard link under the data directory refuses the load, naming it', async () => {
     const store = path.join(base, 'store');
     fs.mkdirSync(path.join(store, 'fs-probe', 'data'), {recursive: true});
@@ -189,9 +213,15 @@ async function emptyTmp(tmpDir) {
 }
 
 // roots: [[hostDir, '/data'], [hostDir, '/tmp']]; links are reported as virtual paths.
+// Hard links: bytes once per inode; names are tallied per inode so a file
+// with more links than the walk found (st.nlink > tally) has a name
+// elsewhere -- listed, since it can lead outside (review I4). whollyInside
+// (rm's release, review I1): count a file's bytes only when all its links
+// were found, so removing one name of a shared file gives nothing back.
 async function measure(roots, opts) {
   const maxListed = (opts && opts.maxListed) || 10;
-  const seen = new Set();
+  const whollyInside = opts != null && opts.whollyInside === true;
+  const inodes = new Map();   // dev:ino -> {size, nlink, names: [virtual]}
   const out = {bytes: 0, entries: 0, links: [], moreLinks: 0};
   const flag = (v) => { if (out.links.length < maxListed) out.links.push(v); else out.moreLinks++; };
   for (const [host, vroot] of roots) {
@@ -209,12 +239,18 @@ async function measure(roots, opts) {
         } else if (st.isDirectory()) {
           queue.push([hp, vp]);
         } else if (st.isFile()) {
-          if (st.nlink > 1) flag(vp);
           const key = `${st.dev}:${st.ino}`;
-          if (!seen.has(key)) { seen.add(key); out.bytes += st.size; }
+          const i = inodes.get(key) || {size: st.size, nlink: st.nlink, names: []};
+          i.names.push(vp);
+          inodes.set(key, i);
         }
       }
     }
+  }
+  for (const i of inodes.values()) {
+    const allFound = i.names.length >= i.nlink;
+    if (!allFound) flag(i.names[0]);
+    if (!whollyInside || allFound) out.bytes += i.size;
   }
   return out;
 }
@@ -294,9 +330,29 @@ In `lib/fs-broker/index.js` `createForWorker`, after `ensureDirs` and before the
       t.broker.quota.settle(0, 0, 400, 1);                                    // the file the test planted
       await t.broker.handle('copyFile', ['/data/src', '/tmp/copy']);
       await assert.rejects(t.broker.handle('copyFile', ['/data/src', '/tmp/copy2']), (e) => e.code === 'ENOSPC');
-      await t.broker.handle('rename', ['/tmp/copy', '/tmp/copy']);
-      await t.broker.handle('unlink', ['/tmp/copy']);
+      const before = t.broker.quota.bytes;
+      await t.broker.handle('rename', ['/tmp/copy', '/tmp/copy']);              // to itself: nothing changes (review I2)
+      assert.strictEqual(t.broker.quota.bytes, before);
+      await t.broker.handle('close', [await t.broker.handle('open', ['/tmp/small', 'w'])]);
+      await t.broker.handle('rename', ['/tmp/small', '/tmp/copy']);             // over a different file: the replaced copy is given back
       await t.broker.handle('copyFile', ['/data/src', '/tmp/copy2']);
+    } finally { await t.done(); }
+  });
+
+  it('removing one name of a hard-linked file gives nothing back (review I1)', async () => {
+    const t = await setup('enforce', {quota: {maxBytes: 1500, maxEntries: 1000}});
+    try {
+      const fd = await t.broker.handle('open', ['/data/big', 'w']);
+      await t.broker.handle('write', [fd, Buffer.alloc(1000), null]);
+      await t.broker.handle('close', [fd]);
+      for (let i = 0; i < 3; i++) {
+        await t.broker.handle('mkdir', ['/data/d']);
+        await t.broker.handle('link', ['/data/big', '/data/d/x']);
+        await t.broker.handle('rm', ['/data/d', {recursive: true}]);
+      }
+      const f2 = await t.broker.handle('open', ['/data/more', 'w']);
+      await assert.rejects(t.broker.handle('write', [f2, Buffer.alloc(600), null]), (e) => e.code === 'ENOSPC');
+      await t.broker.handle('close', [f2]);
     } finally { await t.done(); }
   });
 
@@ -329,7 +385,10 @@ and one wired test in `09-wired.js`: a policy file granting `fs-probe` `{limits:
 // The per-module disk quota (spec section 3): one pool for /data and /tmp.
 // Reserve before growth, settle after with what actually happened. All
 // bookkeeping is synchronous, so two operations racing at the edge cannot
-// both pass (the main thread runs one at a time).
+// both pass (the main thread runs one at a time). It is approximate in the
+// safe direction: two descriptors extending one file at once each measure
+// growth from the same old size, so the overlap is counted twice and usage
+// drifts up, never down; the next spawn's walk measures it afresh (review I3).
 const {nodeError} = require('./errors');
 
 const THRESHOLDS = [0.75, 1];
@@ -398,9 +457,9 @@ with `const quotaRoot = (p) => p != null && p.res != null && p.res.kind === 'roo
 - `ftruncate` / `truncate`: `stat` first; growth `max(0, len - size)` reserved; afterwards settle with `len - size` (negative releases).
 - `mkdir` (recursive: count the missing components by `lstat` walking down first), `mkdtemp`, `symlink`, `link`: 1 entry each (the missing count for recursive mkdir).
 - `copyFile`: reserve `srcSize - (dstExists ? dstSize : 0)` bytes and `dstExists ? 0 : 1` entries; settle with the same after success.
-- `rename` within a quota root: if the destination exists and is a file with `nlink === 1`, settle `-dstSize` bytes and `-1` entry after success; a directory destination (empty, per rename's rules) `-1` entry.
+- `rename` within a quota root: `lstat` source and destination first; if they are the same inode (`dev` and `ino` equal: a rename to itself or to another name of the same file, which POSIX leaves unchanged), settle nothing (review I2). Otherwise, if the destination exists and is a file with `nlink === 1`, settle `-dstSize` bytes and `-1` entry after success; a file with more links, `-1` entry only; a directory destination (empty, per rename's rules) `-1` entry.
 - `unlink`: `lstat` first; after success `-1` entry and `-size` bytes when `nlink === 1` and it is a file.
-- `rmdir`: `-1` entry. `rm`: before removing, measure the subtree with `spawnWalk.measure([[host, virtual]])` plus the node itself; after success settle `-bytes`, `-entries`.
+- `rmdir`: `-1` entry. `rm`: before removing, measure the subtree with `spawnWalk.measure([[host, virtual]], {whollyInside: true})` plus the node itself (a lone file: its size only when `nlink === 1`); after success settle `-bytes`, `-entries`. `whollyInside` is what stops the hard-link release loop (review I1).
 
 `lib/fs-broker/index.js`: `quota = (cfg.mode === 'off' || cfg.limits == null) ? null : new Quota({maxBytes: cfg.limits.diskMb * 1024 * 1024, maxEntries: cfg.limits.diskEntries, enforce: cfg.mode === 'enforce', report: cfg.report, bytes: usage.bytes, entries: usage.entries})`, passed as `new FsBroker({..., quota})`. `03-broker.js`'s `setup()` passes `opts.quota` through as `new Quota({...opts.quota, enforce: mode === 'enforce', report})` when given.
 
@@ -416,7 +475,7 @@ with `const quotaRoot = (p) => p != null && p.res != null && p.res.kind === 'roo
 - Modify: `lib/fs-broker/broker.js` (in-flight count, `idle()`), `lib/module-manager.js` (`spawnModuleWorker` runs under the lock; registers each live worker's settle promise)
 
 **Interfaces:**
-- Produces: `new ModuleLifecycle()` with `run(name, fn) → Promise` (one at a time per name), `track(name, {settled: Promise, terminate: () => Promise})`, `live(name) → entry | null`, `settled(name) → Promise`; `FsBroker.prototype.idle() → Promise` (resolves when no operation is running).
+- Produces: `new ModuleLifecycle()` with `run(name, fn) → Promise` (one at a time per name), `track(name, {exited: Promise, settled: Promise, terminate: () => Promise})`, `live(name) → entry | null` (tracked and not yet exited), `settled(name) → Promise`; `FsBroker.prototype.idle() → Promise` (resolves when no operation is running).
 
 - [ ] **Step 1: Write the failing tests.** Unit, in `test/module-loading/14-lifecycle.js`:
 
@@ -433,23 +492,32 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
     assert.deepStrictEqual(order, ['b1', 'a1', 'a2']);
   });
 
-  it('settled(name) waits for the tracked worker to settle', async () => {
+  it('a worker is live until it exits, and settled(name) waits beyond that for its broker (review I5)', async () => {
     const l = new ModuleLifecycle();
+    let exit;
     let done;
-    l.track('a', {settled: new Promise((r) => { done = r; }), terminate: async () => {}});
+    l.track('a', {exited: new Promise((r) => { exit = r; }), settled: new Promise((r) => { done = r; }), terminate: async () => {}});
+    assert.notStrictEqual(l.live('a'), null);
     let passed = false;
     const waiting = l.settled('a').then(() => { passed = true; });
+    exit();
     await new Promise((r) => setTimeout(r, 20));
-    assert.strictEqual(passed, false);
+    assert.strictEqual(l.live('a'), null, 'exited: no longer live');
+    assert.strictEqual(passed, false, 'but not settled yet');
     done();
     await waiting;
     assert.strictEqual(passed, true);
-    assert.strictEqual(l.live('a'), null);
+  });
+
+  it('the broker delay hook is ignored without the test-only variable (review M1)', () => {
+    const {testDelayMs} = require('../../lib/fs-broker/broker');
+    assert.strictEqual(testDelayMs({COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500'}), 0);
+    assert.strictEqual(testDelayMs({COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500', COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG: '1'}), 1500);
   });
 });
 ```
 
-and a wired test (port 9634): a fixture handler `slowWrite` in `fs-probe` that starts `fs.promises.writeFile('/tmp/slow', <8 MB>)` and returns at once; the broker is given a test hook through `COUNTINGHOUSE_TEST_BROKER_DELAY_MS=1500` (read only when `COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG` is set, like the thread-flag guard) that delays each `write` by that much; call `slowWrite`, then `POST /restart-module {name: 'fs-probe'}` at once; assert the server log shows the new spawn's `/tmp` emptying after the old broker's last write settled (`file broker: fs-probe settled` logged by the lock before `spawn walk` for the next spawn), and that `/tmp/slow` does not exist in the new worker.
+and a wired test (port 9634): a fixture handler `slowWrite` in `fs-probe` that starts `fs.promises.writeFile('/tmp/slow', <8 MB>)` and returns at once; the broker is given a test hook through `COUNTINGHOUSE_TEST_BROKER_DELAY_MS=1500` (read only when `COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG` is set, like the thread-flag guard) that delays each `write` by that much; call `slowWrite`, then `POST /restart-module {name: 'fs-probe'}` at once; assert the server log shows the new spawn's `/tmp` emptying after the old broker's last write settled (`file broker: fs-probe settled` logged by the lock before `spawn walk` for the next spawn), and that `/tmp/slow` does not exist in the new worker. A second wired case (review I5): with the delay hook holding a write, crash the worker (the fixture's `exit` action, `process.exit(1)`); the supervisor's restart after its backoff must succeed (not "superseded"), and its walk must come after `fs-probe settled`.
 - [ ] **Step 2: Run** them → FAIL (no module; restart empties `/tmp` while the write still runs).
 - [ ] **Step 3: Implement** `lib/module-lifecycle.js`:
 
@@ -475,12 +543,17 @@ class ModuleLifecycle {
   }
 
   track(name, entry) {
+    entry.hasExited = false;
     this.entries.set(name, entry);
+    entry.exited.then(() => { entry.hasExited = true; });
     entry.settled.then(() => { if (this.entries.get(name) === entry) this.entries.delete(name); });
   }
 
+  // Live: tracked and not yet exited. An exited worker whose broker is still
+  // settling is not live (review I5), but settled() still waits for it.
   live(name) {
-    return this.entries.get(name) || null;
+    const e = this.entries.get(name);
+    return (e != null && !e.hasExited) ? e : null;
   }
 
   settled(name) {
@@ -497,7 +570,8 @@ module.exports = {ModuleLifecycle};
 `ModuleManager`: `this.lifecycle = new ModuleLifecycle()` in the constructor. `spawnModuleWorker` wraps the part from `createForWorker` to the worker's start in `this.lifecycle.run(name, async () => { ... })`:
 1. `const live = this.lifecycle.live(name)`; if `live != null`: when `stillWanted` is given (a supervisor restart), fail with `new Error('module sandbox: restart superseded by an operator action')`; otherwise `await live.terminate()`. Then `await this.lifecycle.settled(name)`.
 2. `const fsb = await createForWorker(...)` (the walk runs here, Task 2), then `startWorker(fsb)` as today.
-3. After `new Worker`, `this.lifecycle.track(name, {settled, terminate: () => worker.terminate()})` where `settled = new Promise((r) => worker.once('exit', r)).then(() => fsb.bridge.close()).then(() => fsb.broker.idle()).then(() => LOG.I(`file broker: ${name} settled`))`.
+3. After `new Worker`, `this.lifecycle.track(name, {exited, settled, terminate: () => worker.terminate()})` where `exited = new Promise((r) => worker.once('exit', r))` and `settled = exited.then(() => fsb.bridge.close()).then(() => fsb.broker.idle()).then(() => LOG.I(`file broker: ${name} settled`))`.
+The test delay hook: `broker.js` exports `testDelayMs(env)` (0 unless `env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG` is set, else `Number(env.COUNTINGHOUSE_TEST_BROKER_DELAY_MS) || 0`), read once at module load into a constant; `write` awaits that many ms when it is non-zero (review M1).
 Log `file broker: ${name} spawn walk` at the start of the walk (in `createForWorker`, through `cfg.report`-like logging) so the ordering is visible.
 - [ ] **Step 4: Run** `npx mocha --exit test/module-loading/14-lifecycle.js`, then (tell the reviewer) `npx mocha --exit test/fs-broker/09-wired.js test/sandbox/06-supervisor.js test/module-loading/*.js` → all passing. Ledger: closes plan 2b I1 (overlapping spawns) and, with Task 2, plan 2a M3.
 - [ ] **Step 5: Commit** `feat(sandbox): a per-name lifecycle lock for spawns and uninstall`.
@@ -517,6 +591,8 @@ Log `file broker: ${name} spawn walk` at the start of the walk (in `createForWor
   - loaded `fs-probe` → `POST /uninstall-module {name: 'fs-probe'}` → error `MODULE_LOADED`; data still there;
   - `POST /unload-module {name: 'fs-probe'}`, then uninstall → `{dataDeleted: true}` and `<store>/fs-probe` gone; with `keepData: true` → `{dataDeleted: false}`, directory kept;
   - `name: '../x'`, `name: 'a/b/c'`, `name: ''` → `MODULE_NAME_INVALID`, and nothing outside the store touched;
+  - a scoped name (`@scope/probe`, data created by hand under `<store>/@scope/probe`) → deleted, and the empty `<store>/@scope` with it;
+  - unload, then uninstall at once while the old broker is still settling (delay hook) → succeeds after the settle, never `MODULE_LOADED` (review I5);
   - `<store>/fs-probe` replaced by a symlink to a directory outside → uninstall refuses (the data root is not a real directory) and the outside directory is intact;
   - a suspended module (the existing supervisor test fixture `sandbox-hog` driven to suspension, as in `06-supervisor.js`) → `MODULE_LOADED` (message says suspended);
   - racing: start `POST /load-module` and `POST /uninstall-module` for the same name together (after an unload); assert either uninstall refused with `MODULE_LOADED` and the module works, or uninstall succeeded and the load that followed sees an empty `/data` — never a 500 and never a worker with `/data` missing;
@@ -547,6 +623,8 @@ ModuleManager.prototype.uninstallModule = function(name, keepData, callback) {
         if (!st.isDirectory()) throw new CHError('MODULE_DATA_NOT_DIRECTORY', name, root);
         await require('fs/promises').rm(root, {recursive: true, force: true});
         dataDeleted = true;
+        // A scoped name leaves <store>/@scope behind: remove it when empty (review M2).
+        if (name.startsWith('@')) await require('fs/promises').rmdir(require('path').dirname(root)).catch(() => {});
       }
     }
     const registryEntryRemoved = await removeRegistryEntry(name);
