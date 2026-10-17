@@ -51,9 +51,7 @@ Each layer below says what it stops and what it does not.
 
 **Modes.** `--moduleSandbox off|audit|enforce` (default `audit` under
 `--workerThread`; `off` without it, since the sandbox needs worker mode).
-The sandbox needs Node 22.16 or later (`module.registerHooks` and Worker
-`getHeapStatistics`). On an older Node the default is `off`, the startup log
-says why, and an explicit `audit` or `enforce` is a startup error.
+countinghouse 8 needs Node 22.16 or later.
 `off` is today's behaviour. In `audit` every check runs, a violation is
 logged once per (module, rule, target) and the operation goes ahead. In
 `enforce` a violation is blocked with the error Node itself would throw
@@ -192,8 +190,7 @@ above.
   `--authoringTools` is on (`countinghouse_validate_module` runs the module in
   a child process), which lets the whole process start children outside the
   permission model. `--allow-worker` is always added, and Node documents that
-  as weakening the model. `--permission` needs Node >= 22.13
-  or >= 23.5.
+  as weakening the model.
 - **Resource limits can misfire.** When the main thread's own check runs
   late (a long synchronous task, or a paused VM), it restarts the clock
   instead of blaming the worker. A main thread that is busy without

@@ -10,11 +10,15 @@ the auth config.
 
 ## Unreleased
 
+### Changed — 8.0.0 platform
+
+- **Node 22.16 or later is required.** Startup exits with status 2 on an
+  older Node. Node 20 reached end of life in April 2026.
+
 ### Added — module sandbox, part 1
 
 - **`--moduleSandbox off|audit|enforce`** (default `audit` under
-  `--workerThread` on Node >= 22.16, `off` otherwise; an explicit mode on an
-  older Node is a startup error). In each module's worker: no native
+  `--workerThread`, `off` otherwise). In each module's worker: no native
   code, no process controls, `require` limited to built-ins and the module's
   own directory, built-ins limited to an allowlist (no `child_process`,
   `cluster`, `worker_threads`, `inspector`, `wasi`, `v8`, `node:sqlite`,
@@ -29,7 +33,7 @@ the auth config.
 - **Resource limits**: JS heap, memory outside the heap, a blocked event
   loop (`heapMb`, `externalMb`, `maxBlockMs`), and a worker message rate
   (`--moduleMessageRate`).
-- **`--hardened`** (Node >= 22.13): re-launches under Node's permission
+- **`--hardened`**: re-launches under Node's permission
   model; every module must live under `--modulePath`.
 - `countinghouse-validate` reports dependencies outside the module, native
   code, and (as warnings) install scripts.
@@ -50,7 +54,7 @@ the auth config.
 
 ### Changed — what the default `audit` mode does to existing modules
 
-These apply under `--workerThread` on Node >= 22.16 unless
+These apply under `--workerThread` unless
 `--moduleSandbox off` is given.
 
 - **A module worker's `process.env` holds only the variables the module
