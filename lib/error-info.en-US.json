@@ -40,6 +40,7 @@
   "CORRESPONDING_MODULE_NOT_FOUND": "Corresponding device module not found",
   "LOAD_MODULE_FAIL": "Module load failed",
   "GET_MODULE_INFO_FAIL": "Failed to get module info",
+  "REMOVE_MODULE_INFO_FAIL": "Failed to remove the module's registry entry -- nothing was deleted; the server log has the reason",
   "MODULE_PACKAGE_INFO_INVALID": "Invalid module package info file",
   "MODULE_PACKAGE_NAME_TYPE_ERROR": "Module package name type error",
   "MODULE_VERSION_INFO_INVALID": "Invalid module version info",
