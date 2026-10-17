@@ -34,6 +34,23 @@ the auth config.
 - **The job worker needs Redis 5.0 or later** (BullMQ; 6.2 recommended). On
   an older Redis, which 7.x ran on as long as jobs were not used, a plain
   start now logs BullMQ's version error and jobs do not run.
+- `UV_THREADPOOL_SIZE` defaults to 16 (set it yourself to override).
+- **Every module now needs a writable `--moduleDataPath`**, in every mode:
+  the default is `$HOME/countinghouse_module_data`, so where `$HOME` is
+  read-only (systemd `ProtectHome` or `ProtectSystem=strict`, a read-only
+  container root) set `--moduleDataPath` to a writable directory before
+  upgrading, or modules fail to load with `cannot create the module data
+  directory`.
+
+### Added — module sandbox, part 2 (in progress)
+
+- **File access from module workers goes through the main thread**, in every
+  `--moduleSandbox` mode under `--workerThread`: `fs` is patched before any
+  module code loads, and a per-worker broker answers every call. Each module
+  gets private `/data` and `/tmp` directories under the new
+  **`--moduleDataPath`** (default `$HOME/countinghouse_module_data`); `/tmp`
+  is the module's own, no longer the host's. The file checks are not
+  enforced yet; until they are, `enforce` behaves like `audit` for files.
 
 ### Added — module sandbox, part 1
 
