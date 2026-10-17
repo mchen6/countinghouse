@@ -1,0 +1,14 @@
+{
+  "device": {
+    "friendlyName": "stack-rewriter",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "rewrites stack traces and loads a file through CHUtil.loadFile",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "where", "description": "Report the handler's directory.", "input": {"schema": "/probeService/where/input"}, "output": {"schema": "/probeService/where/output"}}
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"name": "stack-rewriter", "version": "1.0.0", "main": "index.js", "description": "rewrites stack traces, as source-map-support does, then loads a file through CHUtil.loadFile"}

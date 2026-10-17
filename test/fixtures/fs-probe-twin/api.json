@@ -1,0 +1,20 @@
+{
+  "device": {
+    "friendlyName": "fs-probe-twin",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "writes and reads files so the file broker can be seen working",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "write", "description": "Write a file.", "input": {"schema": "/probeService/write/input"}, "output": {"schema": "/probeService/write/output"}},
+          {"name": "read", "description": "Read a file.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}},
+          {"name": "config", "description": "Return the module's device config.", "input": {"schema": "/probeService/config/input"}, "output": {"schema": "/probeService/config/output"}},
+          {"name": "where", "description": "Report what the module sees of its own location.", "input": {"schema": "/probeService/where/input"}, "output": {"schema": "/probeService/where/output"}},
+          {"name": "slowWrite", "description": "Start writing 8 MB to /tmp/slow and return.", "input": {"schema": "/probeService/slowWrite/input"}, "output": {"schema": "/probeService/slowWrite/output"}},
+          {"name": "exit", "description": "End the worker.", "input": {"schema": "/probeService/exit/input"}, "output": {"schema": "/probeService/exit/output"}},
+          {"name": "fsResults", "description": "Paths the module's fs returns.", "input": {"schema": "/probeService/fsResults/input"}, "output": {"schema": "/probeService/fsResults/output"}}
+        ]
+      }
+    }
+  }
+}

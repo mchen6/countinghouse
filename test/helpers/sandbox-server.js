@@ -61,8 +61,11 @@ function mcpCall(port, key, name, args, opts) {
       .end((err, res) => {
         if (err) return reject(err);
         const answer = res.body.result || res.body.error;
-        if (res.body.error != null && /^unknown tool/.test(String(res.body.error.message)) && !(opts && opts.allowUnknownTool)) {
-          return reject(new Error(`mcpCall: ${res.body.error.message} -- tool names are lowercase; pass {allowUnknownTool: true} if the test expects it missing`));
+        // Either shape: a JSON-RPC error, or a tools/call result with isError.
+        const unknown = (res.body.error != null && /unknown tool/.test(String(res.body.error.message))) ||
+          (res.body.result != null && res.body.result.isError === true && /unknown tool/.test(JSON.stringify(res.body.result.content || '')));
+        if (unknown && !(opts && opts.allowUnknownTool)) {
+          return reject(new Error(`mcpCall: unknown tool ${name} -- tool names are lowercase; pass {allowUnknownTool: true} if the test expects it missing`));
         }
         return resolve(answer);
       });

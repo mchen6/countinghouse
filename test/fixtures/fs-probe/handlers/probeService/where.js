@@ -7,6 +7,7 @@ module.exports = async () => {
   try { own = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')).name; } catch (e) { own = String(e.code); }
   return {output: {dirname: __dirname, filename: __filename, cwd: process.cwd(), tmpdir: require('os').tmpdir(),
     resolve: require.resolve('./read'), frame: frame, own: own,
-    // a require built from a directory, as some packages do
-    dirResolve: require('module').createRequire(`${__dirname}/`).resolve('./read')}};
+    // a require built from a directory, as some packages do (worker mode
+    // only: single-thread mode does not map a virtual createRequire path)
+    dirResolve: (() => { try { return require('module').createRequire(`${__dirname}/`).resolve('./read'); } catch (e) { return String(e.code); } })()}};
 };
