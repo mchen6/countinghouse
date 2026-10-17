@@ -17,7 +17,9 @@ const ROUTES = [
   ['dlopen'], ['binding'], ['kill'], ['getBuiltinModule'], ['child_process'], ['worker_threads'],
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
-  ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine']
+  ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
+  ['listenFd'], ['socketFd'], ['socketHandle'], ['ttyFd'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
 
 function serverArgs(mode) {
@@ -46,6 +48,11 @@ describe('sandbox 05: worker lockdown', function() {
       assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null});
     });
 
+    it('process.loadEnvFile reads through the broker', async () => {
+      const r = await mcpCall(9608, KEY, TOOL, {what: 'loadEnvFile'});
+      assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
     it('uses Node\'s own error codes', async () => {
       const notFound = await mcpCall(9608, KEY, TOOL, {what: 'child_process'});
       assert.strictEqual(notFound.structuredContent.output.code, 'MODULE_NOT_FOUND');
@@ -64,6 +71,11 @@ describe('sandbox 05: worker lockdown', function() {
         const r = await mcpCall(9609, KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(r.structuredContent.output.outcome, 'allowed', `${what}: ${JSON.stringify(r.structuredContent)}`);
       });
+    });
+
+    it('process.loadEnvFile reads through the broker', async () => {
+      const r = await mcpCall(9609, KEY, TOOL, {what: 'loadEnvFile'});
+      assert.deepStrictEqual(r.structuredContent.output, {outcome: 'allowed', code: null}, JSON.stringify(r));
     });
 
     it('logs a repeated violation once', async () => {
@@ -169,7 +181,7 @@ describe('sandbox 05: worker lockdown', function() {
 
 describe('sandbox 05: the built-in allowlist', () => {
   const REFUSED = ['child_process', 'cluster', 'worker_threads', 'inspector', 'inspector/promises', 'v8', 'wasi',
-    'sqlite', 'test', 'test/reporters', 'sea'];
+    'sqlite', 'test', 'test/reporters', 'sea', 'repl', 'trace_events'];
 
   it('refuses each left-out built-in, with or without node:', () => {
     REFUSED.forEach((id) => {

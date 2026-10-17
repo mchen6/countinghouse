@@ -20,6 +20,11 @@ module.exports = async (fs, root, ctx) => {
   out.originalsRead = grant.originals.readFileSync(file, 'utf8');
   release = grant.boot([dir]);
   out.bootRead = fs.readFileSync(path.join(dir, 'g.txt'), 'utf8');
+  // outside the boot roots during boot: answered locally
+  out.bootExistsOutside = await new Promise((resolve) => fs.exists(`${dir}-not-a-root/x`, resolve));
+  out.bootExistsSyncOutside = fs.existsSync(`${dir}-not-a-root/x`);
+  out.bootReadOutside = attempt(() => fs.readFileSync(`${dir}-not-a-root/x`));
+  out.bootOutside = grant.bootOutside();
   release();
   out.afterBoot = attempt(() => fs.readFileSync(path.join(dir, 'g.txt'), 'utf8'));
   out.grantNotExported = Object.keys(ctx.patch).includes('grant') === false;

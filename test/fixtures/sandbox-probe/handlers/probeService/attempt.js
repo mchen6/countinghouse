@@ -39,7 +39,50 @@ const ATTEMPTS = {
   }),
   requestBaseUrl:   () => new Promise((resolve, reject) => {
     CHUtil.request({baseUrl: 'http://127.0.0.1:1', uri: '/x', timeout: 2000}, (err) => (err != null && /module sandbox/.test(err.message) ? reject(err) : resolve()));
-  })
+  }),
+  // Descriptor and handle adoption (spec section 2, "Other routes to files").
+  listenFd:         () => new Promise((resolve, reject) => {
+    const server = require('net').createServer();
+    server.once('error', (e) => (/module sandbox/.test(e.message) ? reject(e) : resolve()));
+    server.listen({fd: 999999}, () => { server.close(); resolve(); });
+  }),
+  socketFd:         () => new (require('net').Socket)({fd: 999999}),
+  socketHandle:     () => new (require('net').Socket)({handle: {}}),
+  ttyFd:            () => new (require('tty').WriteStream)(999999),
+  dgramFd:          () => new Promise((resolve, reject) => {
+    const socket = require('dgram').createSocket('udp4');
+    socket.once('error', (e) => (/module sandbox/.test(e.message) ? reject(e) : resolve()));
+    socket.bind({fd: 999999}, () => { socket.close(); resolve(); });
+  }),
+  http2RespondFD:   () => new Promise((resolve, reject) => {
+    const http2 = require('http2');
+    const server = http2.createServer();
+    let client = null;
+    const done = (fn, v) => { if (client) client.close(); server.close(); fn(v); };
+    server.on('stream', (stream) => {
+      try { stream.respondWithFD(0); done(resolve); } catch (e) { done(reject, e); }
+    });
+    server.listen(0, '127.0.0.1', () => {
+      client = http2.connect(`http://127.0.0.1:${server.address().port}`);
+      client.on('error', () => {});
+      const req = client.request({':path': '/'});
+      req.on('error', () => {});
+      req.end();
+    });
+  }),
+  // Writes by native code, outside the broker (to directories that do not
+  // exist, so audit writes nothing).
+  report:           () => process.report.writeReport('/nonexistent-ch-probe/r.json'),
+  compileCache:     () => module.constructor.enableCompileCache('/nonexistent-ch-probe/cc'),
+  sourceMaps:       () => process.setSourceMapsEnabled(true),
+  repl:             () => require('repl'),
+  traceEvents:      () => require('trace_events'),
+  // Every mode: process.loadEnvFile reads through the broker.
+  loadEnvFile:      () => {
+    require('fs').writeFileSync('/data/.env', 'PROBE_ENV=1\n');
+    process.loadEnvFile('/data/.env');
+    if (process.env.PROBE_ENV !== '1') throw Object.assign(new Error('loadEnvFile did not apply /data/.env'), {code: 'NOT_LOADED'});
+  }
 };
 
 module.exports = async (input) => {

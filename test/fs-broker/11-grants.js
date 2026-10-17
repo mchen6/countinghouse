@@ -28,6 +28,10 @@ describe('fs-broker 11: path-scoped original-fs grants (L1)', function() {
     assert.strictEqual(r.otherNotGranted, 'ENOENT');
     assert.strictEqual(r.originalsRead, 'granted');
     assert.strictEqual(r.bootRead, 'booted');
+    assert.strictEqual(r.bootExistsOutside, false, 'fs.exists calls back with false, not an error');
+    assert.strictEqual(r.bootExistsSyncOutside, false);
+    assert.strictEqual(r.bootReadOutside, 'ENOENT');
+    assert.deepStrictEqual(r.bootOutside, {paths: [`${dir}-not-a-root/x`], dropped: 0});
     assert.strictEqual(r.afterBoot, 'ENOENT');
     assert.strictEqual(r.grantNotExported, true);
   });
