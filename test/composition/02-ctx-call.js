@@ -265,8 +265,8 @@ let singleThreadServer;
 function startSingleThreadServer(done) {
   singleThreadServer = spawn(process.execPath, [
     path.join(__dirname, '..', '..', 'framework.js'),
-    // Deliberately no --workerThread.
-    '--bindAddr', '127.0.0.1', '--port', String(PORT_SINGLE_THREAD),
+    // Deliberately single-thread mode.
+    '--no-workerThread', '--bindAddr', '127.0.0.1', '--port', String(PORT_SINGLE_THREAD),
     '--authConfigPath', path.join(__dirname, 'fixtures-auth.json'),
     '--loadModule', path.join(FIXTURES, 'compose-callee'),
     '--loadModule', path.join(FIXTURES, 'compose-caller')

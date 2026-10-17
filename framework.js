@@ -59,6 +59,9 @@ if (options.moduleSandbox === 'off') {
 } else {
   logger.I('module sandbox: mode ' + options.moduleSandbox);
 }
+if (options.workerThread !== true) {
+  logger.W('single-thread mode (--no-workerThread) is for debugging modules: no module sandbox, and not for production');
+}
 if (options.hardened === true) {
   logger.I('module sandbox: hardened -- running under --permission; modules must live under ' + options.modulePath);
 }

@@ -16,7 +16,8 @@
 // -- the CLI's own tests assert on it byte-for-byte.
 const path = require('path');
 
-require(path.join(__dirname, '..', 'lib', 'cli-options')).setOptions({});
+// The validator requires the module in this process: never the worker path.
+require(path.join(__dirname, '..', 'lib', 'cli-options')).setOptions({workerThread: false});
 const moduleValidator = require(path.join(__dirname, '..', 'lib', 'module-validator'));
 
 const rawArgs  = process.argv.slice(2);

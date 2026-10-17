@@ -14,6 +14,19 @@ the auth config.
 
 - **Node 22.16 or later is required.** Startup exits with status 2 on an
   older Node. Node 20 reached end of life in April 2026.
+- **`--workerThread` is on by default.** Pass `--no-workerThread` (or
+  `--workerThread false`) for single-thread mode, now meant only for
+  debugging modules; startup logs a warning saying so. Worker mode also
+  starts, by default, what it always started:
+  - the BullMQ job worker on Redis, so the job routes (`POST /add-job`,
+    `/get-job`, `/get-job-history`, `/remove-job`) and MCP task-augmented
+    `tools/call` are available on a plain start, where they used to refuse;
+    pass `--no-workerThread` if you do not want them;
+  - modules in worker threads, so direct peer channels are used;
+  - the module sandbox in its default `audit` mode (see below).
+- **The job worker needs Redis 5.0 or later** (BullMQ; 6.2 recommended). On
+  an older Redis, which 7.x ran on as long as jobs were not used, a plain
+  start now logs BullMQ's version error and jobs do not run.
 
 ### Added — module sandbox, part 1
 
