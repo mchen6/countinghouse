@@ -83,3 +83,5 @@ Then point it at a repository you wouldn't paste into a chat window, and watch w
 Repo: [github.com/mchen6/countinghouse](https://github.com/mchen6/countinghouse) (Apache-2.0). The original 2015 repo is archived [here](https://github.com/mchen6/cdif) with history intact — the `allowSimpleType` commit included, for anyone who wants to check the receipts.
 
 Two limits worth stating plainly. In-process composition works only between modules on the same runtime. And module isolation is `worker_threads` — separate V8 heap, shared process, filesystem and network — which is a reasonable boundary for modules from developers you have a relationship with, and is not comparable to containers or micro-VMs; [`docs/security-model.md`](https://github.com/mchen6/countinghouse/blob/master/docs/security-model.md) says so at length. I'm one person and this codebase is ten years old in the best and worst senses. If you're building agent infrastructure and this is your missing layer too — issues and email are open.
+
+[Follow-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
