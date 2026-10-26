@@ -1,0 +1,24 @@
+
+##### run 1 of 3 #####
+
+=== direct, sandbox off (--moduleSandbox off) ===
+
+=== direct, sandbox audit (--moduleSandbox audit) ===
+
+=== direct, sandbox enforce (--moduleSandbox enforce) ===
+
+##### run 2 of 3 #####
+
+=== direct, sandbox off (--moduleSandbox off) ===
+
+=== direct, sandbox audit (--moduleSandbox audit) ===
+
+=== direct, sandbox enforce (--moduleSandbox enforce) ===
+
+##### run 3 of 3 #####
+
+=== direct, sandbox off (--moduleSandbox off) ===
+
+=== direct, sandbox audit (--moduleSandbox audit) ===
+
+=== direct, sandbox enforce (--moduleSandbox enforce) ===

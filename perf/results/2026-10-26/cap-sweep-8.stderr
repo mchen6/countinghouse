@@ -1,0 +1,18 @@
+
+##### run 1 of 3 #####
+
+=== Direct peer channel (sandbox audit (default)) ===
+  payload=1048576B concurrency=64 ...
+    throughput=118.0 req/s, hop p50=210.94ms p99=453.87ms, errors=0
+
+##### run 2 of 3 #####
+
+=== Direct peer channel (sandbox audit (default)) ===
+  payload=1048576B concurrency=64 ...
+    throughput=125.1 req/s, hop p50=185.12ms p99=388.66ms, errors=0
+
+##### run 3 of 3 #####
+
+=== Direct peer channel (sandbox audit (default)) ===
+  payload=1048576B concurrency=64 ...
+    throughput=133.6 req/s, hop p50=306.20ms p99=488.29ms, errors=0

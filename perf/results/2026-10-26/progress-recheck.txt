@@ -1,0 +1,5 @@
+2026-10-26T21:12:05Z commit 3d9599d6ddc1d44dcd049ac7397958ea9ebe271b
+2026-10-26T21:13:35Z gate recheck-1MB-c16: mean idle 96.6%
+2026-10-26T21:13:35Z start recheck-1MB-c16: node perf/direct-peer-channels-perf.js --runs 5 --paths direct --cells 1048576:16 --sandboxModes off,audit --mcpToolCallCost 1 --json perf/results/2026-10-26/recheck-1MB-c16.json
+2026-10-26T21:15:10Z end recheck-1MB-c16: exit 0
+2026-10-26T21:15:10Z interference recheck-1MB-c16: session used 2.44 CPU s over 95 s wall (claude, ptyxis, gnome-shell)

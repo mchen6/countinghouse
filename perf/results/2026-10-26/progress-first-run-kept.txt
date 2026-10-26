@@ -1,0 +1,9 @@
+2026-10-26T20:21:33Z gate direct-peer-channels: mean idle 97.8%
+2026-10-26T20:21:33Z start direct-peer-channels: node perf/direct-peer-channels-perf.js --runs 3 --json perf/results/2026-10-26/direct-peer-channels.json
+2026-10-26T20:23:01Z end direct-peer-channels: exit 0
+2026-10-26T20:23:31Z gate serialization: mean idle 96.8%
+2026-10-26T20:23:31Z start serialization: node perf/peer-channel-serialization-perf.js --runs 3 --json perf/results/2026-10-26/serialization.json
+2026-10-26T20:23:59Z end serialization: exit 0
+2026-10-26T20:39:42Z gate cap-sweep-4: mean idle 96.1%
+2026-10-26T20:39:42Z start cap-sweep-4: node perf/direct-peer-channels-perf.js --runs 3 --paths direct --cells 1048576:64 --directPeerChannelsMaxConcurrency 4 --json perf/results/2026-10-26/cap-sweep-4.json
+2026-10-26T20:40:13Z end cap-sweep-4: exit 0
