@@ -10,18 +10,22 @@
 // protocol specifically, per CLAUDE.md's "performance claims cannot cite
 // old numbers until re-benchmarked" rule.
 //
-// Usage: node perf/peer-channel-serialization-perf.js
+// Usage: node perf/peer-channel-serialization-perf.js [--runs <n>] [--json <file>]
 // Self-contained -- spins up its own worker, no countinghouse server
-// involved. Takes well under a minute. Prints a markdown table and a
+// involved. Takes well under a minute per run. Prints a markdown table and a
 // summary computed from the actual measured numbers (not hand-written --
 // see perf/direct-peer-channels-perf.js's header comment for why that
 // distinction matters: a hand-computed "2.7-3.7x" claim for this exact
 // benchmark once quietly ignored the 1KB row, which only showed ~1.1x).
+// With --runs, each run is a fresh process (perf/multi-run.js); cells are
+// the median across runs with the [min-max] range, and one strategy only
+// counts as faster than another when the two ranges do not overlap.
 
 const Worker = require('worker_threads').Worker;
 const isMainThread = require('worker_threads').isMainThread;
 const parentPort = require('worker_threads').parentPort;
 const MessageChannel = require('worker_threads').MessageChannel;
+const multiRun = isMainThread ? require('./multi-run') : null;
 
 const PAYLOAD_SIZES = [1024, 102400, 1048576]; // 1KB, 100KB, 1MB
 const ROUNDTRIPS = 300;
@@ -90,7 +94,7 @@ function benchStrategy(port, strategy, payload, roundtrips) {
   });
 }
 
-async function mainThreadMain() {
+async function measureOnce() {
   const channel = new MessageChannel();
   const worker = new Worker(__filename, {workerData: {port: channel.port2}, transferList: [channel.port2]});
 
@@ -110,12 +114,9 @@ async function mainThreadMain() {
     }
   }
 
-  const report = buildReport(results);
-  console.log(`\n${report.table}\n`);
-  console.log(`${report.summary}\n`);
-  console.log(JSON.stringify(results, null, 2));
   channel.port1.close();
   await worker.terminate();
+  return results;
 }
 
 function formatPayload(bytes) {
@@ -124,32 +125,51 @@ function formatPayload(bytes) {
   return `${bytes}B`;
 }
 
-function buildReport(results) {
+const STRATEGIES = ['stringify', 'structuredClone', 'transferBuffer'];
+const STRATEGY_LABELS = {stringify: '`JSON.stringify`', structuredClone: 'structured clone', transferBuffer: 'transfer list'};
+
+function buildReport(runs) {
+  const ms = (v) => `${v.toFixed(2)}ms`;
+  const range = (sizeBytes, strategy) => multiRun.across(runs.map((r) => r[sizeBytes][strategy].p50));
+
   const rows = ['| Payload | `JSON.stringify` p50 | Structured clone p50 | Transfer list p50 |', '|---|---|---|---|'];
-  const ratios = []; // stringify p50 / structuredClone p50, per payload size -- >1 means structuredClone is faster
-  const winners = [];
+  const ratios = []; // stringify / structuredClone, medians -- >1 means structuredClone is faster
+  const verdicts = [];
+  const noise = [];
 
   PAYLOAD_SIZES.forEach((sizeBytes) => {
-    const r = results[sizeBytes];
-    const fastest = ['stringify', 'structuredClone', 'transferBuffer'].reduce((a, b) => { return r[a].p50 < r[b].p50 ? a : b; });
-    winners.push({payload: formatPayload(sizeBytes), fastest: fastest});
+    const r = {};
+    STRATEGIES.forEach((st) => { r[st] = range(sizeBytes, st); noise.push({label: `${STRATEGY_LABELS[st]} at ${formatPayload(sizeBytes)}`, range: r[st]}); });
+    // fastest: lowest median, and bold only if its range clears both others
+    const fastest = STRATEGIES.reduce((a, b) => (r[a].median < r[b].median ? a : b));
+    const clear = STRATEGIES.every((st) => st === fastest || multiRun.compareLower(r[fastest], r[st]) === -1);
+    const cell = (st) => {
+      const text = multiRun.fmtRange(r[st], ms);
+      return (st === fastest && clear) ? `**${text}**` : text;
+    };
+    rows.push(`| ${formatPayload(sizeBytes)} | ${cell('stringify')} | ${cell('structuredClone')} | ${cell('transferBuffer')} |`);
 
-    const bold = function(strategy) { return strategy === fastest ? `**${r[strategy].p50.toFixed(2)}ms**` : `${r[strategy].p50.toFixed(2)}ms`; };
-    rows.push(`| ${formatPayload(sizeBytes)} | ${bold('stringify')} | ${bold('structuredClone')} | ${bold('transferBuffer')} |`);
-
-    ratios.push({payload: formatPayload(sizeBytes), ratio: r.stringify.p50 / r.structuredClone.p50});
+    ratios.push({payload: formatPayload(sizeBytes), ratio: r.stringify.median / r.structuredClone.median});
+    const c = multiRun.compareLower(r.structuredClone, r.stringify);
+    verdicts.push({payload: formatPayload(sizeBytes), fastest: fastest, clear: clear,
+      vsStringify: c === -1 ? 'faster' : (c === 1 ? 'slower' : 'within noise')});
   });
 
   const minRatio = ratios.reduce((a, b) => { return a.ratio < b.ratio ? a : b; });
   const maxRatio = ratios.reduce((a, b) => { return a.ratio > b.ratio ? a : b; });
-  const allStructuredCloneWins = winners.every((w) => { return w.fastest === 'structuredClone'; });
 
-  const winnerList   = winners.map((w) => `${w.payload}=${w.fastest}`).join(', ');
-  const sweepNote    = allStructuredCloneWins ? ' Structured clone wins at every size tested.' : '';
+  const fastestList = verdicts.map((v) => `${v.payload}=${v.fastest}${v.clear ? '' : ' (within noise of the next)'}`).join(', ');
+  const vsList = verdicts.map((v) => `${v.payload} ${v.vsStringify}`).join(', ');
+  const sweep = verdicts.every((v) => v.vsStringify === 'faster')
+    ? ' Structured clone is faster than `JSON.stringify` at every size tested, with non-overlapping ranges.'
+    : '';
 
-  const summary = `Fastest strategy per payload size: ${winnerList}.${sweepNote} Structured clone vs. \`JSON.stringify\` ratio ranges from ${minRatio.ratio.toFixed(2)}× (at ${minRatio.payload}) to ${maxRatio.ratio.toFixed(2)}× (at ${maxRatio.payload}).`;
+  const summary = `Lowest median per payload size: ${fastestList}. Structured clone against \`JSON.stringify\`: ${vsList}.${sweep} ` +
+    `Ratio of medians (\`JSON.stringify\` / structured clone) ranges from ${minRatio.ratio.toFixed(2)}× (at ${minRatio.payload}) to ${
+      maxRatio.ratio.toFixed(2)}× (at ${maxRatio.payload}).`;
 
-  return {table: rows.join('\n'), summary: summary};
+  return [multiRun.envHeader(null, runs.length), `Round trips per cell: ${ROUNDTRIPS}.`, '', rows.join('\n'), '',
+    multiRun.noiseFloorLine(noise, runs.length), '', summary].join('\n');
 }
 
 function workerMain() {
@@ -176,7 +196,7 @@ function workerMain() {
 }
 
 if (isMainThread) {
-  mainThreadMain().catch((err) => { console.error(err); process.exit(1); });
+  multiRun.main({measure: measureOnce, report: buildReport}).then(() => process.exit(0)).catch((err) => { console.error(err); process.exit(1); });
 } else {
   workerMain();
 }
