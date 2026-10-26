@@ -4,6 +4,8 @@ How the [`examples/log-triage`](../examples/log-triage/README.md) composite
 behaves as its input grows, what the runtime adds on top of the work itself,
 and what the same hops cost when a client makes them one by one.
 
+[Follow-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
+
 Every number here comes from one run of `perf/log-triage-perf.js` on
 2026-10-07, against the server as released in 7.1.0 (`cb68765`). Reproduce
 it with:
