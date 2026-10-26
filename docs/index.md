@@ -2,6 +2,8 @@
 
 *[countinghouse](https://github.com/mchen6/countinghouse) — a runtime where MCP tools call other MCP tools. Apache-2.0, [on npm](https://www.npmjs.com/package/countinghouse).*
 
+[Follow-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
+
 In 2015 I wrote a Node.js framework for a problem nobody framed this way back then: let a client that has never seen your service discover it, understand it, and call it — without integrating an SDK. It was called CDIF, the setting was the early IoT wave, and everything in it was a *device* exposing *services* containing *actions*. A client's whole lifecycle was four HTTP calls: list what's here, fetch a thing's description, fetch its JSON Schema, invoke an action with a JSON payload. The server validated every call before implementation code saw it.
 
 In 2024, Anthropic shipped the Model Context Protocol, and I had a strange afternoon. `get-spec` is `tools/list`. `invoke-action` is `tools/call`. The schema endpoint is `inputSchema`. Server-side validation is server-side validation. Piece for piece, it was what I had been running in production for a decade.
