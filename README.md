@@ -210,6 +210,8 @@ does not round away is the CPU across a session: a hundred such hops cost 21
 seconds of CPU in-process against 173 over stdio. That is capacity, not
 latency. [Tables, methodology and caveats](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms).
 
+[Follow-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
+
 ## Status, and what isn't built
 
 In-process composition works only between modules on the same runtime. Modules
