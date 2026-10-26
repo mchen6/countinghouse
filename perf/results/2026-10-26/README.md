@@ -42,8 +42,8 @@ first pass predates the interference logging.
 | `sandbox-direct-peer-channels` | 9 cells, direct path, `--moduleSandbox off/audit/enforce`, `--mcpToolCallCost 1` |
 | `sandbox-log-triage` | log-triage headline (8 files x 400 lines, direct), the three sandbox modes |
 | `recheck-1MB-c16` | `--runs 5` of the one sandbox cell that crossed the 10% line in `sandbox-direct-peer-channels` |
+| `repo-review-token-comparison` | `examples/repo-review/token-comparison.js`, commit `92b17cd` (its server fixed to load the demo's auth.json so the composite binds); 5 samples, bytes are deterministic. Gate and interference in `progress-repo-review.txt` |
 
-`examples/repo-review/token-comparison.js` was not re-run: on this commit it
-cannot start its composite under `--debug` (no auth identity lists
-`repo-review` in `runsModules`), so the repo-review byte figures were left as
-they were.
+The token comparison scans the repository it runs in. The worktree held
+nothing beyond the committed tree and `node_modules` (excluded by repo-scan)
+when it ran.
