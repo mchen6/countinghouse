@@ -348,7 +348,9 @@ in other chains may complete — and be charged — after the first failure.
 worker thread. The `read` hops overlap because they wait on I/O; the `redact`
 hops are CPU-bound work in a single worker and run roughly one after another.
 [`docs/log-triage-performance.md`](../../docs/log-triage-performance.md) has
-the measurements: masking is over half of the handlers' time, and latency
+the measurements (2-vCPU VMware guest, Intel i7-6600U, Node v24.21.0, commit
+`3d9599d`, module sandbox `audit`): with 8 or more files, redact is 22% to 67%
+of the handlers' time, cluster 7% to 24% and read 11% to 58%, and latency
 grows linearly with the files read.
 
 **`log-read` reads the directory it is given.** A file name is confined to

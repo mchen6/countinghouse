@@ -6,31 +6,36 @@ and what the same hops cost when a client makes them one by one.
 
 [Write-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
 
-Every number here comes from one run of `perf/log-triage-perf.js` on
-2026-10-07, against the server as released in 7.1.0 (`cb68765`). Reproduce
-it with:
+Every number and every comparison here comes from one invocation of
+`perf/log-triage-perf.js` on 2026-10-26, at commit `3d9599d`, with the module
+sandbox in its default mode (`audit`), and is pasted from its output
+unchanged. Raw output:
+[`perf/results/2026-10-26/log-triage.md`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-26/log-triage.md).
+Reproduce it with:
 
 ```sh
-node perf/log-triage-perf.js --reps 25
+node perf/log-triage-perf.js --reps 25 --runs 3
 ```
 
 ## Read this first
 
-- **The machine is small.** One virtual CPU (Intel Core i7-6600U, 2.60 GHz) in
-  a VMware guest, 7.2 GB, Node v24.21.0, Linux 7.0. The client, the server's
-  main thread, four module workers and Redis all share that one core. The
-  absolute times are small-machine times; the shapes and ratios are the
-  result.
-- **Nothing here measures parallelism.** With one core, the composite's
-  concurrent read-then-redact chains cannot run at the same time, so this run
-  cannot say what concurrency buys. That needs a multi-core machine and is
-  not claimed below.
+- **The machine is small.** Two virtual CPUs (Intel Core i7-6600U, 2.60 GHz)
+  in a VMware guest, 7.2 GB, Node v24.21.0, Linux 7.0. The client, the
+  server's main thread, four module workers and Redis all share those two
+  cores. The absolute times are small-machine times; the shapes and ratios
+  are the result.
+- **Nothing here measures parallelism.** The composite's concurrent
+  read-then-redact chains compete for the same two cores as everything else
+  in the list above, so this run cannot say what concurrency buys. It is not
+  claimed below.
 - **One caller at a time.** Calls are made back to back, never overlapping.
   Throughput under concurrent callers was not measured.
-- **Noise is around 30%.** Each cell is the median of 25 calls after 5
-  warm-ups, shown with its min and max. The same in-process baseline
-  (8 files of 400 lines) was measured twice in this run and came out at 30.7
-  ms and 22.5 ms. Treat differences smaller than that as no difference.
+- **Three runs, and ranges.** Each run is a fresh process with fresh servers.
+  Within a run each cell is the median of 25 calls after 5 warm-ups; the
+  tables show the median of the three runs' medians, with the [min–max] range
+  of those medians. One side counts as faster only when the two ranges do not
+  overlap. Each table's noise floor, the largest spread of any configuration
+  across the runs, is printed under it.
 - **Metering is on.** The servers run without `--debug`, with
   `--mcpToolCallCost 1`, so every hop pays its Redis round trip.
 
@@ -41,99 +46,126 @@ node perf/log-triage-perf.js --reps 25
 - **in-process**: the same four handlers called as plain functions in one Node
   process, one file after another. No runtime, no workers, no HTTP, no
   metering. This is the cost of the work itself.
-- **runtime adds**: composite minus in-process. It covers HTTP, the outer
-  call, hops between workers, schema validation on every hop, and metering.
+- **runtime adds**: composite minus in-process, within each run. It covers
+  HTTP, the outer call, hops between workers, schema validation on every hop,
+  and metering.
 - **client-orchestrated**: the same `2N + 2` tool calls made one at a time by
   an MCP client that holds the three leaf tools.
 
 Both hop paths were measured: **direct** peer channels, the default since
-7.1.0, and **routed** through the main thread (`--no-directPeerChannels`).
+7.1.0, and **main-thread-routed** (`--no-directPeerChannels`).
 
 ## Latency follows the number of files, linearly
 
-400 lines per file. Times in ms, median (min–max).
+400 lines per file. Times in ms.
 
-| files | hops | direct | routed | in-process |
-|---|---|---|---|---|
-| 1 | 4 | 24.4 (14.0–45.6) | 19.0 (15.3–38.8) | 6.0 |
-| 2 | 6 | 27.8 (18.5–153) | 34.3 (19.3–103) | 9.8 |
-| 4 | 10 | 27.8 (22.6–44.6) | 38.3 (25.8–54.7) | 15.7 |
-| 8 | 18 | 48.0 (40.1–114) | 63.2 (47.8–109) | 30.7 |
-| 16 | 34 | 78.9 (64.7–107) | 92.7 (70.7–160) | 59.0 |
-| 32 | 66 | 157 (137–203) | 178 (150–221) | 97.1 |
+| files | hops | direct | main-thread-routed | in-process | runtime adds, direct | runtime adds, main-thread-routed |
+|---|---|---|---|---|---|---|
+| 1 | 4 | 19.3 [18.7–22.2] | 20.6 [19.9–21.5] | 7.04 [4.54–8.07] | 14.7 [10.6–15.2] | 12.8 [12.5–17.0] |
+| 2 | 6 | 24.2 [23.6–28.3] | 26.4 [24.2–27.1] | 7.97 [6.12–11.6] | 18.1 [12.0–20.3] | 16.3 [15.5–20.3] |
+| 4 | 10 | 28.5 [27.5–33.9] | 33.7 [29.2–35.2] | 13.2 [12.9–14.6] | 15.6 [12.9–20.6] | 20.5 [16.3–20.6] |
+| 8 | 18 | 41.4 [41.0–41.7] | 43.9 [43.7–47.1] | 25.3 [24.2–30.7] | 16.1 [10.3–17.5] | 18.4 [13.2–22.8] |
+| 16 | 34 | 66.1 [61.3–67.8] | 67.4 [64.8–68.0] | 43.5 [39.7–44.1] | 22.5 [21.5–23.7] | 23.4 [21.2–28.2] |
+| 32 | 66 | 107 [104–110] | 118 [114–118] | 86.4 [81.7–93.4] | 20.7 [10.5–28.2] | 31.7 [20.2–36.8] |
 
-From 1 file to 32, the composite goes from about 24 ms to about 157 ms on the
-direct path: roughly 4.3 ms for each further file, which is two more hops and
-one more file's work. On the routed path it is roughly 5.1 ms per file. The
-bill grows the same way, by 2 per file, so latency and cost move together and
-`maxFiles` bounds both.
+*Noise floor: the largest spread of any single configuration across the 3 runs is 68% (in-process 2 files), as (max - min) / median.*
 
-## With larger files, the work dominates
+**Per file, direct**: from 1 file to 32, the composite goes from 19.3 [18.7–22.2] ms to 107 [104–110] ms, 2.74 [2.73–2.94] ms for each further file ((32-file median - 1-file median) / 31, per run). A least-squares line through all 6 file counts fits with r² 0.995 [0.995–0.997].
 
-8 files, 18 hops. Times in ms, median (min–max).
+**Per file, main-thread-routed**: from 1 file to 32, the composite goes from 20.6 [19.9–21.5] ms to 118 [114–118] ms, 3.16 [2.97–3.17] ms for each further file ((32-file median - 1-file median) / 31, per run). A least-squares line through all 6 file counts fits with r² 0.997 [0.995–0.999].
 
-| lines per file | direct | routed | in-process | runtime adds, direct | runtime adds, routed |
-|---|---|---|---|---|---|
-| 100 | 21.9 (17.0–31.6) | 24.9 (18.7–75.5) | 6.5 | 15.4 | 18.4 |
-| 400 | 44.0 (33.5–56.8) | 52.6 (39.7–84.3) | 22.5 | 21.5 | 30.0 |
-| 1,600 | 125 (110–184) | 142 (128–169) | 88.6 | 36.3 | 53.4 |
-| 6,400 | 437 (393–501) | 514 (437–577) | 357 | 79.7 | 157 |
+**Bill**: charged per composite call at 1, 2, 4, 8, 16, 32 files: 4, 6, 10, 18, 34, 66 (each further file adds 2).
 
-At 100 lines per file the runtime is most of the call: 15 of 22 ms. At 6,400
-lines per file (about 4 MB of logs in total) the handlers' own work is 357 of
-437 ms, about 82%, and the runtime's share has fallen to 18%.
+Latency and cost move together, so `maxFiles` bounds both.
 
-What the runtime adds is not constant. It grows with payload, from about 15
-ms to about 80 ms on the direct path, because every `read` result and every
-`redact` input and output is a batch of lines crossing a worker boundary.
+## The work is most of the call, more so with larger files
+
+8 files, 18 hops. Times in ms.
+
+| lines per file | logs in total | direct | main-thread-routed | in-process | runtime adds, direct | runtime adds, main-thread-routed | runtime's share, direct | runtime's share, main-thread-routed |
+|---|---|---|---|---|---|---|---|---|
+| 100 | 0.06 MB | 19.8 [18.1–20.0] | 21.4 [21.2–22.3] | 12.3 [11.7–13.8] | 6.42 [6.17–7.49] | 8.85 [8.47–9.66] | 35% [31%–38%] | 42% [38%–45%] |
+| 400 | 0.26 MB | 35.7 [34.5–36.0] | 39.0 [36.0–40.2] | 20.5 [20.2–21.4] | 15.4 [13.1–15.5] | 18.5 [14.6–20.0] | 43% [38%–43%] | 47% [41%–50%] |
+| 1600 | 1.04 MB | 88.7 [86.8–88.7] | 96.0 [94.6–97.3] | 72.5 [69.1–74.5] | 14.3 [14.3–19.6] | 22.1 [21.6–28.2] | 16% [16%–22%] | 23% [22%–29%] |
+| 6400 | 4.17 MB | 317 [312–327] | 344 [340–352] | 268 [263–268] | 53.5 [44.5–58.4] | 76.3 [71.7–88.5] | 17% [14%–18%] | 22% [21%–25%] |
+
+*Noise floor: the largest spread of any single configuration across the 3 runs is 17% (in-process 100 lines), as (max - min) / median.*
+
+**Runtime's share of the call, direct**: 35% [31%–38%] at 100 lines, 43% [38%–43%] at 400 lines, 16% [16%–22%] at 1600 lines, 17% [14%–18%] at 6400 lines; the handlers' own work is 65% [62%–69%], 57% [57%–62%], 84% [78%–84%], 83% [82%–86%] respectively.
+
+**Runtime's share of the call, main-thread-routed**: 42% [38%–45%] at 100 lines, 47% [41%–50%] at 400 lines, 23% [22%–29%] at 1600 lines, 22% [21%–25%] at 6400 lines; the handlers' own work is 58% [55%–62%], 53% [50%–59%], 77% [71%–78%], 78% [75%–79%] respectively.
+
+An earlier version of this document, measured on one vCPU, found the opposite
+for small inputs: the runtime was most of the call at 100 lines per file. On
+this machine it is not most of the call at any file size measured.
+
+**Same baseline, measured twice per run**: the in-process baseline for 8 files of 400 lines is 25.3 [24.2–30.7] ms in the files sweep and 20.5 [20.2–21.4] ms in the size sweep; within each run the two differ by 18% [18%–52%].
 
 ## What the runtime adds per call and per hop
 
-Two parts can be read off the first table (composite minus in-process, at 400
-lines per file):
+Two parts, read off the first table (composite minus in-process, at 400
+lines per file), and per hop off the second:
 
-- **A fixed part of roughly 12 to 18 ms per call** on this machine, visible at
-  1 to 4 files, where the direct path adds 12 to 18 ms regardless of the hop
-  count. That is HTTP, the outer call's authorization and metering, and the
-  response.
-- **A per-hop part of roughly 1 ms.** At 32 files the direct path adds 60 ms
-  over 66 hops, 0.9 ms per hop; the routed path adds 81 ms, 1.2 ms per hop.
-  With 6,400-line files it rises to 4.4 ms per hop direct and 8.7 ms routed.
+**Fixed part, direct**: the runtime adds 14.7 [10.6–15.2] ms at 1 file, 18.1 [12.0–20.3] ms at 2 files, 15.6 [12.9–20.6] ms at 4 files (hops 4, 6, 10); per run, the smallest of these is 12.9 [10.6–14.7] ms and the largest 20.3 [15.6–20.6] ms.
 
-These are differences of two noisy medians, so the per-hop figures are
-indicative, not precise.
+**Fixed part, main-thread-routed**: the runtime adds 12.8 [12.5–17.0] ms at 1 file, 16.3 [15.5–20.3] ms at 2 files, 20.5 [16.3–20.6] ms at 4 files (hops 4, 6, 10); per run, the smallest of these is 12.8 [12.5–17.0] ms and the largest 20.5 [16.3–20.6] ms.
+
+**Per hop at 400 lines, direct**: at 32 files the runtime adds 20.7 [10.5–28.2] ms over 66 hops, 0.31 [0.16–0.43] ms per hop.
+
+**Per hop at 400 lines, main-thread-routed**: at 32 files the runtime adds 31.7 [20.2–36.8] ms over 66 hops, 0.48 [0.31–0.56] ms per hop.
+
+**Per hop by file size, direct**: the runtime adds 0.36 [0.34–0.42] ms at 100, 0.86 [0.73–0.86] ms at 400, 0.79 [0.79–1.09] ms at 1600, 2.97 [2.47–3.25] ms at 6400 lines per file.
+
+**Per hop by file size, main-thread-routed**: the runtime adds 0.49 [0.47–0.54] ms at 100, 1.03 [0.81–1.11] ms at 400, 1.23 [1.20–1.56] ms at 1600, 4.24 [3.98–4.92] ms at 6400 lines per file.
+
+The fixed part is HTTP, the outer call's authorization and metering, and the
+response. What the runtime adds grows with payload because every `read`
+result and every `redact` input and output is a batch of lines crossing a
+worker boundary. These are differences of two noisy medians, so the per-hop
+figures are indicative, not precise.
 
 ## Direct against routed
 
-The direct path is the faster one wherever the difference is larger than the
-noise:
+Times in ms.
 
-| case | direct | routed | direct is lower by |
-|---|---|---|---|
-| 8 files, 400 lines | 48.0 | 63.2 | 24% |
-| 32 files, 400 lines | 157 | 178 | 12% |
-| 8 files, 6,400 lines | 437 | 514 | 15% |
-| 1 file, 400 lines | 24.4 | 19.0 | within noise |
+| case | direct | routed | direct is lower by | verdict |
+|---|---|---|---|---|
+| 1 file, 400 lines | 19.3 [18.7–22.2] | 20.6 [19.9–21.5] | 6% | within noise |
+| 2 files, 400 lines | 24.2 [23.6–28.3] | 26.4 [24.2–27.1] | 8% | within noise |
+| 4 files, 400 lines | 28.5 [27.5–33.9] | 33.7 [29.2–35.2] | 15% | within noise |
+| 8 files, 400 lines | 41.4 [41.0–41.7] | 43.9 [43.7–47.1] | 6% | direct lower |
+| 16 files, 400 lines | 66.1 [61.3–67.8] | 67.4 [64.8–68.0] | 2% | within noise |
+| 32 files, 400 lines | 107 [104–110] | 118 [114–118] | 9% | direct lower |
+| 8 files, 100 lines | 19.8 [18.1–20.0] | 21.4 [21.2–22.3] | 7% | direct lower |
+| 8 files, 1600 lines | 88.7 [86.8–88.7] | 96.0 [94.6–97.3] | 8% | direct lower |
+| 8 files, 6400 lines | 317 [312–327] | 344 [340–352] | 8% | direct lower |
+| 8 files, 400 lines (size sweep) | 35.7 [34.5–36.0] | 39.0 [36.0–40.2] | 9% | within noise |
 
-The gap is clearest in what the runtime adds with large payloads: 80 ms
-direct against 157 ms routed at 6,400 lines per file. That fits
-[`direct-peer-channels.md`](direct-peer-channels.md), which says the direct
-path matters most for composition-heavy calls with large payloads, and it is
-the same trade-off described there: the direct path checks authorization when
-a channel opens, not on every hop.
+**Direct against routed**: the direct path is lower in 5 of 10 cases by 6% to 9% of the routed median (8 files, 400 lines; 32 files, 400 lines; 8 files, 100 lines; 8 files, 1600 lines; 8 files, 6400 lines); routed is lower in 0; 5 are within noise (1 file, 400 lines; 2 files, 400 lines; 4 files, 400 lines; 16 files, 400 lines; 8 files, 400 lines (size sweep)).
+
+This fits [`direct-peer-channels.md`](direct-peer-channels.md), which says
+the direct path matters most for composition-heavy calls with large payloads,
+and it is the same trade-off described there: the direct path checks
+authorization when a channel opens, not on every hop.
 
 ## One composite call against the same hops made by the client
 
-8 files of 400 lines, 18 tool calls for the client. Times in ms, median
-(min–max); bytes are JSON request and response bodies.
+8 files of 400 lines, 18 tool calls for the client. Times in ms; bytes are
+JSON request and response bodies.
 
-| | tool calls | latency, direct server | latency, routed server | bytes sent | bytes received |
+| | tool calls | latency, direct server | latency, main-thread-routed server | bytes sent | bytes received |
 |---|---|---|---|---|---|
-| composite | 1 | 45.6 (34.7–73.4) | 50.6 (35.7–73.1) | 167 | 14,436 |
-| client-orchestrated | 18 | 109 (86.1–226) | 96.7 (78.6–167) | 549,495 | 1,119,438 |
+| composite | 1 | 38.5 [37.2–42.8] | 40.0 [38.1–42.3] | 167 | 14436 |
+| client-orchestrated | 18 | 113 [108–114] | 99.9 [97.1–105] | 549495 | 1119438 |
 
-The composite is about twice as fast, and it moves about 14.6 KB where the
-client-orchestrated version moves about 1.67 MB, roughly 114 times as much.
+*Noise floor: the largest spread of any single configuration across the 3 runs is 15% (composite direct), as (max - min) / median.*
+
+**Composite against client, direct server**: one composite call takes 38.5 [37.2–42.8] ms against 113 [108–114] ms for the 18 client calls, lower; the client takes 2.81× [2.67×–3.04×] as long, per run.
+
+**Composite against client, main-thread-routed server**: one composite call takes 40.0 [38.1–42.3] ms against 99.9 [97.1–105] ms for the 18 client calls, lower; the client takes 2.48× [2.43×–2.62×] as long, per run.
+
+**Bytes on the wire**: the composite moves 14603 bytes (14.6 KB) and the client-orchestrated version 1668933 bytes (1.67 MB), 114 times as much. Identical in every run and on both paths.
+
 The difference is the raw lines: the client has to receive every file from
 `read` and send it back to `redact`, then send all the masked lines to
 `cluster`.
@@ -141,52 +173,50 @@ The difference is the raw lines: the client has to receive every file from
 Three things this comparison does not show. The client here is on the same
 machine as the server, so network latency, which would widen the gap, is
 absent. The client-orchestrated calls are sequential, as a model issuing tool
-calls would make them. And the hop path makes no difference to the client
-rows, since a client calling leaf tools directly makes no inner hops; the two
-latency columns differ only by noise.
+calls would make them, with no inference time between them. And a client
+calling leaf tools directly makes no inner hops, so the two client latency
+columns are not a comparison of hop paths.
 
 ## Where the work itself goes
 
-In-process, no runtime. Times in ms, from the median run of each case.
+In-process, no runtime. Times in ms.
 
 | files | lines per file | total | list | read | redact | cluster |
 |---|---|---|---|---|---|---|
-| 1 | 400 | 6.0 | 2.2 | 0.4 | 2.6 | 0.8 |
-| 8 | 400 | 30.7 | 2.6 | 5.7 | 18.8 | 3.6 |
-| 32 | 400 | 97.1 | 3.4 | 9.9 | 60.4 | 23.0 |
-| 8 | 100 | 6.5 | 0.3 | 1.6 | 3.5 | 1.1 |
-| 8 | 1,600 | 88.6 | 0.5 | 9.2 | 60.2 | 18.5 |
-| 8 | 6,400 | 357 | 0.4 | 48.2 | 235 | 72.3 |
+| 1 | 400 | 7.04 [4.54–8.07] | 4.40 [2.13–5.05] | 0.60 [0.42–1.00] | 1.45 [1.43–1.48] | 0.54 [0.53–0.55] |
+| 2 | 400 | 7.97 [6.12–11.6] | 3.13 [2.20–5.95] | 1.03 [0.69–1.60] | 2.43 [2.38–2.91] | 1.08 [0.83–1.31] |
+| 4 | 400 | 13.2 [12.9–14.6] | 3.03 [1.96–3.32] | 2.12 [1.59–2.29] | 5.53 [5.48–8.92] | 2.08 [2.03–2.21] |
+| 8 | 400 | 25.3 [24.2–30.7] | 4.91 [4.02–7.11] | 6.17 [6.17–8.71] | 10.6 [10.1–10.7] | 4.04 [3.19–4.12] |
+| 16 | 400 | 43.5 [39.7–44.1] | 4.02 [3.93–4.33] | 9.11 [8.31–11.3] | 21.5 [20.8–22.0] | 6.74 [6.45–8.22] |
+| 32 | 400 | 86.4 [81.7–93.4] | 3.38 [2.01–3.48] | 16.4 [15.6–18.8] | 49.5 [45.3–57.8] | 16.1 [14.0–17.4] |
+| 8 | 100 | 12.3 [11.7–13.8] | 1.53 [1.47–1.97] | 7.07 [6.77–8.32] | 2.67 [2.61–2.79] | 0.82 [0.81–0.89] |
+| 8 | 1600 | 72.5 [69.1–74.5] | 0.95 [0.93–1.17] | 8.43 [7.54–8.96] | 46.9 [46.2–48.2] | 14.2 [14.0–18.0] |
+| 8 | 6400 | 268 [263–268] | 1.99 [1.39–2.03] | 28.1 [25.1–31.9] | 172 [169–176] | 62.9 [55.1–66.8] |
 
-Masking is the expensive step: `redact` is 53 to 68% of the handlers' time
-in every case with 8 or more files. It is five regular expressions applied
-to every line. `cluster` is next at 12 to 24%, and reading the files is 10
-to 25%.
+**Stage shares** (of the four stages' sum, cases with 8 or more files, median across runs): redact 22% to 67%, cluster 7% to 24%, read 11% to 58%.
 
-This matters for anyone sizing a deployment. `pii-redact` runs in one worker,
-so on a multi-core machine the masking of one call's files would still run
-one file after another, and it is where a second call would queue. The
-example's README says the same thing in words; this is the measurement behind
-it.
+Masking is five regular expressions applied to every line. `pii-redact` runs
+in one worker, so on a multi-core machine the masking of one call's files
+would still run one file after another, and it is where a second call would
+queue. The example's README says the same thing in words; this is the
+measurement behind it.
 
 ## What an operator can take from this
 
 - **Cost and latency are both linear in `maxFiles`**, so the cap that bounds
-  the bill bounds the wait as well.
-- **For small inputs the runtime is most of the latency; for large inputs the
-  work is.** On this machine the two are about equal at 400 lines per file
-  with 8 files (21.5 ms added against 22.5 ms of work).
-- **Keeping the hops inside the runtime halves the latency and cuts wire
-  traffic by two orders of magnitude** compared with a client making the same
-  calls, before any network delay is counted.
-- **The direct path is worth having for this workload**, by 12 to 24% where
-  it is measurable, more as payloads grow.
+  the bill bounds the wait as well (see the per-file fit above).
+- **The handlers' own work is the larger part of the call at every input
+  size measured here**, and the runtime's share shrinks as files grow (see
+  the runtime's share above).
+- **Keeping the hops inside the runtime is faster and moves far less data**
+  than a client making the same calls, before any network delay is counted:
+  see the composite-against-client lines above.
+- **The direct path is worth having for this workload** where the difference
+  clears the noise (see "Direct against routed").
 
 ## Not measured
 
 - Concurrent callers, throughput and tail latency under load.
-- Any benefit from running the per-file chains concurrently (needs more than
-  one core).
+- Any benefit from running the per-file chains concurrently (two shared
+  cores cannot isolate it).
 - Memory use.
-- A network between client and server.
-- The CouchDB and sqlite AuthProviders; these runs use the file provider.
