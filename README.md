@@ -202,12 +202,12 @@ The rationale behind this and other architecture decisions is collected in
 [`docs/design-decisions.md`](https://github.com/mchen6/countinghouse/blob/master/docs/design-decisions.md).
 
 **On performance, honestly.** In-process hops are cheaper than crossing a
-process boundary — at 1MB payloads, one hop costs 3.299ms in-process against
-44.159ms over stdio and 16.031ms over HTTP. But the largest per-hop saving
-measured is 13.889ms, so any tool whose own work takes more than ~139ms sees
+process boundary — at 1MB payloads, one hop costs 3.30 ms in-process against
+44.2 ms over stdio and 16.0 ms over HTTP. But the largest per-hop saving
+measured is 13.9 ms, so any tool whose own work takes more than ~139 ms sees
 even that as under 10% of the call. Per call, transport rounds to nothing.
 What does not round away is the CPU across a session: a hundred such hops cost
-7.72 seconds of CPU in-process against 91.52 over stdio. That is capacity, not
+7.72 seconds of CPU in-process against 91.5 over stdio. That is capacity, not
 latency. (Medians of three runs, 2-vCPU VMware guest, Intel i7-6600U, Node
 v24.21.0, commit `3d9599d`.) [Tables, methodology and caveats](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms).
 

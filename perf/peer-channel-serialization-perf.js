@@ -129,7 +129,6 @@ const STRATEGIES = ['stringify', 'structuredClone', 'transferBuffer'];
 const STRATEGY_LABELS = {stringify: '`JSON.stringify`', structuredClone: 'structured clone', transferBuffer: 'transfer list'};
 
 function buildReport(runs) {
-  const ms = (v) => `${v.toFixed(2)}ms`;
   const range = (sizeBytes, strategy) => multiRun.across(runs.map((r) => r[sizeBytes][strategy].p50));
 
   const rows = ['| Payload | `JSON.stringify` p50 | Structured clone p50 | Transfer list p50 |', '|---|---|---|---|'];
@@ -144,7 +143,7 @@ function buildReport(runs) {
     const fastest = STRATEGIES.reduce((a, b) => (r[a].median < r[b].median ? a : b));
     const clear = STRATEGIES.every((st) => st === fastest || multiRun.compareLower(r[fastest], r[st]) === -1);
     const cell = (st) => {
-      const text = multiRun.fmtRange(r[st], ms);
+      const text = multiRun.fmtRangeMs(r[st]);
       return (st === fastest && clear) ? `**${text}**` : text;
     };
     rows.push(`| ${formatPayload(sizeBytes)} | ${cell('stringify')} | ${cell('structuredClone')} | ${cell('transferBuffer')} |`);
@@ -165,8 +164,8 @@ function buildReport(runs) {
     : '';
 
   const summary = `Lowest median per payload size: ${fastestList}. Structured clone against \`JSON.stringify\`: ${vsList}.${sweep} ` +
-    `Ratio of medians (\`JSON.stringify\` / structured clone) ranges from ${minRatio.ratio.toFixed(2)}× (at ${minRatio.payload}) to ${
-      maxRatio.ratio.toFixed(2)}× (at ${maxRatio.payload}).`;
+    `Ratio of medians (\`JSON.stringify\` / structured clone) ranges from ${multiRun.fmtRatio(minRatio.ratio)} (at ${minRatio.payload}) to ${
+      multiRun.fmtRatio(maxRatio.ratio)} (at ${maxRatio.payload}).`;
 
   return [multiRun.envHeader(null, runs.length), `Round trips per cell: ${ROUNDTRIPS}.`, '', rows.join('\n'), '',
     multiRun.noiseFloorLine(noise, runs.length), '', summary].join('\n');

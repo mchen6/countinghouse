@@ -343,8 +343,10 @@ function buildReport(runs) {
     const values = runs.map((r) => r[cond][k][metric]).filter((v) => v != null);
     return values.length > 0 ? multiRun.across(values) : null;
   };
-  const fr = (r, fmt) => (r == null ? 'n/a' : multiRun.fmtRange(r, fmt));
-  const ms3 = (v) => `${v.toFixed(3)}ms`;
+  // range formatters (perf/multi-run.js): three significant figures, the unit once
+  const fr = (r, fmt) => (r == null ? 'n/a' : fmt(r));
+  const ms3 = multiRun.fmtRangeMs;
+  const mb = (r) => multiRun.fmtRangeInt({median: r.median / 1048576, min: r.min / 1048576, max: r.max / 1048576}, 'MB');
 
   const vs = {stdio: [], http: []};
   const noise = [];
@@ -361,9 +363,9 @@ function buildReport(runs) {
       });
 
       rows.push(`| ${formatPayload(p)} | ${h} | ${conds.slice(0, 3).map((c) => `${fr(g[c].chainP50Ms, ms3)} / ${fr(g[c].chainP99Ms, ms3)}`).join(' | ')} | ${
-        conds.map((c) => fr(g[c].perHopP50Ms, ms3)).join(' / ')} | ${conds.map((c) => fr(g[c].hopsPerSecond, (v) => v.toFixed(0))).join(' / ')} | ${
-        conds.map((c) => fr(g[c].cpuSeconds, (v) => `${v.toFixed(2)}s`)).join(' / ')} | ${
-        conds.map((c) => fr(g[c].peakRssBytes, (v) => `${(v / 1048576).toFixed(0)}MB`)).join(' / ')} | ${runs[0].peerChannel[k].samples} |`);
+        conds.map((c) => fr(g[c].perHopP50Ms, ms3)).join(' / ')} | ${conds.map((c) => fr(g[c].hopsPerSecond, (r) => multiRun.fmtRangeInt(r))).join(' / ')} | ${
+        conds.map((c) => fr(g[c].cpuSeconds, multiRun.fmtRangeSeconds)).join(' / ')} | ${
+        conds.map((c) => fr(g[c].peakRssBytes, mb)).join(' / ')} | ${runs[0].peerChannel[k].samples} |`);
 
       ['stdio', 'http'].forEach((other) => {
         const c = multiRun.compareLower(g.peerChannel.chainP50Ms, g[other].chainP50Ms);
@@ -381,21 +383,20 @@ function buildReport(runs) {
     const named = (arr) => (arr.length > 0 ? ` (${arr.map((x) => `${x.label}: ${fr(x.peer, ms3)} vs. ${fr(x.other, ms3)} per hop`).join(', ')})` : '');
     return `**vs. ${title}**: the direct peer channel has a lower p50 in ${lower.length} of ${list.length} cells, a higher one in ${
       higher.length}${named(higher)}, and is within noise in ${noisy.length}${named(noisy)}; ratio of medians from ${
-      min.ratio.toFixed(2)}× (at ${min.label}) to ${max.ratio.toFixed(2)}× (at ${max.label}).`;
+      multiRun.fmtRatio(min.ratio)} (at ${min.label}) to ${multiRun.fmtRatio(max.ratio)} (at ${max.label}).`;
   }
 
   const perRun = runs.map(worstHopDelta);
   const delta = multiRun.across(perRun.map((w) => w.ms));
   const breakEven = multiRun.across(perRun.map((w) => w.ms * 10));
   const where = Array.from(new Set(perRun.map((w) => w.label))).join(', ');
-  const fmtBE = (v) => (v >= 1 ? `${v.toFixed(0)}ms` : `${v.toFixed(2)}ms`);
 
   const summary = [];
   summary.push(vsSentence('stdio', 'MCP stdio subprocess'));
   summary.push(vsSentence('http', 'localhost HTTP'));
-  summary.push(`**Scale of the difference**: the largest per-hop saving measured here is ${multiRun.fmtRange(delta, ms3)} across the ${
+  summary.push(`**Scale of the difference**: the largest per-hop saving measured here is ${ms3(delta)} across the ${
     runs.length} runs (best case for the direct channel, across every cell; at ${where}). ` +
-    `A tool whose own execution takes more than ~${multiRun.fmtRange(breakEven, fmtBE)} per call would see even that saving as under 10% of the hop, and proportionally less the ` +
+    `A tool whose own execution takes more than ~${ms3(breakEven)} per call would see even that saving as under 10% of the hop, and proportionally less the ` +
     'slower it gets. This benchmark measures transport, not tools.');
 
   return [multiRun.envHeader(null, runs.length), '', rows.join('\n'), '', multiRun.noiseFloorLine(noise, runs.length), '', summary.join('\n\n')].join('\n');

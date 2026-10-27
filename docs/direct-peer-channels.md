@@ -102,25 +102,25 @@ overlap; otherwise it is within noise, whatever the medians say.
 
 | Payload | Concurrency | Main-thread-routed p50 | Main-thread-routed p99 | Main-thread-routed req/s | Direct peer channel p50 | Direct peer channel p99 | Direct peer channel req/s |
 |---|---|---|---|---|---|---|---|
-| 1KB | 1 | 1.41ms [1.40ms–1.46ms] | 4.40ms [3.80ms–5.11ms] | 169 [168–171] | 1.38ms [1.38ms–1.40ms] | 5.04ms [3.10ms–5.43ms] | 204 [181–204] |
-| 1KB | 16 | 9.54ms [8.37ms–12.81ms] | 24.71ms [21.30ms–27.16ms] | 409 [398–413] | 9.50ms [9.06ms–11.58ms] | 28.18ms [20.21ms–39.61ms] | 469 [402–476] |
-| 1KB | 64 | 39.22ms [27.60ms–51.69ms] | 68.78ms [50.52ms–77.58ms] | 476 [463–517] | 45.94ms [27.07ms–48.68ms] | 69.99ms [54.91ms–96.15ms] | 620 [498–644] |
-| 100KB | 1 | 1.53ms [1.45ms–1.53ms] | 6.98ms [5.27ms–8.20ms] | 202 [193–219] | 1.49ms [1.34ms–1.55ms] | 5.80ms [4.09ms–8.84ms] | 203 [196–223] |
-| 100KB | 16 | 10.81ms [10.41ms–11.27ms] | 22.46ms [22.46ms–33.71ms] | 502 [426–575] | 10.22ms [8.97ms–10.26ms] | 25.05ms [17.69ms–30.64ms] | 543 [445–591] |
-| 100KB | 64 | 32.24ms [28.08ms–33.54ms] | 43.28ms [42.88ms–53.20ms] | 636 [573–773] | 43.03ms [36.25ms–60.40ms] | 67.28ms [63.97ms–119.76ms] | 704 [543–789] |
-| 1MB | 1 | 7.60ms [7.56ms–7.89ms] | 17.07ms [16.20ms–18.10ms] | 93 [91–94] | 5.06ms [5.06ms–5.14ms] | 14.84ms [13.00ms–15.12ms] | 121 [118–122] |
-| 1MB | 16 | 77.08ms [61.61ms–80.88ms] | 125.39ms [114.85ms–150.78ms] | 123 [123–138] | 59.11ms [58.92ms–60.11ms] | 115.45ms [110.28ms–140.13ms] | 156 [146–160] |
-| 1MB | 64 | 302.64ms [298.51ms–335.13ms] | 361.29ms [360.23ms–373.46ms] | 130 [122–131] | 234.89ms [213.57ms–253.16ms] | 379.78ms [358.01ms–401.81ms] | 190 [178–195] |
+| 1KB | 1 | 1.41 [1.40–1.46] ms | 4.40 [3.80–5.11] ms | 169 [168–171] | 1.38 [1.38–1.40] ms | 5.04 [3.10–5.43] ms | 204 [181–204] |
+| 1KB | 16 | 9.54 [8.37–12.8] ms | 24.7 [21.3–27.2] ms | 409 [398–413] | 9.50 [9.06–11.6] ms | 28.2 [20.2–39.6] ms | 469 [402–476] |
+| 1KB | 64 | 39.2 [27.6–51.7] ms | 68.8 [50.5–77.6] ms | 476 [463–517] | 45.9 [27.1–48.7] ms | 70.0 [54.9–96.2] ms | 620 [498–644] |
+| 100KB | 1 | 1.53 [1.45–1.53] ms | 6.98 [5.27–8.20] ms | 202 [193–219] | 1.49 [1.34–1.55] ms | 5.80 [4.09–8.84] ms | 203 [196–223] |
+| 100KB | 16 | 10.8 [10.4–11.3] ms | 22.5 [22.5–33.7] ms | 502 [426–575] | 10.2 [8.97–10.3] ms | 25.0 [17.7–30.6] ms | 543 [445–591] |
+| 100KB | 64 | 32.2 [28.1–33.5] ms | 43.3 [42.9–53.2] ms | 636 [573–773] | 43.0 [36.3–60.4] ms | 67.3 [64.0–120] ms | 704 [543–789] |
+| 1MB | 1 | 7.60 [7.56–7.89] ms | 17.1 [16.2–18.1] ms | 93 [91–94] | 5.06 [5.06–5.14] ms | 14.8 [13.0–15.1] ms | 121 [118–122] |
+| 1MB | 16 | 77.1 [61.6–80.9] ms | 125 [115–151] ms | 123 [123–138] | 59.1 [58.9–60.1] ms | 115 [110–140] ms | 156 [146–160] |
+| 1MB | 64 | 303 [299–335] ms | 361 [360–373] ms | 130 [122–131] | 235 [214–253] ms | 380 [358–402] ms | 190 [178–195] |
 
 *Noise floor: the largest spread of any single configuration across the 3 runs, as (max - min) / median: p50 61% (Main-thread-routed 1KB/c=64); p99 83% (Direct peer channel 100KB/c=64); throughput 35% (Direct peer channel 100KB/c=64).*
 
 Errors: none. Sandbox log: 0 violations, 0 would-be-refused under enforce, 0 restarts, 0 suspensions.
 
-**p50**: direct peer channels are lower than main-thread-routed in 4 of 9 cells, higher in 1 (100KB/c=64 (32.24ms [28.08ms–33.54ms] vs. 43.03ms [36.25ms–60.40ms]), main vs. direct), and within noise in 4; ratio of medians from 0.75× (at 100KB/c=64) to 1.50× (at 1MB/c=1).
+**p50**: direct peer channels are lower than main-thread-routed in 4 of 9 cells, higher in 1 (100KB/c=64 (32.2 [28.1–33.5] ms vs. 43.0 [36.3–60.4] ms), main vs. direct), and within noise in 4; ratio of medians from 0.749× (at 100KB/c=64) to 1.50× (at 1MB/c=1).
 
 **Throughput**: direct peer channels are higher in 4 of 9 cells, lower in 0, and within noise in 5; ratio of medians from 1.00× (at 100KB/c=1) to 1.47× (at 1MB/c=64).
 
-**p99**: direct peer channels are lower in 1 of 9 cells, higher (worse) in 1 (100KB/c=64 (43.28ms [42.88ms–53.20ms] vs. 67.28ms [63.97ms–119.76ms]), main vs. direct), and within noise in 7.
+**p99**: direct peer channels are lower in 1 of 9 cells, higher (worse) in 1 (100KB/c=64 (43.3 [42.9–53.2] ms vs. 67.3 [64.0–120] ms), main vs. direct), and within noise in 7.
 
 These numbers already include the backpressure fix described below — see
 that section for what changed and why.
@@ -215,9 +215,9 @@ others.
 
 | Payload | `JSON.stringify` p50 | Structured clone p50 | Transfer list p50 |
 |---|---|---|---|
-| 1KB | 0.24ms [0.12ms–0.25ms] | **0.05ms [0.05ms–0.05ms]** | 0.28ms [0.11ms–0.28ms] |
-| 100KB | 0.73ms [0.69ms–0.76ms] | **0.24ms [0.24ms–0.26ms]** | 0.86ms [0.85ms–0.93ms] |
-| 1MB | 10.88ms [10.78ms–12.40ms] | **3.31ms [3.29ms–3.45ms]** | 11.31ms [10.79ms–11.55ms] |
+| 1KB | 0.241 [0.123–0.253] ms | **0.0509 [0.0487–0.0534] ms** | 0.278 [0.109–0.283] ms |
+| 100KB | 0.726 [0.693–0.764] ms | **0.245 [0.240–0.259] ms** | 0.863 [0.854–0.931] ms |
+| 1MB | 10.9 [10.8–12.4] ms | **3.31 [3.29–3.45] ms** | 11.3 [10.8–11.5] ms |
 
 *Noise floor: the largest spread of any single configuration across the 3 runs is 62% (transfer list at 1KB), as (max - min) / median.*
 
@@ -282,23 +282,23 @@ no sandbox mode. Cells are the median across the three runs with the
 
 | Payload | Hops | Direct peer channel<br>p50 / p99 | MCP stdio subprocess<br>p50 / p99 | localhost HTTP<br>p50 / p99 | Per-hop p50<br>(peer / stdio / http) | Hops/s<br>(peer / stdio / http) | CPU<br>(peer / stdio / http) | Peak RSS<br>(peer / stdio / http) | n |
 |---|---|---|---|---|---|---|---|---|---|
-| 1KB | 1 | 0.254ms [0.224ms–0.260ms] / 1.093ms [0.862ms–1.401ms] | 0.286ms [0.248ms–0.287ms] / 1.099ms [0.916ms–1.443ms] | 0.746ms [0.659ms–0.785ms] / 2.437ms [2.317ms–3.114ms] | 0.254ms [0.224ms–0.260ms] / 0.286ms [0.248ms–0.287ms] / 0.746ms [0.659ms–0.785ms] | 3702 [3564–4642] / 3247 [3217–3977] / 1160 [1112–1286] | 0.11s [0.10s–0.13s] / 0.17s [0.15s–0.19s] / 0.51s [0.45s–0.53s] | 79MB [78MB–79MB] / 121MB [121MB–121MB] / 133MB [133MB–134MB] | 500 |
-| 1KB | 10 | 2.266ms [2.265ms–2.360ms] / 4.285ms [3.499ms–4.465ms] | 2.452ms [0.975ms–2.474ms] / 4.421ms [4.318ms–4.936ms] | 4.965ms [4.910ms–5.783ms] / 14.318ms [12.218ms–15.003ms] | 0.227ms [0.226ms–0.236ms] / 0.245ms [0.098ms–0.247ms] / 0.497ms [0.491ms–0.578ms] | 4731 [4471–4901] / 4722 [4622–7120] / 1942 [1713–1998] | 0.67s [0.65s–0.73s] / 0.82s [0.57s–0.84s] / 2.22s [2.16s–2.52s] | 93MB [92MB–93MB] / 140MB [139MB–140MB] / 155MB [155MB–157MB] | 400 |
-| 1KB | 100 | 23.505ms [23.469ms–23.655ms] / 28.486ms [25.865ms–29.164ms] | 25.463ms [25.175ms–25.861ms] / 30.291ms [30.015ms–32.043ms] | 55.754ms [49.625ms–58.954ms] / 81.095ms [72.952ms–84.151ms] | 0.235ms [0.235ms–0.237ms] / 0.255ms [0.252ms–0.259ms] / 0.558ms [0.496ms–0.590ms] | 4600 [4308–4771] / 4437 [4257–4461] / 1909 [1693–2203] | 0.70s [0.67s–0.73s] / 0.90s [0.85s–0.93s] / 2.17s [1.93s–2.50s] | 97MB [97MB–98MB] / 145MB [144MB–145MB] / 158MB [154MB–160MB] | 40 |
-| 64KB | 1 | 0.269ms [0.186ms–0.283ms] / 0.982ms [0.933ms–1.333ms] | 0.763ms [0.763ms–0.869ms] / 2.540ms [2.217ms–2.711ms] | 1.565ms [1.552ms–1.565ms] / 3.939ms [3.801ms–4.178ms] | 0.269ms [0.186ms–0.283ms] / 0.763ms [0.763ms–0.869ms] / 1.565ms [1.552ms–1.565ms] | 3407 [3371–4751] / 1104 [990–1137] / 578 [570–583] | 0.12s [0.10s–0.14s] / 0.47s [0.46s–0.55s] / 0.98s [0.96s–0.98s] | 99MB [98MB–100MB] / 152MB [152MB–153MB] / 158MB [157MB–159MB] | 500 |
-| 64KB | 10 | 2.785ms [2.750ms–2.854ms] / 7.191ms [7.082ms–13.084ms] | 8.231ms [8.193ms–8.300ms] / 14.479ms [14.009ms–14.839ms] | 15.172ms [13.656ms–15.181ms] / 32.671ms [31.056ms–43.798ms] | 0.278ms [0.275ms–0.285ms] / 0.823ms [0.819ms–0.830ms] / 1.517ms [1.366ms–1.518ms] | 3334 [3284–3388] / 1165 [1156–1192] / 650 [625–706] | 0.26s [0.24s–0.32s] / 0.88s [0.86s–0.89s] / 1.72s [1.56s–1.80s] | 102MB [102MB–102MB] / 154MB [153MB–155MB] / 174MB [172MB–175MB] | 100 |
-| 64KB | 100 | 27.744ms [25.743ms–27.770ms] / 34.543ms [33.342ms–38.095ms] | 82.639ms [80.507ms–99.081ms] / 103.503ms [99.872ms–136.046ms] | 137.238ms [134.025ms–138.485ms] / 174.055ms [163.382ms–179.323ms] | 0.277ms [0.257ms–0.278ms] / 0.826ms [0.805ms–0.991ms] / 1.372ms [1.340ms–1.385ms] | 3660 [3469–3733] / 1171 [1001–1199] / 739 [715–745] | 0.49s [0.44s–0.55s] / 1.74s [1.69s–2.20s] / 3.06s [3.01s–3.16s] | 103MB [102MB–106MB] / 159MB [159MB–162MB] / 176MB [176MB–177MB] | 20 |
-| 1MB | 1 | 3.299ms [3.234ms–4.090ms] / 6.634ms [5.128ms–6.949ms] | 44.159ms [43.284ms–46.009ms] / 78.641ms [65.748ms–83.981ms] | 16.031ms [15.646ms–16.435ms] / 31.674ms [29.453ms–34.244ms] | 3.299ms [3.234ms–4.090ms] / 44.159ms [43.284ms–46.009ms] / 16.031ms [15.646ms–16.435ms] | 302 [244–304] / 22 [21–22] / 58 [57–60] | 0.66s [0.64s–0.82s] / 9.47s [9.23s–9.97s] / 3.72s [3.64s–3.76s] | 117MB [116MB–118MB] / 309MB [297MB–314MB] / 363MB [349MB–372MB] | 200 |
-| 1MB | 10 | 32.888ms [32.300ms–35.767ms] / 37.066ms [35.392ms–51.429ms] | 444.756ms [437.288ms–444.800ms] / 503.175ms [498.497ms–542.324ms] | 171.778ms [168.951ms–176.529ms] / 213.789ms [213.415ms–214.305ms] | 3.289ms [3.230ms–3.577ms] / 44.476ms [43.729ms–44.480ms] / 17.178ms [16.895ms–17.653ms] | 301 [270–311] / 22 [22–23] / 57 [57–59] | 0.65s [0.64s–0.74s] / 9.29s [9.17s–9.31s] / 3.76s [3.68s–3.82s] | 205MB [203MB–217MB] / 369MB [341MB–385MB] / 367MB [346MB–390MB] | 20 |
-| 1MB | 100 | 400.062ms [384.664ms–404.653ms] / 429.991ms [416.500ms–430.400ms] | 4391.429ms [4377.082ms–4500.000ms] / 4606.405ms [4575.215ms–6577.966ms] | 1590.522ms [1589.754ms–1592.194ms] / 1775.662ms [1752.674ms–1871.945ms] | 4.001ms [3.847ms–4.047ms] / 43.914ms [43.771ms–45.000ms] / 15.905ms [15.898ms–15.922ms] | 257 [257–264] / 23 [21–23] / 62 [62–62] | 7.72s [7.54s–7.76s] / 91.52s [90.78s–98.18s] / 34.62s [34.28s–34.63s] | 205MB [202MB–217MB] / 390MB [342MB–406MB] / 420MB [415MB–422MB] | 20 |
+| 1KB | 1 | 0.254 [0.224–0.260] ms / 1.09 [0.862–1.40] ms | 0.286 [0.248–0.287] ms / 1.10 [0.916–1.44] ms | 0.746 [0.659–0.785] ms / 2.44 [2.32–3.11] ms | 0.254 [0.224–0.260] ms / 0.286 [0.248–0.287] ms / 0.746 [0.659–0.785] ms | 3702 [3564–4642] / 3247 [3217–3977] / 1160 [1112–1286] | 0.110 [0.100–0.130] s / 0.170 [0.150–0.190] s / 0.510 [0.450–0.530] s | 79 [78–79] MB / 121 [121–121] MB / 133 [133–134] MB | 500 |
+| 1KB | 10 | 2.27 [2.26–2.36] ms / 4.29 [3.50–4.47] ms | 2.45 [0.975–2.47] ms / 4.42 [4.32–4.94] ms | 4.97 [4.91–5.78] ms / 14.3 [12.2–15.0] ms | 0.227 [0.226–0.236] ms / 0.245 [0.0975–0.247] ms / 0.497 [0.491–0.578] ms | 4731 [4471–4901] / 4722 [4622–7120] / 1942 [1713–1998] | 0.670 [0.650–0.730] s / 0.820 [0.570–0.840] s / 2.22 [2.16–2.52] s | 93 [92–93] MB / 140 [139–140] MB / 155 [155–157] MB | 400 |
+| 1KB | 100 | 23.5 [23.5–23.7] ms / 28.5 [25.9–29.2] ms | 25.5 [25.2–25.9] ms / 30.3 [30.0–32.0] ms | 55.8 [49.6–59.0] ms / 81.1 [73.0–84.2] ms | 0.235 [0.235–0.237] ms / 0.255 [0.252–0.259] ms / 0.558 [0.496–0.590] ms | 4600 [4308–4771] / 4437 [4257–4461] / 1909 [1693–2203] | 0.700 [0.670–0.730] s / 0.900 [0.850–0.930] s / 2.17 [1.93–2.50] s | 97 [97–98] MB / 145 [144–145] MB / 158 [154–160] MB | 40 |
+| 64KB | 1 | 0.269 [0.186–0.283] ms / 0.982 [0.933–1.33] ms | 0.763 [0.763–0.869] ms / 2.54 [2.22–2.71] ms | 1.56 [1.55–1.57] ms / 3.94 [3.80–4.18] ms | 0.269 [0.186–0.283] ms / 0.763 [0.763–0.869] ms / 1.56 [1.55–1.57] ms | 3407 [3371–4751] / 1104 [990–1137] / 578 [570–583] | 0.120 [0.100–0.140] s / 0.470 [0.460–0.550] s / 0.980 [0.960–0.980] s | 99 [98–100] MB / 152 [152–153] MB / 158 [157–159] MB | 500 |
+| 64KB | 10 | 2.78 [2.75–2.85] ms / 7.19 [7.08–13.1] ms | 8.23 [8.19–8.30] ms / 14.5 [14.0–14.8] ms | 15.2 [13.7–15.2] ms / 32.7 [31.1–43.8] ms | 0.278 [0.275–0.285] ms / 0.823 [0.819–0.830] ms / 1.52 [1.37–1.52] ms | 3334 [3284–3388] / 1165 [1156–1192] / 650 [625–706] | 0.260 [0.240–0.320] s / 0.880 [0.860–0.890] s / 1.72 [1.56–1.80] s | 102 [102–102] MB / 154 [153–155] MB / 174 [172–175] MB | 100 |
+| 64KB | 100 | 27.7 [25.7–27.8] ms / 34.5 [33.3–38.1] ms | 82.6 [80.5–99.1] ms / 104 [99.9–136] ms | 137 [134–138] ms / 174 [163–179] ms | 0.277 [0.257–0.278] ms / 0.826 [0.805–0.991] ms / 1.37 [1.34–1.38] ms | 3660 [3469–3733] / 1171 [1001–1199] / 739 [715–745] | 0.490 [0.440–0.550] s / 1.74 [1.69–2.20] s / 3.06 [3.01–3.16] s | 103 [102–106] MB / 159 [159–162] MB / 176 [176–177] MB | 20 |
+| 1MB | 1 | 3.30 [3.23–4.09] ms / 6.63 [5.13–6.95] ms | 44.2 [43.3–46.0] ms / 78.6 [65.7–84.0] ms | 16.0 [15.6–16.4] ms / 31.7 [29.5–34.2] ms | 3.30 [3.23–4.09] ms / 44.2 [43.3–46.0] ms / 16.0 [15.6–16.4] ms | 302 [244–304] / 22 [21–22] / 58 [57–60] | 0.660 [0.640–0.820] s / 9.47 [9.23–9.97] s / 3.72 [3.64–3.76] s | 117 [116–118] MB / 309 [297–314] MB / 363 [349–372] MB | 200 |
+| 1MB | 10 | 32.9 [32.3–35.8] ms / 37.1 [35.4–51.4] ms | 445 [437–445] ms / 503 [498–542] ms | 172 [169–177] ms / 214 [213–214] ms | 3.29 [3.23–3.58] ms / 44.5 [43.7–44.5] ms / 17.2 [16.9–17.7] ms | 301 [270–311] / 22 [22–23] / 57 [57–59] | 0.650 [0.640–0.740] s / 9.29 [9.17–9.31] s / 3.76 [3.68–3.82] s | 205 [203–217] MB / 369 [341–385] MB / 367 [346–390] MB | 20 |
+| 1MB | 100 | 400 [385–405] ms / 430 [417–430] ms | 4.39 [4.38–4.50] s / 4.61 [4.58–6.58] s | 1.59 [1.59–1.59] s / 1.78 [1.75–1.87] s | 4.00 [3.85–4.05] ms / 43.9 [43.8–45.0] ms / 15.9 [15.9–15.9] ms | 257 [257–264] / 23 [21–23] / 62 [62–62] | 7.72 [7.54–7.76] s / 91.5 [90.8–98.2] s / 34.6 [34.3–34.6] s | 205 [202–217] MB / 390 [342–406] MB / 420 [415–422] MB | 20 |
 
 *Noise floor: the largest spread of any single configuration across the 3 runs is 61% (stdio 1KB/10hop p50), as (max - min) / median.*
 
-**vs. MCP stdio subprocess**: the direct peer channel has a lower p50 in 7 of 9 cells, a higher one in 0, and is within noise in 2 (1KB/1hop: 0.254ms [0.224ms–0.260ms] vs. 0.286ms [0.248ms–0.287ms] per hop, 1KB/10hop: 0.227ms [0.226ms–0.236ms] vs. 0.245ms [0.098ms–0.247ms] per hop); ratio of medians from 1.08× (at 1KB/10hop) to 13.52× (at 1MB/10hop).
+**vs. MCP stdio subprocess**: the direct peer channel has a lower p50 in 7 of 9 cells, a higher one in 0, and is within noise in 2 (1KB/1hop: 0.254 [0.224–0.260] ms vs. 0.286 [0.248–0.287] ms per hop, 1KB/10hop: 0.227 [0.226–0.236] ms vs. 0.245 [0.0975–0.247] ms per hop); ratio of medians from 1.08× (at 1KB/10hop) to 13.5× (at 1MB/10hop).
 
 **vs. localhost HTTP**: the direct peer channel has a lower p50 in 9 of 9 cells, a higher one in 0, and is within noise in 0; ratio of medians from 2.19× (at 1KB/10hop) to 5.82× (at 64KB/1hop).
 
-**Scale of the difference**: the largest per-hop saving measured here is 13.889ms [13.665ms–14.076ms] across the 3 runs (best case for the direct channel, across every cell; at 1MB/10hop). A tool whose own execution takes more than ~139ms [137ms–141ms] per call would see even that saving as under 10% of the hop, and proportionally less the slower it gets. This benchmark measures transport, not tools.
+**Scale of the difference**: the largest per-hop saving measured here is 13.9 [13.7–14.1] ms across the 3 runs (best case for the direct channel, across every cell; at 1MB/10hop). A tool whose own execution takes more than ~139 [137–141] ms per call would see even that saving as under 10% of the hop, and proportionally less the slower it gets. This benchmark measures transport, not tools.
 
 ### What this does and does not justify
 

@@ -431,9 +431,11 @@ async function measureOnce() {
 
 // ------------------------------- reporting --------------------------------
 
-const fmt = (n) => (n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
-const pct = (n) => `${(n * 100).toFixed(0)}%`;
-const R   = (r, f) => (r == null ? 'n/a' : multiRun.fmtRange(r, f || fmt));
+// display formatters (perf/multi-run.js): three significant figures, the unit
+// once; R formats a range, milliseconds unless told otherwise
+const pct  = multiRun.fmtPct;
+const pctR = multiRun.fmtRangePct;
+const R    = (r, f) => (r == null ? 'n/a' : (f || multiRun.fmtRangeMs)(r));
 
 // One value per run, computed by fn(run), reported across runs.
 function acrossRuns(runs, fn) {
@@ -537,9 +539,9 @@ function reportSandbox(runs, sandbox, say) {
     const hi = acrossRuns(runs, (run) => files(run, l, nMax));
     const slope = acrossRuns(runs, (run) => (files(run, l, nMax) - files(run, l, nMin)) / (nMax - nMin));
     const r2 = acrossRuns(runs, (run) => rSquared(FILE_COUNTS, FILE_COUNTS.map((n) => files(run, l, n))));
-    say(`**Per file, ${l}**: from ${nMin} file to ${nMax}, the composite goes from ${R(lo)} ms to ${R(hi)} ms, ${R(slope)} ms for each further file ` +
+    say(`**Per file, ${l}**: from ${nMin} file to ${nMax}, the composite goes from ${R(lo)} to ${R(hi)}, ${R(slope)} for each further file ` +
       `((${nMax}-file median - ${nMin}-file median) / ${nMax - nMin}, per run). A least-squares line through all ${FILE_COUNTS.length} file counts fits with r² ${
-      R(r2, (v) => v.toFixed(3))}.`);
+      R(r2, (r) => multiRun.fmtRange(r, (v) => v.toFixed(3)))}.`);
     say('');
   });
   const charged = FILE_COUNTS.map((n) => cond(runs[0], labels[0], sandbox).files.find((f) => f.n === n).charged);
@@ -548,17 +550,17 @@ function reportSandbox(runs, sandbox, say) {
   say('');
   const small = FILE_COUNTS.filter((n) => n <= 4);
   labels.forEach((l) => {
-    const parts = small.map((n) => `${R(acrossRuns(runs, (run) => files(run, l, n) - baseF(run, n)))} ms at ${n} file${n === 1 ? '' : 's'}`);
+    const parts = small.map((n) => `${R(acrossRuns(runs, (run) => files(run, l, n) - baseF(run, n)))} at ${n} file${n === 1 ? '' : 's'}`);
     const lo = acrossRuns(runs, (run) => Math.min.apply(null, small.map((n) => files(run, l, n) - baseF(run, n))));
     const hi = acrossRuns(runs, (run) => Math.max.apply(null, small.map((n) => files(run, l, n) - baseF(run, n))));
     say(`**Fixed part, ${l}**: the runtime adds ${parts.join(', ')} (hops ${small.map((n) => 2 * n + 2).join(', ')}); per run, the smallest of these is ${
-      R(lo)} ms and the largest ${R(hi)} ms.`);
+      R(lo)} and the largest ${R(hi)}.`);
     say('');
   });
   labels.forEach((l) => {
     const perHop = acrossRuns(runs, (run) => (files(run, l, nMax) - baseF(run, nMax)) / (2 * nMax + 2));
     const added = acrossRuns(runs, (run) => files(run, l, nMax) - baseF(run, nMax));
-    say(`**Per hop at 400 lines, ${l}**: at ${nMax} files the runtime adds ${R(added)} ms over ${2 * nMax + 2} hops, ${R(perHop)} ms per hop.`);
+    say(`**Per hop at 400 lines, ${l}**: at ${nMax} files the runtime adds ${R(added)} over ${2 * nMax + 2} hops, ${R(perHop)} per hop.`);
     say('');
   });
 
@@ -576,27 +578,27 @@ function reportSandbox(runs, sandbox, say) {
     const added = labels.map((l) => acrossRuns(runs, (run) => size(run, l, lines) - baseS(run, lines)));
     const share = labels.map((l) => acrossRuns(runs, (run) => (size(run, l, lines) - baseS(run, lines)) / size(run, l, lines)));
     const seqCell = hasSeq ? ` ${R(acrossRuns(runs, (run) => seqS(run, lines)))} |` : '';
-    say(`| ${lines} | ${(runs[0].sizeBytes[lines] / 1048576).toFixed(2)} MB | ${lat.map((r) => R(r)).join(' | ')} | ${R(base)} |${seqCell} ${
-      added.map((r) => R(r)).join(' | ')} | ${share.map((r) => R(r, pct)).join(' | ')} |`);
+    say(`| ${lines} | ${multiRun.sig3(runs[0].sizeBytes[lines] / 1048576)} MB | ${lat.map((r) => R(r)).join(' | ')} | ${R(base)} |${seqCell} ${
+      added.map((r) => R(r)).join(' | ')} | ${share.map((r) => R(r, pctR)).join(' | ')} |`);
   });
   say('');
   say(multiRun.noiseFloorLine(sizeNoise, runs.length));
   say('');
   labels.forEach((l) => {
-    const parts = LINE_COUNTS.map((lines) => `${R(acrossRuns(runs, (run) => (size(run, l, lines) - baseS(run, lines)) / size(run, l, lines)), pct)} at ${lines} lines`);
-    const work = LINE_COUNTS.map((lines) => `${R(acrossRuns(runs, (run) => baseS(run, lines) / size(run, l, lines)), pct)}`);
+    const parts = LINE_COUNTS.map((lines) => `${R(acrossRuns(runs, (run) => (size(run, l, lines) - baseS(run, lines)) / size(run, l, lines)), pctR)} at ${lines} lines`);
+    const work = LINE_COUNTS.map((lines) => `${R(acrossRuns(runs, (run) => baseS(run, lines) / size(run, l, lines)), pctR)}`);
     say(`**Runtime's share of the call, ${l}**: ${parts.join(', ')}; the handlers' own work is ${work.join(', ')} respectively.`);
     say('');
-    const perHop = LINE_COUNTS.map((lines) => `${R(acrossRuns(runs, (run) => (size(run, l, lines) - baseS(run, lines)) / (2 * SIZE_FILES + 2)))} ms at ${lines}`);
+    const perHop = LINE_COUNTS.map((lines) => `${R(acrossRuns(runs, (run) => (size(run, l, lines) - baseS(run, lines)) / (2 * SIZE_FILES + 2)))} at ${lines}`);
     say(`**Per hop by file size, ${l}**: the runtime adds ${perHop.join(', ')} lines per file.`);
     say('');
   });
   if (runs.every((run) => run.baselines.repeat != null)) {
     const first = acrossRuns(runs, (run) => baseF(run, SIZE_FILES));
     const again = acrossRuns(runs, (run) => med(run.baselines.repeat.stats));
-    say(`**Same baseline cell, measured twice per run**: ${SIZE_FILES} of the ${Math.max.apply(null, FILE_COUNTS)} files, 400 lines, came out at ${R(first)} ms in the files sweep and ${
-      R(again)} ms when measured again at the end of the baseline phase; within each run the two differ by ${R(acrossRuns(runs, (run) =>
-      Math.abs(baseF(run, SIZE_FILES) - med(run.baselines.repeat.stats)) / Math.min(baseF(run, SIZE_FILES), med(run.baselines.repeat.stats))), pct)}.`);
+    say(`**Same baseline cell, measured twice per run**: ${SIZE_FILES} of the ${Math.max.apply(null, FILE_COUNTS)} files, 400 lines, came out at ${R(first)} in the files sweep and ${
+      R(again)} when measured again at the end of the baseline phase; within each run the two differ by ${R(acrossRuns(runs, (run) =>
+      Math.abs(baseF(run, SIZE_FILES) - med(run.baselines.repeat.stats)) / Math.min(baseF(run, SIZE_FILES), med(run.baselines.repeat.stats))), pctR)}.`);
     say('');
   }
   if (hasSeq) {
@@ -604,7 +606,7 @@ function reportSandbox(runs, sandbox, say) {
       const c = acrossRuns(runs, (run) => baseS(run, lines));
       const q = acrossRuns(runs, (run) => seqS(run, lines));
       const v = verdictLower(c, q);
-      return `${R(c)} against ${R(q)} ms at ${lines} lines (${v === 'lower' ? 'concurrent lower' : v === 'higher' ? 'sequential lower' : 'within noise'})`;
+      return `${R(c)} against ${R(q)} at ${lines} lines (${v === 'lower' ? 'concurrent lower' : v === 'higher' ? 'sequential lower' : 'within noise'})`;
     });
     say(`**Concurrent against sequential baseline** (${SIZE_FILES} files): ${parts.join(', ')}. Runtime adds and shares above use the concurrent one.`);
     say('');
@@ -663,14 +665,14 @@ function reportSandbox(runs, sandbox, say) {
     const cli  = acrossRuns(runs, (run) => med(cond(run, l, sandbox).client.client.stats));
     const ratio = acrossRuns(runs, (run) => med(cond(run, l, sandbox).client.client.stats) / med(cond(run, l, sandbox).client.composite.stats));
     const v = verdictLower(comp, cli);
-    say(`**Composite against client, ${l} server**: one composite call takes ${R(comp)} ms against ${R(cli)} ms for the ${
-      CLIENT_FILES * 2 + 2} client calls, ${v === 'lower' ? 'lower' : v === 'higher' ? 'higher' : 'within noise'}; the client takes ${R(ratio, (x) => `${x.toFixed(2)}×`)} as long, per run.`);
+    say(`**Composite against client, ${l} server**: one composite call takes ${R(comp)} against ${R(cli)} for the ${
+      CLIENT_FILES * 2 + 2} client calls, ${v === 'lower' ? 'lower' : v === 'higher' ? 'higher' : 'within noise'}; the client takes ${R(ratio, multiRun.fmtRangeRatio)} as long, per run.`);
     say('');
   });
   const compTotal = bytesOf.composite.req + bytesOf.composite.res;
   const cliTotal  = bytesOf.client.req + bytesOf.client.res;
-  say(`**Bytes on the wire**: the composite moves ${compTotal} bytes (${(compTotal / 1000).toFixed(1)} KB) and the client-orchestrated version ${cliTotal} bytes (${
-    (cliTotal / 1e6).toFixed(2)} MB), ${(cliTotal / compTotal).toFixed(0)} times as much. ${
+  say(`**Bytes on the wire**: the composite moves ${compTotal} bytes (${multiRun.sig3(compTotal / 1000)} KB) and the client-orchestrated version ${cliTotal} bytes (${
+    multiRun.sig3(cliTotal / 1e6)} MB), ${multiRun.sig3(cliTotal / compTotal)} times as much. ${
     bytesOf.composite.consistent && bytesOf.client.consistent ? 'Identical in every run and on both paths.' : 'NOTE: byte counts differed between runs or paths.'}`);
   say('');
 }
@@ -721,7 +723,7 @@ function reportSandboxComparison(runs, say) {
       const slower = m.median / b.median - 1;
       const v = verdictLower(m, b);
       const verdict = v === 'within noise' ? 'within noise' : (v === 'higher' ? 'slower' : 'faster');
-      say(`**${p.label}, ${mode} against ${base}** (composite, ${HEADLINE.files} files of ${HEADLINE.lines} lines): ${R(m)} ms against ${R(b)} ms, ${
+      say(`**${p.label}, ${mode} against ${base}** (composite, ${HEADLINE.files} files of ${HEADLINE.lines} lines): ${R(m)} against ${R(b)}, ${
         slower >= 0 ? '+' : ''}${pct(slower)} (${verdict}). More than 10% slower with non-overlapping ranges: ${verdict === 'slower' && slower > 0.10 ? 'yes' : 'no'}.`);
       say('');
     });

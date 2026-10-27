@@ -268,8 +268,9 @@ function rangeOf(runs, condKey, cellKey, metric) {
   return values.length > 0 ? multiRun.across(values) : null;
 }
 
-const ms  = (v) => `${v.toFixed(2)}ms`;
-const rps = (v) => v.toFixed(0);
+// range formatters (perf/multi-run.js): three significant figures, the unit once
+const ms  = (r) => multiRun.fmtRangeMs(r);
+const rps = (r) => multiRun.fmtRangeInt(r);
 
 // Per cell: is a better than b, worse, or within noise (ranges overlap)?
 // lowerIsBetter: true for latency, false for throughput. Ratios are of the
@@ -295,11 +296,11 @@ function ratioRange(ratios) {
   if (ratios.length === 0) return '';
   const min = ratios.reduce((x, y) => (x.v < y.v ? x : y));
   const max = ratios.reduce((x, y) => (x.v > y.v ? x : y));
-  return `ratio of medians from ${min.v.toFixed(2)}× (at ${min.label}) to ${max.v.toFixed(2)}× (at ${max.label})`;
+  return `ratio of medians from ${multiRun.fmtRatio(min.v)} (at ${min.label}) to ${multiRun.fmtRatio(max.v)} (at ${max.label})`;
 }
 
 function listCells(entries, fmt) {
-  return entries.map((e) => `${e.label} (${multiRun.fmtRange(e.b, fmt)} vs. ${multiRun.fmtRange(e.a, fmt)})`).join(', ');
+  return entries.map((e) => `${e.label} (${fmt(e.b)} vs. ${fmt(e.a)})`).join(', ');
 }
 
 function pathSummary(runs, sandbox) {
@@ -368,7 +369,7 @@ function buildReport(runs) {
       condKeys.forEach((ck, i) => {
         ['hopP50', 'hopP99', 'throughputRps'].forEach((metric) => {
           const r = rangeOf(runs, ck, k.key, metric);
-          row.push(r == null ? 'n/a' : multiRun.fmtRange(r, metric === 'throughputRps' ? rps : ms));
+          row.push(r == null ? 'n/a' : (metric === 'throughputRps' ? rps : ms)(r));
           if (r != null) noise[metric].push({label: `${PATH_LABELS[PATHS[i]]} ${cellLabel(k)}`, range: r});
         });
       });

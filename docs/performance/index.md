@@ -12,18 +12,18 @@ Every number here comes from `perf/log-triage-perf.js`, `perf/direct-peer-channe
 
 [`examples/log-triage`](https://github.com/mchen6/countinghouse/tree/master/examples/log-triage) triages a directory of logs. For N files it lists the directory, reads and redacts each file, and clusters the warnings and errors: 2N + 2 inner hops, published to the outside as a single tool. With 8 files of 400 lines:
 
-| | tool calls | latency (ms) | bytes on the wire |
+| | tool calls | latency | bytes on the wire |
 |---|---|---|---|
-| one composite call | 1 | 35.7 [33.0–37.6] | 14.6 KB |
-| a client making the same hops | 18 | 95.7 [95.1–108] | 1.67 MB |
+| one composite call | 1 | 35.7 [33.0–37.6] ms | 14.6 KB |
+| a client making the same hops | 18 | 95.7 [95.1–108] ms | 1.67 MB |
 
-The client takes 2.90× [2.53×–3.03×] as long, per run, and moves 114 times as much data across the client–server boundary. The difference is the raw log lines. A client orchestrating the chain has to receive every file from `read` and send it back to `redact`, then send every masked line on to `cluster`. The composite keeps all of that inside the runtime and returns counts plus a bounded set of clusters.
+The client takes 2.90 [2.53–3.03]× as long, per run, and moves 114 times as much data across the client–server boundary. The difference is the raw log lines. A client orchestrating the chain has to receive every file from `read` and send it back to `redact`, then send every masked line on to `cluster`. The composite keeps all of that inside the runtime and returns counts plus a bounded set of clusters.
 
 Three things this table does not show, and each of them would flatter it if I let them. The client ran on the same machine as the server, so there is no network between them; real network latency would widen the gap only on the client-orchestrated side. The 18 client calls are issued back to back by a script, not by a model, so there is no inference time between them; a model deciding each next call would add seconds, not milliseconds. And bytes on the wire are not tokens in a context window. I'm reporting what I measured, not what it would cost you in any particular model.
 
 ## The machine, because it matters
 
-Two virtual CPUs (an Intel i7-6600U at 2.6 GHz) in a VMware guest, running Node 24.21. The client, the server's main thread, four module workers and Redis all share those two cores. Within each run, each cell is the median of 25 calls after 5 warm-ups, and each of the three runs starts from a fresh process with fresh servers. The noise is still large. The same in-process baseline cell, measured twice per run, came out at 21.7 [20.9–21.9] ms and 21.5 [21.2–22.2] ms. The call in the headline table (8 of 32 files, 400 lines, direct path) shows up as 38.4 [37.8–38.8] and 35.7 [33.0–37.6] ms in two tables of the same runs, measured at different points in the run, after the server had served 90 and 300 calls. **A difference counts only when the two ranges don't overlap.** The absolute times are small-machine times. The shapes and the ratios are the result.
+Two virtual CPUs (an Intel i7-6600U at 2.6 GHz) in a VMware guest, running Node 24.21. The client, the server's main thread, four module workers and Redis all share those two cores. Within each run, each cell is the median of 25 calls after 5 warm-ups, and each of the three runs starts from a fresh process with fresh servers. The noise is still large. The same in-process baseline cell, measured twice per run, came out at 21.7 [20.9–21.9] ms and 21.5 [21.2–22.2] ms, 3 [2–6]% apart. The call in the headline table (8 of 32 files, 400 lines, direct path) shows up as 38.4 [37.8–38.8] ms and 35.7 [33.0–37.6] ms in two tables of the same runs, measured at different points in the run, after the server had served 90 and 300 calls. **A difference counts only when the two ranges don't overlap.** The absolute times are small-machine times. The shapes and the ratios are the result.
 
 Two cores shared by all of those processes is not a parallelism test either. The composite runs its per-file chains concurrently, but this run cannot separate what that buys from everything else competing for the same cores, and I'm not claiming it.
 
@@ -33,18 +33,18 @@ Call the same four handlers as plain functions in one process (no runtime, no wo
 
 The first is fixed, visible at 1 to 4 files: per run, the smallest of those is 11.9 [10.9–13.1] ms and the largest 15.2 [13.6–15.9] ms. That is HTTP, the outer call's authorization and metering, and the response.
 
-The second is per hop: 0.48 [0.46–0.54] ms at 400 lines per file on the direct path, and 0.53 [0.51–0.57] ms when routed through the main thread. It grows with payload. At 6,400 lines per file it is 3.69 [3.00–5.08] ms direct and 3.72 [3.63–3.96] ms routed, because every `read` result and every `redact` input and output is a batch of lines crossing a worker boundary.
+The second is per hop: 0.482 [0.463–0.542] ms at 400 lines per file on the direct path, and 0.534 [0.512–0.571] ms when routed through the main thread. It grows with payload. At 6,400 lines per file it is 3.69 [3.00–5.08] ms direct and 3.72 [3.63–3.96] ms routed, because every `read` result and every `redact` input and output is a batch of lines crossing a worker boundary.
 
 Whether any of that matters depends on how much work each hop does:
 
-| lines per file (8 files) | total, direct (ms) | handlers alone (ms) | runtime's share |
+| lines per file (8 files) | total, direct | handlers alone | runtime's share |
 |---|---|---|---|
-| 100 | 19.1 [18.6–20.0] | 6.59 [6.47–6.64] | 65% [65%–68%] |
-| 400 | 32.1 [31.5–33.0] | 17.6 [16.5–18.1] | 45% [44%–49%] |
-| 1,600 | 81.8 [81.5–83.6] | 61.8 [61.6–62.2] | 24% [24%–26%] |
-| 6,400 | 311 [299–336] | 245 [244–245] | 21% [18%–27%] |
+| 100 | 19.1 [18.6–20.0] ms | 6.59 [6.47–6.64] ms | 65 [65–68]% |
+| 400 | 32.1 [31.5–33.0] ms | 17.6 [16.5–18.1] ms | 45 [44–49]% |
+| 1,600 | 81.8 [81.5–83.6] ms | 61.8 [61.6–62.2] ms | 24 [24–26]% |
+| 6,400 | 311 [299–336] ms | 245 [244–245] ms | 21 [18–27]% |
 
-For small inputs, **most of what you pay for is the runtime, not the work.** That was true on one vCPU and it is true on two: at 100 lines per file the runtime's share is 65% [65%–68%]. I'd rather you read that here than find it out later. The 2026-10-26 update of this post said the opposite, that the work was most of the call at every size; that came from an in-process baseline that read the files one after another while the composite reads them concurrently, which on two CPUs made the baseline run high. It has been withdrawn. By 6,400 lines per file the runtime's share is 21% [18%–27%]. If your tools are thin wrappers around fast in-memory functions, the fixed per-call overhead dominates. If they do real work, it fades.
+For small inputs, **most of what you pay for is the runtime, not the work.** That was true on one vCPU and it is true on two: at 100 lines per file the runtime's share is 65 [65–68]%. I'd rather you read that here than find it out later. The 2026-10-26 update of this post said the opposite, that the work was most of the call at every size; that came from an in-process baseline that read the files one after another while the composite reads them concurrently, which on two CPUs made the baseline run high. It has been withdrawn. By 6,400 lines per file the runtime's share is 21 [18–27]%. If your tools are thin wrappers around fast in-memory functions, the fixed per-call overhead dominates. If they do real work, it fades.
 
 ## Latency and the bill move together
 
@@ -56,20 +56,20 @@ That is what per-hop metering is for here. The cost follows the data, and the ca
 
 Since 7.1.0, calls between module workers go over a direct `MessageChannel` that the main thread brokers once, instead of being routed through the main thread on every hop. On this workload the direct path is lower in 4 of 10 cases by 5% to 17% of the routed median; routed is lower in none, and the other six are within noise. Four of them:
 
-| case | direct (ms) | routed (ms) | |
+| case | direct | routed | |
 |---|---|---|---|
-| 8 files × 400 lines | 38.4 [37.8–38.8] | 40.6 [39.2–44.5] | 5% lower |
-| 8 files × 100 lines | 19.1 [18.6–20.0] | 23.1 [20.7–24.6] | 17% lower |
-| 8 files × 1,600 lines | 81.8 [81.5–83.6] | 88.3 [85.6–89.2] | 7% lower |
-| 32 files × 400 lines | 98.5 [97.4–102] | 102 [101–104] | within noise |
+| 8 files × 400 lines | 38.4 [37.8–38.8] ms | 40.6 [39.2–44.5] ms | 5% lower |
+| 8 files × 100 lines | 19.1 [18.6–20.0] ms | 23.1 [20.7–24.6] ms | 17% lower |
+| 8 files × 1,600 lines | 81.8 [81.5–83.6] ms | 88.3 [85.6–89.2] ms | 7% lower |
+| 32 files × 400 lines | 98.5 [97.4–102] ms | 102 [101–104] ms | within noise |
 
-In isolation, with a fixture that does nothing but round-trip a payload, the direct path's throughput is higher in 4 of the nine payload/concurrency cells, lower in none, and within noise in 5. Its median latency is lower in 4, higher in 1 (100KB at concurrency 64), and within noise in 4; the ratio of medians runs from 0.75× to 1.50×. Its p99 is higher in 1 of the nine ([full nine-cell table](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-main-thread-routed-vs-direct-peer-channel)). That's a modest result, and it's the one I'm reporting. (The version I'm not reporting is below.)
+In isolation, with a fixture that does nothing but round-trip a payload, the direct path's throughput is higher in 4 of the nine payload/concurrency cells, lower in none, and within noise in 5. Its median latency is lower in 4, higher in 1 (100KB at concurrency 64), and within noise in 4; the ratio of medians runs from 0.749× to 1.50×. Its p99 is higher in 1 of the nine ([full nine-cell table](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-main-thread-routed-vs-direct-peer-channel)). That's a modest result, and it's the one I'm reporting. (The version I'm not reporting is below.)
 
 The trade isn't only about speed. On the routed path, every hop passes the authorization check. On the direct path the check runs once, when the channel opens, and a revoked grant reaches an open channel through a timed re-check: within 5 seconds by default (`--peerChannelAuthRecheckSeconds`), not on the next hop. The routed path is still there, behind `--no-directPeerChannels`, for anyone who needs a revocation to apply on the very next call.
 
 ## Against a process boundary
 
-The first post covered this, so briefly. Per hop, an in-process call costs about the same as a bare stdio JSON-RPC echo at 1 KB (0.254 ms against 0.286 ms, within noise) and far less at 1 MB (3.299 ms against 44.159 ms over stdio and 16.031 ms over localhost HTTP). The benchmark computes its own break-even: the largest per-hop saving it measured was 13.889 ms [13.665ms–14.076ms], so a tool that spends more than about 139 ms per call would see even that as under 10%. [The full table and its caveats.](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms)
+The first post covered this, so briefly. Per hop, an in-process call costs about the same as a bare stdio JSON-RPC echo at 1 KB (0.254 ms against 0.286 ms, within noise) and far less at 1 MB (3.30 ms against 44.2 ms over stdio and 16.0 ms over localhost HTTP). The benchmark computes its own break-even: the largest per-hop saving it measured was 13.9 [13.7–14.1] ms, so a tool that spends more than about 139 [137–141] ms per call would see even that as under 10%. [The full table and its caveats.](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms)
 
 The log-triage comparison above is the more useful number, because it measures a whole runtime doing real work rather than an echo.
 

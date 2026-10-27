@@ -17,6 +17,9 @@
 // measureOnce() returns one run's results as plain JSON. buildReport(runs)
 // receives the array of N such results and returns the text to print.
 // Without --runs the script behaves as before: one run, in this process.
+// With --render <file> it measures nothing and reports the runs a previous
+// --json <file> saved, so a change to the report can be checked against data
+// already taken.
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
@@ -75,6 +78,47 @@ function noiseFloorLine(cells, runs) {
 // "1.23 [1.10-1.40]" with the given number formatter
 function fmtRange(r, fmt) {
   return `${fmt(r.median)} [${fmt(r.min)}–${fmt(r.max)}]`;
+}
+
+// Display precision. The noise floors run to tens of percent, so every
+// measured quantity is shown to three significant figures; comparisons are
+// always made on the unrounded values, never on these strings.
+function sig3(v) {
+  if (v === 0) return '0';
+  const a = Math.abs(v);
+  if (a >= 1000) return String(Math.round(v / Math.pow(10, Math.floor(Math.log10(a)) - 2)) * Math.pow(10, Math.floor(Math.log10(a)) - 2));
+  const decimals = Math.max(0, 2 - Math.floor(Math.log10(a)));
+  return v.toFixed(decimals);
+}
+
+// milliseconds: "3.30 ms", "113 ms"; from 1000 ms, seconds: "4.39 s"
+function fmtMs(v) {
+  return Math.abs(v) >= 1000 ? `${sig3(v / 1000)} s` : `${sig3(v)} ms`;
+}
+
+// a range of milliseconds, the unit once and chosen by the median:
+// "13.9 [13.7–14.1] ms", "4.39 [4.38–4.50] s"
+function fmtRangeMs(r) {
+  const s = Math.abs(r.median) >= 1000;
+  const f = (v) => sig3(s ? v / 1000 : v);
+  return `${f(r.median)} [${f(r.min)}–${f(r.max)}] ${s ? 's' : 'ms'}`;
+}
+
+// a range of seconds measured as seconds (CPU time): "7.72 [7.54–7.76] s"
+function fmtRangeSeconds(r) {
+  return `${sig3(r.median)} [${sig3(r.min)}–${sig3(r.max)}] s`;
+}
+
+function fmtRatio(v) { return `${sig3(v)}×`; }
+function fmtRangeRatio(r) { return `${sig3(r.median)} [${sig3(r.min)}–${sig3(r.max)}]×`; }
+
+// fractions shown as whole percentages: "65 [65–68]%"
+function fmtPct(v) { return `${Math.round(v * 100)}%`; }
+function fmtRangePct(r) { return `${Math.round(r.median * 100)} [${Math.round(r.min * 100)}–${Math.round(r.max * 100)}]%`; }
+
+// counts and rates shown whole, the unit once: "620 [498–644] req/s"
+function fmtRangeInt(r, unit) {
+  return `${Math.round(r.median)} [${Math.round(r.min)}–${Math.round(r.max)}]${unit != null ? ` ${unit}` : ''}`;
 }
 
 // The sandbox mode a server started with these flags runs in, decided by the
@@ -162,6 +206,15 @@ async function main(spec) {
     return null;
   }
 
+  // --render <file>: no measurement at all; report the runs a previous
+  // --json saved. The other flags must match the ones that run was made with.
+  const renderFrom = argValue('--render', null);
+  if (renderFrom != null) {
+    const saved = JSON.parse(fs.readFileSync(renderFrom, 'utf8'));
+    console.log(spec.report(saved.runs));
+    return saved.runs;
+  }
+
   const runs = Number(argValue('--runs', 1));
   const results = [];
   if (argValue('--runs', null) == null) {
@@ -203,6 +256,6 @@ function stripRuns(argv) {
 
 module.exports = {
   argValue, median, across, overlaps, compareLower, relativeSpread, noiseFloor, noiseFloorLine,
-  fmtRange, sandboxMode, sandboxArgs, newSandboxLog, scanSandboxLog, sandboxLogLine,
+  fmtRange, sig3, fmtMs, fmtRangeMs, fmtRangeSeconds, fmtRatio, fmtRangeRatio, fmtPct, fmtRangePct, fmtRangeInt, sandboxMode, sandboxArgs, newSandboxLog, scanSandboxLog, sandboxLogLine,
   classifyError, errorLine, mergeTally, envHeader, main
 };
