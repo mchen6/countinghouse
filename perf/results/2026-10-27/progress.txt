@@ -1,0 +1,5 @@
+2026-10-27T04:26:13Z commit 0ec55b8543f879a14ea02c6bf65720f2c0e01d94
+2026-10-27T04:27:44Z gate log-triage: mean idle 96.8%
+2026-10-27T04:27:44Z start log-triage: node perf/log-triage-perf.js --reps 25 --runs 3 --json perf/results/2026-10-27/log-triage.json
+2026-10-27T04:33:06Z end log-triage: exit 0
+2026-10-27T04:33:06Z interference log-triage: session used 3.15 CPU s over 322 s wall (claude, ptyxis, gnome-shell)
