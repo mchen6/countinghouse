@@ -201,6 +201,18 @@ jobs:
           npm run test:peer-standalone
           npx mocha ./test/test6.js
 
+      # test/sandbox needs the Node APIs the module sandbox is built on
+      # (Node >= 22.16; see lib/sandbox-support.js). The check asks the server's
+      # own code rather than naming a version here, so the matrix can change
+      # without this step changing with it.
+      - name: Module sandbox tests
+        run: |
+          if node -e "process.exit(require('./lib/sandbox-support').missing().length ? 1 : 0)"; then
+            npx mocha --exit ./test/sandbox/*.js
+          else
+            echo "::notice::Node $(node -v) lacks the module sandbox's APIs; test/sandbox skipped"
+          fi
+
       # informational only for now - the dependency tree isn't at zero
       # vulnerabilities yet, so this doesn't gate CI; it's here so the
       # count is visible in every run while that work continues
