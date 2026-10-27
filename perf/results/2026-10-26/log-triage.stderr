@@ -1,0 +1,84 @@
+
+##### run 1 of 3 #####
+
+=== direct, sandbox audit (default) ===
+  files=1
+  files=2
+  files=4
+  files=8
+  files=16
+  files=32
+  lines=100
+  lines=400
+  lines=1600
+  lines=6400
+  composite vs client-orchestrated
+
+=== main-thread-routed, sandbox audit (default) ===
+  files=1
+  files=2
+  files=4
+  files=8
+  files=16
+  files=32
+  lines=100
+  lines=400
+  lines=1600
+  lines=6400
+  composite vs client-orchestrated
+
+##### run 2 of 3 #####
+
+=== direct, sandbox audit (default) ===
+  files=1
+  files=2
+  files=4
+  files=8
+  files=16
+  files=32
+  lines=100
+  lines=400
+  lines=1600
+  lines=6400
+  composite vs client-orchestrated
+
+=== main-thread-routed, sandbox audit (default) ===
+  files=1
+  files=2
+  files=4
+  files=8
+  files=16
+  files=32
+  lines=100
+  lines=400
+  lines=1600
+  lines=6400
+  composite vs client-orchestrated
+
+##### run 3 of 3 #####
+
+=== direct, sandbox audit (default) ===
+  files=1
+  files=2
+  files=4
+  files=8
+  files=16
+  files=32
+  lines=100
+  lines=400
+  lines=1600
+  lines=6400
+  composite vs client-orchestrated
+
+=== main-thread-routed, sandbox audit (default) ===
+  files=1
+  files=2
+  files=4
+  files=8
+  files=16
+  files=32
+  lines=100
+  lines=400
+  lines=1600
+  lines=6400
+  composite vs client-orchestrated

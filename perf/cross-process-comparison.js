@@ -50,9 +50,13 @@
 //     already. Prose in docs/direct-peer-channels.md may only quote numbers
 //     this script printed, copy-pasted from a real run.
 //
-// Usage: node perf/cross-process-comparison.js
-// Prints a markdown table + generated summary, then raw JSON. Takes several
-// minutes; the 1MB/100-hop cells move gigabytes through each transport.
+// Usage: node perf/cross-process-comparison.js [--runs <n>] [--json <file>]
+// Prints a markdown table + generated summary. Takes several minutes per
+// run; the 1MB/100-hop cells move gigabytes through each transport. With
+// --runs, each run is a fresh process (perf/multi-run.js); cells are the
+// median across runs with the [min-max] range, a comparison only counts as
+// lower or higher when the two ranges do not overlap, and the break-even
+// figure is computed per run and reported the same way.
 
 const cp     = require('child_process');
 const path   = require('path');
@@ -60,6 +64,7 @@ const fs     = require('fs');
 const http   = require('http');
 const Worker = require('worker_threads').Worker;
 const MessageChannel = require('worker_threads').MessageChannel;
+const multiRun = require('./multi-run');
 
 const PAYLOAD_SIZES = [1024, 65536, 1048576];   // 1KB, 64KB, 1MB
 const CHAIN_LENGTHS = [1, 10, 100];
@@ -311,63 +316,92 @@ function formatPayload(bytes) {
 }
 
 function fmtMs(v)  { return v == null ? 'n/a' : `${v.toFixed(3)}ms`; }
-function fmtRss(v) { return v == null ? 'n/a' : `${(v / 1048576).toFixed(0)}MB`; }
-function fmtCpu(v) { return v == null ? 'n/a' : `${v.toFixed(2)}s`; }
 
-// Generated from the measured numbers -- never hand-written. See the header.
-function buildReport(results) {
-  const rows = [
-    '| Payload | Hops | Direct peer channel<br>p50 / p99 | MCP stdio subprocess<br>p50 / p99 | localhost HTTP<br>p50 / p99 | Per-hop p50<br>(peer / stdio / http) | Hops/s<br>(peer / stdio / http) | CPU<br>(peer / stdio / http) | Peak RSS<br>(peer / stdio / http) | n |',
-    '|---|---|---|---|---|---|---|---|---|---|'
-  ];
-
-  const speedupsStdio = [], speedupsHttp = [];
-
-  PAYLOAD_SIZES.forEach((p) => {
-    CHAIN_LENGTHS.forEach((h) => {
-      const k = `${p}:${h}`;
-      const a = results.peerChannel[k], b = results.stdio[k], c = results.http[k];
-
-      rows.push(`| ${formatPayload(p)} | ${h} | ${fmtMs(a.chainP50Ms)} / ${fmtMs(a.chainP99Ms)} | ${fmtMs(b.chainP50Ms)} / ${fmtMs(b.chainP99Ms)} | ${fmtMs(c.chainP50Ms)} / ${fmtMs(c.chainP99Ms)} | ${fmtMs(a.perHopP50Ms)} / ${fmtMs(b.perHopP50Ms)} / ${fmtMs(c.perHopP50Ms)} | ${a.hopsPerSecond.toFixed(0)} / ${b.hopsPerSecond.toFixed(0)} / ${c.hopsPerSecond.toFixed(0)} | ${fmtCpu(a.cpuSeconds)} / ${fmtCpu(b.cpuSeconds)} / ${fmtCpu(c.cpuSeconds)} | ${fmtRss(a.peakRssBytes)} / ${fmtRss(b.peakRssBytes)} / ${fmtRss(c.peakRssBytes)} | ${a.samples} |`);
-
-      speedupsStdio.push({label: `${formatPayload(p)}/${h}hop`, v: b.chainP50Ms / a.chainP50Ms});
-      speedupsHttp.push({label: `${formatPayload(p)}/${h}hop`, v: c.chainP50Ms / a.chainP50Ms});
-    });
-  });
-
-  function range(arr) {
-    const min = arr.reduce((x, y) => { return x.v < y.v ? x : y; });
-    const max = arr.reduce((x, y) => { return x.v > y.v ? x : y; });
-    return {min: min, max: max, wins: arr.filter((x) => { return x.v > 1; }).length, total: arr.length};
-  }
-
-  const rs = range(speedupsStdio), rh = range(speedupsHttp);
-
-  // the honest counterweight, computed rather than asserted: how long a tool
-  // would have to take for the transport difference to be <=10% of a hop
-  let worstHopDeltaMs = 0;
+// The largest per-hop saving in one run: for every cell, the cheaper of
+// stdio and HTTP minus the direct peer channel, per hop at p50.
+function worstHopDelta(results) {
+  let worst = {ms: 0, label: null};
   PAYLOAD_SIZES.forEach((p) => {
     CHAIN_LENGTHS.forEach((h) => {
       const k = `${p}:${h}`;
       const d = Math.min(results.stdio[k].perHopP50Ms, results.http[k].perHopP50Ms) - results.peerChannel[k].perHopP50Ms;
-      if (d > worstHopDeltaMs) worstHopDeltaMs = d;
+      if (d > worst.ms) worst = {ms: d, label: `${formatPayload(p)}/${h}hop`};
+    });
+  });
+  return worst;
+}
+
+// Generated from the measured numbers -- never hand-written. See the header.
+function buildReport(runs) {
+  const rows = [
+    '| Payload | Hops | Direct peer channel<br>p50 / p99 | MCP stdio subprocess<br>p50 / p99 | localhost HTTP<br>p50 / p99 | Per-hop p50<br>(peer / stdio / http) | Hops/s<br>(peer / stdio / http) | CPU<br>(peer / stdio / http) | Peak RSS<br>(peer / stdio / http) | n |',
+    '|---|---|---|---|---|---|---|---|---|---|'
+  ];
+  const conds = ['peerChannel', 'stdio', 'http'];
+  const condLabels = {peerChannel: 'direct peer channel', stdio: 'stdio', http: 'HTTP'};
+  const rangeOf = (cond, k, metric) => {
+    const values = runs.map((r) => r[cond][k][metric]).filter((v) => v != null);
+    return values.length > 0 ? multiRun.across(values) : null;
+  };
+  const fr = (r, fmt) => (r == null ? 'n/a' : multiRun.fmtRange(r, fmt));
+  const ms3 = (v) => `${v.toFixed(3)}ms`;
+
+  const vs = {stdio: [], http: []};
+  const noise = [];
+
+  PAYLOAD_SIZES.forEach((p) => {
+    CHAIN_LENGTHS.forEach((h) => {
+      const k = `${p}:${h}`;
+      const label = `${formatPayload(p)}/${h}hop`;
+      const g = {};
+      conds.forEach((c) => {
+        g[c] = {};
+        ['chainP50Ms', 'chainP99Ms', 'perHopP50Ms', 'hopsPerSecond', 'cpuSeconds', 'peakRssBytes'].forEach((m) => { g[c][m] = rangeOf(c, k, m); });
+        noise.push({label: `${condLabels[c]} ${label} p50`, range: g[c].chainP50Ms});
+      });
+
+      rows.push(`| ${formatPayload(p)} | ${h} | ${conds.slice(0, 3).map((c) => `${fr(g[c].chainP50Ms, ms3)} / ${fr(g[c].chainP99Ms, ms3)}`).join(' | ')} | ${
+        conds.map((c) => fr(g[c].perHopP50Ms, ms3)).join(' / ')} | ${conds.map((c) => fr(g[c].hopsPerSecond, (v) => v.toFixed(0))).join(' / ')} | ${
+        conds.map((c) => fr(g[c].cpuSeconds, (v) => `${v.toFixed(2)}s`)).join(' / ')} | ${
+        conds.map((c) => fr(g[c].peakRssBytes, (v) => `${(v / 1048576).toFixed(0)}MB`)).join(' / ')} | ${runs[0].peerChannel[k].samples} |`);
+
+      ['stdio', 'http'].forEach((other) => {
+        const c = multiRun.compareLower(g.peerChannel.chainP50Ms, g[other].chainP50Ms);
+        vs[other].push({label: label, ratio: g[other].chainP50Ms.median / g.peerChannel.chainP50Ms.median,
+          verdict: c === -1 ? 'lower' : (c === 1 ? 'higher' : 'noise'),
+          peer: g.peerChannel.perHopP50Ms, other: g[other].perHopP50Ms});
+      });
     });
   });
 
-  const summary = [];
-  summary.push(`**vs. MCP stdio subprocess**: the direct peer channel has a lower p50 in ${rs.wins} of ${rs.total} cells, from ${rs.min.v.toFixed(2)}× (at ${rs.min.label}) to ${rs.max.v.toFixed(2)}× (at ${rs.max.label}).`);
-  summary.push(`**vs. localhost HTTP**: lower p50 in ${rh.wins} of ${rh.total} cells, from ${rh.min.v.toFixed(2)}× (at ${rh.min.label}) to ${rh.max.v.toFixed(2)}× (at ${rh.max.label}).`);
-  const breakEvenMs = worstHopDeltaMs * 10;
-  summary.push(`**Scale of the difference**: the largest per-hop saving measured here is ${worstHopDeltaMs.toFixed(3)}ms (best case for the direct channel, across every cell). ` +
-    `A tool whose own execution takes more than ${ 
-    breakEvenMs >= 1 ? `~${breakEvenMs.toFixed(0)}ms` : `~${breakEvenMs.toFixed(2)}ms` 
-    } per call would see even that saving as under 10% of the hop, and proportionally less the ` +
-    `slower it gets. This benchmark measures transport, not tools.`);
+  function vsSentence(other, title) {
+    const list = vs[other];
+    const lower = list.filter((x) => x.verdict === 'lower'), higher = list.filter((x) => x.verdict === 'higher'), noisy = list.filter((x) => x.verdict === 'noise');
+    const min = list.reduce((x, y) => (x.ratio < y.ratio ? x : y)), max = list.reduce((x, y) => (x.ratio > y.ratio ? x : y));
+    const named = (arr) => (arr.length > 0 ? ` (${arr.map((x) => `${x.label}: ${fr(x.peer, ms3)} vs. ${fr(x.other, ms3)} per hop`).join(', ')})` : '');
+    return `**vs. ${title}**: the direct peer channel has a lower p50 in ${lower.length} of ${list.length} cells, a higher one in ${
+      higher.length}${named(higher)}, and is within noise in ${noisy.length}${named(noisy)}; ratio of medians from ${
+      min.ratio.toFixed(2)}× (at ${min.label}) to ${max.ratio.toFixed(2)}× (at ${max.label}).`;
+  }
 
-  return {table: rows.join('\n'), summary: summary.join('\n\n')};
+  const perRun = runs.map(worstHopDelta);
+  const delta = multiRun.across(perRun.map((w) => w.ms));
+  const breakEven = multiRun.across(perRun.map((w) => w.ms * 10));
+  const where = Array.from(new Set(perRun.map((w) => w.label))).join(', ');
+  const fmtBE = (v) => (v >= 1 ? `${v.toFixed(0)}ms` : `${v.toFixed(2)}ms`);
+
+  const summary = [];
+  summary.push(vsSentence('stdio', 'MCP stdio subprocess'));
+  summary.push(vsSentence('http', 'localhost HTTP'));
+  summary.push(`**Scale of the difference**: the largest per-hop saving measured here is ${multiRun.fmtRange(delta, ms3)} across the ${
+    runs.length} runs (best case for the direct channel, across every cell; at ${where}). ` +
+    `A tool whose own execution takes more than ~${multiRun.fmtRange(breakEven, fmtBE)} per call would see even that saving as under 10% of the hop, and proportionally less the ` +
+    'slower it gets. This benchmark measures transport, not tools.');
+
+  return [multiRun.envHeader(null, runs.length), '', rows.join('\n'), '', multiRun.noiseFloorLine(noise, runs.length), '', summary.join('\n\n')].join('\n');
 }
 
-async function main() {
+async function measureOnce() {
   const results = {peerChannel: {}, stdio: {}, http: {}};
 
   for (let s = 0; s < PAYLOAD_SIZES.length; s++) {
@@ -393,10 +427,7 @@ async function main() {
     }
   }
 
-  const report = buildReport(results);
-  console.log(`\n${report.table}\n`);
-  console.log(`${report.summary}\n`);
-  console.log(JSON.stringify(results, null, 2));
+  return results;
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+multiRun.main({measure: measureOnce, report: buildReport}).then(() => process.exit(0)).catch((err) => { console.error(err); process.exit(1); });

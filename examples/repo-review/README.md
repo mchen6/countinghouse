@@ -13,9 +13,9 @@ intermediate data is genuinely large.
 Two claims, and they carry equal weight — the second is the one that survives
 a handler being rewritten badly:
 
-1. **The bytes.** Composed in the client, this review moves **5.04 MB** into
+1. **The bytes.** Composed in the client, this review moves **6.08 MB** into
    the caller's context across three tool calls. Composed in the runtime, it
-   moves **11.0 KB** in one call — a **470× reduction**, all of it source code
+   moves **10.7 KB** in one call — a **579× reduction**, all of it source code
    that stayed on the server. Measured, not asserted: see
    [Token comparison](#token-comparison). (The absolute byte counts drift as
    this repository's own source grows — re-run the script for a current
@@ -203,7 +203,11 @@ with every intermediate result returned to the client and handed back down —
 what an MCP client with three independent servers has to do — and **(b)** one
 call to the composite.
 
-The report below is copy-pasted from a real run. The script generates its own
+The report below is copy-pasted from a real run: 2026-10-26, commit `92b17cd`,
+a 2-vCPU VMware guest (Intel i7-6600U), Node v24.21.0, module sandbox `audit`
+(raw output in
+[`perf/results/2026-10-26/`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-26/repo-review-token-comparison.md)).
+The script generates its own
 summary from the measured numbers; nothing in this section is hand-written, and
 nothing here may be edited by hand — re-run the script and paste again.
 
@@ -211,27 +215,27 @@ nothing here may be edited by hand — re-run the script and paste again.
 | | (a) three separate tools | (b) one composite tool | ratio |
 |---|---|---|---|
 | MCP tool calls | 3 | 1 | 3× |
-| Response bytes (into model context) | 5.04 MB | 11.0 KB | **470×** |
-| Estimated response tokens | ~1.32M | ~2.8k | 470× |
-| Request bytes (out of model context) | 2.83 MB | 115 B | 25847× |
-| Total bytes across the MCP boundary | 7.88 MB | 11.1 KB | 726× |
-| End-to-end wall time (p50) | 514 ms | 253 ms | 2.03× |
+| Response bytes (into model context) | 6.08 MB | 10.7 KB | **579×** |
+| Estimated response tokens | ~1.59M | ~2.8k | 579× |
+| Request bytes (out of model context) | 3.32 MB | 115 B | 30301× |
+| Total bytes across the MCP boundary | 9.40 MB | 10.9 KB | 886× |
+| End-to-end wall time (p50) | 301 ms | 172 ms | 1.75× |
 | Samples | 5 | 5 | |
 
 | Condition | Tool call | Request | Response |
 |---|---|---|---|
-| (a) | `repo_scan_scanservice_scan` | 109 B | 5.03 MB |
-| (a) | `secret_detect_detectservice_detect` | 2.38 MB | 5.8 KB |
-| (a) | `dep_audit_auditservice_audit` | 469.7 KB | 9.0 KB |
-| (b) | `repo_review_reviewservice_review` | 115 B | 11.0 KB |
+| (a) | `repo_scan_scanservice_scan` | 109 B | 6.06 MB |
+| (a) | `secret_detect_detectservice_detect` | 2.88 MB | 5.6 KB |
+| (a) | `dep_audit_auditservice_audit` | 456.5 KB | 8.4 KB |
+| (b) | `repo_review_reviewservice_review` | 115 B | 10.7 KB |
 
-**Same work, checked rather than assumed**: both conditions reported 394 files / 2296494 bytes scanned, 15 credential finding(s) and 46 declared dependencies. The two work descriptors are identical.
+**Same work, checked rather than assumed**: both conditions reported 492 files / 2791701 bytes scanned, 14 credential finding(s) and 42 declared dependencies. The two work descriptors are identical.
 
-**Context cost**: the client received 5.04 MB across 3 calls in (a) and 11.0 KB in one call in (b) -- 470× less. That is 5276545 bytes, an estimated ~1.32M tokens, that never entered a model context. The source code is the whole of the difference: it was read and analysed in both conditions, and only in (b) did it stay inside the server.
+**Context cost**: the client received 6.08 MB across 3 calls in (a) and 10.7 KB in one call in (b) -- 579× less. That is 6360705 bytes, an estimated ~1.59M tokens, that never entered a model context. The source code is the whole of the difference: it was read and analysed in both conditions, and only in (b) did it stay inside the server.
 
-**Latency**: (b) took 253ms at p50 against (a)'s 514ms (2.03×). Both numbers are dominated by the tools' own work -- reading and regex-scanning 2.19 MB of source -- not by the transport, and (b) additionally pays for serializing every hop payload to build its dataFlow report. Treat the byte column as the result of this benchmark and the latency column as context for it.
+**Latency**: (b) took 172ms at p50 against (a)'s 301ms (1.75×). Both numbers are dominated by the tools' own work -- reading and regex-scanning 2.66 MB of source -- not by the transport, and (b) additionally pays for serializing every hop payload to build its dataFlow report. Treat the byte column as the result of this benchmark and the latency column as context for it.
 
-**What (a) is charitable about**: its 2.83 MB of request body is this script copying an object in memory. A model client would have to emit those bytes as tool-call arguments, token by token, before the second and third calls could happen at all.
+**What (a) is charitable about**: its 3.32 MB of request body is this script copying an object in memory. A model client would have to emit those bytes as tool-call arguments, token by token, before the second and third calls could happen at all.
 ```
 
 Tokens are **estimated at 4 bytes each**, not counted — there is no tokenizer

@@ -107,6 +107,30 @@ These apply under `--workerThread` on Node >= 22.16 unless
   development.
 - Test: `test/module-loading/12-reload-fresh-code.js`.
 
+### Docs — every performance number re-measured on 2 vCPUs
+
+- All benchmark figures in `docs/direct-peer-channels.md`,
+  `docs/log-triage-performance.md`, both posts under `docs/`, `README.md` and
+  `examples/log-triage/README.md` were re-measured on 2026-10-26 on a 2-vCPU
+  machine (Node v24.21.0, module sandbox `audit`), three independent runs per
+  script. Raw output is in `perf/results/2026-10-26/`; the replaced tables
+  are kept under "Retired numbers" in `docs/direct-peer-channels.md`.
+- `examples/repo-review/token-comparison.js` runs again (it had failed since
+  composition binding started requiring a `runsModules` identity, which its
+  `--debug` server lacked; it now loads the demo's `auth.json`). Re-run on
+  2026-10-26: 6.08 MB against 10.7 KB, 579× (previously 470×; the repository
+  it scans has grown).
+- One published conclusion reversed: for small log-triage inputs the
+  runtime is no longer most of the call. The handlers' own work is the
+  larger part at every input size measured.
+- `perf/`: the four benchmark scripts take `--runs N`, report each cell as
+  the median and range across fresh-process runs, count a difference only
+  when the ranges do not overlap, and print each table's noise floor and the
+  module sandbox mode it ran under.
+- Test fixture: `test/fixtures/sandbox-native/build/Release/fake.node` is now
+  committed; `build/` in `.gitignore` had kept it out, so sandbox 04 failed on
+  a clean checkout.
+
 ## 7.1.2
 
 ### Security — `package-info` is rate limited

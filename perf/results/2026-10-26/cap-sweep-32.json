@@ -1,0 +1,85 @@
+{
+  "runs": [
+    {
+      "conditions": {
+        "direct|default": {
+          "path": "direct",
+          "sandbox": null,
+          "sandboxMode": "audit (default)",
+          "cells": {
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 136.23978201634878,
+              "hopP50": 189.74381,
+              "hopP99": 333.063937,
+              "hopMean": 192.46747581999998
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|default": {
+          "path": "direct",
+          "sandbox": null,
+          "sandboxMode": "audit (default)",
+          "cells": {
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 132.15859030837004,
+              "hopP50": 237.74059,
+              "hopP99": 309.62501,
+              "hopMean": 212.1307892333333
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|default": {
+          "path": "direct",
+          "sandbox": null,
+          "sandboxMode": "audit (default)",
+          "cells": {
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 126.79628064243448,
+              "hopP50": 182.517542,
+              "hopP99": 328.659905,
+              "hopMean": 198.96775122666654
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    }
+  ]
+}

@@ -4,6 +4,8 @@
 
 [Follow-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
 
+*Updated 2026-10-26: the transport figures below were re-measured on a 2-vCPU machine at commit 3d9599d; the original figures are in [docs/direct-peer-channels.md#retired-numbers](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#retired-numbers).*
+
 In 2015 I wrote a Node.js framework for a problem nobody framed this way back then: let a client that has never seen your service discover it, understand it, and call it — without integrating an SDK. It was called CDIF, the setting was the early IoT wave, and everything in it was a *device* exposing *services* containing *actions*. A client's whole lifecycle was four HTTP calls: list what's here, fetch a thing's description, fetch its JSON Schema, invoke an action with a JSON payload. The server validated every call before implementation code saw it.
 
 In 2024, Anthropic shipped the Model Context Protocol, and I had a strange afternoon. `get-spec` is `tools/list`. `invoke-action` is `tools/call`. The schema endpoint is `inputSchema`. Server-side validation is server-side validation. Piece for piece, it was what I had been running in production for a decade.
@@ -44,11 +46,11 @@ The interesting question isn't which approach wins. It's when a chain should sto
 
 An MCP server is a separate process, whether a local child over stdio or a service over a socket, so every tool-to-tool hop costs a serialize, a pipe write, a deserialize and a scheduler round trip. Modules on one runtime hand each other a structured clone in shared process memory instead.
 
-At 1KB the gap nearly closes: 0.34ms in-process versus 0.36ms over stdio and 0.73ms over HTTP. At 1MB it does not — one hop costs 9.1ms, 86.1ms and 38.8ms respectively; a hundred hops cost 0.9s, 8.3s and 3.7s, and 21s, 173s and 76s of CPU. The stdio condition is a bare JSON-RPC echo with no handshake and no `tools/list`: the best case for stdio, not a typical one.
+At 1KB the gap against stdio closes to within noise: 0.254ms in-process versus 0.286ms over stdio and 0.746ms over HTTP. At 1MB it does not — one hop costs 3.299ms, 44.159ms and 16.031ms respectively; a hundred hops cost 400.062ms, 4391.429ms and 1590.522ms, and 7.72s, 91.52s and 34.62s of CPU. (Medians of three runs on a 2-vCPU VMware guest, Intel i7-6600U, Node v24.21.0, commit 3d9599d; no server is involved, so no sandbox mode.) The stdio condition is a bare JSON-RPC echo with no handshake and no `tools/list`: the best case for stdio, not a typical one.
 
-Now the honest part, which the benchmark script computes rather than asserts. The largest per-hop saving it measured is 31ms, so a tool whose own execution takes more than about 310ms would see even that as under 10% of the call. Anything hitting a database, an API or a model is far past that line. **Per call, the transport rounds to nothing.**
+Now the honest part, which the benchmark script computes rather than asserts. The largest per-hop saving it measured is 13.889ms, so a tool whose own execution takes more than about 139ms would see even that as under 10% of the call. Anything hitting a database, an API or a model is far past that line. **Per call, the transport rounds to nothing.**
 
-Per session it doesn't, and the arithmetic is just multiplication. Agent runs are hundreds of calls over hours; that 8.3-versus-0.9-second row is one chain. The workload where this shows up is composition-heavy, large-payload and fast-tooled — parse, chunk, embed, retrieve, rerank — and the CPU column matters more than the clock. 173 seconds against 21 is not latency you wait out. It is capacity you buy. [Full tables, methodology and caveats.](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms)
+Per session it doesn't, and the arithmetic is just multiplication. Agent runs are hundreds of calls over hours; that 4391.429-versus-400.062-millisecond row is one chain. The workload where this shows up is composition-heavy, large-payload and fast-tooled — parse, chunk, embed, retrieve, rerank — and the CPU column matters more than the clock. 91.52 seconds against 7.72 is not latency you wait out. It is capacity you buy. [Full tables, methodology and caveats.](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms)
 
 ## Why the 2015 part matters at all
 
