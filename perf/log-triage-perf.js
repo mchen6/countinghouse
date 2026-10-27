@@ -14,9 +14,16 @@
 //               400 lines each). Hops are 2N + 2.
 //   2. size     latency against file size at 8 files (100..6400 lines each).
 //   3. baseline the same work in this process with no runtime at all: the
-//               four handlers called as plain functions, one after another.
-//               composite - baseline is what hops, schema validation,
-//               metering and HTTP cost together.
+//               four handlers called as plain functions, scheduled the way
+//               the composite schedules them (list, then every file's read ->
+//               redact chain concurrently, then cluster). composite - baseline
+//               is what hops, schema validation, metering and HTTP cost
+//               together. The same handlers are also timed one file after
+//               another ("sequential"), alternating with the concurrent runs;
+//               that is what the per-stage table is taken from, since
+//               concurrent stages overlap. On more than one CPU the two differ:
+//               each sequential file read pays the hand-off to libuv's thread
+//               pool in turn, which concurrent reads overlap.
 //   4. client   the same 2N + 2 tool calls made one by one by an MCP client
 //               holding the leaf tools, raw lines crossing the wire both ways.
 //
@@ -220,9 +227,10 @@ async function repeat(fn, errors) {
   return {stats: summarize(samples), last: last};
 }
 
-// The same work with no runtime: the handlers as plain functions, in the
-// order the composite calls them, one file after another.
-async function inProcess(dir, maxFiles) {
+// The same work with no runtime: the handlers as plain functions, one file
+// after another. Each stage is timed on its own, which only adds up because
+// nothing overlaps.
+async function inProcessSequential(dir, maxFiles) {
   const t = {list: 0, read: 0, redact: 0, cluster: 0};
   const clock = async (key, fn) => {
     const s = process.hrtime.bigint();
@@ -244,6 +252,23 @@ async function inProcess(dir, maxFiles) {
   if (chosen.length > 0) await clock('cluster', () => handlers.cluster({lines: lines}));
 
   return {ms: Number(process.hrtime.bigint() - start) / 1e6, stages: t, lineCount: lines.length};
+}
+
+// The same work scheduled as examples/log-triage/log-triage/handlers/
+// triageService/triage.js schedules it: list, then the per-file read -> redact
+// chains concurrently, then cluster over every masked line. This is the
+// baseline "runtime adds" is measured against.
+async function inProcessConcurrent(dir, maxFiles) {
+  const start  = process.hrtime.bigint();
+  const listed = (await handlers.list({dir: dir})).output;
+  const chosen = listed.files.slice(0, maxFiles);
+  const chains = await Promise.all(chosen.map(async (file) => {
+    const raw = (await handlers.read({dir: dir, name: file.name})).output;
+    return (await handlers.redact({lines: raw.lines})).output.lines;
+  }));
+  const lines = [].concat(...chains);
+  if (chosen.length > 0) await handlers.cluster({lines: lines});
+  return {ms: Number(process.hrtime.bigint() - start) / 1e6, lineCount: lines.length};
 }
 
 // The same 2N + 2 tool calls, made one at a time by a client that holds the
@@ -360,29 +385,38 @@ async function measureOnce() {
   const sizeBytes = {};
   LINE_COUNTS.forEach((lines) => { sizeBytes[lines] = dirBytes(dirs.size[lines]); });
 
-  // Baselines first, before any server competes for the CPU.
-  const baselines = {files: {}, size: {}};
+  // Baselines first, before any server competes for the CPU. Concurrent and
+  // sequential alternate rep by rep, so drift reaches both alike.
+  const baselines = {files: {}, size: {}, filesSeq: {}, sizeSeq: {}, repeat: null};
   const stages = [];
   const baseline = async (dir, n) => {
-    for (let i = 0; i < WARMUP; i++) await inProcess(dir, n);
-    const runs = [];
-    for (let i = 0; i < REPS; i++) runs.push(await inProcess(dir, n));
-    const stats = summarize(runs.map((r) => r.ms));
-    const byTotal = runs.slice().sort((a, b) => a.ms - b.ms);
-    return {stats: stats, typical: byTotal[Math.floor(byTotal.length / 2)]};
+    for (let i = 0; i < WARMUP; i++) { await inProcessConcurrent(dir, n); await inProcessSequential(dir, n); }
+    const conc = [], seq = [];
+    for (let i = 0; i < REPS; i++) {
+      conc.push(await inProcessConcurrent(dir, n));
+      seq.push(await inProcessSequential(dir, n));
+    }
+    const byTotal = seq.slice().sort((a, b) => a.ms - b.ms);
+    return {stats: summarize(conc.map((r) => r.ms)), seqStats: summarize(seq.map((r) => r.ms)),
+            typical: byTotal[Math.floor(byTotal.length / 2)]};
   };
   const fileCounts = MATRIX === 'headline' ? [HEADLINE.files] : FILE_COUNTS;
   for (const n of fileCounts) {
     const b = await baseline(dirs.files, n);
     baselines.files[n] = b.stats;
+    baselines.filesSeq[n] = b.seqStats;
     stages.push({n: n, lines: 400, ms: b.typical.ms, stages: b.typical.stages});
   }
   if (MATRIX !== 'headline') {
     for (const lines of LINE_COUNTS) {
       const b = await baseline(dirs.size[lines], SIZE_FILES);
       baselines.size[lines] = b.stats;
+      baselines.sizeSeq[lines] = b.seqStats;
       if (lines !== 400) stages.push({n: SIZE_FILES, lines: lines, ms: b.typical.ms, stages: b.typical.stages});
     }
+    // The same cell again, at the end of the baseline phase: a true repeat,
+    // for the within-run noise of the baseline itself.
+    baselines.repeat = {n: SIZE_FILES, stats: (await baseline(dirs.files, SIZE_FILES)).stats};
   }
 
   const conditions = [];
@@ -471,13 +505,19 @@ function reportSandbox(runs, sandbox, say) {
   const size  = (run, l, lines) => med(cond(run, l, sandbox).size.find((s) => s.lines === lines).stats);
   const baseF = (run, n) => med(run.baselines.files[n]);
   const baseS = (run, lines) => med(run.baselines.size[lines]);
+  // the sequential baseline exists in runs recorded since it was added
+  const hasSeq = runs.every((run) => run.baselines.filesSeq != null);
+  const seqF = (run, n) => med(run.baselines.filesSeq[n]);
+  const seqS = (run, lines) => med(run.baselines.sizeSeq[lines]);
+  const seqHead = hasSeq ? ' in-process, sequential |' : '';
+  const seqRule = hasSeq ? '---|' : '';
 
   // 1. files
   say('');
-  say(`### Latency against files read (400 lines per file)`);
+  say(`### Latency against files read (400 lines per file, the first N files of a directory of ${Math.max.apply(null, FILE_COUNTS)})`);
   say('');
-  say(`| files | hops | ${labels.join(' | ')} | in-process | runtime adds, ${labels.join(' | runtime adds, ')} |`);
-  say(`|---|---|${labels.map(() => '---').join('|')}|---|${labels.map(() => '---').join('|')}|`);
+  say(`| files | hops | ${labels.join(' | ')} | in-process |${seqHead} runtime adds, ${labels.join(' | runtime adds, ')} |`);
+  say(`|---|---|${labels.map(() => '---').join('|')}|---|${seqRule}${labels.map(() => '---').join('|')}|`);
   const filesNoise = [];
   FILE_COUNTS.forEach((n) => {
     const lat = labels.map((l) => acrossRuns(runs, (run) => files(run, l, n)));
@@ -485,7 +525,8 @@ function reportSandbox(runs, sandbox, say) {
     const base = acrossRuns(runs, (run) => baseF(run, n));
     filesNoise.push({label: `in-process ${n} file${n === 1 ? '' : 's'}`, range: base});
     const added = labels.map((l) => acrossRuns(runs, (run) => files(run, l, n) - baseF(run, n)));
-    say(`| ${n} | ${2 * n + 2} | ${lat.map((r) => R(r)).join(' | ')} | ${R(base)} | ${added.map((r) => R(r)).join(' | ')} |`);
+    const seqCell = hasSeq ? ` ${R(acrossRuns(runs, (run) => seqF(run, n)))} |` : '';
+    say(`| ${n} | ${2 * n + 2} | ${lat.map((r) => R(r)).join(' | ')} | ${R(base)} |${seqCell} ${added.map((r) => R(r)).join(' | ')} |`);
   });
   say('');
   say(multiRun.noiseFloorLine(filesNoise, runs.length));
@@ -522,10 +563,10 @@ function reportSandbox(runs, sandbox, say) {
   });
 
   // 2. size
-  say(`### Latency against file size (${SIZE_FILES} files, ${2 * SIZE_FILES + 2} hops)`);
+  say(`### Latency against file size (${SIZE_FILES} files, ${2 * SIZE_FILES + 2} hops, a directory of ${SIZE_FILES} files)`);
   say('');
-  say(`| lines per file | logs in total | ${labels.join(' | ')} | in-process | runtime adds, ${labels.join(' | runtime adds, ')} | runtime's share, ${labels.join(' | runtime\'s share, ')} |`);
-  say(`|---|---|${labels.map(() => '---').join('|')}|---|${labels.map(() => '---').join('|')}|${labels.map(() => '---').join('|')}|`);
+  say(`| lines per file | logs in total | ${labels.join(' | ')} | in-process |${seqHead} runtime adds, ${labels.join(' | runtime adds, ')} | runtime's share, ${labels.join(' | runtime\'s share, ')} |`);
+  say(`|---|---|${labels.map(() => '---').join('|')}|---|${seqRule}${labels.map(() => '---').join('|')}|${labels.map(() => '---').join('|')}|`);
   const sizeNoise = [];
   LINE_COUNTS.forEach((lines) => {
     const lat = labels.map((l) => acrossRuns(runs, (run) => size(run, l, lines)));
@@ -534,7 +575,8 @@ function reportSandbox(runs, sandbox, say) {
     sizeNoise.push({label: `in-process ${lines} lines`, range: base});
     const added = labels.map((l) => acrossRuns(runs, (run) => size(run, l, lines) - baseS(run, lines)));
     const share = labels.map((l) => acrossRuns(runs, (run) => (size(run, l, lines) - baseS(run, lines)) / size(run, l, lines)));
-    say(`| ${lines} | ${(runs[0].sizeBytes[lines] / 1048576).toFixed(2)} MB | ${lat.map((r) => R(r)).join(' | ')} | ${R(base)} | ${
+    const seqCell = hasSeq ? ` ${R(acrossRuns(runs, (run) => seqS(run, lines)))} |` : '';
+    say(`| ${lines} | ${(runs[0].sizeBytes[lines] / 1048576).toFixed(2)} MB | ${lat.map((r) => R(r)).join(' | ')} | ${R(base)} |${seqCell} ${
       added.map((r) => R(r)).join(' | ')} | ${share.map((r) => R(r, pct)).join(' | ')} |`);
   });
   say('');
@@ -549,11 +591,24 @@ function reportSandbox(runs, sandbox, say) {
     say(`**Per hop by file size, ${l}**: the runtime adds ${perHop.join(', ')} lines per file.`);
     say('');
   });
-  const b8F = acrossRuns(runs, (run) => baseF(run, SIZE_FILES));
-  const b8S = acrossRuns(runs, (run) => baseS(run, 400));
-  say(`**Same baseline, measured twice per run**: the in-process baseline for ${SIZE_FILES} files of 400 lines is ${R(b8F)} ms in the files sweep and ${
-    R(b8S)} ms in the size sweep; within each run the two differ by ${R(acrossRuns(runs, (run) => Math.abs(baseF(run, SIZE_FILES) - baseS(run, 400)) /
-    Math.min(baseF(run, SIZE_FILES), baseS(run, 400))), pct)}.`);
+  if (runs.every((run) => run.baselines.repeat != null)) {
+    const first = acrossRuns(runs, (run) => baseF(run, SIZE_FILES));
+    const again = acrossRuns(runs, (run) => med(run.baselines.repeat.stats));
+    say(`**Same baseline cell, measured twice per run**: ${SIZE_FILES} of the ${Math.max.apply(null, FILE_COUNTS)} files, 400 lines, came out at ${R(first)} ms in the files sweep and ${
+      R(again)} ms when measured again at the end of the baseline phase; within each run the two differ by ${R(acrossRuns(runs, (run) =>
+      Math.abs(baseF(run, SIZE_FILES) - med(run.baselines.repeat.stats)) / Math.min(baseF(run, SIZE_FILES), med(run.baselines.repeat.stats))), pct)}.`);
+    say('');
+  }
+  if (hasSeq) {
+    const parts = LINE_COUNTS.map((lines) => {
+      const c = acrossRuns(runs, (run) => baseS(run, lines));
+      const q = acrossRuns(runs, (run) => seqS(run, lines));
+      const v = verdictLower(c, q);
+      return `${R(c)} against ${R(q)} ms at ${lines} lines (${v === 'lower' ? 'concurrent lower' : v === 'higher' ? 'sequential lower' : 'within noise'})`;
+    });
+    say(`**Concurrent against sequential baseline** (${SIZE_FILES} files): ${parts.join(', ')}. Runtime adds and shares above use the concurrent one.`);
+    say('');
+  }
   say('');
 
   // 3. direct vs routed
