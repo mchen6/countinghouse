@@ -69,8 +69,8 @@ claude mcp add --transport http countinghouse http://127.0.0.1:9527/mcp \
 ```
 
 Then aim it at a repository you would not paste into a chat window, and watch
-what does and doesn't come back. Measured on this repo: **5.04 MB of response
-composed client-side versus 11.0 KB through the composite tool — 470× fewer
+what does and doesn't come back. Measured on this repo: **6.08 MB of response
+composed client-side versus 10.7 KB through the composite tool — 579× fewer
 bytes**, all of the difference being source code that stayed inside the
 process. (This repository grows over time, so the absolute figures drift from
 run to run; see [`examples/repo-review/README.md`](https://github.com/mchen6/countinghouse/blob/master/examples/repo-review/README.md#token-comparison)

@@ -115,6 +115,11 @@ These apply under `--workerThread` on Node >= 22.16 unless
   machine (Node v24.21.0, module sandbox `audit`), three independent runs per
   script. Raw output is in `perf/results/2026-10-26/`; the replaced tables
   are kept under "Retired numbers" in `docs/direct-peer-channels.md`.
+- `examples/repo-review/token-comparison.js` runs again (it had failed since
+  composition binding started requiring a `runsModules` identity, which its
+  `--debug` server lacked; it now loads the demo's `auth.json`). Re-run on
+  2026-10-26: 6.08 MB against 10.7 KB, 579× (previously 470×; the repository
+  it scans has grown).
 - One published conclusion reversed: for small log-triage inputs the
   runtime is no longer most of the call. The handlers' own work is the
   larger part at every input size measured.
