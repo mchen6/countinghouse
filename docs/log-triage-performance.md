@@ -7,10 +7,19 @@ and what the same hops cost when a client makes them one by one.
 [Write-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
 
 Every number and every comparison here comes from one invocation of
-`perf/log-triage-perf.js` on 2026-10-26, at commit `3d9599d`, with the module
+`perf/log-triage-perf.js` on 2026-10-27, at commit `0ec55b8`, with the module
 sandbox in its default mode (`audit`), and is pasted from its output
 unchanged. Raw output:
-[`perf/results/2026-10-26/log-triage.md`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-26/log-triage.md).
+[`perf/results/2026-10-27/log-triage.md`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-27/log-triage.md).
+
+*A 2026-10-26 version of this document reported that the handlers' own work
+was most of the call at every input size. That came from an in-process
+baseline that read the files one after another while the composite reads them
+concurrently; on two CPUs that baseline ran high. The baseline is now
+scheduled like the composite, and that conclusion is withdrawn: the runtime is
+most of the call for small inputs, as it was on one vCPU. The check that found
+it is in
+[`perf/results/2026-10-27/`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-27/README.md).*
 Reproduce it with:
 
 ```sh
@@ -44,8 +53,12 @@ node perf/log-triage-perf.js --reps 25 --runs 3
 - **composite**: one `tools/call` to `log_triage_triageservice_triage`, timed
   at the client. For `N` files it makes `2N + 2` inner hops.
 - **in-process**: the same four handlers called as plain functions in one Node
-  process, one file after another. No runtime, no workers, no HTTP, no
-  metering. This is the cost of the work itself.
+  process, scheduled the way the composite schedules them: list, then every
+  file's read and redact chain concurrently, then cluster. No runtime, no
+  workers, no HTTP, no metering. This is the cost of the work itself.
+- **in-process, sequential**: the same handlers one file after another,
+  timed alternately with the concurrent ones. Shown beside them, and the
+  source of the per-stage table, where concurrent stages would overlap.
 - **runtime adds**: composite minus in-process, within each run. It covers
   HTTP, the outer call, hops between workers, schema validation on every hop,
   and metering.
@@ -57,66 +70,64 @@ Both hop paths were measured: **direct** peer channels, the default since
 
 ## Latency follows the number of files, linearly
 
-400 lines per file. Times in ms.
+400 lines per file, the first N files of a directory of 32. Times in ms.
 
-| files | hops | direct | main-thread-routed | in-process | runtime adds, direct | runtime adds, main-thread-routed |
-|---|---|---|---|---|---|---|
-| 1 | 4 | 19.3 [18.7–22.2] | 20.6 [19.9–21.5] | 7.04 [4.54–8.07] | 14.7 [10.6–15.2] | 12.8 [12.5–17.0] |
-| 2 | 6 | 24.2 [23.6–28.3] | 26.4 [24.2–27.1] | 7.97 [6.12–11.6] | 18.1 [12.0–20.3] | 16.3 [15.5–20.3] |
-| 4 | 10 | 28.5 [27.5–33.9] | 33.7 [29.2–35.2] | 13.2 [12.9–14.6] | 15.6 [12.9–20.6] | 20.5 [16.3–20.6] |
-| 8 | 18 | 41.4 [41.0–41.7] | 43.9 [43.7–47.1] | 25.3 [24.2–30.7] | 16.1 [10.3–17.5] | 18.4 [13.2–22.8] |
-| 16 | 34 | 66.1 [61.3–67.8] | 67.4 [64.8–68.0] | 43.5 [39.7–44.1] | 22.5 [21.5–23.7] | 23.4 [21.2–28.2] |
-| 32 | 66 | 107 [104–110] | 118 [114–118] | 86.4 [81.7–93.4] | 20.7 [10.5–28.2] | 31.7 [20.2–36.8] |
+| files | hops | direct | main-thread-routed | in-process | in-process, sequential | runtime adds, direct | runtime adds, main-thread-routed |
+|---|---|---|---|---|---|---|---|
+| 1 | 4 | 19.9 [18.6–21.7] | 21.7 [18.6–26.7] | 6.51 [5.50–7.12] | 6.09 [5.43–7.12] | 13.1 [12.8–15.2] | 14.5 [13.1–20.2] |
+| 2 | 6 | 23.1 [21.0–25.1] | 22.6 [21.5–24.1] | 9.19 [7.89–10.1] | 10.5 [8.09–10.9] | 15.2 [10.9–15.9] | 14.1 [12.3–14.7] |
+| 4 | 10 | 28.4 [28.4–29.6] | 31.0 [28.9–31.9] | 14.8 [14.7–17.7] | 17.9 [17.3–19.4] | 13.6 [11.9–13.7] | 14.2 [14.1–16.3] |
+| 8 | 18 | 38.4 [37.8–38.8] | 40.6 [39.2–44.5] | 21.7 [20.9–21.9] | 29.3 [29.2–29.7] | 16.5 [16.1–17.9] | 19.7 [17.5–22.6] |
+| 16 | 34 | 58.9 [56.7–59.8] | 59.2 [59.0–63.0] | 36.2 [34.8–36.8] | 48.1 [45.4–50.1] | 22.8 [19.9–25.0] | 24.2 [22.4–26.8] |
+| 32 | 66 | 98.5 [97.4–102] | 102 [101–104] | 66.7 [66.6–66.8] | 92.9 [87.9–95.2] | 31.8 [30.5–35.8] | 35.2 [33.8–37.7] |
 
-*Noise floor: the largest spread of any single configuration across the 3 runs is 68% (in-process 2 files), as (max - min) / median.*
+*Noise floor: the largest spread of any single configuration across the 3 runs is 37% (main-thread-routed 1 file), as (max - min) / median.*
 
-**Per file, direct**: from 1 file to 32, the composite goes from 19.3 [18.7–22.2] ms to 107 [104–110] ms, 2.74 [2.73–2.94] ms for each further file ((32-file median - 1-file median) / 31, per run). A least-squares line through all 6 file counts fits with r² 0.995 [0.995–0.997].
+**Per file, direct**: from 1 file to 32, the composite goes from 19.9 [18.6–21.7] ms to 98.5 [97.4–102] ms, 2.54 [2.54–2.60] ms for each further file ((32-file median - 1-file median) / 31, per run). A least-squares line through all 6 file counts fits with r² 0.999 [0.998–0.999].
 
-**Per file, main-thread-routed**: from 1 file to 32, the composite goes from 20.6 [19.9–21.5] ms to 118 [114–118] ms, 3.16 [2.97–3.17] ms for each further file ((32-file median - 1-file median) / 31, per run). A least-squares line through all 6 file counts fits with r² 0.997 [0.995–0.999].
+**Per file, main-thread-routed**: from 1 file to 32, the composite goes from 21.7 [18.6–26.7] ms to 102 [101–104] ms, 2.54 [2.42–2.77] ms for each further file ((32-file median - 1-file median) / 31, per run). A least-squares line through all 6 file counts fits with r² 0.997 [0.993–1.000].
 
 **Bill**: charged per composite call at 1, 2, 4, 8, 16, 32 files: 4, 6, 10, 18, 34, 66 (each further file adds 2).
 
 Latency and cost move together, so `maxFiles` bounds both.
 
-## The work is most of the call, more so with larger files
+## With larger files, the work dominates
 
-8 files, 18 hops. Times in ms.
+8 files, 18 hops, a directory of 8 files. Times in ms.
 
-| lines per file | logs in total | direct | main-thread-routed | in-process | runtime adds, direct | runtime adds, main-thread-routed | runtime's share, direct | runtime's share, main-thread-routed |
-|---|---|---|---|---|---|---|---|---|
-| 100 | 0.06 MB | 19.8 [18.1–20.0] | 21.4 [21.2–22.3] | 12.3 [11.7–13.8] | 6.42 [6.17–7.49] | 8.85 [8.47–9.66] | 35% [31%–38%] | 42% [38%–45%] |
-| 400 | 0.26 MB | 35.7 [34.5–36.0] | 39.0 [36.0–40.2] | 20.5 [20.2–21.4] | 15.4 [13.1–15.5] | 18.5 [14.6–20.0] | 43% [38%–43%] | 47% [41%–50%] |
-| 1600 | 1.04 MB | 88.7 [86.8–88.7] | 96.0 [94.6–97.3] | 72.5 [69.1–74.5] | 14.3 [14.3–19.6] | 22.1 [21.6–28.2] | 16% [16%–22%] | 23% [22%–29%] |
-| 6400 | 4.17 MB | 317 [312–327] | 344 [340–352] | 268 [263–268] | 53.5 [44.5–58.4] | 76.3 [71.7–88.5] | 17% [14%–18%] | 22% [21%–25%] |
+| lines per file | logs in total | direct | main-thread-routed | in-process | in-process, sequential | runtime adds, direct | runtime adds, main-thread-routed | runtime's share, direct | runtime's share, main-thread-routed |
+|---|---|---|---|---|---|---|---|---|---|
+| 100 | 0.06 MB | 19.1 [18.6–20.0] | 23.1 [20.7–24.6] | 6.59 [6.47–6.64] | 11.7 [10.4–13.7] | 12.5 [12.1–13.5] | 16.6 [14.1–18.0] | 65% [65%–68%] | 72% [68%–73%] |
+| 400 | 0.26 MB | 32.1 [31.5–33.0] | 37.5 [34.7–38.4] | 17.6 [16.5–18.1] | 23.6 [23.0–25.4] | 15.0 [13.9–15.6] | 20.3 [17.1–21.0] | 45% [44%–49%] | 53% [49%–56%] |
+| 1600 | 1.04 MB | 81.8 [81.5–83.6] | 88.3 [85.6–89.2] | 61.8 [61.6–62.2] | 69.1 [68.5–69.9] | 19.9 [19.6–21.8] | 26.5 [24.0–27.0] | 24% [24%–26%] | 30% [28%–30%] |
+| 6400 | 4.17 MB | 311 [299–336] | 312 [310–316] | 245 [244–245] | 255 [252–260] | 66.4 [54.0–91.5] | 67.0 [65.3–71.4] | 21% [18%–27%] | 21% [21%–23%] |
 
-*Noise floor: the largest spread of any single configuration across the 3 runs is 17% (in-process 100 lines), as (max - min) / median.*
+*Noise floor: the largest spread of any single configuration across the 3 runs is 17% (main-thread-routed 100 lines), as (max - min) / median.*
 
-**Runtime's share of the call, direct**: 35% [31%–38%] at 100 lines, 43% [38%–43%] at 400 lines, 16% [16%–22%] at 1600 lines, 17% [14%–18%] at 6400 lines; the handlers' own work is 65% [62%–69%], 57% [57%–62%], 84% [78%–84%], 83% [82%–86%] respectively.
+**Runtime's share of the call, direct**: 65% [65%–68%] at 100 lines, 45% [44%–49%] at 400 lines, 24% [24%–26%] at 1600 lines, 21% [18%–27%] at 6400 lines; the handlers' own work is 35% [32%–35%], 55% [51%–56%], 76% [74%–76%], 79% [73%–82%] respectively.
 
-**Runtime's share of the call, main-thread-routed**: 42% [38%–45%] at 100 lines, 47% [41%–50%] at 400 lines, 23% [22%–29%] at 1600 lines, 22% [21%–25%] at 6400 lines; the handlers' own work is 58% [55%–62%], 53% [50%–59%], 77% [71%–78%], 78% [75%–79%] respectively.
+**Runtime's share of the call, main-thread-routed**: 72% [68%–73%] at 100 lines, 53% [49%–56%] at 400 lines, 30% [28%–30%] at 1600 lines, 21% [21%–23%] at 6400 lines; the handlers' own work is 28% [27%–32%], 47% [44%–51%], 70% [70%–72%], 79% [77%–79%] respectively.
 
-An earlier version of this document, measured on one vCPU, found the opposite
-for small inputs: the runtime was most of the call at 100 lines per file. On
-this machine it is not most of the call at any file size measured.
+**Concurrent against sequential baseline** (8 files): 6.59 [6.47–6.64] against 11.7 [10.4–13.7] ms at 100 lines (concurrent lower), 17.6 [16.5–18.1] against 23.6 [23.0–25.4] ms at 400 lines (concurrent lower), 61.8 [61.6–62.2] against 69.1 [68.5–69.9] ms at 1600 lines (concurrent lower), 245 [244–245] against 255 [252–260] ms at 6400 lines (concurrent lower). Runtime adds and shares above use the concurrent one.
 
-**Same baseline, measured twice per run**: the in-process baseline for 8 files of 400 lines is 25.3 [24.2–30.7] ms in the files sweep and 20.5 [20.2–21.4] ms in the size sweep; within each run the two differ by 18% [18%–52%].
+**Same baseline cell, measured twice per run**: 8 of the 32 files, 400 lines, came out at 21.7 [20.9–21.9] ms in the files sweep and 21.5 [21.2–22.2] ms when measured again at the end of the baseline phase; within each run the two differ by 3% [2%–6%].
 
 ## What the runtime adds per call and per hop
 
 Two parts, read off the first table (composite minus in-process, at 400
 lines per file), and per hop off the second:
 
-**Fixed part, direct**: the runtime adds 14.7 [10.6–15.2] ms at 1 file, 18.1 [12.0–20.3] ms at 2 files, 15.6 [12.9–20.6] ms at 4 files (hops 4, 6, 10); per run, the smallest of these is 12.9 [10.6–14.7] ms and the largest 20.3 [15.6–20.6] ms.
+**Fixed part, direct**: the runtime adds 13.1 [12.8–15.2] ms at 1 file, 15.2 [10.9–15.9] ms at 2 files, 13.6 [11.9–13.7] ms at 4 files (hops 4, 6, 10); per run, the smallest of these is 11.9 [10.9–13.1] ms and the largest 15.2 [13.6–15.9] ms.
 
-**Fixed part, main-thread-routed**: the runtime adds 12.8 [12.5–17.0] ms at 1 file, 16.3 [15.5–20.3] ms at 2 files, 20.5 [16.3–20.6] ms at 4 files (hops 4, 6, 10); per run, the smallest of these is 12.8 [12.5–17.0] ms and the largest 20.5 [16.3–20.6] ms.
+**Fixed part, main-thread-routed**: the runtime adds 14.5 [13.1–20.2] ms at 1 file, 14.1 [12.3–14.7] ms at 2 files, 14.2 [14.1–16.3] ms at 4 files (hops 4, 6, 10); per run, the smallest of these is 14.1 [12.3–14.2] ms and the largest 16.3 [14.5–20.2] ms.
 
-**Per hop at 400 lines, direct**: at 32 files the runtime adds 20.7 [10.5–28.2] ms over 66 hops, 0.31 [0.16–0.43] ms per hop.
+**Per hop at 400 lines, direct**: at 32 files the runtime adds 31.8 [30.5–35.8] ms over 66 hops, 0.48 [0.46–0.54] ms per hop.
 
-**Per hop at 400 lines, main-thread-routed**: at 32 files the runtime adds 31.7 [20.2–36.8] ms over 66 hops, 0.48 [0.31–0.56] ms per hop.
+**Per hop at 400 lines, main-thread-routed**: at 32 files the runtime adds 35.2 [33.8–37.7] ms over 66 hops, 0.53 [0.51–0.57] ms per hop.
 
-**Per hop by file size, direct**: the runtime adds 0.36 [0.34–0.42] ms at 100, 0.86 [0.73–0.86] ms at 400, 0.79 [0.79–1.09] ms at 1600, 2.97 [2.47–3.25] ms at 6400 lines per file.
+**Per hop by file size, direct**: the runtime adds 0.69 [0.67–0.75] ms at 100, 0.83 [0.77–0.86] ms at 400, 1.11 [1.09–1.21] ms at 1600, 3.69 [3.00–5.08] ms at 6400 lines per file.
 
-**Per hop by file size, main-thread-routed**: the runtime adds 0.49 [0.47–0.54] ms at 100, 1.03 [0.81–1.11] ms at 400, 1.23 [1.20–1.56] ms at 1600, 4.24 [3.98–4.92] ms at 6400 lines per file.
+**Per hop by file size, main-thread-routed**: the runtime adds 0.92 [0.78–1.00] ms at 100, 1.13 [0.95–1.16] ms at 400, 1.47 [1.33–1.50] ms at 1600, 3.72 [3.63–3.96] ms at 6400 lines per file.
 
 The fixed part is HTTP, the outer call's authorization and metering, and the
 response. What the runtime adds grows with payload because every `read`
@@ -130,18 +141,18 @@ Times in ms.
 
 | case | direct | routed | direct is lower by | verdict |
 |---|---|---|---|---|
-| 1 file, 400 lines | 19.3 [18.7–22.2] | 20.6 [19.9–21.5] | 6% | within noise |
-| 2 files, 400 lines | 24.2 [23.6–28.3] | 26.4 [24.2–27.1] | 8% | within noise |
-| 4 files, 400 lines | 28.5 [27.5–33.9] | 33.7 [29.2–35.2] | 15% | within noise |
-| 8 files, 400 lines | 41.4 [41.0–41.7] | 43.9 [43.7–47.1] | 6% | direct lower |
-| 16 files, 400 lines | 66.1 [61.3–67.8] | 67.4 [64.8–68.0] | 2% | within noise |
-| 32 files, 400 lines | 107 [104–110] | 118 [114–118] | 9% | direct lower |
-| 8 files, 100 lines | 19.8 [18.1–20.0] | 21.4 [21.2–22.3] | 7% | direct lower |
-| 8 files, 1600 lines | 88.7 [86.8–88.7] | 96.0 [94.6–97.3] | 8% | direct lower |
-| 8 files, 6400 lines | 317 [312–327] | 344 [340–352] | 8% | direct lower |
-| 8 files, 400 lines (size sweep) | 35.7 [34.5–36.0] | 39.0 [36.0–40.2] | 9% | within noise |
+| 1 file, 400 lines | 19.9 [18.6–21.7] | 21.7 [18.6–26.7] | 8% | within noise |
+| 2 files, 400 lines | 23.1 [21.0–25.1] | 22.6 [21.5–24.1] | -2% | within noise |
+| 4 files, 400 lines | 28.4 [28.4–29.6] | 31.0 [28.9–31.9] | 8% | within noise |
+| 8 files, 400 lines | 38.4 [37.8–38.8] | 40.6 [39.2–44.5] | 5% | direct lower |
+| 16 files, 400 lines | 58.9 [56.7–59.8] | 59.2 [59.0–63.0] | 0% | within noise |
+| 32 files, 400 lines | 98.5 [97.4–102] | 102 [101–104] | 3% | within noise |
+| 8 files, 100 lines | 19.1 [18.6–20.0] | 23.1 [20.7–24.6] | 17% | direct lower |
+| 8 files, 1600 lines | 81.8 [81.5–83.6] | 88.3 [85.6–89.2] | 7% | direct lower |
+| 8 files, 6400 lines | 311 [299–336] | 312 [310–316] | 0% | within noise |
+| 8 files, 400 lines (size sweep) | 32.1 [31.5–33.0] | 37.5 [34.7–38.4] | 14% | direct lower |
 
-**Direct against routed**: the direct path is lower in 5 of 10 cases by 6% to 9% of the routed median (8 files, 400 lines; 32 files, 400 lines; 8 files, 100 lines; 8 files, 1600 lines; 8 files, 6400 lines); routed is lower in 0; 5 are within noise (1 file, 400 lines; 2 files, 400 lines; 4 files, 400 lines; 16 files, 400 lines; 8 files, 400 lines (size sweep)).
+**Direct against routed**: the direct path is lower in 4 of 10 cases by 5% to 17% of the routed median (8 files, 400 lines; 8 files, 100 lines; 8 files, 1600 lines; 8 files, 400 lines (size sweep)); routed is lower in 0; 6 are within noise (1 file, 400 lines; 2 files, 400 lines; 4 files, 400 lines; 16 files, 400 lines; 32 files, 400 lines; 8 files, 6400 lines).
 
 This fits [`direct-peer-channels.md`](direct-peer-channels.md), which says
 the direct path matters most for composition-heavy calls with large payloads,
@@ -155,14 +166,14 @@ JSON request and response bodies.
 
 | | tool calls | latency, direct server | latency, main-thread-routed server | bytes sent | bytes received |
 |---|---|---|---|---|---|
-| composite | 1 | 38.5 [37.2–42.8] | 40.0 [38.1–42.3] | 167 | 14436 |
-| client-orchestrated | 18 | 113 [108–114] | 99.9 [97.1–105] | 549495 | 1119438 |
+| composite | 1 | 35.7 [33.0–37.6] | 38.0 [37.8–38.1] | 167 | 14436 |
+| client-orchestrated | 18 | 95.7 [95.1–108] | 87.1 [83.1–102] | 549495 | 1119438 |
 
-*Noise floor: the largest spread of any single configuration across the 3 runs is 15% (composite direct), as (max - min) / median.*
+*Noise floor: the largest spread of any single configuration across the 3 runs is 22% (client main-thread-routed), as (max - min) / median.*
 
-**Composite against client, direct server**: one composite call takes 38.5 [37.2–42.8] ms against 113 [108–114] ms for the 18 client calls, lower; the client takes 2.81× [2.67×–3.04×] as long, per run.
+**Composite against client, direct server**: one composite call takes 35.7 [33.0–37.6] ms against 95.7 [95.1–108] ms for the 18 client calls, lower; the client takes 2.90× [2.53×–3.03×] as long, per run.
 
-**Composite against client, main-thread-routed server**: one composite call takes 40.0 [38.1–42.3] ms against 99.9 [97.1–105] ms for the 18 client calls, lower; the client takes 2.48× [2.43×–2.62×] as long, per run.
+**Composite against client, main-thread-routed server**: one composite call takes 38.0 [37.8–38.1] ms against 87.1 [83.1–102] ms for the 18 client calls, lower; the client takes 2.28× [2.19×–2.69×] as long, per run.
 
 **Bytes on the wire**: the composite moves 14603 bytes (14.6 KB) and the client-orchestrated version 1668933 bytes (1.67 MB), 114 times as much. Identical in every run and on both paths.
 
@@ -183,17 +194,17 @@ In-process, no runtime. Times in ms.
 
 | files | lines per file | total | list | read | redact | cluster |
 |---|---|---|---|---|---|---|
-| 1 | 400 | 7.04 [4.54–8.07] | 4.40 [2.13–5.05] | 0.60 [0.42–1.00] | 1.45 [1.43–1.48] | 0.54 [0.53–0.55] |
-| 2 | 400 | 7.97 [6.12–11.6] | 3.13 [2.20–5.95] | 1.03 [0.69–1.60] | 2.43 [2.38–2.91] | 1.08 [0.83–1.31] |
-| 4 | 400 | 13.2 [12.9–14.6] | 3.03 [1.96–3.32] | 2.12 [1.59–2.29] | 5.53 [5.48–8.92] | 2.08 [2.03–2.21] |
-| 8 | 400 | 25.3 [24.2–30.7] | 4.91 [4.02–7.11] | 6.17 [6.17–8.71] | 10.6 [10.1–10.7] | 4.04 [3.19–4.12] |
-| 16 | 400 | 43.5 [39.7–44.1] | 4.02 [3.93–4.33] | 9.11 [8.31–11.3] | 21.5 [20.8–22.0] | 6.74 [6.45–8.22] |
-| 32 | 400 | 86.4 [81.7–93.4] | 3.38 [2.01–3.48] | 16.4 [15.6–18.8] | 49.5 [45.3–57.8] | 16.1 [14.0–17.4] |
-| 8 | 100 | 12.3 [11.7–13.8] | 1.53 [1.47–1.97] | 7.07 [6.77–8.32] | 2.67 [2.61–2.79] | 0.82 [0.81–0.89] |
-| 8 | 1600 | 72.5 [69.1–74.5] | 0.95 [0.93–1.17] | 8.43 [7.54–8.96] | 46.9 [46.2–48.2] | 14.2 [14.0–18.0] |
-| 8 | 6400 | 268 [263–268] | 1.99 [1.39–2.03] | 28.1 [25.1–31.9] | 172 [169–176] | 62.9 [55.1–66.8] |
+| 1 | 400 | 6.09 [5.43–7.12] | 3.16 [2.76–4.32] | 0.67 [0.55–0.82] | 1.50 [1.42–1.76] | 0.54 [0.47–0.57] |
+| 2 | 400 | 10.5 [8.09–10.9] | 4.88 [3.01–5.74] | 1.77 [1.00–1.84] | 2.78 [2.42–2.95] | 1.02 [0.86–1.09] |
+| 4 | 400 | 17.9 [17.3–19.4] | 5.79 [4.78–7.13] | 4.21 [3.34–4.67] | 5.04 [4.89–8.13] | 1.75 [1.63–3.00] |
+| 8 | 400 | 29.3 [29.2–29.7] | 6.89 [6.83–6.99] | 8.33 [8.29–8.49] | 10.3 [9.75–10.6] | 3.65 [3.38–4.37] |
+| 16 | 400 | 48.1 [45.4–50.1] | 5.73 [3.32–7.02] | 11.7 [8.81–14.2] | 21.5 [20.5–24.6] | 8.33 [8.14–8.90] |
+| 32 | 400 | 92.9 [87.9–95.2] | 6.06 [5.47–7.52] | 29.0 [22.5–34.1] | 40.3 [40.3–41.8] | 16.1 [14.3–17.1] |
+| 8 | 100 | 11.7 [10.4–13.7] | 1.45 [1.20–1.93] | 6.60 [5.40–8.10] | 2.79 [2.79–2.86] | 0.84 [0.82–0.85] |
+| 8 | 1600 | 69.1 [68.5–69.9] | 1.68 [1.58–1.78] | 11.0 [10.7–11.6] | 40.6 [39.8–41.1] | 15.4 [15.1–16.8] |
+| 8 | 6400 | 255 [252–260] | 1.32 [1.02–7.50] | 23.2 [21.7–23.4] | 165 [163–170] | 63.3 [53.6–68.4] |
 
-**Stage shares** (of the four stages' sum, cases with 8 or more files, median across runs): redact 22% to 67%, cluster 7% to 24%, read 11% to 58%.
+**Stage shares** (of the four stages' sum, cases with 8 or more files, median across runs): redact 24% to 65%, cluster 7% to 25%, read 9% to 57%.
 
 Masking is five regular expressions applied to every line. `pii-redact` runs
 in one worker, so on a multi-core machine the masking of one call's files
@@ -205,9 +216,8 @@ measurement behind it.
 
 - **Cost and latency are both linear in `maxFiles`**, so the cap that bounds
   the bill bounds the wait as well (see the per-file fit above).
-- **The handlers' own work is the larger part of the call at every input
-  size measured here**, and the runtime's share shrinks as files grow (see
-  the runtime's share above).
+- **For small inputs the runtime is most of the latency; for large inputs
+  the work is** (see the runtime's share above).
 - **Keeping the hops inside the runtime is faster and moves far less data**
   than a client making the same calls, before any network delay is counted:
   see the composite-against-client lines above.

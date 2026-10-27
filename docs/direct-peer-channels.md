@@ -417,6 +417,18 @@ Fastest strategy per payload size: 1KB=structuredClone, 100KB=structuredClone, 1
 
 **Scale of the difference**: the largest per-hop saving measured here is 30.765ms (best case for the direct channel, across every cell). A tool whose own execution takes more than ~308ms per call would see even that saving as under 10% of the hop, and proportionally less the slower it gets. This benchmark measures transport, not tools.
 
+#### log-triage, 2026-10-26: withdrawn
+
+The 2026-10-26 log-triage run
+([`perf/results/2026-10-26/log-triage.md`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-26/log-triage.md))
+measured "runtime adds" against an in-process baseline that ran the handlers
+one file after another, while the composite runs each file's chain
+concurrently; on two CPUs that baseline ran high and the runtime's share came
+out low. Its log-triage figures were replaced on 2026-10-27 by a run with a
+baseline scheduled like the composite
+([`perf/results/2026-10-27/`](https://github.com/mchen6/countinghouse/blob/master/perf/results/2026-10-27/README.md)).
+The raw output stays in the repository; its tables are not repeated here.
+
 #### log-triage, 2026-10-07, one vCPU, Node 24.21.0, countinghouse 7.1.0 (`cb68765`)
 
 From `docs/log-triage-performance.md` as it stood before 2026-10-26: one run

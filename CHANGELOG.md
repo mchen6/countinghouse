@@ -120,9 +120,13 @@ These apply under `--workerThread` on Node >= 22.16 unless
   `--debug` server lacked; it now loads the demo's `auth.json`). Re-run on
   2026-10-26: 6.08 MB against 10.7 KB, 579× (previously 470×; the repository
   it scans has grown).
-- One published conclusion reversed: for small log-triage inputs the
-  runtime is no longer most of the call. The handlers' own work is the
-  larger part at every input size measured.
+- log-triage's in-process baseline now schedules the handlers the way the
+  composite does, each file's read and redact chain concurrently; it had run
+  them one file after another, which on two CPUs made it run high. With it,
+  re-measured on 2026-10-27 (`perf/results/2026-10-27/`), the runtime is most
+  of the call for small inputs, 65% at 100 lines per file on the direct path,
+  as on one vCPU. A 2026-10-26 docs update that said the opposite is
+  withdrawn.
 - `perf/`: the four benchmark scripts take `--runs N`, report each cell as
   the median and range across fresh-process runs, count a difference only
   when the ranges do not overlap, and print each table's noise floor and the
