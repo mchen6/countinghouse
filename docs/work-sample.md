@@ -12,7 +12,7 @@ countinghouse hosts MCP tool servers for many tenants. A chain of tool calls run
 
 - **Shipped.** Published on npm under Apache-2.0, with a public launch post.
 - **Simpler to build on.** A one-tool module went from 36 lines in 3 files to 6 lines in 1.
-- **Less data to the model.** In the repo's benchmarks, one composite call sends the model over 100× fewer bytes than the same steps called one by one. Conditions and scripts are in the README.
+- **Less data on the wire.** In the repo's benchmarks, one composite call moves over 100× fewer bytes between the MCP client and the server than the same steps called one by one. Conditions and scripts are in the README.
 - **A clear product call.** I scoped it as a runtime, not a marketplace, and wrote that decision into the project's instructions.
 
 ## 2. A process I improved with AI
