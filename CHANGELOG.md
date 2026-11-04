@@ -11,7 +11,12 @@ the auth config.
 ## Unreleased
 
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
-groups everything below by what an operator has to do.
+groups everything below by what an operator has to do. Measured cost of the
+file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
+write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
+`--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
+1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
+([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
 ### Changed — 8.0.0 platform
 
@@ -59,7 +64,7 @@ groups everything below by what an operator has to do.
 - HTTP/2 `respondWithFile` is not available to modules (see Known issues).
 - Anything a module left in `/tmp` is gone after a restart.
 
-### Added — module sandbox, part 2 (in progress)
+### Added — module sandbox, part 2
 
 - **File access from module workers goes through the main thread**, in every
   `--moduleSandbox` mode under `--workerThread`: `fs` is patched before any
