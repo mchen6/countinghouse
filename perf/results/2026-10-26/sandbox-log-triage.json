@@ -1,0 +1,376 @@
+{
+  "runs": [
+    {
+      "reps": 25,
+      "warmup": 5,
+      "matrix": "headline",
+      "baselines": {
+        "files": {
+          "8": {
+            "median": 20.112159,
+            "min": 17.398739,
+            "max": 28.711085,
+            "n": 25
+          }
+        },
+        "size": {}
+      },
+      "stages": [
+        {
+          "n": 8,
+          "lines": 400,
+          "ms": 20.112159,
+          "stages": {
+            "list": 1.905929,
+            "read": 2.9948759999999996,
+            "redact": 11.729467,
+            "cluster": 3.37539
+          }
+        }
+      ],
+      "sizeBytes": {
+        "100": 67888,
+        "400": 273875,
+        "1600": 1094370,
+        "6400": 4369497
+      },
+      "conditions": [
+        {
+          "label": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 45.180237,
+              "min": 38.594864,
+              "max": 83.971236,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        {
+          "label": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 46.395275,
+              "min": 39.944815,
+              "max": 95.194063,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 1,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        {
+          "label": "direct",
+          "sandbox": "enforce",
+          "sandboxMode": "enforce (--moduleSandbox enforce)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 47.312665,
+              "min": 40.297817,
+              "max": 86.779122,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 1,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      ]
+    },
+    {
+      "reps": 25,
+      "warmup": 5,
+      "matrix": "headline",
+      "baselines": {
+        "files": {
+          "8": {
+            "median": 21.476359,
+            "min": 17.586853,
+            "max": 24.406725,
+            "n": 25
+          }
+        },
+        "size": {}
+      },
+      "stages": [
+        {
+          "n": 8,
+          "lines": 400,
+          "ms": 21.476359,
+          "stages": {
+            "list": 1.797582,
+            "read": 3.0461679999999998,
+            "redact": 12.319227999999999,
+            "cluster": 4.223859
+          }
+        }
+      ],
+      "sizeBytes": {
+        "100": 67888,
+        "400": 273875,
+        "1600": 1094370,
+        "6400": 4369497
+      },
+      "conditions": [
+        {
+          "label": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 43.80119,
+              "min": 35.37264,
+              "max": 92.654779,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        {
+          "label": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 48.399955,
+              "min": 40.050315,
+              "max": 91.079671,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 1,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        {
+          "label": "direct",
+          "sandbox": "enforce",
+          "sandboxMode": "enforce (--moduleSandbox enforce)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 50.810801,
+              "min": 39.207614,
+              "max": 60.656765,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 1,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      ]
+    },
+    {
+      "reps": 25,
+      "warmup": 5,
+      "matrix": "headline",
+      "baselines": {
+        "files": {
+          "8": {
+            "median": 25.124658,
+            "min": 18.807878,
+            "max": 32.618955,
+            "n": 25
+          }
+        },
+        "size": {}
+      },
+      "stages": [
+        {
+          "n": 8,
+          "lines": 400,
+          "ms": 25.124658,
+          "stages": {
+            "list": 5.19272,
+            "read": 5.797651,
+            "redact": 10.828637,
+            "cluster": 3.178666
+          }
+        }
+      ],
+      "sizeBytes": {
+        "100": 67888,
+        "400": 273875,
+        "1600": 1094370,
+        "6400": 4369497
+      },
+      "conditions": [
+        {
+          "label": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 48.114495,
+              "min": 36.132792,
+              "max": 84.564655,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        {
+          "label": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 45.84125,
+              "min": 38.27471,
+              "max": 77.892182,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 1,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        {
+          "label": "direct",
+          "sandbox": "enforce",
+          "sandboxMode": "enforce (--moduleSandbox enforce)",
+          "files": [],
+          "size": [],
+          "client": null,
+          "headline": {
+            "stats": {
+              "median": 46.874543,
+              "min": 37.964837,
+              "max": 82.880746,
+              "n": 25
+            },
+            "charged": 18
+          },
+          "errors": {
+            "tally": {},
+            "samples": []
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 1,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      ]
+    }
+  ]
+}

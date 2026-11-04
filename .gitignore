@@ -12,6 +12,9 @@ core
 output
 *.log*
 build/
+# ...except the sandbox fixture's fake native addon: test/sandbox/04 needs a
+# .node file to exist for the native-code check to fire.
+!test/fixtures/sandbox-native/build/
 
 # The two example directories swapped roles.
 #

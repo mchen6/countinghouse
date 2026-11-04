@@ -1,0 +1,50 @@
+
+##### run 1 of 5 #####
+
+=== Direct peer channel, sandbox off (sandbox off (--moduleSandbox off)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=146.3 req/s, hop p50=56.20ms p99=104.27ms, errors=0
+
+=== Direct peer channel, sandbox audit (sandbox audit (--moduleSandbox audit)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=116.4 req/s, hop p50=92.68ms p99=137.00ms, errors=0
+
+##### run 2 of 5 #####
+
+=== Direct peer channel, sandbox off (sandbox off (--moduleSandbox off)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=128.9 req/s, hop p50=61.96ms p99=118.17ms, errors=0
+
+=== Direct peer channel, sandbox audit (sandbox audit (--moduleSandbox audit)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=122.0 req/s, hop p50=64.74ms p99=151.78ms, errors=0
+
+##### run 3 of 5 #####
+
+=== Direct peer channel, sandbox off (sandbox off (--moduleSandbox off)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=141.1 req/s, hop p50=60.36ms p99=104.71ms, errors=0
+
+=== Direct peer channel, sandbox audit (sandbox audit (--moduleSandbox audit)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=127.8 req/s, hop p50=61.07ms p99=130.27ms, errors=0
+
+##### run 4 of 5 #####
+
+=== Direct peer channel, sandbox off (sandbox off (--moduleSandbox off)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=132.3 req/s, hop p50=63.39ms p99=120.98ms, errors=0
+
+=== Direct peer channel, sandbox audit (sandbox audit (--moduleSandbox audit)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=123.5 req/s, hop p50=65.26ms p99=148.95ms, errors=0
+
+##### run 5 of 5 #####
+
+=== Direct peer channel, sandbox off (sandbox off (--moduleSandbox off)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=121.6 req/s, hop p50=56.34ms p99=159.93ms, errors=0
+
+=== Direct peer channel, sandbox audit (sandbox audit (--moduleSandbox audit)) ===
+  payload=1048576B concurrency=16 ...
+    throughput=137.0 req/s, hop p50=66.11ms p99=128.95ms, errors=0

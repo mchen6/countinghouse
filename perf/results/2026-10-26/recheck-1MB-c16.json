@@ -1,0 +1,254 @@
+{
+  "runs": [
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 146.34146341463415,
+              "hopP50": 56.200004,
+              "hopP99": 104.274688,
+              "hopMean": 57.08784946000001
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 116.36927851047324,
+              "hopP50": 92.683601,
+              "hopP99": 136.998751,
+              "hopMean": 84.02228762666664
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 128.86597938144328,
+              "hopP50": 61.956524,
+              "hopP99": 118.166509,
+              "hopMean": 65.55045600666668
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 121.95121951219512,
+              "hopP50": 64.742676,
+              "hopP99": 151.784486,
+              "hopMean": 70.16564104
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 141.11006585136406,
+              "hopP50": 60.361355,
+              "hopP99": 104.709313,
+              "hopMean": 61.10066015333332
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 127.76831345826234,
+              "hopP50": 61.066944,
+              "hopP99": 130.26978,
+              "hopMean": 62.74096598666668
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 132.27513227513228,
+              "hopP50": 63.390204,
+              "hopP99": 120.980931,
+              "hopMean": 66.05545090000001
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 123.45679012345678,
+              "hopP50": 65.260404,
+              "hopP99": 148.948475,
+              "hopMean": 70.30670151333334
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 121.55591572123177,
+              "hopP50": 56.337296,
+              "hopP99": 159.933927,
+              "hopMean": 68.14671826666664
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 136.986301369863,
+              "hopP50": 66.106105,
+              "hopP99": 128.949529,
+              "hopMean": 65.6805675
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    }
+  ]
+}

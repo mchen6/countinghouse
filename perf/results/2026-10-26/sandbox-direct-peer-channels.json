@@ -1,0 +1,799 @@
+{
+  "runs": [
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 188.20577164366372,
+              "hopP50": 1.277043,
+              "hopP99": 4.017,
+              "hopMean": 1.4958351066666666
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 434.7826086956522,
+              "hopP50": 6.535765,
+              "hopP99": 19.080829,
+              "hopMean": 7.249746279999999
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 428.57142857142856,
+              "hopP50": 23.115936,
+              "hopP99": 58.097646,
+              "hopMean": 29.265222580000003
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 199.203187250996,
+              "hopP50": 1.393695,
+              "hopP99": 9.439326,
+              "hopMean": 1.79513852
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 539.568345323741,
+              "hopP50": 9.272816,
+              "hopP99": 19.035355,
+              "hopMean": 9.058882019999997
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 694.4444444444445,
+              "hopP50": 31.26629,
+              "hopP99": 54.151224,
+              "hopMean": 31.81318369333333
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 129.98266897746967,
+              "hopP50": 4.533983,
+              "hopP99": 13.383781,
+              "hopMean": 5.194955033333333
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 187.73466833541926,
+              "hopP50": 44.173894,
+              "hopP99": 122.790383,
+              "hopMean": 52.05944244666665
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 202.7027027027027,
+              "hopP50": 192.028358,
+              "hopP99": 309.038572,
+              "hopMean": 183.5051396866667
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 194.55252918287937,
+              "hopP50": 1.458031,
+              "hopP99": 3.835295,
+              "hopMean": 1.588235393333333
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 361.4457831325301,
+              "hopP50": 12.648317,
+              "hopP99": 30.503748,
+              "hopMean": 13.18386778666667
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 684.931506849315,
+              "hopP50": 23.017285,
+              "hopP99": 36.186048,
+              "hopMean": 22.11809389999999
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 229.70903522205208,
+              "hopP50": 1.361011,
+              "hopP99": 6.485973,
+              "hopMean": 1.5743506733333337
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 617.283950617284,
+              "hopP50": 9.905906,
+              "hopP99": 17.677544,
+              "hopMean": 9.653596333333327
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 892.8571428571429,
+              "hopP50": 15.79643,
+              "hopP99": 37.55711,
+              "hopMean": 19.31531318
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 122.24938875305622,
+              "hopP50": 4.862084,
+              "hopP99": 18.021668,
+              "hopMean": 5.632241959999999
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 168.7289088863892,
+              "hopP50": 46.622301,
+              "hopP99": 88.940666,
+              "hopMean": 53.223974619999986
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 173.61111111111111,
+              "hopP50": 205.313636,
+              "hopP99": 367.508955,
+              "hopMean": 197.45787280666661
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|enforce": {
+          "path": "direct",
+          "sandbox": "enforce",
+          "sandboxMode": "enforce (--moduleSandbox enforce)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 229.35779816513764,
+              "hopP50": 1.346904,
+              "hopP99": 2.628026,
+              "hopMean": 1.4169442199999995
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 404.3126684636119,
+              "hopP50": 10.768797,
+              "hopP99": 24.805054,
+              "hopMean": 11.542097339999998
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 389.61038961038963,
+              "hopP50": 30.905159,
+              "hopP99": 77.299412,
+              "hopMean": 33.06294267333333
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 194.0491591203105,
+              "hopP50": 1.55245,
+              "hopP99": 9.753603,
+              "hopMean": 1.882029519999999
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 638.2978723404256,
+              "hopP50": 8.53246,
+              "hopP99": 18.358229,
+              "hopMean": 8.460803100000003
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 710.9004739336493,
+              "hopP50": 48.869203,
+              "hopP99": 57.344389,
+              "hopMean": 44.325936899999995
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 123.86457473162675,
+              "hopP50": 4.923366,
+              "hopP99": 15.282335,
+              "hopMean": 5.3973341466666644
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 148.8095238095238,
+              "hopP50": 61.457445,
+              "hopP99": 120.209733,
+              "hopMean": 64.06286686000003
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 205.1983584131327,
+              "hopP50": 233.67813,
+              "hopP99": 370.450349,
+              "hopMean": 222.72576411333327
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 177.51479289940826,
+              "hopP50": 1.394331,
+              "hopP99": 4.109193,
+              "hopMean": 1.5572078666666669
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 394.7368421052632,
+              "hopP50": 7.264819,
+              "hopP99": 21.357147,
+              "hopMean": 7.719982073333332
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 485.4368932038835,
+              "hopP50": 30.734716,
+              "hopP99": 43.126263,
+              "hopMean": 29.967518253333335
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 192.0614596670935,
+              "hopP50": 1.407628,
+              "hopP99": 11.953742,
+              "hopMean": 1.9408886733333326
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 576.9230769230769,
+              "hopP50": 7.513334,
+              "hopP99": 19.53998,
+              "hopMean": 8.001957400000002
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 663.7168141592921,
+              "hopP50": 58.331736,
+              "hopP99": 73.152729,
+              "hopMean": 53.04553522000002
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 113.12217194570135,
+              "hopP50": 5.410327,
+              "hopP99": 14.097459,
+              "hopMean": 6.0843362066666655
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 183.15018315018312,
+              "hopP50": 51.482843,
+              "hopP99": 76.638563,
+              "hopMean": 50.338416333333335
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 209.49720670391062,
+              "hopP50": 136.312727,
+              "hopP99": 249.873564,
+              "hopMean": 139.31669166666663
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 163.04347826086956,
+              "hopP50": 1.858614,
+              "hopP99": 5.016208,
+              "hopMean": 2.0150907333333326
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 421.34831460674155,
+              "hopP50": 10.302099,
+              "hopP99": 24.251821,
+              "hopMean": 10.541279126666666
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 638.2978723404256,
+              "hopP50": 44.568112,
+              "hopP99": 79.874151,
+              "hopMean": 45.06050436666666
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 227.96352583586628,
+              "hopP50": 1.351611,
+              "hopP99": 3.435746,
+              "hopMean": 1.5070916666666674
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 460.1226993865031,
+              "hopP50": 10.953409,
+              "hopP99": 32.66679,
+              "hopMean": 11.619644213333332
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 691.2442396313364,
+              "hopP50": 49.290927,
+              "hopP99": 73.898105,
+              "hopMean": 47.25503170666668
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 124.89592006661115,
+              "hopP50": 4.709021,
+              "hopP99": 14.599206,
+              "hopMean": 5.365622506666669
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 171.42857142857142,
+              "hopP50": 49.328601,
+              "hopP99": 100.894938,
+              "hopMean": 53.99723033999998
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 173.41040462427745,
+              "hopP50": 220.642356,
+              "hopP99": 347.680351,
+              "hopMean": 212.81676699333326
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|enforce": {
+          "path": "direct",
+          "sandbox": "enforce",
+          "sandboxMode": "enforce (--moduleSandbox enforce)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 190.59720457433292,
+              "hopP50": 1.493764,
+              "hopP99": 6.354621,
+              "hopMean": 1.7385499666666668
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 503.35570469798665,
+              "hopP50": 10.270847,
+              "hopP99": 21.38417,
+              "hopMean": 10.574722046666663
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 533.8078291814946,
+              "hopP50": 34.646301,
+              "hopP99": 58.040922,
+              "hopMean": 33.97150829333333
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 225.56390977443607,
+              "hopP50": 1.334105,
+              "hopP99": 5.928106,
+              "hopMean": 1.5761957999999998
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 563.9097744360903,
+              "hopP50": 10.234056,
+              "hopP99": 24.086296,
+              "hopMean": 10.956035299999996
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 704.225352112676,
+              "hopP50": 29.213868,
+              "hopP99": 57.86871,
+              "hopMean": 29.022150933333343
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 114.94252873563218,
+              "hopP50": 5.425242,
+              "hopP99": 14.995964,
+              "hopMean": 6.0481521066666675
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 166.85205784204672,
+              "hopP50": 50.242319,
+              "hopP99": 114.156102,
+              "hopMean": 55.95375117333335
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 210.37868162692845,
+              "hopP50": 161.904972,
+              "hopP99": 304.598766,
+              "hopMean": 155.70456863333334
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    },
+    {
+      "conditions": {
+        "direct|off": {
+          "path": "direct",
+          "sandbox": "off",
+          "sandboxMode": "off (--moduleSandbox off)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 160.25641025641028,
+              "hopP50": 1.574858,
+              "hopP99": 3.693419,
+              "hopMean": 1.7948975800000004
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 300.60120240480967,
+              "hopP50": 10.853631,
+              "hopP99": 38.888732,
+              "hopMean": 13.150024520000002
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 334.07572383073494,
+              "hopP50": 44.449654,
+              "hopP99": 92.093905,
+              "hopMean": 45.456016760000004
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 149.10536779324053,
+              "hopP50": 1.603144,
+              "hopP99": 20.024681,
+              "hopMean": 2.370559646666667
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 379.746835443038,
+              "hopP50": 11.89548,
+              "hopP99": 28.895756,
+              "hopMean": 12.677843593333332
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 731.7073170731708,
+              "hopP50": 23.41543,
+              "hopP99": 46.751848,
+              "hopMean": 24.91088682666668
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 131.92612137203167,
+              "hopP50": 4.551986,
+              "hopP99": 12.271086,
+              "hopMean": 5.097385079999998
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 195.5671447196871,
+              "hopP50": 45.519474,
+              "hopP99": 101.589372,
+              "hopMean": 51.09959410666665
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 160.25641025641028,
+              "hopP50": 256.814029,
+              "hopP99": 431.381826,
+              "hopMean": 234.7327620400001
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|audit": {
+          "path": "direct",
+          "sandbox": "audit",
+          "sandboxMode": "audit (--moduleSandbox audit)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 193.54838709677418,
+              "hopP50": 1.434682,
+              "hopP99": 3.906652,
+              "hopMean": 1.5676322266666673
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 405.4054054054054,
+              "hopP50": 10.710451,
+              "hopP99": 27.559083,
+              "hopMean": 11.818522919999998
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 446.42857142857144,
+              "hopP50": 73.693369,
+              "hopP99": 110.651302,
+              "hopMean": 72.56704899999997
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 220.58823529411765,
+              "hopP50": 1.409737,
+              "hopP99": 9.121783,
+              "hopMean": 1.6669130733333335
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 519.0311418685121,
+              "hopP50": 10.258031,
+              "hopP99": 36.606347,
+              "hopMean": 11.90544586
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 632.9113924050633,
+              "hopP50": 54.284965,
+              "hopP99": 96.19276,
+              "hopMean": 56.352539700000015
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 123.55848434925865,
+              "hopP50": 4.826004,
+              "hopP99": 13.440238,
+              "hopMean": 5.498685433333332
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 160.25641025641028,
+              "hopP50": 62.245071,
+              "hopP99": 117.456682,
+              "hopMean": 59.203629400000004
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 184.72906403940885,
+              "hopP50": 184.311674,
+              "hopP99": 289.968946,
+              "hopMean": 176.2013725933333
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        },
+        "direct|enforce": {
+          "path": "direct",
+          "sandbox": "enforce",
+          "sandboxMode": "enforce (--moduleSandbox enforce)",
+          "cells": {
+            "1024:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 164.11378555798686,
+              "hopP50": 1.612882,
+              "hopP99": 7.080872,
+              "hopMean": 2.0346846733333335
+            },
+            "1024:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 515.4639175257731,
+              "hopP50": 8.396928,
+              "hopP99": 21.569253,
+              "hopMean": 8.805169053333334
+            },
+            "1024:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 641.0256410256411,
+              "hopP50": 47.82965,
+              "hopP99": 92.432348,
+              "hopMean": 52.626723613333326
+            },
+            "102400:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 212.46458923512748,
+              "hopP50": 1.406838,
+              "hopP99": 6.36227,
+              "hopMean": 1.6757920466666667
+            },
+            "102400:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 545.4545454545454,
+              "hopP50": 7.942659,
+              "hopP99": 25.11415,
+              "hopMean": 9.429569299999999
+            },
+            "102400:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 684.931506849315,
+              "hopP50": 41.994106,
+              "hopP99": 61.408255,
+              "hopMean": 42.55479166666666
+            },
+            "1048576:1": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 112.78195488721803,
+              "hopP50": 5.426658,
+              "hopP99": 15.079978,
+              "hopMean": 6.108949986666666
+            },
+            "1048576:16": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 150.15015015015015,
+              "hopP50": 54.672826,
+              "hopP99": 135.853663,
+              "hopMean": 60.113578579999995
+            },
+            "1048576:64": {
+              "errors": {},
+              "errorSamples": [],
+              "throughputRps": 190.35532994923858,
+              "hopP50": 178.086668,
+              "hopP99": 303.687147,
+              "hopMean": 177.65276183333327
+            }
+          },
+          "sandboxLog": {
+            "violations": 0,
+            "wouldRefuse": 0,
+            "uses": 0,
+            "restarts": 0,
+            "suspended": 0,
+            "samples": []
+          }
+        }
+      }
+    }
+  ]
+}

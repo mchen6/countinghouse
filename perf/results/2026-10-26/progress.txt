@@ -1,0 +1,31 @@
+2026-10-26T20:45:51Z commit 3d9599d6ddc1d44dcd049ac7397958ea9ebe271b
+2026-10-26T20:47:21Z gate cross-process: mean idle 97.4%
+2026-10-26T20:47:21Z start cross-process: node perf/cross-process-comparison.js --runs 3 --json perf/results/2026-10-26/cross-process.json
+2026-10-26T20:56:21Z end cross-process: exit 0
+2026-10-26T20:56:21Z interference cross-process: session used 5.35 CPU s over 540 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T20:56:51Z gate log-triage: mean idle 97.8%
+2026-10-26T20:56:51Z start log-triage: node perf/log-triage-perf.js --reps 25 --runs 3 --json perf/results/2026-10-26/log-triage.json
+2026-10-26T21:01:39Z end log-triage: exit 0
+2026-10-26T21:01:39Z interference log-triage: session used 2.77 CPU s over 288 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T21:02:09Z gate cap-sweep-8: mean idle 97.5%
+2026-10-26T21:02:09Z start cap-sweep-8: node perf/direct-peer-channels-perf.js --runs 3 --paths direct --cells 1048576:64 --directPeerChannelsMaxConcurrency 8 --json perf/results/2026-10-26/cap-sweep-8.json
+2026-10-26T21:02:38Z end cap-sweep-8: exit 0
+2026-10-26T21:02:38Z interference cap-sweep-8: session used 0.45 CPU s over 29 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T21:03:08Z gate cap-sweep-16: mean idle 97.8%
+2026-10-26T21:03:08Z start cap-sweep-16: node perf/direct-peer-channels-perf.js --runs 3 --paths direct --cells 1048576:64 --directPeerChannelsMaxConcurrency 16 --json perf/results/2026-10-26/cap-sweep-16.json
+2026-10-26T21:03:37Z end cap-sweep-16: exit 0
+2026-10-26T21:03:37Z interference cap-sweep-16: session used 0.57 CPU s over 28 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T21:04:07Z gate cap-sweep-32: mean idle 98.0%
+2026-10-26T21:04:07Z start cap-sweep-32: node perf/direct-peer-channels-perf.js --runs 3 --paths direct --cells 1048576:64 --directPeerChannelsMaxConcurrency 32 --json perf/results/2026-10-26/cap-sweep-32.json
+2026-10-26T21:04:36Z end cap-sweep-32: exit 0
+2026-10-26T21:04:36Z interference cap-sweep-32: session used 0.42 CPU s over 28 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T21:04:36Z phase 2 done
+2026-10-26T21:05:06Z gate sandbox-direct-peer-channels: mean idle 98.0%
+2026-10-26T21:05:06Z start sandbox-direct-peer-channels: node perf/direct-peer-channels-perf.js --runs 3 --paths direct --sandboxModes off,audit,enforce --mcpToolCallCost 1 --json perf/results/2026-10-26/sandbox-direct-peer-channels.json
+2026-10-26T21:07:12Z end sandbox-direct-peer-channels: exit 0
+2026-10-26T21:07:12Z interference sandbox-direct-peer-channels: session used 1.84 CPU s over 125 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T21:07:42Z gate sandbox-log-triage: mean idle 97.0%
+2026-10-26T21:07:42Z start sandbox-log-triage: node perf/log-triage-perf.js --reps 25 --runs 3 --paths direct --matrix headline --sandboxModes off,audit,enforce --json perf/results/2026-10-26/sandbox-log-triage.json
+2026-10-26T21:09:32Z end sandbox-log-triage: exit 0
+2026-10-26T21:09:32Z interference sandbox-log-triage: session used 1.81 CPU s over 109 s wall (claude, ptyxis, gnome-shell)
+2026-10-26T21:09:32Z phase 3 done

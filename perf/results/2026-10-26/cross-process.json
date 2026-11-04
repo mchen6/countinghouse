@@ -1,0 +1,757 @@
+{
+  "runs": [
+    {
+      "peerChannel": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.254214,
+          "chainP99Ms": 0.862071,
+          "perHopP50Ms": 0.254214,
+          "hopsPerSecond": 3701.6733221765903,
+          "cpuSeconds": 0.12999999999999998,
+          "peakRssBytes": 82173952
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 2.359882,
+          "chainP99Ms": 3.498802,
+          "perHopP50Ms": 0.23598819999999998,
+          "hopsPerSecond": 4900.917951856738,
+          "cpuSeconds": 0.6499999999999999,
+          "peakRssBytes": 97599488
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 23.504799,
+          "chainP99Ms": 28.48565,
+          "perHopP50Ms": 0.23504798999999998,
+          "hopsPerSecond": 4307.591524630171,
+          "cpuSeconds": 0.73,
+          "peakRssBytes": 101904384
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 0.282984,
+          "chainP99Ms": 0.981681,
+          "perHopP50Ms": 0.282984,
+          "hopsPerSecond": 3406.672636065569,
+          "cpuSeconds": 0.1200000000000001,
+          "peakRssBytes": 102715392
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 2.784587,
+          "chainP99Ms": 7.19126,
+          "perHopP50Ms": 0.2784587,
+          "hopsPerSecond": 3387.9744841748707,
+          "cpuSeconds": 0.2400000000000002,
+          "peakRssBytes": 106528768
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 27.769726,
+          "chainP99Ms": 34.542543,
+          "perHopP50Ms": 0.27769726,
+          "hopsPerSecond": 3733.3857172150088,
+          "cpuSeconds": 0.4399999999999995,
+          "peakRssBytes": 106938368
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 3.299091,
+          "chainP99Ms": 5.128426,
+          "perHopP50Ms": 3.299091,
+          "hopsPerSecond": 304.0542813757179,
+          "cpuSeconds": 0.6399999999999988,
+          "peakRssBytes": 121438208
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 35.766716,
+          "chainP99Ms": 51.428857,
+          "perHopP50Ms": 3.5766716,
+          "hopsPerSecond": 270.3157194750018,
+          "cpuSeconds": 0.7399999999999984,
+          "peakRssBytes": 213155840
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 404.652508,
+          "chainP99Ms": 430.400237,
+          "perHopP50Ms": 4.04652508,
+          "hopsPerSecond": 256.5529512933314,
+          "cpuSeconds": 7.760000000000002,
+          "peakRssBytes": 211795968
+        }
+      },
+      "stdio": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.287026,
+          "chainP99Ms": 1.098643,
+          "perHopP50Ms": 0.287026,
+          "hopsPerSecond": 3247.23339449108,
+          "cpuSeconds": 0.16999999999999998,
+          "peakRssBytes": 126824448
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 2.473975,
+          "chainP99Ms": 4.317827,
+          "perHopP50Ms": 0.2473975,
+          "hopsPerSecond": 4621.5856314606945,
+          "cpuSeconds": 0.8400000000000003,
+          "peakRssBytes": 147292160
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 25.860856,
+          "chainP99Ms": 30.014648,
+          "perHopP50Ms": 0.25860856,
+          "hopsPerSecond": 4257.410067190839,
+          "cpuSeconds": 0.9299999999999997,
+          "peakRssBytes": 150925312
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 0.76337,
+          "chainP99Ms": 2.216693,
+          "perHopP50Ms": 0.76337,
+          "hopsPerSecond": 1104.107697102646,
+          "cpuSeconds": 0.45999999999999996,
+          "peakRssBytes": 158994432
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 8.29969,
+          "chainP99Ms": 14.009088,
+          "perHopP50Ms": 0.829969,
+          "hopsPerSecond": 1164.51093218059,
+          "cpuSeconds": 0.879999999999999,
+          "peakRssBytes": 160923648
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 80.506558,
+          "chainP99Ms": 99.872414,
+          "perHopP50Ms": 0.80506558,
+          "hopsPerSecond": 1198.7987422817384,
+          "cpuSeconds": 1.6900000000000013,
+          "peakRssBytes": 166846464
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 46.008962,
+          "chainP99Ms": 83.980918,
+          "perHopP50Ms": 46.008962,
+          "hopsPerSecond": 20.82770037762769,
+          "cpuSeconds": 9.969999999999997,
+          "peakRssBytes": 324485120
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 444.800446,
+          "chainP99Ms": 498.497305,
+          "perHopP50Ms": 44.4800446,
+          "hopsPerSecond": 22.27314811479978,
+          "cpuSeconds": 9.29,
+          "peakRssBytes": 357883904
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 4499.999749,
+          "chainP99Ms": 6577.965599,
+          "perHopP50Ms": 44.99999749,
+          "hopsPerSecond": 21.085390372337763,
+          "cpuSeconds": 98.17999999999999,
+          "peakRssBytes": 358948864
+        }
+      },
+      "http": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.659388,
+          "chainP99Ms": 2.317361,
+          "perHopP50Ms": 0.659388,
+          "hopsPerSecond": 1285.6773471020952,
+          "cpuSeconds": 0.44999999999999996,
+          "peakRssBytes": 139968512
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 5.783153,
+          "chainP99Ms": 12.217744,
+          "perHopP50Ms": 0.5783153000000001,
+          "hopsPerSecond": 1712.6419767889138,
+          "cpuSeconds": 2.5199999999999996,
+          "peakRssBytes": 162811904
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 55.754335,
+          "chainP99Ms": 72.951502,
+          "perHopP50Ms": 0.55754335,
+          "hopsPerSecond": 1909.0574777197469,
+          "cpuSeconds": 2.17,
+          "peakRssBytes": 161861632
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 1.565428,
+          "chainP99Ms": 4.177683,
+          "perHopP50Ms": 1.565428,
+          "hopsPerSecond": 569.5286038286147,
+          "cpuSeconds": 0.9799999999999995,
+          "peakRssBytes": 164569088
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 15.181419,
+          "chainP99Ms": 32.671086,
+          "perHopP50Ms": 1.5181419,
+          "hopsPerSecond": 650.2093314156291,
+          "cpuSeconds": 1.7199999999999989,
+          "peakRssBytes": 182366208
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 134.025469,
+          "chainP99Ms": 179.322853,
+          "perHopP50Ms": 1.3402546899999999,
+          "hopsPerSecond": 744.807559389765,
+          "cpuSeconds": 3.01,
+          "peakRssBytes": 184786944
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 16.434691,
+          "chainP99Ms": 34.244338,
+          "perHopP50Ms": 16.434691,
+          "hopsPerSecond": 56.544855008890046,
+          "cpuSeconds": 3.759999999999998,
+          "peakRssBytes": 381124608
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 176.528719,
+          "chainP99Ms": 214.304581,
+          "perHopP50Ms": 17.6528719,
+          "hopsPerSecond": 56.81980602525064,
+          "cpuSeconds": 3.8200000000000003,
+          "peakRssBytes": 362323968
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 1590.522033,
+          "chainP99Ms": 1871.944634,
+          "perHopP50Ms": 15.905220329999999,
+          "hopsPerSecond": 61.76598920938891,
+          "cpuSeconds": 34.61999999999999,
+          "peakRssBytes": 440922112
+        }
+      }
+    },
+    {
+      "peerChannel": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.26048,
+          "chainP99Ms": 1.092926,
+          "perHopP50Ms": 0.26048,
+          "hopsPerSecond": 3564.4085705890393,
+          "cpuSeconds": 0.10999999999999999,
+          "peakRssBytes": 82432000
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 2.264916,
+          "chainP99Ms": 4.465213,
+          "perHopP50Ms": 0.2264916,
+          "hopsPerSecond": 4470.512149807041,
+          "cpuSeconds": 0.73,
+          "peakRssBytes": 96845824
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 23.468881,
+          "chainP99Ms": 25.865323,
+          "perHopP50Ms": 0.23468881,
+          "hopsPerSecond": 4771.444976440281,
+          "cpuSeconds": 0.6700000000000004,
+          "peakRssBytes": 102854656
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 0.269064,
+          "chainP99Ms": 1.33257,
+          "perHopP50Ms": 0.269064,
+          "hopsPerSecond": 3370.696651808813,
+          "cpuSeconds": 0.14000000000000057,
+          "peakRssBytes": 104574976
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 2.854392,
+          "chainP99Ms": 7.082257,
+          "perHopP50Ms": 0.2854392,
+          "hopsPerSecond": 3334.0486423560546,
+          "cpuSeconds": 0.2599999999999998,
+          "peakRssBytes": 106647552
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 25.743122,
+          "chainP99Ms": 38.095289,
+          "perHopP50Ms": 0.25743122,
+          "hopsPerSecond": 3659.6276765798634,
+          "cpuSeconds": 0.5500000000000007,
+          "peakRssBytes": 111628288
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 4.090285,
+          "chainP99Ms": 6.634088,
+          "perHopP50Ms": 4.090285,
+          "hopsPerSecond": 244.32799671674965,
+          "cpuSeconds": 0.8199999999999985,
+          "peakRssBytes": 122540032
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 32.299994,
+          "chainP99Ms": 35.392331,
+          "perHopP50Ms": 3.2299993999999996,
+          "hopsPerSecond": 310.68292334946796,
+          "cpuSeconds": 0.6400000000000006,
+          "peakRssBytes": 215404544
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 384.6641,
+          "chainP99Ms": 416.500327,
+          "perHopP50Ms": 3.846641,
+          "hopsPerSecond": 263.8328766799796,
+          "cpuSeconds": 7.539999999999996,
+          "peakRssBytes": 214831104
+        }
+      },
+      "stdio": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.248464,
+          "chainP99Ms": 0.915845,
+          "perHopP50Ms": 0.248464,
+          "hopsPerSecond": 3977.2270343575956,
+          "cpuSeconds": 0.15000000000000002,
+          "peakRssBytes": 127287296
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 2.452349,
+          "chainP99Ms": 4.93567,
+          "perHopP50Ms": 0.24523489999999998,
+          "hopsPerSecond": 4721.745111192172,
+          "cpuSeconds": 0.8199999999999998,
+          "peakRssBytes": 146812928
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 25.174638,
+          "chainP99Ms": 30.290722,
+          "perHopP50Ms": 0.25174638,
+          "hopsPerSecond": 4437.471652945734,
+          "cpuSeconds": 0.8999999999999995,
+          "peakRssBytes": 152535040
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 0.868635,
+          "chainP99Ms": 2.711138,
+          "perHopP50Ms": 0.868635,
+          "hopsPerSecond": 989.6673522771987,
+          "cpuSeconds": 0.5500000000000007,
+          "peakRssBytes": 160686080
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 8.231411,
+          "chainP99Ms": 14.838821,
+          "perHopP50Ms": 0.8231411,
+          "hopsPerSecond": 1156.3474904644377,
+          "cpuSeconds": 0.8899999999999997,
+          "peakRssBytes": 162197504
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 99.081145,
+          "chainP99Ms": 136.0464,
+          "perHopP50Ms": 0.99081145,
+          "hopsPerSecond": 1000.929705048632,
+          "cpuSeconds": 2.1999999999999993,
+          "peakRssBytes": 170205184
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 44.158895,
+          "chainP99Ms": 78.64062,
+          "perHopP50Ms": 44.158895,
+          "hopsPerSecond": 21.944776360466992,
+          "cpuSeconds": 9.469999999999999,
+          "peakRssBytes": 329617408
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 444.755815,
+          "chainP99Ms": 542.324329,
+          "perHopP50Ms": 44.4755815,
+          "hopsPerSecond": 22.357024989956937,
+          "cpuSeconds": 9.309999999999999,
+          "peakRssBytes": 403308544
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 4391.429294,
+          "chainP99Ms": 4606.404868,
+          "perHopP50Ms": 43.914292939999996,
+          "hopsPerSecond": 22.59222386050985,
+          "cpuSeconds": 91.52000000000001,
+          "peakRssBytes": 426172416
+        }
+      },
+      "http": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.7847,
+          "chainP99Ms": 3.113837,
+          "perHopP50Ms": 0.7847,
+          "hopsPerSecond": 1112.0066397115816,
+          "cpuSeconds": 0.53,
+          "peakRssBytes": 140005376
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 4.965327,
+          "chainP99Ms": 15.002986,
+          "perHopP50Ms": 0.49653270000000005,
+          "hopsPerSecond": 1942.347921442769,
+          "cpuSeconds": 2.22,
+          "peakRssBytes": 164855808
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 49.624621,
+          "chainP99Ms": 81.095329,
+          "perHopP50Ms": 0.49624620999999997,
+          "hopsPerSecond": 2202.973775574371,
+          "cpuSeconds": 1.9300000000000006,
+          "peakRssBytes": 167858176
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 1.551636,
+          "chainP99Ms": 3.938944,
+          "perHopP50Ms": 1.551636,
+          "hopsPerSecond": 578.0717595367518,
+          "cpuSeconds": 0.9799999999999995,
+          "peakRssBytes": 166969344
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 15.172484,
+          "chainP99Ms": 43.798051,
+          "perHopP50Ms": 1.5172484000000002,
+          "hopsPerSecond": 625.2033380076371,
+          "cpuSeconds": 1.8000000000000007,
+          "peakRssBytes": 183123968
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 137.237701,
+          "chainP99Ms": 163.381909,
+          "perHopP50Ms": 1.37237701,
+          "hopsPerSecond": 715.2666265947361,
+          "cpuSeconds": 3.160000000000002,
+          "peakRssBytes": 185778176
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 16.030777,
+          "chainP99Ms": 31.673856,
+          "perHopP50Ms": 16.030777,
+          "hopsPerSecond": 58.37559283329651,
+          "cpuSeconds": 3.719999999999999,
+          "peakRssBytes": 365977600
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 168.950992,
+          "chainP99Ms": 213.78879,
+          "perHopP50Ms": 16.8950992,
+          "hopsPerSecond": 58.71659166377079,
+          "cpuSeconds": 3.6799999999999997,
+          "peakRssBytes": 384692224
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 1589.753517,
+          "chainP99Ms": 1775.662313,
+          "perHopP50Ms": 15.897535170000001,
+          "hopsPerSecond": 61.94707213630048,
+          "cpuSeconds": 34.63000000000001,
+          "peakRssBytes": 442195968
+        }
+      }
+    },
+    {
+      "peerChannel": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.224071,
+          "chainP99Ms": 1.400801,
+          "perHopP50Ms": 0.224071,
+          "hopsPerSecond": 4642.308979012894,
+          "cpuSeconds": 0.1,
+          "peakRssBytes": 82661376
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 2.266489,
+          "chainP99Ms": 4.285255,
+          "perHopP50Ms": 0.2266489,
+          "hopsPerSecond": 4731.396917355802,
+          "cpuSeconds": 0.6699999999999999,
+          "peakRssBytes": 97185792
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 23.655197,
+          "chainP99Ms": 29.163597,
+          "perHopP50Ms": 0.23655197,
+          "hopsPerSecond": 4600.18524416957,
+          "cpuSeconds": 0.7000000000000002,
+          "peakRssBytes": 102027264
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 0.186444,
+          "chainP99Ms": 0.933169,
+          "perHopP50Ms": 0.186444,
+          "hopsPerSecond": 4751.021032428036,
+          "cpuSeconds": 0.10000000000000053,
+          "peakRssBytes": 103403520
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 2.750098,
+          "chainP99Ms": 13.084023,
+          "perHopP50Ms": 0.27500979999999997,
+          "hopsPerSecond": 3284.219958595512,
+          "cpuSeconds": 0.3199999999999994,
+          "peakRssBytes": 107180032
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 27.744443,
+          "chainP99Ms": 33.341939,
+          "perHopP50Ms": 0.27744443,
+          "hopsPerSecond": 3468.9989380197453,
+          "cpuSeconds": 0.4900000000000002,
+          "peakRssBytes": 107757568
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 3.233517,
+          "chainP99Ms": 6.948797,
+          "perHopP50Ms": 3.233517,
+          "hopsPerSecond": 301.90344613047364,
+          "cpuSeconds": 0.6600000000000001,
+          "peakRssBytes": 123359232
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 32.887904,
+          "chainP99Ms": 37.066361,
+          "perHopP50Ms": 3.2887904,
+          "hopsPerSecond": 301.33351228526186,
+          "cpuSeconds": 0.6500000000000021,
+          "peakRssBytes": 227737600
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 400.061695,
+          "chainP99Ms": 429.991376,
+          "perHopP50Ms": 4.0006169499999995,
+          "hopsPerSecond": 257.35934713447296,
+          "cpuSeconds": 7.719999999999999,
+          "peakRssBytes": 227872768
+        }
+      },
+      "stdio": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.285855,
+          "chainP99Ms": 1.442939,
+          "perHopP50Ms": 0.285855,
+          "hopsPerSecond": 3216.6212340361494,
+          "cpuSeconds": 0.19000000000000006,
+          "peakRssBytes": 127291392
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 0.975084,
+          "chainP99Ms": 4.421249,
+          "perHopP50Ms": 0.0975084,
+          "hopsPerSecond": 7119.575406606478,
+          "cpuSeconds": 0.5700000000000001,
+          "peakRssBytes": 145977344
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 25.46285,
+          "chainP99Ms": 32.042644,
+          "perHopP50Ms": 0.2546285,
+          "hopsPerSecond": 4460.953411959436,
+          "cpuSeconds": 0.8500000000000005,
+          "peakRssBytes": 151633920
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 0.763377,
+          "chainP99Ms": 2.539808,
+          "perHopP50Ms": 0.763377,
+          "hopsPerSecond": 1136.597300103133,
+          "cpuSeconds": 0.46999999999999975,
+          "peakRssBytes": 159281152
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 8.192828,
+          "chainP99Ms": 14.478554,
+          "perHopP50Ms": 0.8192828000000001,
+          "hopsPerSecond": 1191.9964144557132,
+          "cpuSeconds": 0.8600000000000003,
+          "peakRssBytes": 161517568
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 82.639279,
+          "chainP99Ms": 103.503308,
+          "perHopP50Ms": 0.82639279,
+          "hopsPerSecond": 1170.8163044492555,
+          "cpuSeconds": 1.7400000000000002,
+          "peakRssBytes": 167215104
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 43.284026,
+          "chainP99Ms": 65.748317,
+          "perHopP50Ms": 43.284026,
+          "hopsPerSecond": 22.49919488346672,
+          "cpuSeconds": 9.23,
+          "peakRssBytes": 311615488
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 437.288209,
+          "chainP99Ms": 503.175114,
+          "perHopP50Ms": 43.7288209,
+          "hopsPerSecond": 22.576317437815177,
+          "cpuSeconds": 9.170000000000002,
+          "peakRssBytes": 387153920
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 4377.081844,
+          "chainP99Ms": 4575.214579,
+          "perHopP50Ms": 43.77081844,
+          "hopsPerSecond": 22.768881623227347,
+          "cpuSeconds": 90.78,
+          "peakRssBytes": 409243648
+        }
+      },
+      "http": {
+        "1024:1": {
+          "samples": 500,
+          "chainP50Ms": 0.745535,
+          "chainP99Ms": 2.436758,
+          "perHopP50Ms": 0.745535,
+          "hopsPerSecond": 1159.734110543837,
+          "cpuSeconds": 0.51,
+          "peakRssBytes": 139943936
+        },
+        "1024:10": {
+          "samples": 400,
+          "chainP50Ms": 4.910121,
+          "chainP99Ms": 14.317511,
+          "perHopP50Ms": 0.4910121,
+          "hopsPerSecond": 1997.8147243266453,
+          "cpuSeconds": 2.1599999999999997,
+          "peakRssBytes": 162127872
+        },
+        "1024:100": {
+          "samples": 40,
+          "chainP50Ms": 58.953664,
+          "chainP99Ms": 84.15108,
+          "perHopP50Ms": 0.5895366400000001,
+          "hopsPerSecond": 1692.8209384927081,
+          "cpuSeconds": 2.5,
+          "peakRssBytes": 165863424
+        },
+        "65536:1": {
+          "samples": 500,
+          "chainP50Ms": 1.564707,
+          "chainP99Ms": 3.80058,
+          "perHopP50Ms": 1.564707,
+          "hopsPerSecond": 582.5982183780608,
+          "cpuSeconds": 0.96,
+          "peakRssBytes": 165748736
+        },
+        "65536:10": {
+          "samples": 100,
+          "chainP50Ms": 13.655893,
+          "chainP99Ms": 31.055523,
+          "perHopP50Ms": 1.3655893000000001,
+          "hopsPerSecond": 706.3707193740154,
+          "cpuSeconds": 1.5599999999999987,
+          "peakRssBytes": 180269056
+        },
+        "65536:100": {
+          "samples": 20,
+          "chainP50Ms": 138.484557,
+          "chainP99Ms": 174.0553,
+          "perHopP50Ms": 1.38484557,
+          "hopsPerSecond": 739.4892023739241,
+          "cpuSeconds": 3.0600000000000005,
+          "peakRssBytes": 184885248
+        },
+        "1048576:1": {
+          "samples": 200,
+          "chainP50Ms": 15.646057,
+          "chainP99Ms": 29.452536,
+          "perHopP50Ms": 15.646057,
+          "hopsPerSecond": 59.644808621622715,
+          "cpuSeconds": 3.640000000000004,
+          "peakRssBytes": 389763072
+        },
+        "1048576:10": {
+          "samples": 20,
+          "chainP50Ms": 171.778398,
+          "chainP99Ms": 213.41513,
+          "perHopP50Ms": 17.1778398,
+          "hopsPerSecond": 57.406685541724634,
+          "cpuSeconds": 3.759999999999998,
+          "peakRssBytes": 409100288
+        },
+        "1048576:100": {
+          "samples": 20,
+          "chainP50Ms": 1592.193897,
+          "chainP99Ms": 1752.673974,
+          "perHopP50Ms": 15.921938970000001,
+          "hopsPerSecond": 62.32643629292637,
+          "cpuSeconds": 34.28,
+          "peakRssBytes": 435380224
+        }
+      }
+    }
+  ]
+}

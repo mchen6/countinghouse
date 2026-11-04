@@ -82,9 +82,16 @@ const MODULES = ['repo-scan', 'secret-detect', 'dep-audit', 'repo-review'];
 // granting the caller only the composite device is what makes repo-review the
 // only visible tool). Running both conditions against one permissive server is
 // what keeps the comparison apples-to-apples.
+//
+// --debug bypasses authentication but not composition binding: repo-review
+// declares "countinghouse.calls", so the server needs an auth identity whose
+// "runsModules" lists it before the composite enters tools/list. The demo's
+// own auth.json carries exactly that identity (repo-review-internal); the
+// API_KEY below is not in it and does not need to be, under --debug.
 function startServer() {
   const args = ['./framework.js', '--workerThread', '--debug', '--bindAddr', HOST,
-                '--port', String(PORT), '--mcpToolCallCost', '1'];
+                '--port', String(PORT), '--mcpToolCallCost', '1',
+                '--authConfigPath', './examples/repo-review/auth.json'];
   MODULES.forEach((m) => { args.push('--loadModule', `./examples/repo-review/${m}`); });
 
   const child = cp.spawn(process.execPath, args, {cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe']});
