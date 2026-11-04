@@ -183,8 +183,10 @@ describe('sandbox 07: restart and suspend', function() {
     it('a module whose worker exited stays down, as before', async () => {
       await mcpCall(9612, KEY, tool('exit'), {});
       await new Promise((resolve) => setTimeout(resolve, 4000));
-      const r = await mcpCall(9612, KEY, tool('ping'), {});
-      assert.notStrictEqual(r.isError, false, JSON.stringify(r));
+      // Unloaded, so its tools are gone: the call must find no such tool
+      // (the next test calls ping through pingOk, which checks the name).
+      const r = await mcpCall(9612, KEY, tool('ping'), {}, {allowUnknownTool: true});
+      assert.ok(/unknown tool/.test(String(r.message)), JSON.stringify(r));
       assert.ok(server.output.includes('unloaded due to reason: WORKER EXIT WITH CODE: 3'), server.output.slice(-2000));
     });
 
