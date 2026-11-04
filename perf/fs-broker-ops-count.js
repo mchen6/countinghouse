@@ -1,7 +1,7 @@
 // How many libuv pool jobs (async fs calls on the main thread) the broker
-// makes for one ioBench round -- writeFileSync (open, write, close),
-// readFileSync (readFile), statSync (stat), unlinkSync (unlink) -- in each
-// mode. Machine-independent, unlike milliseconds.
+// makes for one ioBench round, as the patch sends it -- writeFileSync
+// (writeFile), readFileSync (readFile), statSync (stat), unlinkSync (unlink)
+// -- in each mode. Machine-independent, unlike milliseconds.
 //   node perf/fs-broker-ops-count.js
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -27,9 +27,7 @@ const {FsBroker} = require('../lib/fs-broker/broker');
 const {Quota} = require('../lib/fs-broker/quota');
 
 async function round(broker) {
-  const fd = await broker.handle('open', ['/data/f', 'w']);
-  await broker.handle('write', [fd, Buffer.alloc(4096), null]);
-  await broker.handle('close', [fd]);
+  await broker.handle('writeFile', ['/data/f', Buffer.alloc(4096), 'w', 0o666]);
   await broker.handle('readFile', ['/data/f', 'r']);
   await broker.handle('stat', ['/data/f']);
   await broker.handle('unlink', ['/data/f']);
@@ -48,7 +46,7 @@ async function round(broker) {
     await round(broker);   // warm-up
     Object.keys(counts).forEach((k) => delete counts[k]);
     await round(broker);
-    out[mode] = {total: Object.values(counts).reduce((a, b) => a + b, 0), bridgeCalls: 6, byCall: Object.assign({}, counts)};
+    out[mode] = {total: Object.values(counts).reduce((a, b) => a + b, 0), bridgeCalls: 4, byCall: Object.assign({}, counts)};
     await broker.closeAll();
     fs.rmSync(base, {recursive: true, force: true});
   }
