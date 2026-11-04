@@ -45,6 +45,13 @@ you have to do. What the sandbox does and does not protect is in
 
 Under worker mode, in every `--moduleSandbox` mode unless noted:
 
+- **Part 1's lockdown now applies by default** (under `audit` and
+  `enforce`), since worker mode is the default: native addons,
+  `child_process` and the other blocked built-ins, process controls, and a
+  module whose dependencies resolve outside its own directory all work but
+  are logged under `audit`, and are refused under `enforce`. The list is in
+  the CHANGELOG's "module sandbox, part 1" section and in
+  [`security-model.md`](security-model.md).
 - **Virtual paths.** A module sees its own directory as `/app`:
   `__dirname`, `__filename`, `require.resolve`, `import.meta`, stack traces,
   `process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`). Code that builds
@@ -86,9 +93,9 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
   neither is HTTP/2 `respondWithFile` (read the file with `fs` and stream
   it).
 - **Start-up time grows with the files in `/data` and `/tmp`:** a worker's
-  start walks them, about 70 µs per entry on one CPU (715 ms for 10 000;
-  about 7 s near the 100 000 default; measured at `dab69d0`). The walk does
-  not block the server.
+  start walks them, about 70-145 µs per entry on the maintainer's VM
+  (715 ms for 10 000 at `dab69d0`, 1.1-1.5 s at `cd411ee` on a slower disk;
+  so 7-15 s near the 100 000 default). The walk does not block the server.
 
 Module authors: [Files and paths](module-development.md#files-and-paths)
 says how to write a module for this.
@@ -124,8 +131,11 @@ maintainer's VM; treat these as orders of magnitude and measure your own.
   Brokered file I/O costs tens of times the direct path. Modules doing
   occasional file I/O will not notice; modules doing thousands of small
   synchronous operations per request will.
-- **Spawn time** on 1 CPU (measured at `dab69d0`): `POST /restart-module`
-  until the module answers, a median of about 6 s; the `/data` walk as above.
+- **Restarts are faster than in 7.1.2.** `POST /restart-module` until a
+  small module answers again took a median of about 1.3 s at `cd411ee`
+  against about 4.2 s on 7.1.2, same module and machine, 2 CPUs. What part 2
+  adds to each start is the walk of `/data` and `/tmp`: about 0.7-1.5 s per
+  10 000 entries on the maintainer's VM, depending on the disk.
 
 ## Going back to 7.x
 

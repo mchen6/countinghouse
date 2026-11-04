@@ -222,9 +222,10 @@ ceiling 1024) and `diskEntries` (files and directories, default ceiling
 100 000). Over either, a write fails with `ENOSPC` under `enforce`; under
 `audit` crossing a threshold is logged. Declared paths are not counted.
 Start-up time grows with the number of entries in `/data` and `/tmp`: your
-worker's start walks them, about 70 µs per entry on a 1-CPU machine (715 ms
-for 10 000 entries, so about 7 s near the 100 000 default; measured at
-`dab69d0`). The walk is asynchronous and does not block the server.
+worker's start walks them, about 70-145 µs per entry on the maintainer's VM
+(715 ms for 10 000 entries at `dab69d0`, 1.1-1.5 s at `cd411ee` on a slower
+disk; so 7-15 s near the 100 000 default). The walk is asynchronous and does
+not block the server.
 
 **Links.** In every mode a hard link works only within one writable root, and
 a symbolic link only with a relative target that stays inside its root

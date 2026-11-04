@@ -107,7 +107,9 @@ investigated.
 
 ## Spawn time
 
-Measured at `dab69d0`, 1 CPU (A-C do not touch the spawn path).
+Measured at `dab69d0`, 1 CPU (A-C do not touch the spawn path). On 2 CPUs
+the same restart round trip takes about 1.6 s, and a restart is faster than
+in 7.1.2: see [Restarts against 7.x](#restarts-against-7x).
 
 | Step | median | min | max |
 |---|---|---|---|
@@ -122,6 +124,30 @@ fixed cost). The spawn walk grows with the number of entries in a module's
 `/data` and `/tmp`, about 70 µs per entry here: a module near the default
 `diskEntries` limit (100 000) adds about 7 s to each start and restart. The
 walk is asynchronous and does not block the main thread.
+
+### Restarts against 7.x
+
+Measured 2026-11-04 on the same VM after its upgrade (2 CPUs, Node v24.21.0).
+`perf/spawn-time-perf.js` at `cd411ee`, three sessions of 10 runs: the
+`fs-probe` restart round trip took a median of 1 606, 1 588 and 1 670 ms
+(1 392-1 968 overall), and the 10 000-file walk 1 431, 1 453 and 1 139 ms
+(852-1 972). The walk code is unchanged since `dab69d0`; this machine's disk
+is slower since the upgrade, so the walk is about 115-145 µs per entry here.
+
+For a 7.x baseline, the same small module (`test/fixtures/handler-map-module`,
+unchanged between the two) was restarted with `POST /restart-module` until a
+`tools/call` succeeded again, in worker mode, three alternating sessions of
+10 runs:
+
+| | middle of the three sessions' medians | range of those medians |
+|---|---|---|
+| 7.1.2 (`fddac24`) | 4 244 ms | 4 018-4 304 |
+| 8.0.0 (`cd411ee`) | 1 294 ms | 1 088-1 316 |
+
+A restart in 8.0.0 is faster than in 7.1.2. The broker's share of a start
+(`createForWorker`, about 6 ms here, plus the walk of `/data` and `/tmp`) is
+small unless a module keeps many files. Why 7.1.2 is slower was not
+investigated.
 
 ## What this means
 
