@@ -72,3 +72,92 @@ describe('fs-broker 14: a hoisted npm install', function() {
     assert.deepStrictEqual(w.structuredContent != null ? w.structuredContent.output : w, {ok: true, code: null}, server.output.slice(-3000));
   });
 });
+
+// Installs whose dependencies are symlinks: pnpm links each package into
+// node_modules/.pnpm/<name>@<version>/node_modules/<name> and links its
+// dependencies beside it there, and a checkout may symlink node_modules
+// whole. Node looks a dependency up by the link's name before it resolves
+// it, so the code roots must hold that spelling as well as the real one
+// (review, plan 5).
+describe('fs-broker 14: dependencies installed as symlinks', function() {
+  this.timeout(180000);
+  let project = null;
+  let server = null;
+  const packages = () => {
+    const names = [];
+    for (const entry of fs.readdirSync(path.join(ROOT, 'node_modules'))) {
+      if (entry.startsWith('.')) continue;
+      if (entry.startsWith('@')) fs.readdirSync(path.join(ROOT, 'node_modules', entry)).forEach((n) => names.push(`${entry}/${n}`));
+      else names.push(entry);
+    }
+    return names;
+  };
+  const store = (nm, name) => path.join(nm, '.pnpm', `${name.replace('/', '+')}@0.0.0`, 'node_modules', name);
+  const link = (target, at) => { fs.mkdirSync(path.dirname(at), {recursive: true}); fs.symlinkSync(target, at); };
+  const deps = (dir) => {
+    let pkg = {};
+    try { pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')); } catch (e) { pkg = {}; }
+    return [].concat(...['dependencies', 'optionalDependencies', 'peerDependencies'].map((k) => Object.keys(pkg[k] || {})));
+  };
+
+  // pnpm's layout: every package real only in the store, each one's
+  // dependencies linked beside it, countinghouse run from its real path.
+  function pnpmInstall() {
+    const nm = path.join(project, 'node_modules');
+    const names = packages();
+    for (const name of names) fs.cpSync(path.join(ROOT, 'node_modules', name), store(nm, name), {recursive: true, verbatimSymlinks: true});
+    for (const name of names) {
+      for (const dep of deps(store(nm, name))) {
+        if (names.includes(dep) && !fs.existsSync(path.join(path.dirname(store(nm, name)), dep))) link(store(nm, dep), path.join(store(nm, name), '..', dep));
+      }
+    }
+    const installed = store(nm, 'countinghouse');
+    fs.mkdirSync(installed, {recursive: true});
+    ['framework.js', 'package.json', 'bin', 'lib', 'spec'].forEach((p) => fs.cpSync(path.join(ROOT, p), path.join(installed, p), {recursive: true}));
+    for (const dep of deps(installed)) link(store(nm, dep), path.join(installed, '..', dep));
+    link(installed, path.join(nm, 'countinghouse'));
+    assert.strictEqual(fs.lstatSync(path.join(installed, '..', 'bunyan')).isSymbolicLink(), true);
+    return installed;
+  }
+
+  // A checkout whose node_modules is one symlink to another tree's.
+  function linkedNodeModules() {
+    const installed = path.join(project, 'checkout');
+    fs.mkdirSync(installed);
+    ['framework.js', 'package.json', 'bin', 'lib', 'spec'].forEach((p) => fs.cpSync(path.join(ROOT, p), path.join(installed, p), {recursive: true}));
+    fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(installed, 'node_modules'));
+    return installed;
+  }
+
+  beforeEach(() => { project = mkdtemp('symlinked-'); });
+  afterEach(() => {
+    stopServer(server);
+    server = null;
+    fs.rmSync(project, {recursive: true, force: true});
+  });
+
+  [['pnpm', pnpmInstall], ['a symlinked node_modules', linkedNodeModules]].forEach(([label, make]) => {
+    ['off', 'enforce'].forEach((mode) => {
+      it(`${label}, ${mode}: a worker boots and its module works`, async () => {
+        const installed = make();
+        server = await startServer(9633, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
+          '--moduleDataPath', path.join(project, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')], {root: installed});
+        const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'linked'}, {allowUnknownTool: true});
+        assert.deepStrictEqual(w.structuredContent != null ? w.structuredContent.output : w, {ok: true, code: null}, server.output.slice(-3000));
+      });
+    });
+  });
+
+  // Not pnpm: Node's permission model refuses a granted symlink when another
+  // grant extends its name (redis beside redis-commands), a form of
+  // nodejs/node#66812 (plan 5 ledger).
+  it('a symlinked node_modules, --hardened (enforce): a worker boots and its module works', async () => {
+    const installed = linkedNodeModules();
+    const modules = path.join(project, 'modules');
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(modules, 'fs-probe'), {recursive: true});
+    server = await startServer(9633, ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
+      '--modulePath', modules, '--moduleDataPath', `${installed}_data`, '--loadModule', path.join(modules, 'fs-probe')], {root: installed});
+    const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'linked'}, {allowUnknownTool: true});
+    assert.deepStrictEqual(w.structuredContent != null ? w.structuredContent.output : w, {ok: true, code: null}, server.output.slice(-3000));
+  });
+});
