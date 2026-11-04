@@ -15,6 +15,9 @@ against `master` at `fd6daee`. The spikes behind the claims marked
 *(spiked)* ran on Node 24.21 in throwaway code; their results are summarised
 in [Spike results](#spike-results).
 
+**Amended 2026-11-04** (plan 5 Task 6, approved by the user): the spec now
+says what plans 3-5 built. Each changed passage is marked *(amended 2026-11-04)*.
+
 ## The problem
 
 Part 1 gave each module's worker a lockdown, limits and a policy, but no file
@@ -229,12 +232,28 @@ Node's loader calls the public `fs` at call time (`realpathSync`,
   from a getter, gets the full checks; a test has such a getter `require` an
   outside absolute path and expects `MODULE_NOT_FOUND` under `enforce`.
 - **Every resolve is bounded from `set-options` onwards (L2), whoever the
-  parent is.** Countinghouse's boot `require`s of `lib/` and `node_modules/`
-  between the `fs` patch and `set-options` are unbounded by design; they run
-  before any module code exists. A
-  countinghouse parent may reach only `lib/`, `node_modules/` and
-  `package.json` under the install directory, plus the module root. Anything
-  else is `MODULE_NOT_FOUND` under `enforce` and logged under `audit`. This
+  parent is.** *(amended 2026-11-04)* The boot window, from worker start to `set-options`, runs
+  only countinghouse's own code, before any module code exists: it is served
+  under a boot grant for countinghouse's code roots, and anything else it
+  touches is answered `ENOENT` and logged once as countinghouse's own, in
+  every mode. From `set-options` on, a countinghouse parent may reach only
+  its code roots plus the module root. Anything else is `MODULE_NOT_FOUND`
+  under `enforce` and logged under `audit`.
+- **Code roots** *(amended 2026-11-04)*: countinghouse's own entries (`lib/`, `package.json`,
+  `spec/schema.json`) and the package directory of each package in its
+  dependency closure (dependencies, optional and peer dependencies,
+  transitively), found the way Node finds them so a hoisted npm install
+  works, minus every module root. Never a whole `node_modules`, which may
+  hold other modules. A dependency installed as a symlink (pnpm, a linked
+  `node_modules`) is a root under the name Node looks it up by and under its
+  real path; a module root excludes both. One list serves the boot grant,
+  L2, the loader lookups below and `--hardened`'s read grants.
+- **The loader's own lookups under `enforce`** *(amended 2026-11-04)*: `Module._stat`,
+  `_findPath`, `_resolveFilename`, `_readPackage` and `findPackageJSON` stat
+  and read natively, past the broker; under `enforce` they answer missing
+  outside the module root and the code roots, so a module cannot probe host
+  paths through them. Under `audit` and `off` they are unchanged (outside
+  access passes through there anyway). This
   closes `module.parent.require`, `require.cache[lib].require`,
   `Module._load(path, cmModule)`, `Module.prototype.require.call(cmModule,
   path)` and the `vm.Script` `import()` referrer as routes to files.
@@ -258,11 +277,15 @@ message. The plan begins with a survey of every post-lockdown `fs`, `cwd` and
 | `process.setSourceMapsEnabled` (the loader reads `sourceMappingURL` paths) | locked |
 | `repl`, `trace_events` | removed from the built-in allowlist |
 | `net.Socket({fd})`, `net.Socket({handle})`, `tty.ReadStream`/`WriteStream(fd)`, `server.listen({fd})` and `server.listen(handle)` on `net`, `http`, `https` and `http2` servers, and `tls.TLSSocket` wrapping any of them | the `fd`/`handle` option is refused under `enforce`, logged under `audit`. In the spike a worker adopted the main thread's real listening socket with `net.Socket({fd})`, and with `listen({fd})` on `net` and `http` servers took over the main server's connections *(spiked)* |
+| HTTP/2 `respondWithFD(fd)` *(amended 2026-11-04)* | refused under `enforce`, logged under `audit` (it sends a real descriptor's contents natively) |
+| HTTP/2 `respondWithFile(path)` *(amended 2026-11-04)* | not available to modules in any mode (`ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`): it hands the brokered descriptor to native code, which cannot read it (user decision) |
 | Unix-socket paths (`net.connect(path)`, `http.request({socketPath})`) | a gap until part 4 |
 
-This table is not yet known to be complete: the plan's first task sweeps the
-allowlisted built-ins for any other file or descriptor access, and anything
-found comes back to the reviewer and the user.
+*(amended 2026-11-04)* Plan 3's sweep of the allowlisted built-ins found three routes:
+`respondWithFD` and `respondWithFile` (above) and the loader's own lookups
+(section 2, "The loader"). `dns`, `tls`, `crypto`, `zlib`, `vm`, `dgram`
+(whose `bind({fd})` was already locked), `tty`, `net` and the rest needed
+nothing further.
 
 ## 3. The broker
 
@@ -287,6 +310,20 @@ effective `fs` declarations, and the quota.
    creation, re-`lstat` the parent chain. On a mismatch, close and answer
    `ENOENT`.
 
+*(amended 2026-11-04)* Three optimisations (user decision, plan 5 Task 4b; commits `b977146`,
+`60ca7e8`, `9246db1`):
+- Under `off` the broker makes no host checks (step 3), since `off` decides
+  nothing about files; post-open verification was already enforce-only. The
+  link rules, `EXDEV`, `EBUSY` on roots and the special-file check after open
+  still run.
+- `writeFile` and `appendFile` on a path are one brokered operation: open,
+  write and close inside the broker, with the quota, the verification and
+  the checks unchanged.
+- Each broker caches directory real paths for up to 1 s and 1024 entries.
+  Every operation that takes the exclusive lock clears the cache first; only
+  directories are cached, never the file a call names; under `enforce`
+  opened descriptors are still verified without the cache.
+
 **Per-module read/write lock.** Mutating operations (write, rename, unlink,
 mkdir, rm, link, symlink, chmod, truncate, utimes…) take it exclusively;
 every path-resolving operation, reads and opens included, takes it shared. A
@@ -296,8 +333,10 @@ module cannot race itself.
 writable root, and counted where the quota is counted; `symlink()` only with a relative target that
 resolves inside the same root; absolute targets are `EPERM`. `chmod` and
 `fchmod` strip setuid, setgid and sticky bits. Under `enforce`, the spawn walk
-refuses to start a module whose `/data` or `/tmp` holds a regular file with
-more than one link or a symlink with an absolute target, naming the entries.
+refuses to start a module whose `/data` or `/tmp` holds a link that can lead
+outside *(amended 2026-11-04)*: a symlink with an absolute target, or a hard link to a file that
+also has a name outside `/data` and `/tmp`. A hard link the module made
+inside them, which the link rules allow, is fine. The log names the entries.
 The operator clears that by removing or replacing them under
 `<moduleDataPath>/<name>/`, then `POST /restart-module`.
 
@@ -305,8 +344,10 @@ The operator clears that by removing or replacing them under
 `Dir.path`, `glob` results, and `err.path`, `err.dest` and the message.
 Cross-root `rename` answers `EXDEV`, so copy fallbacks work.
 
-**Descriptor table:** at most 256 per worker, numbered from 3, operations on
-one descriptor serialised, all closed when the worker exits.
+**Descriptor table:** at most 256 per worker, numbered from 3 in the broker,
+operations on one descriptor serialised, all closed when the worker exits.
+*(amended 2026-11-04)* Module code sees `0x10000000 + n` for broker descriptor `n`, so a
+brokered descriptor is never mistaken for a real one.
 
 **Quota:**
 - At spawn: empty `/tmp` (lstat; never follow links), then measure `/data` and
@@ -336,7 +377,8 @@ one descriptor serialised, all closed when the worker exits.
 descriptors close, the broker is discarded. A per-name lifecycle lock makes the
 next spawn wait for the old broker's operations to settle before it empties
 `/tmp` and walks, and keeps uninstall's deletion and a load of the same name
-apart.
+apart. *(amended 2026-11-04)* The wait is bounded at 35 s (the bridge's 30 s deadline plus a
+margin); past it the next spawn goes ahead and logs what was still running.
 
 ## 4. Modes
 
@@ -402,12 +444,16 @@ paths:
   back. `os.tmpdir()` returns `/tmp`. Relative paths resolve against `/app`.
   Countinghouse APIs that take a path from module code (`CHUtil.loadFile`)
   translate at their boundary. No checks, quota or link rules.
-- The data directories are created and `/tmp` emptied at module load.
+- The data directories are created and `/tmp` emptied at every module load
+  *(amended 2026-11-04)*.
 - **Documented differences from worker mode:** `process.cwd()` stays real;
   stack frames, `module.filename`, `require.cache` keys and `require.resolve`
   stay host; paths given to non-`fs` APIs are not translated; a module can
   require countinghouse's own dependencies through `NODE_PATH`; ES modules'
-  `import.meta.dirname` stays host.
+  `import.meta.dirname` stays host; *(amended 2026-11-04)* `createRequire` with a virtual (`/app`)
+  path fails with `MODULE_NOT_FOUND` (both modules see `/app`, and the
+  resolver cannot tell which is meant), so use `require`, or
+  `createRequire(import.meta.url)` in ES modules.
 
 ## 7. Uninstall
 
@@ -415,9 +461,12 @@ paths:
 - validates `name` against npm package-name rules before building any path;
 - refuses while the module is loaded, restarting or suspended;
 - removes the registry entry (`lib/device-db.js` `removeModuleInfo`, which has
-  no caller today);
+  no caller today), first *(amended 2026-11-04)*: if that fails nothing has been deleted
+  (`REMOVE_MODULE_INFO_FAIL`), and `registryEntryRemoved` is reported true
+  only when an entry existed;
 - deletes `<moduleDataPath>/<name>` unless `keepData`, never following links,
-  under the per-name lifecycle lock.
+  under the per-name lifecycle lock (`MODULE_DATA_NOT_DIRECTORY` if it is a
+  link or a file, which is left alone).
 
 It never removes the module's code under `--modulePath`; the docs say so.
 
@@ -438,13 +487,24 @@ Each goes into `docs/security-model.md` and the CHANGELOG:
   `CHUtil.request` host check is not a network boundary; `--hardened`'s
   symlink and write-scope limits; native code in the main thread; uncaught
   exceptions do not end a worker; resource limits can misfire.
-- The routes table in section 2 is complete only once the plan's built-in
-  sweep has run.
+- *(amended 2026-11-04)* A CommonJS file that an ES module imports directly keeps its host
+  `__filename` and host stack frames (Node 24 gives the hooks no way to
+  change them); what that file requires is virtual again.
+- *(amended 2026-11-04)* The directory real-path cache: a host process's change, or another
+  module's change in a shared `rw` directory, can go unseen for up to 1 s;
+  under `enforce` every open is still verified.
+- *(amended 2026-11-04)* HTTP/2 `respondWithFile` is not available to modules.
+- *(amended 2026-11-04)* `--hardened` does not support pnpm installs until nodejs/node#66812 is
+  fixed: Node's permission model refuses a granted symlink when another
+  grant extends its name, even for a synchronous call (a form of the bug
+  found after it was filed).
 
 ## Error codes and flags
 
 New flag: `--moduleDataPath`. New limits: `diskMb` and `diskEntries`. New
-error code: `MODULE_NAME_MISMATCH`. New route: `POST /uninstall-module`. Module-facing
+error codes: `MODULE_NAME_MISMATCH`, and for uninstall *(amended 2026-11-04)*
+`MODULE_NAME_INVALID`, `MODULE_LOADED`, `MODULE_DATA_NOT_DIRECTORY` and
+`REMOVE_MODULE_INFO_FAIL`. New route: `POST /uninstall-module`. Module-facing
 errors are Node's own: `ENOENT`, `EROFS`, `EPERM`, `ENOSPC`, `EMFILE`,
 `ETIMEDOUT`, `EIO`, `EXDEV`, `EBADF`, `ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`.
 Registry errors for uninstall follow the existing error-info files.

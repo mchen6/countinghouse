@@ -426,3 +426,31 @@ are taken by `test/module-loading/12-reload-fresh-code.js`).
   CEAMS did with CouchDB (`lib/device-config.js` now reads files). To be
   revisited after this part, so env values and `DeviceConfig` end up as one
   configuration story.
+
+## Amended by part 2 (2026-11-04)
+
+Part 2 (`2026-10-17-module-sandbox-fs-broker-design.md`, 8.0.0) changes
+three things this spec says:
+
+- **`off` is no longer "today's behaviour" for files.** Under
+  `--moduleSandbox off` in worker mode the file broker still runs: modules
+  see virtual paths (`/app`, `/data`, `/tmp`), the link rules apply, and
+  every file call is a hop to the main thread. Where this spec says `off`
+  adds no new hop, that no longer holds for file calls. `off` still turns
+  off the lockdown, the limits, the policy and violation logging, as this
+  spec says. Within part 2's file broker, `off` also makes no host checks,
+  which keeps its hop cheap (part 2 spec, §3).
+- **A load whose request name differs from its package.json name is
+  refused in every mode** (`MODULE_NAME_MISMATCH`), `off` and
+  single-thread mode included, and the policy is looked up by the
+  package.json name.
+- **`--hardened`'s grants** (§5): it also grants read and write on
+  `--moduleDataPath`, creates that directory before relaunching, and grants
+  read on countinghouse's dependency code roots outside its install
+  directory.
+
+The known gap accepted here, module code borrowing countinghouse's loaded
+modules to reach files, is closed for files by part 2's bounded loader.
+Access to the objects themselves remains (part 2 spec, "Gaps that remain").
+
+Worker mode became the default in the same release (part 2 spec, §5).
