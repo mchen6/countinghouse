@@ -1,19 +1,20 @@
-// countinghouse 8 needs Node 22.16 (module.registerHooks, Worker
-// getHeapStatistics, --permission). Older Node fails fast at startup.
+// countinghouse 8 needs Node 24.15: its module.registerHooks resolve hooks
+// see require.resolve (earlier Node, 22 included, skips them, so module code's
+// require.resolve fails in worker mode). Older Node fails fast at startup.
 const assert = require('assert');
 const nodeVersion = require('../../lib/node-version');
 
 describe('sandbox 10: Node version floor', () => {
-  it('accepts 22.16.0 and later', () => {
-    ['v22.16.0', 'v22.20.1', 'v23.0.0', 'v24.21.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), true, v));
+  it('accepts 24.15.0 and later', () => {
+    ['v24.15.0', 'v24.15.1', 'v24.21.0', 'v24.22.2', 'v25.0.0', 'v26.12.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), true, v));
   });
 
   it('refuses anything older', () => {
-    ['v20.20.2', 'v22.0.0', 'v22.15.9', 'v18.0.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), false, v));
+    ['v20.20.2', 'v22.16.0', 'v22.23.4', 'v24.0.0', 'v24.14.1', 'v24.14.9', 'v18.0.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), false, v));
   });
 
   it('says what it needs and what it got', () => {
-    assert.strictEqual(nodeVersion.message('v20.20.2'), 'countinghouse 8 needs Node 22.16 or later (this is v20.20.2)');
+    assert.strictEqual(nodeVersion.message('v20.20.2'), 'countinghouse 8 needs Node 24.15 or later (this is v20.20.2)');
   });
 
   it('accepts the Node running this test', () => {

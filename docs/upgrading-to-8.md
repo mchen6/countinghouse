@@ -9,7 +9,9 @@ you have to do. What the sandbox does and does not protect is in
 
 ## Before you upgrade
 
-- **Node 22.16 or later.** Startup exits with status 2 on an older Node.
+- **Node 24.15 or later.** Startup exits with status 2 on an older Node.
+  Node 22 is not supported (module loader hooks miss `require.resolve`
+  before 24.15).
 - **Redis 5.0 or later if you use jobs** (6.2 recommended). Worker mode now
   starts the BullMQ job worker on a plain start; on an older Redis it logs
   BullMQ's version error and jobs do not run.

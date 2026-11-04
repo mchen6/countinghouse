@@ -20,8 +20,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 
 ### Changed — 8.0.0 platform
 
-- **Node 22.16 or later is required.** Startup exits with status 2 on an
-  older Node. Node 20 reached end of life in April 2026.
+- **Node 24.15 or later is required.** Startup exits with status 2 on an
+  older Node. Node 22 is not supported: `module.registerHooks` does not hook
+  `require.resolve` before 24.15 (22.x included), so module code's
+  `require.resolve` fails in worker mode there.
 - **`--workerThread` is on by default.** Pass `--no-workerThread` (or
   `--workerThread false`) for single-thread mode, now meant only for
   debugging modules; startup logs a warning saying so. Worker mode also

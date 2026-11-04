@@ -40,7 +40,7 @@ it to travel in.
 
 ## See it
 
-Needs Node.js >= 22.16 and a Redis reachable at `redis://127.0.0.1:6379`
+Needs Node.js >= 24.15 and a Redis reachable at `redis://127.0.0.1:6379`
 (metering, rate limiting and session state; `--redisUrl` points elsewhere).
 No other external service — authentication is file-backed by default.
 

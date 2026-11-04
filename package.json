@@ -22,7 +22,7 @@
     "server.json"
   ],
   "engines": {
-    "node": ">=22.16"
+    "node": ">=24.15"
   },
   "scripts": {
     "lint": "eslint .",

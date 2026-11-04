@@ -57,7 +57,7 @@ Each layer below says what it stops and what it does not.
 
 **Modes.** `--moduleSandbox off|audit|enforce`, default `audit`. The sandbox
 needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
-22.16 or later.
+24.15 or later.
 
 | | `off` | `audit` (default) | `enforce` |
 |---|---|---|---|

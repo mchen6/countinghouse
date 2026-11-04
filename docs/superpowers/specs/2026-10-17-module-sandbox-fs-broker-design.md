@@ -5,7 +5,8 @@ code (part 1: `docs/superpowers/specs/2026-10-15-module-sandbox-foundation-desig
 Part 2 puts every file access a module makes behind the main thread, gives
 each module its own file namespace, and closes the routes part 1 left around
 the `require` boundary. It ships as **8.0.0**, together with `--workerThread`
-becoming the default and a Node floor of 22.16.
+becoming the default and a Node floor of 24.15 *(amended 2026-11-04; was
+22.16)*.
 
 Designed with the user on 2026-10-17, and reviewed section by section by a
 second Claude Code session acting as reviewer. Every decision below was
@@ -53,7 +54,8 @@ Made by the user during design:
    there, through a lighter mechanism ([section 6](#6-single-thread-mode)).
    Identity stays the host path in that mode (option "a" of the collision
    question).
-8. **8.0.0:** Node >= 22.16; `--workerThread` becomes the default (its own
+8. **8.0.0:** Node >= 24.15 *(amended 2026-11-04, user decision: Node 22
+   dropped; see section 5)*; `--workerThread` becomes the default (its own
    change); the part 1 spec is amended where it promised "off is today's
    behaviour" and "no new hop".
 9. **Link rules apply in every `--moduleSandbox` mode** (`off`, `audit`,
@@ -397,9 +399,17 @@ environment for `audit` and `enforce` only.
 
 ## 5. 8.0.0
 
-1. **Node >= 22.16.** `package.json` engines, the CI matrix (22 at >= 22.16,
-   and 24), and `CLAUDE.md`'s target line (the user asked the author to change
-   it). Part 1's `lib/sandbox-support.js` fallback is removed.
+1. **Node >= 24.15** *(amended 2026-11-04; was 22.16)*. `package.json`
+   engines, the CI matrix (24.15.0, the floor itself, and the newest 24.x),
+   and `CLAUDE.md`'s target line. Part 1's `lib/sandbox-support.js` fallback is
+   removed. Why 24.15: on Node 22 and on 24.x before 24.15,
+   `module.registerHooks` resolve hooks are not called for `require.resolve`
+   or `createRequire().resolve`, so module code's `require.resolve` reaches
+   Node's resolver with its virtual `/app` path and fails (found by the first
+   CI run on 22.23.4; bisected on each minor's latest patch: 24.0.0, 24.10.0,
+   24.12.0, 24.13.1 and 24.14.1 skip the hook, 24.15.0, 24.21.0 and 24.22.2
+   call it). The user chose dropping Node 22 over a Node-22-only
+   `require.resolve` shim.
 2. **`--workerThread` is the default** (its own commit). `--no-workerThread`
    selects single-thread mode; `--workerThread false` and
    `--workerThread=false`, which minimist passes as the string `"false"`
