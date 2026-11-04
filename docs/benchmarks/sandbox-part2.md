@@ -146,8 +146,11 @@ unchanged between the two) was restarted with `POST /restart-module` until a
 
 A restart in 8.0.0 is faster than in 7.1.2. The broker's share of a start
 (`createForWorker`, about 6 ms here, plus the walk of `/data` and `/tmp`) is
-small unless a module keeps many files. Why 7.1.2 is slower was not
-investigated.
+small unless a module keeps many files. The likely cause of 7.1.2's extra
+time: it waited a fixed 3 s at unload before terminating the old worker
+(`lib/module-manager.js` at `fddac24`), and 8.0.0 waits for the worker's
+acknowledgement instead. That matches most of the difference; it was not
+measured separately.
 
 ## What this means
 
