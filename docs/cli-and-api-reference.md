@@ -31,9 +31,22 @@ simulation).
 | `--deviceConfigPath <path>` | `./config/devices` | Directory of per-module device config files (one `<moduleName>.json` each). |
 | `--moduleSandbox off\|audit\|enforce` | `audit` (worker mode); `off` in single-thread mode | Module sandbox mode: `off` is no lockdown, limits or policy; `audit` logs violations and lets them through; `enforce` blocks them. Resource limits apply in `audit` too. Explicit `audit` or `enforce` without `--workerThread` is a startup error. See [Security model](security-model.md). |
 | `--modulePolicy <file>` | none | JSON file of operator ceilings and per-module entries that narrow what each module's `countinghouse.permissions` declaration grants. Re-read when a module restarts. See [Declaring permissions](module-development.md#declaring-permissions). |
+| `--moduleDataPath <dir>` | `$HOME/countinghouse_module_data` | Where each module's private data lives: `<dir>/<package name>/data` (its `/data`, kept) and `.../tmp` (its `/tmp`, emptied when its worker starts), created with mode `0700`. Must be writable by the service user. Unload, restart and reload never delete it; `POST /uninstall-module` does. See [Files and paths](module-development.md#files-and-paths). |
 | `--moduleMessageRate <n>` | `2000` | Messages per second a module's worker may send to the main thread (Redis commands included); beyond it, calls fail with `RATE_LIMITED`. |
-| `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread`). Every module must live under `--modulePath`, symlinks resolved, on load, reload and restart alike (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. `--authoringTools` adds `--allow-child-process`, which lets the whole process start children outside the permission model. |
+| `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread`). Not supported for pnpm installs until [nodejs/node#66812](https://github.com/nodejs/node/issues/66812) is fixed (see [Security model](security-model.md)). Every module must live under `--modulePath`, symlinks resolved, on load, reload and restart alike (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. `--authoringTools` adds `--allow-child-process`, which lets the whole process start children outside the permission model. |
 | `--locale <locale>` | `en-US` | Error message locale (`zh-CN` also available). |
+
+**Module limits in the policy.** `--modulePolicy` ceilings and per-module
+entries take the same `limits` keys a module declares: `heapMb`,
+`externalMb`, `maxBlockMs`, and since 8.0.0 `diskMb` and `diskEntries`
+(the module's `/data` and `/tmp` together; default ceilings 1024 and
+100000). Over a disk limit, writes fail with `ENOSPC` under `enforce`.
+
+**Installed under `/app`.** In worker mode (the default) the server refuses
+to start, exit code 2, when its own code lives under `/app`, the path
+modules see their own code at. Install it elsewhere (e.g.
+`/opt/countinghouse`) or run with `--no-workerThread`. Modules and data under
+`/app` are fine.
 
 ## HTTP API surface
 
@@ -45,7 +58,7 @@ simulation).
 | `POST /devices/:deviceID/invoke-action` | Platform, pre-MCP HTTP API | Direct HTTP equivalent of `tools/call`; predates the MCP gateway and still works. |
 | `GET /devices/:deviceID/get-spec`, `.../schema` | Platform | A device's `api.json` / resolved JSON Schema 2020-12 documents. |
 | `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. |
-| `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
+| `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/uninstall-module`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
 
@@ -65,6 +78,20 @@ key is absent under `--moduleSandbox off`.
 may be left out to restart the module from where it was last loaded, which
 is how a suspended module is brought back. A `path` that does not exist is
 refused with `INVALID_MODULE_PATH` before anything is unloaded.
+
+**`POST /uninstall-module`** takes `{name, keepData}` and answers
+`{uninstalled: true, name, dataDeleted, registryEntryRemoved}`. It removes
+the module's registry entry (when the server uses the registry, that is when
+no `--loadModule` is given), then deletes `<moduleDataPath>/<name>` unless
+`keepData` is `true`, never following links. It never removes the module's
+code under `--modulePath`. Errors:
+
+| Code | When |
+|---|---|
+| `MODULE_NAME_INVALID` | `name` is not a valid npm package name |
+| `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
+| `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; nothing was deleted |
+| `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
 goes through the same `AuthProvider` check `tools/call` does. For exactly

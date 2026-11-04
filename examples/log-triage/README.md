@@ -57,8 +57,14 @@ That first writes eight sample log files into `log-read`'s own data directory,
 on every machine), then starts the server with [`auth.json`](auth.json).
 `log-read` sees that directory as `/data/sample-logs`: from 8.0.0 a module sees
 its own directory as `/app`, its data as `/data` and a private `/tmp`, so the
-demo needs no file permission in any `--moduleSandbox` mode. Call it with the
-demo key:
+demo needs no file permission in any `--moduleSandbox` mode. With a
+non-default `--moduleDataPath`, write the files there instead:
+
+```sh
+node examples/log-triage/generate-logs.js --dir <moduleDataPath>/log-read/data/sample-logs
+```
+
+Call it with the demo key:
 
 ```sh
 curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \

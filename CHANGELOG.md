@@ -10,6 +10,9 @@ the auth config.
 
 ## Unreleased
 
+Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
+groups everything below by what an operator has to do.
+
 ### Changed — 8.0.0 platform
 
 - **Node 22.16 or later is required.** Startup exits with status 2 on an
@@ -107,6 +110,11 @@ the auth config.
 - The `__filename` and stack frames of a CommonJS file that an ES module
   imports directly show its host path, not `/app/...` (a Node 24 limit);
   what that file requires is virtual again.
+- `--hardened` does not support pnpm installs of countinghouse: Node's
+  permission model refuses a granted symlink when another grant extends its
+  name (`redis` beside `redis-commands`), a form of
+  [nodejs/node#66812](https://github.com/nodejs/node/issues/66812). npm
+  installs work, and pnpm installs work without `--hardened`.
 
 ### Added — module sandbox, part 1
 

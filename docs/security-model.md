@@ -146,7 +146,7 @@ mode and logged at spawn.
 For each call the broker translates the virtual path, decides by mode, then
 checks the host: the real location must lie inside its root, compared with
 roots resolved at spawn. Under `enforce` every opened descriptor is then
-verified (its device and inode, and `/proc/self/fd`) against that location,
+verified (its device and inode, and on Linux `/proc/self/fd`) against that location,
 so a path swapped for a symlink between the check and the open is closed and
 answered `ENOENT`. Mutating calls take a per-module lock exclusively and
 every other call shares it, so a module cannot race its own checks. The
@@ -158,8 +158,9 @@ In every mode: `link()` works only within one writable root; `symlink()`
 takes only a relative target that stays inside its root (absolute targets are
 `EPERM`); `chmod` strips setuid, setgid and sticky bits; a cross-root
 `rename` answers `EXDEV`. Under `enforce` a module whose `/data` or `/tmp`
-holds a hard-linked file or an absolute symlink does not start until the
-operator removes it. The disk quota (`diskMb`, `diskEntries`, one pool for
+holds a symlink with an absolute target, or a hard link to a file that also
+has a name outside its `/data` and `/tmp`, does not start until the operator
+removes it (the log names the entries). The disk quota (`diskMb`, `diskEntries`, one pool for
 `/data` and `/tmp`) answers `ENOSPC` under `enforce`.
 
 The main thread is protected in every mode: the thread pool is raised to 16
@@ -171,8 +172,11 @@ that takes over 30 s answers `ETIMEDOUT`.
 
 **3. The bounded loader** (`lib/fs-broker/identity.js`). Node's loader reads
 files through the same `fs`, so the loader hooks decide that traffic. Module
-code resolves to virtual `file:///app/...` URLs. From the worker's
-`set-options` on, every resolve is bounded, whoever the parent is: module
+code resolves to virtual `file:///app/...` URLs. Before the worker's
+`set-options`, while only countinghouse's own boot runs, it reads only its
+code roots; anything else it touches is answered `ENOENT` and logged once as
+countinghouse's own, in every mode. From `set-options` on, every resolve is
+bounded, whoever the parent is: module
 code reaches only its own root, and countinghouse's code reaches only its own
 code roots plus the module root. That closes `module.parent.require`,
 `require.cache[...].require`, `Module._load`, and the `vm.Script` dynamic
@@ -556,7 +560,8 @@ or micro-VM isolation.
 
 ## Positioning
 
-**"Worker-thread isolation + module review (verify/publish)" fits a
+**"Worker-thread isolation + module review (structural verification, plus
+operator review)" fits a
 semi-trusted, operator-vetted third-party module model** — modules are
 vetted by the platform operator (structural verification, and in practice,
 human review) before being loaded, not open to anonymous, unreviewed code

@@ -220,12 +220,13 @@ module for you, using the four authoring tools and the skill this repo ships at
 is the same check from a shell — see [`docs/module-authoring.md`](https://github.com/mchen6/countinghouse/blob/master/docs/module-authoring.md). An importer for servers built on the official
 MCP TypeScript SDK is planned and does not exist yet.
 
-Module isolation is `worker_threads`: separate V8 heap, shared OS process,
-filesystem, network and `process` global. That is a reasonable boundary for
-modules from developers you have a relationship with, and it is **not**
-comparable to containers, gVisor or micro-VMs. `docs/security-model.md` states
-plainly what it does and does not provide, and what would be required to go
-further.
+Module isolation is `worker_threads` plus an in-process sandbox: separate V8
+heap, a per-module file namespace brokered by the main thread (since 8.0.0),
+and a shared OS process, network and `process` global. That is a reasonable
+boundary for modules from developers you have a relationship with, and it is
+**not** comparable to containers, gVisor or micro-VMs. `docs/security-model.md`
+states plainly what it does and does not provide, and what would be required
+to go further. Upgrading from 7.x: [`docs/upgrading-to-8.md`](https://github.com/mchen6/countinghouse/blob/master/docs/upgrading-to-8.md).
 
 ## Origin
 

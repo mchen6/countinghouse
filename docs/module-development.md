@@ -185,6 +185,88 @@ curl -X POST http://127.0.0.1:9527/load-module \
 You do **not** need `--debug` for either. `--debug` disables authentication
 for the whole server; it is not how you get access to an endpoint.
 
+## Files and paths
+
+Since 8.0.0 a module in worker mode (the default) sees its own file
+namespace, the same in every `--moduleSandbox` mode:
+
+| Path your code uses | What it is | Access |
+|---|---|---|
+| `/app` | your module's install directory | read-only under `enforce`; writes are logged under `audit` |
+| `/data` | your module's private data directory | read-write, counted against your disk limits, kept across restarts |
+| `/tmp` | your module's private temp directory | read-write, counted against your disk limits, **emptied every time your worker starts** |
+| each path you declared in `fs` | the same path on the host | `r` or `rw`, as the operator approved |
+
+`__dirname` and `__filename` are under `/app` (`/app/handlers/...`),
+`process.cwd()` is `/app`, and `os.tmpdir()` is `/tmp`. Paths in results and
+errors are virtual too. Use `require` and relative paths as usual; build file
+paths from `__dirname` (or `import.meta.dirname`) rather than from a host path
+you know.
+
+**Write under `/data` or `/tmp`.** Writing next to your code under `/app` is
+refused under `enforce` (`EROFS`). `/data` is for what must survive a
+restart; `/tmp` starts empty each time. On the host they are
+`<moduleDataPath>/<your package name>/data` and `.../tmp`; the operator sets
+`--moduleDataPath` (default `$HOME/countinghouse_module_data`). Unloading,
+restarting and reloading never delete them; an operator's
+`POST /uninstall-module` does, unless told to keep them.
+
+**Anything else, declare.** A path outside your namespace is answered
+`ENOENT` under `enforce` (and logged on the host); under `audit` and `off` it
+reaches the host and is logged. Declare each outside path in `fs` (see
+[Declaring permissions](#declaring-permissions)) and the operator approves
+it.
+
+**Disk limits.** `/data` and `/tmp` together count against `diskMb` (default
+ceiling 1024) and `diskEntries` (files and directories, default ceiling
+100 000). Over either, a write fails with `ENOSPC` under `enforce`; under
+`audit` crossing a threshold is logged. Declared paths are not counted.
+Start-up time grows with the number of entries in `/data` and `/tmp`: your
+worker's start walks them, about 70 µs per entry on a 1-CPU machine (715 ms
+for 10 000 entries, so about 7 s near the 100 000 default; measured at
+`dab69d0`). The walk is asynchronous and does not block the server.
+
+**Links.** In every mode a hard link works only within one writable root, and
+a symbolic link only with a relative target that stays inside its root
+(absolute targets are `EPERM`). `chmod` drops setuid, setgid and sticky bits.
+A `rename` across roots (`/tmp` to `/data`, say) answers `EXDEV`, so copy
+fallbacks such as `fs-extra`'s `move` work.
+
+**What works differently.**
+
+- Every `fs` call is a message to the main thread, synchronous calls
+  included. Fewer, larger operations cost less: `readFile`, `writeFile` and
+  `appendFile` are one call each. On a 2-CPU machine, 250 rounds of a 4 KB
+  write, read, stat and unlink took about 1.2 s under `off` and 1.9 s under
+  `enforce`, against about 30 ms with no broker (measured at `9246db1`; see
+  [the benchmarks](benchmarks/sandbox-part2.md)).
+- Descriptors your code gets from `fs.open` are numbers from `0x10000000`
+  up, not small integers. `fs.writeSync(1, ...)` and `fs.writeSync(2, ...)`
+  still go to your module's console (`pino` and `sonic-boom` work).
+- `fs.watch`, `fs.watchFile` and `fs.promises.watch` are not available
+  (`ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`).
+- HTTP/2 `respondWithFile` is not available: read the file with `fs` and
+  stream it.
+- A worker's `process.env` holds only the variables you declared (see
+  below), so code that read undeclared variables sees them missing.
+
+**Single-thread mode** (`--no-workerThread`) is for debugging modules and
+has no sandbox. Modules still see `/app`, `/data` and `/tmp` through `fs`,
+`fs/promises`, `os` and `CHUtil.loadFile`, but only as a translation, with no
+checks, quota or link rules. The differences from worker mode:
+
+- `process.cwd()` is the server's real working directory.
+- Stack frames, `module.filename`, `require.cache` keys and `require.resolve`
+  results are host paths, and so is `import.meta.dirname` in ES modules.
+- Paths given to anything other than `fs`, `fs/promises`, `os` and
+  `CHUtil.loadFile` are not translated.
+- `createRequire` with a virtual (`/app`) path fails with `MODULE_NOT_FOUND`;
+  use `require`, or `createRequire(import.meta.url)` in ES modules.
+- A module can require countinghouse's own dependencies through `NODE_PATH`.
+
+Upgrading a module or a deployment from 7.x: see
+[`upgrading-to-8.md`](upgrading-to-8.md).
+
 ## Declaring permissions
 
 Under `--workerThread`, each module runs inside the module sandbox
@@ -200,7 +282,7 @@ nothing. One that needs more declares it in `package.json`, beside
     "fs":     [ { "path": "/var/log/app", "access": "r" } ],
     "net":    [ { "host": "api.example.com", "ports": [443] } ],
     "env":    [ "WEATHER_API_KEY" ],
-    "limits": { "heapMb": 128, "externalMb": 128, "maxBlockMs": 5000 }
+    "limits": { "heapMb": 128, "externalMb": 128, "maxBlockMs": 5000, "diskMb": 200 }
   }
 }
 ```
@@ -210,16 +292,16 @@ nothing. One that needs more declares it in `package.json`, beside
 | `fs` | Paths outside the module only. Absolute, normalized, no `..`. `access` is `r` or `rw`. `/`, `/app`, `/data`, `/tmp` and anything under them are reserved and cannot be declared. |
 | `net` | `host` is a hostname or a `*.`-prefixed wildcard (one leading label only); `ports` is optional, integers 1-65535. |
 | `env` | Environment variable names (`[A-Z_][A-Z0-9_]*`). |
-| `limits` | What the module asks for; all optional: `heapMb` (JS heap), `externalMb` (Buffers and typed arrays), `maxBlockMs` (how long the event loop may be blocked). The operator's ceiling applies; the default ceilings are 256, 256 and 10000. |
+| `limits` | What the module asks for; all optional: `heapMb` (JS heap), `externalMb` (Buffers and typed arrays), `maxBlockMs` (how long the event loop may be blocked), `diskMb` and `diskEntries` (`/data` and `/tmp` together). The operator's ceiling applies; the default ceilings are 256, 256, 10000, 1024 and 100000. |
 
 A declaration is a request. The operator's `--modulePolicy` file can grant it
 as declared or narrow it, never widen it. Under `--moduleSandbox enforce` a
 module that declares `fs`, `net` or `env` gets none of them until the
 operator adds an entry for it: no access outside its own directory, and no
-environment variables at all. Under `audit` the declaration is granted. **In this release only `env` and `limits` change what your code
-can do.** `fs` and `net` are validated and logged, and take effect when the
-file and network brokers ship, so declare them now and expect to need them.
-Targets of `CHUtil.request` and `CHUtil.createSOAPClient` are already checked
+environment variables at all. Under `audit` the declaration is granted.
+`fs`, `env` and `limits` take effect now. `net` is validated and logged, and
+takes effect when the network brokers ship, so declare it now and expect to
+need it. Targets of `CHUtil.request` and `CHUtil.createSOAPClient` are already checked
 against the effective `net` entries: under `audit` a disallowed target is
 logged and the request still goes ahead; only `enforce` refuses it. Under
 `enforce`, `CHUtil.request` also accepts only the ordinary request options (`method`,
@@ -249,8 +331,8 @@ environment; a name with neither is absent. Read them with
 `process.env.NAME` as usual.
 
 **Blocked built-ins.** `child_process`, `cluster`, `worker_threads`,
-`inspector` (and `inspector/promises`), `wasi`, `v8`, `node:sqlite`,
-`node:test` and `node:sea`, and any built-in newer than Node 24.21, are
+`inspector` (and `inspector/promises`), `wasi`, `v8`, `repl`,
+`trace_events`, `node:sqlite`, `node:test` and `node:sea`, and any built-in newer than Node 24.21, are
 unavailable:
 `require` of them fails with `MODULE_NOT_FOUND` under `enforce` (under
 `audit` it works and is logged). `module` is reduced to `builtinModules`,
@@ -259,8 +341,9 @@ OpenSSL engines (`crypto.setEngine`, `privateKeyEngine`, `clientCertEngine`)
 count as native code. `process.dlopen`, `process.binding`, `process.kill`, `process.abort`,
 `process.chdir` and the `process.set*id` family throw under `enforce`; under
 `audit` they work and are logged, so `process.kill` can still signal the
-server. `process.exit` works in both and ends only your module. `fs`, `net`, `http` and similar still
-work in this release, and the first use of each is logged.
+server. `process.exit` works in both and ends only your module. `net`,
+`http` and similar still work in this release, and the first use of each is
+logged; `fs` goes through the file broker ([Files and paths](#files-and-paths)).
 
 **Limits, restart and suspend.** A module that exceeds its heap limit, its
 external memory limit, or blocks its event loop longer than `maxBlockMs` is
