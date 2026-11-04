@@ -1,12 +1,18 @@
 # Module sandbox part 2: what the file broker costs
 
-Measured 2026-10-17 on the maintainer's development VM: **1 CPU**, Node
+Measured 2026-10-17 at `dab69d0` on the maintainer's development VM: **1 CPU**, Node
 v24.21.0, `UV_THREADPOOL_SIZE` 16 (countinghouse's default). On one CPU every
 hop between the module's worker, the main thread and libuv's thread pool is a
 full context switch, so these are close to a worst case; a multi-core host
 should do better, and was not measured. The VM is noisy: medians are over 5
 runs (10 for spawn time) and the spreads are wide. Treat these as orders of
 magnitude on this machine, and measure your own.
+
+The broker was optimised after these measurements (plan 5 Task 4b: A
+`b977146`, B `60ca7e8`, C `9246db1`). By then the VM had 2 CPUs, so
+[After the optimisations](#after-the-optimisations) measures both the
+before and the after commit again, on 2 CPUs. The sections up to there
+are the original 1-CPU measurements at `dab69d0`.
 
 Scripts: `perf/fs-broker-io-perf.js`, `perf/fs-broker-ops-count.js`,
 `perf/spawn-time-perf.js`.
@@ -56,7 +62,52 @@ the operation, and under `enforce` an `fstat` and a `readlink` of
 They are what keeps a module inside its namespace when a host process swaps a
 path; under `off` they decide nothing.
 
+## After the optimisations
+
+Measured 2026-11-04 on the same VM, now **2 CPUs**, Node v24.21.0,
+`UV_THREADPOOL_SIZE` 16. Three optimisations (plan 5 Task 4b):
+
+- **A** (`b977146`): under `--moduleSandbox off` the broker makes no host
+  checks, because `off` decides nothing about files. The link rules, `EXDEV`,
+  `EBUSY` on roots and the special-file check still run.
+- **B** (`60ca7e8`): `writeFile` and `appendFile` on a path are one brokered
+  call, not open + write + close. The quota, the post-open verify and the
+  special-file check all still apply.
+- **C** (`9246db1`): each broker caches directory real paths. Every mutating
+  operation clears the cache, entries expire after 1000 ms, and at most 1024
+  are kept. Only directories are cached, and under `enforce` every opened
+  descriptor is still verified without the cache.
+
+Pool jobs and bridge calls per benchmark round (`perf/fs-broker-ops-count.js`;
+counts, so the CPU count does not matter):
+
+| Mode | pool jobs, `dab69d0` | pool jobs, `9246db1` | bridge calls |
+|---|---|---|---|
+| `off` | 21 | 12 | 6 → 4 |
+| `audit` | 25 | 22 | 6 → 4 |
+| `enforce` | 29 | 26 | 6 → 4 |
+
+File I/O, 250 rounds (`perf/fs-broker-io-perf.js 250`). The two commits were
+run three times each, alternating. The table shows the middle of the three
+sessions' medians, each over 5 runs, with the range of those three medians:
+
+| Mode | before (`dab69d0`) | after (`9246db1`) | change |
+|---|---|---|---|
+| `--no-workerThread` (no broker) | 31 ms (26-49) | 29 ms (29-82) | none (no broker) |
+| worker, `--moduleSandbox off` | 1 713 ms (1 652-2 070) | 1 232 ms (1 178-1 446) | about -28% |
+| worker, `--moduleSandbox enforce` | 2 261 ms (2 201-2 438) | 1 919 ms (1 824-2 266) | about -15% |
+| `enforce`, 10 modules at once, 25 rounds each | 1 164 ms (942-1 232) | 1 105 ms (989-1 460) | within noise |
+
+`off` gains the most, from A. `enforce` keeps its post-open verification
+(an `fstat` and a `readlink` per open), which is the security check and was
+left alone. Brokered file I/O still costs tens of times the direct path on
+this machine. In the 10-module case the two commits' ranges overlap: any
+saving there is smaller than this VM's noise. The cause was not
+investigated.
+
 ## Spawn time
+
+Measured at `dab69d0`, 1 CPU (A-C do not touch the spawn path).
 
 | Step | median | min | max |
 |---|---|---|---|
@@ -80,5 +131,6 @@ walk is asynchronous and does not block the main thread.
   7.x's single-thread mode.
 - `--no-workerThread` keeps the direct path, but has no sandbox and is meant
   for debugging only.
-- Fewer, larger operations cost less: `readFile` is one brokered call, and
-  each call's checks are paid once.
+- Fewer, larger operations cost less: `readFile`, and since `60ca7e8`
+  `writeFile` and `appendFile`, are one brokered call each, and each call's
+  checks are paid once.
