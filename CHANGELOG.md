@@ -42,9 +42,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `__proto__`, `toString` and the like authenticated as a tenant with no
   devices; the CouchDB provider's cache had the same flaw. The environment
   key and `--debugKey` are compared in constant time.
-- **Browser origins are checked.** `/mcp` refuses (403) a request whose
+- **Browser origins are checked.** Every route refuses (403) a request whose
   `Origin` is not in `--allowedOrigins` (none by default), as MCP's
-  Streamable HTTP transport requires; and under `--debug` without
+  Streamable HTTP transport requires for `/mcp`; and under `--debug` without
   `--debugKey`, a request whose `Host` is not this loopback server is
   refused, which stops DNS rebinding. CORS headers are sent only for
   `--allowedOrigins`; every origin used to be allowed.

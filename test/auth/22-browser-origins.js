@@ -61,6 +61,19 @@ describe('auth 22: browser origins', function() {
     assert.strictEqual(none.status, 200, none.text);
   });
 
+  // A body-less cross-site POST (fetch with mode 'no-cors') needs no preflight
+  // and carries the real loopback Host, so the Origin check is app-wide, not
+  // only on /mcp, and does not depend on the path's case (review R1-2c, R1-2d).
+  it('an unlisted Origin is refused on every route: POST /shutdown under --debug, and /MCP', async () => {
+    server = await startServer(9665, ['--workerThread', '--debug']);
+    const shutdown = await request(9665, '/shutdown', {Origin: 'http://evil.example'});
+    assert.strictEqual(shutdown.status, 403, shutdown.text);
+    const upper = await request(9665, '/MCP', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
+    assert.strictEqual(upper.status, 403, upper.text);
+    const still = await request(9665, '/mcp', MCP, RPC);
+    assert.strictEqual(still.status, 200, 'the server is still up');
+  });
+
   it('no CORS headers by default; --allowedOrigins opts an origin in', async () => {
     server = await startServer(9665, ['--workerThread', '--debug', '--debugKey', 'k']);
     const plain = await request(9665, '/mcp', MCP, RPC);
