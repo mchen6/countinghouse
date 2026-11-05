@@ -339,12 +339,18 @@ The following are known, accepted, and not hidden by the layers above.
   children outside the permission model. `--allow-worker` is always added,
   and Node documents that as weakening the model. Node's permission model
   also has a bug ([nodejs/node#66812](https://github.com/nodejs/node/issues/66812),
-  Node 20-26): a granted directory is refused when another grant extends its
-  name. countinghouse works around the forms it hits in its own directories,
-  but **`--hardened` does not support pnpm installs** until it is fixed: pnpm
-  links dependencies whose names extend each other (`redis`,
-  `redis-commands`), and Node then refuses even a synchronous call through
-  such a link, a form of the bug found after the issue was filed. npm installs and a
+  Node 20-26): operations on a granted directory are refused when another
+  grant extends its name (`/x/countinghouse` beside `/x/countinghouse_data`,
+  `redis` beside `redis-commands`), and from Node 24.22 a synchronous
+  `realpath` is refused too, a form found after the issue was filed.
+  countinghouse resolves its own granted directories in the unrestricted
+  parent before relaunching and hands the results to the server, so its
+  startup is not refused; the grants are the same. Before relaunching it
+  also checks, under the real grants, any granted directory it did not
+  resolve, and if Node would refuse it, exits with status 2 naming the
+  overlapping paths. **`--hardened` does not support pnpm installs** until
+  the bug is fixed: Node's own module loader resolves pnpm's dependency
+  links, whose names extend each other, and is refused. npm installs and a
   symlinked `node_modules` work under `--hardened`, and pnpm installs work
   without it.
 - **Resource limits can misfire.** When the main thread's own check runs

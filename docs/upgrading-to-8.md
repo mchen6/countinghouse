@@ -41,7 +41,10 @@ you have to do. What the sandbox does and does not protect is in
   install of countinghouse until
   [nodejs/node#66812](https://github.com/nodejs/node/issues/66812) is fixed:
   Node's permission model refuses the dependency links. Use npm, or run
-  without `--hardened`. pnpm installs work in worker mode without it.
+  without `--hardened`. pnpm installs work in worker mode without it. If paths
+  you configure for `--hardened` overlap by name (one extending another's,
+  such as `/srv/ch` and `/srv/ch_data`), startup exits with status 2 and
+  names them; rename one.
 
 ## What modules will notice
 

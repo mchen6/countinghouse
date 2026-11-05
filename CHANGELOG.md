@@ -120,8 +120,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - `--hardened` does not support pnpm installs of countinghouse: Node's
   permission model refuses a granted symlink when another grant extends its
   name (`redis` beside `redis-commands`), a form of
-  [nodejs/node#66812](https://github.com/nodejs/node/issues/66812). npm
-  installs work, and pnpm installs work without `--hardened`.
+  [nodejs/node#66812](https://github.com/nodejs/node/issues/66812), and
+  Node's own module loader resolves pnpm's links. npm installs work, and
+  pnpm installs work without `--hardened`.
+- From Node 24.22 that bug also refuses a synchronous `realpath` of such a
+  directory. `--hardened` resolves countinghouse's own granted directories
+  before relaunching, so the server starts; any other granted directory Node
+  would refuse (an overlap among the paths you configured) stops startup
+  with status 2 and a message naming the paths.
 
 ### Added — module sandbox, part 1
 
