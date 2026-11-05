@@ -242,6 +242,16 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
   including hot-loading modules, which is what an admin key is for. See
   [`cli-and-api-reference.md`](cli-and-api-reference.md).
 
+## Rotating a key
+
+A repeatable job's scheduler belongs to the key that created it: its id is
+the job's name scoped to a hash of that key (8.0.0). After a key is
+replaced, the new key cannot reach the old key's schedulers. Before rotating
+a key, remove its repeatable jobs (`POST /devices/:id/remove-job`
+`{name, isRepeat: true}` with the old key) and recreate them with the new
+one, or have an admin remove them afterwards by their full scheduler id
+(`<hash>:<name>`, as bullmq lists it) in place of the name.
+
 ## Choosing a backend
 
 Start with `file` — it's the default for a reason, and covers everything

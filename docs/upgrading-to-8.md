@@ -63,7 +63,8 @@ you have to do. What the sandbox does and does not protect is in
   scheduler ids. A new `add-job` with the same name creates a second,
   owner-scoped scheduler rather than replacing the old one, so remove the
   old one first (admin key, `POST /devices/:id/remove-job`
-  `{name, isRepeat: true}`).
+  `{name, isRepeat: true}`). Schedulers now belong to the key that created
+  them; see [Rotating a key](authentication.md#rotating-a-key).
 
 ## What modules will notice
 
