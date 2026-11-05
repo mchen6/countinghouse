@@ -37,6 +37,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `--debug` server. Send `application/json`.
 - **Form bodies are no longer parsed** (nothing read them), for the same
   reason: a cross-site form post could feed `/load-module` its path.
+- **API keys that name `Object.prototype` members no longer authenticate.**
+  The file provider looked keys up in a plain object, so `constructor`,
+  `__proto__`, `toString` and the like authenticated as a tenant with no
+  devices; the CouchDB provider's cache had the same flaw. The environment
+  key and `--debugKey` are compared in constant time.
 - **Browser origins are checked.** `/mcp` refuses (403) a request whose
   `Origin` is not in `--allowedOrigins` (none by default), as MCP's
   Streamable HTTP transport requires; and under `--debug` without
