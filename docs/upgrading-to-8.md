@@ -50,7 +50,10 @@ you have to do. What the sandbox does and does not protect is in
   bind the first non-internal IPv4 address). Remote clients need, for
   example, `--bindAddr 0.0.0.0`. `--debug` without `--debugKey` refuses to
   start on any other address, and JSON must be sent as `application/json`,
-  not `text/plain`.
+  not `text/plain` (form bodies are not parsed at all).
+- **Browser-based clients need `--allowedOrigins`.** CORS is off by default
+  (it allowed every origin), and `/mcp` refuses a request from a browser
+  origin not listed there. Clients outside a browser are unaffected.
 - **Request bodies are bounded:** 8 MB for JSON, XML and forms
   (`--maxRequestBody`), 64 MB for BSON on `invoke-action` and `add-job`
   (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies

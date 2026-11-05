@@ -35,6 +35,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - **`text/plain` bodies are no longer parsed as JSON:** a cross-site
   `text/plain` POST needs no CORS preflight, so a web page could drive a
   `--debug` server. Send `application/json`.
+- **Form bodies are no longer parsed** (nothing read them), for the same
+  reason: a cross-site form post could feed `/load-module` its path.
+- **Browser origins are checked.** `/mcp` refuses (403) a request whose
+  `Origin` is not in `--allowedOrigins` (none by default), as MCP's
+  Streamable HTTP transport requires; and under `--debug` without
+  `--debugKey`, a request whose `Host` is not this loopback server is
+  refused, which stops DNS rebinding. CORS headers are sent only for
+  `--allowedOrigins`; every origin used to be allowed.
 
 ### Changed — 8.0.0 platform
 
