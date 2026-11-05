@@ -55,6 +55,18 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     assert.strictEqual(seen.env, 'gone', 'the marker is removed so descendants never read fd 3');
   });
 
+  it('a differently written spelling of a precomputed path is answered too (review)', async () => {
+    base = mkdtemp('realpaths-');
+    const ch = path.join(base, 'ch');
+    ['ch', 'ch_data'].forEach((d) => fs.mkdirSync(path.join(base, d)));
+    const rec = realpaths.recorder(fs.realpathSync);
+    rec.realpath(`${ch}/`);
+    assert.deepStrictEqual(rec.known(), {[ch]: ch}, 'recorded under the resolved spelling');
+    const seen = await childSees([ch, `${ch}_data`], rec.known(), [`${ch}/`, `${ch}/.`]);
+    assert.strictEqual(seen[`${ch}/`], ch, JSON.stringify(seen));
+    assert.strictEqual(seen[`${ch}/.`], ch, JSON.stringify(seen));
+  });
+
   it('anything not precomputed falls back to the real call', async () => {
     base = mkdtemp('realpaths-');
     fs.mkdirSync(path.join(base, 'other'));
