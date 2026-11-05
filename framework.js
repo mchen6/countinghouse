@@ -47,9 +47,29 @@ if (options.hardened === true && process.permission == null) {
       ' -- set --moduleDataPath to a writable directory');
     process.exit(2);
   }
-  hardenedLaunch.relaunch(hardenedLaunch.permissionFlags(options, __dirname, process.cwd()));
+  // The child would be refused a realpath of its own granted directories on
+  // Node 24.22+ (nodejs/node#66812), so this unrestricted process resolves
+  // them and sends the results; the probe checks any granted directory it did
+  // not resolve, and refuses clearly instead of failing after the relaunch.
+  var realpathRecorder = require('./lib/hardened-realpaths').recorder(require('fs').realpathSync);
+  var hardenedFlags = hardenedLaunch.permissionFlags(options, __dirname, process.cwd(), realpathRecorder.realpath);
+  hardenedLaunch.precompute(options, __dirname, realpathRecorder);
+  // Skipped: what the parent resolved, and what those resolved to (the child
+  // receives a real path as an answer; it never resolves one again).
+  var precomputed = realpathRecorder.known();
+  var skip = Object.assign({}, precomputed);
+  Object.keys(precomputed).forEach(function(k) { skip[precomputed[k]] = true; });
+  var probe = hardenedLaunch.probeGrants(hardenedFlags, {skip: skip});
+  if (!probe.ok) {
+    console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
+    process.exit(2);
+  }
+  hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
 }
+// The relaunched --hardened server: the parent's real paths, before anything
+// here resolves a path (lib/hardened-realpaths.js).
+if (process.permission != null) require('./lib/hardened-realpaths').receive();
 
 var logger = require('./lib/logger');
 logger.createLogger(options.logStream);

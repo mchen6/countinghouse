@@ -1,13 +1,15 @@
-// Node 24's permission model refuses async operations on a granted directory
-// itself when another grant extends its name (/x/countinghouse and
-// /x/countinghouse_module_data, the default layout under $HOME); paths inside
-// it are unaffected, and so are sync calls. createForWorker therefore resolves
-// directories with the sync realpath (found in plan 2b, Task 5).
+// Node's permission model refuses operations on a granted directory itself
+// when another grant extends its name (/x/countinghouse and
+// /x/countinghouse_module_data); paths inside it are unaffected
+// (nodejs/node#66812). Up to Node 24.21 a sync realpath was spared, which
+// realDir relied on (plan 2b, Task 5); from 24.22 it is refused too, so under
+// --hardened the unrestricted parent resolves these directories and the
+// child's realDir answers from that (lib/hardened-realpaths.js).
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {execFileSync} = require('child_process');
+const {execFileSync, spawn} = require('child_process');
 
 const ROOT = fs.realpathSync(path.join(__dirname, '..', '..'));
 
@@ -30,12 +32,22 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     assert.strictEqual(out, 'ERR_ACCESS_DENIED');
   });
 
-  it('realDir (sync) resolves the directory itself under the same grants', () => {
+  it('realDir resolves the directory itself under the same grants, given the parent\'s real paths', async () => {
     base = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.ch-perm-')));
     const dir = path.join(base, 'ch');
     fs.mkdirSync(dir);
     fs.mkdirSync(`${dir}_data`);
-    const out = underPermission(dir, `try { console.log(require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).realDir(${JSON.stringify(dir)})); } catch (e) { console.log(e.code); }`);
+    const realpaths = require('../../lib/hardened-realpaths');
+    const code = `require(${JSON.stringify(path.join(ROOT, 'lib', 'hardened-realpaths'))}).receive();
+      try { console.log(require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).realDir(${JSON.stringify(dir)})); } catch (e) { console.log(e.code); }`;
+    const out = await new Promise((resolve) => {
+      const child = spawn(process.execPath, ['--permission', `--allow-fs-read=${ROOT}`, `--allow-fs-read=${dir}`, `--allow-fs-read=${dir}_data`, '-e', code],
+        {env: Object.assign({}, process.env, realpaths.childEnv()), stdio: ['ignore', 'pipe', 'ignore', 'pipe']});
+      let text = '';
+      child.stdout.on('data', (c) => { text += c; });
+      child.on('exit', () => resolve(text.trim()));
+      realpaths.send(child, {[dir]: dir});
+    });
     assert.strictEqual(out, dir);
   });
 
