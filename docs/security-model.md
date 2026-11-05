@@ -421,21 +421,23 @@ these are the checks that predate them and still apply:
   module's main entry, and `resolveHandlerMap`
   (`lib/module-validator.js:180`) calls `require()` on every handler file —
   there is no way to resolve the handler map without loading the JS that
-  defines it. That `require()` happens inside a disposable,
-  timeout-bounded child process (`execFile` with `VALIDATE_CHILD_TIMEOUT_MS`,
-  `lib/mcp/gateway.js`), not the long-lived gateway process, so a hang, a
-  crash, or a `process.exit()` during that load only takes down the one-off
-  child, not the server answering every other tenant's requests at the same
-  time. The tool itself is gated behind `--authoringTools` plus an admin
-  key, the same gate every other authoring tool uses. That exposure is also
-  not new relative to what an admin can already do: `countinghouse_load_module`,
-  reachable by the identical admin-gated population, `require()`s a module's
-  code directly into the live gateway process with no child-process
-  isolation at all — its own `LOAD_MODULE_TIMEOUT_MS` only bounds how long
-  the tool call waits for a callback, it does not stop a synchronous hang
-  inside that `require()` from blocking the process itself.
-  `countinghouse_validate_module`'s child-process boundary is strictly
-  safer than that, not a new hole opened next to an otherwise-clean tool.
+  defines it. Under `--moduleSandbox audit` and `enforce` that `require()`
+  runs in a module worker set up exactly as a load of that module would be
+  (its policy, declared environment, limits, `--hardened` root, file
+  namespace and lockdown), which is then discarded: it gets no main-thread
+  services (any other message is refused and logged), its data directory is
+  a throwaway under `<moduleDataPath>/.validate`, and at most two run at once
+  (`lib/module-manager.js` `validateModuleSandboxed`). Under `off`, where a
+  worker would get the server's whole environment, and in single-thread
+  mode, it runs in a disposable child process given only `PATH`, `HOME` and
+  `NODE_PATH`. Until 8.0.0 it always ran in a child process with the
+  server's whole environment and no sandbox, which was weaker than a load.
+  A hang, a crash or a `process.exit()` ends only that worker or child. The
+  tool is gated behind `--authoringTools` plus an admin key, like every
+  authoring tool. **The result describes a module; it is not a check a
+  hostile module cannot fool:** the module runs beside the validator and
+  could report its own result, so nothing gates on it (load does not run
+  the validator).
   **None of this makes it a security scan, though.** It does not audit or
   review the module's code for malicious behavior, does not check its
   `node_modules` dependency tree for known vulnerabilities, and does not

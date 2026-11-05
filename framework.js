@@ -186,6 +186,8 @@ var ModuleManager = require('./lib/module-manager');
 var RouteManager  = require('./lib/route-manager');
 
 var mm = new ModuleManager();
+// Throwaway directories of validations a crash interrupted (review R1-4).
+if (options.workerThread === true) mm.sweepValidateRoot();
 
 var routeManager = new RouteManager(mm);
 

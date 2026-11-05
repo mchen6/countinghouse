@@ -42,6 +42,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `__proto__`, `toString` and the like authenticated as a tenant with no
   devices; the CouchDB provider's cache had the same flaw. The environment
   key and `--debugKey` are compared in constant time.
+- **`countinghouse_validate_module` runs the module sandboxed.** It requires
+  the module's code to resolve the handler map, and ran it in a child
+  process with the server's whole environment (API keys included) and no
+  sandbox, even under `enforce` and `--hardened`. Under `audit` and
+  `enforce` it now runs in a module worker set up as a load of that module
+  would be, given no main-thread services and discarded afterwards, at
+  most two at a time; under `off` and single-thread mode, in a child with a
+  clean environment. The result describes the module; it is not a check a
+  hostile module cannot fool.
 - **Browser origins are checked.** Every route refuses (403) a request whose
   `Origin` is not in `--allowedOrigins` (none by default), as MCP's
   Streamable HTTP transport requires for `/mcp`; and under `--debug` without
