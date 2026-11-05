@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "redis-forge",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "forges a redis command message, as hostile module code could (review R1-3)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:forgeService": {
+        "actionList": [
+          {
+            "name": "forge",
+            "description": "Sends a rediscommand message with the given op, then a legitimate set and get.",
+            "input": {"schema": "/forgeService/forge/input"},
+            "output": {"schema": "/forgeService/forge/output"}
+          }
+        ]
+      }
+    }
+  }
+}
