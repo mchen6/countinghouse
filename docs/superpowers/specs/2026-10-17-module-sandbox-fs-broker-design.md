@@ -111,7 +111,10 @@ What a module sees, in every mode, under `--workerThread`:
 | `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as narrowed by the policy; no quota |
 
-- **`--moduleDataPath`** (new), default `$HOME/countinghouse_module_data`. The
+- **`--moduleDataPath`** (new), default `$HOME/.countinghouse/module_data`
+  *(amended 2026-11-04, user decision; was `$HOME/countinghouse_module_data`,
+  whose name extends a likely install directory, `$HOME/countinghouse`, which
+  Node's permission model mishandles under `--hardened`)*. The
   directory and each module's directories are created with mode `0700`.
   `<name>` is the **package.json name the main thread verified**, never the
   load request's `name`. Part 2 moves part 1's policy lookup

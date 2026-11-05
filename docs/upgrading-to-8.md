@@ -17,7 +17,7 @@ you have to do. What the sandbox does and does not protect is in
   BullMQ's version error and jobs do not run.
 - **A writable `--moduleDataPath`.** Every module now gets private data
   directories there, in every mode. The default is
-  `$HOME/countinghouse_module_data`; where `$HOME` is read-only (systemd
+  `$HOME/.countinghouse/module_data`; where `$HOME` is read-only (systemd
   `ProtectHome` or `ProtectSystem=strict`, a read-only container root) set it
   to a writable directory first, or modules fail to load with `cannot create
   the module data directory`. Under systemd, add it to `ReadWritePaths`

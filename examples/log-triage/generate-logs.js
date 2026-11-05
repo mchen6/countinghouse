@@ -141,7 +141,10 @@ if (require.main === module) {
   // By default, into log-read's own /data under the default --moduleDataPath,
   // which is where the module finds them as /data/sample-logs (8.0.0).
   if (opts.dir == null) {
-    const base = path.join(process.env[process.platform === 'win32' ? 'USERPROFILE' : 'HOME'], 'countinghouse_module_data');
+    // The server's own default (lib/cli-options.js), so the two never drift.
+    const defaults = Object.create(require('../../lib/cli-options'));
+    defaults.setOptions({});
+    const base = defaults.moduleDataPath;
     opts.dir = path.join(require('../../lib/module-data').dirsFor(base, 'log-read').data, 'sample-logs');
     fs.mkdirSync(opts.dir, {recursive: true, mode: 0o700});
   }

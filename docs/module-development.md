@@ -207,7 +207,7 @@ you know.
 refused under `enforce` (`EROFS`). `/data` is for what must survive a
 restart; `/tmp` starts empty each time. On the host they are
 `<moduleDataPath>/<your package name>/data` and `.../tmp`; the operator sets
-`--moduleDataPath` (default `$HOME/countinghouse_module_data`). Unloading,
+`--moduleDataPath` (default `$HOME/.countinghouse/module_data`). Unloading,
 restarting and reloading never delete them; an operator's
 `POST /uninstall-module` does, unless told to keep them.
 

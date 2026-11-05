@@ -72,6 +72,32 @@ describe('fs-broker 01: module data directories', () => {
     }
   });
 
+  // The default since 8.0.0 (user decision, 2026-11-04): a name that does not
+  // extend a likely install directory ($HOME/countinghouse), which Node's
+  // permission model mishandles under --hardened (nodejs/node#66812).
+  it('defaults to $HOME/.countinghouse/module_data', () => {
+    const options = Object.create(require('../../lib/cli-options'));
+    options.setOptions({});
+    assert.strictEqual(options.moduleDataPath, path.join(os.homedir(), '.countinghouse', 'module_data'));
+  });
+
+  it('a fresh home gets .countinghouse and module_data both 0700; an existing .countinghouse keeps its mode', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-home-'));
+    try {
+      const store = path.join(home, '.countinghouse', 'module_data');
+      await md.ensureDirs(store, 'm');
+      [path.join(home, '.countinghouse'), store].forEach((d) => assert.strictEqual(fs.statSync(d).mode & 0o777, 0o700, d));
+      const home2 = path.join(home, 'second');
+      fs.mkdirSync(path.join(home2, '.countinghouse'), {recursive: true});
+      fs.chmodSync(path.join(home2, '.countinghouse'), 0o750);
+      await md.ensureDirs(path.join(home2, '.countinghouse', 'module_data'), 'm');
+      assert.strictEqual(fs.statSync(path.join(home2, '.countinghouse')).mode & 0o777, 0o750);
+      assert.strictEqual(fs.statSync(path.join(home2, '.countinghouse', 'module_data')).mode & 0o777, 0o700);
+    } finally {
+      fs.rmSync(home, {recursive: true, force: true});
+    }
+  });
+
   it('throws for an unsafe name', () => {
     assert.throws(() => md.dirsFor('/srv/data', '../etc'), /cannot be used as a data directory name/);
   });

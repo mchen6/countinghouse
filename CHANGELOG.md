@@ -46,7 +46,7 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   start now logs BullMQ's version error and jobs do not run.
 - `UV_THREADPOOL_SIZE` defaults to 16 (set it yourself to override).
 - **Every module now needs a writable `--moduleDataPath`**, in every mode:
-  the default is `$HOME/countinghouse_module_data`, so where `$HOME` is
+  the default is `$HOME/.countinghouse/module_data`, so where `$HOME` is
   read-only (systemd `ProtectHome` or `ProtectSystem=strict`, a read-only
   container root) set `--moduleDataPath` to a writable directory before
   upgrading, or modules fail to load with `cannot create the module data
@@ -72,7 +72,7 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `--moduleSandbox` mode under `--workerThread`: `fs` is patched before any
   module code loads, and a per-worker broker answers every call. Each module
   gets private `/data` and `/tmp` directories under the new
-  **`--moduleDataPath`** (default `$HOME/countinghouse_module_data`); `/tmp`
+  **`--moduleDataPath`** (default `$HOME/.countinghouse/module_data`); `/tmp`
   is the module's own, no longer the host's. Under `enforce`, paths outside
   the namespace are `ENOENT`, `/app` and read-only declared paths are
   `EROFS`, and the link rules apply in every mode.

@@ -532,7 +532,7 @@ IPAddressAllow=127.0.0.1
 modules are approved to call have to be listed by address. `--modulePath`,
 `--moduleDataPath` and `--authConfigPath` point into the three
 `ReadWritePaths`: their defaults (`$HOME/countinghouse_modules`,
-`$HOME/countinghouse_module_data`, `./auth.json`) are read-only under
+`$HOME/.countinghouse/module_data`, `./auth.json`) are read-only under
 `ProtectSystem=strict`; modules write their `/data` and `/tmp` under
 `--moduleDataPath`, and the file auth provider writes `auth.json` with a
 demo key on first run. All three directories must exist and belong to the

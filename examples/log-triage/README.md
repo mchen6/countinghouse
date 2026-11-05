@@ -52,7 +52,7 @@ npm run demo:log-triage
 ```
 
 That first writes eight sample log files into `log-read`'s own data directory,
-`$HOME/countinghouse_module_data/log-read/data/sample-logs/`
+`$HOME/.countinghouse/module_data/log-read/data/sample-logs/`
 ([`generate-logs.js`](generate-logs.js): seeded, so the files are byte-identical
 on every machine), then starts the server with [`auth.json`](auth.json).
 `log-read` sees that directory as `/data/sample-logs`: from 8.0.0 a module sees
