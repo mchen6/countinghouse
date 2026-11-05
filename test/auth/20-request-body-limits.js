@@ -1,9 +1,11 @@
-// Request bodies are read before any route checks the caller's key, so their
-// size is bounded app-wide: JSON, XML and form bodies by --maxRequestBody
-// (MB, default 8), BSON bodies only on the two routes that take them
-// (invoke-action and add-job) by --maxBsonRequestBody (MB, default 64).
-// They were 1 GB everywhere, which let an unauthenticated client exhaust the
-// main thread's memory with a few concurrent posts (review R1-1).
+// JSON and XML bodies are read before any route checks the caller's key, so
+// their size is bounded app-wide by --maxRequestBody (MB, default 8). BSON
+// bodies are read only on the two routes that take them (invoke-action and
+// add-job), only for a caller who passes the key check (auth 26), and are
+// bounded by --maxBsonRequestBody (MB, default 64). They were 1 GB
+// everywhere, which let an unauthenticated client exhaust the main thread's
+// memory with a few concurrent posts (review R1-1). The BSON cases run under
+// keyless --debug, which admits every caller, so the body is read.
 const assert = require('assert');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
 
@@ -59,7 +61,7 @@ describe('auth 20: request body limits', function() {
   });
 
   it('the XML parser and add-job\'s BSON parser are bounded too (review)', async () => {
-    server = await startServer(9661, ['--workerThread', '--maxRequestBody', '1', '--maxBsonRequestBody', '1']);
+    server = await startServer(9661, ['--workerThread', '--debug', '--maxRequestBody', '1', '--maxBsonRequestBody', '1']);
     assert.strictEqual(await postRaw(9661, '/mcp', 'application/xml', 2 * 1024 * 1024), 413);
     assert.strictEqual(await postRaw(9661, '/devices/x/add-job', 'application/bson', 2 * 1024 * 1024), 413);
   });
@@ -89,7 +91,7 @@ describe('auth 20: request body limits', function() {
   });
 
   it('refuses a BSON body over --maxBsonRequestBody with 413 on invoke-action', async () => {
-    server = await startServer(9661, ['--workerThread', '--maxBsonRequestBody', '1']);
+    server = await startServer(9661, ['--workerThread', '--debug', '--maxBsonRequestBody', '1']);
     assert.strictEqual(await postRaw(9661, '/devices/x/invoke-action', 'application/bson', 2 * 1024 * 1024), 413);
   });
 });
