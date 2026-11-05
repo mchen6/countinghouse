@@ -65,6 +65,23 @@ describe('auth 21: --debug, the default bind address and text/plain', function()
     assert.strictEqual((await run(['--workerThread', '--port', '9662', '--debug', '--debugKey', 'k', '--bindAddr', '0.0.0.0'])).listen, '0.0.0.0');
   });
 
+  // minimist gives `--debugKey 12345` as a number; the key must still match
+  // the X-CH-Key header, which is always a string (review).
+  it('an all-digit --debugKey works', async () => {
+    server = await startServer(9663, ['--workerThread', '--debug', '--debugKey', '12345']);
+    // an admin route: answered only for a key that matches --debugKey
+    const status = (key) => new Promise((resolve, reject) => {
+      const body = Buffer.from('{}');
+      const req = require('http').request({host: '127.0.0.1', port: 9663, path: '/get-module-device-list', method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CH-Key': key, 'Content-Length': body.length}}, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject);
+      req.end(body);
+    });
+    // 403 is the auth refusal; past auth the route answers its own way
+    assert.strictEqual(await status('wrong'), 403, 'a wrong key must be refused');
+    assert.notStrictEqual(await status('12345'), 403, 'the digit key must pass auth');
+  });
+
   it('does not parse a text/plain body as JSON', async () => {
     server = await startServer(9663, ['--workerThread', '--debug', '--debugKey', 'k']);
     const rpc = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}});

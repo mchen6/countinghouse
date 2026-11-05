@@ -7,12 +7,13 @@
 const assert = require('assert');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
 
-function postRaw(port, route, type, size) {
+function postRaw(port, route, type, size, full) {
   return new Promise((resolve, reject) => {
     const req = require('http').request({host: '127.0.0.1', port: port, path: route, method: 'POST',
       headers: {'Content-Type': type, 'Content-Length': size}}, (res) => {
-      res.resume();
-      res.on('end', () => resolve(res.statusCode));
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve(full ? {status: res.statusCode, type: String(res.headers['content-type']), text: text} : res.statusCode));
     });
     // a server that refuses early may close before the whole body is sent
     req.on('error', (e) => (e.code === 'EPIPE' || e.code === 'ECONNRESET' ? resolve('closed') : reject(e)));
@@ -55,6 +56,36 @@ describe('auth 20: request body limits', function() {
     // /mcp does not take BSON, so its body is never read: over the BSON limit, yet no 413
     const status = await postRaw(9661, '/mcp', 'application/bson', 2 * 1024 * 1024);
     assert.notStrictEqual(status, 413);
+  });
+
+  it('the XML parser and add-job\'s BSON parser are bounded too (review)', async () => {
+    server = await startServer(9661, ['--workerThread', '--maxRequestBody', '1', '--maxBsonRequestBody', '1']);
+    assert.strictEqual(await postRaw(9661, '/mcp', 'application/xml', 2 * 1024 * 1024), 413);
+    assert.strictEqual(await postRaw(9661, '/devices/x/add-job', 'application/bson', 2 * 1024 * 1024), 413);
+  });
+
+  // Express's default error page is HTML and, with NODE_ENV unset, carries
+  // the stack trace; anyone can now provoke a 413 or a 400 (review R1-1).
+  it('a refused body is answered in JSON, without a stack trace', async () => {
+    server = await startServer(9661, ['--workerThread', '--maxRequestBody', '1']);
+    const big = await postRaw(9661, '/mcp', 'application/json', 2 * 1024 * 1024, true);
+    assert.strictEqual(big.status, 413);
+    assert.ok(/application\/json/.test(big.type), big.type);
+    assert.strictEqual(JSON.parse(big.text).code, 'REQUEST_TOO_LARGE', big.text);
+    assert.ok(!/\bat \S+ \(/.test(big.text) && !/node_modules/.test(big.text), `a stack: ${big.text}`);
+    const bad = await new Promise((resolve, reject) => {
+      const req = require('http').request({host: '127.0.0.1', port: 9661, path: '/mcp', method: 'POST',
+        headers: {'Content-Type': 'application/json'}}, (res) => {
+        let text = '';
+        res.on('data', (c) => { text += c; });
+        res.on('end', () => resolve({status: res.statusCode, text: text}));
+      });
+      req.on('error', reject);
+      req.end('{"not json');
+    });
+    assert.strictEqual(bad.status, 400, bad.text);
+    assert.ok(!/node_modules|\bat \S+ \(/.test(bad.text), `a stack: ${bad.text}`);
+    assert.strictEqual(JSON.parse(bad.text).code, 'REQUEST_INVALID');
   });
 
   it('refuses a BSON body over --maxBsonRequestBody with 413 on invoke-action', async () => {
