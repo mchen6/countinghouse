@@ -84,6 +84,21 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
     assert.strictEqual((await mcpCall(9666, 'k', 'countinghouse_validate_module', {path: PROBE})).isError, false, 'the server still answers');
   });
 
+  // A worker that ends itself emits 'exit' once; the teardown must not wait
+  // for a second one, or the busy count and the throwaway directory leak
+  // (review R1-4a).
+  it('modules that exit leave no busy slot and no data behind', async () => {
+    await start('enforce');
+    const EXIT = path.join(ROOT, 'test', 'fixtures', 'handler-map-process-exit');
+    for (let i = 0; i < 3; i++) await validate(9666, EXIT);
+    const after = await validate(9666, PROBE);
+    assert.ok(!/busy/.test(JSON.stringify(after)), `still busy: ${JSON.stringify(after).slice(0, 300)}`);
+    const dir = path.join(base, 'store', '.validate');
+    const left = () => (fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+    for (let i = 0; i < 50 && left().length > 0; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepStrictEqual(left(), []);
+  });
+
   it('off: a child process with a clean environment (no server secret)', async () => {
     await start('off');
     const r = seenBy(await validate(9666, PROBE));
