@@ -20,6 +20,14 @@ async function load(port, modulePath, name) {
   return mcpCall(port, KEY, 'countinghouse_load_module', {path: modulePath, name: name, version: '1.0.0'});
 }
 
+// A load the test needs to succeed: says why when it does not (it can return
+// before a slow load finishes: LOAD_MODULE_TIMEOUT_MS, lib/mcp/gateway.js).
+async function loaded(port, modulePath, name, server) {
+  const r = await load(port, modulePath, name);
+  assert.notStrictEqual(r.isError, true, `load of ${name} failed: ${JSON.stringify(r)}\nserver output:\n${server.output.slice(-3000)}`);
+  return r;
+}
+
 describe('sandbox 04: load-time decisions', function() {
   this.timeout(90000);
   let server = null;
@@ -65,7 +73,7 @@ describe('sandbox 04: load-time decisions', function() {
     const policy = policyFile({modules: {'sandbox-probe': {env: {PROBE_FROM_POLICY: 'first'}}}});
     server = await startServer(9607,
       ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', 'enforce', '--modulePolicy', policy]);
-    await load(9607, PROBE, 'sandbox-probe');
+    await loaded(9607, PROBE, 'sandbox-probe', server);
     fs.writeFileSync(policy, JSON.stringify({modules: {'sandbox-probe': {env: {PROBE_FROM_POLICY: 'second'}}}}));
     await require('../helpers/sandbox-server').post(9607, KEY, '/restart-module', {path: PROBE, name: 'sandbox-probe', version: '1.0.0'});
     const env = await require('../helpers/sandbox-server').waitFor(async () => {
@@ -79,7 +87,7 @@ describe('sandbox 04: load-time decisions', function() {
     server = await startServer(9607,
       ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', 'enforce'],
       {env: {PROBE_FROM_SERVER: 's'}});
-    await load(9607, PROBE, 'sandbox-probe');
+    await loaded(9607, PROBE, 'sandbox-probe', server);
     const env = await mcpCall(9607, KEY, 'sandbox_probe_probeservice_env', {});
     assert.deepStrictEqual(env.structuredContent.output.env, {});
   });

@@ -168,7 +168,9 @@ describe('sandbox 07: restart and suspend', function() {
       const s = await waitFor(async () => {
         const st = await status(9614);
         return st != null && st.state === 'suspended' ? st : null;
-      }, 20000, 'suspended after failed restarts');
+      }, 20000, 'suspended after failed restarts',
+      // still restarting (slow) or stuck (a bug): the supervisor's view, and the server's
+      async () => `supervisor: ${JSON.stringify(await status(9614))}\nserver output:\n${server.output.slice(-3000)}`);
       assert.ok(s.exits.some((e) => e.reason.indexOf('restart failed') === 0), JSON.stringify(s.exits));
     });
   });

@@ -84,14 +84,20 @@ function post(port, key, route, body) {
 
 // Poll an async or sync predicate every 200 ms until it returns a truthy
 // value, which is resolved; reject with `label` after timeoutMs.
-function waitFor(predicate, timeoutMs, label) {
+// describe: optional, async; on a timeout its answer is added to the error, so
+// an intermittent failure reports the state it timed out in.
+function waitFor(predicate, timeoutMs, label, describe) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     (async function attempt() {
       let value = null;
       try { value = await predicate(); } catch (e) { value = null; }
       if (value) return resolve(value);
-      if (Date.now() > deadline) return reject(new Error(`timed out waiting for ${label}`));
+      if (Date.now() > deadline) {
+        let state = '';
+        if (describe != null) { try { state = `\n${await describe()}`; } catch (e) { state = `\n(could not describe: ${e.message})`; } }
+        return reject(new Error(`timed out waiting for ${label}${state}`));
+      }
       setTimeout(attempt, 200);
     })();
   });
