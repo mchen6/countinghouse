@@ -65,6 +65,17 @@ describe('auth 21: --debug, the default bind address and text/plain', function()
     assert.strictEqual((await run(['--workerThread', '--port', '9662', '--debug', '--debugKey', 'k', '--bindAddr', '0.0.0.0'])).listen, '0.0.0.0');
   });
 
+  // A bare --debugKey (a typo, or a value starting with '-') is true to
+  // minimist; turned into the key 'true' it would make "X-CH-Key: true" an
+  // admin, from the network (review R1-5b). It is refused at startup.
+  it('a --debugKey with no value refuses to start', async () => {
+    const remote = await run(['--workerThread', '--port', '9662', '--debug', '--debugKey', '--bindAddr', '0.0.0.0']);
+    assert.strictEqual(remote.code, 2, remote.out.slice(-1500));
+    assert.ok(remote.out.includes('--debugKey needs a value'), remote.out);
+    const local = await run(['--workerThread', '--port', '9662', '--debug', '--debugKey']);
+    assert.strictEqual(local.code, 2, local.out.slice(-1500));
+  });
+
   // minimist gives `--debugKey 12345` as a number; the key must still match
   // the X-CH-Key header, which is always a string (review).
   it('an all-digit --debugKey works', async () => {

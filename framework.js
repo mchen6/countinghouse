@@ -34,6 +34,10 @@ options.setOptions(argv);
 
 // --debug without --debugKey makes every request an admin (load_module
 // included): only on a loopback address (review R1-2).
+if (options.debugKeyMissing === true) {
+  console.error('--debugKey needs a value (--debugKey <key>)');
+  process.exit(2);
+}
 var bindAddress = require('./lib/bind-address');
 if (options.debug === true && options.debugKey == null && !bindAddress.isLoopback(bindAddress.hostIp())) {
   console.error('--debug without --debugKey accepts every request as an admin, so it binds only to loopback; ' +
