@@ -86,7 +86,9 @@ module.exports = async (input, ctx) => {
       // shows which identity this module *intended* each hop to land on. The
       // stop-condition check for this demo is that billedTo stays the outer
       // caller on all three hops, not just the first.
-      billedTo:     (ctx.caller != null) ? ctx.caller.apiKey : null,
+      // The caller's user name, never its API key: tool output reaches MCP
+      // client transcripts and model context (review R2-3).
+      billedTo:     (ctx.caller != null) ? ctx.caller.userName : null,
       authorizedAs: AUTHORIZED_AS_LABEL,
       wallMs:       wallMs
     });
@@ -216,7 +218,7 @@ module.exports = async (input, ctx) => {
   const returnedBytes = jsonBytes({findings: findings, bill: bill});
 
   ctx.log(`repo-review: ${inProcessBytes} bytes in-process, ${returnedBytes} bytes returned, ` +
-          `${bill.length} hops billed to ${(ctx.caller != null) ? ctx.caller.apiKey : 'unknown'}`);
+          `${bill.length} hops billed to ${(ctx.caller != null) ? ctx.caller.userName : 'unknown'}`);
 
   return {
     output: {

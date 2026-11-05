@@ -150,7 +150,7 @@ startServer((startErr) => {
 
           assert.strictEqual(out.bill.length, 3, 'expected exactly 3 inner hops');
           out.bill.forEach((b) => {
-            assert.strictEqual(b.billedTo, CALLER, `hop ${b.hop} must be billed to the real outer caller`);
+            assert.strictEqual(b.billedTo, 'caller', `hop ${b.hop} must be billed to the real outer caller (its user name)`);
             assert.strictEqual(b.authorizedAs, AS_IDENTITY, `hop ${b.hop} must be authorized as the module`);
             assert.strictEqual(b.charged, 1, `hop ${b.hop} must be charged exactly once`);
           });

@@ -247,7 +247,7 @@ their host names; only `/app`, `/data` and `/tmp` are virtual.
             "file": null,
             "charged": 1,
             "balance": -1,
-            "billedTo": "demo-key",
+            "billedTo": "demo",
             "authorizedAs": "log-triage-internal"
         },
         {
@@ -256,7 +256,7 @@ their host names; only `/app`, `/data` and `/tmp` are virtual.
             "file": "app-01.log",
             "charged": 1,
             "balance": -2,
-            "billedTo": "demo-key",
+            "billedTo": "demo",
             "authorizedAs": "log-triage-internal"
         },
         {
@@ -265,7 +265,7 @@ their host names; only `/app`, `/data` and `/tmp` are virtual.
             "file": "app-01.log",
             "charged": 1,
             "balance": -4,
-            "billedTo": "demo-key",
+            "billedTo": "demo",
             "authorizedAs": "log-triage-internal"
         },
         {
@@ -274,7 +274,7 @@ their host names; only `/app`, `/data` and `/tmp` are virtual.
             "file": "app-02.log",
             "charged": 1,
             "balance": -3,
-            "billedTo": "demo-key",
+            "billedTo": "demo",
             "authorizedAs": "log-triage-internal"
         },
         {
@@ -283,7 +283,7 @@ their host names; only `/app`, `/data` and `/tmp` are virtual.
             "file": "app-02.log",
             "charged": 1,
             "balance": -5,
-            "billedTo": "demo-key",
+            "billedTo": "demo",
             "authorizedAs": "log-triage-internal"
         },
         {
@@ -292,7 +292,7 @@ their host names; only `/app`, `/data` and `/tmp` are virtual.
             "file": null,
             "charged": 1,
             "balance": -6,
-            "billedTo": "demo-key",
+            "billedTo": "demo",
             "authorizedAs": "log-triage-internal"
         }
     ],

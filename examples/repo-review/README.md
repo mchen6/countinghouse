@@ -160,9 +160,9 @@ node examples/repo-review/verify-identity-passthrough.js
     }
   },
   "bill": [
-    {"hop": 1, "tool": "repo-scan/scan",       "charged": 1, "balance": -81, "billedTo": "your-key", "authorizedAs": "repo-review-internal", "wallMs": 58},
-    {"hop": 2, "tool": "secret-detect/detect", "charged": 1, "balance": -82, "billedTo": "your-key", "authorizedAs": "repo-review-internal", "wallMs": 68},
-    {"hop": 3, "tool": "dep-audit/audit",      "charged": 1, "balance": -83, "billedTo": "your-key", "authorizedAs": "repo-review-internal", "wallMs": 9}
+    {"hop": 1, "tool": "repo-scan/scan",       "charged": 1, "balance": -81, "billedTo": "you", "authorizedAs": "repo-review-internal", "wallMs": 58},
+    {"hop": 2, "tool": "secret-detect/detect", "charged": 1, "balance": -82, "billedTo": "you", "authorizedAs": "repo-review-internal", "wallMs": 68},
+    {"hop": 3, "tool": "dep-audit/audit",      "charged": 1, "balance": -83, "billedTo": "you", "authorizedAs": "repo-review-internal", "wallMs": 9}
   ],
   "dataFlow": {
     "sourceBytesRead": 2072066,

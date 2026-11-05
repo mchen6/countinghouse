@@ -8,6 +8,10 @@ Recorded 2026-08-17 on countinghouse 6.0.0, Node v20.20.2, Linux. The server
 ran **without `--debug`**, multi-tenant, so the identity and authorization
 behaviour shown here is the real one and not the bypass.
 
+Since 8.0.0 `billedTo` in the bill shows the caller's user name, not its API
+key: tool output reaches client transcripts and model context, so a key does
+not belong there. The capture below is kept as recorded, key included.
+
 The call passes an explicit `exclude` that extends repo-scan's defaults with
 `.claude/**`. That is worth reading as part of the demo rather than as
 housekeeping: **repo-scan walks the filesystem and does not read

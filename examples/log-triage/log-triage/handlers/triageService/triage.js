@@ -51,7 +51,9 @@ module.exports = async (input, ctx) => {
         file:         file,
         charged:      (pm != null && pm.charged != null) ? pm.charged : null,
         balance:      (pm != null && pm.balance != null) ? pm.balance : null,
-        billedTo:     (ctx.caller != null) ? ctx.caller.apiKey : null,
+        // The caller's user name, never its API key: tool output reaches MCP
+        // client transcripts and model context (review R2-3).
+        billedTo:     (ctx.caller != null) ? ctx.caller.userName : null,
         authorizedAs: AUTHORIZED_AS_LABEL
       }
     };
