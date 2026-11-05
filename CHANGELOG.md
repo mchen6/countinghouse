@@ -26,6 +26,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (default 64). Both were 1 GB on every route, read before any key was
   checked, so a few concurrent large posts from an unauthenticated client
   could exhaust the server's memory. An oversized body is answered 413.
+- **The server binds `127.0.0.1` by default.** Without `--bindAddr` it used
+  to bind the first non-internal IPv4 address. Give `--bindAddr` (for
+  example `0.0.0.0`) for remote clients.
+- **`--debug` without `--debugKey` starts only on a loopback address**
+  (exit 2 otherwise): it accepts every request as an admin, `load_module`
+  included.
+- **`text/plain` bodies are no longer parsed as JSON:** a cross-site
+  `text/plain` POST needs no CORS preflight, so a web page could drive a
+  `--debug` server. Send `application/json`.
 
 ### Changed — 8.0.0 platform
 

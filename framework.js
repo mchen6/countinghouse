@@ -32,6 +32,15 @@ process.on('warning', function(e) {
 
 options.setOptions(argv);
 
+// --debug without --debugKey makes every request an admin (load_module
+// included): only on a loopback address (review R1-2).
+var bindAddress = require('./lib/bind-address');
+if (options.debug === true && options.debugKey == null && !bindAddress.isLoopback(bindAddress.hostIp())) {
+  console.error('--debug without --debugKey accepts every request as an admin, so it binds only to loopback; ' +
+    'this server would bind ' + bindAddress.hostIp() + '. Give --debugKey <key>, or drop --bindAddr (it defaults to 127.0.0.1).');
+  process.exit(2);
+}
+
 // --hardened: run the real server as a child under --permission. The child
 // sees process.permission and falls through to normal startup.
 if (options.hardened === true && process.permission == null) {

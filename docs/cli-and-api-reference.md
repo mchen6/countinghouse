@@ -14,7 +14,7 @@ simulation).
 | Flag | Default | Purpose |
 |---|---|---|
 | `--workerThread` | on (8.0.0) | Run each device module in its own `worker_threads.Worker` — the isolation this project is built around. `--no-workerThread` (or `--workerThread false`) selects single-thread mode, which is for debugging modules: no module sandbox, and startup logs a warning saying so. |
-| `--bindAddr` | all interfaces | Address to bind the HTTP server to. |
+| `--bindAddr` | `127.0.0.1` | Address to bind the HTTP server to. Remote clients need it set (e.g. `0.0.0.0`); it was the first non-internal IPv4 address before 8.0.0. |
 | `--port` | `9527` | HTTP port. |
 | `--loadModule <path>` | — | Load a local device module at startup; repeat for multiple modules. |
 | `--redisUrl` | `redis://127.0.0.1:6379` | Redis instance for metering, rate limiting, and session state. |

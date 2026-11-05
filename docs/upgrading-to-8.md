@@ -46,6 +46,11 @@ you have to do. What the sandbox does and does not protect is in
   such as `/srv/ch` and `/srv/ch_data`), startup exits with status 2 and
   names them; rename one.
 
+- **The server binds `127.0.0.1` unless `--bindAddr` is given** (it used to
+  bind the first non-internal IPv4 address). Remote clients need, for
+  example, `--bindAddr 0.0.0.0`. `--debug` without `--debugKey` refuses to
+  start on any other address, and JSON must be sent as `application/json`,
+  not `text/plain`.
 - **Request bodies are bounded:** 8 MB for JSON, XML and forms
   (`--maxRequestBody`), 64 MB for BSON on `invoke-action` and `add-job`
   (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies

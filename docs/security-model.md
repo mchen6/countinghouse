@@ -534,7 +534,10 @@ IPAddressAllow=127.0.0.1
 #IPAddressAllow=192.0.2.10
 ```
 
-`IPAddressAllow` takes addresses and networks, not host names, so the hosts
+The server binds `127.0.0.1` unless `--bindAddr` is given; for remote MCP
+clients add, for example, `--bindAddr 0.0.0.0` to `ExecStart`, and give
+`--debugKey` with `--debug` (without it, `--debug` refuses any address but
+loopback). `IPAddressAllow` takes addresses and networks, not host names, so the hosts
 modules are approved to call have to be listed by address. `--modulePath`,
 `--moduleDataPath` and `--authConfigPath` point into the three
 `ReadWritePaths`: their defaults (`$HOME/countinghouse_modules`,
