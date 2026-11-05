@@ -258,6 +258,17 @@ in [the example below](#hardening-with-systemd).
 
 The following are known, accepted, and not hidden by the layers above.
 
+- **Modules receive their callers' API keys.** `ctx.caller.apiKey` is the
+  raw key of whoever called the module, `ctx.caller.isAdmin` says whether it
+  is an admin key, and `invoke-action` passes the request's headers to
+  module code (`httpHeaders`), the key header included. A malicious or
+  compromised module can collect tenants' keys and, since outbound network
+  is open until part 3, send them out or use them: call other tenants'
+  devices and bill them, and with an admin key unload, restart or
+  uninstall other modules or shut the server down. Planned fix: modules get
+  an opaque caller id instead of the key, and inner calls and billing use a
+  token only the main thread holds (a breaking change for modules that
+  read `ctx.caller.apiKey`).
 - **Module code can reach countinghouse's objects.** Part 2 closes the file
   routes through countinghouse's loader (layer 3), not the objects
   themselves: through `require.cache`, `CHUtil` and the like, module code can
