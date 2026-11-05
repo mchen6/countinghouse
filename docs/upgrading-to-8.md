@@ -56,9 +56,10 @@ you have to do. What the sandbox does and does not protect is in
   (it allowed every origin), and every route refuses a request from a
   browser origin not listed there. Clients outside a browser are unaffected.
 - **Request bodies are bounded:** 8 MB for JSON, XML and forms
-  (`--maxRequestBody`), 64 MB for BSON on `invoke-action` and `add-job`
+  (`--maxRequestBody`), 64 MB for BSON on `invoke-action`
   (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies
-  gets 413 until you raise the limit.
+  gets 413 until you raise the limit. `add-job` takes JSON only; a BSON job
+  never worked there (it failed with `SERVICEID_NOT_AVAILABLE`).
 
 - **Repeatable jobs created before 8.0.0** keep running under their old
   scheduler ids. A new `add-job` with the same name creates a second,

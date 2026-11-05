@@ -1,8 +1,9 @@
 // A BSON body (up to --maxBsonRequestBody, default 64 MB) is read only for a
-// caller who may use the device: on invoke-action and add-job the key and the
-// device id are known from the headers and the URL, so they are checked
-// before the body. They used to be checked after it, which let a client with
-// no key make the server buffer 64 MB per request (review R1-1 follow-up).
+// caller who may use the device: on invoke-action the key and the device id
+// are known from the headers and the URL, so they are checked before the
+// body. They used to be checked after it, which let a client with no key make
+// the server buffer 64 MB per request (review R1-1 follow-up). add-job takes
+// no BSON at all: a job is a JSON description of the task.
 const assert = require('assert');
 const fs     = require('fs');
 const http   = require('http');
@@ -81,8 +82,8 @@ describe('auth 26: the caller is checked before a BSON body is read', function()
       refused(await post(`/devices/${DEVICE_ID}/invoke-action`, bson('nobody'), BIG), 'SYSTEM_ERROR_UNKNOWN_USER');
     });
 
-    it('no key is refused on add-job, not answered 413', async () => {
-      refused(await post(`/devices/${DEVICE_ID}/add-job`, bson(null), BIG), 'SYSTEM_ERROR_UNKNOWN_USER');
+    it('no key is refused, not answered 413', async () => {
+      refused(await post(`/devices/${DEVICE_ID}/invoke-action`, bson(null), BIG), 'SYSTEM_ERROR_UNKNOWN_USER');
     });
 
     it('a key without the device is refused, not answered 413', async () => {
@@ -93,8 +94,16 @@ describe('auth 26: the caller is checked before a BSON body is read', function()
     // reads `application/bson; charset=...` too: the check must cover both.
     it('an upper-case path and a charset parameter are checked too', async () => {
       refused(await post(`/DEVICES/${DEVICE_ID}/INVOKE-ACTION`, bson('nobody'), BIG), 'SYSTEM_ERROR_UNKNOWN_USER');
-      refused(await post(`/devices/${DEVICE_ID}/add-job`,
+      refused(await post(`/devices/${DEVICE_ID}/invoke-action`,
         {'Content-Type': 'application/bson; charset=utf-8', 'X-CH-Key': 'nobody'}, BIG), 'SYSTEM_ERROR_UNKNOWN_USER');
+    });
+
+    // BSON on add-job never worked (the route never deserialized it), and a
+    // job is a description of the task, not its data: the body is not read.
+    it('add-job never reads a BSON body, even for a caller who holds the device', async () => {
+      const reply = await post(`/devices/${DEVICE_ID}/add-job`, bson(ALICE), BIG);
+      assert.notStrictEqual(reply.status, 413, reply.text);
+      assert.strictEqual(reply.body && reply.body.code, 'SERVICEID_NOT_AVAILABLE', reply.text);
     });
 
     it('a caller who holds the device still gets 413 over the limit', async () => {

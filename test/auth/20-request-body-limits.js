@@ -1,9 +1,8 @@
 // JSON and XML bodies are read before any route checks the caller's key, so
 // their size is bounded app-wide by --maxRequestBody (MB, default 8). BSON
-// bodies are read only on the two routes that take them (invoke-action and
-// add-job), only for a caller who passes the key check (auth 26), and are
-// bounded by --maxBsonRequestBody (MB, default 64). They were 1 GB
-// everywhere, which let an unauthenticated client exhaust the main thread's
+// bodies are read only on invoke-action, the one route that takes them, only
+// for a caller who passes the key check (auth 26), and are bounded by
+// --maxBsonRequestBody (MB, default 64). They were 1 GB everywhere, which let an unauthenticated client exhaust the main thread's
 // memory with a few concurrent posts (review R1-1). The BSON cases run under
 // keyless --debug, which admits every caller, so the body is read.
 const assert = require('assert');
@@ -60,10 +59,10 @@ describe('auth 20: request body limits', function() {
     assert.notStrictEqual(status, 413);
   });
 
-  it('the XML parser and add-job\'s BSON parser are bounded too (review)', async () => {
+  it('the XML parser is bounded too, and add-job reads no BSON (review)', async () => {
     server = await startServer(9661, ['--workerThread', '--debug', '--maxRequestBody', '1', '--maxBsonRequestBody', '1']);
     assert.strictEqual(await postRaw(9661, '/mcp', 'application/xml', 2 * 1024 * 1024), 413);
-    assert.strictEqual(await postRaw(9661, '/devices/x/add-job', 'application/bson', 2 * 1024 * 1024), 413);
+    assert.notStrictEqual(await postRaw(9661, '/devices/x/add-job', 'application/bson', 2 * 1024 * 1024), 413);
   });
 
   // Express's default error page is HTML and, with NODE_ENV unset, carries

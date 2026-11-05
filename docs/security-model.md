@@ -489,7 +489,7 @@ these are the checks that predate them and still apply:
     are parsed on every route before any key is checked, so an
     unauthenticated client can still make the server read up to
     `--maxRequestBody` (8 MB) per request. A BSON body (up to
-    `--maxBsonRequestBody`, 64 MB, on `invoke-action` and `add-job` only)
+    `--maxBsonRequestBody`, 64 MB, on `invoke-action` only)
     is read only after the key and its grant for the URL's device pass
     (`lib/route-manager.js`, `validateUser.beforeBody` in
     `lib/routes/user.js`); keyless `--debug`, loopback-only, admits every
