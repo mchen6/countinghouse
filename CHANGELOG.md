@@ -18,6 +18,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Security — review round R1
+
+- **Request bodies are bounded.** JSON, XML and form bodies are limited to
+  `--maxRequestBody` MB (default 8) on every route, and BSON bodies are read
+  only on `invoke-action` and `add-job`, limited to `--maxBsonRequestBody` MB
+  (default 64). Both were 1 GB on every route, read before any key was
+  checked, so a few concurrent large posts from an unauthenticated client
+  could exhaust the server's memory. An oversized body is answered 413.
+
 ### Changed — 8.0.0 platform
 
 - **Node 24.15 or later is required.** Startup exits with status 2 on an

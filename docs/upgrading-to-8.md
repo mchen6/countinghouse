@@ -46,6 +46,11 @@ you have to do. What the sandbox does and does not protect is in
   such as `/srv/ch` and `/srv/ch_data`), startup exits with status 2 and
   names them; rename one.
 
+- **Request bodies are bounded:** 8 MB for JSON, XML and forms
+  (`--maxRequestBody`), 64 MB for BSON on `invoke-action` and `add-job`
+  (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies
+  gets 413 until you raise the limit.
+
 ## What modules will notice
 
 Under worker mode, in every `--moduleSandbox` mode unless noted:
