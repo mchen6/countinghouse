@@ -20,7 +20,6 @@ module.exports = [
       'spec/**',
       'adaptive-test/**',
       'example/**',
-      'docker/**',
 
       // Deliberately ES5, and must stay that way: it is the input to
       // test/module-loading/09-migrator.js, which exists because the migrator

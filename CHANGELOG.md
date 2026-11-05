@@ -133,6 +133,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - HTTP/2 `respondWithFile` is not available to modules (see Known issues).
 - Anything a module left in `/tmp` is gone after a restart.
 
+### Removed — the CDIF-era Docker image
+
+- **`docker/countinghouse/` is gone.** Its Dockerfile built a CDIF image
+  (Ubuntu 16.04, Node 12, countinghouse 3.0.21 with code-server) and does not
+  run this release: it predates the Node 24.15 floor, and under the new
+  `127.0.0.1` default bind nothing outside the container could reach the
+  server. It is retired for now rather than updated. A container for 8.x
+  must pass `--bindAddr 0.0.0.0`.
+
 ### Added — module sandbox, part 2
 
 - **File access from module workers goes through the main thread**, in every
