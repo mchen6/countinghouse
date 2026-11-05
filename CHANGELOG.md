@@ -32,6 +32,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - **`--debug` without `--debugKey` starts only on a loopback address**
   (exit 2 otherwise): it accepts every request as an admin, `load_module`
   included.
+- **A bare `--debugKey` (no value) refuses to start** (exit 2). It used to
+  start with a key no request could match.
 - **`text/plain` bodies are no longer parsed as JSON:** a cross-site
   `text/plain` POST needs no CORS preflight, so a web page could drive a
   `--debug` server. Send `application/json`.
@@ -42,6 +44,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `__proto__`, `toString` and the like authenticated as a tenant with no
   devices; the CouchDB provider's cache had the same flaw. The environment
   key and `--debugKey` are compared in constant time.
+- **The main thread checks a worker's Redis command name.** Module code can
+  post a `rediscommand` message itself, and the main thread called whatever
+  op it named on the shared client, so an op such as `constructor` or
+  `__proto__` could replace or poison that client for every module. Ops
+  outside Redis's command list are now refused.
 - **`countinghouse_validate_module` runs the module sandboxed.** It requires
   the module's code to resolve the handler map, and ran it in a child
   process with the server's whole environment (API keys included) and no

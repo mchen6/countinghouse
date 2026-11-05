@@ -49,7 +49,8 @@ you have to do. What the sandbox does and does not protect is in
 - **The server binds `127.0.0.1` unless `--bindAddr` is given** (it used to
   bind the first non-internal IPv4 address). Remote clients need, for
   example, `--bindAddr 0.0.0.0`. `--debug` without `--debugKey` refuses to
-  start on any other address, and JSON must be sent as `application/json`,
+  start on any other address, a bare `--debugKey` with no value refuses to
+  start at all (exit 2), and JSON must be sent as `application/json`,
   not `text/plain` (form bodies are not parsed at all).
 - **Browser-based clients need `--allowedOrigins`.** CORS is off by default
   (it allowed every origin), and every route refuses a request from a
