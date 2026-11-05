@@ -51,6 +51,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   most two at a time; under `off` and single-thread mode, in a child with a
   clean environment. The result describes the module; it is not a check a
   hostile module cannot fool.
+- **A direct peer channel serves only the devices granted on it.** The
+  broker checks one (key, device) per grant, but the callee served any
+  device its worker hosts, and module code can post on its own end of a
+  channel. Now the callee keeps the set the broker granted (a later grant
+  reaches it before the caller is told), and refuses any other device with
+  `PEER_NOT_GRANTED`.
 - **Browser origins are checked.** Every route refuses (403) a request whose
   `Origin` is not in `--allowedOrigins` (none by default), as MCP's
   Streamable HTTP transport requires for `/mcp`; and under `--debug` without

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "forgeService": {
+    "forge": {
+      "input": {"type": "object", "properties": {"appKey": {"type": "string"}, "granted": {"type": "string"}, "other": {"type": "string"}},
+        "required": ["appKey", "granted", "other"]},
+      "output": {"type": "object", "properties": {"granted": {"type": "string"}, "other": {"type": "string"}}}
+    }
+  }
+}

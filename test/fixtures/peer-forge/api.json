@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "peer-forge",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "invokes a device it was not granted over a peer channel opened for another (review R2-2)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:forgeService": {
+        "actionList": [
+          {
+            "name": "forge",
+            "description": "Calls the granted device over a direct peer channel, then posts an invoke for another device on the same channel.",
+            "input": {"schema": "/forgeService/forge/input"},
+            "output": {"schema": "/forgeService/forge/output"}
+          }
+        ]
+      }
+    }
+  }
+}
