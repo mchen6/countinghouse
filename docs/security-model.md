@@ -485,6 +485,17 @@ these are the checks that predate them and still apply:
   runs (that's the worker-thread boundary described above). Three things
   worth being explicit about, in the spirit of this document's own rule
   against overstating guarantees:
+  - **Bodies are read before this check, except BSON.** JSON and XML bodies
+    are parsed on every route before any key is checked, so an
+    unauthenticated client can still make the server read up to
+    `--maxRequestBody` (8 MB) per request. A BSON body (up to
+    `--maxBsonRequestBody`, 64 MB, on `invoke-action` and `add-job` only)
+    is read only after the key and its grant for the URL's device pass
+    (`lib/route-manager.js`, `validateUser.beforeBody` in
+    `lib/routes/user.js`); keyless `--debug`, loopback-only, admits every
+    caller, so there it is read. A refused body is discarded unread; a client that
+    keeps sending it is cut off by the server's default request timeout
+    (300 s).
   - **Between modules, the check runs when a channel opens, not on every
     hop.** Since 7.1.0 a module calling another module's device does so over
     a direct peer channel by default. `userAuth` runs once, at brokering

@@ -26,6 +26,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (default 64). Both were 1 GB on every route, read before any key was
   checked, so a few concurrent large posts from an unauthenticated client
   could exhaust the server's memory. An oversized body is answered 413.
+- **A BSON body is read only for a caller who may use the device.** On
+  `invoke-action` and `add-job` the key and its grant for the URL's device
+  are checked before the body, from the headers and the URL, so a client
+  without one is refused (the same 500 and code as before) without the
+  server reading up to 64 MB first.
 - **The server binds `127.0.0.1` by default.** Without `--bindAddr` it used
   to bind the first non-internal IPv4 address. Give `--bindAddr` (for
   example `0.0.0.0`) for remote clients.
