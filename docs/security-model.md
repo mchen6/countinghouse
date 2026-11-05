@@ -482,7 +482,7 @@ these are the checks that predate them and still apply:
   longer a hard dependency). This is caller-identity authorization, not
   module sandboxing — it constrains which apiKey can invoke which device's
   actions, not what a loaded module's own code can do once its handler
-  runs (that's the worker-thread boundary described above). Three things
+  runs (that's the worker-thread boundary described above). Four things
   worth being explicit about, in the spirit of this document's own rule
   against overstating guarantees:
   - **Bodies are read before this check, except BSON.** JSON and XML bodies
@@ -499,8 +499,9 @@ these are the checks that predate them and still apply:
   - **Between modules, the check runs when a channel opens, not on every
     hop.** Since 7.1.0 a module calling another module's device does so over
     a direct peer channel by default. `userAuth` runs once, at brokering
-    time; the channel it grants then reaches every device the callee worker
-    hosts. A grant revoked while the server runs closes the channel on the
+    time; the channel it grants then serves only the devices granted on it,
+    and the callee refuses any other device it hosts (`PEER_NOT_GRANTED`).
+    A grant revoked while the server runs closes the channel on the
     broker's next re-check (`--peerChannelAuthRecheckSeconds`, 5 by
     default), so a revoked module identity can keep reaching a device for up
     to that long. `--no-directPeerChannels` restores the per-hop check on
