@@ -57,6 +57,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   channel. Now the callee keeps the set the broker granted (a later grant
   reaches it before the caller is told), and refuses any other device with
   `PEER_NOT_GRANTED`.
+- **A module reaches only the jobs it is running.** `CHUtil.jobInfo` and
+  `CHUtil.jobProgress` took any job id, and the main thread answered with
+  full internal access, so a module could read every tenant's jobs, their
+  API keys included, and change their progress. A worker now reads and
+  updates only the jobs it is executing, and the job it gets back carries
+  neither the creator's API key nor the queue's options.
 - **Browser origins are checked.** Every route refuses (403) a request whose
   `Origin` is not in `--allowedOrigins` (none by default), as MCP's
   Streamable HTTP transport requires for `/mcp`; and under `--debug` without

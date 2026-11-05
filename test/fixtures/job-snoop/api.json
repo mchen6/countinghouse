@@ -1,0 +1,17 @@
+{
+  "device": {
+    "friendlyName": "job-snoop",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "reads its own job, and tries other tenants' jobs (review R3-1)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:jobService": {
+        "actionList": [
+          {"name": "whoami", "description": "Run as a job: reads its own job through ctx.job.info.",
+           "input": {"schema": "/jobService/whoami/input"}, "output": {"schema": "/jobService/whoami/output"}},
+          {"name": "snoop", "description": "Reads and updates the progress of a job by id, as module code could.",
+           "input": {"schema": "/jobService/snoop/input"}, "output": {"schema": "/jobService/snoop/output"}}
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "jobService": {
+    "whoami": {
+      "input": {"type": "object", "properties": {"note": {"type": "string"}}},
+      "output": {"type": "object", "properties": {"own": {"type": "string"}, "apiKey": {"type": "string"}, "note": {"type": ["string", "null"]}}}
+    },
+    "snoop": {
+      "input": {"type": "object", "properties": {"jobID": {"type": "string"}}, "required": ["jobID"]},
+      "output": {"type": "object", "properties": {"read": {"type": "string"}}}
+    }
+  }
+}
