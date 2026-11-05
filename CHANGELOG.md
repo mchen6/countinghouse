@@ -63,6 +63,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   API keys included, and change their progress. A worker now reads and
   updates only the jobs it is executing, and the job it gets back carries
   neither the creator's API key nor the queue's options.
+- **Repeatable job schedulers are per owner.** A scheduler's id was the
+  caller's raw `opts.name` in one shared queue, and bullmq replaces a
+  scheduler on upsert, so another tenant posting the same name took over
+  the first tenant's scheduler (its later runs owned and billed to the
+  second). Ids are now scoped to a hash of the owner's key, and an owner
+  removes its own scheduler (removing one used to require an admin key).
+  Schedulers created before 8.0.0 keep their bare-name ids and keep
+  running; an admin removes them by name.
 - **Browser origins are checked.** Every route refuses (403) a request whose
   `Origin` is not in `--allowedOrigins` (none by default), as MCP's
   Streamable HTTP transport requires for `/mcp`; and under `--debug` without

@@ -59,6 +59,12 @@ you have to do. What the sandbox does and does not protect is in
   (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies
   gets 413 until you raise the limit.
 
+- **Repeatable jobs created before 8.0.0** keep running under their old
+  scheduler ids. A new `add-job` with the same name creates a second,
+  owner-scoped scheduler rather than replacing the old one, so remove the
+  old one first (admin key, `POST /devices/:id/remove-job`
+  `{name, isRepeat: true}`).
+
 ## What modules will notice
 
 Under worker mode, in every `--moduleSandbox` mode unless noted:
