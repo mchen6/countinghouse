@@ -9,7 +9,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
 
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'validate-probe');
@@ -57,8 +57,14 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
     await validate(9666, PROBE);
     const list = await mcpCall(9666, 'k', 'countinghouse_list_tools', {}, {allowUnknownTool: true});
     assert.ok(!/validate_probe/.test(JSON.stringify(list)), JSON.stringify(list).slice(0, 300));
+    // The answer comes before the teardown: validateModuleSandboxed calls
+    // back with the result, then removes its throwaway directory once the
+    // worker has ended and the broker gone idle. Wait for that, bounded,
+    // instead of reading the directory the moment the answer arrives.
     const dir = path.join(base, 'store', '.validate');
-    assert.deepStrictEqual(fs.existsSync(dir) ? fs.readdirSync(dir) : [], []);
+    const left = () => (fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+    await waitFor(() => left().length === 0, 10000, 'the throwaway directory to be removed', async () => JSON.stringify(left()));
+    assert.deepStrictEqual(left(), []);
   });
 
   it('a stale throwaway directory is removed at startup', async () => {
