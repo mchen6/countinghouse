@@ -33,6 +33,7 @@ const spawn   = require('child_process').spawn;
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {toolErrorCode} = require('../helpers/tool-result');
 
 const ROOT = path.join(__dirname, '..', '..');
 const AUTHORING_NAMES = [
@@ -512,8 +513,8 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
     toolsCall(PORT, NON_ADMIN_KEY, 6, 'countinghouse_validate_module', {path: '.'}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true);
-      assert.ok(body.result.structuredContent != null && body.result.structuredContent.code === 'ADMIN_REQUIRED',
-        `expected structuredContent.code === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
+      assert.ok(toolErrorCode(body.result) === 'ADMIN_REQUIRED',
+        `expected _meta['countinghouse/code'] === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
       done();
     });
   });
@@ -532,8 +533,8 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
       toolsCall(PORT, NON_ADMIN_KEY, 6, name, {path: '.', name: 'x'}, (err, body) => {
         assert.ifError(err);
         assert.strictEqual(body.result.isError, true);
-        assert.ok(body.result.structuredContent != null && body.result.structuredContent.code === 'ADMIN_REQUIRED',
-          `expected structuredContent.code === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
+        assert.ok(toolErrorCode(body.result) === 'ADMIN_REQUIRED',
+          `expected _meta['countinghouse/code'] === 'ADMIN_REQUIRED', got: ${JSON.stringify(body.result)}`);
         done();
       });
     });

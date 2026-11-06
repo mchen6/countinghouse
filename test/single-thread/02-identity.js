@@ -1,6 +1,7 @@
 const assert = require('assert');
 const vm = require('vm');
 const facade = require('../../lib/single-thread-facade');
+const {toolOutput} = require('../helpers/tool-result');
 
 const run = (src) => {
   const fn = vm.runInThisContext(`(function (exports, require, module, __filename, __dirname) {${src}\n})`);
@@ -56,7 +57,7 @@ describe('single-thread 02: identity in a running server', function() {
   const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
   const {mkdtemp} = require('../helpers/test-tmp');
   const FIXTURES = path.join(ROOT, 'test', 'fixtures');
-  const out = (r) => r.structuredContent.output;
+  const out = (r) => toolOutput(r);
   let server = null;
   let base = null;
   afterEach(() => { stopServer(server); server = null; if (base) fs.rmSync(base, {recursive: true, force: true}); base = null; });
@@ -70,7 +71,7 @@ describe('single-thread 02: identity in a running server', function() {
     server = await start(['fs-probe', 'fs-probe-twin']);
     const ra = await mcpCall(9636, 'k', 'fs_probe_probeservice_where', {});
     const rb = await mcpCall(9636, 'k', 'fs_probe_twin_probeservice_where', {});
-    assert.ok(ra.structuredContent && ra.structuredContent.output && rb.structuredContent && rb.structuredContent.output, JSON.stringify([ra, rb]).slice(0, 1500));
+    assert.ok(ra.isError === false && toolOutput(ra) && rb.isError === false && toolOutput(rb), JSON.stringify([ra, rb]).slice(0, 1500));
     const a = out(ra);
     const b = out(rb);
     assert.deepStrictEqual([a.dirname, a.filename, a.own], ['/app/handlers/probeService', '/app/handlers/probeService/where.js', 'fs-probe']);

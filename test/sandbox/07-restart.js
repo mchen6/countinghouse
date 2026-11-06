@@ -6,6 +6,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {toolErrorCode} = require('../helpers/tool-result');
 
 const KEY  = 'aabbcc';
 const HOG  = path.join(ROOT, 'test', 'fixtures', 'sandbox-hog');
@@ -44,7 +45,7 @@ describe('sandbox 07: restart and suspend', function() {
       await mcpCall(9611, KEY, tool('exit'), {});
       const during = await waitFor(async () => {
         const r = await mcpCall(9611, KEY, tool('ping'), {});
-        return r.isError === true && r.structuredContent.code === 'MODULE_RESTARTING' ? r : null;
+        return r.isError === true && toolErrorCode(r) === 'MODULE_RESTARTING' ? r : null;
       }, 5000, 'MODULE_RESTARTING');
       assert.ok(during);
       assert.strictEqual(await listed(9611), true);
@@ -66,7 +67,7 @@ describe('sandbox 07: restart and suspend', function() {
       }, 10000, 'suspended');
       assert.strictEqual(s.exits.length, 3);
       const r = await mcpCall(9611, KEY, tool('ping'), {});
-      assert.strictEqual(r.structuredContent.code, 'MODULE_SUSPENDED');
+      assert.strictEqual(toolErrorCode(r), 'MODULE_SUSPENDED');
       assert.strictEqual(await listed(9611), true);
       assert.ok(server.output.includes('module sandbox: sandbox-hog suspended'), server.output.slice(-2000));
     });
@@ -202,7 +203,7 @@ describe('sandbox 07: restart and suspend', function() {
       track(mcpCall(9612, KEY, tool('flood'), {}));
       track(mcpCall(9612, KEY, tool('ping'), {}));
       await new Promise((resolve) => setTimeout(resolve, 3500));
-      assert.ok(!outcomes.some((r) => r.structuredContent != null && r.structuredContent.code === 'MODULE_RESTARTING'), JSON.stringify(outcomes));
+      assert.ok(!outcomes.some((r) => toolErrorCode(r) === 'MODULE_RESTARTING'), JSON.stringify(outcomes));
     });
   });
 });

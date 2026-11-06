@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {toolOutput} = require('../helpers/tool-result');
 
 // Countinghouse installed under /app is refused, not supported (spec decision
 // 12): Node's module caches are keyed by filename. An install at /app needs
@@ -23,13 +24,13 @@ describe('fs-broker 13: virtual and host paths do not collide', function() {
       server = await startServer(9631, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
         '--moduleDataPath', store, '--loadModule', mod]);
       const res = await mcpCall(9631, 'k', 'fs_probe_probeservice_where', {});
-      const where = res.structuredContent != null ? res.structuredContent.output : res;
+      const where = toolOutput(res);
       assert.strictEqual(where.dirname, '/app/handlers/probeService', JSON.stringify(res));
       assert.strictEqual(where.own, 'fs-probe');
       await mcpCall(9631, 'k', 'fs_probe_probeservice_write', {path: '/tmp/t', content: 'mine'});
       assert.strictEqual(fs.readFileSync(path.join(store, 'fs-probe', 'tmp', 't'), 'utf8'), 'mine');
       const hostTmpPath = path.join(mod, 'package.json');
-      const r = (await mcpCall(9631, 'k', 'fs_probe_probeservice_read', {path: hostTmpPath})).structuredContent.output;
+      const r = toolOutput(await mcpCall(9631, 'k', 'fs_probe_probeservice_read', {path: hostTmpPath}));
       assert.strictEqual(r.code, 'ENOENT', 'a host path under /tmp is the module\'s own /tmp, not the host\'s');
     });
   });

@@ -3,6 +3,7 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const KEY  = 'aabbcc';
 const HOG  = path.join(ROOT, 'test', 'fixtures', 'sandbox-hog');
@@ -34,14 +35,14 @@ describe('sandbox 08: resource limits', function() {
   it('a call in flight when the worker is killed gets MODULE_RESTARTING, not a timeout', async () => {
     const t0 = Date.now();
     const r = await mcpCall(9613, KEY, tool('block'), {});
-    assert.strictEqual(r.structuredContent.code, 'MODULE_RESTARTING', JSON.stringify(r));
+    assert.strictEqual(toolErrorCode(r), 'MODULE_RESTARTING', JSON.stringify(r));
     assert.ok(Date.now() - t0 < 15000, `took ${Date.now() - t0} ms`);
   });
 
   it('the message rate rejects excess messages without killing the module', async () => {
     const r = await mcpCall(9613, KEY, tool('flood'), {});
     assert.strictEqual(r.isError, false, JSON.stringify(r));
-    assert.ok(r.structuredContent.output.limited > 0, JSON.stringify(r.structuredContent));
+    assert.ok(toolOutput(r).limited > 0, JSON.stringify(r));
     assert.strictEqual((await mcpCall(9613, KEY, tool('ping'), {})).isError, false);
     assert.strictEqual(await lastReason(9613), null);
   });

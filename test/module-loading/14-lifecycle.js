@@ -1,5 +1,6 @@
 const assert = require('assert');
 const {ModuleLifecycle} = require('../../lib/module-lifecycle');
+const {toolOutput} = require('../helpers/tool-result');
 
 describe('module-loading 14: the per-name lifecycle lock', () => {
   it('runs one critical section per name at a time, others in parallel', async () => {
@@ -87,24 +88,24 @@ describe('module-loading 14: the lock in a running server', function() {
 
   it('a restart waits for the old worker\'s write to settle before emptying /tmp', async () => {
     server = await start();
-    assert.deepStrictEqual((await mcpCall(9634, 'k', tool('slowwrite'), {})).structuredContent.output, {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(9634, 'k', tool('slowwrite'), {})), {ok: true, code: null});
     const r = await post(9634, 'k', '/restart-module', {name: 'fs-probe'});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
     await waitFor(async () => walkWaitedForSettle(server.output), 20000, 'second walk after settle');
     await waitFor(async () => {
       const read = await mcpCall(9634, 'k', tool('read'), {path: '/tmp/slow'});
-      return read.structuredContent != null && read.structuredContent.output.code === 'ENOENT';
+      return read.isError === false && toolOutput(read).code === 'ENOENT';
     }, 20000, '/tmp emptied by the new spawn');
   });
 
   it('a crash while the broker is busy still restarts after backoff (review I5)', async () => {
     server = await start();
-    assert.deepStrictEqual((await mcpCall(9634, 'k', tool('slowwrite'), {})).structuredContent.output, {ok: true, code: null});
-    assert.deepStrictEqual((await mcpCall(9634, 'k', tool('exit'), {})).structuredContent.output, {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(9634, 'k', tool('slowwrite'), {})), {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(9634, 'k', tool('exit'), {})), {ok: true, code: null});
     await waitFor(async () => walkWaitedForSettle(server.output), 30000, 'supervised restart after settle');
     await waitFor(async () => {
       const w = await mcpCall(9634, 'k', tool('write'), {path: '/data/after', content: 'x'});
-      return w.structuredContent != null && w.structuredContent.output.ok === true;
+      return w.isError === false && toolOutput(w).ok === true;
     }, 30000, 'module back');
     assert.ok(!server.output.includes('superseded'), 'nobody superseded the restart');
   });

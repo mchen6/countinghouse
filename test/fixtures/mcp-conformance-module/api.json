@@ -1,0 +1,74 @@
+{
+  "device": {
+    "friendlyName": "mcp-conformance",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "MCP conformance fixture: one action per result shape the MCP layer must handle",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:shapeService": {
+        "actionList": [
+          {
+            "name": "object_out",
+            "description": "Returns {text: \"ok\"}; declares an object output schema.",
+            "input": {
+              "schema": "/shapeService/object_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/object_out/output"
+            }
+          },
+          {
+            "name": "no_schema_string",
+            "description": "Returns a plain string and declares no output schema.",
+            "input": {
+              "schema": "/shapeService/no_schema_string/input"
+            }
+          },
+          {
+            "name": "no_schema_object",
+            "description": "Returns an object and declares no output schema.",
+            "input": {
+              "schema": "/shapeService/no_schema_object/input"
+            }
+          },
+          {
+            "name": "no_schema_empty",
+            "description": "Returns no output and declares no output schema.",
+            "input": {
+              "schema": "/shapeService/no_schema_empty/input"
+            }
+          },
+          {
+            "name": "prefix_items_out",
+            "description": "Returns a pair; its output schema uses the 2020-12 prefixItems keyword.",
+            "input": {
+              "schema": "/shapeService/prefix_items_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/prefix_items_out/output"
+            }
+          },
+          {
+            "name": "coded_error",
+            "description": "Fails with a typed error; declares a strict object output schema that an error code object would not satisfy.",
+            "input": {
+              "schema": "/shapeService/coded_error/input"
+            },
+            "output": {
+              "schema": "/shapeService/coded_error/output"
+            }
+          },
+          {
+            "name": "strict_out",
+            "description": "Returns a property its own output schema forbids, so the runtime rejects the call.",
+            "input": {
+              "schema": "/shapeService/strict_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/strict_out/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

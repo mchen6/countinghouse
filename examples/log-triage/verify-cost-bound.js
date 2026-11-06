@@ -143,7 +143,7 @@ async function meteredCall(url, caller, args) {
 
   return {
     result:       result,
-    out:          result.structuredContent.output,
+    out:          result.structuredContent,
     callerPaid:   callerBefore - callerAfter,
     internalPaid: internalBefore - internalAfter
   };

@@ -21,6 +21,7 @@ const assert = require('assert');
 const http   = require('http');
 const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const PORT = 9595;
 
@@ -65,7 +66,7 @@ describe('module-loading 08: handler failure classification and style detection'
     call('callbackTyped', (err, result) => {
       if (err) return done(err);
       assert.strictEqual(result.isError, true, JSON.stringify(result));
-      assert.strictEqual(result.structuredContent.code, 'DEVICE_OFFLINE');
+      assert.strictEqual(toolErrorCode(result), 'DEVICE_OFFLINE');
       return done();
     });
   });
@@ -76,7 +77,7 @@ describe('module-loading 08: handler failure classification and style detection'
       assert.strictEqual(result.isError, true, JSON.stringify(result));
       // the regression this step exists to fix: previously
       // DEVICE_INVOKE_EXCEPTION, with the real code discarded
-      assert.strictEqual(result.structuredContent.code, 'DEVICE_OFFLINE',
+      assert.strictEqual(toolErrorCode(result), 'DEVICE_OFFLINE',
         'a rejection carrying a typed error must not be flattened');
       return done();
     });
@@ -87,7 +88,7 @@ describe('module-loading 08: handler failure classification and style detection'
       if (err) return done(err);
       call('rejectTyped', (err2, viaReject) => {
         if (err2) return done(err2);
-        assert.deepStrictEqual(viaReject.structuredContent, viaCallback.structuredContent,
+        assert.deepStrictEqual([viaReject.isError, toolErrorCode(viaReject)], [viaCallback.isError, toolErrorCode(viaCallback)],
           'same failure, two styles, one response');
         return done();
       });
@@ -98,7 +99,7 @@ describe('module-loading 08: handler failure classification and style detection'
     call('callbackPlain', (err, result) => {
       if (err) return done(err);
       assert.strictEqual(result.isError, true, JSON.stringify(result));
-      assert.strictEqual(result.structuredContent.code, 'DEVICE_INVOKE_FAIL');
+      assert.strictEqual(toolErrorCode(result), 'DEVICE_INVOKE_FAIL');
       return done();
     });
   });
@@ -107,7 +108,7 @@ describe('module-loading 08: handler failure classification and style detection'
     call('rejectPlain', (err, result) => {
       if (err) return done(err);
       assert.strictEqual(result.isError, true, JSON.stringify(result));
-      assert.strictEqual(result.structuredContent.code, 'DEVICE_INVOKE_EXCEPTION',
+      assert.strictEqual(toolErrorCode(result), 'DEVICE_INVOKE_EXCEPTION',
         'collapsing this into DEVICE_INVOKE_FAIL would erase "the handler crashed"');
       return done();
     });
@@ -120,7 +121,7 @@ describe('module-loading 08: handler failure classification and style detection'
     call('promiseFromPlainFn', (err, result) => {
       if (err) return done(err);
       assert.strictEqual(result.isError, false, JSON.stringify(result));
-      assert.deepStrictEqual(result.structuredContent, {output: {ok: true}});
+      assert.deepStrictEqual(toolOutput(result), {ok: true});
       return done();
     });
   });
@@ -129,7 +130,7 @@ describe('module-loading 08: handler failure classification and style detection'
     call('asyncOk', (err, result) => {
       if (err) return done(err);
       assert.strictEqual(result.isError, false, JSON.stringify(result));
-      assert.deepStrictEqual(result.structuredContent, {output: {ok: true}});
+      assert.deepStrictEqual(toolOutput(result), {ok: true});
       return done();
     });
   });

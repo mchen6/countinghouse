@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {toolOutput} = require('../helpers/tool-result');
 
 const PORT = 9635;
 const KEY = 'k';
@@ -86,7 +87,7 @@ describe('sandbox 17: POST /uninstall-module', function() {
 
   it('unload, then uninstall while the old broker is still settling: waits, then succeeds (review I5)', async () => {
     server = await start('audit', {COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500'});
-    assert.deepStrictEqual((await mcpCall(PORT, KEY, tool('slowwrite'), {})).structuredContent.output, {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(PORT, KEY, tool('slowwrite'), {})), {ok: true, code: null});
     assert.strictEqual((await post(PORT, KEY, '/unload-module', {name: 'fs-probe'})).status, 200);
     const r = await uninstall({name: 'fs-probe'});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
@@ -96,7 +97,7 @@ describe('sandbox 17: POST /uninstall-module', function() {
 
   it('refuses while the module is restarting', async () => {
     server = await start('audit');
-    assert.deepStrictEqual((await mcpCall(PORT, KEY, tool('exit'), {})).structuredContent.output, {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(PORT, KEY, tool('exit'), {})), {ok: true, code: null});
     await waitFor(async () => server.output.includes('restarting in'), 15000, 'supervisor restarting');
     const r = await uninstall({name: 'fs-probe'});
     assert.strictEqual(r.body.code, 'MODULE_LOADED', JSON.stringify(r.body));
@@ -112,9 +113,9 @@ describe('sandbox 17: POST /uninstall-module', function() {
     assert.ok(un.status === 200 || un.body.code === 'MODULE_LOADED', JSON.stringify(un.body));
     // The module's tools appear once its device comes online, just after the load answers.
     let r = null;
-    await waitFor(async () => { r = await mcpCall(PORT, KEY, tool('read'), {path: '/data/x'}); return r.structuredContent != null; }, 15000, 'module online');
+    await waitFor(async () => { r = await mcpCall(PORT, KEY, tool('read'), {path: '/data/x'}); return r.isError === false; }, 15000, 'module online');
     const expected = un.status === 200 ? {content: null, code: 'ENOENT'} : {content: 'x', code: null};
-    assert.deepStrictEqual(r.structuredContent.output, expected, JSON.stringify({un: un.body, r}));
+    assert.deepStrictEqual(toolOutput(r), expected, JSON.stringify({un: un.body, r}));
   });
 
   // Registry mode (no --loadModule): the entry is removed, and reported only

@@ -193,7 +193,7 @@ async function call(url, key, tool, args) {
     return {error: `${tool}: ${text.slice(0, 600)}`};
   }
   return {
-    out:      parsed.result.structuredContent.output,
+    out:      parsed.result.structuredContent,
     ms:       ms,
     reqBytes: Buffer.byteLength(body),
     resBytes: Buffer.byteLength(text)

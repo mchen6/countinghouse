@@ -1,4 +1,5 @@
 const request = require('supertest');
+const {toolErrorCode} = require('../helpers/tool-result');
 
 const url = 'http://127.0.0.1:9527';
 
@@ -21,7 +22,7 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
 
   const badInput = {bar: 123}; // echoService/echo requires bar: string -- schema validation fails
 
-  it('sync tools/call: an input-validation failure carries structuredContent.code', (done) => {
+  it('sync tools/call: an input-validation failure carries its code in _meta', (done) => {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
     .set('X-CH-Key', 'aabbcc')
@@ -35,14 +36,14 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
       if (result == null || result.isError !== true) {
         return done(new Error(`test32 fail: expected an isError:true result, got: ${JSON.stringify(res.body)}`));
       }
-      if (result.structuredContent == null || result.structuredContent.code !== 'INPUT_DATA_VALIDATION_FAIL') {
-        return done(new Error(`test32 fail: expected structuredContent.code === INPUT_DATA_VALIDATION_FAIL, got: ${JSON.stringify(result)}`));
+      if (result.structuredContent !== undefined || toolErrorCode(result) !== 'INPUT_DATA_VALIDATION_FAIL') {
+        return done(new Error(`test32 fail: expected _meta['countinghouse/code'] === INPUT_DATA_VALIDATION_FAIL and no structuredContent, got: ${JSON.stringify(result)}`));
       }
       return done();
     });
   });
 
-  it('task-augmented tools/call: an input-validation failure carries structuredContent.code via tasks/result', (done) => {
+  it('task-augmented tools/call: an input-validation failure carries its code in _meta via tasks/result', (done) => {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
     .send({jsonrpc: '2.0', id: 2, method: 'initialize', params: {protocolVersion: '2026-07-28'}})
@@ -83,8 +84,8 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
             if (result.isError !== true) {
               return done(new Error(`test32 fail: expected task result isError:true, got: ${JSON.stringify(result)}`));
             }
-            if (result.structuredContent == null || result.structuredContent.code !== 'INPUT_DATA_VALIDATION_FAIL') {
-              return done(new Error(`test32 fail: expected structuredContent.code === INPUT_DATA_VALIDATION_FAIL, got: ${JSON.stringify(result)}`));
+            if (result.structuredContent !== undefined || toolErrorCode(result) !== 'INPUT_DATA_VALIDATION_FAIL') {
+              return done(new Error(`test32 fail: expected _meta['countinghouse/code'] === INPUT_DATA_VALIDATION_FAIL and no structuredContent, got: ${JSON.stringify(result)}`));
             }
             return done();
           });

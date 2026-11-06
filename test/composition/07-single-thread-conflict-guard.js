@@ -33,6 +33,7 @@ const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
+const {toolOutput} = require('../helpers/tool-result');
 
 // Same reasoning as 02-ctx-call.js and friends: something downstream reaches
 // lib/countinghouse-util.js at require time, which needs options.redisUrl.
@@ -124,7 +125,7 @@ describe('single-thread deviceID conflict guard (DeviceManager.prototype.onDevic
          params: {name: 'dup_deviceid_target_pingservice_ping', arguments: {}}}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, false, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.output.answeredBy, 'first', JSON.stringify(body));
+      assert.strictEqual(toolOutput(body.result).answeredBy, 'first', JSON.stringify(body));
       done();
     });
   });

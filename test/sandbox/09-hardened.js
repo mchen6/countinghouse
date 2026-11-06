@@ -6,6 +6,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const KEY = 'aabbcc';
 
@@ -32,7 +33,7 @@ describe('sandbox 09: --hardened', function() {
     assert.ok(server.output.includes('module sandbox: hardened -- running under --permission'), server.output.slice(-2000));
     for (const file of ['/proc/self/environ', '/proc/self/mem']) {
       const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_attempt', {what: 'read', arg: file});
-      assert.strictEqual(r.structuredContent.output.outcome, 'blocked', `${file}: ${JSON.stringify(r)}`);
+      assert.strictEqual(toolOutput(r).outcome, 'blocked', `${file}: ${JSON.stringify(r)}`);
     }
   });
 
@@ -41,7 +42,7 @@ describe('sandbox 09: --hardened', function() {
       '--modulePath', root]);
     const r = await mcpCall(9614, KEY, 'countinghouse_load_module',
       {path: path.join(ROOT, 'test', 'fixtures', 'handler-map-convention'), name: 'handler-map-convention', version: '1.0.0'});
-    assert.strictEqual(r.structuredContent.code, 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(r));
+    assert.strictEqual(toolErrorCode(r), 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(r));
   });
 
   it('refuses a module outside --modulePath on restart, reload, and through a symlink', async () => {
@@ -55,7 +56,7 @@ describe('sandbox 09: --hardened', function() {
     assert.ok(JSON.stringify(reload.body).includes('MODULE_PATH_OUTSIDE_ROOT'), JSON.stringify(reload));
     const linked = await mcpCall(9614, KEY, 'countinghouse_load_module',
       {path: path.join(root, 'linked-probe'), name: 'sandbox-probe', version: '1.0.0'});
-    assert.strictEqual(linked.structuredContent.code, 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(linked));
+    assert.strictEqual(toolErrorCode(linked), 'MODULE_PATH_OUTSIDE_ROOT', JSON.stringify(linked));
     // The running module was left alone by all three.
     const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_env', {});
     assert.strictEqual(r.isError, false, JSON.stringify(r));
@@ -96,9 +97,9 @@ describe('sandbox 09: --hardened', function() {
       server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
         '--modulePath', root, '--moduleDataPath', data, '--loadModule', path.join(root, 'fs-probe')]);
       const w = await mcpCall(9614, KEY, 'fs_probe_probeservice_write', {path: '/data/x', content: 'hardened'});
-      assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null}, JSON.stringify(w));
+      assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, JSON.stringify(w));
       const r = await mcpCall(9614, KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
-      assert.deepStrictEqual(r.structuredContent.output, {content: 'hardened', code: null});
+      assert.deepStrictEqual(toolOutput(r), {content: 'hardened', code: null});
       assert.strictEqual(fs.readFileSync(path.join(data, 'fs-probe', 'data', 'x'), 'utf8'), 'hardened');
     } finally {
       fs.rmSync(data, {recursive: true, force: true});
@@ -119,10 +120,10 @@ describe('sandbox 09: --hardened', function() {
       assert.strictEqual(restarted.status, 200, JSON.stringify(restarted.body));
       await waitFor(async () => {
         const r = await mcpCall(9614, KEY, 'fs_probe_probeservice_read', {path: '/data/x'});
-        return r.structuredContent != null && r.structuredContent.output.content === 'kept';
+        return r.isError === false && toolOutput(r).content === 'kept';
       }, 15000, 'read after restart');
       const where = await mcpCall(9614, KEY, 'fs_probe_probeservice_where', {});
-      assert.strictEqual(where.structuredContent.output.dirname, '/app/handlers/probeService', JSON.stringify(where));
+      assert.strictEqual(toolOutput(where).dirname, '/app/handlers/probeService', JSON.stringify(where));
     } finally {
       fs.rmSync(data, {recursive: true, force: true});
     }

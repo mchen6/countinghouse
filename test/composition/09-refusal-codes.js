@@ -34,6 +34,7 @@ const assert = require('assert');
 // reason as test/composition/02-ctx-call.js's copy of this line.
 require('../../lib/cli-options').setOptions({workerThread: false});
 const handlerCtx = require('../../lib/handler-ctx');
+const {toolErrorCode} = require('../helpers/tool-result');
 
 function fakeDevice() {
   return {deviceID: 'unit-test-device', spec: {device: {friendlyName: 'compose-caller'}}};
@@ -177,7 +178,7 @@ describe('ctx.call refusal codes reach an MCP client through the worker hop', fu
     callTool('compose_caller_callerservice_undeclared', {}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.code, 'CTX_CALL_UNDECLARED',
+      assert.strictEqual(toolErrorCode(body.result), 'CTX_CALL_UNDECLARED',
         JSON.stringify(body));
       // And the text is the actionable head, not "Device interface call
       // threw an exception".
@@ -190,7 +191,7 @@ describe('ctx.call refusal codes reach an MCP client through the worker hop', fu
     callTool('compose_caller_nocalls_callerservice_trycall', {}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.code, 'CTX_CALL_UNBOUND',
+      assert.strictEqual(toolErrorCode(body.result), 'CTX_CALL_UNBOUND',
         JSON.stringify(body));
       done();
     });
@@ -204,7 +205,7 @@ describe('ctx.call refusal codes reach an MCP client through the worker hop', fu
     callTool('compose_caller_callerservice_viaboom', {}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.code, 'DEVICE_INVOKE_EXCEPTION',
+      assert.strictEqual(toolErrorCode(body.result), 'DEVICE_INVOKE_EXCEPTION',
         JSON.stringify(body));
       done();
     });

@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const sqlite3 = require('sqlite3');
 const {ROOT, startServer, stopServer, mcpCall, post} = require('../helpers/sandbox-server');
+const {toolErrorCode} = require('../helpers/tool-result');
 
 const KEY = 'aabbcc';
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'sandbox-probe');   // package.json name: sandbox-probe
@@ -22,7 +23,7 @@ describe('module-loading 13: request name must match package.json', function() {
     it(`${label}: refuses a mismatched name and loads the matching one`, async () => {
       server = await startServer(9615, flags.concat(['--debug', '--debugKey', KEY, '--authoringTools']));
       const bad = await mcpCall(9615, KEY, 'countinghouse_load_module', {path: PROBE, name: 'weather', version: '1.0.0'});
-      assert.strictEqual(bad.structuredContent.code, 'MODULE_NAME_MISMATCH', JSON.stringify(bad));
+      assert.strictEqual(toolErrorCode(bad), 'MODULE_NAME_MISMATCH', JSON.stringify(bad));
       const good = await mcpCall(9615, KEY, 'countinghouse_load_module', {path: PROBE, name: 'sandbox-probe', version: '1.0.0'});
       assert.strictEqual(good.structuredContent.loaded, true, JSON.stringify(good));
     });

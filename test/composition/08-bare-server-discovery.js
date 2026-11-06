@@ -25,6 +25,7 @@ const assert = require('assert');
 const path   = require('path');
 const spawn  = require('child_process').spawn;
 const waitForReady = require('../helpers/wait-for-ready');
+const {toolOutput} = require('../helpers/tool-result');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PORT = 9562;   // verified unused across test/ and examples/
@@ -153,7 +154,7 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
       assert.notStrictEqual(body.result.isError, true,
         'ctx.call refused from a runtime-loaded module -- composition was never ' +
         `verified on this bare instance. Result: ${JSON.stringify(body.result)}`);
-      assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body.result));
+      assert.strictEqual(toolOutput(body.result).n, 42, JSON.stringify(body.result));
       done();
     });
   });

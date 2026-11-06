@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {toolOutput} = require('../helpers/tool-result');
 
 const KEY = 'aabbcc';
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'fs-probe');
@@ -32,10 +33,10 @@ describe('fs-broker 09: module workers use the broker', function() {
     it(`${mode}: /data is the module's own data directory`, async () => {
       server = await start(mode);
       const w = await mcpCall(9626, KEY, tool('write'), {path: '/data/x', content: 'hello'});
-      assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null}, JSON.stringify(w));
+      assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, JSON.stringify(w));
       assert.strictEqual(fs.readFileSync(path.join(base, 'store', 'fs-probe', 'data', 'x'), 'utf8'), 'hello');
       const r = await mcpCall(9626, KEY, tool('read'), {path: '/data/x'});
-      assert.deepStrictEqual(r.structuredContent.output, {content: 'hello', code: null});
+      assert.deepStrictEqual(toolOutput(r), {content: 'hello', code: null});
     });
   });
 
@@ -50,7 +51,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     server = await start('audit');
     const outside = outsidePath();
     const w = await mcpCall(9626, KEY, tool('write'), {path: outside, content: 'o'});
-    assert.strictEqual(w.structuredContent.output.ok, true, JSON.stringify(w));
+    assert.strictEqual(toolOutput(w).ok, true, JSON.stringify(w));
     assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'o');
     await waitFor(async () => server.output.includes(`module sandbox: fs-probe file outside ${outside}`), 5000, 'outside log line');
   });
@@ -59,7 +60,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     server = await start('enforce');
     const outside = outsidePath();
     const w = await mcpCall(9626, KEY, tool('write'), {path: outside, content: 'o'});
-    assert.deepStrictEqual(w.structuredContent.output, {ok: false, code: 'ENOENT'}, JSON.stringify(w));
+    assert.deepStrictEqual(toolOutput(w), {ok: false, code: 'ENOENT'}, JSON.stringify(w));
     assert.strictEqual(fs.existsSync(outside), false);
     await waitFor(async () => server.output.includes(`module sandbox: fs-probe file outside ${outside}`), 5000, 'outside log line');
     // The worker booted and loaded the module with countinghouse's own code
@@ -80,7 +81,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     await mcpCall(9626, KEY, tool('write'), {path: '/data/keep', content: 'kept'});
     const r1 = await post(9626, KEY, '/restart-module', {name: 'fs-probe'});
     assert.strictEqual(r1.status, 200, JSON.stringify(r1.body));
-    await waitFor(async () => (await mcpCall(9626, KEY, tool('read'), {path: '/data/keep'})).structuredContent.output.content === 'kept', 15000, 'read after restart');
+    await waitFor(async () => toolOutput(await mcpCall(9626, KEY, tool('read'), {path: '/data/keep'})).content === 'kept', 15000, 'read after restart');
   });
 
   // A module loaded from under /tmp, and data under /tmp, still work.
@@ -92,7 +93,7 @@ describe('fs-broker 09: module workers use the broker', function() {
         server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', mode,
           '--moduleDataPath', path.join(base, 'store'), '--loadModule', copy]);
         const w = await mcpCall(9626, KEY, tool('write'), {path: '/data/x', content: 'from tmp'});
-        assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null}, JSON.stringify(w));
+        assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, JSON.stringify(w));
       } finally {
         fs.rmSync(copy, {recursive: true, force: true});
       }
@@ -130,7 +131,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     fs.linkSync(path.join(base, 'store', 'fs-probe', 'data', 'a'), path.join(base, 'store', 'fs-probe', 'data', 'b'));   // as link() inside one root would
     const r1 = await post(9626, KEY, '/restart-module', {name: 'fs-probe'});
     assert.strictEqual(r1.status, 200, JSON.stringify(r1.body));
-    await waitFor(async () => (await mcpCall(9626, KEY, tool('read'), {path: '/data/b'})).structuredContent.output.content === 'x', 15000, 'read after restart');
+    await waitFor(async () => toolOutput(await mcpCall(9626, KEY, tool('read'), {path: '/data/b'})).content === 'x', 15000, 'read after restart');
   });
 
   it('enforce: a planted absolute symlink or hard link under the data directory refuses the load, naming it', async () => {
@@ -150,7 +151,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     fs.symlinkSync('/nonexistent-ch-target', path.join(store, 'fs-probe', 'data', 'dest'));
     server = await start('audit');
     const w = await mcpCall(9626, KEY, tool('write'), {path: '/data/x', content: 'y'});
-    assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(w), {ok: true, code: null});
     assert.ok(server.output.includes('/data/dest'), server.output.slice(-2000));
   });
 
@@ -160,7 +161,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     fs.writeFileSync(path.join(store, 'fs-probe', 'tmp', 'old'), 'stale');
     server = await start('off');
     const r = await mcpCall(9626, KEY, tool('read'), {path: '/tmp/old'});
-    assert.deepStrictEqual(r.structuredContent.output, {content: null, code: 'ENOENT'});
+    assert.deepStrictEqual(toolOutput(r), {content: null, code: 'ENOENT'});
   });
 
   it('enforce: the policy\'s diskMb reaches the broker in megabytes (ENOSPC past 1 MB)', async () => {
@@ -169,9 +170,9 @@ describe('fs-broker 09: module workers use the broker', function() {
     server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'enforce', '--modulePolicy', policy,
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', PROBE]);
     const small = await mcpCall(9626, KEY, tool('write'), {path: '/data/small', content: '0123456789', repeat: 50000});   // 500 KB
-    assert.deepStrictEqual(small.structuredContent.output, {ok: true, code: null}, JSON.stringify(small));
+    assert.deepStrictEqual(toolOutput(small), {ok: true, code: null}, JSON.stringify(small));
     const big = await mcpCall(9626, KEY, tool('write'), {path: '/data/big', content: '0123456789', repeat: 200000});      // 2 MB
-    assert.deepStrictEqual(big.structuredContent.output, {ok: false, code: 'ENOSPC'}, JSON.stringify(big));
+    assert.deepStrictEqual(toolOutput(big), {ok: false, code: 'ENOSPC'}, JSON.stringify(big));
   });
 
   it('enforce: the policy\'s disk limits reach the broker (ENOSPC past diskEntries)', async () => {
@@ -181,10 +182,10 @@ describe('fs-broker 09: module workers use the broker', function() {
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', PROBE]);
     for (const f of ['a', 'b']) {
       const w = await mcpCall(9626, KEY, tool('write'), {path: `/data/${f}`, content: f});
-      assert.deepStrictEqual(w.structuredContent.output, {ok: true, code: null}, JSON.stringify(w));
+      assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, JSON.stringify(w));
     }
     const third = await mcpCall(9626, KEY, tool('write'), {path: '/data/c', content: 'c'});
-    assert.deepStrictEqual(third.structuredContent.output, {ok: false, code: 'ENOSPC'}, JSON.stringify(third));
+    assert.deepStrictEqual(toolOutput(third), {ok: false, code: 'ENOSPC'}, JSON.stringify(third));
   });
 
   it('logs the broker\'s capacity at startup in worker mode', async () => {

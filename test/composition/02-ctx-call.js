@@ -83,6 +83,7 @@ const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 // Needed before requiring anything that reaches lib/countinghouse-util.js
 // (handler-ctx's buildCtx does, lazily, on first call): without this,
@@ -164,7 +165,7 @@ describe('ctx.call: success and refusal, against the real spawned server', funct
     callTool('compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, false, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body));
+      assert.strictEqual(toolOutput(body.result).n, 42, JSON.stringify(body));
       done();
     });
   });
@@ -179,7 +180,7 @@ describe('ctx.call: success and refusal, against the real spawned server', funct
       // reject with a DeviceError, and a code survives the worker hop and
       // the gateway untouched. test/composition/09-refusal-codes.js owns
       // the full set; this file keeps its own assertion honest.
-      assert.strictEqual(body.result.structuredContent.code, 'CTX_CALL_UNDECLARED',
+      assert.strictEqual(toolErrorCode(body.result), 'CTX_CALL_UNDECLARED',
         JSON.stringify(body));
       done();
     });
@@ -319,7 +320,7 @@ describe('ctx.call: success in single-thread mode (no --workerThread)', function
     callToolSingleThread('compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, false, JSON.stringify(body));
-      assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body));
+      assert.strictEqual(toolOutput(body.result).n, 42, JSON.stringify(body));
       done();
     });
   });

@@ -6,6 +6,7 @@ const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-ser
 const {mkdtemp} = require('../helpers/test-tmp');
 // Required where used, so the server tests run before identity.js exists.
 const identity = () => require('../../lib/fs-broker/identity');
+const {toolOutput} = require('../helpers/tool-result');
 
 describe('fs-broker 12: virtual identity', function() {
   this.timeout(120000);
@@ -23,7 +24,7 @@ describe('fs-broker 12: virtual identity', function() {
     it(`${mode}: a module sees /app, cwd /app, tmpdir /tmp, and reads its own files via __dirname`, async () => {
       server = await start(mode, 'fs-probe');
       const res = await mcpCall(9630, 'k', 'fs_probe_probeservice_where', {});
-      const r = res.structuredContent != null ? res.structuredContent.output : res;
+      const r = toolOutput(res);
       assert.strictEqual(r.dirname, '/app/handlers/probeService', JSON.stringify(res));
       assert.strictEqual(r.filename, '/app/handlers/probeService/where.js');
       assert.strictEqual(r.cwd, '/app');
@@ -38,7 +39,7 @@ describe('fs-broker 12: virtual identity', function() {
   it('an ES-module package loads through virtual URLs; a dependency without "type" stays CommonJS', async () => {
     server = await start('enforce', 'esm-probe');
     const res = await mcpCall(9630, 'k', 'esm_probe_probeservice_where', {});
-    const r = res.structuredContent != null ? res.structuredContent.output : res;
+    const r = toolOutput(res);
     assert.strictEqual(r.url, 'file:///app/handlers/probeService/where.js', JSON.stringify(res));
     assert.strictEqual(r.dirname, '/app/handlers/probeService');
     assert.strictEqual(r.helper, 'helped');
@@ -83,7 +84,7 @@ describe('fs-broker 12: virtual identity', function() {
   it('enforce: module code cannot register a loader hook after set-options', async () => {
     server = await start('enforce', 'route-probe');
     const res = await mcpCall(9630, 'k', 'route_probe_probeservice_attempt', {what: 'registerHooks', target: '/x'});
-    const r = res.structuredContent != null ? res.structuredContent.output : res;
+    const r = toolOutput(res);
     assert.deepStrictEqual(r, {outcome: 'refused', code: 'ERR_ACCESS_DENIED'}, JSON.stringify(res));
   });
 
@@ -101,7 +102,7 @@ describe('fs-broker 12: virtual identity', function() {
       try {
         server = await start('enforce', 'route-probe');
         const res = await mcpCall(9630, 'k', 'route_probe_probeservice_attempt', {what: what, target: t.file});
-        const r = res.structuredContent != null ? res.structuredContent.output : res;
+        const r = toolOutput(res);
         assert.strictEqual(r.outcome, 'refused', JSON.stringify(res));
       } finally {
         fs.rmSync(t.cleanup, {recursive: true, force: true});

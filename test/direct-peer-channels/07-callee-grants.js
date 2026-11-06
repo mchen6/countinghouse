@@ -9,6 +9,7 @@ const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
+const {toolOutput} = require('../helpers/tool-result');
 
 describe('direct peer channels 07: the callee serves only granted devices', function() {
   this.timeout(120000);
@@ -31,7 +32,7 @@ describe('direct peer channels 07: the callee serves only granted devices', func
 
   it('a granted device is served; another device on the same worker is refused', async () => {
     const r = await mcpCall(9668, 'forger', 'peer_forge_forgeservice_forge', {appKey: 'forger', granted: dev1, other: dev2});
-    const out = r.structuredContent != null ? r.structuredContent.output : r;
+    const out = toolOutput(r);
     assert.ok(/^ok: .*dynamic-device-1/.test(String(out.granted)), JSON.stringify(r) + server.output.slice(-1500));
     assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));
   });
@@ -40,7 +41,7 @@ describe('direct peer channels 07: the callee serves only granted devices', func
   // grant on the open channel reaches the callee before the caller uses it.
   it('a device granted later on the open channel is served', async () => {
     const r = await mcpCall(9668, 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev2, other: dev1});
-    const out = r.structuredContent != null ? r.structuredContent.output : r;
+    const out = toolOutput(r);
     assert.ok(/^ok: .*dynamic-device-2/.test(String(out.granted)), JSON.stringify(r));
     assert.ok(/^ok: .*dynamic-device-1/.test(String(out.other)), JSON.stringify(out));
   });

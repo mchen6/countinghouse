@@ -18,6 +18,7 @@ const fs     = require('fs');
 const http   = require('http');
 const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const PORT = 9584;
 const LOG  = `/tmp/countinghouse-test-handler-map-${process.pid}.log`;
@@ -99,8 +100,8 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
       // caller is asserted here too: the handler read it off ctx, so this
       // doubles as proof that ctx reaches a device.js-exported handler.
-      assert.deepStrictEqual(res.result.structuredContent,
-        {output: {text: 'hello world', caller: 'aabbcc'}});
+      assert.deepStrictEqual(toolOutput(res.result),
+        {text: 'hello world', caller: 'aabbcc'});
       return done();
     });
   });
@@ -110,8 +111,8 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       name: 'handler_map_convention_greetservice_hello', arguments: {name: 'convention'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(res.result.structuredContent,
-        {output: {text: 'hello convention', caller: 'aabbcc'}});
+      assert.deepStrictEqual(toolOutput(res.result),
+        {text: 'hello convention', caller: 'aabbcc'});
       return done();
     });
   });
@@ -121,7 +122,7 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       name: 'handler_map_module_greetservice_hello', arguments: {}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, true);
-      assert.strictEqual(res.result.structuredContent.code, 'INPUT_DATA_VALIDATION_FAIL');
+      assert.strictEqual(toolErrorCode(res.result), 'INPUT_DATA_VALIDATION_FAIL');
       return done();
     });
   });

@@ -136,16 +136,14 @@ curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
   "result": {
     "isError": false,
     "content": [
-      {"type": "text", "text": "{\"output\":{\"finalText\":\"HELLO FROM THE COMPOSITE DEMO\",\"bill\":[...]}}"}
+      {"type": "text", "text": "{\"finalText\":\"HELLO FROM THE COMPOSITE DEMO\",\"bill\":[...]}"}
     ],
     "structuredContent": {
-      "output": {
-        "finalText": "HELLO FROM THE COMPOSITE DEMO",
-        "bill": [
-          {"hop": 1, "tool": "transform-demo/uppercase", "charged": 1, "balance": -1},
-          {"hop": 2, "tool": "echo-device-module/echo", "charged": 1, "balance": -2}
-        ]
-      }
+      "finalText": "HELLO FROM THE COMPOSITE DEMO",
+      "bill": [
+        {"hop": 1, "tool": "transform-demo/uppercase", "charged": 1, "balance": -1},
+        {"hop": 2, "tool": "echo-device-module/echo", "charged": 1, "balance": -2}
+      ]
     }
   }
 }
@@ -154,8 +152,12 @@ curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
 That is the shape MCP's `tools/call` wraps every response in —
 `jsonrpc`/`id`/`result` are the JSON-RPC 2.0 envelope, `content` is the same
 payload serialized as text (for clients that only read that), and
-`structuredContent.output` is the actual return value, worth parsing directly
-rather than re-parsing `content[0].text`. `finalText` is `transform-demo`
+`structuredContent` is the return value itself, conforming to the tool's
+advertised `outputSchema`, worth reading directly rather than re-parsing
+`content[0].text`. (The module returned `{output: …}`; ctx.call and HTTP
+`invoke-action` keep that wrapper, MCP does not. A tool that declares no
+output schema returns text only. Before 8.0.0, MCP results kept the wrapper
+too, as `structuredContent.output`.) `finalText` is `transform-demo`
 uppercasing the input, then `echo-device-module` echoing that result back —
 two independent modules, called one after another entirely inside the server
 process, with neither intermediate result ever entering the MCP client's

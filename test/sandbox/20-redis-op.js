@@ -6,6 +6,7 @@
 const assert = require('assert');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {toolOutput} = require('../helpers/tool-result');
 
 describe('sandbox 20: a forged rediscommand op', function() {
   this.timeout(120000);
@@ -19,7 +20,7 @@ describe('sandbox 20: a forged rediscommand op', function() {
   ['constructor', '__proto__', 'toString', '__defineGetter__', 'flushall'].forEach((op) => {
     it(`'${op}' is refused, and Redis still works afterwards`, async () => {
       const r = await mcpCall(9664, 'k', 'redis_forge_forgeservice_forge', {op: op});
-      const out = r.structuredContent != null ? r.structuredContent.output : r;
+      const out = toolOutput(r);
       assert.ok(/^error: .*not a supported redis command/i.test(String(out.forged)), JSON.stringify(out) + server.output.slice(-1500));
       assert.strictEqual(out.after, 'still works', JSON.stringify(out));
     });
@@ -27,7 +28,7 @@ describe('sandbox 20: a forged rediscommand op', function() {
 
   it('a supported command still works through the same message', async () => {
     const r = await mcpCall(9664, 'k', 'redis_forge_forgeservice_forge', {op: 'get'});
-    const out = r.structuredContent != null ? r.structuredContent.output : r;
+    const out = toolOutput(r);
     assert.ok(/^ok: /.test(String(out.forged)), JSON.stringify(out));
     assert.strictEqual(out.after, 'still works');
   });

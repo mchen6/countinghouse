@@ -2,6 +2,7 @@ const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {toolErrorCode} = require('../helpers/tool-result');
 
 // Covers audit leftover #6 (7.0.0 / A1): the authenticated *read* paths had
 // no rate limiter at all. An authenticated caller could poll GET /balance,
@@ -151,8 +152,8 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
         const denied = responses.filter((r) => {
           const result = (r.res != null) ? r.res.body.result : null;
           return result != null && result.isError === true &&
-                 result.structuredContent != null &&
-                 result.structuredContent.code === 'RATE_LIMIT_EXCEEDED';
+                 result.structuredContent === undefined &&
+                 toolErrorCode(result) === 'RATE_LIMIT_EXCEEDED';
         });
         if (denied.length === 0) {
           return done(new Error(`no check_balance call in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body))}`));

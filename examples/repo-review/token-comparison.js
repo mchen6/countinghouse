@@ -190,7 +190,7 @@ function callTool(name, args) {
     if (result == null) throw new Error(`${name}: no result in response`);
     if (result.isError === true) throw new Error(`${name}: ${JSON.stringify(result).slice(0, 500)}`);
     return {
-      output:        result.structuredContent.output,
+      output:        result.structuredContent,
       responseBytes: res.responseBytes,
       requestBytes:  res.requestBytes
     };

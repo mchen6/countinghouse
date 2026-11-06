@@ -40,6 +40,7 @@ const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
+const {toolErrorCode} = require('../helpers/tool-result');
 
 const PORT = 9557;
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
@@ -155,7 +156,7 @@ describe('verifyComposition: refusal at call time, against the real spawned serv
       assert.strictEqual(body.result.isError, true, JSON.stringify(body));
       // Typed since ctx.call's guards became DeviceErrors: the code, not
       // just isError, is now the observable shape (09-refusal-codes.js).
-      assert.strictEqual(body.result.structuredContent.code, 'CTX_CALL_UNDECLARED', JSON.stringify(body));
+      assert.strictEqual(toolErrorCode(body.result), 'CTX_CALL_UNDECLARED', JSON.stringify(body));
       done();
     });
   });

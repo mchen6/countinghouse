@@ -14,6 +14,7 @@ const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 
 const handlerCtx = require('../../lib/handler-ctx');
+const {toolOutput} = require('../helpers/tool-result');
 
 const PORT = 9590;
 
@@ -90,8 +91,8 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
       name: 'handler_map_module_greetservice_hello', arguments: {name: 'w'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(res.result.structuredContent,
-        {output: {text: 'hello w', caller: 'aabbcc'}});
+      assert.deepStrictEqual(toolOutput(res.result),
+        {text: 'hello w', caller: 'aabbcc'});
       return done();
     });
   });
@@ -101,8 +102,8 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
       name: 'handler_map_convention_greetservice_hello', arguments: {name: 'c'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(res.result.structuredContent,
-        {output: {text: 'hello c', caller: 'aabbcc'}});
+      assert.deepStrictEqual(toolOutput(res.result),
+        {text: 'hello c', caller: 'aabbcc'});
       return done();
     });
   });

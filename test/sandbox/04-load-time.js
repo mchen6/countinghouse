@@ -5,6 +5,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const KEY    = 'aabbcc';
 const PROBE  = path.join(ROOT, 'test', 'fixtures', 'sandbox-probe');
@@ -37,7 +38,7 @@ describe('sandbox 04: load-time decisions', function() {
     server = await startServer(9607, ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', 'enforce']);
     const r = await load(9607, NATIVE, 'sandbox-native');
     assert.strictEqual(r.isError, true, JSON.stringify(r));
-    assert.strictEqual(r.structuredContent.code, 'MODULE_SANDBOX_REFUSED');
+    assert.strictEqual(toolErrorCode(r), 'MODULE_SANDBOX_REFUSED');
     assert.ok(server.output.includes('fake.node'), server.output.slice(-2000));
   });
 
@@ -66,7 +67,7 @@ describe('sandbox 04: load-time decisions', function() {
     assert.strictEqual(r.structuredContent.loaded, true, JSON.stringify(r));
     assert.ok(server.output.includes('module sandbox: sandbox-probe effective permissions'), server.output.slice(-2000));
     const env = await mcpCall(9607, KEY, 'sandbox_probe_probeservice_env', {});
-    assert.deepStrictEqual(env.structuredContent.output.env, {PROBE_FROM_POLICY: 'p', PROBE_FROM_SERVER: 's'});
+    assert.deepStrictEqual(toolOutput(env).env, {PROBE_FROM_POLICY: 'p', PROBE_FROM_SERVER: 's'});
   });
 
   it('re-reads the policy file when the module restarts', async () => {
@@ -78,7 +79,7 @@ describe('sandbox 04: load-time decisions', function() {
     await require('../helpers/sandbox-server').post(9607, KEY, '/restart-module', {path: PROBE, name: 'sandbox-probe', version: '1.0.0'});
     const env = await require('../helpers/sandbox-server').waitFor(async () => {
       const r = await mcpCall(9607, KEY, 'sandbox_probe_probeservice_env', {});
-      return r.isError === false && r.structuredContent.output.env.PROBE_FROM_POLICY === 'second' ? r : null;
+      return r.isError === false && toolOutput(r).env.PROBE_FROM_POLICY === 'second' ? r : null;
     }, 20000, 'env after restart');
     assert.ok(env);
   });
@@ -89,6 +90,6 @@ describe('sandbox 04: load-time decisions', function() {
       {env: {PROBE_FROM_SERVER: 's'}});
     await loaded(9607, PROBE, 'sandbox-probe', server);
     const env = await mcpCall(9607, KEY, 'sandbox_probe_probeservice_env', {});
-    assert.deepStrictEqual(env.structuredContent.output.env, {});
+    assert.deepStrictEqual(toolOutput(env).env, {});
   });
 });

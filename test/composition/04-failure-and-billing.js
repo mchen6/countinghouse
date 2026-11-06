@@ -72,6 +72,7 @@ const assert  = require('assert');
 const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const ROOT     = path.join(__dirname, '..', '..');
@@ -202,9 +203,9 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
     callTool(getBase(), 'compose_caller_callerservice_viaboom', {}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true, `expected an MCP error, got ${JSON.stringify(body)}`);
-      console.log(`    [observed] viaBoom structuredContent: ${JSON.stringify(body.result.structuredContent)}, text: ${JSON.stringify(body.result.content)}`);
-      assert.strictEqual(body.result.structuredContent && body.result.structuredContent.code, 'DEVICE_INVOKE_EXCEPTION',
-        `expected structuredContent.code, got ${JSON.stringify(body)}`);
+      console.log(`    [observed] viaBoom _meta: ${JSON.stringify(body.result._meta)}, text: ${JSON.stringify(body.result.content)}`);
+      assert.strictEqual(toolErrorCode(body.result), 'DEVICE_INVOKE_EXCEPTION',
+        `expected _meta['countinghouse/code'], got ${JSON.stringify(body)}`);
 
       // Give the worker's console.log a moment to cross the thread
       // boundary and land in the piped stdout buffer before reading it.
@@ -268,7 +269,7 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
       callTool(getBase(), 'compose_caller_callerservice_viacall', {n: 21}, (err, body) => {
         assert.ifError(err);
         assert.strictEqual(body.result.isError, false, `expected success, got ${JSON.stringify(body)}`);
-        assert.strictEqual(body.result.structuredContent.output.n, 42, JSON.stringify(body));
+        assert.strictEqual(toolOutput(body.result).n, 42, JSON.stringify(body));
         // A successful composed call fires TWO independently-timed charges,
         // not one: the hop charge (lib/device-manager.js:668's
         // CHUtil.ci.recordCall) GATES the reply back to the composing

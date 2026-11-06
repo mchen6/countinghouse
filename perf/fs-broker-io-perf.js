@@ -24,7 +24,7 @@ async function timeOne(tool, rounds) {
   const r = await mcpCall(PORT, KEY, tool, {rounds: rounds || ROUNDS});
   const wall = Number(process.hrtime.bigint() - started) / 1e6;
   if (r.structuredContent == null) throw new Error(JSON.stringify(r));
-  return {inner: r.structuredContent.output.ms, wall: wall};
+  return {inner: r.structuredContent.ms, wall: wall};
 }
 
 async function single(label, flags, base) {

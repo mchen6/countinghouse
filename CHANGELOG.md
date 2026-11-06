@@ -103,6 +103,28 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   refused, which stops DNS rebinding. CORS headers are sent only for
   `--allowedOrigins`; every origin used to be allowed.
 
+### Changed — MCP results conform to their advertised schemas (breaking for MCP clients)
+
+- **`structuredContent` is the tool's output itself.** It used to be the
+  handler's `{output: …}`, one level above the advertised `outputSchema`, so
+  the official MCP SDK client rejected every module tool with `-32602
+  Structured content does not match the tool's output schema` (Claude Code
+  does not validate, which is why it never showed). The text block is the
+  same object serialized. tasks/result follows the module as loaded when it
+  is read, and goes text only for a stored result that no longer conforms.
+- **Tools without a declared output schema advertise none** and return text
+  only. The bundled modules all declare one; their `tools/list` is
+  unchanged.
+- **Error codes are in `_meta["countinghouse/code"]`**, and error results
+  carry no `structuredContent`, because clients validate it against the
+  output schema even on errors.
+- **`countinghouse_call_tool` advertises no output schema.**
+- ctx.call and HTTP `invoke-action` keep `{output: …}`.
+- New contract test `test/mcp-contract/03-sdk-client-conformance.js` drives
+  `@modelcontextprotocol/sdk` 1.32.2 (exact-pinned devDependency) against
+  every bundled and example module; `04-output-shape-after-reload.js` covers
+  a reload that changes a schema.
+
 ### Changed — 8.0.0 platform
 
 - **Node 24.15 or later is required.** Startup exits with status 2 on an

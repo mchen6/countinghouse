@@ -6,11 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {toolOutput} = require('../helpers/tool-result');
 
 const PORT = 9636;
 const KEY = 'k';
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
-const out = (r) => (r.structuredContent != null ? r.structuredContent.output : r);
+const out = (r) => (toolOutput(r));
 
 describe('single-thread 01: data directories and the fs/os facade', function() {
   this.timeout(120000);

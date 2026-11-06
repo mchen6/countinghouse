@@ -2,6 +2,7 @@ const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {toolOutput} = require('../helpers/tool-result');
 
 // Standalone-only, non---debug, multi-tenant auth.json.
 //
@@ -94,7 +95,7 @@ describe('auth 12: composing modules need their internal identity granted (all o
         if (result == null || result.isError === true) {
           return done(new Error(`composite-demo still failing with the documented grants applied: ${JSON.stringify(res.body)}`));
         }
-        const output = result.structuredContent.output;
+        const output = toolOutput(result);
         if (output.finalText !== 'HELLO FROM THE COMPOSITE DEMO') {
           return done(new Error(`unexpected finalText: ${JSON.stringify(output)}`));
         }

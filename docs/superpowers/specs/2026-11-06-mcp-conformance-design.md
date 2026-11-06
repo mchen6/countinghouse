@@ -107,9 +107,20 @@ Platform tools (`countinghouse_*`) already return bare results. They go
 through the same success path unchanged, and the contract test (below)
 checks that each conforms to its advertised schema.
 
-**Error results** keep today's shape: `isError: true`, the message in the
-text block, and `structuredContent: {code}` when there is a code. (My call;
-MCP does not validate error results against `outputSchema`.)
+**Error results** (amended 2026-11-06, the maintainer's decision during Task
+1): `isError: true`, the message in the text block, the code, when there is
+one, in `_meta["countinghouse/code"]`, and no `structuredContent`. The draft
+kept `structuredContent: {code}`, on the belief that MCP clients don't
+validate error results. The contract test's RED run showed otherwise: SDK
+1.32.2's `Client.callTool` validates `structuredContent` whenever it is
+present, error or not (`dist/cjs/client/index.js:496-510`), so `{code}` is
+rejected with `-32602` on any tool whose schema doesn't admit it.
+
+`countinghouse/code` follows MCP's `_meta` key rules: an optional prefix
+ending in `/`, where prefixes starting with `mcp` or `modelcontextprotocol`
+are reserved. The same key is used on every error path: synchronous calls,
+failed `tasks/result`, `countinghouse_call_tool`, platform tools, and the
+rate-limit and auth refusals.
 
 **tools/list.** For a module tool, `outputSchema` is advertised only when the
 action declares an output schema pointer that resolves to a schema of type
@@ -117,8 +128,14 @@ action declares an output schema pointer that resolves to a schema of type
 with today's default `{type: 'object', properties: {}}` (`DEFAULT_SCHEMA`,
 `lib/mcp/tool-registry.js:290`). `inputSchema` keeps the default when none is
 declared, because MCP requires an `inputSchema`. The maintainer decided this
-and approved regenerating the golden file: 17 of the 22 tools in
-`test/mcp-contract/tools-list.golden.json` lose their `outputSchema`.
+and approved regenerating the golden file. Amended 2026-11-06: the draft said
+17 of the 22 tools in `test/mcp-contract/tools-list.golden.json` would lose
+their `outputSchema`, but that was a misreading. Those echo actions declare
+`{"type": "object", "properties": {}}` in their own `schema.json`, which only
+looks like the default. So the bundled modules don't change shape on
+`tools/list`, and the golden file changes only for check_balance. "No
+declared schema" applies to modules with no output pointer (the
+`no_schema_*` fixtures and third-party modules).
 
 **One lookup for every path.** Inside `lib/`, only `tool-registry.js`'s
 `resolveSchemas` / `schemaPathFor` compute `outputSchema`. It is async and
@@ -211,7 +228,11 @@ These changes alter what MCP clients see:
 
 - `structuredContent.output` becomes `structuredContent`;
 - the text block loses its `{"output": …}` wrapper;
-- 17 tools lose `outputSchema`;
+- a tool whose module declares no output schema advertises none (none of the
+  bundled ones);
+- error codes move from `structuredContent.code` to
+  `_meta["countinghouse/code"]`, and errors carry no `structuredContent`;
+- `countinghouse_call_tool` advertises no output schema;
 - check_balance loses `apiKey` and gains `userName`.
 
 8.0.0 is unreleased, so it is recorded in:
@@ -246,13 +267,13 @@ fix (the project's working style).
   table) is left to the builder.
 - **tools/list golden** is regenerated with
   `node test/mcp-contract/capture-tools-list.js`. The diff must be exactly the
-  17 dropped default output schemas plus the check_balance schema change.
+  check_balance schema change (amended: the bundled modules don't change).
 - **`test/mcp-contract/02-approved-tool-changes.js`.** Its third test
   deep-equals every surviving tool's `outputSchema` against the 4.x snapshot,
-  so it would fail on 18 tools. `tools-list.pre-5.0.0.json` is history and is
-  NOT recaptured. Instead the test gets an `APPROVED_SCHEMA_CHANGES` table,
-  keyed by tool name, each entry with its reason and exact new value: absent
-  for the 17, the new schema for check_balance. The test asserts the delta is
+  so it would fail on check_balance. `tools-list.pre-5.0.0.json` is history
+  and is NOT recaptured. Instead the test gets an `APPROVED_SCHEMA_CHANGES`
+  table, keyed by tool name, each entry with its reason and exact new value:
+  today only check_balance's. The test asserts the delta is
   exactly that table, the same discipline as its existing
   `APPROVED_REMOVALS`.
 - **Reload.** A module whose output schema changes is reloaded and then

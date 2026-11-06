@@ -127,6 +127,26 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
 Module authors: [Files and paths](module-development.md#files-and-paths)
 says how to write a module for this.
 
+## What MCP clients will notice
+
+- **Results are the tool's output itself.** A module tool's
+  `structuredContent` used to be `{output: …}`, one level above the
+  `outputSchema` it advertised, so clients that validate results (the
+  official MCP SDK client does) rejected every module tool. It is now the
+  output itself, and `content[0].text` is the same object serialized. Read
+  `structuredContent`, not `structuredContent.output`.
+- **A tool whose module declares no output schema advertises none** and
+  returns text only: a string as-is, anything else as JSON, no output as one
+  empty text block. The bundled modules all declare one, so their
+  `tools/list` entries do not change.
+- **Error codes moved to `_meta`.** An error result is `isError: true` with
+  the message as text and the code in `_meta["countinghouse/code"]`, with no
+  `structuredContent` (clients validate it against the output schema even on
+  errors). Read the code there instead of `structuredContent.code`.
+- **`countinghouse_call_tool` no longer advertises an output schema**: its
+  result is whatever the inner tool returns.
+- ctx.call and HTTP `invoke-action` are unchanged: they keep `{output: …}`.
+
 ## What operators get
 
 - **`POST /uninstall-module {name, keepData}`** (admin key): removes a

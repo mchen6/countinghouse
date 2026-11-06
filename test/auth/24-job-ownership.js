@@ -10,6 +10,7 @@ const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
+const {toolOutput} = require('../helpers/tool-result');
 
 const DEVICE = deviceIDForName('job-snoop');
 const SERVICE = 'urn:countinghouse-test:serviceID:jobService';
@@ -54,7 +55,7 @@ describe('auth 24: a module reaches only its own jobs', function() {
     const created = await addJob('alice-key', {note: 'secret'});
     const before = await settled('alice-key', created.body.id);
     const r = await mcpCall(9669, 'bob-key', 'job_snoop_jobservice_snoop', {jobID: String(created.body.id)});
-    const out = r.structuredContent != null ? r.structuredContent.output : r;
+    const out = toolOutput(r);
     assert.ok(/^error: /.test(String(out.read)), `bob read alice's job: ${JSON.stringify(out)}`);
     assert.ok(!/alice-key/.test(JSON.stringify(r)), 'the key leaked');
     await new Promise((resolve) => setTimeout(resolve, 300));

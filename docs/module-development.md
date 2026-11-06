@@ -446,7 +446,10 @@ Load time is still where you want to find a broken chain, because only the
 load-time error can name the module, the address and the file to fix. But a
 runtime refusal is no longer anonymous: **each `ctx.call` guard rejects with
 a typed code that reaches an MCP client intact.** A failed `tools/call`
-comes back `isError: true` with `structuredContent.code` set to one of:
+comes back `isError: true` with `_meta["countinghouse/code"]` set to one of
+(before 8.0.0 it was `structuredContent.code`; an error result now carries no
+`structuredContent`, because MCP clients validate it against the tool's output
+schema even on errors):
 
 | `code` | what it means |
 | --- | --- |

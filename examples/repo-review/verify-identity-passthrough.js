@@ -144,7 +144,7 @@ startServer((startErr) => {
           if (result == null) return fail('no result at all');
           if (result.isError !== false) return fail(`call errored: ${JSON.stringify(result).slice(0, 1500)}`);
 
-          const out = result.structuredContent.output;
+          const out = result.structuredContent;
           console.log(`\n[3] all ${out.bill.length} inner hops succeeded with no caller grant to the inner devices.`);
           out.bill.forEach((b) => console.log(`    hop ${b.hop} ${b.tool.padEnd(22)} charged=${b.charged} balance=${b.balance} billedTo=${b.billedTo} authorizedAs=${b.authorizedAs}`));
 

@@ -29,6 +29,7 @@ const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {toolOutput} = require('../helpers/tool-result');
 
 const PATHS = [
   {label: 'main-thread-routed',   port: 9593, flags: ' --no-directPeerChannels'},
@@ -123,8 +124,8 @@ describe(`auth 13: inner hops are authorized as the module, billed to the caller
       assert.ok(result != null, 'no result at all');
       assert.strictEqual(result.isError, false,
         `authorization must use the module identity, not the caller: ${JSON.stringify(result)}`);
-      assert.strictEqual(result.structuredContent.output.echoed, 'hi');
-      assert.strictEqual(result.structuredContent.output.billedTo, CALLER,
+      assert.strictEqual(toolOutput(result).echoed, 'hi');
+      assert.strictEqual(toolOutput(result).billedTo, CALLER,
         'ctx.caller must be the real outer caller');
       return done();
     });

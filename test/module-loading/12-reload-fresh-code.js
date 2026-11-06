@@ -17,6 +17,7 @@ const path    = require('path');
 const spawn   = require('child_process').spawn;
 const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
+const {toolOutput} = require('../helpers/tool-result');
 
 const ROOT    = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'reload-fresh-code');
@@ -78,7 +79,7 @@ function greet(port, cb) {
   mcp(port, 'tools/call', {name: TOOL, arguments: {name: 'world'}}, (err, body) => {
     if (err) return cb(err);
     assert.strictEqual(body.result.isError, false, `tool call failed: ${JSON.stringify(body.result)}`);
-    return cb(null, body.result.structuredContent.output.text);
+    return cb(null, toolOutput(body.result).text);
   });
 }
 
@@ -91,7 +92,7 @@ function expectGreeting(port, expected, done) {
   (function attempt() {
     mcp(port, 'tools/call', {name: TOOL, arguments: {name: 'world'}}, (err, body) => {
       if (err == null && body.result != null && body.result.isError === false) {
-        last = body.result.structuredContent.output.text;
+        last = toolOutput(body.result).text;
         if (last === expected) return done();
       } else {
         last = err != null ? err.message : JSON.stringify(body && (body.result || body.error));

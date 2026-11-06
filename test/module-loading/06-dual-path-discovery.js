@@ -22,6 +22,7 @@ const assert = require('assert');
 const http   = require('http');
 const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
 const PORT   = 9586;
 const DEVICE_COUNT = 3;
@@ -102,13 +103,13 @@ describe('module-loading 06: both module shapes, in one server', function() {
     call('dynamic_device_1_dynservice_hello', {}, (err, dyn) => {
       if (err) return done(err);
       assert.strictEqual(dyn.isError, false, JSON.stringify(dyn));
-      assert.deepStrictEqual(dyn.structuredContent, {output: {name: 'dynamic-device-1'}});
+      assert.deepStrictEqual(toolOutput(dyn), {name: 'dynamic-device-1'});
 
       call('handler_map_module_greetservice_hello', {name: 'x'}, (err2, hm) => {
         if (err2) return done(err2);
         assert.strictEqual(hm.isError, false, JSON.stringify(hm));
-        assert.deepStrictEqual(hm.structuredContent,
-          {output: {text: 'hello x', caller: 'aabbcc'}});
+        assert.deepStrictEqual(toolOutput(hm),
+          {text: 'hello x', caller: 'aabbcc'});
         return done();
       });
     });
@@ -124,7 +125,7 @@ describe('module-loading 06: both module shapes, in one server', function() {
         call('dynamic_device_2_dynservice_hello', {}, (err2, gone) => {
           if (err2) return done(err2);
           assert.strictEqual(gone.isError, true, 'a retired device must stop answering');
-          assert.strictEqual(gone.structuredContent.code, 'DEVICE_OFFLINE', JSON.stringify(gone));
+          assert.strictEqual(toolErrorCode(gone), 'DEVICE_OFFLINE', JSON.stringify(gone));
 
           call('dynamic_device_1_dynservice_hello', {}, (err3, alive) => {
             if (err3) return done(err3);

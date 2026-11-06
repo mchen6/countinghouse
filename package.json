@@ -86,6 +86,7 @@
     }
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "bench-rest": "^1.2.4",
     "chalk": "^2.4.2",
     "chmod": "^0.2.1",

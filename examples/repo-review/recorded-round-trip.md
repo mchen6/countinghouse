@@ -115,6 +115,10 @@ Request body: **257 bytes.**
 a string for clients that only read `content`. The `structuredContent` half,
 verbatim and complete:
 
+> Captured before 8.0.0's MCP result change: `structuredContent` no longer has
+> the `output` wrapper. Today the same response starts at `"findings"`, and
+> `content[0].text` is that object serialized.
+
 ```json
 {
   "output": {
