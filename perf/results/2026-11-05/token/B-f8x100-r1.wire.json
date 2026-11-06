@@ -1,0 +1,101 @@
+{
+  "calls": [
+    {
+      "t": 1793933872400,
+      "method": "server/discover",
+      "status": 200
+    },
+    {
+      "t": 1793933872486,
+      "method": "initialize",
+      "status": 200
+    },
+    {
+      "t": 1793933872509,
+      "method": "notifications/initialized",
+      "status": 202
+    },
+    {
+      "t": 1793933872547,
+      "method": "tools/list",
+      "status": 200
+    },
+    {
+      "t": 1793933874497,
+      "method": "tools/call",
+      "tool": "log_triage_triageservice_triage",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 13188,
+      "argBytes": 22,
+      "args": {
+        "dir": "/data/f8x100"
+      },
+      "result": {
+        "levels": {
+          "DEBUG": 130,
+          "INFO": 344,
+          "WARN": 183,
+          "ERROR": 143,
+          "unparsed": 0
+        },
+        "files": 8,
+        "clusters": [
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 44
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 42
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 36
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 32
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 30
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 29
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 25
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 24
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 22
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 17
+          }
+        ]
+      }
+    }
+  ],
+  "reachedWarnError": {}
+}

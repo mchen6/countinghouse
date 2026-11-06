@@ -1,0 +1,24 @@
+{
+  "calls": [
+    {
+      "t": 1793932110212,
+      "method": "server/discover",
+      "status": 200
+    },
+    {
+      "t": 1793932110693,
+      "method": "initialize",
+      "status": 200
+    },
+    {
+      "t": 1793932110769,
+      "method": "notifications/initialized",
+      "status": 202
+    },
+    {
+      "t": 1793932110849,
+      "method": "tools/list",
+      "status": 200
+    }
+  ]
+}

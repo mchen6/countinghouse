@@ -1,0 +1,13 @@
+{
+  "variant": "D2",
+  "selfCheck": {
+    "ok": true,
+    "found": [],
+    "interfaces": [
+      "ListInput",
+      "ReadInput",
+      "RedactInput",
+      "ClusterInput"
+    ]
+  }
+}

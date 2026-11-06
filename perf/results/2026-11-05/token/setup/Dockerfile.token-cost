@@ -1,0 +1,31 @@
+# Token-cost measurement: countinghouse + log-triage + Redis + the log fixtures,
+# all inside one container. The fixtures exist only in this image's layers
+# (/var/lib/docker, root-only on the host), generated with a random seed that
+# is never printed or written down, so the host user running claude can
+# neither read nor regenerate them.
+FROM node:24.21.0-trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends redis-server \
+ && rm -rf /var/lib/apt/lists/*
+
+# WORKDIR would create the directory as root, and COPY --chown changes only
+# what it copies, so npm ci as ch could not create node_modules.
+RUN useradd -m -s /bin/bash ch && install -d -o ch -g ch /home/ch/countinghouse
+WORKDIR /home/ch/countinghouse
+COPY --chown=ch:ch . .
+USER ch
+RUN npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
+
+# Fixtures in log-read's own data dir (the module sees it as /data/<name>).
+RUN set -e; umask 077; \
+    D=/home/ch/.countinghouse/module_data/log-read/data; mkdir -p "$D"; \
+    SEED=$(od -An -N4 -tu4 /dev/urandom | tr -d ' '); \
+    node examples/log-triage/generate-logs.js --dir "$D/f2x100" --files 2 --lines 100 --seed "$SEED" >/dev/null; \
+    node examples/log-triage/generate-logs.js --dir "$D/f8x100" --files 8 --lines 100 --seed "$SEED" >/dev/null; \
+    node examples/log-triage/generate-logs.js --dir "$D/f8x400" --files 8 --lines 400 --seed "$SEED" >/dev/null; \
+    unset SEED; \
+    chmod -R go-rwx /home/ch/.countinghouse
+
+COPY --chown=ch:ch entrypoint.token-cost.sh /home/ch/entrypoint.sh
+EXPOSE 9540
+ENTRYPOINT ["bash", "/home/ch/entrypoint.sh"]

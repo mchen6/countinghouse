@@ -1,0 +1,25 @@
+{
+  "calls": [
+    {
+      "t": 1793934937073,
+      "method": "server/discover",
+      "status": 200
+    },
+    {
+      "t": 1793934937177,
+      "method": "initialize",
+      "status": 200
+    },
+    {
+      "t": 1793934937198,
+      "method": "notifications/initialized",
+      "status": 202
+    },
+    {
+      "t": 1793934937233,
+      "method": "tools/list",
+      "status": 200
+    }
+  ],
+  "reachedWarnError": {}
+}

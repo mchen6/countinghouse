@@ -1,0 +1,422 @@
+{
+  "f2x100": {
+    "dir": "/data/f2x100",
+    "files": [
+      "app-01.log",
+      "app-02.log"
+    ],
+    "levels": {
+      "DEBUG": 36,
+      "INFO": 96,
+      "WARN": 34,
+      "ERROR": 34,
+      "unparsed": 0
+    },
+    "pii": {
+      "total": 76,
+      "email": 29,
+      "ipv4": 25,
+      "phone": 9,
+      "card": 3,
+      "bearerToken": 10
+    },
+    "clusters": [
+      {
+        "template": "upstream timeout after #ms calling inventory-service request=#",
+        "level": "ERROR",
+        "count": 10
+      },
+      {
+        "template": "slow query took #ms table=orders",
+        "level": "WARN",
+        "count": 8
+      },
+      {
+        "template": "connection pool exhausted, # requests waiting",
+        "level": "WARN",
+        "count": 7
+      },
+      {
+        "template": "database connection lost to db-#.internal retry=#",
+        "level": "ERROR",
+        "count": 7
+      },
+      {
+        "template": "rate limit near threshold for client <ipv#>",
+        "level": "WARN",
+        "count": 7
+      },
+      {
+        "template": "retrying webhook delivery attempt # to <email>",
+        "level": "WARN",
+        "count": 6
+      },
+      {
+        "template": "failed to send receipt to <email>: mailbox unavailable",
+        "level": "ERROR",
+        "count": 5
+      },
+      {
+        "template": "job # exceeded max attempts, moved to dead letter queue",
+        "level": "ERROR",
+        "count": 5
+      },
+      {
+        "template": "disk usage at #% on /var/data",
+        "level": "WARN",
+        "count": 4
+      },
+      {
+        "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+        "level": "ERROR",
+        "count": 4
+      }
+    ],
+    "allClusters": [
+      {
+        "template": "upstream timeout after #ms calling inventory-service request=#",
+        "level": "ERROR",
+        "count": 10
+      },
+      {
+        "template": "slow query took #ms table=orders",
+        "level": "WARN",
+        "count": 8
+      },
+      {
+        "template": "connection pool exhausted, # requests waiting",
+        "level": "WARN",
+        "count": 7
+      },
+      {
+        "template": "database connection lost to db-#.internal retry=#",
+        "level": "ERROR",
+        "count": 7
+      },
+      {
+        "template": "rate limit near threshold for client <ipv#>",
+        "level": "WARN",
+        "count": 7
+      },
+      {
+        "template": "retrying webhook delivery attempt # to <email>",
+        "level": "WARN",
+        "count": 6
+      },
+      {
+        "template": "failed to send receipt to <email>: mailbox unavailable",
+        "level": "ERROR",
+        "count": 5
+      },
+      {
+        "template": "job # exceeded max attempts, moved to dead letter queue",
+        "level": "ERROR",
+        "count": 5
+      },
+      {
+        "template": "disk usage at #% on /var/data",
+        "level": "WARN",
+        "count": 4
+      },
+      {
+        "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+        "level": "ERROR",
+        "count": 4
+      },
+      {
+        "template": "payment declined for card <card> order=#",
+        "level": "ERROR",
+        "count": 3
+      },
+      {
+        "template": "deprecated endpoint /api/v#/orders called by client #",
+        "level": "WARN",
+        "count": 2
+      }
+    ]
+  },
+  "f8x100": {
+    "dir": "/data/f8x100",
+    "files": [
+      "app-01.log",
+      "app-02.log",
+      "app-03.log",
+      "app-04.log",
+      "app-05.log",
+      "app-06.log",
+      "app-07.log",
+      "app-08.log"
+    ],
+    "levels": {
+      "DEBUG": 130,
+      "INFO": 344,
+      "WARN": 183,
+      "ERROR": 143,
+      "unparsed": 0
+    },
+    "pii": {
+      "total": 265,
+      "email": 100,
+      "ipv4": 87,
+      "phone": 29,
+      "card": 24,
+      "bearerToken": 25
+    },
+    "clusters": [
+      {
+        "template": "slow query took #ms table=orders",
+        "level": "WARN",
+        "count": 44
+      },
+      {
+        "template": "upstream timeout after #ms calling inventory-service request=#",
+        "level": "ERROR",
+        "count": 42
+      },
+      {
+        "template": "rate limit near threshold for client <ipv#>",
+        "level": "WARN",
+        "count": 36
+      },
+      {
+        "template": "retrying webhook delivery attempt # to <email>",
+        "level": "WARN",
+        "count": 32
+      },
+      {
+        "template": "connection pool exhausted, # requests waiting",
+        "level": "WARN",
+        "count": 30
+      },
+      {
+        "template": "database connection lost to db-#.internal retry=#",
+        "level": "ERROR",
+        "count": 29
+      },
+      {
+        "template": "disk usage at #% on /var/data",
+        "level": "WARN",
+        "count": 25
+      },
+      {
+        "template": "payment declined for card <card> order=#",
+        "level": "ERROR",
+        "count": 24
+      },
+      {
+        "template": "job # exceeded max attempts, moved to dead letter queue",
+        "level": "ERROR",
+        "count": 22
+      },
+      {
+        "template": "failed to send receipt to <email>: mailbox unavailable",
+        "level": "ERROR",
+        "count": 17
+      }
+    ],
+    "allClusters": [
+      {
+        "template": "slow query took #ms table=orders",
+        "level": "WARN",
+        "count": 44
+      },
+      {
+        "template": "upstream timeout after #ms calling inventory-service request=#",
+        "level": "ERROR",
+        "count": 42
+      },
+      {
+        "template": "rate limit near threshold for client <ipv#>",
+        "level": "WARN",
+        "count": 36
+      },
+      {
+        "template": "retrying webhook delivery attempt # to <email>",
+        "level": "WARN",
+        "count": 32
+      },
+      {
+        "template": "connection pool exhausted, # requests waiting",
+        "level": "WARN",
+        "count": 30
+      },
+      {
+        "template": "database connection lost to db-#.internal retry=#",
+        "level": "ERROR",
+        "count": 29
+      },
+      {
+        "template": "disk usage at #% on /var/data",
+        "level": "WARN",
+        "count": 25
+      },
+      {
+        "template": "payment declined for card <card> order=#",
+        "level": "ERROR",
+        "count": 24
+      },
+      {
+        "template": "job # exceeded max attempts, moved to dead letter queue",
+        "level": "ERROR",
+        "count": 22
+      },
+      {
+        "template": "failed to send receipt to <email>: mailbox unavailable",
+        "level": "ERROR",
+        "count": 17
+      },
+      {
+        "template": "deprecated endpoint /api/v#/orders called by client #",
+        "level": "WARN",
+        "count": 16
+      },
+      {
+        "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+        "level": "ERROR",
+        "count": 9
+      }
+    ]
+  },
+  "f8x400": {
+    "dir": "/data/f8x400",
+    "files": [
+      "app-01.log",
+      "app-02.log",
+      "app-03.log",
+      "app-04.log",
+      "app-05.log",
+      "app-06.log",
+      "app-07.log",
+      "app-08.log"
+    ],
+    "levels": {
+      "DEBUG": 578,
+      "INFO": 1394,
+      "WARN": 669,
+      "ERROR": 559,
+      "unparsed": 0
+    },
+    "pii": {
+      "total": 1067,
+      "email": 396,
+      "ipv4": 362,
+      "phone": 112,
+      "card": 95,
+      "bearerToken": 102
+    },
+    "clusters": [
+      {
+        "template": "slow query took #ms table=orders",
+        "level": "WARN",
+        "count": 157
+      },
+      {
+        "template": "upstream timeout after #ms calling inventory-service request=#",
+        "level": "ERROR",
+        "count": 144
+      },
+      {
+        "template": "rate limit near threshold for client <ipv#>",
+        "level": "WARN",
+        "count": 138
+      },
+      {
+        "template": "database connection lost to db-#.internal retry=#",
+        "level": "ERROR",
+        "count": 116
+      },
+      {
+        "template": "disk usage at #% on /var/data",
+        "level": "WARN",
+        "count": 114
+      },
+      {
+        "template": "connection pool exhausted, # requests waiting",
+        "level": "WARN",
+        "count": 100
+      },
+      {
+        "template": "retrying webhook delivery attempt # to <email>",
+        "level": "WARN",
+        "count": 99
+      },
+      {
+        "template": "payment declined for card <card> order=#",
+        "level": "ERROR",
+        "count": 95
+      },
+      {
+        "template": "job # exceeded max attempts, moved to dead letter queue",
+        "level": "ERROR",
+        "count": 76
+      },
+      {
+        "template": "failed to send receipt to <email>: mailbox unavailable",
+        "level": "ERROR",
+        "count": 73
+      }
+    ],
+    "allClusters": [
+      {
+        "template": "slow query took #ms table=orders",
+        "level": "WARN",
+        "count": 157
+      },
+      {
+        "template": "upstream timeout after #ms calling inventory-service request=#",
+        "level": "ERROR",
+        "count": 144
+      },
+      {
+        "template": "rate limit near threshold for client <ipv#>",
+        "level": "WARN",
+        "count": 138
+      },
+      {
+        "template": "database connection lost to db-#.internal retry=#",
+        "level": "ERROR",
+        "count": 116
+      },
+      {
+        "template": "disk usage at #% on /var/data",
+        "level": "WARN",
+        "count": 114
+      },
+      {
+        "template": "connection pool exhausted, # requests waiting",
+        "level": "WARN",
+        "count": 100
+      },
+      {
+        "template": "retrying webhook delivery attempt # to <email>",
+        "level": "WARN",
+        "count": 99
+      },
+      {
+        "template": "payment declined for card <card> order=#",
+        "level": "ERROR",
+        "count": 95
+      },
+      {
+        "template": "job # exceeded max attempts, moved to dead letter queue",
+        "level": "ERROR",
+        "count": 76
+      },
+      {
+        "template": "failed to send receipt to <email>: mailbox unavailable",
+        "level": "ERROR",
+        "count": 73
+      },
+      {
+        "template": "deprecated endpoint /api/v#/orders called by client #",
+        "level": "WARN",
+        "count": 61
+      },
+      {
+        "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+        "level": "ERROR",
+        "count": 55
+      }
+    ]
+  }
+}

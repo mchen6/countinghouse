@@ -1,0 +1,21 @@
+{
+  "variant": "D1",
+  "selfCheck": {
+    "ok": true,
+    "found": [],
+    "interfaces": [
+      "ListInput",
+      "ListOutputFile",
+      "ListOutput",
+      "ReadInput",
+      "ReadOutput",
+      "RedactInput",
+      "RedactOutputCounts",
+      "RedactOutput",
+      "ClusterInput",
+      "ClusterOutputByLevel",
+      "ClusterOutputCluster",
+      "ClusterOutput"
+    ]
+  }
+}

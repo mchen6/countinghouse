@@ -1,0 +1,1054 @@
+{
+  "calls": [
+    {
+      "t": 1793935229419,
+      "method": "server/discover",
+      "status": 200
+    },
+    {
+      "t": 1793935229513,
+      "method": "initialize",
+      "status": 200
+    },
+    {
+      "t": 1793935229531,
+      "method": "notifications/initialized",
+      "status": 202
+    },
+    {
+      "t": 1793935229577,
+      "method": "tools/list",
+      "status": 200
+    },
+    {
+      "t": 1793935232021,
+      "method": "tools/call",
+      "tool": "log_read_readservice_list",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 828,
+      "argBytes": 22,
+      "dir": "/data/f8x400"
+    },
+    {
+      "t": 1793935233801,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71602,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-01.log",
+      "lines": 400,
+      "outHash": "0f976480915909b0",
+      "warnErrorLines": 159
+    },
+    {
+      "t": 1793935234260,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71178,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-02.log",
+      "lines": 400,
+      "outHash": "4dfaa2a4feedfc5d",
+      "warnErrorLines": 167
+    },
+    {
+      "t": 1793935234575,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71936,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-03.log",
+      "lines": 400,
+      "outHash": "04f84b0476c756d2",
+      "warnErrorLines": 161
+    },
+    {
+      "t": 1793935235008,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71036,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-04.log",
+      "lines": 400,
+      "outHash": "54fb3682baa5c2c6",
+      "warnErrorLines": 151
+    },
+    {
+      "t": 1793935235392,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71002,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-05.log",
+      "lines": 400,
+      "outHash": "ecaff0f2b2754c63",
+      "warnErrorLines": 155
+    },
+    {
+      "t": 1793935235709,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 69426,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-06.log",
+      "lines": 400,
+      "outHash": "34f5cb101f689f83",
+      "warnErrorLines": 139
+    },
+    {
+      "t": 1793935235957,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 70912,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-07.log",
+      "lines": 400,
+      "outHash": "afb1b94b937be61d",
+      "warnErrorLines": 144
+    },
+    {
+      "t": 1793935236211,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 70507,
+      "argBytes": 42,
+      "dir": "/data/f8x400",
+      "file": "app-08.log",
+      "lines": 400,
+      "outHash": "8474fca86fcc7089",
+      "warnErrorLines": 152
+    },
+    {
+      "t": 1793935283259,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 28537,
+      "argBytes": 14600,
+      "lines": 159,
+      "inHash": "d2340f77616bf78b",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-01.log": 159
+      },
+      "outHash": "b9e826d71019ee0f"
+    },
+    {
+      "t": 1793935331122,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6259,
+      "argBytes": 13984,
+      "lines": 159,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-01.log": 159
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 84,
+          "ERROR": 75
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 23
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 21
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 17
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 16
+          },
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 16
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 15
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 11
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 9
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 9
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 9
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 7
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 6
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935370724,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 29225,
+      "argBytes": 14893,
+      "lines": 167,
+      "inHash": "898b96aa24a8634d",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-02.log": 167
+      },
+      "outHash": "546453a798f54c28"
+    },
+    {
+      "t": 1793935404802,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6263,
+      "argBytes": 14320,
+      "lines": 167,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-02.log": 167
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 99,
+          "ERROR": 68
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 28
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 21
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 19
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 16
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 15
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 13
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 13
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 12
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 10
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 9
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 8
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935440469,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 28923,
+      "argBytes": 14665,
+      "lines": 161,
+      "inHash": "e5cc482e61fc3324",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-03.log": 161
+      },
+      "outHash": "93601a37775a7975"
+    },
+    {
+      "t": 1793935470490,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 26731,
+      "argBytes": 13595,
+      "lines": 151,
+      "inHash": "858daae64cdc9c0d",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-04.log": 151
+      },
+      "outHash": "71b2f50f6301dffb"
+    },
+    {
+      "t": 1793935502619,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6263,
+      "argBytes": 14175,
+      "lines": 161,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-03.log": 161
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 76,
+          "ERROR": 85
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 21
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 21
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 18
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 17
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 15
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 15
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 11
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 11
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 10
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 9
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 8
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 5
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935529184,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6263,
+      "argBytes": 13089,
+      "lines": 151,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-04.log": 151
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 82,
+          "ERROR": 69
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 19
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 18
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 18
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 15
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 14
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 13
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 13
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 11
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 10
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 8
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 6
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 6
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935563510,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 27241,
+      "argBytes": 13954,
+      "lines": 155,
+      "inHash": "a38b768da6e4bc4d",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-05.log": 155
+      },
+      "outHash": "43aaf472c19b49a8"
+    },
+    {
+      "t": 1793935590041,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 24313,
+      "argBytes": 12431,
+      "lines": 139,
+      "inHash": "fec44cf0776bcdcf",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-06.log": 139
+      },
+      "outHash": "e29d3c87e79403b6"
+    },
+    {
+      "t": 1793935622729,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6261,
+      "argBytes": 13341,
+      "lines": 155,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-05.log": 155
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 93,
+          "ERROR": 62
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 20
+          },
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 19
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 17
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 17
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 16
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 12
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 12
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 10
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 9
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 9
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 8
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 6
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935646618,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6261,
+      "argBytes": 11893,
+      "lines": 139,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-06.log": 139
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 76,
+          "ERROR": 63
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 21
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 14
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 13
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 13
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 12
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 12
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 12
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 12
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 11
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 8
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 7
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 4
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935678031,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 25021,
+      "argBytes": 12809,
+      "lines": 144,
+      "inHash": "29c758f8ca9f9f0b",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-07.log": 144
+      },
+      "outHash": "d439d49bfcac311e"
+    },
+    {
+      "t": 1793935708580,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 27135,
+      "argBytes": 13811,
+      "lines": 152,
+      "inHash": "0c3947d47228aa0a",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 7,
+      "linesBySourceFile": {
+        "app-08.log": 152
+      },
+      "outHash": "f9b7e47a1ef45bac"
+    },
+    {
+      "t": 1793935737670,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6261,
+      "argBytes": 12241,
+      "lines": 144,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-07.log": 144
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 79,
+          "ERROR": 65
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 20
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 18
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 16
+          },
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 15
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 15
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 12
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 11
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 10
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 8
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 7
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 7
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 5
+          }
+        ]
+      }
+    },
+    {
+      "t": 1793935765110,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 6261,
+      "argBytes": 13290,
+      "lines": 152,
+      "topClusters": 20,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-08.log": 152
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 0,
+          "INFO": 0,
+          "WARN": 80,
+          "ERROR": 72
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 22
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 20
+          },
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 18
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 16
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 12
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 12
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 12
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 10
+          },
+          {
+            "template": "deprecated endpoint /api/v#/orders called by client #",
+            "level": "WARN",
+            "count": 9
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 8
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 7
+          },
+          {
+            "template": "unhandled exception in worker #: TypeError: cannot read properties of undefined",
+            "level": "ERROR",
+            "count": 6
+          }
+        ]
+      }
+    }
+  ],
+  "reachedWarnError": {
+    "app-01.log": 159,
+    "app-02.log": 167,
+    "app-03.log": 161,
+    "app-04.log": 151,
+    "app-05.log": 155,
+    "app-06.log": 139,
+    "app-07.log": 144,
+    "app-08.log": 152
+  }
+}

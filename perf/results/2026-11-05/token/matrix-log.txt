@@ -1,0 +1,73 @@
+spent so far: 1.964 USD
+C-none-r1: exit=0 wall=3.7s tool calls at the wire=0
+spent so far: 1.973 USD
+CD-none-r1: exit=0 wall=3.7s tool calls at the wire=0
+spent so far: 1.984 USD
+A-f2x100-r1: exit=0 wall=48.0s tool calls at the wire=5
+spent so far: 2.135 USD
+B-f2x100-r1: exit=0 wall=9.1s tool calls at the wire=1
+spent so far: 2.158 USD
+D1-f2x100-r1: exit=0 wall=17.6s tool calls at the wire=5
+spent so far: 2.198 USD
+A-f8x100-r1: exit=0 wall=146.2s tool calls at the wire=11
+spent so far: 2.730 USD
+B-f8x100-r1: exit=0 wall=10.2s tool calls at the wire=1
+spent so far: 2.757 USD
+D1-f8x100-r1: exit=0 wall=16.7s tool calls at the wire=12
+spent so far: 2.797 USD
+D2-f8x100-r1: exit=0 wall=23.3s tool calls at the wire=21
+spent so far: 2.843 USD
+A-f8x400-r1: exit=0 wall=119.0s tool calls at the wire=11
+spent so far: 3.492 USD
+B-f8x400-r1: exit=0 wall=13.6s tool calls at the wire=1
+spent so far: 3.518 USD
+D1-f8x400-r1: exit=0 wall=17.4s tool calls at the wire=12
+spent so far: 3.559 USD
+C-none-r2: exit=0 wall=3.0s tool calls at the wire=0
+spent so far: 3.568 USD
+CD-none-r2: exit=0 wall=3.1s tool calls at the wire=0
+spent so far: 3.578 USD
+B-f2x100-r2: exit=0 wall=10.4s tool calls at the wire=1
+spent so far: 3.602 USD
+D1-f2x100-r2: exit=0 wall=16.7s tool calls at the wire=5
+spent so far: 3.647 USD
+A-f2x100-r2: exit=0 wall=44.1s tool calls at the wire=5
+spent so far: 3.787 USD
+B-f8x100-r2: exit=0 wall=9.8s tool calls at the wire=1
+spent so far: 3.813 USD
+D1-f8x100-r2: exit=0 wall=18.5s tool calls at the wire=12
+spent so far: 3.854 USD
+A-f8x100-r2: exit=0 wall=143.2s tool calls at the wire=11
+spent so far: 4.376 USD
+D2-f8x100-r2: exit=0 wall=19.7s tool calls at the wire=11
+spent so far: 4.415 USD
+B-f8x400-r2: exit=0 wall=9.9s tool calls at the wire=1
+spent so far: 4.441 USD
+D1-f8x400-r2: exit=0 wall=15.9s tool calls at the wire=11
+spent so far: 4.479 USD
+A-f8x400-r2: exit=0 wall=566.2s tool calls at the wire=19
+spent so far: 6.603 USD
+C-none-r3: exit=0 wall=3.2s tool calls at the wire=0
+spent so far: 6.612 USD
+CD-none-r3: exit=0 wall=5.2s tool calls at the wire=0
+spent so far: 6.623 USD
+D1-f2x100-r3: exit=0 wall=19.8s tool calls at the wire=5
+spent so far: 6.664 USD
+A-f2x100-r3: exit=0 wall=43.9s tool calls at the wire=5
+spent so far: 6.804 USD
+B-f2x100-r3: exit=0 wall=9.8s tool calls at the wire=1
+spent so far: 6.828 USD
+D1-f8x100-r3: exit=0 wall=17.5s tool calls at the wire=12
+spent so far: 6.869 USD
+A-f8x100-r3: exit=0 wall=142.5s tool calls at the wire=11
+spent so far: 7.388 USD
+B-f8x100-r3: exit=0 wall=10.4s tool calls at the wire=1
+spent so far: 7.415 USD
+D2-f8x100-r3: exit=0 wall=20.8s tool calls at the wire=12
+spent so far: 7.459 USD
+D1-f8x400-r3: exit=0 wall=15.9s tool calls at the wire=12
+spent so far: 7.498 USD
+A-f8x400-r3: exit=0 wall=553.0s tool calls at the wire=25
+spent so far: 9.630 USD
+B-f8x400-r3: exit=0 wall=11.4s tool calls at the wire=1
+exit=0

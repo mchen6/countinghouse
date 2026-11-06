@@ -1,0 +1,268 @@
+{
+  "calls": [
+    {
+      "t": 1793934360334,
+      "method": "tools/call",
+      "tool": "log_read_readservice_list",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 828,
+      "argBytes": 22,
+      "dir": "/data/f8x400"
+    },
+    {
+      "t": 1793934363207,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71602,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-01.log",
+      "lines": 400,
+      "outHash": "0f976480915909b0",
+      "warnErrorLines": 159
+    },
+    {
+      "t": 1793934363233,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71178,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-02.log",
+      "lines": 400,
+      "outHash": "4dfaa2a4feedfc5d",
+      "warnErrorLines": 167
+    },
+    {
+      "t": 1793934363254,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71936,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-03.log",
+      "lines": 400,
+      "outHash": "04f84b0476c756d2",
+      "warnErrorLines": 161
+    },
+    {
+      "t": 1793934363266,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71036,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-04.log",
+      "lines": 400,
+      "outHash": "54fb3682baa5c2c6",
+      "warnErrorLines": 151
+    },
+    {
+      "t": 1793934363280,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 71002,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-05.log",
+      "lines": 400,
+      "outHash": "ecaff0f2b2754c63",
+      "warnErrorLines": 155
+    },
+    {
+      "t": 1793934363291,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 69426,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-06.log",
+      "lines": 400,
+      "outHash": "34f5cb101f689f83",
+      "warnErrorLines": 139
+    },
+    {
+      "t": 1793934363302,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 70912,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-07.log",
+      "lines": 400,
+      "outHash": "afb1b94b937be61d",
+      "warnErrorLines": 144
+    },
+    {
+      "t": 1793934363317,
+      "method": "tools/call",
+      "tool": "log_read_readservice_read",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 70506,
+      "argBytes": 62,
+      "dir": "/data/f8x400",
+      "file": "app-08.log",
+      "lines": 400,
+      "outHash": "8474fca86fcc7089",
+      "warnErrorLines": 152
+    },
+    {
+      "t": 1793934363365,
+      "method": "tools/call",
+      "tool": "pii_redact_redactservice_redact",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 537368,
+      "argBytes": 279394,
+      "lines": 3200,
+      "inHash": "0e2c691a3978429d",
+      "inputIsAReadOutput": null,
+      "inputPlantedValues": 10,
+      "linesBySourceFile": {
+        "app-01.log": 400,
+        "app-02.log": 400,
+        "app-03.log": 400,
+        "app-04.log": 400,
+        "app-05.log": 400,
+        "app-06.log": 400,
+        "app-07.log": 400,
+        "app-08.log": 400
+      },
+      "outHash": "6f7d53ab8c36407e"
+    },
+    {
+      "t": 1793934363406,
+      "method": "tools/call",
+      "tool": "error_cluster_clusterservice_cluster",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 5194,
+      "argBytes": 265353,
+      "lines": 3200,
+      "topClusters": 10,
+      "plantedValuesInInput": [],
+      "linesNotFromRedact": 0,
+      "rawPlantedLines": 0,
+      "linesBySourceFile": {
+        "app-01.log": 400,
+        "app-02.log": 400,
+        "app-03.log": 400,
+        "app-04.log": 400,
+        "app-05.log": 400,
+        "app-06.log": 400,
+        "app-07.log": 400,
+        "app-08.log": 400
+      },
+      "result": {
+        "byLevel": {
+          "DEBUG": 578,
+          "INFO": 1394,
+          "WARN": 669,
+          "ERROR": 559
+        },
+        "unparsed": 0,
+        "clusterCount": 12,
+        "clusters": [
+          {
+            "template": "slow query took #ms table=orders",
+            "level": "WARN",
+            "count": 157
+          },
+          {
+            "template": "upstream timeout after #ms calling inventory-service request=#",
+            "level": "ERROR",
+            "count": 144
+          },
+          {
+            "template": "rate limit near threshold for client <ipv#>",
+            "level": "WARN",
+            "count": 138
+          },
+          {
+            "template": "database connection lost to db-#.internal retry=#",
+            "level": "ERROR",
+            "count": 116
+          },
+          {
+            "template": "disk usage at #% on /var/data",
+            "level": "WARN",
+            "count": 114
+          },
+          {
+            "template": "connection pool exhausted, # requests waiting",
+            "level": "WARN",
+            "count": 100
+          },
+          {
+            "template": "retrying webhook delivery attempt # to <email>",
+            "level": "WARN",
+            "count": 99
+          },
+          {
+            "template": "payment declined for card <card> order=#",
+            "level": "ERROR",
+            "count": 95
+          },
+          {
+            "template": "job # exceeded max attempts, moved to dead letter queue",
+            "level": "ERROR",
+            "count": 76
+          },
+          {
+            "template": "failed to send receipt to <email>: mailbox unavailable",
+            "level": "ERROR",
+            "count": 73
+          }
+        ]
+      }
+    }
+  ],
+  "reachedWarnError": {
+    "app-01.log": 159,
+    "app-02.log": 167,
+    "app-03.log": 161,
+    "app-04.log": 151,
+    "app-05.log": 155,
+    "app-06.log": 139,
+    "app-07.log": 144,
+    "app-08.log": 152
+  }
+}

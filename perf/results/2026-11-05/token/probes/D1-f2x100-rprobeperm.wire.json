@@ -1,0 +1,16 @@
+{
+  "calls": [
+    {
+      "t": 1793932133480,
+      "method": "tools/call",
+      "tool": "log_read_readservice_list",
+      "status": 200,
+      "isError": false,
+      "rpcError": null,
+      "errorText": null,
+      "responseBytes": 356,
+      "argBytes": 22,
+      "dir": "/data/f2x100"
+    }
+  ]
+}
