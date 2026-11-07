@@ -10,6 +10,22 @@
       "output": {
         "type": "object"
       }
+    },
+    "callFailCatalogue": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "callFailMadeUp": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

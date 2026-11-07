@@ -3,7 +3,13 @@
 // and only the hop that completed is billed. With direct peer channels (the
 // default) the channel is invalidated and the hop fails PEER_GONE; without
 // them the hop goes through the main thread, where the inner worker's
-// in-flight work is failed as the worker ends.
+// in-flight work is failed as the worker ends (MODULE_RELOADING).
+//
+// A callee's own coded error reaches the composite's caller with its code
+// when the code is one of the runtime's (lib/error-info.en-US.json), on
+// either path; any other code is a callee crash to the caller
+// (DEVICE_INVOKE_EXCEPTION), so a callee cannot pass a made-up code off as
+// a runtime one.
 const assert  = require('assert');
 const fs      = require('fs');
 const os      = require('os');
@@ -23,8 +29,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').set('X-CH-Key', KEY).then((r) => r.body.balance);
 
-[{label: 'with direct peer channels', port: 9609, flags: []},
-  {label: 'without direct peer channels', port: 9610, flags: ['--no-directPeerChannels']}].forEach((variant) => {
+[{label: 'with direct peer channels', port: 9609, flags: [], reloadCode: 'PEER_GONE'},
+  {label: 'without direct peer channels', port: 9610, flags: ['--no-directPeerChannels'], reloadCode: 'MODULE_RELOADING'}].forEach((variant) => {
   describe(`composition 15: a composite's in-flight hop when its inner module reloads, ${variant.label}`, function() {
     this.timeout(120000);
     let base = null;
@@ -51,14 +57,23 @@ const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').se
       const r = await call;
       const ms = Date.now() - started;
       assert.strictEqual(r.isError, true, JSON.stringify(r));
-      assert.ok(toolErrorCode(r) != null, `no code: ${JSON.stringify(r)}`);
-      assert.ok(ms < PROMPT_MS, `took ${ms} ms (code ${toolErrorCode(r)})`);
-      console.log(`    [observed] code ${toolErrorCode(r)} after ${ms} ms`);
+      assert.strictEqual(toolErrorCode(r), variant.reloadCode, JSON.stringify(r));
+      assert.ok(ms < PROMPT_MS, `took ${ms} ms`);
       // Billing is recorded asynchronously; give it a fixed window.
       await sleep(1500);
       assert.strictEqual(before - (await balance(variant.port)), 1, 'only the completed ping hop is billed');
       await waitFor(async () => (await mcpCall(variant.port, KEY, 'worker_end_endservice_ping', {}, {allowUnknownTool: true})).isError === false,
         20000, 'the reloaded inner module to answer');
+    });
+
+    it('a callee\'s runtime error code reaches the caller', async () => {
+      const r = await mcpCall(variant.port, KEY, 'worker_end_caller_callerservice_callfailcatalogue', {});
+      assert.strictEqual(toolErrorCode(r), 'DEVICE_INVOKE_FAIL', JSON.stringify(r));
+    });
+
+    it('a callee\'s made-up error code does not: the caller sees a callee crash', async () => {
+      const r = await mcpCall(variant.port, KEY, 'worker_end_caller_callerservice_callfailmadeup', {});
+      assert.strictEqual(toolErrorCode(r), 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(r));
     });
   });
 });

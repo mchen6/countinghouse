@@ -55,6 +55,26 @@
             "output": {
               "schema": "/endService/crash/output"
             }
+          },
+          {
+            "name": "failCatalogue",
+            "description": "Fails with a code from the runtime's own error catalogue.",
+            "input": {
+              "schema": "/endService/failCatalogue/input"
+            },
+            "output": {
+              "schema": "/endService/failCatalogue/output"
+            }
+          },
+          {
+            "name": "failMadeUp",
+            "description": "Fails with a code the runtime does not define.",
+            "input": {
+              "schema": "/endService/failMadeUp/input"
+            },
+            "output": {
+              "schema": "/endService/failMadeUp/output"
+            }
           }
         ]
       }

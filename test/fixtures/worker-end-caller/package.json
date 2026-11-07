@@ -5,7 +5,9 @@
   "countinghouse": {
     "calls": [
       "worker-end/endService.ping",
-      "worker-end/endService.hang"
+      "worker-end/endService.hang",
+      "worker-end/endService.failCatalogue",
+      "worker-end/endService.failMadeUp"
     ]
   }
 }

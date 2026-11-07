@@ -15,6 +15,26 @@
             "output": {
               "schema": "/callerService/pingThenHang/output"
             }
+          },
+          {
+            "name": "callFailCatalogue",
+            "description": "Calls worker-end failCatalogue.",
+            "input": {
+              "schema": "/callerService/callFailCatalogue/input"
+            },
+            "output": {
+              "schema": "/callerService/callFailCatalogue/output"
+            }
+          },
+          {
+            "name": "callFailMadeUp",
+            "description": "Calls worker-end failMadeUp.",
+            "input": {
+              "schema": "/callerService/callFailMadeUp/input"
+            },
+            "output": {
+              "schema": "/callerService/callFailMadeUp/output"
+            }
           }
         ]
       }
