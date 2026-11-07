@@ -314,7 +314,7 @@ async function runCondition(p, sandbox, dirs) {
   const config = {};
   config[caller]       = {userName: 'perf-caller', devices: [TRIAGE_DEVICE]};
   config[orchestrator] = {userName: 'perf-orchestrator', devices: [READ_DEVICE, REDACT_DEVICE, CLUSTER_DEVICE]};
-  config['log-triage-internal'] = {
+  config['log-triage-internal-perf-key'] = {
     userName: 'log-triage-internal',
     devices: [READ_DEVICE, REDACT_DEVICE, CLUSTER_DEVICE],
     runsModules: ['log-triage']

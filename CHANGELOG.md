@@ -124,6 +124,16 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   name equal to the key (the file provider's fallback for an entry without
   `userName`) is returned as `null`; under `--debug` it is `debug`.
 - ctx.call and HTTP `invoke-action` keep `{output: …}`.
+- **The composite examples' internal keys differ from their user names.**
+  In `examples/log-triage/auth.json` and `examples/repo-review/auth.json`
+  the internal identity's key was its user name, which every bill prints as
+  `authorizedAs`, so every caller received a working key (log-triage's reads
+  unmasked logs). The keys are now `…-internal-demo-key-not-secret`; the
+  user names, `runsModules` and handlers are unchanged.
+- **The file auth provider warns at startup** about an entry whose key equals
+  its `userName`, or that has no `userName` (the key is then used as the user
+  name). It names the entry by position, never prints a key, and starts
+  anyway.
 - New contract test `test/mcp-contract/03-sdk-client-conformance.js` drives
   `@modelcontextprotocol/sdk` 1.32.2 (exact-pinned devDependency) against
   every bundled and example module; `04-output-shape-after-reload.js` covers

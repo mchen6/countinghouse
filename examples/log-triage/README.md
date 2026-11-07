@@ -76,11 +76,14 @@ curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \
 Both keys in [`auth.json`](auth.json) are demo credentials, committed on
 purpose and usable only against a server you started yourself on `127.0.0.1`.
 `demo-key` is granted the composite and nothing else; the three inner modules
-are granted to `log-triage-internal`, the identity the composite's hops are
-authorized as. `log-triage-internal` is itself an API key: presented as
-`X-CH-Key`, it can call the three leaf tools directly, including `log-read`'s
-`read`, which returns unmasked lines. Replace both keys before the server is
-reachable from anywhere but localhost.
+are granted to the identity the composite's hops are authorized as: user name
+`log-triage-internal`, which every bill shows as `authorizedAs`, with the
+separate key `log-triage-internal-demo-key-not-secret`. That key is a real API
+key: presented as `X-CH-Key`, it can call the three leaf tools directly,
+including `log-read`'s `read`, which returns unmasked lines. It differs from
+the user name on purpose, since a user name reaches every caller (the file
+provider warns at startup about a key that doubles as one). Replace both keys
+before the server is reachable from anywhere but localhost.
 
 Every planted value in the sample logs is fake by construction: `example.com`
 addresses, the `203.0.113.0/24` documentation range, `555` phone numbers, the

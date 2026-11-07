@@ -26,6 +26,8 @@ narrowing the scan to repository source is the right response to it.
 ## Setup
 
 ```sh
+# auth.json as it was at capture. Since 8.0.0 the internal identity's key
+# differs from its user name (repo-review-internal-demo-key-not-secret).
 # auth.json: the caller is granted the composite device ONLY.
 # The composing module's identity is granted the three inner devices.
 {

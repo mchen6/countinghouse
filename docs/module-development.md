@@ -416,13 +416,18 @@ hops:
 
 ```json
 {
-  "repo-review-internal": {
+  "<a key that is not its user name>": {
     "userName": "repo-review-internal",
     "devices": ["<deviceID of repo-scan>", "<deviceID of secret-detect>"],
     "runsModules": ["repo-review"]
   }
 }
 ```
+
+Give the identity a key that differs from its `userName`: user names are shown
+to callers (a composite's bill, `check_balance`), so a key that doubles as one
+is handed to every caller. The file provider warns at startup when it sees
+one.
 
 That split is deliberate: which identity a module runs as is the operator's
 decision, not the author's, so the same module can be deployed twice under

@@ -27,7 +27,10 @@ const READ_DEVICE    = 'fd0eafbd-20da-53e6-9302-681687350a3b';
 const REDACT_DEVICE  = 'b5048beb-2128-52c0-9cd4-42669f57090f';
 const CLUSTER_DEVICE = '9f9aab37-b175-5286-81c3-68bdd24bd4f7';
 
-const AS_IDENTITY = 'log-triage-internal';
+// The module identity's user name (what the bill shows as authorizedAs) and
+// its API key, which differ: a user name reaches every caller.
+const AS_IDENTITY     = 'log-triage-internal';
+const AS_IDENTITY_KEY = 'log-triage-internal-demo-key-not-secret';
 const TOOL        = 'log_triage_triageservice_triage';
 const FILE_COUNT  = 8;
 
@@ -134,12 +137,12 @@ async function triage(url, key, args) {
 // and after. Returns what the call returned and what each identity paid.
 async function meteredCall(url, caller, args) {
   const callerBefore   = await settledBalance(url, caller);
-  const internalBefore = await settledBalance(url, AS_IDENTITY);
+  const internalBefore = await settledBalance(url, AS_IDENTITY_KEY);
 
   const result = await triage(url, caller, args);
 
   const callerAfter   = await settledBalance(url, caller);
-  const internalAfter = await settledBalance(url, AS_IDENTITY);
+  const internalAfter = await settledBalance(url, AS_IDENTITY_KEY);
 
   return {
     result:       result,
@@ -158,8 +161,8 @@ async function verifyPath(p, dirs) {
   // granted the three inner devices and bound to the module by "runsModules".
   const config = {};
   config[caller]      = {userName: 'caller', devices: [TRIAGE_DEVICE]};
-  config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [READ_DEVICE, REDACT_DEVICE, CLUSTER_DEVICE],
-                         runsModules: ['log-triage']};
+  config[AS_IDENTITY_KEY] = {userName: AS_IDENTITY, devices: [READ_DEVICE, REDACT_DEVICE, CLUSTER_DEVICE],
+                             runsModules: ['log-triage']};
   fs.writeFileSync(authPath, JSON.stringify(config, null, 2));
 
   console.log(`\n=== ${p.label} (port ${p.port}) ===`);

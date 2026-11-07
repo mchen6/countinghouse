@@ -15,7 +15,10 @@ const url       = `http://127.0.0.1:${PORT}`;
 const AUTH_PATH = `/tmp/countinghouse-verify-4hop-${process.pid}.json`;
 
 const CALLER      = `caller-4hop-${process.pid}`;
-const AS_IDENTITY = 'repo-review-internal';
+// The module identity's user name (what the bill shows as authorizedAs) and
+// its API key, which differ: a user name reaches every caller.
+const AS_IDENTITY     = 'repo-review-internal';
+const AS_IDENTITY_KEY = 'repo-review-internal-demo-key-not-secret';
 
 const REVIEW_DEVICE = '51b0d6ac-7a77-5083-8476-26a9be96a101';
 const SCAN_DEVICE   = '1359302a-e4fe-5c14-853b-f83638e8ca01';
@@ -32,8 +35,8 @@ function writeAuth() {
   // identity (DeviceManager.prototype.verifyComposition, load-time) -- since
   // repo-review's package.json declares "countinghouse.calls", the module
   // now refuses to come online without this, same as the real auth.json.
-  config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [SCAN_DEVICE, DETECT_DEVICE, AUDIT_DEVICE],
-                          runsModules: ['repo-review']};
+  config[AS_IDENTITY_KEY] = {userName: AS_IDENTITY, devices: [SCAN_DEVICE, DETECT_DEVICE, AUDIT_DEVICE],
+                              runsModules: ['repo-review']};
   fs.writeFileSync(AUTH_PATH, JSON.stringify(config, null, 2));
 }
 
@@ -135,7 +138,7 @@ startServer((startErr) => {
 
     settledBalance(CALLER, (e1, callerBefore) => {
       if (e1) return fail('caller balance never settled', e1);
-      settledBalance(AS_IDENTITY, (e2, internalBefore) => {
+      settledBalance(AS_IDENTITY_KEY, (e2, internalBefore) => {
         if (e2) return fail('internal balance never settled', e2);
         console.log(`\n[2] balances before: caller=${callerBefore} internal=${internalBefore}`);
 
@@ -163,7 +166,7 @@ startServer((startErr) => {
 
           settledBalance(CALLER, (e4, callerAfter) => {
             if (e4) return fail('caller balance never settled after', e4);
-            settledBalance(AS_IDENTITY, (e5, internalAfter) => {
+            settledBalance(AS_IDENTITY_KEY, (e5, internalAfter) => {
               if (e5) return fail('internal balance never settled after', e5);
 
               const callerPaid   = callerBefore - callerAfter;
