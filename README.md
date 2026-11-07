@@ -211,6 +211,16 @@ What does not round away is the CPU across a session: a hundred such hops cost
 latency. (Medians of three runs, 2-vCPU VMware guest, Intel i7-6600U, Node
 v24.21.0, commit `3d9599d`.) [Tables, methodology and caveats](https://github.com/mchen6/countinghouse/blob/master/docs/direct-peer-channels.md#benchmark-transport-overhead-vs-other-tool-to-tool-mechanisms).
 
+**On token cost, honestly.** With a model as the client, one composite call
+cost $0.024–0.026 per run at every size measured. The same model chaining the
+four inner tools itself paid 5.95×, 19.77× and 81.06× that, growing with the
+data (medians of three runs, table "all valid runs"). In every leaf-chaining
+run, the synthetic personal data planted in the logs reached the model's
+context; in no composite run did it. Code mode with typed wrappers came close
+to the composite (1.47–1.77× its cost, no leaks); without output types it
+leaked in 6 of 9 runs. One model (claude-sonnet-5-5), one task, synthetic
+logs, commit `622438f`. [Method, results and every caveat](https://mchen6.github.io/countinghouse/performance/token-cost/).
+
 [Follow-up: One call instead of eighteen — what a composite MCP tool costs](https://mchen6.github.io/countinghouse/performance/)
 
 ## Status, and what isn't built
