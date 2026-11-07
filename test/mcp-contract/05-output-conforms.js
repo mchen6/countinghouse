@@ -24,6 +24,18 @@ describe('mcp-contract 05: the stored-output conformance check', () => {
     assert.strictEqual(ajv._cache.size, before);
   });
 
+  // A failed compile ("already exists") means the $id is someone else's
+  // registration -- in single-thread mode the runtime compiles module schemas
+  // on this same instance (lib/service.js) -- and must be left in place.
+  it('leaves a schema another part of the runtime registered under the same $id', () => {
+    const ajv = validator.getSchemaValidator();
+    const id = 'https://countinghouse.test/registered-elsewhere.json';
+    ajv.compile(Object.assign({$id: id}, freshSchema()));
+    outputConforms(Object.assign({$id: id}, freshSchema()), {text: 'v1'});
+    assert.notStrictEqual(ajv.getSchema(id), undefined);
+    ajv.removeSchema(id);
+  });
+
   it('gives the same answer every time for a schema with an $id', () => {
     const withId = () => Object.assign({$id: 'https://countinghouse.test/output-conforms.json'}, freshSchema());
     assert.deepStrictEqual([1, 2, 3].map(() => outputConforms(withId(), {text: 'v1'})), [true, true, true]);
