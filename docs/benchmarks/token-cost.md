@@ -175,3 +175,9 @@ wrapper affected the conclusions above:
   The third rests on the unwrapping rule. A wrapper returning the wrapped
   object would have handed D1 types that were off by one level, and that
   case was not measured.
+
+Since that fix, `structuredContent` is the result itself, and
+`perf/gen-code-mode-wrappers.js` follows: its wrappers return
+`structuredContent` (or, for a tool without an output schema, the text), and
+`perf/token-cost-compare.js` reads the new shape. Re-running the matrix on a
+later commit measures the fixed shape, not the one above.

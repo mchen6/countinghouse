@@ -180,8 +180,9 @@ function record(wire, planted, reqBody, text, status) {
   const args = reqBody.params.arguments || {};
   const body = parseRpcBody(text);
   const result = body && body.result;
-  // structuredContent is {output: <result>} for a module tool
-  const sc = result && result.structuredContent && result.structuredContent.output;
+  // structuredContent is the module's result (8.0.0); the 2026-11-05 runs
+  // read it as {output: <result>}
+  const sc = result && result.structuredContent;
   const entry = {t: Date.now(), method: 'tools/call', tool: name, status,
     isError: !!(result && result.isError), rpcError: body && body.error ? body.error.message : null,
     errorText: result && result.isError ? (result.content || []).map((c) => c.text).join(' ').slice(0, 300) : null,
@@ -248,10 +249,10 @@ async function cmdReference(o) {
   for (const [name, dir] of Object.entries(FIXTURES)) {
     const r = await rpc(url, key, 'tools/call', {name: COMPOSITE, arguments: {dir}});
     if (r.isError) throw new Error(`reference ${name}: ${r.content.map((c) => c.text).join(' ')}`);
-    const f = r.structuredContent.output.findings;
+    const f = r.structuredContent.findings;
     // a second call at topClusters 50 gives the full cluster list, for checking
     // answers that list more than the default 10
-    const all = (await rpc(url, key, 'tools/call', {name: COMPOSITE, arguments: {dir, topClusters: 50}})).structuredContent.output.findings;
+    const all = (await rpc(url, key, 'tools/call', {name: COMPOSITE, arguments: {dir, topClusters: 50}})).structuredContent.findings;
     ref[name] = {dir, files: f.files.read.map((x) => x.name), levels: f.levels, pii: f.pii,
       clusters: f.clusters.map((c) => ({template: c.template, level: c.level, count: c.count})),
       allClusters: all.clusters.map((c) => ({template: c.template, level: c.level, count: c.count}))};

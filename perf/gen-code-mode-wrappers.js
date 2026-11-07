@@ -23,9 +23,11 @@
 //                                         read from the environment.
 //   <out>/servers/log-triage/README.md    the four functions.
 //
-// countinghouse returns structuredContent as {output: <result>} while
-// tools/list advertises the schema of <result> itself, so every wrapper
-// returns structuredContent.output: the value the Output type describes.
+// Each wrapper returns the tool's structuredContent: the result itself, as
+// the Output type describes it (since 8.0.0's MCP result change; the
+// 2026-11-05 measurement predates it and unwrapped {output}). A tool without
+// an output schema answers text only, so the wrapper falls back to the text:
+// parsed as JSON when it is JSON, else the string.
 //
 // D1 and D2 have identical inputs. D2 drops the Output interfaces and declares
 // `@returns {Promise<unknown>}` instead, the case of an MCP server without
@@ -250,11 +252,9 @@ async function ${fn}(input) {
   const body = await res.json();
   if (body.error) throw new Error(\`${tool}: \${body.error.message}\`);
   if (body.result.isError) throw new Error(\`${tool}: \${body.result.content.map((c) => c.text).join(' ')}\`);
-  // countinghouse's structuredContent is {output: <result>}, one level above
-  // the advertised outputSchema; the function returns the result itself.
-  const sc = body.result.structuredContent;
-  if (sc == null || !('output' in sc)) throw new Error(\`${tool}: no structuredContent.output in the response\`);
-  return sc.output;
+  if (body.result.structuredContent !== undefined) return body.result.structuredContent;
+  const text = (body.result.content || []).map((c) => c.text || '').join('');
+  try { return JSON.parse(text); } catch (e) { return text; }
 }
 
 module.exports = {${fn}};
