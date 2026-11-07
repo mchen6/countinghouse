@@ -1,0 +1,88 @@
+// A composition hop to a device that is not loaded answers why (MODULE_
+// UNLOADED, MODULE_RESTARTING, ..., or DEVICE_NOT_FOUND for one never hosted)
+// only to an identity granted that device. Any other identity gets
+// USER_HAS_NO_DEVICE in every case, as over HTTP; otherwise the answer would
+// tell it whether a device was ever hosted here. Both hop paths: a direct
+// peer channel and the main thread.
+//
+// A hop's client is built by asking main for the device's spec, a query
+// that carries no identity: for a device that is not loaded it answers the
+// same whether the device was unloaded or never hosted, so a module learns
+// nothing from it either. The specific codes reach a caller only through a
+// client built while the device was loaded.
+const assert = require('assert');
+const fs     = require('fs');
+const os     = require('os');
+const path   = require('path');
+const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {toolErrorCode} = require('../helpers/tool-result');
+const {deviceIDForName} = require('../../lib/call-address');
+
+const INNER  = path.join(ROOT, 'test', 'fixtures', 'worker-end');
+const PROBER = path.join(ROOT, 'test', 'fixtures', 'hop-prober');
+const DEVICE = deviceIDForName('worker-end');
+const NEVER  = deviceIDForName('never-loaded-anywhere');
+const ADMIN     = 'hop-oracle-admin';
+const GRANTED   = 'hop-oracle-granted';
+const UNGRANTED = 'hop-oracle-ungranted';
+// Used only after the unload, so their clients are built then (clients are
+// cached per identity).
+const GRANTED_FRESH   = 'hop-oracle-granted-fresh';
+const UNGRANTED_FRESH = 'hop-oracle-ungranted-fresh';
+const PROBE = 'hop_prober_probeservice_probe';
+// The device ID in a message is the caller's own input, not a disclosure.
+const normalised = (seen) => ({code: seen.code, message: String(seen.message).replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, '<id>')});
+
+[{label: 'over a direct peer channel', port: 9616, flags: []},
+  {label: 'through the main thread', port: 9617, flags: ['--no-directPeerChannels']}].forEach((variant) => {
+  describe(`composition 16: a hop to a missing device, ${variant.label}`, function() {
+    this.timeout(90000);
+    let base = null;
+    let server = null;
+    const probe = (as, deviceID) => mcpCall(variant.port, ADMIN, PROBE, {as: as, deviceID: deviceID});
+    const observe = async (as, deviceID) => {
+      const r = await mcpCall(variant.port, ADMIN, 'hop_prober_probeservice_observe', {as: as, deviceID: deviceID});
+      return JSON.parse(r.content[0].text);
+    };
+
+    before(async () => {
+      base = fs.mkdtempSync(path.join(os.homedir(), '.ch-hop-oracle-'));
+      const authPath = path.join(base, 'auth.json');
+      fs.writeFileSync(authPath, JSON.stringify({
+        [ADMIN]: {userName: 'admin', devices: ['*'], admin: true},
+        [GRANTED]: {userName: 'granted', devices: [DEVICE, NEVER]},
+        [UNGRANTED]: {userName: 'ungranted', devices: [deviceIDForName('some-other-module')]},
+        [GRANTED_FRESH]: {userName: 'granted-fresh', devices: [DEVICE, NEVER]},
+        [UNGRANTED_FRESH]: {userName: 'ungranted-fresh', devices: [deviceIDForName('some-other-module')]}
+      }));
+      server = await startServer(variant.port, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
+        '--loadModule', INNER, '--loadModule', PROBER].concat(variant.flags));
+      await waitFor(async () => (await probe(GRANTED, DEVICE)).isError === false, 20000, 'the probe to reach worker-end');
+      // Both identities build their client while the device is loaded.
+      await probe(UNGRANTED, DEVICE);
+      assert.strictEqual((await post(variant.port, ADMIN, '/unload-module', {name: 'worker-end'})).status, 200);
+    });
+    after(() => {
+      stopServer(server);
+      if (base != null) fs.rmSync(base, {recursive: true, force: true});
+    });
+
+    it('through a client built while it was loaded: MODULE_UNLOADED to an identity granted it', async () => {
+      const r = await probe(GRANTED, DEVICE);
+      assert.strictEqual(toolErrorCode(r), 'MODULE_UNLOADED', JSON.stringify(r));
+    });
+
+    it('through a client built while it was loaded: USER_HAS_NO_DEVICE to an identity without a grant', async () => {
+      const r = await probe(UNGRANTED, DEVICE);
+      assert.strictEqual(toolErrorCode(r), 'USER_HAS_NO_DEVICE', JSON.stringify(r));
+    });
+
+    it('a client built now: the module sees the same for an unloaded device as for one never hosted', async () => {
+      for (const as of [GRANTED_FRESH, UNGRANTED_FRESH]) {
+        const unloaded = await observe(as, DEVICE);
+        const never = await observe(as, NEVER);
+        assert.deepStrictEqual(normalised(unloaded), normalised(never), `${as}: ${JSON.stringify(unloaded)} vs ${JSON.stringify(never)}`);
+      }
+    });
+  });
+});

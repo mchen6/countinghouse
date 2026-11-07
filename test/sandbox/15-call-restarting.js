@@ -76,10 +76,19 @@ describe('sandbox 15: calls to a restarting module', () => {
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 
-  it('routed path: an unknown device is answered as before', () => {
+  it('routed path: an unknown device is answered as before, to a caller with access', () => {
+    const wm = callerWM();
+    fakeDm(false).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-x', 'svc', 'act', {}, 5, wm);
+    assert.deepStrictEqual(wm.sent, [{msgID: 5, errMsg: 'device not found in map', data: null}]);
+  });
+
+  // Whether a device is missing, and why, is answered only after the access
+  // check, so a caller without access cannot tell a device that was hosted
+  // here from one that never was.
+  it('routed path: an unknown device gives a caller without access the access error', () => {
     const wm = callerWM();
     fakeDm(false).sendInvokeActionMessageToWorker('k', 'k', 'dev-x', 'svc', 'act', {}, 5, wm);
-    assert.deepStrictEqual(wm.sent, [{msgID: 5, errMsg: 'device not found in map', data: null}]);
+    assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 
   it('direct peer channels: the request is denied with MODULE_RESTARTING', () => {
@@ -90,11 +99,19 @@ describe('sandbox 15: calls to a restarting module', () => {
     assert.strictEqual(wm.sent[0].errCode, 'MODULE_RESTARTING', JSON.stringify(wm.sent));
   });
 
-  it('direct peer channels: an unknown device is still DEVICE_NOT_FOUND', () => {
+  it('direct peer channels: an unknown device is still DEVICE_NOT_FOUND, to a caller with access', () => {
+    const wm = callerWM();
+    const broker = Object.create(PeerChannelBroker.prototype);
+    broker.dm = fakeDm(false);
+    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner'}, wm);
+    assert.strictEqual(wm.sent[0].errCode, new CHError('DEVICE_NOT_FOUND').code);
+  });
+
+  it('direct peer channels: an unknown device gives a caller without access the access error', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(false);
     broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'k'}, wm);
-    assert.strictEqual(wm.sent[0].errCode, new CHError('DEVICE_NOT_FOUND').code);
+    assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 });

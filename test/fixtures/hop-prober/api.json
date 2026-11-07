@@ -1,0 +1,33 @@
+{
+  "device": {
+    "friendlyName": "hop-prober",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "calls a device by raw deviceID as a given identity, so what a composition hop answers for a missing device can be seen",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Calls worker-end ping on input.deviceID as input.as.",
+            "input": {
+              "schema": "/probeService/probe/input"
+            },
+            "output": {
+              "schema": "/probeService/probe/output"
+            }
+          },
+          {
+            "name": "observe",
+            "description": "Like probe, but returns the error the module saw as its output.",
+            "input": {
+              "schema": "/probeService/observe/input"
+            },
+            "output": {
+              "schema": "/probeService/observe/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

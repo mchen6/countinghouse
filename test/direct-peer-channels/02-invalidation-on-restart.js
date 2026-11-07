@@ -80,21 +80,27 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
           if (r.ms > 5000) {
             return done(new Error(`direct-peer-channels 02 fail: race call ${i} took ${r.ms}ms -- looks like it hung waiting for a stale port instead of being invalidated (got code: ${r.code})`));
           }
+          if (r.code === 'DEVICE_NOT_FOUND') {
+            return done(new Error(`direct-peer-channels 02 fail: race call ${i} got DEVICE_NOT_FOUND inside a restart window -- the reload's state was recorded too late or cleared too early: ${JSON.stringify(raceResults)}`));
+          }
         }
 
         // at least one race call must show the invalidation actually firing
-        // (PEER_GONE) or its direct consequence (DEVICE_NOT_FOUND, once
-        // re-brokering finds the device briefly absent from deviceMap
-        // during the teardown/recreate window) -- if every race call
+        // (PEER_GONE) or its direct consequence: re-brokering finding the
+        // device briefly absent from deviceMap during the teardown/recreate
+        // window, which a restart (a reload) reports as MODULE_RELOADING to
+        // a caller with access. Never DEVICE_NOT_FOUND: that would mean the
+        // reload's state was recorded too late or cleared too early -- if
+        // every race call
         // instead saw DEVICE_INVOKE_FAIL throughout, that would mean the
         // restart hadn't actually started affecting this channel yet by
         // the time the races ran, and the test wouldn't have exercised D4
         // at all.
         const sawChannelDisruption = raceResults.some((r) => {
-          return r.code === 'PEER_GONE' || r.code === 'DEVICE_NOT_FOUND';
+          return r.code === 'PEER_GONE' || r.code === 'MODULE_RELOADING';
         });
         if (sawChannelDisruption !== true) {
-          return done(new Error(`direct-peer-channels 02 fail: no race call observed PEER_GONE or DEVICE_NOT_FOUND -- test did not exercise the restart window: ${JSON.stringify(raceResults)}`));
+          return done(new Error(`direct-peer-channels 02 fail: no race call observed PEER_GONE or MODULE_RELOADING -- test did not exercise the restart window: ${JSON.stringify(raceResults)}`));
         }
 
         // Finally, wait for the new worker instance to be fully back

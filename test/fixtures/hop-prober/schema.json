@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "deviceID": {
+            "type": "string"
+          },
+          "as": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceID",
+          "as"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "observe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "deviceID": {
+            "type": "string"
+          },
+          "as": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceID",
+          "as"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}
