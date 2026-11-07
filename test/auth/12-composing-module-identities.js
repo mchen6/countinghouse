@@ -41,7 +41,8 @@ function writeAuth(path, withGrants) {
   const config = {};
   config[CALLER] = {userName: 'caller', devices: ['*']};
   if (withGrants === true) {
-    INTERNAL_IDENTITIES.forEach((k) => { config[k] = {userName: k, devices: ['*']}; });
+    // Each with a user name that is not its key, as docs/composite-tools.md now shows.
+    INTERNAL_IDENTITIES.forEach((k, i) => { config[k] = {userName: `bundled-demo-identity-${i + 1}`, devices: ['*']}; });
   }
   fs.writeFileSync(path, JSON.stringify(config));
 }

@@ -110,7 +110,7 @@ below for the full list and a one-liner that grants all of them.
 
 ```sh
 node -e "var c=JSON.parse(require('fs').readFileSync('auth.json'));
-  c['composite-demo-internal']={userName:'composite-demo-internal',devices:['*']};
+  c['composite-demo-internal']={userName:'composite-demo-identity',devices:['*']};
   require('fs').writeFileSync('auth.json', JSON.stringify(c, null, 2));"
 ```
 
@@ -270,11 +270,16 @@ Grant whichever ones you load, before starting the server:
 ```sh
 node -e "var f='auth.json',fs=require('fs');
   var c=JSON.parse(fs.readFileSync(f));
-  ['composite-demo-internal','aabbcc','perf-caller-demo-internal'].forEach(function(k){
-    c[k]={userName:k, devices:['*']};
+  [['composite-demo-internal','composite-demo-identity'],['aabbcc','echo-client-identity'],
+   ['perf-caller-demo-internal','perf-caller-demo-identity']].forEach(function(p){
+    c[p[0]]={userName:p[1], devices:['*']};
   });
   fs.writeFileSync(f, JSON.stringify(c,null,2));"
 ```
+
+Each gets a `userName` different from its key: user names are shown to callers
+(bills, `check_balance`), so a key must not double as one, and the file auth
+provider warns at startup when it does.
 
 `echo-device-client-module`'s key is the literal string `aabbcc` because it
 predates this convention and doubles as the `--debugKey` this repo's test
