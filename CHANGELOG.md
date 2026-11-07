@@ -27,6 +27,25 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `perf/gen-code-mode-wrappers.js`, results in
   `perf/results/2026-11-05/token/`.
 
+### Fixed — the repo-review example reads only the directory it is given
+
+- **repo-scan's default root comes from the operator's device config**
+  (`defaultRoot` in `<--deviceConfigPath>/repo-scan.json`). It used to climb
+  five levels up from its handler's `__dirname`, which since sandbox part 2
+  is virtual (`/app/handlers/scanService`), so the climb landed on `/`: a
+  `repo_review` call with no `path` walked the host's filesystem (allowed
+  and logged under `audit`) until the request timed out, which is why
+  `examples/repo-review/verify-identity-passthrough.js` failed with "Device
+  is not responding".
+- **With no `path` and no configured default, the call is refused** with
+  `ARGUMENTS_INVALID`, and a filesystem root is refused as `path` or as the
+  default. The root check is a tripwire; confining reads is `enforce` with
+  a declared fs permission.
+- `npm run demo:repo-review` writes that config for the checkout (in
+  `examples/repo-review/config/`, git-ignored) and passes
+  `--deviceConfigPath`, so the demo still runs with no arguments. The verify
+  script and `token-comparison.js` pass `path` explicitly.
+
 ### Security — review round R1
 
 - **Request bodies are bounded.** JSON, XML and form bodies are limited to
