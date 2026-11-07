@@ -85,7 +85,8 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
     mcpCheckBalance(ALICE, (err, res) => {
       if (err) return done(err);
       const r = res.body.result;
-      if (r == null || r.isError === true || r.structuredContent.apiKey !== ALICE) {
+      // Its own balance, under its user name; never its key (auth 27 pins the shape).
+      if (r == null || r.isError === true || r.structuredContent.userName !== 'alice' || 'apiKey' in r.structuredContent) {
         return done(new Error(`expected the caller's own balance, got: ${JSON.stringify(res.body)}`));
       }
       return done();

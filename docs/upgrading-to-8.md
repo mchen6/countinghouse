@@ -145,6 +145,8 @@ says how to write a module for this.
   errors). Read the code there instead of `structuredContent.code`.
 - **`countinghouse_call_tool` no longer advertises an output schema**: its
   result is whatever the inner tool returns.
+- **`countinghouse_check_balance` returns `{userName, balance}`**, not
+  `{apiKey, balance}`. `userName` is `null` when it would equal the key.
 - ctx.call and HTTP `invoke-action` are unchanged: they keep `{output: …}`.
 
 ## What operators get

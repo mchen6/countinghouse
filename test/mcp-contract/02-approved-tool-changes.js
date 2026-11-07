@@ -6,7 +6,8 @@
 // removal. This file closes that gap: tools-list.pre-5.0.0.json was captured
 // at 31f1316 -- the commit before phase 1a, i.e. before any 5.0.0 work at all
 // -- and this asserts that the only difference between the 4.x surface and
-// the 5.0.0 surface is a single, named, approved removal.
+// the 5.0.0 surface is a single, named, approved removal -- plus the output
+// schema changes in APPROVED_SCHEMA_CHANGES below.
 //
 // Recapture (only when a surface change is intended, and say why in the
 // commit message):
@@ -35,6 +36,18 @@ const APPROVED_REMOVALS = {
   'echo_device_echoservice_echowithapicache': 'demonstrated --apiCache, removed with it'
 };
 
+// Output-schema changes the maintainer has approved, each with its reason and
+// the exact value now advertised (undefined: no outputSchema at all). A
+// changed schema that is not on this list fails the third test below, and so
+// does an entry for a schema that did not change.
+const APPROVED_SCHEMA_CHANGES = {
+  countinghouse_check_balance: {
+    reason: 'no raw API key in tool output: returns {userName, balance} (spec 2026-11-06-mcp-conformance-design.md)',
+    outputSchema: {type: 'object', properties: {userName: {type: ['string', 'null']}, balance: {type: ['number', 'null']}},
+      required: ['userName', 'balance'], additionalProperties: false}
+  }
+};
+
 function byName(list) {
   const out = {};
   list.forEach((t) => { out[t.name] = t; });
@@ -59,12 +72,24 @@ describe('mcp-contract 02: the whole 4.x -> 5.0.0 tool-surface delta is one appr
       `a tool appeared that the 4.x surface did not have: ${JSON.stringify(added)}`);
   });
 
-  it('leaves every surviving tool field-for-field identical to its 4.x definition', () => {
+  it('leaves every surviving tool field-for-field identical to its 4.x definition, apart from approved schema changes', () => {
     Object.keys(pre).forEach((name) => {
       if (now[name] == null) return; // an approved removal, covered above
       assert.strictEqual(now[name].description, pre[name].description, `${name}: description moved`);
       assert.deepStrictEqual(now[name].inputSchema,  pre[name].inputSchema,  `${name}: inputSchema moved`);
-      assert.deepStrictEqual(now[name].outputSchema, pre[name].outputSchema, `${name}: outputSchema moved`);
+      const approved = APPROVED_SCHEMA_CHANGES[name];
+      if (approved != null) {
+        assert.deepStrictEqual(now[name].outputSchema, approved.outputSchema, `${name}: outputSchema is not the approved one`);
+      } else {
+        assert.deepStrictEqual(now[name].outputSchema, pre[name].outputSchema, `${name}: outputSchema moved`);
+      }
+    });
+  });
+
+  it('names only output schemas that actually changed', () => {
+    Object.keys(APPROVED_SCHEMA_CHANGES).forEach((name) => {
+      assert.ok(pre[name] != null && now[name] != null, `${name}: not on both surfaces`);
+      assert.notDeepStrictEqual(pre[name].outputSchema, now[name].outputSchema, `${name}: approved a change that did not happen`);
     });
   });
 

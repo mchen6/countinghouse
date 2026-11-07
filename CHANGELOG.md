@@ -119,6 +119,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   carry no `structuredContent`, because clients validate it against the
   output schema even on errors.
 - **`countinghouse_call_tool` advertises no output schema.**
+- **`countinghouse_check_balance` returns `{userName, balance}`**, no longer
+  the caller's raw API key, which reached model context and logs. A user
+  name equal to the key (the file provider's fallback for an entry without
+  `userName`) is returned as `null`; under `--debug` it is `debug`.
 - ctx.call and HTTP `invoke-action` keep `{output: …}`.
 - New contract test `test/mcp-contract/03-sdk-client-conformance.js` drives
   `@modelcontextprotocol/sdk` 1.32.2 (exact-pinned devDependency) against

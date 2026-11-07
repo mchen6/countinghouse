@@ -55,8 +55,11 @@
     "outputSchema": {
       "type": "object",
       "properties": {
-        "apiKey": {
-          "type": "string"
+        "userName": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "balance": {
           "type": [
@@ -64,7 +67,12 @@
             "null"
           ]
         }
-      }
+      },
+      "required": [
+        "userName",
+        "balance"
+      ],
+      "additionalProperties": false
     }
   },
   {
