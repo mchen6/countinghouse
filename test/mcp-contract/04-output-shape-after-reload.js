@@ -1,8 +1,16 @@
 // The output shape a result is sent in follows the module as it is loaded
 // now: after a reload that changes an action's output schema, tools/list and
-// tools/call both use the new schema, and a task result stored before the
-// reload is read back text-only once it no longer conforms -- never as
-// structuredContent the advertised schema would reject.
+// tools/call both use the new schema. A task's result is stamped at
+// completion with a hash of the output schema it was produced under, and
+// tasks/result sends structuredContent only while the advertised schema
+// still has that hash -- otherwise text only, even when the old result
+// would happen to validate against the new schema. No module schema is
+// compiled on the main thread to decide it.
+//
+// Each task here finishes before the reload that follows it; the ordering
+// is never forced the other way, because the stamp is taken from whatever
+// is loaded at completion, so a task that completed after a reload is
+// simply stamped with the new schema.
 const assert  = require('assert');
 const fs      = require('fs');
 const os      = require('os');
@@ -30,6 +38,23 @@ function mcp(port, method, params) {
   return request(`http://127.0.0.1:${port}`).post('/mcp')
     .set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream').set('X-CH-Key', KEY)
     .send({jsonrpc: '2.0', id: Date.now(), method, params}).then((res) => res.body);
+}
+
+const V1_SCHEMA  = fs.readFileSync(path.join(FIXTURE, 'schema.json'), 'utf8');
+const V1_HANDLER = fs.readFileSync(path.join(FIXTURE, 'handlers', 'greetService', 'hello.js'), 'utf8');
+function writeV1(dir) {
+  fs.writeFileSync(path.join(dir, 'schema.json'), V1_SCHEMA);
+  fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'), V1_HANDLER);
+}
+
+// v3: v1 plus an optional field. A v1 result still validates against it,
+// but it is not the schema the result was produced under.
+function writeV3(dir) {
+  writeV1(dir);
+  const schemaFile = path.join(dir, 'schema.json');
+  const schema = JSON.parse(fs.readFileSync(schemaFile, 'utf8'));
+  schema.greetService.hello.output.properties.lang = {type: 'string'};
+  fs.writeFileSync(schemaFile, JSON.stringify(schema, null, 2));
 }
 
 // v2: a different, strict output, so a v1 result cannot pass for it.
@@ -74,7 +99,7 @@ async function finishedTask(port) {
 describe('mcp-contract 04: the result shape follows the module after a reload', function() {
   this.timeout(120000);
 
-  let tmp, port, server, v1TaskId;
+  let tmp, port, server, v1TaskId, v2TaskId;
 
   before(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-reload-output-schema-'));
@@ -121,6 +146,40 @@ describe('mcp-contract 04: the result shape follows the module after a reload', 
     const res = await mcp(port, 'tasks/result', {taskId: v1TaskId});
     assert.strictEqual(res.result.isError, false);
     assert.strictEqual(res.result.structuredContent, undefined);
+    assert.deepStrictEqual(JSON.parse(res.result.content[0].text), {text: 'v1'});
+  });
+
+  it('a task finished on v2, read after a reload back to v1, is text-only', async () => {
+    v2TaskId = await finishedTask(port);
+    writeV1(tmp);
+    await load(port, tmp);
+    await callUntil(port, (res) => res.structuredContent != null && res.structuredContent.text === 'v1');
+    const res = await mcp(port, 'tasks/result', {taskId: v2TaskId});
+    assert.strictEqual(res.result.isError, false);
+    assert.strictEqual(res.result.structuredContent, undefined);
+    assert.deepStrictEqual(JSON.parse(res.result.content[0].text), {upper: 'V2'});
+  });
+
+  it('reloading the same v1 schema keeps a v1 task as structuredContent', async () => {
+    const res = await mcp(port, 'tasks/result', {taskId: v1TaskId});
+    assert.deepStrictEqual(res.result.structuredContent, {text: 'v1'});
+    await load(port, tmp);
+    await callUntil(port, (r) => r.structuredContent != null && r.structuredContent.text === 'v1');
+    const again = await mcp(port, 'tasks/result', {taskId: v1TaskId});
+    assert.deepStrictEqual(again.result.structuredContent, {text: 'v1'});
+  });
+
+  it('a compatible schema change still sends a v1 task text-only: the schema it was produced under is gone', async () => {
+    writeV3(tmp);
+    await load(port, tmp);
+    const list = async () => (await mcp(port, 'tools/list', {})).result.tools.find((t) => t.name === TOOL);
+    const deadline = Date.now() + 20000;
+    while (!('lang' in ((await list()) || {outputSchema: {properties: {}}}).outputSchema.properties) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const res = await mcp(port, 'tasks/result', {taskId: v1TaskId});
+    assert.strictEqual(res.result.isError, false);
+    assert.strictEqual(res.result.structuredContent, undefined, JSON.stringify(res.result));
     assert.deepStrictEqual(JSON.parse(res.result.content[0].text), {text: 'v1'});
   });
 });

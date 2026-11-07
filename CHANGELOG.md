@@ -111,7 +111,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   Structured content does not match the tool's output schema` (Claude Code
   does not validate, which is why it never showed). The text block is the
   same object serialized. tasks/result follows the module as loaded when it
-  is read, and goes text only for a stored result that no longer conforms.
+  is read: a completed task is stamped with a hash of the output schema its
+  result was produced under, and goes text only once the advertised schema
+  is a different one (even if the old result would validate against it). No
+  module schema is compiled on the main thread for it.
 - **Tools without a declared output schema advertise none** and return text
   only. The bundled modules all declare one; their `tools/list` is
   unchanged.

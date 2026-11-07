@@ -234,6 +234,29 @@ describe('auth 07: MCP tasks/* and the HTTP job routes enforce per-tenant job ow
       });
   });
 
+  // tasks/result's output-schema stamp lives on the job's data, main-side;
+  // the HTTP job routes return that data, so they must leave it out -- their
+  // response shape is unchanged by it. Read as the owner, after completion
+  // (when the stamp is written), so ownership surviving the write is
+  // checked here too.
+  it('HTTP /get-job and /get-job-history: the owner reads her job, with no internal output-schema stamp', (done) => {
+    request(url).post(`/devices/${DEVICE_ID}/get-job`).set('X-CH-Key', ALICE).send({id: aliceTaskId}).end((err, res) => {
+      if (err) return done(err);
+      if (res.status !== 200 || res.body.job == null || res.body.state !== 'completed') {
+        return done(new Error(`owner should read her completed job, got: ${res.status} ${JSON.stringify(res.body)}`));
+      }
+      if ('outputSchemaHash' in (res.body.job.data || {})) return done(new Error(`get-job exposed the stamp: ${JSON.stringify(res.body.job.data)}`));
+      request(url).post(`/devices/${DEVICE_ID}/get-job-history`).set('X-CH-Key', ALICE).send({name: ECHO_TOOL}).end((err2, res2) => {
+        if (err2) return done(err2);
+        const mine = (Array.isArray(res2.body) ? res2.body : []).filter((r) => String(r.job.id) === String(aliceTaskId));
+        if (mine.length === 0) return done(new Error(`owner should see her job's history, got: ${JSON.stringify(res2.body)}`));
+        const leaked = mine.filter((r) => 'outputSchemaHash' in (r.job.data || {}));
+        if (leaked.length > 0) return done(new Error(`get-job-history exposed the stamp: ${JSON.stringify(leaked[0].job.data)}`));
+        return done();
+      });
+    });
+  });
+
   it('alice\'s job survived every one of mallory\'s attempts', (done) => {
     mcp(ALICE, {jsonrpc: '2.0', id: 10, method: 'tasks/get', params: {taskId: aliceTaskId}}, (err, res) => {
       if (err) return done(err);

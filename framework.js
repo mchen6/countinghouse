@@ -211,7 +211,10 @@ global.DeviceError  = require('./lib/countinghouse-error').DeviceError;
 global.CHUtil.redis = redisAPI.client;
 
 var JobControl    = require('./lib/job-control');
-if (options.workerThread === true) JobControl.initJobProcess(routeManager.cdifInterface);
+if (options.workerThread === true) {
+  JobControl.initJobProcess(routeManager.cdifInterface);
+  JobControl.setCompletionHook(require('./lib/mcp/gateway').stampOutputSchema(routeManager.cdifInterface));
+}
 
 // routeManager.startServer();
 mm.loadAllModules();
