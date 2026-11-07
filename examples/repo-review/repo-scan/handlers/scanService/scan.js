@@ -11,9 +11,17 @@
 const fs   = require('fs');
 const path = require('path');
 
-// The countinghouse repo this module ships inside:
-// examples/repo-review/repo-scan/handlers/scanService/ -> up five.
-const DEFAULT_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
+// The default root is the operator's choice: `defaultRoot` in this module's
+// device config (<--deviceConfigPath>/repo-scan.json; `npm run
+// demo:repo-review` writes one pointing at the countinghouse checkout). It is
+// never inferred. It used to be "up five" from this file's __dirname, but a
+// sandboxed module's __dirname is virtual (/app/handlers/scanService), so that
+// climb landed on '/' and a no-argument call walked the host filesystem.
+function configuredDefaultRoot() {
+  const config = global.DeviceConfig;
+  return (config != null && typeof config.defaultRoot === 'string' && config.defaultRoot.trim() !== '')
+    ? config.defaultRoot : null;
+}
 
 // Source plus manifests. Manifests are in the default set deliberately: the
 // composite tool hands package.json and the lockfile to dep-audit out of this
@@ -172,11 +180,26 @@ function walk(root, includeRes, excludeRes, budget, state) {
 }
 
 function resolveRoot(input) {
-  if (input == null || input.path == null) return DEFAULT_ROOT;
-  if (typeof input.path !== 'string' || input.path.trim() === '') {
-    throw new DeviceError('ARGUMENTS_INVALID', 'path must be a non-empty string');
+  let wanted;
+  if (input == null || input.path == null) {
+    wanted = configuredDefaultRoot();
+    if (wanted == null) {
+      throw new DeviceError('ARGUMENTS_INVALID',
+        'pass `path`, or set `defaultRoot` in repo-scan\'s device config (<--deviceConfigPath>/repo-scan.json)');
+    }
+  } else {
+    if (typeof input.path !== 'string' || input.path.trim() === '') {
+      throw new DeviceError('ARGUMENTS_INVALID', 'path must be a non-empty string');
+    }
+    wanted = input.path;
   }
-  const resolved = path.resolve(input.path);
+  const resolved = path.resolve(wanted);
+  // A tripwire, not the protection: under --moduleSandbox audit, reads
+  // outside the module's namespace are allowed and logged by design; enforce
+  // with a declared fs permission is what confines them.
+  if (path.parse(resolved).root === resolved) {
+    throw new DeviceError('ARGUMENTS_INVALID', `${resolved} is a filesystem root; name the repository directory`);
+  }
 
   let stat;
   try {

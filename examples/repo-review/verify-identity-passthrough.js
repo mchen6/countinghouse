@@ -94,7 +94,8 @@ function callReview(key, cb) {
   .set('Content-Type', 'application/json').set('X-CH-Key', key)
   .send({jsonrpc: '2.0', id: 1, method: 'tools/call',
          params: {name: 'repo_review_reviewservice_review',
-                  arguments: {include: ['lib/**/*.js', 'package.json', 'package-lock.json']}}})
+                  // Named explicitly: repo-scan has no inferred default root.
+                  arguments: {path: REPO_ROOT, include: ['lib/**/*.js', 'package.json', 'package-lock.json']}}})
   .end((err, res) => {
     if (err) return cb(err);
     return cb(null, res.body != null ? res.body.result : null);

@@ -72,3 +72,6 @@ docs/*.tgz
 
 # test trees (test/helpers/test-tmp.js)
 test/.tmp/
+
+# Written by `npm run demo:repo-review`: repo-scan's defaultRoot, this checkout's absolute path.
+/examples/repo-review/config/

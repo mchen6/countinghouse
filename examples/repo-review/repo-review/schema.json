@@ -9,7 +9,7 @@
         "properties": {
           "path": {
             "title": "repository to review",
-            "description": "Directory to review. Defaults to the countinghouse repository this tool is hosted in, which is what makes the demo runnable with no arguments.",
+            "description": "Directory to review. Defaults to the operator-configured `defaultRoot` of repo-scan (`npm run demo:repo-review` sets it to the countinghouse checkout, which is what makes the demo runnable with no arguments); with none, path is required.",
             "type": "string"
           },
           "include": {

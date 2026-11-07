@@ -358,7 +358,8 @@ async function main() {
 
     // Identical arguments to both conditions: whatever repo-scan's defaults are,
     // both sides get them, so neither can be reading a different tree.
-    const scanArgs = {};
+    // Named explicitly: repo-scan has no inferred default (see its schema).
+    const scanArgs = {path: REPO_ROOT};
 
     console.error('warm-up (not measured) ...');
     await conditionA(scanArgs);

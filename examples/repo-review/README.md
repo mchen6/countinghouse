@@ -82,7 +82,17 @@ npm run demo:repo-review
 
 That file grants `demo-key` the composite module only, and the composing
 module's internal identity (`repo-review-internal`) the three inner modules.
-Call it with the demo key:
+The script also writes `examples/repo-review/config/repo-scan.json`, setting
+repo-scan's `defaultRoot` to this checkout, and passes `--deviceConfigPath`,
+which is what makes a call with no `path` review the countinghouse repository.
+That flag replaces the device-config directory for every module the server
+loads; it is fine for these four, which read no other config, but don't copy
+it into a real setup without moving the other modules' config files too.
+That default is the operator's: repo-scan never infers it (with no
+`defaultRoot`, `path` is required), and it refuses a filesystem root. Under
+the default `--moduleSandbox audit` the reads outside the module are allowed
+and logged; under `enforce` they need a declared fs permission for that
+directory. Call it with the demo key:
 
 ```sh
 curl -s -X POST http://127.0.0.1:9527/mcp -H "Content-Type: application/json" \

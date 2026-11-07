@@ -9,7 +9,7 @@
         "properties": {
           "path": {
             "title": "directory to scan",
-            "description": "Absolute or relative path of the directory to walk. Defaults to the countinghouse repository this module ships in, which is what makes the repo-review demo runnable with no arguments.",
+            "description": "Absolute or relative path of the directory to walk. Defaults to `defaultRoot` in this module's device config, which the operator sets (`npm run demo:repo-review` sets it to the countinghouse checkout); with none, path is required. A filesystem root is refused. Under --moduleSandbox audit, reads outside the module are allowed and logged; enforce with a declared fs permission is what confines them.",
             "type": "string"
           },
           "include": {
