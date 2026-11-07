@@ -321,14 +321,16 @@ async function runCondition(p, sandbox, dirs) {
   };
   fs.writeFileSync(authPath, JSON.stringify(config));
 
-  const args = serverArgs(p.port, authPath, p.flags.concat(sandboxFlags(sandbox)));
+  const args = serverArgs(p.port, authPath, p.flags.concat(sandboxFlags(sandbox), ['--moduleDataPath', dirs.dataRoot]));
   const sandboxLog = multiRun.newSandboxLog();
   const errors = {tally: {}, samples: []};
   console.error(`\n=== ${p.label}, sandbox ${multiRun.sandboxMode(args)} ===`);
   const server = await startServer(args, sandboxLog);
   const result = {label: p.label, sandbox: sandbox, sandboxMode: multiRun.sandboxMode(args),
                   files: [], size: [], client: null, headline: null, errors: errors, sandboxLog: sandboxLog};
-  const triage = (dir, n) => call(url, caller, TOOLS.triage, {dir: dir, maxFiles: n});
+  // the server sees a log directory as /data/<name>; dirs.* are host paths
+  const asServed = (dir) => `/data/${path.relative(dirs.logRoot, dir)}`;
+  const triage = (dir, n) => call(url, caller, TOOLS.triage, {dir: asServed(dir), maxFiles: n});
 
   try {
     if (MATRIX === 'headline') {
@@ -355,7 +357,7 @@ async function runCondition(p, sandbox, dirs) {
 
     console.error('  composite vs client-orchestrated');
     const composite = await repeat(() => triage(dirs.files, CLIENT_FILES), errors);
-    const client    = await repeat(() => clientOrchestrated(url, orchestrator, dirs.files, CLIENT_FILES), errors);
+    const client    = await repeat(() => clientOrchestrated(url, orchestrator, asServed(dirs.files), CLIENT_FILES), errors);
     const bytes = (r) => (r.last != null ? {reqBytes: r.last.reqBytes, resBytes: r.last.resBytes} : {reqBytes: null, resBytes: null});
     result.client = {
       n: CLIENT_FILES,
@@ -375,11 +377,18 @@ function dirBytes(dir) {
 
 async function measureOnce() {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'log-triage-perf-'));
-  const dirs = {root: tempRoot, files: path.join(tempRoot, 'files'), size: {}};
+  // The logs live in log-read's own data directory under the servers'
+  // --moduleDataPath, which the module sees as /data in every sandbox mode.
+  // A host path under /tmp would not do: a sandboxed module's /tmp is its
+  // own (every composite call then failed DEVICE_ACTION_CALL_FAIL). The
+  // in-process baselines read the same files by their host paths.
+  const dataRoot = path.join(tempRoot, 'module_data');
+  const logRoot  = path.join(dataRoot, 'log-read', 'data');
+  const dirs = {root: tempRoot, dataRoot: dataRoot, logRoot: logRoot, files: path.join(logRoot, 'files'), size: {}};
 
   gen.generate({dir: dirs.files, files: Math.max.apply(null, FILE_COUNTS), lines: 400, seed: 1});
   for (const lines of LINE_COUNTS) {
-    dirs.size[lines] = path.join(tempRoot, `size-${lines}`);
+    dirs.size[lines] = path.join(logRoot, `size-${lines}`);
     gen.generate({dir: dirs.size[lines], files: SIZE_FILES, lines: lines, seed: 1});
   }
   const sizeBytes = {};
