@@ -112,6 +112,8 @@
   "MODULE_SANDBOX_REFUSED": "Module refused by the module sandbox (enforce mode) -- run countinghouse-validate on it, fix the listed problems (permissions syntax, dependencies outside the module, native code), and load it again",
   "MODULE_RESTARTING": "The module's worker stopped (a resource limit or a crash) and is restarting -- retry after the time given; the server log has the reason",
   "MODULE_SUSPENDED": "The module was suspended after repeated worker exits -- an operator must fix the cause (see the server log) and restart it with POST /restart-module",
+  "MODULE_RELOADING": "The module is reloading and its worker was replaced while this was in progress -- retry; the new module answers once it has loaded",
+  "MODULE_UNLOADED": "The module was unloaded (or its new code failed to load, or its worker ended with no supervisor to restart it) -- an operator must load it again",
   "RATE_LIMITED": "This module sent too many messages to the main thread -- slow down, or ask the operator to raise --moduleMessageRate",
   "MODULE_NAME_INVALID": "Not a valid npm package name -- give the module's package.json name (for example \"my-module\" or \"@scope/my-module\")",
   "MODULE_LOADED": "The module is loaded, restarting or suspended -- unload it first (POST /unload-module), then uninstall it",

@@ -112,6 +112,8 @@
   "MODULE_SANDBOX_REFUSED": "模块被模块沙箱拒绝（enforce 模式）-- 请对其运行 countinghouse-validate，修复列出的问题（权限声明语法、模块目录之外的依赖、原生代码），然后重新加载",
   "MODULE_RESTARTING": "模块的 worker 已停止（资源限制或崩溃），正在重启 -- 请在给出的时间之后重试；原因见服务器日志",
   "MODULE_SUSPENDED": "模块因 worker 反复退出已被暂停 -- 需要运维人员排除原因（见服务器日志）后用 POST /restart-module 重启",
+  "MODULE_RELOADING": "模块正在重新加载，处理过程中其 worker 已被替换 -- 请重试；新模块加载完成后即可应答",
+  "MODULE_UNLOADED": "模块已被卸载（或新代码加载失败，或其 worker 退出且没有监督器重启它）-- 需要运维人员重新加载",
   "RATE_LIMITED": "该模块发往主线程的消息过多 -- 请降低频率，或请运维人员调高 --moduleMessageRate",
   "MODULE_NAME_INVALID": "不是有效的 npm 包名 -- 请使用模块 package.json 中的名称（例如 \"my-module\" 或 \"@scope/my-module\"）",
   "MODULE_LOADED": "模块已加载、正在重启或已被暂停 -- 请先卸载（POST /unload-module），再执行 uninstall",

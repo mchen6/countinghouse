@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "worker-end-caller",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a composite whose second hop is still in flight when its inner module reloads",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "pingThenHang",
+            "description": "Calls worker-end ping (completes), then hang (in flight).",
+            "input": {
+              "schema": "/callerService/pingThenHang/input"
+            },
+            "output": {
+              "schema": "/callerService/pingThenHang/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
