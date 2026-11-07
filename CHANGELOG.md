@@ -18,6 +18,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Docs — what log-triage costs in model tokens
+
+- [`docs/benchmarks/token-cost.md`](docs/benchmarks/token-cost.md): the same
+  triage task through `claude -p`, four ways (the model chaining the leaf
+  tools, one composite call, and code mode with and without output types),
+  46 runs at `622438f`. Scripts in `perf/token-cost-compare.js` and
+  `perf/gen-code-mode-wrappers.js`, results in
+  `perf/results/2026-11-05/token/`.
+
 ### Security — review round R1
 
 - **Request bodies are bounded.** JSON, XML and form bodies are limited to
