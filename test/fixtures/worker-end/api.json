@@ -1,0 +1,63 @@
+{
+  "device": {
+    "friendlyName": "worker-end",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "handlers that hang, block or end their worker, so work in flight when a worker ends can be seen failing",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:endService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Prove the module is up.",
+            "input": {
+              "schema": "/endService/ping/input"
+            },
+            "output": {
+              "schema": "/endService/ping/output"
+            }
+          },
+          {
+            "name": "hang",
+            "description": "Never answers, so the call is in flight when the worker ends.",
+            "input": {
+              "schema": "/endService/hang/input"
+            },
+            "output": {
+              "schema": "/endService/hang/output"
+            }
+          },
+          {
+            "name": "busy",
+            "description": "Blocks its worker for 600 ms, then answers: a message sent meanwhile waits behind it.",
+            "input": {
+              "schema": "/endService/busy/input"
+            },
+            "output": {
+              "schema": "/endService/busy/output"
+            }
+          },
+          {
+            "name": "die",
+            "description": "Blocks for 600 ms, then ends its worker without answering.",
+            "input": {
+              "schema": "/endService/die/input"
+            },
+            "output": {
+              "schema": "/endService/die/output"
+            }
+          },
+          {
+            "name": "crash",
+            "description": "Ends its worker 100 ms later without answering.",
+            "input": {
+              "schema": "/endService/crash/input"
+            },
+            "output": {
+              "schema": "/endService/crash/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

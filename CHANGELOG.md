@@ -129,8 +129,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   the official MCP SDK client rejected every module tool with `-32602
   Structured content does not match the tool's output schema` (Claude Code
   does not validate, which is why it never showed). The text block is the
-  same object serialized. tasks/result follows the module as loaded when it
-  is read: a completed task is stamped with a hash of the output schema its
+  same object serialized. A synchronous call is shaped with the output
+  schema in effect when it started, even if the module reloads before it
+  answers. tasks/result follows the module as loaded when it is read: a completed task is stamped with a hash of the output schema its
   result was produced under, and goes text only once the advertised schema
   is a different one (even if the old result would validate against it). No
   module schema is compiled on the main thread for it.
