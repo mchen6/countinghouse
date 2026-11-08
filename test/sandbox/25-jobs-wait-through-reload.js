@@ -169,6 +169,9 @@ describe('sandbox 25: a job waits through its module\'s reload', function() {
       assert.match(job.job.failedReason, /^MODULE_SUSPENDED: /);
       await sleep(1500);
       assert.strictEqual((await jobState(PORT, END_ID, added.body.id)).job.attemptsMade, 1);
+      // An operator unload of the suspended module: unloaded, not "restarting".
+      assert.strictEqual((await post(PORT, KEY, '/unload-module', {name: 'worker-end'})).status, 200);
+      assert.strictEqual(codeOf(await ping()), 'MODULE_UNLOADED');
     });
   });
 });

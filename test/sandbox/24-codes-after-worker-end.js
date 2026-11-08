@@ -129,6 +129,39 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
       assert.strictEqual(codeOf(await call()), 'MODULE_UNLOADED');
     });
 
+    // The same for a supervised restart after a crash: from the crash until
+    // the restarted worker's devices are back -- which, for a module whose
+    // discovery takes a while, is seconds after the supervisor has it
+    // running again -- never DEVICE_NOT_FOUND.
+    it('between a crash and the restarted worker\'s devices coming back, a request is never DEVICE_NOT_FOUND', async function() {
+      this.timeout(60000);
+      const dir = path.join(base, 'slow-discovery', 'stray-output-module');
+      fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'stray-output-module'), dir, {recursive: true});
+      const index = path.join(dir, 'index.js');
+      fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("this.emit('deviceonline', new Device(), this);",
+        "setTimeout(() => this.emit('deviceonline', new Device(), this), 3000);"));
+      const device = path.join(dir, 'device.js');
+      fs.writeFileSync(device, fs.readFileSync(device, 'utf8').replace("this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {",
+        "this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {\n    if (args.input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }"));
+      const id = deviceIDForName('stray-output-module');
+      const call = (v) => post(PORT, KEY, `/devices/${id}/invoke-action`, {serviceID: 'urn:countinghouse-test:serviceID:svc', actionName: 'returnsCleanly', input: {v: v}});
+      await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
+      await waitFor(async () => (await call('x')).status === 200, 20000, 'the slow-discovery copy to answer');
+      await call('crash');
+      const seen = new Set();
+      const deadline = Date.now() + 30000;
+      let down = false;
+      let ok = false;
+      while (!ok && Date.now() < deadline) {
+        const r = await call('x');
+        if (r.status === 200) { if (down) ok = true; } else { down = true; seen.add(codeOf(r)); }
+        await sleep(20);
+      }
+      await post(PORT, KEY, '/unload-module', {name: 'stray-output-module'});
+      assert.ok(ok, `never came back: ${JSON.stringify([...seen])}`);
+      assert.ok(!seen.has('DEVICE_NOT_FOUND'), `saw DEVICE_NOT_FOUND during the restart: ${JSON.stringify([...seen])}`);
+    });
+
     it('after a reload whose new code fails to load, a request is MODULE_UNLOADED', async () => {
       fs.writeFileSync(path.join(copy, 'api.json'), '{ this is not json');
       const loaded = await post(PORT, KEY, '/load-module', {path: copy, name: 'worker-end'});
