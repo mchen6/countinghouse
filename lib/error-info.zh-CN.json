@@ -77,6 +77,7 @@
   "SYSTEM_ERROR_UNKNOWN_USER": "未知用户",
   "USER_HAS_NO_DEVICE":"该 apiKey 无权访问此设备，请联系管理员将其加入鉴权配置中该 apiKey 的设备列表",
   "ADMIN_REQUIRED":"此操作需要管理员 apiKey",
+  "AUTH_RELOAD_INVALID": "认证配置未重新加载，因为它未通过检查 -- 当前使用的配置保持不变；请修正所列问题后再次重新加载",
   "INVALID_BALANCE_FORMAT":"用户余额数据格式非法",
   "NO_PRICE_RECORD":"用户api计数格式非法",
   "USER_DEVICE_RECORD_FORMAT_INVALID":"用户设备列表格式非法",

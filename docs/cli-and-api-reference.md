@@ -62,7 +62,7 @@ modules see their own code at. Install it elsewhere (e.g.
 | `POST /devices/:deviceID/invoke-action` | Platform, pre-MCP HTTP API | Direct HTTP equivalent of `tools/call`; predates the MCP gateway and still works. |
 | `GET /devices/:deviceID/get-spec`, `.../schema` | Platform | A device's `api.json` / resolved JSON Schema 2020-12 documents. |
 | `POST /devices/:deviceID/{add,get,remove}-job`, `get-job-history` | Platform | Job control predating the MCP Tasks extension; still available for non-MCP callers. Scoped to the caller's own jobs, same ownership rule `tasks/*` applies. |
-| `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/uninstall-module`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
+| `POST /load-module`, `/unload-module`, `/restart-module`, `/reload-module`, `/uninstall-module`, `/reload-auth`, `/shutdown`, `/get-module-device-list` | Platform, **admin key required** | Module lifecycle and operational surface. Gated per request on the caller's apiKey having `admin` — see [Admin keys](authentication.md#admin-keys). Not `--debug`-gated: `--debug` bypasses the check like it bypasses every other one, but is not how you configure access to these. |
 
 **Module names.** A load (`/load-module`, `countinghouse_load_module`, `--loadModule`, the registry at startup, restarts) must use the module's package.json name; any other name is refused with `MODULE_NAME_MISMATCH`. `POST /load-module` may leave `name` out, and then uses the package.json name.
 
@@ -77,6 +77,28 @@ of the next restart attempt in milliseconds since the epoch (or `null`); and
 `violations` counts the module's logged sandbox violations. A module that is
 restarting or suspended is still answered, with an empty `deviceList`. The
 key is absent under `--moduleSandbox off`.
+
+**`POST /reload-auth`** re-reads the auth configuration without a restart,
+and answers `{ok, entries, changed}`: counts only, never keys. It's also the
+authoring tool `countinghouse_reload_auth`.
+- **File provider:** the file is re-read and checked. If it passes, it
+  replaces the configuration in use at once. If it doesn't (unreadable, not
+  JSON, an entry that isn't an object), the configuration in use stays, and
+  the answer, `AUTH_RELOAD_INVALID`, names the problem by entry position,
+  never by key. This check is stricter than at startup, on purpose: at
+  startup an unreadable file means no key is accepted (the server fails
+  closed), but a reload must never replace a working configuration with a
+  broken one. So a file the server started with can still be refused by a
+  reload, and the answer says which entry to fix.
+- **CouchDB:** its cache is emptied. **sqlite:** it reads its database on
+  every call, so the reload changes nothing and says so.
+- Grants added or removed apply from the next call; calls in flight finish
+  as they started. An open peer channel whose grant was removed closes at
+  the next re-check (`--peerChannelAuthRecheckSeconds`).
+- A changed `runsModules` binding applies to modules loaded or reloaded
+  after the reload. A module already running keeps the binding it was
+  verified with at its load, so reload that module (`POST /reload-module`)
+  to pick up a new one.
 
 **`POST /restart-module`** takes `{name, path, version}`; `path` and `version`
 may be left out to restart the module from where it was last loaded, which

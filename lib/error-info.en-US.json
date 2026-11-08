@@ -77,6 +77,7 @@
   "SYSTEM_ERROR_UNKNOWN_USER": "Unknown user",
   "USER_HAS_NO_DEVICE": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config",
   "ADMIN_REQUIRED": "This operation requires an admin apiKey",
+  "AUTH_RELOAD_INVALID": "The auth configuration was not reloaded, because it failed its checks -- the configuration in use is unchanged; fix the problem named and reload again",
   "INVALID_BALANCE_FORMAT": "Invalid user balance data format",
   "NO_PRICE_RECORD": "Invalid user API count format",
   "USER_DEVICE_RECORD_FORMAT_INVALID": "Invalid user device list format",

@@ -82,6 +82,16 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   condition; without peer channels every code was flattened. A callee can
   still raise any runtime code, as it could as a tool of its own.
 
+### Added — reload the auth configuration without a restart
+
+- `POST /reload-auth` (admin key) and the authoring tool
+  `countinghouse_reload_auth` re-read the auth configuration: the file
+  provider re-reads and checks its file, swapping it in only if it passes
+  (otherwise `AUTH_RELOAD_INVALID`, naming the entry by position, and the
+  configuration in use stays); CouchDB empties its cache; sqlite already
+  reads live. The answer is `{ok, entries, changed}`, never keys. A changed
+  `runsModules` binding applies to modules loaded or reloaded afterwards.
+
 ### Added — `--jobTimeout`
 
 - `--jobTimeout <seconds>` (default `3600`, `0` for none) bounds a job that

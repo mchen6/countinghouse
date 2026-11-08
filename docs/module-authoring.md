@@ -53,6 +53,7 @@ tools appear:
 | `countinghouse_validate_module` | The CLI's check over MCP. Returns `{ok, module, problems}`. |
 | `countinghouse_load_module` | Load a module from a local path into the running runtime. Returns the tool names it made callable, plus `discoveryComplete`. |
 | `countinghouse_call_tool` | Invoke a tool by name — so a just-loaded module can be called without waiting for the client to refresh its tool list. |
+| `countinghouse_reload_auth` | Re-read the auth configuration without a restart, the same as `POST /reload-auth`. |
 
 ### The loop
 

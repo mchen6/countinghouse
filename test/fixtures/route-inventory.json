@@ -13,6 +13,7 @@
   "/get-module-device-list",
   "/load-module",
   "/mcp",
+  "/reload-auth",
   "/reload-module",
   "/restart-module",
   "/shutdown",
