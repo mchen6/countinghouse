@@ -356,6 +356,13 @@ is caught and logged, and does not end the worker). Then:
   minutes suspends it instead, see below). Calls
   meanwhile get `MODULE_RESTARTING` with the time of the next attempt. Your
   tools stay in `tools/list`; callers should retry after the time given.
+- When the operator reloads your module (load it again,
+  `POST /reload-module`, `POST /restart-module`), calls in flight fail at
+  once with **`MODULE_RELOADING`**, and calls that arrive before its devices
+  are back get it too; a queued or scheduled job waits for the new worker
+  (up to 30 s) and runs on it. When it is unloaded, or its new code fails to
+  load, calls in flight and after get **`MODULE_UNLOADED`**, and jobs for it
+  fail without retrying.
 - After 3 exits in 10 minutes the module is suspended and calls get
   **`MODULE_SUSPENDED`** with the last reason, until an operator runs
   `POST /restart-module`. A restart that the sandbox refuses (because the

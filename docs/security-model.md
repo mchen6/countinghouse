@@ -231,7 +231,11 @@ killing the worker; file traffic has its own budget (layer 2). A worker that
 ends unexpectedly is restarted after 1 s, then 2 s, and
 suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
 which the current threshold never reaches); calls get
-`MODULE_RESTARTING` or `MODULE_SUSPENDED` while the tools stay listed. When a
+`MODULE_RESTARTING` or `MODULE_SUSPENDED` while the tools stay listed. A
+deliberate reload or unload fails its calls in flight with `MODULE_RELOADING`
+or `MODULE_UNLOADED`. Why a device is missing is told only to a caller that
+passes the access check for it, so a key without access cannot learn whether a
+device was ever hosted. When a
 worker ends, its file operations in flight answer `EIO` and its descriptors
 close; a per-name lifecycle lock makes the next start (and an uninstall) wait
 for them. This bounds memory, blocking, disk use and crash loops. It does

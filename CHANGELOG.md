@@ -27,6 +27,81 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `perf/gen-code-mode-wrappers.js`, results in
   `perf/results/2026-11-05/token/`.
 
+### Fixed — work in flight when a module's worker ends
+
+- **Calls and jobs a worker still owed an answer fail at once, with why.**
+  Before, only a crash the supervisor restarts did this. A reload, an
+  unload, a failed reload, or any crash under `--moduleSandbox off` left
+  synchronous calls waiting for the 30 s `--requestTimeout`
+  (`DEVICE_NOT_RESPONDING`) and running jobs active forever. Now every
+  worker end answers them: `MODULE_RELOADING` when a new worker replaces
+  it, `MODULE_UNLOADED` for an unload or a crash with no supervisor (the
+  module stays down), `MODULE_RESTARTING` for a supervised crash, as
+  before. A reply the worker posted before it handled the unload is still
+  the real answer.
+- **A request for a module that is gone says why.** After an unload, a
+  failed reload, or a crash with no supervisor, a request for one of its
+  devices is `MODULE_UNLOADED`; during a reload, until its devices are
+  back, `MODULE_RELOADING`, and during a supervisor restart
+  `MODULE_RESTARTING` until they are back (not only until the restarted
+  worker is running). `DEVICE_NOT_FOUND` is left for a device never
+  hosted. The reason is given only after the caller's access check (HTTP,
+  composition hops, a job's owner); a caller without access gets
+  `USER_HAS_NO_DEVICE` whatever the reason. This also closes an older gap
+  where a composition hop answered a missing device before checking
+  access. An MCP `tools/call` for an unloaded module's tool is still an
+  unknown tool: it is not listed.
+- **A queued or scheduled job waits through its module's reload** or a
+  supervisor restart, up to 30 s, and runs on the new worker. If the
+  module ends up unloaded or suspended, the job fails with that code and
+  is not retried; if the wait runs out, it fails `MODULE_RELOADING` or
+  `MODULE_RESTARTING`, which bullmq retries when `attempts > 1`. A
+  synchronous call in the same gap still fails at once. A waiting job
+  holds one of the job worker's 1024 concurrency slots.
+- **Jobs failed `MODULE_UNLOADED` or `MODULE_SUSPENDED` are not retried**,
+  whatever their `attempts`: the module is gone until an operator acts.
+- **A reloaded worker whose discovery does not finish within 15 s is
+  unloaded** (logged as an error naming the module), in every sandbox
+  mode: its devices are `MODULE_UNLOADED`, the supervisor does not restart
+  it, and the worker is terminated. Before, with the sandbox off, a module
+  that blocked its worker in discovery left it spinning for good.
+- `countinghouse_validate_module` answers only after its throwaway worker
+  and directory are gone, so a validation sent the moment another answers
+  is no longer refused as busy.
+- Single-thread mode is unaffected (no workers, no job processor); an
+  unload there still answers `DEVICE_NOT_FOUND`.
+
+### Changed — a composite sees an inner tool's error code only if it is a runtime code
+
+- On a composition hop (`ctx.call`, `ctx.serviceClient`), an inner
+  failure keeps its code up to the composite's caller only if the code is
+  one of the runtime's own (`lib/error-info.en-US.json`); any other code is
+  reported as a callee failure, `DEVICE_INVOKE_EXCEPTION`. Before, it
+  depended on the path: over a direct peer channel (the default) any code
+  passed, so an inner module could pass off an invented code as a runtime
+  condition; without peer channels every code was flattened. A callee can
+  still raise any runtime code, as it could as a tool of its own.
+
+### Added — `--jobTimeout`
+
+- `--jobTimeout <seconds>` (default `3600`, `0` for none) bounds a job that
+  sets no timeout of its own, so a handler that never answers cannot hold
+  a job worker slot forever. A job's own `opts.timeout` wins. Either is
+  capped at about 24 days (setTimeout's maximum); a larger value used to
+  fail the job at once. It is applied
+  when the job runs, so it also bounds jobs queued before the upgrade and
+  jobs a scheduler makes from a template stored earlier. Like the other
+  numeric flags, a value that is not a number of seconds falls back to the
+  default.
+
+### Security — no API key in a log line
+
+- Two server log lines printed a tenant's raw API key: a peer channel
+  closed because a grant was revoked, and every module call to
+  `ctx.recordUsage`. Both now name the tenant by a short fingerprint
+  (`key sha256:<first 8 hex>`), enough to tell tenants apart in a log, not
+  to recover the key.
+
 ### Fixed — the repo-review example reads only the directory it is given
 
 - **repo-scan's default root comes from the operator's device config**
