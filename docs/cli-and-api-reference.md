@@ -28,6 +28,7 @@ simulation).
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |
+| `--jobTimeout <seconds>` | `3600` | How long a job (a task, an HTTP `add-job`, a scheduler run) may run when it sets no timeout of its own; `0` for none; at most about 24 days (a larger value, or a job's own larger `opts.timeout`, is taken as that). A job's own `opts.timeout` wins. Like the other numeric flags, a value that is not a number of seconds (`-1`, `1h`) falls back to the default rather than stopping the server. |
 | `--deviceConfigPath <path>` | `./config/devices` | Directory of per-module device config files (one `<moduleName>.json` each). |
 | `--moduleSandbox off\|audit\|enforce` | `audit` (worker mode); `off` in single-thread mode | Module sandbox mode: `off` is no lockdown, limits or policy; `audit` logs violations and lets them through; `enforce` blocks them. Resource limits apply in `audit` too. Explicit `audit` or `enforce` without `--workerThread` is a startup error. See [Security model](security-model.md). |
 | `--modulePolicy <file>` | none | JSON file of operator ceilings and per-module entries that narrow what each module's `countinghouse.permissions` declaration grants. Re-read when a module restarts. See [Declaring permissions](module-development.md#declaring-permissions). |
