@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "key-dump-caller",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "test/auth/30: what a module can reach, searched for keys and user names",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "viaCall",
+            "description": "Peer hop into key-dump, plus this module's own view.",
+            "input": {
+              "schema": "/callerService/viaCall/input"
+            },
+            "output": {
+              "schema": "/callerService/viaCall/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

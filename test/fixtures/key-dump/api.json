@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "key-dump",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "test/auth/30: what a module can reach, searched for keys and user names",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:dumpService": {
+        "actionList": [
+          {
+            "name": "dump",
+            "description": "Search what this module can reach for the given needles.",
+            "input": {
+              "schema": "/dumpService/dump/input"
+            },
+            "output": {
+              "schema": "/dumpService/dump/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
