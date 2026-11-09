@@ -18,6 +18,17 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Security — an open whose folder appeared mid-check is verified
+
+- Under `enforce`, the broker skipped its check after an open when the
+  file's parent directory was missing at the moment it checked the path:
+  that open had nothing to compare against. A host process creating the
+  parent in between, as a link to elsewhere, could steer the open outside
+  the module's namespace or a write-open into a read-only root. The
+  broker now checks where such a descriptor really landed (the parent's
+  real path now, in the root the path names; the name there is the
+  opened file) and closes it with `ENOENT` otherwise.
+
 ### Security — a module's symlink is decided by where it really leads
 
 - `symlink()` in `/data`, `/tmp` or a declared `rw` path checked the
