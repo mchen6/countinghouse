@@ -112,6 +112,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   where a composition hop answered a missing device before checking
   access. An MCP `tools/call` for an unloaded module's tool is still an
   unknown tool: it is not listed.
+- **A reload refused for an invalid version string ends the module's
+  worker** under `--workerThread`, as an unload does. Before, the worker
+  kept running, unreachable, its devices answered `DEVICE_NOT_FOUND`, and
+  uninstall was refused `MODULE_LOADED`.
 - **A queued or scheduled job waits through its module's reload** or a
   supervisor restart, up to 30 s, and runs on the new worker. If the
   module ends up unloaded or suspended, the job fails with that code and
