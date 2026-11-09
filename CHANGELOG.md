@@ -130,6 +130,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   mode: its devices are `MODULE_UNLOADED`, the supervisor does not restart
   it, and the worker is terminated. Before, with the sandbox off, a module
   that blocked its worker in discovery left it spinning for good.
+- **A reload that reaches a worker still blocked in discovery stays a
+  reload**: the old worker's 15 s bound no longer fires during the
+  reload's 3 s unload window, where it turned the reload's devices
+  `MODULE_UNLOADED` (and failed the jobs waiting for them for good).
 - `countinghouse_validate_module` answers only after its throwaway worker
   and directory are gone, so a validation sent the moment another answers
   is no longer refused as busy.
