@@ -18,6 +18,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Security — a module's symlink is decided by where it really leads
+
+- `symlink()` in `/data`, `/tmp` or a declared `rw` path checked the
+  target's text only, so `x -> "."` followed by `y -> "x/.."` was accepted
+  and `y` led to the directory above the root for anyone following it (a
+  host tool, the runtime, another module sharing the path); the module's own
+  later use was already refused. The target is now walked on the host from
+  the real path of the link's directory, following links on the way, and
+  must land in the link's root. It may also hold no `..` segment: a `..`
+  that stays inside today can lead out once the module renames a directory
+  above it. Breaking for a module that makes links such as `../f`: they
+  answer `EPERM` in every `--moduleSandbox` mode.
+
 ### Docs — what log-triage costs in model tokens
 
 - [`docs/benchmarks/token-cost.md`](docs/benchmarks/token-cost.md): the same

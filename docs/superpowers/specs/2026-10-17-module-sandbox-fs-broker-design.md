@@ -336,7 +336,11 @@ module cannot race itself.
 
 **Link rules, in every `--moduleSandbox` mode:** `link()` only within one
 writable root, and counted where the quota is counted; `symlink()` only with a relative target that
-resolves inside the same root; absolute targets are `EPERM`. `chmod` and
+resolves inside the same root; absolute targets are `EPERM`. *(Amended 2026-11-09, FB1:)* the target
+may hold no `..` segment, and is decided by where it really leads — walked from the real path of the
+link's directory, following links on the way — not by its text; text alone let `x -> "."` then
+`y -> "x/.."` lead to the root's parent, and a `..` that stays inside at creation can lead out after a
+rename. `chmod` and
 `fchmod` strip setuid, setgid and sticky bits. Under `enforce`, the spawn walk
 refuses to start a module whose `/data` or `/tmp` holds a link that can lead
 outside *(amended 2026-11-04)*: a symlink with an absolute target, or a hard link to a file that

@@ -101,7 +101,8 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
   `ENOSPC` under `enforce`; under `audit` crossings of 75 % and 100 % are
   logged.
 - **Links.** A hard link only within one writable root; a symlink only with
-  a relative target inside its root. `chmod` drops setuid, setgid and sticky
+  a relative target that really leads inside its root and holds no `..`
+  segment (`../f` answers `EPERM`). `chmod` drops setuid, setgid and sticky
   bits. A cross-root `rename` answers `EXDEV`.
 - **Only declared environment variables** (under `audit` and `enforce`). A
   module's `process.env` holds the names it declares in

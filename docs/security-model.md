@@ -155,8 +155,10 @@ clears the cache first, and opened descriptors are still verified without
 it.
 
 In every mode: `link()` works only within one writable root; `symlink()`
-takes only a relative target that stays inside its root (absolute targets are
-`EPERM`); `chmod` strips setuid, setgid and sticky bits; a cross-root
+takes only a relative target with no `..` segment, and only when the target
+really leads inside its root, following any link on the way (an absolute
+target, a `..`, or a target that leads outside is `EPERM`); `chmod` strips
+setuid, setgid and sticky bits; a cross-root
 `rename` answers `EXDEV`. Under `enforce` a module whose `/data` or `/tmp`
 holds a symlink with an absolute target, or a hard link to a file that also
 has a name outside its `/data` and `/tmp`, does not start until the operator
@@ -322,7 +324,9 @@ The following are known, accepted, and not hidden by the layers above.
   change, or another module's change in a shared `rw` directory, can go
   unseen for that long; under `enforce` every open is still verified. The
   other module cannot make a link that leads outside the root (the link
-  rules), so a stale entry cannot either.
+  rules: no `..`, so a link leads only into its own directory, however that
+  directory is later renamed), so a stale entry cannot either. A link a host
+  process made, or one made before 8.0.0, is not covered by that.
 - **Host paths leak in one place.** For a CommonJS file imported directly by
   an ES module, Node 24 gives `__filename` and stack frames the host path.
 - **Descriptor and handle adoption is refused only under `enforce`.**
