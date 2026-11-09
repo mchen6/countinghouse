@@ -100,7 +100,7 @@ environment. So the guarantee depends on the mode:
 - **Redis**, the other place keys live. Metering balances are named by the
   raw key (db 12), pre-upgrade job data holds it (db 11), and so do
   `--apiMonitor`'s lists until the logger work retires them. A module
-  reaches Redis two ways:
+  reaches Redis three ways:
   - `ctx.redis`, the runtime's route. Its commands go through the main
     thread, to db 5 only, with an allowlist of 23 commands that includes no
     `keys`, `scan` or `select` (lib/redis-api.js,
@@ -117,9 +117,20 @@ environment. So the guarantee depends on the mode:
     in-worker check: code in the worker can interfere with the wrappers, as
     docs/security-model.md already says of the `CHUtil.request` check. The
     boundary is parts 3 and 4.
+  - **The worker's own metering client (M6, found in review; fixed before
+    R2-1 resumes).**
+    Every worker builds its own metering provider today, with a Redis
+    client on the balance ledger (lib/countinghouse-interface.js, built per
+    worker by lib/sandbox.js and reachable as `CHUtil.ci` or through
+    `require.cache`). Module code can call its `recordCall` with any key, or
+    write the balance hashes through its client directly. So until that fix
+    lands, a module *can* reach the key-named data. Nothing in a worker has
+    needed it since D5, so the fix builds the provider on the main thread
+    only, and gives workers a stub that refuses. R2-1 assumes that fix: after
+    it, a worker holds no Redis client at all.
   - So R2-1 also: (a) stops sending `redisUrl` to workers. It's in
-    `getOptions()` today, a worker never opens Redis itself, and a
-    `--redisUrl` with a password would hand that password to every module.
+    `getOptions()` today, a worker opens no Redis connection of its own
+    once M6 lands, and a `--redisUrl` with a password would hand that password to every module.
     (b) Tells operators, in docs/security-model.md and the upgrade guide,
     to put Redis behind a password or ACL, which is the control that holds
     until the network broker ships.
@@ -354,13 +365,66 @@ also returned on paths other than `ctx.call`.
 
 Tokens close the half where a worker states who to bill and who it is.
 Declared-call enforcement closes the half where it states an undeclared
-target. One thing can't be closed at this layer: a module can use the
-authority of **any** call it is currently serving, since it holds every
-in-flight `ctx`. While call A is open, its code can make hops billed to A's
-caller for work it does on behalf of call B. The hop is still limited to the
-module's own binding and declared calls, and still billed to a real caller
-of that module. This is documented in docs/security-model.md as the
-residual, alongside "the operator reviews the module".
+target. What can't be closed at this layer:
+
+- **A module can use the authority of any call it is currently serving**,
+  since it holds every in-flight `ctx`. While call A is open, its code can
+  make hops billed to A's caller for work it does on behalf of call B. The
+  hop is still limited to the module's own binding and declared calls, and
+  still billed to a real caller of that module.
+- **A module's worker runtime is fully readable and writable by the
+  module.** Module code shares its worker's realm and `require.cache`
+  (lib/fs-broker/identity.js: the runtime's own files are keyed by host
+  path), so it can enumerate the cache, take any runtime module's exports,
+  and read or replace their state and functions: the device manager's
+  methods, the WorkerMessage send path, the peer channel's checks. Hiding
+  `CHUtil.dm` and `CHUtil.ci` (Task 5) is tidying, not protection.
+  Consequences:
+  - **No key and no user name may remain anywhere in worker-side runtime
+    state**: channel records, composition bindings, client caches and their
+    cache keys, options. test/auth/30 walks `ctx`, `globalThis` and every
+    `require.cache` entry's exports to enforce that.
+  - A module that hooks its worker's send path can read the tokens of every
+    call in flight in that worker. That's inside the first point (it
+    already holds those `ctx`'s), and a token is bound to its worker, so a
+    peer callee that reads a caller's token still can't use it.
+  - **Worker-side checks are only as good as the worker.** A callee module
+    can disable its own grant check, which only exposes itself. It can also
+    skip metering-before-serve, serving calls into itself unbilled: a
+    module can make itself free to call. That's a billing-integrity
+    residual for the operator. The real fix is metering issued by the main
+    thread when it brokers the channel, or per-invoke accounting on main: a
+    follow-up, not R2-1.
+  - Everything that protects **other** tenants and modules (whom a hop
+    bills, which identity it authorizes as, which targets it may reach) is
+    decided on the main thread, so it holds, including against phantom
+    billing (below).
+  - Isolating the runtime from module code (freezing `require.cache`,
+    running module code in a separate context) is a possible later sandbox
+    item, not R2-1.
+
+This is documented in docs/security-model.md as the residual, alongside
+"the operator reviews the module".
+
+### 10b. Peer invokes are announced and matched
+
+Main doesn't see peer invokes, so a malicious callee could send extra
+metering requests citing a caller's token "for an invoke on that channel",
+and bill the caller's tenant for hops that never happened. So:
+
+- For each peer invoke, the **caller** worker sends main a non-blocking
+  announcement `{channel, invokeId, token}`.
+- Main accepts a callee's metering request only if it matches an unmatched
+  announcement for that channel and invokeId. Each announcement is matched
+  at most once.
+- The two arrive on different ports with no ordering, so main holds an
+  unmatched metering request for up to `PEER_ANNOUNCE_WAIT_MS = 1000` for
+  its announcement, then refuses it (fail closed; the peer path meters
+  before it serves, so no handler runs).
+- A caller that suppresses its announcements gets its own calls refused,
+  which fails safe.
+- The cost is one extra one-way message per peer invoke, with no added
+  serial latency except when the metering request wins the race.
 
 ### 11. Jobs whose owner is gone
 
