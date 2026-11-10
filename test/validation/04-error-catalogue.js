@@ -47,6 +47,23 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
     assert.deepStrictEqual(left, []);
   });
 
+  // Step 1 (c): lib/, bin/ and framework.js construct and test only
+  // CountinghouseError. The old names survive in lib/countinghouse-error.js
+  // (the shims) and on the lines that set the module-facing globals, until
+  // step 1 (d) removes both.
+  it('names the old classes nowhere in lib/, bin/ or framework.js but the shims and the globals', () => {
+    const left = [];
+    for (const f of sources()) {
+      if (f.endsWith(path.join('lib', 'countinghouse-error.js'))) continue;
+      fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+        if (/\b(CHError|DeviceError)\b/.test(line) && !/^\s*global\.(CHError|DeviceError)\s*=/.test(line)) {
+          left.push(`${path.relative(ROOT, f)}:${i + 1}`);
+        }
+      });
+    }
+    assert.deepStrictEqual(left, []);
+  });
+
   it('gives every entry a kind, retryable, httpStatus, mcpCode, and en and zh text', () => {
     for (const [code, e] of Object.entries(CODES)) {
       assert.ok(/^[A-Z][A-Z0-9_]+$/.test(code), code);
