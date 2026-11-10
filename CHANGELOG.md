@@ -79,6 +79,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   above it. Breaking for a module that makes links such as `../f`: they
   answer `EPERM` in every `--moduleSandbox` mode.
 
+### Security — a job is authorized when it runs
+
+- A job was authorized only when it was added. A queued, delayed, retried
+  or scheduled job kept running, and billing its owner's key, after the
+  key lost the grant for that device or action or was removed from the
+  auth config, and its owner could no longer even cancel it. Now the
+  owner's key is checked again before every run, as a synchronous call
+  is. A refused run fails for good (not retried, not billed), with
+  `USER_HAS_NO_DEVICE` or `SYSTEM_ERROR_UNKNOWN_USER` and never the key in
+  the failure, and a refused scheduler is removed. An unreachable auth
+  backend (`SYSTEM_ERROR_USERDB_NA`) is retried like any other failure. A
+  revocation reaches jobs as it reaches calls: at once for sqlite, after
+  `POST /reload-auth` for the file and CouchDB providers.
+
 ### Docs — what log-triage costs in model tokens
 
 - [`docs/benchmarks/token-cost.md`](docs/benchmarks/token-cost.md): the same
