@@ -188,6 +188,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `MODULE_RESTARTING`, which bullmq retries when `attempts > 1`. A
   synchronous call in the same gap still fails at once. A waiting job
   holds one of the job worker's 1024 concurrency slots.
+- **A job's answer after its timeout is dropped.** Once a job's timeout
+  (its own, or `--jobTimeout`) has failed it, an answer that still arrives
+  from the worker is not billed, the completion hook does not stamp the
+  job, and nothing is written over a retry's data; before, such an answer
+  was billed and stamped as a completion. A retry running while the first
+  attempt's handler is still going owns the job in the worker on its own:
+  its progress reports are accepted after that handler returns (they were
+  refused, the first return having erased the job's in-flight entry).
 - **Jobs failed `MODULE_UNLOADED` or `MODULE_SUSPENDED` are not retried**,
   whatever their `attempts`: the module is gone until an operator acts.
 - **A supervised module whose restarted worker crashes before its devices

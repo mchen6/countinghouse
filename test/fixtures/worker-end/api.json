@@ -75,6 +75,16 @@
             "output": {
               "schema": "/endService/failMadeUp/output"
             }
+          },
+          {
+            "name": "late",
+            "description": "The first call for a job answers after input.ms (default 6000); a later call for the same job answers at once, or reports progress 1..input.steps first.",
+            "input": {
+              "schema": "/endService/late/input"
+            },
+            "output": {
+              "schema": "/endService/late/output"
+            }
           }
         ]
       }

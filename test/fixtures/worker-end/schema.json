@@ -93,6 +93,33 @@
           }
         }
       }
+    },
+    "late": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "ms": {
+            "type": "integer"
+          },
+          "steps": {
+            "type": "integer"
+          },
+          "stepMs": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "attempt": {
+            "type": "integer"
+          }
+        }
+      }
     }
   }
 }
