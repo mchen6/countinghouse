@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "attempt": {
+      "input": {"type": "object", "properties": {"what": {"type": "string"}, "via": {"type": "string", "enum": ["direct", "cache"]}},
+        "required": ["what", "via"]},
+      "output": {"type": "object", "properties": {"outcome": {"type": "string"}, "code": {"type": ["string", "null"]},
+        "owner": {"type": ["string", "null"]}, "fsBridge": {"type": ["boolean", "null"]}}}
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "cache-require-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "requires a refused builtin directly, or through a countinghouse Module object's require from require.cache",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "attempt",
+            "description": "Requires one builtin one way and reports the outcome.",
+            "input": {"schema": "/probeService/attempt/input"},
+            "output": {"schema": "/probeService/attempt/output"}
+          }
+        ]
+      }
+    }
+  }
+}
