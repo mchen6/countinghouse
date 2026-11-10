@@ -29,7 +29,7 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
 
   it('has every code lib/ constructs an error with', () => {
     const raised = new Set();
-    const re = /new (?:CHError|DeviceError|CountinghouseError)\(\s*['"]([A-Z][A-Z0-9_]+)['"]|CountinghouseError\.(?:device|create)\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
+    const re = /new CountinghouseError\(\s*['"]([A-Z][A-Z0-9_]+)['"]|CountinghouseError\.create\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
     let m;
     while ((m = re.exec(text)) != null) raised.add(m[1] || m[2]);
     assert.ok(raised.size > 50, `premise: found ${raised.size} raised codes`);

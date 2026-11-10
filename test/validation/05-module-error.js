@@ -85,9 +85,10 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   });
 
   // Step 1 (d2): the old classes and the topic are gone.
-  it('is the only error class: no CHError or DeviceError, and no topic', () => {
+  it('is the only error class: no CHError or DeviceError, no device form, and no topic', () => {
     const exported = require('../../lib/countinghouse-error');
     assert.deepStrictEqual(['CHError', 'DeviceError'].filter((n) => n in exported), []);
+    assert.strictEqual(CountinghouseError.device, undefined);
     assert.strictEqual('topic' in new CountinghouseError('DEVICE_NOT_FOUND'), false);
     assert.strictEqual('topic' in CountinghouseError.module('X_Y'), false);
   });
