@@ -1,0 +1,63 @@
+{
+  "device": {
+    "friendlyName": "error-shape-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "one action per outcome whose response body test/mcp-contract/07 pins",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:shapeService": {
+        "actionList": [
+          {
+            "name": "ok",
+            "description": "error-shape case ok",
+            "input": {
+              "schema": "/shapeService/ok/input"
+            },
+            "output": {
+              "schema": "/shapeService/ok/output"
+            }
+          },
+          {
+            "name": "needsInput",
+            "description": "error-shape case needsInput",
+            "input": {
+              "schema": "/shapeService/needsInput/input"
+            },
+            "output": {
+              "schema": "/shapeService/needsInput/output"
+            }
+          },
+          {
+            "name": "throwPlain",
+            "description": "error-shape case throwPlain",
+            "input": {
+              "schema": "/shapeService/throwPlain/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwPlain/output"
+            }
+          },
+          {
+            "name": "callbackPlain",
+            "description": "error-shape case callbackPlain",
+            "input": {
+              "schema": "/shapeService/callbackPlain/input"
+            },
+            "output": {
+              "schema": "/shapeService/callbackPlain/output"
+            }
+          },
+          {
+            "name": "callbackTyped",
+            "description": "error-shape case callbackTyped",
+            "input": {
+              "schema": "/shapeService/callbackTyped/input"
+            },
+            "output": {
+              "schema": "/shapeService/callbackTyped/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

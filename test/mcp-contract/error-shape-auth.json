@@ -1,0 +1,4 @@
+{
+  "error-shape-key": {"userName": "error-shape", "devices": ["*"]},
+  "error-shape-no-access": {"userName": "error-shape-none", "devices": []}
+}

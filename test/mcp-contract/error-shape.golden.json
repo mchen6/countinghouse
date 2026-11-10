@@ -1,0 +1,794 @@
+{
+  "worker": {
+    "http invoke-action / success": {
+      "status": 200,
+      "body": {
+        "output": {
+          "ok": true
+        }
+      }
+    },
+    "mcp tools/call / success": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"ok\":true}"
+            }
+          ],
+          "structuredContent": {
+            "ok": true
+          }
+        }
+      }
+    },
+    "mcp tasks/result / success": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "completed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": false,
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"ok\":true}"
+              }
+            ],
+            "structuredContent": {
+              "ok": true
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / bad input": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "INPUT_DATA_VALIDATION_FAIL",
+        "message": "Input data validation error",
+        "fault": {
+          "reason": "data validation failed",
+          "info": {
+            "dataPath": "",
+            "schemaPath": "#/required",
+            "validatorMessage": "must have required property 'x'"
+          }
+        }
+      }
+    },
+    "mcp tools/call / bad input": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Input data validation error"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / bad input": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "INPUT_DATA_VALIDATION_FAIL: Input data validation error"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Input data validation error"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module throw": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "boom",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / module throw": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module throw": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module callback error": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "DEVICE_INVOKE_FAIL",
+        "message": "Device call failed"
+      }
+    },
+    "mcp tools/call / module callback error": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device call failed"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module callback error": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_FAIL: Device call failed"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device call failed"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module typed error": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "DEVICE_OFFLINE",
+        "message": "Device is offline"
+      }
+    },
+    "mcp tools/call / module typed error": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device is offline"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_OFFLINE"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module typed error": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_OFFLINE: Device is offline"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device is offline"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_OFFLINE"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / unknown tool": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "ACTION_NOT_FOUND",
+        "message": "Action not found"
+      }
+    },
+    "mcp tools/call / unknown tool": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32602,
+          "message": "unknown tool: error_shape_module_shapeservice_nope"
+        }
+      }
+    },
+    "mcp tasks/result / unknown tool": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "error": {
+            "code": -32602,
+            "message": "unknown tool: error_shape_module_shapeservice_nope"
+          }
+        }
+      }
+    },
+    "http invoke-action / missing device": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "DEVICE_NOT_FOUND",
+        "message": "Device not found: 00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "http invoke-action / no access": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "USER_HAS_NO_DEVICE",
+        "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+      }
+    },
+    "mcp tools/call / no access": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+        }
+      }
+    },
+    "mcp tasks/result / no access": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "error": {
+            "code": -32603,
+            "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+          }
+        }
+      }
+    },
+    "http invoke-action / unknown key": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "SYSTEM_ERROR_UNKNOWN_USER",
+        "message": "Unknown user: error-shape-unknown-key"
+      }
+    },
+    "mcp tools/call / unknown key": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Unknown user: error-shape-unknown-key"
+        }
+      }
+    },
+    "mcp tasks/result / unknown key": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "error": {
+            "code": -32603,
+            "message": "Unknown user: error-shape-unknown-key"
+          }
+        }
+      }
+    },
+    "http invoke-action / no key": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "SYSTEM_ERROR_UNKNOWN_USER",
+        "message": "Unknown user"
+      }
+    },
+    "mcp tools/call / no key": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Unknown user"
+        }
+      }
+    },
+    "mcp tasks/result / no key": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "error": {
+            "code": -32603,
+            "message": "Unknown user"
+          }
+        }
+      }
+    }
+  },
+  "single-thread": {
+    "http invoke-action / success": {
+      "status": 200,
+      "body": {
+        "output": {
+          "ok": true
+        }
+      }
+    },
+    "mcp tools/call / success": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"ok\":true}"
+            }
+          ],
+          "structuredContent": {
+            "ok": true
+          }
+        }
+      }
+    },
+    "http invoke-action / bad input": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "INPUT_DATA_VALIDATION_FAIL",
+        "message": "Input data validation error",
+        "fault": {
+          "reason": "data validation failed",
+          "info": {
+            "dataPath": "",
+            "schemaPath": "#/required",
+            "validatorMessage": "must have required property 'x'"
+          }
+        }
+      }
+    },
+    "mcp tools/call / bad input": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Input data validation error"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "INPUT_DATA_VALIDATION_FAIL"
+          }
+        }
+      }
+    },
+    "http invoke-action / module throw": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: boom",
+        "fault": {
+          "message": "boom",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / module throw": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: boom"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / module callback error": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "DEVICE_INVOKE_FAIL",
+        "message": "Device call failed: boom"
+      }
+    },
+    "mcp tools/call / module callback error": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device call failed: boom"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+          }
+        }
+      }
+    },
+    "http invoke-action / module typed error": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "DEVICE_OFFLINE",
+        "message": "Device is offline: shape probe"
+      }
+    },
+    "mcp tools/call / module typed error": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device is offline: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_OFFLINE"
+          }
+        }
+      }
+    },
+    "http invoke-action / unknown tool": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "ACTION_NOT_FOUND",
+        "message": "Action not found: nope"
+      }
+    },
+    "mcp tools/call / unknown tool": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32602,
+          "message": "unknown tool: error_shape_module_shapeservice_nope"
+        }
+      }
+    },
+    "http invoke-action / missing device": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "DEVICE_NOT_FOUND",
+        "message": "Device not found: 00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "http invoke-action / no access": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "USER_HAS_NO_DEVICE",
+        "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+      }
+    },
+    "mcp tools/call / no access": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
+        }
+      }
+    },
+    "http invoke-action / unknown key": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "SYSTEM_ERROR_UNKNOWN_USER",
+        "message": "Unknown user: error-shape-unknown-key"
+      }
+    },
+    "mcp tools/call / unknown key": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Unknown user: error-shape-unknown-key"
+        }
+      }
+    },
+    "http invoke-action / no key": {
+      "status": 500,
+      "body": {
+        "topic": "countinghouse error",
+        "code": "SYSTEM_ERROR_UNKNOWN_USER",
+        "message": "Unknown user"
+      }
+    },
+    "mcp tools/call / no key": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32603,
+          "message": "Unknown user"
+        }
+      }
+    },
+    "mcp tasks/result / refused in this mode": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "error": {
+            "code": -32602,
+            "message": "task-augmented tools/call requires the server to be running in multi-thread mode (--workerThread)"
+          }
+        }
+      }
+    }
+  }
+}

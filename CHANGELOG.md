@@ -18,6 +18,24 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Removed — 23 error codes nothing raised
+
+- The error catalogue (`lib/error-catalogue.js`, which replaces
+  `lib/error-info.*.json`) does not carry over codes the runtime never
+  raised: `LOAD_MODULE_FILE_FAIL`, `INVALID_ACCESS_TOKEN`,
+  `CANNOT_VERIFY_ACCESS_TOKEN`, `DEVICE_ID_GENERATION_FAIL`,
+  `INVALID_DEVICE_ID`, `MODULE_IN_DISCOVERING`,
+  `CANNOT_GENERATE_ACCESS_TOKEN`, `MODULE_INFO_CONTAINS_PUBLISHCONFIG`,
+  `MODULE_PATH_CHMOD_FAIL`, `USERNAME_INVALID`, `PASSWORD_INVALID`,
+  `MISSING_INPUT_ARGUMENT`, `DATA_VALIDATION_FAIL`,
+  `NOT_ENOUGH_USER_BALANCE`, `SYSTEM_ERROR_NETWORK_ERROR`,
+  `SYSTEM_ERROR_DATA_PARSE_ERROR`, `SYSTEM_ERROR_SMSTMPLDB_NA`,
+  `SYSTEM_ERROR_USER_UNAUTHORIZED`, `INVALID_BALANCE_FORMAT`,
+  `NO_PRICE_RECORD`, `USER_DEVICE_RECORD_FORMAT_INVALID`, `API_ERROR`,
+  `DATA_ERROR`. A module that raised one of them gets the code as its
+  message instead of the old text; a module's codes are its own (see the
+  logger-and-errors spec).
+
 ### Fixed — an unknown `--locale` falls back to en-US
 
 - Error messages for a `--locale` with no catalogue text are in en-US, the
