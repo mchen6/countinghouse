@@ -159,6 +159,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   backend (`SYSTEM_ERROR_USERDB_NA`) is retried like any other failure. A
   revocation reaches jobs as it reaches calls: at once for sqlite, after
   `POST /reload-auth` for the file and CouchDB providers.
+- The check has a deadline of 10 s: an auth backend that accepts the
+  lookup and never answers fails the run `SYSTEM_ERROR_USERDB_NA`, which is
+  retried, instead of holding it with no bound.
 
 ### Docs — what log-triage costs in model tokens
 
