@@ -240,7 +240,9 @@ and a shared OS process, network and `process` global. That is a reasonable
 boundary for modules from developers you have a relationship with, and it is
 **not** comparable to containers, gVisor or micro-VMs. `docs/security-model.md`
 states plainly what it does and does not provide, and what would be required
-to go further. Upgrading from 7.x: [`docs/upgrading-to-8.md`](https://github.com/mchen6/countinghouse/blob/master/docs/upgrading-to-8.md).
+to go further. It is a layer on top of a container, not a replacement for one:
+[`docs/deployment.md`](https://github.com/mchen6/countinghouse/blob/master/docs/deployment.md)
+gives the deployment posture and a reference setup. Upgrading from 7.x: [`docs/upgrading-to-8.md`](https://github.com/mchen6/countinghouse/blob/master/docs/upgrading-to-8.md).
 
 ## Origin
 

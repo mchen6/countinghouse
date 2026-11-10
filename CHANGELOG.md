@@ -18,6 +18,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Docs — deployment posture
+
+- [`docs/deployment.md`](docs/deployment.md): the module sandbox isolates
+  modules from each other and from tenants' data inside one process; it does
+  not isolate countinghouse from the host. It gives the posture (an
+  unprivileged user, a container with memory and CPU limits, the default
+  seccomp profile, Redis reachable from countinghouse only, the auth config
+  as a secret, an ingress in front), a reference Docker Compose and
+  Kubernetes outline, and what the in-process sandbox does not give.
+  Linked from security-model.md, the README and docs/index.md.
+- `docs/superpowers/notes/2026-11-10-multi-language-modules-brainstorm.md`:
+  notes on modules in other languages, containers and Kubernetes. Notes, not
+  a spec: nothing in them is decided.
+
 ### Removed — the device fields `rateLimit` and `price` (breaking)
 
 - `api.json`'s device-level `rateLimit` and `price` are CDIF-era and

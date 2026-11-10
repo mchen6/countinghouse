@@ -267,6 +267,11 @@ network is left to the OS. A systemd unit example is in
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
+The sandbox isolates modules from each other and from tenants' data inside
+one process; it does not isolate countinghouse from the host. Run it as an
+unprivileged user in a container with limits and the default seccomp
+profile: [deployment.md](deployment.md) gives the posture, a reference setup,
+and the short list of what the in-process sandbox cannot give.
 
 - **Modules receive their callers' API keys.** `ctx.caller.apiKey` is the
   raw key of whoever called the module, `ctx.caller.isAdmin` says whether it
