@@ -29,7 +29,7 @@ const addJob  = (opts) => request(URL).post(`/devices/${DEVICE}/add-job`).set('X
   .send({serviceID: SERVICE, actionName: 'whoami', opts: Object.assign({name: NAME}, opts), input: {note: 'n'}});
 const balance = () => request(URL).post('/mcp').set('X-CH-Key', ALICE).set('Accept', 'application/json, text/event-stream')
   .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'countinghouse_check_balance', arguments: {}}})
-  .then((r) => r.body.result.structuredContent.balance);
+  .then((r) => r.body.result.structuredContent.balance || 0);
 
 describe('auth 33: a job is authorized when it runs', function() {
   this.timeout(120000);
@@ -46,7 +46,8 @@ describe('auth 33: a job is authorized when it runs', function() {
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-run-auth-'));
     authPath = path.join(base, 'auth.json');
     write({userName: 'alice', devices: [DEVICE]});
-    server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
+    // Every run costs 1, so "not billed" is a real check (the default cost is 0).
+    server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
     queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});
   });
