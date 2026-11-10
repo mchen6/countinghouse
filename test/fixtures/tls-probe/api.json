@@ -1,0 +1,43 @@
+{
+  "device": {
+    "friendlyName": "tls-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "handlers that make TLS client connections (tls.connect, https, fetch), so what the lockdown lets through can be seen",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "tlsRoundTrip",
+            "description": "tls.connect to 127.0.0.1:input.port, one HTTP/1.0 GET over it: 'round-trip' with authorized, or the error code.",
+            "input": {
+              "schema": "/probeService/tlsRoundTrip/input"
+            },
+            "output": {
+              "schema": "/probeService/tlsRoundTrip/output"
+            }
+          },
+          {
+            "name": "httpsGet",
+            "description": "https.get from 127.0.0.1:input.port: the status and body, or the error code.",
+            "input": {
+              "schema": "/probeService/httpsGet/input"
+            },
+            "output": {
+              "schema": "/probeService/httpsGet/output"
+            }
+          },
+          {
+            "name": "fetchGet",
+            "description": "fetch from https://127.0.0.1:input.port/: the body, or the error code.",
+            "input": {
+              "schema": "/probeService/fetchGet/input"
+            },
+            "output": {
+              "schema": "/probeService/fetchGet/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

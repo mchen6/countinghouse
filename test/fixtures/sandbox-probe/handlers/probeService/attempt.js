@@ -47,6 +47,7 @@ const ATTEMPTS = {
     server.listen({fd: 999999}, () => { server.close(); resolve(); });
   }),
   socketFd:         () => new (require('net').Socket)({fd: 999999}),
+  socketFdNumber:   () => new (require('net').Socket)(999999),
   socketHandle:     () => new (require('net').Socket)({handle: {}}),
   ttyFd:            () => new (require('tty').WriteStream)(999999),
   dgramFd:          () => new Promise((resolve, reject) => {

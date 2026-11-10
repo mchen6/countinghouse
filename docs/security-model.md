@@ -94,7 +94,8 @@ any module code). Stops:
   `wasi`, `sqlite` (its `loadExtension` loads native code), `test` (its
   `run()` starts unsandboxed child processes), `sea`, `repl` and
   `trace_events`; Node 26's `ffi`, which calls native code, is not on it
-  either), through `require`, `import()` and
+  either; nor are Node's TLS internals `_tls_wrap` and `_tls_common`, which
+  sit behind none of the wrappers put on `tls`), through `require`, `import()` and
   `process.getBuiltinModule` alike, so a built-in a later Node adds is
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
@@ -103,9 +104,16 @@ any module code). Stops:
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker;
-- adopting a descriptor or handle (`net.Socket({fd})`, `server.listen({fd})`
-  and the like, which in testing let a worker take over the main server's
-  connections): refused under `enforce`, logged under `audit`;
+- adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
+  `server.listen({fd})` and the like, which in testing let a worker take over
+  the main server's connections): refused under `enforce`, logged under
+  `audit`, and under `--hardened` this is the only guard, since the native
+  `open(fd)` backstop cannot be taken there. A handle
+  *object* given to `net.Socket` is not adoption: inside a worker the only
+  route to a foreign descriptor is a number, and the handle Node's own TLS
+  machinery hands in (`tls.connect`, `https`, `fetch`) is over a socket the
+  module was allowed to open, so TLS client connections work under `enforce`
+  as under `audit`, `--hardened` included;
 - `CHUtil.loadFile` outside the module's own directory.
 
 Each override is non-writable and non-configurable. `net`, `http` and the
