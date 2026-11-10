@@ -104,6 +104,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   registered**, nor one from a worker that has ended or been replaced. It
   used to undo what the unload recorded, so the device then answered
   `DEVICE_NOT_FOUND` instead of `MODULE_UNLOADED`.
+- **A direct peer channel is granted only to a callee that is still there.**
+  The broker checks the caller's access asynchronously, and a callee that
+  ended or began unloading meanwhile still got the channel. A port sent to
+  a worker that has already exited never closes, so the caller kept a dead
+  channel and every call over it waited out the peer timeout. Now such a
+  callee is answered as a missing device (`MODULE_RELOADING`,
+  `MODULE_UNLOADED`, ...), one replaced by a reload is granted on its new
+  worker, and a caller that ended meanwhile is sent nothing.
 - **A request for a module that is gone says why.** After an unload, a
   failed reload, or a crash with no supervisor, a request for one of its
   devices is `MODULE_UNLOADED`; during a reload, until its devices are
