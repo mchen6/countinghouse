@@ -100,6 +100,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   module stays down), `MODULE_RESTARTING` for a supervised crash, as
   before. A reply the worker posted before it handled the unload is still
   the real answer.
+- **A device a worker announces once its unload has begun is not
+  registered**, nor one from a worker that has ended or been replaced. It
+  used to undo what the unload recorded, so the device then answered
+  `DEVICE_NOT_FOUND` instead of `MODULE_UNLOADED`.
 - **A request for a module that is gone says why.** After an unload, a
   failed reload, or a crash with no supervisor, a request for one of its
   devices is `MODULE_UNLOADED`; during a reload, until its devices are
