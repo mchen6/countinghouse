@@ -114,6 +114,11 @@ any module code). Stops:
   machinery hands in (`tls.connect`, `https`, `fetch`) is over a socket the
   module was allowed to open, so TLS client connections work under `enforce`
   as under `audit`, `--hardened` included;
+- the Redis endpoint (R2-1, part 2: `--redisUrl`'s host and port): refused
+  with `EACCES` in `audit` and `enforce`, under its configured host and every
+  loopback name. This is an in-worker check, not a boundary: a Redis reached
+  under another address of the same machine (a LAN IP, a hostname) is not
+  denied until the network broker (parts 3 and 4);
 - `CHUtil.loadFile` outside the module's own directory.
 
 Each override is non-writable and non-configurable. `net`, `http` and the
