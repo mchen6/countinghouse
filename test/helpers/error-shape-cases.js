@@ -32,7 +32,15 @@ const OUTCOMES = [
   {name: 'module error returned async', action: 'returnErrorAsync', args: {}},
   {name: 'module error thrown', action: 'throwError', args: {}},
   {name: 'module error called back', action: 'callbackError', args: {}},
-  {name: 'lookalike returned', action: 'returnLookalike', args: {}}
+  {name: 'lookalike returned', action: 'returnLookalike', args: {}},
+  // step 1 (d2): thrown from a plain function; a plain Error with a module's
+  // code; codes that are not a module's (a system error's, Node's ERR_); and
+  // the old module-visible globals, which are gone
+  {name: 'module error thrown sync', action: 'throwErrorSync', args: {}},
+  {name: 'plain error with a module code', action: 'throwPlainCoded', args: {}},
+  {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
+  {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
+  {name: 'old globals', action: 'globalsProbe', args: {}}
 ];
 
 function normalize(value) {
@@ -117,8 +125,8 @@ async function runCases(port, tasks) {
 }
 
 // The two modes the golden records: worker threads (the default) and the
-// single-thread mode, whose messages differ (a worker sends only the message
-// head across) and which refuses tasks.
+// single-thread mode, which refuses tasks. A module's error answers the same
+// in both (step 1 (d2): the worker reply carries it whole).
 const MODES = {
   worker: {flags: ['--workerThread'], tasks: true},
   'single-thread': {flags: ['--no-workerThread'], tasks: false}

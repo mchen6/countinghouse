@@ -21,8 +21,7 @@ describe('test28: invoke async action which throw exception', function() {
     .expect(500, (err, res) => {
       if (err) return done(err);
 
-      if (res.body.topic !== 'device error' ||
-          res.body.code !== 'DEVICE_INVOKE_EXCEPTION' ||
+      if (res.body.code !== 'DEVICE_INVOKE_EXCEPTION' ||
           res.body.fault == null ||
           res.body.fault.message.startsWith('Cannot read properties of null') === false
       ) {

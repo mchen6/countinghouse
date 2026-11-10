@@ -105,6 +105,56 @@
             "output": {
               "schema": "/shapeService/returnLookalike/output"
             }
+          },
+          {
+            "name": "throwErrorSync",
+            "description": "error-shape case throwErrorSync",
+            "input": {
+              "schema": "/shapeService/throwErrorSync/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwErrorSync/output"
+            }
+          },
+          {
+            "name": "throwPlainCoded",
+            "description": "error-shape case throwPlainCoded",
+            "input": {
+              "schema": "/shapeService/throwPlainCoded/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwPlainCoded/output"
+            }
+          },
+          {
+            "name": "throwSystemCoded",
+            "description": "error-shape case throwSystemCoded",
+            "input": {
+              "schema": "/shapeService/throwSystemCoded/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwSystemCoded/output"
+            }
+          },
+          {
+            "name": "throwNodeCoded",
+            "description": "error-shape case throwNodeCoded",
+            "input": {
+              "schema": "/shapeService/throwNodeCoded/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwNodeCoded/output"
+            }
+          },
+          {
+            "name": "globalsProbe",
+            "description": "error-shape case globalsProbe",
+            "input": {
+              "schema": "/shapeService/globalsProbe/input"
+            },
+            "output": {
+              "schema": "/shapeService/globalsProbe/output"
+            }
           }
         ]
       }

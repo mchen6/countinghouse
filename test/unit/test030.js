@@ -28,8 +28,7 @@ describe('test30: invoke async action which throws inside a never-settling Promi
     .expect(500, (err, res) => {
       if (err) return done(err);
 
-      if (res.body.topic !== 'device error' ||
-          res.body.code !== 'DEVICE_NOT_RESPONDING'
+      if (res.body.code !== 'DEVICE_NOT_RESPONDING'
       ) {
         console.error(chalk.white.bgRed.bold(`Request:${JSON.stringify(req)}`));
         console.error(chalk.white.bgRed.bold(`Response: ${JSON.stringify(res.body)}`));

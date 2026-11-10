@@ -5,10 +5,11 @@
 // untyped and with a typed error, an unknown tool, a missing device, a key
 // with no access, an unknown key, no key), in worker and single-thread mode.
 //
-// Step 1 moves every error site in lib/ to one class. This file is what says
-// that move changed nothing a client sees; a step that means to change an
-// answer (step 1 (d): bundled modules raise their own codes) regenerates the
-// golden in the same commit and says so:
+// The golden is the recorded contract, and it changes only on purpose: a
+// commit that means to change an answer regenerates it in the same commit,
+// and its PR lists every changed answer (the user, 2026-11-10: there is no
+// client yet, so the old shape is not preserved; step 1 (d2) dropped
+// `topic`, for one):
 //   node test/mcp-contract/capture-error-shape.js
 //
 // One recorded answer is wrong on purpose and stays until R2-1 Task 5: an
@@ -63,7 +64,8 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
   // one -- as well as by throwing it or calling back with it. All four are
   // the same answer, and it carries the module's code. A plain object that
   // only looks like an error is a result.
-  const FORMS = ['module error returned', 'module error returned async', 'module error thrown', 'module error called back'];
+  const FORMS = ['module error returned', 'module error returned async', 'module error thrown', 'module error called back',
+    'module error thrown sync', 'plain error with a module code'];
   const PATHS = ['http invoke-action', 'mcp tools/call', 'mcp tasks/result'];
 
   it('gives the same answer for a module error returned, returned async, thrown or called back', () => {
@@ -88,6 +90,41 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
       assert.strictEqual(toolErrorCode(call.body.result), 'SHAPE_REJECTED', `${mode}: ${JSON.stringify(call)}`);
     }
     assert.strictEqual(GOLDEN['single-thread']['http invoke-action / module error returned'].body.message, 'SHAPE_REJECTED: shape probe');
+  });
+
+  // Step 1 (d2): the worker reply carries a module's error whole (code,
+  // message, origin), so worker mode answers it exactly as single-thread.
+  it('answers a module error in worker mode exactly as in single-thread mode', () => {
+    for (const f of FORMS.concat(['module typed error'])) {
+      for (const p of ['http invoke-action', 'mcp tools/call']) {
+        const w = GOLDEN.worker[`${p} / ${f}`];
+        const s = GOLDEN['single-thread'][`${p} / ${f}`];
+        assert.ok(w !== undefined && s !== undefined, `premise: ${p} / ${f} in both modes`);
+        assert.deepStrictEqual(w, s, `${p} / ${f}`);
+      }
+    }
+    assert.strictEqual(GOLDEN.worker['http invoke-action / module error returned'].body.message, 'SHAPE_REJECTED: shape probe');
+  });
+
+  // §5.1: a plain Error's code is the module's only when it looks like one
+  // and is not a system error's (errno/syscall) or Node's (ERR_).
+  it('takes a plain Error\'s code as the module\'s only when it is not a system or Node code', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      assert.strictEqual(GOLDEN[mode]['http invoke-action / module typed error'].body.code, 'SHAPE_OFFLINE', mode);
+      for (const f of ['plain error with a system code', 'plain error with a Node code']) {
+        const a = GOLDEN[mode][`http invoke-action / ${f}`];
+        assert.strictEqual(a.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode} / ${f}: ${JSON.stringify(a)}`);
+      }
+    }
+  });
+
+  // Step 1 (d2): no `topic` in an answer.
+  it('carries no `topic` in any answer', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      for (const [name, a] of Object.entries(GOLDEN[mode])) {
+        assert.ok(!JSON.stringify(a).includes('"topic"'), `${mode} / ${name}: ${JSON.stringify(a).slice(0, 200)}`);
+      }
+    }
   });
 
   it('treats a returned object that merely looks like an error as a result', () => {

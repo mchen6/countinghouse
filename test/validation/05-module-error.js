@@ -23,11 +23,53 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     assert.strictEqual(CountinghouseError.module('DEVICE_OFFLINE', 'mine').message, 'DEVICE_OFFLINE: mine');
   });
 
-  it('serialises as a module error does today (topic device error, code, message), details not enumerable', () => {
+  it('serialises as code and message only (no topic, step 1 (d2)), details not enumerable', () => {
     const e = CountinghouseError.module('REPO_TOO_LARGE', 'over 2 GB', {limit: 2});
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(e)), {topic: 'device error', code: 'REPO_TOO_LARGE', message: 'REPO_TOO_LARGE: over 2 GB'});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(e)), {code: 'REPO_TOO_LARGE', message: 'REPO_TOO_LARGE: over 2 GB'});
     assert.deepStrictEqual(e.details, {limit: 2});
     assert.deepStrictEqual(CountinghouseError.module('X_Y').details, {});
+  });
+
+  // details.cause is reserved for the underlying error (§5.1): it is the
+  // error's cause, kept off details and every serialised form.
+  it('lifts details.cause into a non-enumerable cause, off details and JSON', () => {
+    const inner = Object.assign(new Error('inner text'), {code: 'INNER', secretish: 'inner field'});
+    const e = CountinghouseError.module('INNER_CALL_FAILED', 'hop failed', {cause: inner, hop: 2});
+    assert.strictEqual(e.cause, inner);
+    assert.strictEqual(Object.getOwnPropertyDescriptor(e, 'cause').enumerable, false);
+    assert.deepStrictEqual(e.details, {hop: 2});
+    const json = JSON.stringify(e);
+    assert.deepStrictEqual(JSON.parse(json), {code: 'INNER_CALL_FAILED', message: 'INNER_CALL_FAILED: hop failed'});
+    assert.ok(!json.includes('inner'), json);
+    const only = CountinghouseError.module('INNER_CALL_FAILED', 'x', {cause: inner});
+    assert.deepStrictEqual([only.details, only.cause], [{}, inner]);
+  });
+
+  it('leaves the module\'s details object itself alone when it lifts the cause', () => {
+    const inner = new Error('inner');
+    const given = {cause: inner, hop: 2};
+    CountinghouseError.module('INNER_CALL_FAILED', 'x', given);
+    assert.deepStrictEqual(given, {cause: inner, hop: 2});
+  });
+
+  // Step 1 (d2): the worker reply carries a module's error whole (code,
+  // message, details) as envelope fields, and the main thread rebuilds it.
+  // The details cross as JSON, the cause not at all.
+  it('crosses the worker reply envelope whole, details as JSON and no cause', () => {
+    const WorkerMessage = require('../../lib/worker-message');
+    const inner = Object.assign(new Error('inner text'), {code: 'INNER'});
+    const e = CountinghouseError.module('INNER_CALL_FAILED', 'hop failed', {cause: inner, hop: 2, nested: new Error('nested'), fn() {}});
+    const envelope = structuredClone(WorkerMessage.moduleErrorFields(e));
+    assert.ok(!JSON.stringify(envelope).includes('inner text'), JSON.stringify(envelope));
+    const back = WorkerMessage.replyError(envelope);
+    assert.ok(back instanceof CountinghouseError);
+    assert.deepStrictEqual([back.code, back.message, back.origin, back.kind], ['INNER_CALL_FAILED', 'INNER_CALL_FAILED: hop failed', 'module', 'module']);
+    assert.deepStrictEqual(back.details, {hop: 2, nested: {}});
+    assert.strictEqual(back.cause, undefined);
+    const bare = WorkerMessage.replyError(structuredClone(WorkerMessage.moduleErrorFields(CountinghouseError.module('MINE'))));
+    assert.deepStrictEqual([bare.code, bare.message, bare.details], ['MINE', 'MINE', {}]);
+    const runtime = WorkerMessage.replyError({errMsg: 'Device is offline', errCode: 'DEVICE_OFFLINE'});
+    assert.ok(!(runtime instanceof CountinghouseError) && runtime.code === 'DEVICE_OFFLINE');
   });
 
   it('has a stack from where the module made it', () => {
@@ -40,6 +82,37 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     for (const args of [[], [null], [42, {}], ['', undefined, null]]) {
       assert.ok(CountinghouseError.module(...args) instanceof CountinghouseError, JSON.stringify(args));
     }
+  });
+
+  // Step 1 (d2): the topic is gone.
+  it('has no topic, on a runtime error or a module\'s', () => {
+    assert.strictEqual('topic' in new CountinghouseError('DEVICE_NOT_FOUND'), false);
+    assert.strictEqual('topic' in CountinghouseError.module('X_Y'), false);
+  });
+
+  // §5.1's plain-Error rule (step 1 (d2)): a plain Error's .code is the
+  // module's own when it looks like a code (/^[A-Z][A-Z0-9_]{2,}$/) and is
+  // neither a system error's (errno or syscall) nor Node's (ERR_).
+  describe('fromModule: a plain Error with a code', () => {
+    const plain = (code, extra) => Object.assign(new Error('why'), {code: code}, extra || {});
+    it('is the module\'s error when its code looks like one', () => {
+      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'DEVICE_OFFLINE']) {
+        const e = CountinghouseError.fromModule(plain(code));
+        assert.ok(e instanceof CountinghouseError, code);
+        assert.deepStrictEqual([e.code, e.message, e.origin, e.kind], [code, `${code}: why`, 'module', 'module'], code);
+      }
+    });
+    it('is not, for a system error, a Node error, or a code that does not look like one', () => {
+      const cases = [plain('EACCES', {errno: -13}), plain('ENOENT', {syscall: 'open'}), plain('ERR_INVALID_ARG_TYPE'),
+        plain('ERR_OUT_OF_RANGE'), plain('MODULE_NOT_FOUND'), plain('ABORT_ERR'), plain('AB'), plain('lower_case'), plain('1ABC'), plain('A-B-C'), plain(42), new Error('no code'), null, undefined, 'a string'];
+      for (const c of cases) assert.strictEqual(CountinghouseError.fromModule(c), null, JSON.stringify(c && c.code));
+    });
+    it('passes a CountinghouseError through unchanged, whatever its origin', () => {
+      const r = new CountinghouseError('MODULE_RELOADING');
+      const m = CountinghouseError.module('MINE');
+      assert.strictEqual(CountinghouseError.fromModule(r), r);
+      assert.strictEqual(CountinghouseError.fromModule(m), m);
+    });
   });
 
   it('leaves a runtime error\'s catalogue fields alone', () => {

@@ -81,7 +81,6 @@
     "http invoke-action / bad input": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "INPUT_DATA_VALIDATION_FAIL",
         "message": "Input data validation error",
         "fault": {
@@ -168,7 +167,6 @@
     "http invoke-action / module throw": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception",
         "fault": {
@@ -252,7 +250,6 @@
     "http invoke-action / module callback error": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "DEVICE_INVOKE_FAIL",
         "message": "Device call failed"
       }
@@ -331,9 +328,8 @@
     "http invoke-action / module typed error": {
       "status": 500,
       "body": {
-        "topic": "device error",
-        "code": "DEVICE_OFFLINE",
-        "message": "Device is offline"
+        "code": "SHAPE_OFFLINE",
+        "message": "SHAPE_OFFLINE: shape probe"
       }
     },
     "mcp tools/call / module typed error": {
@@ -346,11 +342,11 @@
           "content": [
             {
               "type": "text",
-              "text": "Device is offline"
+              "text": "SHAPE_OFFLINE: shape probe"
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_OFFLINE"
+            "countinghouse/code": "SHAPE_OFFLINE"
           }
         }
       }
@@ -383,7 +379,7 @@
             "ttl": null,
             "createdAt": "<time>",
             "lastUpdatedAt": "<time>",
-            "statusMessage": "DEVICE_OFFLINE: Device is offline"
+            "statusMessage": "SHAPE_OFFLINE: SHAPE_OFFLINE: shape probe"
           }
         }
       },
@@ -397,11 +393,11 @@
             "content": [
               {
                 "type": "text",
-                "text": "Device is offline"
+                "text": "SHAPE_OFFLINE: shape probe"
               }
             ],
             "_meta": {
-              "countinghouse/code": "DEVICE_OFFLINE"
+              "countinghouse/code": "SHAPE_OFFLINE"
             }
           }
         }
@@ -410,7 +406,6 @@
     "http invoke-action / unknown tool": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "ACTION_NOT_FOUND",
         "message": "Action not found"
       }
@@ -442,9 +437,8 @@
     "http invoke-action / module error returned": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED"
+        "message": "SHAPE_REJECTED: shape probe"
       }
     },
     "mcp tools/call / module error returned": {
@@ -457,7 +451,7 @@
           "content": [
             {
               "type": "text",
-              "text": "SHAPE_REJECTED"
+              "text": "SHAPE_REJECTED: shape probe"
             }
           ],
           "_meta": {
@@ -494,7 +488,7 @@
             "ttl": null,
             "createdAt": "<time>",
             "lastUpdatedAt": "<time>",
-            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED: shape probe"
           }
         }
       },
@@ -508,7 +502,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "SHAPE_REJECTED"
+                "text": "SHAPE_REJECTED: shape probe"
               }
             ],
             "_meta": {
@@ -521,9 +515,8 @@
     "http invoke-action / module error returned async": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED"
+        "message": "SHAPE_REJECTED: shape probe"
       }
     },
     "mcp tools/call / module error returned async": {
@@ -536,7 +529,7 @@
           "content": [
             {
               "type": "text",
-              "text": "SHAPE_REJECTED"
+              "text": "SHAPE_REJECTED: shape probe"
             }
           ],
           "_meta": {
@@ -573,7 +566,7 @@
             "ttl": null,
             "createdAt": "<time>",
             "lastUpdatedAt": "<time>",
-            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED: shape probe"
           }
         }
       },
@@ -587,7 +580,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "SHAPE_REJECTED"
+                "text": "SHAPE_REJECTED: shape probe"
               }
             ],
             "_meta": {
@@ -600,9 +593,8 @@
     "http invoke-action / module error thrown": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED"
+        "message": "SHAPE_REJECTED: shape probe"
       }
     },
     "mcp tools/call / module error thrown": {
@@ -615,7 +607,7 @@
           "content": [
             {
               "type": "text",
-              "text": "SHAPE_REJECTED"
+              "text": "SHAPE_REJECTED: shape probe"
             }
           ],
           "_meta": {
@@ -652,7 +644,7 @@
             "ttl": null,
             "createdAt": "<time>",
             "lastUpdatedAt": "<time>",
-            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED: shape probe"
           }
         }
       },
@@ -666,7 +658,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "SHAPE_REJECTED"
+                "text": "SHAPE_REJECTED: shape probe"
               }
             ],
             "_meta": {
@@ -679,9 +671,8 @@
     "http invoke-action / module error called back": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
-        "message": "SHAPE_REJECTED"
+        "message": "SHAPE_REJECTED: shape probe"
       }
     },
     "mcp tools/call / module error called back": {
@@ -694,7 +685,7 @@
           "content": [
             {
               "type": "text",
-              "text": "SHAPE_REJECTED"
+              "text": "SHAPE_REJECTED: shape probe"
             }
           ],
           "_meta": {
@@ -731,7 +722,7 @@
             "ttl": null,
             "createdAt": "<time>",
             "lastUpdatedAt": "<time>",
-            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED: shape probe"
           }
         }
       },
@@ -745,7 +736,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "SHAPE_REJECTED"
+                "text": "SHAPE_REJECTED: shape probe"
               }
             ],
             "_meta": {
@@ -758,11 +749,10 @@
     "http invoke-action / lookalike returned": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "OUTPUT_DATA_VALIDATION_FAIL",
         "message": "Output data validation error",
         "fault": {
-          "reason": "unexpected output argument: topic",
+          "reason": "unexpected output argument: code",
           "info": ""
         }
       }
@@ -838,10 +828,412 @@
         }
       }
     },
+    "http invoke-action / module error thrown sync": {
+      "status": 500,
+      "body": {
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / module error thrown sync": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error thrown sync": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED: shape probe"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "SHAPE_REJECTED: shape probe"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "SHAPE_REJECTED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a module code": {
+      "status": 500,
+      "body": {
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / plain error with a module code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / plain error with a module code": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED: shape probe"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "SHAPE_REJECTED: shape probe"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "SHAPE_REJECTED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a system code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "shape probe",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / plain error with a system code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / plain error with a system code": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a Node code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "shape probe",
+          "name": "TypeError",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / plain error with a Node code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / plain error with a Node code": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / old globals": {
+      "status": 200,
+      "body": {
+        "output": {
+          "deviceError": "function",
+          "chError": "function"
+        }
+      }
+    },
+    "mcp tools/call / old globals": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"deviceError\":\"function\",\"chError\":\"function\"}"
+            }
+          ],
+          "structuredContent": {
+            "deviceError": "function",
+            "chError": "function"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / old globals": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "completed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": false,
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"deviceError\":\"function\",\"chError\":\"function\"}"
+              }
+            ],
+            "structuredContent": {
+              "deviceError": "function",
+              "chError": "function"
+            }
+          }
+        }
+      }
+    },
     "http invoke-action / missing device": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "DEVICE_NOT_FOUND",
         "message": "Device not found: 00000000-0000-0000-0000-000000000000"
       }
@@ -849,7 +1241,6 @@
     "http invoke-action / no access": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "USER_HAS_NO_DEVICE",
         "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
       }
@@ -881,7 +1272,6 @@
     "http invoke-action / unknown key": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
         "message": "Unknown user: error-shape-unknown-key"
       }
@@ -913,7 +1303,6 @@
     "http invoke-action / no key": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
         "message": "Unknown user"
       }
@@ -974,7 +1363,6 @@
     "http invoke-action / bad input": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "INPUT_DATA_VALIDATION_FAIL",
         "message": "Input data validation error",
         "fault": {
@@ -1009,7 +1397,6 @@
     "http invoke-action / module throw": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "DEVICE_INVOKE_EXCEPTION",
         "message": "Device interface call threw an exception: boom",
         "fault": {
@@ -1041,7 +1428,6 @@
     "http invoke-action / module callback error": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "DEVICE_INVOKE_FAIL",
         "message": "Device call failed: boom"
       }
@@ -1068,9 +1454,8 @@
     "http invoke-action / module typed error": {
       "status": 500,
       "body": {
-        "topic": "device error",
-        "code": "DEVICE_OFFLINE",
-        "message": "Device is offline: shape probe"
+        "code": "SHAPE_OFFLINE",
+        "message": "SHAPE_OFFLINE: shape probe"
       }
     },
     "mcp tools/call / module typed error": {
@@ -1083,11 +1468,11 @@
           "content": [
             {
               "type": "text",
-              "text": "Device is offline: shape probe"
+              "text": "SHAPE_OFFLINE: shape probe"
             }
           ],
           "_meta": {
-            "countinghouse/code": "DEVICE_OFFLINE"
+            "countinghouse/code": "SHAPE_OFFLINE"
           }
         }
       }
@@ -1095,7 +1480,6 @@
     "http invoke-action / unknown tool": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "ACTION_NOT_FOUND",
         "message": "Action not found: nope"
       }
@@ -1114,7 +1498,6 @@
     "http invoke-action / module error returned": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
         "message": "SHAPE_REJECTED: shape probe"
       }
@@ -1141,7 +1524,6 @@
     "http invoke-action / module error returned async": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
         "message": "SHAPE_REJECTED: shape probe"
       }
@@ -1168,7 +1550,6 @@
     "http invoke-action / module error thrown": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
         "message": "SHAPE_REJECTED: shape probe"
       }
@@ -1195,7 +1576,6 @@
     "http invoke-action / module error called back": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "SHAPE_REJECTED",
         "message": "SHAPE_REJECTED: shape probe"
       }
@@ -1222,11 +1602,10 @@
     "http invoke-action / lookalike returned": {
       "status": 500,
       "body": {
-        "topic": "device error",
         "code": "OUTPUT_DATA_VALIDATION_FAIL",
         "message": "Output data validation error",
         "fault": {
-          "reason": "unexpected output argument: topic",
+          "reason": "unexpected output argument: code",
           "info": ""
         }
       }
@@ -1250,10 +1629,152 @@
         }
       }
     },
+    "http invoke-action / module error thrown sync": {
+      "status": 500,
+      "body": {
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / module error thrown sync": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a module code": {
+      "status": 500,
+      "body": {
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / plain error with a module code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a system code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: shape probe",
+        "fault": {
+          "message": "shape probe",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / plain error with a system code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a Node code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: shape probe",
+        "fault": {
+          "message": "shape probe",
+          "name": "TypeError",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / plain error with a Node code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / old globals": {
+      "status": 200,
+      "body": {
+        "output": {
+          "deviceError": "function",
+          "chError": "function"
+        }
+      }
+    },
+    "mcp tools/call / old globals": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": false,
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"deviceError\":\"function\",\"chError\":\"function\"}"
+            }
+          ],
+          "structuredContent": {
+            "deviceError": "function",
+            "chError": "function"
+          }
+        }
+      }
+    },
     "http invoke-action / missing device": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "DEVICE_NOT_FOUND",
         "message": "Device not found: 00000000-0000-0000-0000-000000000000"
       }
@@ -1261,7 +1782,6 @@
     "http invoke-action / no access": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "USER_HAS_NO_DEVICE",
         "message": "This apiKey does not have access to this device: ask the operator to add it to the apiKey's devices list in the auth config"
       }
@@ -1280,7 +1800,6 @@
     "http invoke-action / unknown key": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
         "message": "Unknown user: error-shape-unknown-key"
       }
@@ -1299,7 +1818,6 @@
     "http invoke-action / no key": {
       "status": 500,
       "body": {
-        "topic": "countinghouse error",
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
         "message": "Unknown user"
       }

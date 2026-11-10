@@ -1,8 +1,8 @@
 // The error class of the logger-and-errors spec (docs/superpowers/specs/
-// 2026-11-09-logger-design.md §5.1), step 1 (a): CountinghouseError beside
-// the old classes, rendering at construction exactly as they do (byte-
-// identity for the codemod that follows), with a name, a real stack, and
-// kind/retryable/httpStatus/mcpCode from the catalogue. No server.
+// 2026-11-09-logger-design.md §5.1): it renders at construction (the
+// catalogue text, then ": " and the arguments), serialises as code and
+// message only (no topic since step 1 (d2)), and has a name, a real stack,
+// and kind/retryable/httpStatus/mcpCode from the catalogue. No server.
 const assert  = require('assert');
 const options = require('../../lib/cli-options');
 const errors  = require('../../lib/countinghouse-error');
@@ -10,23 +10,18 @@ const errors  = require('../../lib/countinghouse-error');
 describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
   const {CountinghouseError, CHError, DeviceError} = errors;
 
-  it('renders, codes and topics exactly as CHError does, for the same arguments', () => {
-    const cases = [['DEVICE_NOT_FOUND'], ['ARGUMENTS_INVALID', 'x must be a string'], ['SYSTEM_ERROR', {a: 1}, 'and more'],
-      ['LOAD_MODULE_FAIL', 'm', null, 'reason'], ['NOT_A_CATALOGUE_CODE'], ['NOT_A_CATALOGUE_CODE', 'detail']];
-    for (const args of cases) {
-      const now = new CountinghouseError(...args);
-      const old = new CHError(...args);
-      assert.strictEqual(now.message, old.message, JSON.stringify(args));
-      assert.strictEqual(now.code, old.code, JSON.stringify(args));
-      assert.strictEqual(now.topic, old.topic, JSON.stringify(args));
+  it('renders the catalogue text, then ": " and the arguments, and serialises as code and message only', () => {
+    const cases = [
+      [['DEVICE_NOT_FOUND'], 'Device not found'],
+      [['ARGUMENTS_INVALID', 'x must be a string'], 'Invalid call arguments: x must be a string'],
+      [['SYSTEM_ERROR', {a: 1}, 'and more'], 'System error: {"a":1} and more'],
+      [['LOAD_MODULE_FAIL', 'm', null, 'reason'], 'Module load failed: m reason'],
+      [['NOT_A_CATALOGUE_CODE'], 'NOT_A_CATALOGUE_CODE'],
+      [['NOT_A_CATALOGUE_CODE', 'detail'], 'NOT_A_CATALOGUE_CODE']];
+    for (const [args, message] of cases) {
+      const e = new CountinghouseError(...args);
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(e)), {code: args[0], message: message}, JSON.stringify(args));
     }
-  });
-
-  it('CountinghouseError.device() renders and keeps the topic exactly as DeviceError does', () => {
-    const now = CountinghouseError.device('DEVICE_INVOKE_FAIL', 'boom');
-    const old = new DeviceError('DEVICE_INVOKE_FAIL', 'boom');
-    assert.deepStrictEqual({message: now.message, code: now.code, topic: now.topic}, {message: old.message, code: old.code, topic: old.topic});
-    assert.strictEqual(now.topic, 'device error');
   });
 
   it('is a real Error: a name, and a stack that starts where it was thrown', () => {
@@ -38,26 +33,26 @@ describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
     assert.ok(firstFrame(e).includes('03-error-class.js'), e.stack);
   });
 
-  // Step 1 (c): until (d) retires them, the module-facing globals are the old
-  // names, and they must make the same class lib/ makes, or lib/service.js
-  // would stop recognising a module's typed error.
-  it('the old names (behind the module-facing globals) make CountinghouseErrors, with their topics', () => {
+  // Until a later commit of step 1 (d2) retires them, the module-facing
+  // globals are the old names, and they must make the same class lib/ makes,
+  // or lib/service.js would stop recognising a module's typed error.
+  it('the old names (behind the module-facing globals) make CountinghouseErrors, without a topic', () => {
     const fromCH = new CHError('DEVICE_NOT_FOUND', 'd1');
     const fromDevice = new DeviceError('DEVICE_OFFLINE', 'x');
     assert.ok(fromCH instanceof CountinghouseError);
     assert.ok(fromDevice instanceof CountinghouseError);
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromCH)), {topic: 'countinghouse error', code: 'DEVICE_NOT_FOUND', message: 'Device not found: d1'});
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromDevice)), {topic: 'device error', code: 'DEVICE_OFFLINE', message: 'Device is offline: x'});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromCH)), {code: 'DEVICE_NOT_FOUND', message: 'Device not found: d1'});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromDevice)), {code: 'DEVICE_OFFLINE', message: 'Device is offline: x'});
     const firstFrame = (err) => String(err.stack).split('\n').find((l) => /^\s+at /.test(l)) || '';
     assert.ok(firstFrame(fromDevice).includes('03-error-class.js'), fromDevice.stack);
   });
 
-  // The old classes decided by arguments.length: an explicit undefined code
-  // (lib/device-manager.js passes `err.code != null ? err.code : err.message`)
-  // is kept as undefined, message and all, not turned into null and
-  // 'unknown error'.
+  // It decides by arguments.length, as the old classes did: an explicit
+  // undefined code (CountinghouseError.fromReply may pass `err.code != null ?
+  // err.code : err.message`) is kept as undefined, message and all, not
+  // turned into null and 'unknown error'.
   it('keeps an explicit undefined code as the old classes did', () => {
-    for (const e of [new CountinghouseError(undefined), CountinghouseError.device(undefined)]) {
+    for (const e of [new CountinghouseError(undefined)]) {
       assert.ok(Object.prototype.hasOwnProperty.call(e, 'code'));
       assert.strictEqual(e.code, undefined);
       assert.strictEqual(e.message, undefined);
@@ -95,7 +90,6 @@ describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
     try {
       options.locale = 'xx-XX';
       assert.strictEqual(new CountinghouseError('DEVICE_NOT_FOUND').message, 'Device not found');
-      assert.strictEqual(new CHError('DEVICE_NOT_FOUND').message, 'Device not found');
       options.locale = 'zh-CN';
       assert.notStrictEqual(new CountinghouseError('DEVICE_NOT_FOUND').message, 'Device not found');
     } finally { options.locale = saved; }

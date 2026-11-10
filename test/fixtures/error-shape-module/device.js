@@ -1,8 +1,7 @@
 // One action per outcome whose exact response body
-// test/mcp-contract/07-error-shape.js pins, on each entry path. DeviceError is
-// the module-visible global (lib/sandbox.js) until step 1 (d) of the
-// logger-and-errors spec replaces it with ctx.error; that step updates this
-// file and the golden together. ctx.error (step 1 (d1)) is the module's own.
+// test/mcp-contract/07-error-shape.js pins, on each entry path. A module
+// reports its own errors with ctx.error (logger-design §5.1); there are no
+// module-visible error classes or globals (step 1 (d2)).
 module.exports = {
   shapeService: {
     ok: async () => ({output: {ok: true}}),
@@ -17,18 +16,31 @@ module.exports = {
     // A handler that reports an untyped failure: DEVICE_INVOKE_FAIL.
     callbackPlain: (input, ctx, callback) => callback(new Error('boom'), null),
 
-    // A handler that reports a typed failure: the code survives.
-    callbackTyped: (input, ctx, callback) => callback(new DeviceError('DEVICE_OFFLINE', 'shape probe'), null),
+    // A handler that reports a typed failure with a plain Error carrying its
+    // own code (§5.1's plain-Error rule): the code survives.
+    callbackTyped: (input, ctx, callback) => callback(Object.assign(new Error('shape probe'), {code: 'SHAPE_OFFLINE'}), null),
 
-    // The four ways a handler hands back its own error (ctx.error): returned
-    // from a plain function or an async one, thrown, or called back. All four
-    // give the same answer (test/mcp-contract/07).
+    // The ways a handler hands back its own error (ctx.error): returned
+    // from a plain function or an async one, thrown from either, or called
+    // back; and a plain Error with a module-style code, thrown. All give the
+    // same answer (test/mcp-contract/07).
     returnError: (input, ctx) => ctx.error('SHAPE_REJECTED', 'shape probe'),
     returnErrorAsync: async (input, ctx) => ctx.error('SHAPE_REJECTED', 'shape probe'),
     throwError: async (input, ctx) => { throw ctx.error('SHAPE_REJECTED', 'shape probe'); },
+    throwErrorSync: (input, ctx) => { throw ctx.error('SHAPE_REJECTED', 'shape probe'); },
     callbackError: (input, ctx, callback) => callback(ctx.error('SHAPE_REJECTED', 'shape probe'), null),
+    throwPlainCoded: async () => { throw Object.assign(new Error('shape probe'), {code: 'SHAPE_REJECTED'}); },
+
+    // Not a module's code (§5.1): a system error's code (it has errno and
+    // syscall), and Node's own ERR_ namespace. Both are crashes:
+    // DEVICE_INVOKE_EXCEPTION.
+    throwSystemCoded: async () => { throw Object.assign(new Error('shape probe'), {code: 'EACCES', errno: -13, syscall: 'open'}); },
+    throwNodeCoded: async () => { throw Object.assign(new TypeError('shape probe'), {code: 'ERR_INVALID_ARG_TYPE'}); },
 
     // A plain object that merely looks like an error is a result, not an error.
-    returnLookalike: async () => ({topic: 'device error', code: 'SHAPE_REJECTED', message: 'SHAPE_REJECTED: shape probe'})
+    returnLookalike: async () => ({code: 'SHAPE_REJECTED', message: 'SHAPE_REJECTED: shape probe'}),
+
+    // The old module-visible globals are gone, in both modes.
+    globalsProbe: async () => ({output: {deviceError: typeof DeviceError, chError: typeof CHError}})
   }
 };
