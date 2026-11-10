@@ -93,7 +93,8 @@ any module code). Stops:
   less `child_process`, `cluster`, `worker_threads`, `inspector`, `v8`,
   `wasi`, `sqlite` (its `loadExtension` loads native code), `test` (its
   `run()` starts unsandboxed child processes), `sea`, `repl` and
-  `trace_events`), through `require`, `import()` and
+  `trace_events`; Node 26's `ffi`, which calls native code, is not on it
+  either), through `require`, `import()` and
   `process.getBuiltinModule` alike, so a built-in a later Node adds is
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
@@ -257,8 +258,11 @@ applies to the whole process, **main thread included**, so it limits what
 any module can reach on the host even under `audit`, but cannot separate a
 module from countinghouse's own data in the directories the process may
 read. Every module must live under `--modulePath`. Node 24 has no network
-permission, so outbound network is left to the OS; a systemd unit example is
-in [the example below](#hardening-with-systemd).
+permission; Node 26 has one, and `--hardened` passes `--allow-net` there
+(experimental in Node 26), so on every supported Node the network is
+unrestricted under `--hardened` until the network broker, and outbound
+network is left to the OS. A systemd unit example is in
+[the example below](#hardening-with-systemd).
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
@@ -354,7 +358,13 @@ The following are known, accepted, and not hidden by the layers above.
   modules' directories and the module registry database). `--allow-addons`
   is added for the SQLite auth provider, or whenever no `--loadModule` is
   given (the module registry database uses `sqlite3`); it puts native code in
-  the **main thread** outside the permission model. `--allow-child-process`
+  the **main thread** outside the permission model. It does not cover
+  Node 26's `node:ffi`: under `--permission`, `ffi.dlopen` needs its own
+  `--allow-ffi`, which `--hardened` never passes, so on Node 26 FFI is refused
+  by the permission model for the whole process, beneath the built-in
+  allowlist that already refuses `node:ffi` to module code (checked on
+  26.13.0: `ERR_ACCESS_DENIED`, `permission: 'FFI'`, with or without
+  `--allow-addons`). `--allow-child-process`
   is added when `--authoringTools` is on (`countinghouse_validate_module`
   runs the module in a child process), which lets the whole process start
   children outside the permission model. `--allow-worker` is always added,
@@ -538,8 +548,8 @@ these are the checks that predate them and still apply:
 
 ### Hardening with systemd
 
-Node 24 has no network permission, so under `--hardened` outbound network is
-left to the OS. A unit along these lines (adjust paths, addresses and
+Node 24 has no network permission, and on Node 26 `--hardened` passes
+`--allow-net`, so under `--hardened` outbound network is left to the OS. A unit along these lines (adjust paths, addresses and
 ports) gives the process a read-only file system apart from its module and
 module-data directories, no new privileges, a private `/tmp`, a memory ceiling, and a
 network filter. The filter (`IPAddressDeny`/`IPAddressAllow`) applies to

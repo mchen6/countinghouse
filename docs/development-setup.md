@@ -6,7 +6,7 @@ handful of things that fail quietly if you skip them.
 ## Prerequisites
 
 - **Node >= 24.15** (`package.json`'s `engines`). Development runs on 24.21;
-  CI tests 24.15.0 and the newest 24.x.
+  CI tests 24.15.0, the newest 24.x and the newest 26.x.
 - **Redis** reachable at `redis://127.0.0.1:6379`. Most of the suite needs it —
   metering, rate limiting and the job queue all use it. Check with
   `redis-cli ping`, expecting `PONG`. The runtime uses several numbered

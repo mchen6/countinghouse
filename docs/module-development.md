@@ -333,7 +333,7 @@ environment; a name with neither is absent. Read them with
 
 **Blocked built-ins.** `child_process`, `cluster`, `worker_threads`,
 `inspector` (and `inspector/promises`), `wasi`, `v8`, `repl`,
-`trace_events`, `node:sqlite`, `node:test` and `node:sea`, and any built-in newer than Node 24.21, are
+`trace_events`, `node:sqlite`, `node:test` and `node:sea`, and any built-in newer than Node 24.21 (Node 26's `node:ffi` among them), are
 unavailable:
 `require` of them fails with `MODULE_NOT_FOUND` under `enforce` (under
 `audit` it works and is logged). `module` is reduced to `builtinModules`,

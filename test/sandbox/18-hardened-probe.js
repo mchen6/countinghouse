@@ -81,6 +81,14 @@ describe('sandbox 18: --hardened grant probe', function() {
     assert.ok(/names that do not extend another grant/.test(r.stderr), r.stderr);
   });
 
+  // Node 26 adds a network permission; --hardened grants it where Node has
+  // the flag, so the network stays unrestricted as on Node 24. Right on both:
+  // the expectation is what this Node itself says it accepts.
+  it('passes --allow-net exactly when this Node has the flag', () => {
+    const flags = hardened.permissionFlags({modulePath: '/m', moduleDataPath: '/d', debug: true, localModulePath: '/m/x'}, '/install', '/');
+    assert.strictEqual(flags.includes('--allow-net'), process.allowedNodeEnvironmentFlags.has('--allow-net'), flags.join(' '));
+  });
+
   it('a probe that cannot run refuses, saying so', () => {
     const stub = () => ({status: 1, stdout: '', stderr: 'boom', error: null});
     const probe = hardened.probeGrants(['--permission', '--allow-fs-read=/srv/x'], {spawnSync: stub, existsDir: () => true});

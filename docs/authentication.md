@@ -104,6 +104,14 @@ comfortable to maintain by hand.
 > never touches the module registry DB (the only other thing that uses it).
 > Covered by `test/module-loading/02-sqlite3-unavailable.js`, which runs the
 > whole file-backend flow with `sqlite3` made unloadable.
+>
+> **npm and install scripts.** With npm 11.20.0 (bundled with Node 26.13.0),
+> `npm install` still ran `sqlite3`'s install script, which fetches its
+> binding, but warned that it is "not yet covered by allowScripts", and
+> `npm help install-scripts` already describes dependency install scripts as
+> blocked by default; if a fresh install leaves `sqlite3` without its
+> binding, allow it with `npm install-scripts approve sqlite3` (it records
+> the approval in your `package.json`'s `allowScripts`).
 
 The CLI below has the same requirement, and reports the same diagnosis.
 

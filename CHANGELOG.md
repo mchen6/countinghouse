@@ -18,6 +18,34 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — Node 26 in CI
+
+- CI now tests the newest 26.x as well as 24.15.0 and the newest 24.x. The
+  supported floor (`engines`, `lib/node-version.js`) is still 24.15. A new
+  push to a pull request cancels that PR's superseded CI run; runs on master
+  are never cancelled.
+- **Security, Node 26 only:** Node 26 adds `fs.openAsBlobSync`, which the
+  worker's file patch did not cover, so on Node 26 module code could read a
+  host path through it under every `--moduleSandbox` mode, a gap that
+  existed before this release. It is now brokered like `fs.openAsBlob`, and
+  installed only where Node has it.
+- `--hardened` on Node 26: Node 26's permission model adds a network
+  permission, and without it the relaunched server could neither listen nor
+  reach Redis. `--hardened` now passes `--allow-net` where Node has the flag
+  (Node prints an ExperimentalWarning for it), so the network stays
+  unrestricted under `--hardened`, as on Node 24, until the network broker.
+- Node 26's new built-in `node:ffi` (native calls from JavaScript) is
+  refused to module code. It already was before anyone read it: the
+  built-in allowlist is written out, so a built-in a later Node adds is
+  refused by default, which is the design working as intended. It is now
+  listed explicitly among the refused built-ins. Under `--hardened`, Node's
+  permission model refuses FFI as well (`--allow-ffi` is never passed;
+  `--allow-addons` does not cover it).
+- npm 11.20 (bundled with Node 26) warns that `sqlite3`'s install script is
+  not yet covered by `allowScripts`; see
+  [`docs/authentication.md`](docs/authentication.md) for what to do if a
+  fresh install leaves the SQLite provider without its binding.
+
 ### Fixed — with Redis down, calls answer, and billing resumes when it is back
 
 - node_redis queued commands while disconnected, so with Redis down a

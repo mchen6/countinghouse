@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [master]
 
+# A new push to a pull request cancels that PR's superseded run (the group is
+# the PR number); a push to master is grouped by its sha, unique per commit,
+# so no master run is ever cancelled and every merged commit keeps its result.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   # The one invariant that must never break: no commit may move the MCP
   # surface. api.json is a description format and the module shape is an
@@ -155,8 +162,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The floor itself (lib/node-version.js) and the newest 24.x.
-        node-version: ['24.15.0', '24']
+        # The floor itself (lib/node-version.js), the newest 24.x, and the
+        # newest 26.x.
+        node-version: ['24.15.0', '24', '26']
 
     services:
       redis:

@@ -210,7 +210,8 @@ describe('sandbox 05: off', function() {
 
 describe('sandbox 05: the built-in allowlist', () => {
   const REFUSED = ['child_process', 'cluster', 'worker_threads', 'inspector', 'inspector/promises', 'v8', 'wasi',
-    'sqlite', 'test', 'test/reporters', 'sea', 'repl', 'trace_events'];
+    'sqlite', 'test', 'test/reporters', 'sea', 'repl', 'trace_events',
+    'ffi'];   // Node 26: a foreign-function interface, native code from JavaScript
 
   it('refuses each left-out built-in, with or without node:', () => {
     REFUSED.forEach((id) => {
