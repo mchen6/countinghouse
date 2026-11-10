@@ -1,7 +1,9 @@
 # Logging and errors: structured records, one writer, structured errors
 
 Status: Approved by the user 2026-11-10 (design only; landing per §9: step 1
-may start now, step 2 after R2-1 Task 4, step 3 after R2-1). Written 2026-11-09 by implementer B with the reviewer
+may start now, step 2 after R2-1 Task 4, step 3 after R2-1). Amended
+2026-11-10 during step 1: §5.1's ctx.error paragraph (the user: a handler
+may return its error; how a module error renders) and §5.3's statuses line. Written 2026-11-09 by implementer B with the reviewer
 (countinghouse-a5), who holds the user's decisions. The user's decisions are
 roadmap-p1-p2.md, P1, items 1–11 (cited as "item N"). Calls that are the
 reviewer's or mine are marked. Section 12 lists what the user is asked to
@@ -179,7 +181,16 @@ also lockdown hygiene. The class has:
 - `retryable`, from the catalogue entry.
 
 **Module-facing API.** `ctx.error(code, message?, details?)` returns an
-instance with `origin: 'module'`, whose code is one of the module's own. A
+instance with `origin: 'module'`, whose code is one of the module's own; it
+never throws. A handler hands it back in any of three equivalent ways (the
+user prefers the first): **returning it** as the handler's result, from a
+plain function or an async one (`return ctx.error('REPO_TOO_LARGE', …)`);
+throwing or rejecting with it; or `callback(err)`. All three give the same
+answer, with the module's code. Only a `CountinghouseError` counts: a
+returned plain object that looks like an error is a result. A module error
+renders `CODE: message` (the bare code when there is no message): a
+module's code has no catalogue text, and rendering it the old way would
+drop the module's message. A
 plain `Error` with a `.code` thrown by a module is accepted the same way, so
 authors who prefer plain errors can use them. A runtime error a module
 rethrows unchanged (from `ctx.call`, say) passes through and keeps
@@ -206,7 +217,15 @@ reader can render it in any locale. Nothing is rendered at construction.
 ### 5.3 One catalogue
 
 One table replaces `error-info.en-US.json` and `error-info.zh-CN.json`:
-code → `{en, zh, kind, retryable, httpStatus, mcpCode}`. The catalogue is
+code → `{en, zh, kind, retryable, httpStatus, mcpCode}`. Until step 3
+renders from it, `httpStatus` and `mcpCode` record today's behaviour, which
+the request's path chooses, not the code: every error on the device routes
+answers 500 and a few routes answer their own (403, 429); an MCP tool's
+error is a tool result, so `mcpCode` is null, and the JSON-RPC codes stay
+chosen by the path (an auth failure on `tools/call` is `-32603`, without the
+code). Moving caller-kind codes to 4xx, and giving MCP clients the code of
+an auth failure, are possible later changes for the user, not this series.
+The catalogue is
 runtime-only: modules never raise its codes. The default locale is
 en-US, and a missing locale or a missing translation falls back to en-US,
 fixing today's zh-CN fallback. A test, like sandbox/05's built-in check,

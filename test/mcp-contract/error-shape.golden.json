@@ -439,6 +439,405 @@
         }
       }
     },
+    "http invoke-action / module error returned": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED"
+      }
+    },
+    "mcp tools/call / module error returned": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error returned": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "SHAPE_REJECTED"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "SHAPE_REJECTED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module error returned async": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED"
+      }
+    },
+    "mcp tools/call / module error returned async": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error returned async": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "SHAPE_REJECTED"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "SHAPE_REJECTED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module error thrown": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED"
+      }
+    },
+    "mcp tools/call / module error thrown": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error thrown": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "SHAPE_REJECTED"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "SHAPE_REJECTED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / module error called back": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED"
+      }
+    },
+    "mcp tools/call / module error called back": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / module error called back": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "SHAPE_REJECTED: SHAPE_REJECTED"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "SHAPE_REJECTED"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "SHAPE_REJECTED"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / lookalike returned": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "OUTPUT_DATA_VALIDATION_FAIL",
+        "message": "Output data validation error",
+        "fault": {
+          "reason": "unexpected output argument: topic",
+          "info": ""
+        }
+      }
+    },
+    "mcp tools/call / lookalike returned": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Output data validation error"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / lookalike returned": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "OUTPUT_DATA_VALIDATION_FAIL: Output data validation error"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Output data validation error"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL"
+            }
+          }
+        }
+      }
+    },
     "http invoke-action / missing device": {
       "status": 500,
       "body": {
@@ -709,6 +1108,145 @@
         "error": {
           "code": -32602,
           "message": "unknown tool: error_shape_module_shapeservice_nope"
+        }
+      }
+    },
+    "http invoke-action / module error returned": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / module error returned": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "http invoke-action / module error returned async": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / module error returned async": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "http invoke-action / module error thrown": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / module error thrown": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "http invoke-action / module error called back": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "SHAPE_REJECTED",
+        "message": "SHAPE_REJECTED: shape probe"
+      }
+    },
+    "mcp tools/call / module error called back": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "SHAPE_REJECTED: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "SHAPE_REJECTED"
+          }
+        }
+      }
+    },
+    "http invoke-action / lookalike returned": {
+      "status": 500,
+      "body": {
+        "topic": "device error",
+        "code": "OUTPUT_DATA_VALIDATION_FAIL",
+        "message": "Output data validation error",
+        "fault": {
+          "reason": "unexpected output argument: topic",
+          "info": ""
+        }
+      }
+    },
+    "mcp tools/call / lookalike returned": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Output data validation error"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "OUTPUT_DATA_VALIDATION_FAIL"
+          }
         }
       }
     },

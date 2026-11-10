@@ -58,6 +58,45 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
     });
   }
 
+  // Step 1 (d1), the user's preference: a handler may hand back its own
+  // error (ctx.error) by returning it -- from a plain function or an async
+  // one -- as well as by throwing it or calling back with it. All four are
+  // the same answer, and it carries the module's code. A plain object that
+  // only looks like an error is a result.
+  const FORMS = ['module error returned', 'module error returned async', 'module error thrown', 'module error called back'];
+  const PATHS = ['http invoke-action', 'mcp tools/call', 'mcp tasks/result'];
+
+  it('gives the same answer for a module error returned, returned async, thrown or called back', () => {
+    let compared = 0;
+    for (const mode of Object.keys(GOLDEN)) {
+      for (const p of PATHS) {
+        const answers = FORMS.map((f) => GOLDEN[mode][`${p} / ${f}`]).filter((a) => a !== undefined);
+        if (answers.length === 0) continue;
+        assert.strictEqual(answers.length, FORMS.length, `${mode} / ${p}`);
+        for (let i = 1; i < answers.length; i++) assert.deepStrictEqual(answers[i], answers[0], `${mode} / ${p} / ${FORMS[i]}`);
+        compared++;
+      }
+    }
+    assert.ok(compared >= 5, `premise: compared ${compared} path/mode pairs`);
+  });
+
+  it('carries the module\'s own code for a module error, and its message where the message crosses', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      const http = GOLDEN[mode]['http invoke-action / module error returned'];
+      assert.strictEqual(http.body.code, 'SHAPE_REJECTED', `${mode}: ${JSON.stringify(http)}`);
+      const call = GOLDEN[mode]['mcp tools/call / module error returned'];
+      assert.strictEqual(toolErrorCode(call.body.result), 'SHAPE_REJECTED', `${mode}: ${JSON.stringify(call)}`);
+    }
+    assert.strictEqual(GOLDEN['single-thread']['http invoke-action / module error returned'].body.message, 'SHAPE_REJECTED: shape probe');
+  });
+
+  it('treats a returned object that merely looks like an error as a result', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      const a = GOLDEN[mode]['http invoke-action / lookalike returned'];
+      assert.notStrictEqual(a.body.code, 'SHAPE_REJECTED', `${mode}: ${JSON.stringify(a)}`);
+    }
+  });
+
   it('agrees with the catalogue: invoke-action answers each code with its httpStatus', () => {
     let checked = 0;
     for (const mode of Object.keys(GOLDEN)) {

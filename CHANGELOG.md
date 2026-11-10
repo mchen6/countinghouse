@@ -18,6 +18,16 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — `ctx.error`: a handler's own error, which it may simply return
+
+- `ctx.error(code, message?, details?)` returns the module's own error
+  (it never throws). A handler hands it back by returning it, from a plain
+  function or an async one (`return ctx.error('REPO_TOO_LARGE', 'over 2 GB')`),
+  or by throwing it, or with `callback(err)`: the same answer, carrying the
+  module's code. It answers `REPO_TOO_LARGE: over 2 GB` (the code, then the
+  message). Only such an error counts: a returned plain object that looks
+  like one is a result.
+
 ### Changed — one error class inside the runtime
 
 - Every error the runtime constructs is a `CountinghouseError`

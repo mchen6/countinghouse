@@ -26,7 +26,13 @@ const OUTCOMES = [
   {name: 'module throw', action: 'throwPlain', args: {}},
   {name: 'module callback error', action: 'callbackPlain', args: {}},
   {name: 'module typed error', action: 'callbackTyped', args: {}},
-  {name: 'unknown tool', action: 'nope', args: {}}
+  {name: 'unknown tool', action: 'nope', args: {}},
+  // step 1 (d1): a module's own error, handed back four ways, and a lookalike
+  {name: 'module error returned', action: 'returnError', args: {}},
+  {name: 'module error returned async', action: 'returnErrorAsync', args: {}},
+  {name: 'module error thrown', action: 'throwError', args: {}},
+  {name: 'module error called back', action: 'callbackError', args: {}},
+  {name: 'lookalike returned', action: 'returnLookalike', args: {}}
 ];
 
 function normalize(value) {

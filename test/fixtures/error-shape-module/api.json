@@ -55,6 +55,56 @@
             "output": {
               "schema": "/shapeService/callbackTyped/output"
             }
+          },
+          {
+            "name": "returnError",
+            "description": "error-shape case returnError",
+            "input": {
+              "schema": "/shapeService/returnError/input"
+            },
+            "output": {
+              "schema": "/shapeService/returnError/output"
+            }
+          },
+          {
+            "name": "returnErrorAsync",
+            "description": "error-shape case returnErrorAsync",
+            "input": {
+              "schema": "/shapeService/returnErrorAsync/input"
+            },
+            "output": {
+              "schema": "/shapeService/returnErrorAsync/output"
+            }
+          },
+          {
+            "name": "throwError",
+            "description": "error-shape case throwError",
+            "input": {
+              "schema": "/shapeService/throwError/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwError/output"
+            }
+          },
+          {
+            "name": "callbackError",
+            "description": "error-shape case callbackError",
+            "input": {
+              "schema": "/shapeService/callbackError/input"
+            },
+            "output": {
+              "schema": "/shapeService/callbackError/output"
+            }
+          },
+          {
+            "name": "returnLookalike",
+            "description": "error-shape case returnLookalike",
+            "input": {
+              "schema": "/shapeService/returnLookalike/input"
+            },
+            "output": {
+              "schema": "/shapeService/returnLookalike/output"
+            }
           }
         ]
       }
