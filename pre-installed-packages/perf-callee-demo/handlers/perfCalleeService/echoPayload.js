@@ -3,7 +3,7 @@
 // transport rather than this handler.
 module.exports = async (input, ctx) => {
   if (input == null || typeof(input.data) !== 'string') {
-    throw new DeviceError('ARGUMENTS_INVALID');
+    return ctx.error('INPUT_REJECTED', 'data must be a string');
   }
   return {output: {data: input.data}};
 };

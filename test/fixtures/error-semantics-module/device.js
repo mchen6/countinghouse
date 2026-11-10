@@ -1,18 +1,17 @@
 // One action per way a handler can report success or failure, so
 // test/module-loading/08-error-semantics.js can assert each cell of the matrix
-// directly. DeviceError is a module-visible global (lib/sandbox.js), the same
-// way pre-installed-packages/transform-demo uses it.
-const TYPED_CODE = 'DEVICE_OFFLINE';   // any real code; the point is that it survives
+// directly. A typed error is the module's own (ctx.error, logger-design §5.1).
+const TYPED_CODE = 'SEMANTICS_TYPED';   // the module's own code; the point is that it survives
 
 module.exports = {
   errService: {
     // deliberate failure, callback style
-    callbackTyped: (input, ctx, callback) => callback(new DeviceError(TYPED_CODE), null),
+    callbackTyped: (input, ctx, callback) => callback(ctx.error(TYPED_CODE), null),
 
     // the same deliberate failure, async style -- a rejection carrying a typed
     // error. This used to be flattened to DEVICE_INVOKE_EXCEPTION, discarding
     // the code, which left async handlers with no way to report a typed error.
-    rejectTyped: async () => { throw new DeviceError(TYPED_CODE); },
+    rejectTyped: async (input, ctx) => { throw ctx.error(TYPED_CODE); },
 
     // untyped failure, reported: "I failed"
     callbackPlain: (input, ctx, callback) => callback(new Error('boom'), null),

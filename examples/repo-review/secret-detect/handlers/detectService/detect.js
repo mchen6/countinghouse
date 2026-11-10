@@ -193,17 +193,23 @@ function scanFile(file, findings, cap) {
   return false;
 }
 
+// A helper with no ctx reports the module's own code with a plain Error that
+// carries it (logger-design §5.1); the handler itself returns ctx.error.
+function rejected(message) {
+  return Object.assign(new Error(message), {code: 'INPUT_REJECTED'});
+}
+
 function positiveIntOr(value, fallback) {
   if (value == null) return fallback;
   if (!Number.isInteger(value) || value < 1) {
-    throw new DeviceError('ARGUMENTS_INVALID', `expected a positive integer, got ${JSON.stringify(value)}`);
+    throw rejected(`expected a positive integer, got ${JSON.stringify(value)}`);
   }
   return value;
 }
 
 module.exports = async (input, ctx) => {
   if (input == null || !Array.isArray(input.files)) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'files must be an array of {path, content}');
+    return ctx.error('INPUT_REJECTED', 'files must be an array of {path, content}');
   }
 
   const cap = positiveIntOr(input.maxFindings, DEFAULT_MAX_FINDINGS);
@@ -214,7 +220,7 @@ module.exports = async (input, ctx) => {
 
   for (const file of input.files) {
     if (file == null || typeof file.path !== 'string' || typeof file.content !== 'string') {
-      throw new DeviceError('ARGUMENTS_INVALID', 'every entry in files needs a string path and string content');
+      return ctx.error('INPUT_REJECTED', 'every entry in files needs a string path and string content');
     }
     filesScanned++;
     bytesScanned += Buffer.byteLength(file.content, 'utf8');

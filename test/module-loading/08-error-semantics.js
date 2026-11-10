@@ -66,7 +66,7 @@ describe('module-loading 08: handler failure classification and style detection'
     call('callbackTyped', (err, result) => {
       if (err) return done(err);
       assert.strictEqual(result.isError, true, JSON.stringify(result));
-      assert.strictEqual(toolErrorCode(result), 'DEVICE_OFFLINE');
+      assert.strictEqual(toolErrorCode(result), 'SEMANTICS_TYPED');
       return done();
     });
   });
@@ -77,7 +77,7 @@ describe('module-loading 08: handler failure classification and style detection'
       assert.strictEqual(result.isError, true, JSON.stringify(result));
       // the regression this step exists to fix: previously
       // DEVICE_INVOKE_EXCEPTION, with the real code discarded
-      assert.strictEqual(toolErrorCode(result), 'DEVICE_OFFLINE',
+      assert.strictEqual(toolErrorCode(result), 'SEMANTICS_TYPED',
         'a rejection carrying a typed error must not be flattened');
       return done();
     });

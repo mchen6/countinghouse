@@ -29,7 +29,7 @@ module.exports = async (input, ctx) => {
 
   const maxFiles = (opts.maxFiles != null) ? opts.maxFiles : DEFAULT_MAX_FILES;
   if (!Number.isInteger(maxFiles) || maxFiles < 1 || maxFiles > MAX_MAX_FILES) {
-    throw new DeviceError('ARGUMENTS_INVALID', `maxFiles must be an integer from 1 to ${MAX_MAX_FILES}`);
+    return ctx.error('INPUT_REJECTED', `maxFiles must be an integer from 1 to ${MAX_MAX_FILES}`);
   }
 
   // One place that runs a hop, so every hop is billed and recorded the same
@@ -40,7 +40,7 @@ module.exports = async (input, ctx) => {
     try {
       result = await ctx.call(address, hopInput, {detail: true});
     } catch (e) {
-      throw new DeviceError('DEVICE_ACTION_CALL_FAIL', `${label}${file != null ? ` (${file})` : ''}: ${e.message}`);
+      throw ctx.error('INNER_CALL_FAILED', `${label}${file != null ? ` (${file})` : ''}: ${e.message}`, {cause: e});
     }
 
     const pm = result.platformMetering;

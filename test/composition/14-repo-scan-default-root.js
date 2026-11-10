@@ -41,7 +41,7 @@ describe('composition 14: repo-scan reads only the directory an operator or call
     const r = await mcpCall(PORT, KEY, SCAN, {});
     assert.ok(Date.now() - started < 10000, `took ${Date.now() - started} ms`);
     assert.strictEqual(r.isError, true, JSON.stringify(r));
-    assert.strictEqual(toolErrorCode(r), 'ARGUMENTS_INVALID', JSON.stringify(r));
+    assert.strictEqual(toolErrorCode(r), 'INPUT_REJECTED', JSON.stringify(r));
     // Only the code crosses the worker hop (lib/handler-ctx.js re-wraps by
     // code); the handler's hint about defaultRoot reaches REST and
     // single-thread callers.
@@ -70,9 +70,9 @@ describe('composition 14: repo-scan reads only the directory an operator or call
     fs.writeFileSync(path.join(configDir, 'repo-scan.json'), JSON.stringify({defaultRoot: '/'}));
     server = await start(configDir);
     const viaPath = await mcpCall(PORT, KEY, SCAN, {path: '/'});
-    assert.strictEqual(toolErrorCode(viaPath), 'ARGUMENTS_INVALID', JSON.stringify(viaPath));
+    assert.strictEqual(toolErrorCode(viaPath), 'INPUT_REJECTED', JSON.stringify(viaPath));
     const viaConfig = await mcpCall(PORT, KEY, SCAN, {});
-    assert.strictEqual(toolErrorCode(viaConfig), 'ARGUMENTS_INVALID', JSON.stringify(viaConfig));
+    assert.strictEqual(toolErrorCode(viaConfig), 'INPUT_REJECTED', JSON.stringify(viaConfig));
     assert.ok(!/module sandbox: repo-scan file outside \/var/.test(server.output), 'walked the host filesystem');
   });
 });

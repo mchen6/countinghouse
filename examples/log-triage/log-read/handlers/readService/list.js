@@ -11,11 +11,11 @@ const DEFAULT_DIR = '/data/sample-logs';
 
 const MAX_FILES = 256;
 
-module.exports = async (input) => {
+module.exports = async (input, ctx) => {
   const opts = input || {};
 
   if (opts.dir != null && (typeof opts.dir !== 'string' || opts.dir === '')) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'dir must be a non-empty string');
+    return ctx.error('INPUT_REJECTED', 'dir must be a non-empty string');
   }
   const dir = path.resolve(opts.dir != null ? opts.dir : DEFAULT_DIR);
 
@@ -23,7 +23,7 @@ module.exports = async (input) => {
   try {
     entries = await fs.promises.readdir(dir, {withFileTypes: true});
   } catch (e) {
-    throw new DeviceError('ARGUMENTS_INVALID', `cannot list ${dir}: ${e.code || e.message}`);
+    return ctx.error('INPUT_REJECTED', `cannot list ${dir}: ${e.code || e.message}`);
   }
 
   // isFile() on a Dirent is false for a symbolic link, which is the point: a

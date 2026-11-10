@@ -6,10 +6,19 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 
-// Handlers reference the global DeviceError the runtime installs
-// (lib/sandbox.js). Outside the runtime it has to be supplied.
-if (global.DeviceError == null) {
-  global.DeviceError = require('../../lib/countinghouse-error').DeviceError;
+// A handler reports a bad input by returning ctx.error (logger-design §5.1).
+// Outside the runtime the test supplies the ctx: its error() is what the
+// runtime's is (lib/handler-ctx.js).
+const {CountinghouseError} = require('../../lib/countinghouse-error');
+const CTX = {error: (code, message, details) => CountinghouseError.module(code, message, details)};
+const withCtx = (handler) => (input) => handler(input, CTX);
+
+// The error a handler handed back, whether it returned it or threw it.
+async function handedBack(promise) {
+  let got;
+  try { got = await promise; } catch (e) { got = e; }
+  assert.ok(got instanceof Error, `the handler succeeded: ${JSON.stringify(got)}`);
+  return got;
 }
 
 const EXAMPLE = path.join(__dirname, '..', '..', 'examples', 'log-triage');
@@ -61,8 +70,8 @@ describe('log-triage units: generate-logs', () => {
 });
 
 describe('log-triage units: log-read', () => {
-  const list = require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js'));
-  const read = require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js'));
+  const list = withCtx(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js')));
+  const read = withCtx(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js')));
 
   let dir = null;
 
@@ -80,7 +89,7 @@ describe('log-triage units: log-read', () => {
   });
 
   async function rejectsInvalid(promise) {
-    await assert.rejects(promise, (err) => err.code === 'ARGUMENTS_INVALID');
+    assert.strictEqual((await handedBack(promise)).code, 'INPUT_REJECTED');
   }
 
   it('list returns only regular *.log files, sorted by name, with sizes', async () => {
@@ -166,7 +175,7 @@ describe('log-triage units: log-read', () => {
 });
 
 describe('log-triage units: pii-redact', () => {
-  const redact = require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js'));
+  const redact = withCtx(require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js')));
 
   it('replaces each PII type with its tag and counts it', async () => {
     const {output} = await redact({lines: [
@@ -291,13 +300,13 @@ describe('log-triage units: pii-redact', () => {
   });
 
   it('rejects input whose lines are not all strings', async () => {
-    await assert.rejects(redact({lines: ['ok', 7]}), (err) => err.code === 'ARGUMENTS_INVALID');
-    await assert.rejects(redact({}), (err) => err.code === 'ARGUMENTS_INVALID');
+    assert.strictEqual((await handedBack(redact({lines: ['ok', 7]}))).code, 'INPUT_REJECTED');
+    assert.strictEqual((await handedBack(redact({}))).code, 'INPUT_REJECTED');
   });
 });
 
 describe('log-triage units: error-cluster', () => {
-  const cluster = require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js'));
+  const cluster = withCtx(require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js')));
 
   const LINES = [
     '2026-09-01T00:00:01.000Z INFO request completed in 12ms status=200 path=/api/orders/4821',
@@ -381,9 +390,8 @@ describe('log-triage units: error-cluster', () => {
   });
 
   it('rejects bad lines and an out-of-range topClusters', async () => {
-    const invalid = (err) => err.code === 'ARGUMENTS_INVALID';
-    await assert.rejects(cluster({lines: 'nope'}), invalid);
-    await assert.rejects(cluster({lines: [], topClusters: 0}), invalid);
-    await assert.rejects(cluster({lines: [], topClusters: 51}), invalid);
+    for (const input of [{lines: 'nope'}, {lines: [], topClusters: 0}, {lines: [], topClusters: 51}]) {
+      assert.strictEqual((await handedBack(cluster(input))).code, 'INPUT_REJECTED', JSON.stringify(input));
+    }
   });
 });

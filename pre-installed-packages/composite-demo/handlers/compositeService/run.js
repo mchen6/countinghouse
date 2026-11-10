@@ -50,7 +50,7 @@ function invokeHop(client, actionName, input) {
 
 module.exports = async (input, ctx) => {
   if (input == null || typeof(input.text) !== 'string') {
-    throw new DeviceError('ARGUMENTS_INVALID');
+    return ctx.error('INPUT_REJECTED', 'text must be a string');
   }
 
   const bill = [];
@@ -76,7 +76,7 @@ module.exports = async (input, ctx) => {
   try {
     first = await invokeHop(transformClient, 'uppercase', {text: input.text});
   } catch (e) {
-    throw new DeviceError('DEVICE_ACTION_CALL_FAIL', e.message);
+    return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }
   recordHop('transform-demo/uppercase', first.platformMetering);
 
@@ -86,7 +86,7 @@ module.exports = async (input, ctx) => {
   try {
     second = await invokeHop(echoClient, 'echo', {foo: [], bar: first.data.output.text});
   } catch (e) {
-    throw new DeviceError('DEVICE_ACTION_CALL_FAIL', e.message);
+    return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }
   recordHop('echo-device-module/echo', second.platformMetering);
 

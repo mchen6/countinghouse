@@ -21,22 +21,22 @@ function isBareLogName(name) {
          !/[/\\\0]/.test(name);
 }
 
-module.exports = async (input) => {
+module.exports = async (input, ctx) => {
   const opts = input || {};
 
   if (opts.dir != null && (typeof opts.dir !== 'string' || opts.dir === '')) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'dir must be a non-empty string');
+    return ctx.error('INPUT_REJECTED', 'dir must be a non-empty string');
   }
   if (!isBareLogName(opts.name)) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'name must be a bare file name ending in .log');
+    return ctx.error('INPUT_REJECTED', 'name must be a bare file name ending in .log');
   }
 
   const maxBytes = (opts.maxBytes != null) ? opts.maxBytes : DEFAULT_MAX_BYTES;
   if (!Number.isInteger(maxBytes) || maxBytes < 1) {
-    throw new DeviceError('ARGUMENTS_INVALID', `maxBytes must be a positive integer, got ${JSON.stringify(opts.maxBytes)}`);
+    return ctx.error('INPUT_REJECTED', `maxBytes must be a positive integer, got ${JSON.stringify(opts.maxBytes)}`);
   }
   if (maxBytes > MAX_MAX_BYTES) {
-    throw new DeviceError('ARGUMENTS_INVALID', `maxBytes must be at most ${MAX_MAX_BYTES} (16 MiB), got ${maxBytes}`);
+    return ctx.error('INPUT_REJECTED', `maxBytes must be at most ${MAX_MAX_BYTES} (16 MiB), got ${maxBytes}`);
   }
 
   const dir  = path.resolve(opts.dir != null ? opts.dir : DEFAULT_DIR);
@@ -47,10 +47,10 @@ module.exports = async (input) => {
   try {
     stat = await fs.promises.lstat(full);
   } catch (e) {
-    throw new DeviceError('ARGUMENTS_INVALID', `cannot read ${opts.name}: ${e.code || e.message}`);
+    return ctx.error('INPUT_REJECTED', `cannot read ${opts.name}: ${e.code || e.message}`);
   }
   if (!stat.isFile()) {
-    throw new DeviceError('ARGUMENTS_INVALID', `${opts.name} is not a regular file`);
+    return ctx.error('INPUT_REJECTED', `${opts.name} is not a regular file`);
   }
 
   let text;

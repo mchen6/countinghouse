@@ -179,17 +179,23 @@ function walk(root, includeRes, excludeRes, budget, state) {
   }
 }
 
+// A helper with no ctx reports the module's own code with a plain Error that
+// carries it (logger-design §5.1); the handler itself returns ctx.error.
+function rejected(message) {
+  return Object.assign(new Error(message), {code: 'INPUT_REJECTED'});
+}
+
 function resolveRoot(input) {
   let wanted;
   if (input == null || input.path == null) {
     wanted = configuredDefaultRoot();
     if (wanted == null) {
-      throw new DeviceError('ARGUMENTS_INVALID',
+      throw rejected(
         'pass `path`, or set `defaultRoot` in repo-scan\'s device config (<--deviceConfigPath>/repo-scan.json)');
     }
   } else {
     if (typeof input.path !== 'string' || input.path.trim() === '') {
-      throw new DeviceError('ARGUMENTS_INVALID', 'path must be a non-empty string');
+      throw rejected('path must be a non-empty string');
     }
     wanted = input.path;
   }
@@ -198,17 +204,17 @@ function resolveRoot(input) {
   // outside the module's namespace are allowed and logged by design; enforce
   // with a declared fs permission is what confines them.
   if (path.parse(resolved).root === resolved) {
-    throw new DeviceError('ARGUMENTS_INVALID', `${resolved} is a filesystem root; name the repository directory`);
+    throw rejected(`${resolved} is a filesystem root; name the repository directory`);
   }
 
   let stat;
   try {
     stat = fs.statSync(resolved);
   } catch (e) {
-    throw new DeviceError('ARGUMENTS_INVALID', `cannot stat ${resolved}: ${e.code || e.message}`);
+    throw rejected(`cannot stat ${resolved}: ${e.code || e.message}`);
   }
   if (!stat.isDirectory()) {
-    throw new DeviceError('ARGUMENTS_INVALID', `${resolved} is not a directory`);
+    throw rejected(`${resolved} is not a directory`);
   }
   return resolved;
 }
@@ -216,7 +222,7 @@ function resolveRoot(input) {
 function positiveIntOr(value, fallback) {
   if (value == null) return fallback;
   if (!Number.isInteger(value) || value < 1) {
-    throw new DeviceError('ARGUMENTS_INVALID', `expected a positive integer, got ${JSON.stringify(value)}`);
+    throw rejected(`expected a positive integer, got ${JSON.stringify(value)}`);
   }
   return value;
 }

@@ -53,11 +53,17 @@ function rangeKind(range) {
   return 'other';
 }
 
+// A helper with no ctx reports the module's own code with a plain Error that
+// carries it (logger-design §5.1); the handler itself returns ctx.error.
+function rejected(message) {
+  return Object.assign(new Error(message), {code: 'INPUT_REJECTED'});
+}
+
 function parseJSON(text, label) {
   try {
     return JSON.parse(text);
   } catch (e) {
-    throw new DeviceError('ARGUMENTS_INVALID', `${label} is not valid JSON: ${e.message}`);
+    throw rejected(`${label} is not valid JSON: ${e.message}`);
   }
 }
 
@@ -125,12 +131,12 @@ function analyzeLockfile(lockText, lockName, directNames, notes) {
 
 module.exports = async (input, ctx) => {
   if (input == null || typeof input.manifest !== 'string') {
-    throw new DeviceError('ARGUMENTS_INVALID', 'manifest must be the text of a package.json');
+    return ctx.error('INPUT_REJECTED', 'manifest must be the text of a package.json');
   }
 
   const manifest = parseJSON(input.manifest, 'manifest');
   if (manifest == null || typeof manifest !== 'object' || Array.isArray(manifest)) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'manifest parsed to something other than a JSON object');
+    return ctx.error('INPUT_REJECTED', 'manifest parsed to something other than a JSON object');
   }
 
   const notes      = [NOTE_NO_NETWORK];

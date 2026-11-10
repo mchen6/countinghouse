@@ -68,7 +68,7 @@ module.exports = async (input, ctx) => {
     try {
       result = await ctx.call(address, hopInput, {detail: true});
     } catch (e) {
-      throw new DeviceError('DEVICE_ACTION_CALL_FAIL', `${label}: ${e.message}`);
+      throw ctx.error('INNER_CALL_FAILED', `${label}: ${e.message}`, {cause: e});
     }
     const wallMs   = Date.now() - t0;
     const outBytes = jsonBytes(result.data);

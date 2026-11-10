@@ -20,17 +20,17 @@ const UUID_RE   = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const HEX_RE    = /\b[0-9a-f]{8,}\b/gi;
 const DIGITS_RE = /\d+/g;
 
-module.exports = async (input) => {
+module.exports = async (input, ctx) => {
   const opts  = input || {};
   const lines = opts.lines;
 
   if (!Array.isArray(lines) || !lines.every((l) => typeof l === 'string')) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'lines must be an array of strings');
+    return ctx.error('INPUT_REJECTED', 'lines must be an array of strings');
   }
 
   const top = (opts.topClusters != null) ? opts.topClusters : DEFAULT_TOP_CLUSTERS;
   if (!Number.isInteger(top) || top < 1 || top > MAX_TOP_CLUSTERS) {
-    throw new DeviceError('ARGUMENTS_INVALID', `topClusters must be an integer from 1 to ${MAX_TOP_CLUSTERS}`);
+    return ctx.error('INPUT_REJECTED', `topClusters must be an integer from 1 to ${MAX_TOP_CLUSTERS}`);
   }
 
   const byLevel  = {DEBUG: 0, INFO: 0, WARN: 0, ERROR: 0};

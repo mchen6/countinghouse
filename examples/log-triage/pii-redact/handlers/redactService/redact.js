@@ -48,11 +48,11 @@ const PATTERNS = [
   {type: 'phone',       tag: '<phone>', re: /(?:\+\d{1,3}[-. ]?)?(?:\(\d{3}\)|\d{3})[-. ]\d{3}[-. ]\d{4}\b/g}
 ];
 
-module.exports = async (input) => {
+module.exports = async (input, ctx) => {
   const lines = (input != null) ? input.lines : null;
 
   if (!Array.isArray(lines) || !lines.every((l) => typeof l === 'string')) {
-    throw new DeviceError('ARGUMENTS_INVALID', 'lines must be an array of strings');
+    return ctx.error('INPUT_REJECTED', 'lines must be an array of strings');
   }
 
   const counts = {email: 0, ipv4: 0, phone: 0, card: 0, bearerToken: 0};

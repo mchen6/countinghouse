@@ -23,7 +23,7 @@ function invoke(client, input) {
 
 module.exports = async (input, ctx) => {
   if (input == null || typeof(input.payloadSizeBytes) !== 'number') {
-    throw new DeviceError('ARGUMENTS_INVALID');
+    return ctx.error('INPUT_REJECTED', 'payloadSizeBytes must be a number');
   }
 
   const data = 'x'.repeat(input.payloadSizeBytes);
@@ -32,14 +32,14 @@ module.exports = async (input, ctx) => {
   try {
     client = await clientFor(ctx);
   } catch (e) {
-    throw new DeviceError('DEVICE_ACTION_CALL_FAIL', e.message);
+    return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }
 
   const start = process.hrtime.bigint();
   try {
     await invoke(client, {data: data});
   } catch (e) {
-    throw new DeviceError('DEVICE_ACTION_CALL_FAIL', e.message);
+    return ctx.error('INNER_CALL_FAILED', e.message, {cause: e});
   }
 
   return {output: {durationMs: Number(process.hrtime.bigint() - start) / 1e6}};

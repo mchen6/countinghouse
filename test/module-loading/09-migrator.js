@@ -66,8 +66,7 @@ describe('module-loading 09: the 5.x -> 6.0.0 migrator', () => {
       assert.ok(!/input\s*=\s*input/.test(out), `self-referential declaration: ${out}`);
       assert.ok(!/\bargs\b/.test(out), `no args reference should survive: ${out}`);
 
-      // run it, with DeviceError stubbed the way lib/sandbox.js provides it
-      global.DeviceError = global.DeviceError || function (code) { this.code = code; };
+      // run it
       const handler = require(path.join(dir, 'handlers', 'legacyService', 'shout.js'));
 
       let result = null;

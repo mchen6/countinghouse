@@ -244,7 +244,7 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
     const r = await client.callTool({name: `${SHAPE}coded_error`, arguments: {}});
     assert.strictEqual(r.isError, true);
     assert.strictEqual(r.structuredContent, undefined);
-    assert.strictEqual(r._meta['countinghouse/code'], 'DEVICE_OFFLINE');
+    assert.strictEqual(r._meta['countinghouse/code'], 'CONFORMANCE_CODED');
   });
 
   describe('tasks/result', () => {
