@@ -54,18 +54,21 @@ describe('fs-broker 01: module data directories', () => {
   });
 
   // Node grants a subtree only for a directory that exists when it starts, so
-  // --hardened creates --moduleDataPath before relaunching under --permission.
-  it('--hardened creates a missing --moduleDataPath (0700) before the relaunch, and leaves an existing one alone', () => {
+  // --hardened creates --moduleDataPath before relaunching under --permission;
+  // and the module folder, so the grant probe sees it as the child will (H1).
+  it('--hardened creates a missing --moduleDataPath (0700) and module folder before the relaunch, and leaves an existing one alone', () => {
     const {prepareGrants} = require('../../lib/hardened-launch');
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-md-'));
     try {
       const missing = path.join(root, 'a', 'store');
-      prepareGrants({moduleDataPath: missing}, '/');
+      const modules = path.join(root, 'm', 'modules');
+      prepareGrants({modulePath: modules, moduleDataPath: missing}, '/');
       assert.strictEqual(fs.statSync(missing).mode & 0o777, 0o700);
+      assert.ok(fs.statSync(modules).isDirectory(), 'the module folder is created too');
       const existing = path.join(root, 'existing');
       fs.mkdirSync(existing);
       fs.chmodSync(existing, 0o750);
-      prepareGrants({moduleDataPath: existing}, '/');
+      prepareGrants({modulePath: modules, moduleDataPath: existing}, '/');
       assert.strictEqual(fs.statSync(existing).mode & 0o777, 0o750);
     } finally {
       fs.rmSync(root, {recursive: true, force: true});

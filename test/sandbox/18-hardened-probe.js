@@ -52,6 +52,35 @@ describe('sandbox 18: --hardened grant probe', function() {
       .forEach((s) => assert.ok(text.includes(s), `${s} missing from:\n${text}`));
   });
 
+  // H1: --modulePath X beside --moduleDataPath X_data. The parent resolves
+  // X's real path for the child, but the child's first act on X is
+  // mkdirSync + accessSync(W_OK) (framework.js), which Node refuses for such a
+  // pair on every 24.x: the relaunched child died naming nothing.
+  it('probes the module folder\'s mkdir and write access too, even when its realpath was precomputed', () => {
+    base = mkdtemp('probe-');
+    const x = path.join(base, 'X');
+    ['X', 'X_data'].forEach((d) => fs.mkdirSync(path.join(base, d)));
+    const flags = ['--permission', `--allow-fs-read=${x}`, `--allow-fs-write=${x}`, `--allow-fs-read=${x}_data`, `--allow-fs-write=${x}_data`];
+    const direct = require('child_process').spawnSync(process.execPath, flags.concat(['-e',
+      `try { const fs = require('fs'); fs.mkdirSync(${JSON.stringify(x)}, {recursive: true}); fs.accessSync(${JSON.stringify(x)}, fs.constants.W_OK); } catch (e) { process.exit(9); }`]),
+    {stdio: 'ignore'});
+    const probe = hardened.probeGrants(flags, {skip: {[x]: true}, writable: [x]});
+    assert.strictEqual(probe.ok, direct.status === 0, JSON.stringify(probe));
+    if (!probe.ok) assert.ok(probe.refused.some((r) => r.path === x && r.op === 'mkdir/access'), JSON.stringify(probe));
+  });
+
+  it('the X / X_data layout exits 2 before relaunching, naming both paths and saying to rename one', () => {
+    base = mkdtemp('probe-');
+    const x = path.join(base, 'X');
+    const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, '..', '..', 'framework.js'),
+      '--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--port', '9653',
+      '--modulePath', x, '--moduleDataPath', `${x}_data`], {encoding: 'utf8', timeout: 20000, cwd: base});
+    assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
+    assert.ok(r.stderr.includes(`${x} and ${x}_data`), r.stderr);
+    assert.ok(r.stderr.includes('mkdir/access'), r.stderr);
+    assert.ok(/names that do not extend another grant/.test(r.stderr), r.stderr);
+  });
+
   it('a probe that cannot run refuses, saying so', () => {
     const stub = () => ({status: 1, stdout: '', stderr: 'boom', error: null});
     const probe = hardened.probeGrants(['--permission', '--allow-fs-read=/srv/x'], {spawnSync: stub, existsDir: () => true});

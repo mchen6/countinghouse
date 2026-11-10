@@ -18,6 +18,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Fixed — `--hardened` refuses `--modulePath X` beside `--moduleDataPath X_data` clearly
+
+- With a module folder whose name the data directory extends, the
+  relaunched server died at start with "cannot access module folder:
+  Access to this API has been restricted", naming nothing: Node's
+  permission model refuses creating and checking a granted directory that
+  another grant's name extends (nodejs/node#66812), on every 24.x. The
+  start-up check now makes those calls too, so such a layout exits with
+  status 2 before relaunching, naming both paths and saying to rename one,
+  as the `--hardened` reference already promised. The module folder is now
+  created before that check, as the server would create it anyway.
+
 ### Fixed — `--mcpToolCallCost` takes only a finite number >= 0
 
 - The flag was read with `parseFloat` and never checked: a negative cost

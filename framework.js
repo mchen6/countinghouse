@@ -64,8 +64,8 @@ if (options.hardened === true && process.permission == null) {
   try {
     hardenedLaunch.prepareGrants(options, process.cwd());
   } catch (e) {
-    console.error('--hardened: cannot create the module data directory ' + options.moduleDataPath + ': ' + e.message +
-      ' -- set --moduleDataPath to a writable directory');
+    console.error('--hardened: cannot create the module folder ' + options.modulePath + ' or the module data directory ' +
+      options.moduleDataPath + ': ' + e.message + ' -- set --modulePath and --moduleDataPath to writable directories');
     process.exit(2);
   }
   // The child would be refused a realpath of its own granted directories on
@@ -80,7 +80,9 @@ if (options.hardened === true && process.permission == null) {
   var precomputed = realpathRecorder.known();
   var skip = Object.assign({}, precomputed);
   Object.keys(precomputed).forEach(function(k) { skip[precomputed[k]] = true; });
-  var probe = hardenedLaunch.probeGrants(hardenedFlags, {skip: skip});
+  // The module folder: the child creates it and checks it is writable before
+  // anything else (below), which the realpath skip does not cover (H1).
+  var probe = hardenedLaunch.probeGrants(hardenedFlags, {skip: skip, writable: [require('path').resolve(process.cwd(), options.modulePath)]});
   if (!probe.ok) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
