@@ -18,6 +18,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Security — module workers hold no metering provider
+
+- Every module worker built its own metering provider on Redis db 0, the
+  balance ledger, and module code reaches its worker's countinghouse
+  objects (`CHUtil.ci`): a module could call
+  `CHUtil.ci.recordCall(anyKey, tool, -100)` to credit a key, or a
+  positive cost to debit anyone. Metering already runs on the main thread
+  only, so workers now build none; `recordCall` and `checkBalance` from
+  module code answer `SYSTEM_ERROR` and the ledger is untouched. This
+  closes countinghouse's own handle on the ledger, not the network: until
+  sandbox parts 3 and 4 a module can still open connections of its own.
+
 ### Security — sandbox decisions use the kernel's real path
 
 - Node's JS `fs.realpathSync` resolves a link pair such as `x -> "."`,

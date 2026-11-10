@@ -285,7 +285,9 @@ The following are known, accepted, and not hidden by the layers above.
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
   (`CHUtil.ci.deviceManager.workerMessage`, `CHUtil.redis.clientInstance`,
-  `require.cache`), so a module can send any worker message itself. The main
+  `require.cache`), so a module can send any worker message itself. (A
+  worker holds no metering provider, so these objects give no handle on the
+  balance ledger.) The main
   thread therefore bounds those messages on its own side:
   `--moduleMessageRate` applies to all of them except two, each bounded
   differently. Violation reports are capped at 100 per worker. A

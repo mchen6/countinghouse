@@ -337,13 +337,13 @@ to read. A production composition feature would need to address these:
 - **Per-hop cost is hardcoded** (`HOP_COST = 1` in
   `com-countinghouse-compositeService-run.js`), not looked up from each
   target module's own declared pricing.
-- **Metering runs a Redis connection per worker thread**, now that
-  `CdifInterface` builds a `meteringProvider` unconditionally. An
-  alternative would route metering calls through the existing worker→main
-  message channel the way `lib/redis-api.js` proxies raw Redis commands,
-  avoiding N extra Redis connections for N worker threads. Not built here;
-  flagged as a follow-up if per-worker Redis connections become a real
-  constraint.
+- **Metering runs on the main thread only** (review M6). Every worker
+  thread used to build its own `meteringProvider` on db 0, the balance
+  ledger, and module code reaches its worker's `CdifInterface`
+  (`CHUtil.ci`), so a module could record a negative charge to credit any
+  key, or a positive one to debit anyone. Nothing in a worker needs one
+  since D5 moved billing to the main thread, so a worker builds none:
+  `recordCall` and `checkBalance` answer `SYSTEM_ERROR` there.
 - **Fixed: metering coverage on the cross-worker call path is now
   centralized on both paths, and composite-demo no longer double-bills.**
   Originally, only the then opt-in `--directPeerChannels` path metered a
@@ -373,8 +373,8 @@ to read. A production composition feature would need to address these:
   (`uppercase` action), exists only so composite-demo has two distinct
   inner modules to chain, rather than calling echo-device-module twice.
 - `pre-installed-packages/composite-demo/` — the composite tool itself.
-- `lib/countinghouse-interface.js` — the `meteringProvider` per-worker-thread
-  construction fix.
+- `lib/countinghouse-interface.js` — the `meteringProvider`, built on the
+  main thread only.
 - `lib/countinghouse-util.js` — `CHUtil.recordUsage` (app-layer bookkeeping,
   no balance effect; replaces the removed `CHUtil.recordCall`).
 - `lib/device-manager.js`, `lib/peer-channel-broker.js`,

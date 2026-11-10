@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "forgeService": {
+    "credit": {
+      "input": {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
+      "output": {"type": "object", "properties": {"recordCall": {"type": "string"}, "checkBalance": {"type": "string"},
+        "provider": {"type": "string"}}}
+    }
+  }
+}

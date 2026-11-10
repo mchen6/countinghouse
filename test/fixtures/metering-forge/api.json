@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "metering-forge",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "module code reaching the worker's metering provider (review M6)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:forgeService": {
+        "actionList": [
+          {
+            "name": "credit",
+            "description": "Records a negative charge for a key through CHUtil.ci, and reports what the worker holds.",
+            "input": {"schema": "/forgeService/credit/input"},
+            "output": {"schema": "/forgeService/credit/output"}
+          }
+        ]
+      }
+    }
+  }
+}
