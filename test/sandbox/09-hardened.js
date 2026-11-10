@@ -62,6 +62,22 @@ describe('sandbox 09: --hardened', function() {
     assert.strictEqual(r.isError, false, JSON.stringify(r));
   });
 
+  // L1: a descriptor given to net.Socket, as the fd option and as Node's
+  // bare-number form. Under the permission model the native open(fd)
+  // backstop cannot be taken, so the public entry's check is the only guard.
+  it('refuses a descriptor given to net.Socket, as an option and as a bare number', async () => {
+    fs.writeFileSync(path.join(root, 'sandbox-probe', 'handlers', 'probeService', 'attempt.js'),
+      'module.exports = async (input) => { try { new (require("net").Socket)(input.arg === "number" ? 999999 : {fd: 999999});' +
+      ' return {output: {outcome: "allowed", code: null}}; }' +
+      ' catch (e) { return {output: {outcome: e.code === "ERR_ACCESS_DENIED" ? "blocked" : "allowed", code: String(e.code)}}; } };');
+    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+      '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
+    for (const form of ['option', 'number']) {
+      const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_attempt', {what: 'socket', arg: form});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, `${form}: ${JSON.stringify(r)}`);
+    }
+  });
+
   // Review Focus 5.
   it('accepts a relative --loadModule path that resolves inside --modulePath', async () => {
     server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',

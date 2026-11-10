@@ -1,0 +1,7 @@
+{
+  "name": "tls-probe",
+  "version": "1.0.0",
+  "countinghouse": {
+    "permissions": {}
+  }
+}

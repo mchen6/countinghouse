@@ -18,6 +18,24 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Fixed — under `enforce`, TLS client connections were refused since the sandbox lockdown
+
+- A module under `--moduleSandbox enforce` could make no TLS connection at
+  all (`tls.connect`, `https.request`, `fetch` over https): a `TLSSocket`
+  hands `net.Socket` the handle Node just made, and the lockdown's
+  descriptor backstop read a handle object as adoption. Adoption is now a
+  descriptor number, as the `fd` option or as Node's bare-number form
+  `new net.Socket(fd)`: the only route to a foreign descriptor inside a
+  worker. A handle object is over a socket the module was allowed to open.
+  TLS works under `enforce` as under `audit`, `--hardened` included.
+
+### Security — Node's TLS internals leave the built-in allowlist
+
+- `_tls_wrap` and `_tls_common` are refused to modules. They were on the
+  allowlist, and sit behind none of the wrappers the lockdown puts on
+  `tls`, so a module could reach Node's TLS internals past them. A module
+  needs `tls`.
+
 ### Added — `ctx.error`: a handler's own error, which it may simply return
 
 - `ctx.error(code, message?, details?)` returns the module's own error

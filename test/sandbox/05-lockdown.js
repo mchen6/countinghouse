@@ -19,12 +19,26 @@ const ROUTES = [
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
-  ['listenFd'], ['socketFd'], ['socketHandle'], ['ttyFd'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['ttyFd'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
   ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
 
 function serverArgs(mode) {
   return ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE];
+}
+
+// L1: adoption is a descriptor number. A handle object given to net.Socket
+// is never a route to a foreign descriptor inside a worker (Node's own
+// TLSSocket constructs one that way), so it is not a violation: the bogus
+// handle fails on its own, and no descriptor line is logged. First in each
+// mode, before any route logs a descriptor violation, and the log is read
+// after it has had time to arrive (it reaches the test asynchronously).
+const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
+async function handleIsNotAdoption(port, server) {
+  const r = await mcpCall(port, KEY, TOOL, {what: 'socketHandle'});
+  assert.strictEqual(toolOutput(r).outcome, 'allowed', JSON.stringify(r));
+  await settle();
+  assert.ok(!server.output.includes('violation descriptor'), server.output.split('\n').filter((l) => l.includes('violation')).join('\n'));
 }
 
 describe('sandbox 05: worker lockdown', function() {
@@ -34,6 +48,8 @@ describe('sandbox 05: worker lockdown', function() {
     let server = null;
     before(async () => { server = await startServer(9608, serverArgs('enforce')); }); // serverArgs passes --workerThread
     after(() => stopServer(server));
+
+    it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(9608, server));
 
     ROUTES.forEach(([what, arg]) => {
       it(`blocks ${what} and logs it`, async () => {
@@ -71,6 +87,8 @@ describe('sandbox 05: worker lockdown', function() {
     let server = null;
     before(async () => { server = await startServer(9609, serverArgs('audit')); }); // serverArgs passes --workerThread
     after(() => stopServer(server));
+
+    it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(9609, server));
 
     ROUTES.forEach(([what, arg]) => {
       it(`allows ${what} and logs it`, async () => {
@@ -211,6 +229,7 @@ describe('sandbox 05: off', function() {
 describe('sandbox 05: the built-in allowlist', () => {
   const REFUSED = ['child_process', 'cluster', 'worker_threads', 'inspector', 'inspector/promises', 'v8', 'wasi',
     'sqlite', 'test', 'test/reporters', 'sea', 'repl', 'trace_events',
+    '_tls_wrap', '_tls_common',   // Node's tls internals: a module needs tls, which carries the lockdown's wrappers
     'ffi'];   // Node 26: a foreign-function interface, native code from JavaScript
 
   it('refuses each left-out built-in, with or without node:', () => {
