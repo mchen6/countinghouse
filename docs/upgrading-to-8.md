@@ -22,6 +22,16 @@ you have to do. What the sandbox does and does not protect is in
   to a writable directory first, or modules fail to load with `cannot create
   the module data directory`. Under systemd, add it to `ReadWritePaths`
   ([example](security-model.md#hardening-with-systemd)).
+- **Give each user a stable `id` before rotating any key.** 8.0.0 gives
+  every user an opaque id, an HMAC of the auth entry's `id` field, else of
+  its API key ([authentication.md](authentication.md#the-opaque-user-id)).
+  Per-user module data and repeatable job schedulers are scoped by it. An
+  entry without `id` keeps working, but rotating its key then changes its id
+  and orphans that data; add `id` first. The secret behind the ids is
+  written to `<moduleDataPath>/.identity-secret` on first start (or comes
+  from `COUNTINGHOUSE_IDENTITY_SECRET`, 64 hex characters): back it up with
+  the module data, since changing it changes every id. Schedulers stored
+  under the pre-8.0 owner prefix are still found and removed by their owner.
 - **countinghouse not installed under `/app`.** In worker mode startup exits
   with status 2 if countinghouse's own code is under `/app`, where modules
   see their own files. Install it elsewhere (for example

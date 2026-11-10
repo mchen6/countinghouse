@@ -252,13 +252,16 @@ emits it, see `lib/couchdb-adapter/init-db.js`).
 
 ## Rotating a key
 
-A repeatable job's scheduler belongs to the key that created it: its id is
-the job's name scoped to a hash of that key (8.0.0). After a key is
-replaced, the new key cannot reach the old key's schedulers. Before rotating
-a key, remove its repeatable jobs (`POST /devices/:id/remove-job`
-`{name, isRepeat: true}` with the old key) and recreate them with the new
-one, or have an admin remove them afterwards by their full scheduler id
-(`<hash>:<name>`, as bullmq lists it) in place of the name. A job is
+A repeatable job's scheduler belongs to the user that created it: its id is
+the job's name scoped to the user's opaque id (8.0.0, previous section).
+**Give the entry a stable `id` first**: then a rotated key keeps the same
+opaque id, and the schedulers and per-user module data stay the user's.
+Without a stable id, the new key cannot reach the old key's schedulers.
+Before rotating such a key, remove its repeatable jobs
+(`POST /devices/:id/remove-job` `{name, isRepeat: true}` with the old key)
+and recreate them with the new one, or have an admin remove them afterwards
+by their full scheduler id (`<id>:<name>`, as bullmq lists it) in place of
+the name. A job is
 authorized each time it runs, so once the old key is gone from the config
 (after `POST /reload-auth`, for the file and CouchDB providers), its
 schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER` and the

@@ -11,6 +11,7 @@
   "/devices/:deviceID/remove-job",
   "/devices/:deviceID/schema/(.*)",
   "/get-module-device-list",
+  "/identity-lookup",
   "/load-module",
   "/mcp",
   "/reload-auth",
