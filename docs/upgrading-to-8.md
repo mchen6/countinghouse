@@ -70,6 +70,14 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: a device's `rateLimit` is no longer enforced.** The CDIF-era
+  device fields `rateLimit` and `price` in `api.json` are retired: nothing
+  reads them. A spec that still carries one loads and validates, and
+  `countinghouse-validate` warns about it; `bin/countinghouse-migrate-spec.js`
+  removes both. Limit callers with `--apiKeyRateLimit` (per key) and
+  `--globalRateLimit` (all calls); jobs are bounded by the add-job limits on
+  `repeat.every`, `repeat.limit` and `attempts`.
+
 Under worker mode, in every `--moduleSandbox` mode unless noted:
 
 - **Part 1's lockdown now applies by default** (under `audit` and

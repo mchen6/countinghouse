@@ -31,6 +31,22 @@ const fs   = require('fs');
 const path = require('path');
 
 const DROPPED_ACTION_KEYS = ['argumentList', 'realPrice', 'priceInfo', 'freeCount', 'apiCache', 'apiLog'];
+// Device-level keys nothing reads any more (S1): the per-device limiter is
+// gone (--apiKeyRateLimit and --globalRateLimit replace it), and price was
+// never read. Dropped when converting, and from a spec already converted.
+const DROPPED_DEVICE_KEYS = ['rateLimit', 'price'];
+
+// Removes the retired device keys in place; returns the names it removed.
+function dropRetiredDeviceKeys(spec) {
+  const dropped = [];
+  if (spec == null || spec.device == null) return dropped;
+  DROPPED_DEVICE_KEYS.forEach((k) => {
+    if (!Object.prototype.hasOwnProperty.call(spec.device, k)) return;
+    delete spec.device[k];
+    dropped.push(k);
+  });
+  return dropped;
+}
 
 function isOldFormat(spec) {
   if (spec == null || spec.device == null || spec.device.serviceList == null) return false;
@@ -96,6 +112,7 @@ function migrate(spec, label) {
   const out = JSON.parse(JSON.stringify(spec));
   delete out.configId;
   delete out.specVersion;
+  dropRetiredDeviceKeys(out);
 
   const serviceList = out.device.serviceList;
 
@@ -144,8 +161,12 @@ function main(argv) {
       const spec = JSON.parse(fs.readFileSync(file, 'utf8'));
 
       if (!isOldFormat(spec)) {
+        const dropped = dropRetiredDeviceKeys(spec);
         if (toStdout) process.stdout.write(`${JSON.stringify(spec, null, 2)}\n`);
-        else console.log(`${file}: already in the 5.0.0 format, unchanged`);
+        else if (dropped.length > 0) {
+          fs.writeFileSync(file, `${JSON.stringify(spec, null, 2)}\n`);
+          console.log(`${file}: removed the retired device field${dropped.length > 1 ? 's' : ''} ${dropped.join(', ')}`);
+        } else console.log(`${file}: already in the 5.0.0 format, unchanged`);
         return;
       }
 
@@ -170,4 +191,4 @@ if (require.main === module) {
   process.exit(main(process.argv.slice(2)));
 }
 
-module.exports = {migrate: migrate, isOldFormat: isOldFormat};
+module.exports = {migrate: migrate, isOldFormat: isOldFormat, main: main, DROPPED_DEVICE_KEYS: DROPPED_DEVICE_KEYS};

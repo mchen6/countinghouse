@@ -32,11 +32,6 @@
           "maxLength": 4096,
           "minLength": 0
         },
-        "rateLimit": {
-          "description": "the total api requests to this device allowed in one second, must be a positive integer",
-          "type": "integer",
-          "minimum": 1
-        },
         "modelName": {
           "type": "string",
           "maxLength": 128,
@@ -51,11 +46,6 @@
           "type": "string",
           "maxLength": 128,
           "minLength": 0
-        },
-        "price": {
-          "type": "string",
-          "maxLength": 256,
-          "minLength": 1
         },
         "UDN": {
           "title": "Schema for device UUID",

@@ -19,9 +19,9 @@
 // `this.emit('deviceonline', msg, this)`. So the handler can be triggered
 // the same way here with `wm.emit('deviceonline', {data: {...}}, wm)` on a
 // `new WorkerMessage(null)` -- no worker_threads Worker required. The
-// conflict branch returns before any redis/rate-limiter code runs, and the
-// non-conflict branch only touches redis if the spec sets a rateLimit,
-// which these specs don't -- so no network is needed either way.
+// conflict branch returns before any redis code runs, and the non-conflict
+// branch doesn't touch redis (the per-device rate limiter it once set up
+// from a spec's rateLimit is retired) -- so no network is needed either way.
 const assert = require('assert');
 
 // lib/device-manager.js (transitively, via lib/oauth/oauth.js and

@@ -151,8 +151,11 @@ way back. Action names must be unique within a service.
 The spec is validated against the framework's own JSON Schema 2020-12
 meta-schema at load time. Required fields it is easy to forget:
 `device.modelDescription`, and each action's `name`. Anything the meta-schema
-does not know is **rejected**, not ignored — so a stale field left over from
-an older format shows up as a load error rather than silently doing nothing.
+does not know at the top level, in `serviceList` or in an action is
+**rejected**, not ignored — so a stale field left over from an older format
+shows up as a load error rather than silently doing nothing. Directly under
+`device`, unknown fields are accepted; the retired CDIF-era `rateLimit` and
+`price` are among them, and `countinghouse-validate` warns about each.
 
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:

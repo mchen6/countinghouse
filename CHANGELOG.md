@@ -18,6 +18,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Removed — the device fields `rateLimit` and `price` (breaking)
+
+- `api.json`'s device-level `rateLimit` and `price` are CDIF-era and
+  retired. `price` was read by nothing; `rateLimit` was read only by a
+  per-device limiter on Redis db 9, which is removed with it, so **a
+  device's `rateLimit` is no longer enforced**. Use `--apiKeyRateLimit` and
+  `--globalRateLimit`; jobs are bounded by the add-job limits. Both fields
+  are gone from `spec/schema.json`; a spec that still carries one loads and
+  validates (`device` isn't closed), and `countinghouse-validate` warns about
+  each. `bin/countinghouse-migrate-spec.js` removes them, while converting an
+  old spec and from one already in the 5.0.0 format.
+
 ### Added — Node 26 in CI
 
 - CI now tests the newest 26.x as well as 24.15.0 and the newest 24.x. The
