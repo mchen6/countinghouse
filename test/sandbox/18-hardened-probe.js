@@ -36,7 +36,7 @@ describe('sandbox 18: --hardened grant probe', function() {
     const flags = ['--permission', `--allow-fs-read=${ch}`, `--allow-fs-read=${ch}_data`];
     // What this Node does, asked directly; the probe must say the same.
     const direct = require('child_process').spawnSync(process.execPath, flags.concat(['-e',
-      `try { require('fs').realpathSync(${JSON.stringify(ch)}); } catch (e) { process.exit(9); }`]), {stdio: 'ignore'});
+      `try { require('fs').realpathSync.native(${JSON.stringify(ch)}); } catch (e) { process.exit(9); }`]), {stdio: 'ignore'});
     const probe = hardened.probeGrants(flags);
     assert.strictEqual(probe.ok, direct.status === 0, JSON.stringify(probe));
     if (!probe.ok) assert.ok(probe.refused.some((r) => r.path === ch && r.op === 'realpathSync'), JSON.stringify(probe));

@@ -18,6 +18,23 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Security — sandbox decisions use the kernel's real path
+
+- Node's JS `fs.realpathSync` resolves a link pair such as `x -> "."`,
+  `y -> "x/.."` to `x`'s directory; the kernel, and the native form, to
+  its parent. The module tree check, the module root, the `--hardened`
+  real paths and code roots, and a module worker's `fs.realpathSync` under
+  the loader's grant all used the JS form, so they could decide on a place
+  other than the one the kernel opens. They now use the native form. A
+  module whose code tree holds such a link is refused under `enforce`
+  (`MODULE_SANDBOX_REFUSED`, naming the link) and logged under `audit`,
+  which now also reports a `require` through it. Before, the module
+  loaded, and a `require` through the link failed (the loader looked
+  inside the module); it did not load the file outside.
+- `--hardened`'s start-up grant probe checks the native form, the one
+  countinghouse calls; on Node 24 it is refused for a granted directory
+  whose name another grant extends (nodejs/node#66812) on 24.21 as well.
+
 ### Security — an open whose folder appeared mid-check is verified
 
 - Under `enforce`, the broker skipped its check after an open when the

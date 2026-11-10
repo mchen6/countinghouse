@@ -64,7 +64,7 @@ if (options.hardened === true && process.permission == null) {
   // Node 24.22+ (nodejs/node#66812), so this unrestricted process resolves
   // them and sends the results; the probe checks any granted directory it did
   // not resolve, and refuses clearly instead of failing after the relaunch.
-  var realpathRecorder = require('./lib/hardened-realpaths').recorder(require('fs').realpathSync);
+  var realpathRecorder = require('./lib/hardened-realpaths').recorder(require('fs').realpathSync.native);
   var hardenedFlags = hardenedLaunch.permissionFlags(options, __dirname, process.cwd(), realpathRecorder.realpath);
   hardenedLaunch.precompute(options, __dirname, realpathRecorder);
   // Skipped: what the parent resolved, and what those resolved to (the child
