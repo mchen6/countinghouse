@@ -172,6 +172,7 @@ try {
   console.error(e.message);
   process.exit(2);
 }
+var identityReady = Promise.resolve();
 if (options.debug !== true) {
   var authProvider = null;
   try {
@@ -187,10 +188,10 @@ if (options.debug !== true) {
     logger.E(new Error('AuthProvider (--authProvider ' + options.authProvider + ') failed to initialize: ' + e.message));
     process.exit(-1);
   }
-  // The id index, from the provider's entries; rebuilt again on every reload.
-  identity.rebuild(authProvider).catch(function(e) {
-    logger.E(new Error('identity: the id index could not be built: ' + e.message));
-  });
+  // The id index, from the provider's entries: built before the server
+  // listens (below), so a user with a stable id never gets a key-based id
+  // from an early call; rebuilt again on every reload.
+  identityReady = identity.rebuild(authProvider);
 } else if (options.debugKey != null) {
   identity.addKey(options.debugKey, 'debug', true);
 }
@@ -226,31 +227,39 @@ var mm = new ModuleManager();
 // Throwaway directories of validations a crash interrupted (review R1-4).
 if (options.workerThread === true) mm.sweepValidateRoot();
 
-var routeManager = new RouteManager(mm);
+// Serving starts once the id index is built (identityReady above): the
+// RouteManager listens from its constructor. A provider that cannot answer
+// at startup is a configuration error, like AUTH_CONFIG_INVALID: exit 2.
+function serve() {
+  var routeManager = new RouteManager(mm);
 
-var dm = routeManager.cdifInterface.deviceManager;
+  monitor.init();
 
-monitor.init();
+  var redisAPI = require('./lib/redis-api');
+  redisAPI.init();
 
-var redisAPI = require('./lib/redis-api');
-redisAPI.init();
+  global.CHUtil     = require('./lib/countinghouse-util');
+  global.CHDevice   = require('./lib/countinghouse-device');
+  global.CHError    = require('./lib/countinghouse-error').CHError;
+  global.DeviceError  = require('./lib/countinghouse-error').DeviceError;
 
-global.CHUtil     = require('./lib/countinghouse-util');
-global.CHDevice   = require('./lib/countinghouse-device');
-global.CHError    = require('./lib/countinghouse-error').CHError;
-global.DeviceError  = require('./lib/countinghouse-error').DeviceError;
+  //manually set CHUtil.redis because when countinghouse-util.js is first time required, redis-api.js isn't loaded and initialized yet
+  global.CHUtil.redis = redisAPI.client;
 
-//manually set CHUtil.redis because when countinghouse-util.js is first time required, redis-api.js isn't loaded and initialized yet
-global.CHUtil.redis = redisAPI.client;
+  var JobControl    = require('./lib/job-control');
+  if (options.workerThread === true) {
+    JobControl.initJobProcess(routeManager.cdifInterface);
+    JobControl.setCompletionHook(require('./lib/mcp/gateway').stampOutputSchema(routeManager.cdifInterface));
+  }
 
-var JobControl    = require('./lib/job-control');
-if (options.workerThread === true) {
-  JobControl.initJobProcess(routeManager.cdifInterface);
-  JobControl.setCompletionHook(require('./lib/mcp/gateway').stampOutputSchema(routeManager.cdifInterface));
+  // routeManager.startServer();
+  mm.loadAllModules();
 }
 
-// routeManager.startServer();
-mm.loadAllModules();
+identityReady.then(serve, function(e) {
+  console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + e.message);
+  process.exit(2);
+});
 
 
 // forever to restart on crash?

@@ -123,7 +123,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   tool `countinghouse_lookup_identity`, admin only, answer
   `{id, userName, isAdmin}` for an id this server issued and
   `IDENTITY_NOT_FOUND` otherwise, never the key. The index behind them is
-  rebuilt on every `POST /reload-auth`.
+  built before the server listens and rebuilt on every `POST /reload-auth`.
+- **An unusable `--moduleDataPath` now refuses startup** (exit 2, naming the
+  path and what to do): the secret lives there, so a server without a
+  usable data directory has no identity. It used to fail each module load
+  instead.
 
 ### Fixed — with Redis down, calls answer, and billing resumes when it is back
 

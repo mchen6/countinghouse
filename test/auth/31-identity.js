@@ -22,6 +22,7 @@ const ADMIN = `k${hex(12)}`;
 const ALICE = `k${hex(12)}`;
 const BOB   = `k${hex(12)}`;
 const CAROL = `k${hex(12)}`;
+const DAVE  = `k${hex(12)}`;   // an entry with no userName
 const ID_SHAPE = /^u_[A-Za-z0-9_-]{22}$/;
 
 // identity.idFor, computed in a child process with the given secret, so a
@@ -52,7 +53,7 @@ function startAndWait(args, env) {
   });
 }
 
-const noKeys = (text, where) => [ADMIN, ALICE, BOB, CAROL].forEach((k) => assert.ok(!text.includes(k), `${where} holds a key: ${text.slice(0, 300)}`));
+const noKeys = (text, where) => [ADMIN, ALICE, BOB, CAROL, DAVE].forEach((k) => assert.ok(!text.includes(k), `${where} holds a key: ${text.slice(0, 300)}`));
 
 describe('auth 31: the opaque per-user id, its secret, and the operator\'s lookup', function() {
   this.timeout(120000);
@@ -89,7 +90,8 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
     const config = (extra) => Object.assign({
       [ADMIN]: {userName: 'admin', devices: ['*'], admin: true},
       [ALICE]: {userName: 'alice', devices: [], id: 'alice'},
-      [BOB]:   {userName: 'bob', devices: []}
+      [BOB]:   {userName: 'bob', devices: []},
+      [DAVE]:  {devices: []}
     }, extra || {});
     const lookup = (key, id) => request(URL).post('/identity-lookup').set('X-CH-Key', key).send({id});
     const tool = (key, id) => request(URL).post('/mcp').set('X-CH-Key', key).set('Accept', 'application/json, text/event-stream')
@@ -129,7 +131,11 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       const unknown = await lookup(ADMIN, `u_${crypto.randomBytes(17).toString('base64url').slice(0, 22)}`);
       assert.notStrictEqual(unknown.status, 200);
       assert.strictEqual(unknown.body.code, 'IDENTITY_NOT_FOUND', JSON.stringify(unknown.body));
-      [r, rb, ra, denied, unknown].forEach((x) => noKeys(JSON.stringify(x.body), 'a lookup answer'));
+      // An entry with no userName: null, never the key standing in for it.
+      const rd = await lookup(ADMIN, idIn(secret, null, DAVE));
+      assert.strictEqual(rd.status, 200, JSON.stringify(rd.body));
+      assert.deepStrictEqual(rd.body, {id: idIn(secret, null, DAVE), userName: null, isAdmin: false});
+      [r, rb, ra, denied, unknown, rd].forEach((x) => noKeys(JSON.stringify(x.body), 'a lookup answer'));
     });
 
     it('(g) countinghouse_lookup_identity does the same, admin only', async () => {
@@ -142,7 +148,10 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       const unknown = await tool(ADMIN, `u_${crypto.randomBytes(17).toString('base64url').slice(0, 22)}`);
       assert.strictEqual(unknown.body.result.isError, true);
       assert.match(JSON.stringify(unknown.body), /IDENTITY_NOT_FOUND/);
-      [r, denied, unknown].forEach((x) => noKeys(JSON.stringify(x.body), 'a tool answer'));
+      const rd = await tool(ADMIN, idIn(secret, null, DAVE));
+      assert.strictEqual(rd.body.result && rd.body.result.isError, false, JSON.stringify(rd.body));
+      assert.strictEqual(rd.body.result.structuredContent.userName, null);
+      [r, denied, unknown, rd].forEach((x) => noKeys(JSON.stringify(x.body), 'a tool answer'));
     });
 
     it('(i) after POST /reload-auth adds an entry, its id resolves', async () => {
@@ -258,6 +267,45 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
     });
   });
 
+  describe('the index is built before the server serves, and refuses duplicates', () => {
+    it('a provider whose entries() fails at startup refuses the start with exit 2', async function() {
+      let sqlite3 = null;
+      try { sqlite3 = require('sqlite3'); } catch (e) { sqlite3 = null; }
+      if (sqlite3 == null) this.skip();
+      const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-identity-badidx-'));
+      try {
+        const dbPath = path.join(base, 'auth.db');
+        fs.writeFileSync(dbPath, crypto.randomBytes(4096));   // not a database
+        const r = await startAndWait(['--workerThread', '--authProvider', 'sqlite', '--authConfigPath', dbPath,
+          '--moduleDataPath', path.join(base, 'store'), '--port', '9647']);
+        assert.strictEqual(r.code, 2, r.output.slice(-600));
+        assert.match(r.output, /identity|id index/);
+      } finally {
+        fs.rmSync(base, {recursive: true, force: true});
+      }
+    });
+
+    it('two entries yielding the same id make the rebuild fail, naming positions and no key', () => {
+      const k1 = `k${hex(12)}`;
+      const k2 = `k${hex(12)}`;
+      const script = `
+        const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
+        identity.init({moduleDataPath: ${JSON.stringify(path.join(os.tmpdir(), 'ch-identity-unused'))}}).then(() => {
+          const provider = {entries: (cb) => cb(null, [{apiKey: ${JSON.stringify(k1)}, userName: 'one', id: 'same'},
+                                                     {apiKey: ${JSON.stringify(k2)}, userName: 'two', id: 'same'}])};
+          return identity.rebuild(provider).then(() => process.stdout.write('OUT resolved\\n'),
+            (e) => process.stdout.write('OUT rejected ' + e.message + '\\n'));
+        });`;
+      const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000,
+        env: Object.assign({}, process.env, {COUNTINGHOUSE_IDENTITY_SECRET: hex(32)})});
+      const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+      assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
+      assert.match(line, /^OUT rejected /);
+      assert.match(line, /entries 1 and 2/);
+      assert.ok(!line.includes(k1) && !line.includes(k2), `a key in the error: ${line}`);
+    });
+  });
+
   describe('(h) sqlite: a stable id per user', () => {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { sqlite3 = null; }
@@ -284,6 +332,24 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       assert.notStrictEqual(dup.status, 0, 'a duplicate id was accepted');
       assert.ok(!dup.stderr.includes(ALICE) && !dup.stderr.includes(BOB), `a key in the error: ${dup.stderr}`);
       assert.ok((await columns(dbPath)).includes('id'));
+    });
+
+    it('a stable id resolves on the first call after a start: the index is built before the server listens', async () => {
+      const dbPath = path.join(base, 'first.db');
+      assert.strictEqual(cli(dbPath, ['add-user', ADMIN, 'admin']).status, 0);
+      assert.strictEqual(cli(dbPath, ['set-admin', ADMIN, 'true']).status, 0);
+      assert.strictEqual(cli(dbPath, ['add-user', CAROL, 'carol']).status, 0);
+      assert.strictEqual(cli(dbPath, ['set-id', CAROL, 'carol']).status, 0);
+      const store = path.join(base, 'first-store');
+      const server = await startServer(9649, ['--workerThread', '--authProvider', 'sqlite', '--authConfigPath', dbPath, '--moduleDataPath', store]);
+      try {
+        const secret = fs.readFileSync(path.join(store, '.identity-secret'), 'utf8').trim();
+        const carolId = idIn(secret, {id: 'carol'}, CAROL);
+        const r = await request('http://127.0.0.1:9649').post('/identity-lookup').set('X-CH-Key', ADMIN).send({id: carolId});
+        assert.deepStrictEqual(r.body, {id: carolId, userName: 'carol', isAdmin: false});
+      } finally {
+        stopServer(server);
+      }
     });
 
     it('an existing database without the column is migrated on open', async () => {

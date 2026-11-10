@@ -111,15 +111,28 @@ describe('fs-broker 09: module workers use the broker', function() {
     }
   });
 
-  it('a data directory that cannot be created fails the load and says what to do', async () => {
+  // The identity secret lives under the data directory (lib/identity.js), so
+  // a server without a usable one has no identity and does not start: exit 2
+  // before it is ready, naming the path and what to do (R2-1 Task 1; it used
+  // to fail each module load instead).
+  it('a data directory that cannot be created refuses startup and says what to do', async () => {
     const ro = path.join(base, 'ro');
     fs.mkdirSync(ro);
     fs.chmodSync(ro, 0o500);
     try {
-      server = await startServer(9626, ['--workerThread', '--debug', '--debugKey', KEY, '--authoringTools',
-        '--moduleDataPath', path.join(ro, 'store')]);
-      const r = await mcpCall(9626, KEY, 'countinghouse_load_module', {path: PROBE, name: 'fs-probe', version: '1.0.0'});
-      assert.ok(/set --moduleDataPath to a writable directory/.test(JSON.stringify(r)), JSON.stringify(r));
+      const store = path.join(ro, 'store');
+      const r = await new Promise((resolve) => {
+        const p = require('child_process').spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', '9626',
+          '--workerThread', '--debug', '--debugKey', KEY, '--moduleDataPath', store], {cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe']});
+        let output = '';
+        p.stdout.on('data', (c) => { output += c.toString(); });
+        p.stderr.on('data', (c) => { output += c.toString(); });
+        const timer = setTimeout(() => { p.kill('SIGKILL'); resolve({code: 'timeout', output}); }, 20000);
+        p.on('exit', (code) => { clearTimeout(timer); resolve({code, output}); });
+      });
+      assert.strictEqual(r.code, 2, r.output.slice(-600));
+      assert.ok(!/countinghouse ready/.test(r.output), 'the server became ready');
+      assert.ok(r.output.includes(`--moduleDataPath ${store} cannot be created or is not writable: set it to a writable directory`), r.output.slice(-600));
     } finally {
       fs.chmodSync(ro, 0o700);
     }

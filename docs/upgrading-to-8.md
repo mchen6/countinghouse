@@ -30,7 +30,10 @@ you have to do. What the sandbox does and does not protect is in
   and orphans that data; add `id` first. The secret behind the ids is
   written to `<moduleDataPath>/.identity-secret` on first start (or comes
   from `COUNTINGHOUSE_IDENTITY_SECRET`, 64 hex characters): back it up with
-  the module data, since changing it changes every id. Schedulers stored
+  the module data, since changing it changes every id. Start one server on
+  a new data directory first; two starting at once on an empty one would
+  each generate a secret. An unusable `--moduleDataPath` now refuses
+  startup with exit 2 (it used to fail each module load instead). Schedulers stored
   under the pre-8.0 owner prefix are still found and removed by their owner.
 - **countinghouse not installed under `/app`.** In worker mode startup exits
   with status 2 if countinghouse's own code is under `/app`, where modules

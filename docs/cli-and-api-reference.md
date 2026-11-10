@@ -78,8 +78,8 @@ of the next restart attempt in milliseconds since the epoch (or `null`); and
 restarting or suspended is still answered, with an empty `deviceList`. The
 key is absent under `--moduleSandbox off`.
 
-**`POST /identity-lookup`** `{id}` answers `{id, userName, isAdmin}` for an
-opaque user id this server issued (`u_` and 22 characters: what a module
+**`POST /identity-lookup`** `{id}` answers `{id, userName, isAdmin}`
+(`userName` null for an entry without one) for an opaque user id this server issued (`u_` and 22 characters: what a module
 sees as its caller, what a bill's `billedTo` holds, what log lines name a
 tenant by), and `IDENTITY_NOT_FOUND` otherwise; never the key. It's also the
 authoring tool `countinghouse_lookup_identity`. Admin only. The id is an
