@@ -18,6 +18,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Fixed — an unknown `--locale` falls back to en-US
+
+- Error messages for a `--locale` with no catalogue text are in en-US, the
+  default; they used to fall back to zh-CN.
+
 ### Docs — deployment posture
 
 - [`docs/deployment.md`](docs/deployment.md): the module sandbox isolates

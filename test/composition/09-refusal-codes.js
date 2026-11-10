@@ -106,7 +106,7 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
                         'CTX_CALL_UNDECLARED', 'CTX_CALL_BAD_ADDRESS',
                         'CTX_CALL_UNRESOLVED']) {
       const head = new DeviceError(code).message;
-      assert.notStrictEqual(head, code, `${code} has no entry in error-info.*.json`);
+      assert.notStrictEqual(head, code, `${code} has no entry in the error catalogue`);
       assert.ok(/ctx\.call/.test(head), `${code}'s head should name ctx.call: ${head}`);
     }
   });
