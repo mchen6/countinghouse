@@ -39,6 +39,7 @@
   "DEVICE_OBJECT_NOT_VALID_CDIF_DEVICE": "设备对象不是合法的CDIF设备",
   "CORRESPONDING_MODULE_NOT_FOUND": "未找到相应设备模块",
   "LOAD_MODULE_FAIL": "模块加载失败",
+  "MODULE_LOAD_SUPERSEDED": "该模块随后的加载、重载或卸载已接管，本次操作未生效",
   "GET_MODULE_INFO_FAIL": "模块信息获取失败",
   "REMOVE_MODULE_INFO_FAIL": "删除模块的注册表记录失败 -- 未删除任何内容；原因见服务器日志",
   "MODULE_PACKAGE_INFO_INVALID": "模块信息文件非法",

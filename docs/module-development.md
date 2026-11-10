@@ -362,7 +362,12 @@ is caught and logged, and does not end the worker). Then:
   are back get it too; a queued or scheduled job waits for the new worker
   (up to 30 s) and runs on it. When it is unloaded, or its new code fails to
   load, calls in flight and after get **`MODULE_UNLOADED`**, and jobs for it
-  fail without retrying.
+  fail without retrying. Operator actions on your module take effect in
+  order, the latest winning: a reload superseded by a later load, reload
+  or unload before its worker is up ends that worker, and the operator who
+  asked for it gets **`MODULE_LOAD_SUPERSEDED`**; an unload arriving then
+  leaves the module unloaded, and the jobs waiting for it fail
+  `MODULE_UNLOADED` at once.
 - After 3 exits in 10 minutes the module is suspended and calls get
   **`MODULE_SUSPENDED`** with the last reason, until an operator runs
   `POST /restart-module`. A restart that the sandbox refuses (because the

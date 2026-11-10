@@ -212,6 +212,17 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   reload**: the old worker's 15 s bound no longer fires during the
   reload's 3 s unload window, where it turned the reload's devices
   `MODULE_UNLOADED` (and failed the jobs waiting for them for good).
+- **Operator actions on one module take effect in order, the latest
+  winning.** A load, reload or restart that arrives while an earlier
+  reload's worker is still coming up supersedes it: that worker ends and
+  the earlier caller gets `MODULE_LOAD_SUPERSEDED` (new code). An unload
+  arriving then cancels the reload and leaves the module unloaded; it used
+  to be refused ("unknown module") and then undone when the reload's
+  worker came up. The devices stay `MODULE_RELOADING` until the new worker
+  is up, so a job that comes due meanwhile waits and runs; before, the
+  second reload's start terminated the first one's loading worker, which
+  settled the devices to `MODULE_UNLOADED` and failed the waiting jobs for
+  good.
 - `countinghouse_validate_module` answers only after its throwaway worker
   and directory are gone, so a validation sent the moment another answers
   is no longer refused as busy.
