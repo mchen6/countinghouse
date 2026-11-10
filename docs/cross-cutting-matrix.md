@@ -276,7 +276,14 @@ itself.
 **Still fails open**, on every failure mode: flag unset, no metering
 provider, unresolved key, or Redis down. Unchanged from every pre-existing
 limiter, and consistent with this codebase's rule of not denying access as a
-side effect of its own infrastructure being unavailable.
+side effect of its own infrastructure being unavailable. *(Corrected for
+M5:)* "Redis down" used to mean a hang, not a pass: node_redis queued the
+check until Redis came back. The metering and limiter clients
+(`lib/redis-resilient.js`) now queue only until their first connect (at
+most 2 s), then fail a command at once while disconnected; each check has a
+500 ms deadline, and the clients reconnect however long the outage lasted. Calls during an outage are served and not charged; the
+charge of a call in flight when Redis drops may be lost. Test:
+`test/auth/42-redis-down-answers.js`.
 
 **What this does not cover.** The two direct-peer-channel rows remain
 unlimited, per the decision above — this change did not reopen it. `tools/list`

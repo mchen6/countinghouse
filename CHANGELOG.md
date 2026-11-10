@@ -18,6 +18,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Fixed — with Redis down, calls answer, and billing resumes when it is back
+
+- node_redis queued commands while disconnected, so with Redis down a
+  call under `--apiKeyRateLimit` (or to a device with a `rateLimit`) hung
+  until Redis returned instead of failing open, and a charge issued in the
+  outage landed on whatever balance Redis held when it came back. After an
+  hour of failed reconnects the client also stopped for good, and metering
+  never resumed. The metering and rate-limit clients now wait only for
+  their first connect (at most 2 s; a server started with Redis down still
+  answers), then fail a command at once while disconnected, reconnect with
+  at most 1 s between attempts for as long as it takes, and each rate-limit
+  check has a 500 ms deadline. During an outage calls are served and not
+  charged.
+
 ### Fixed — `--hardened` refuses `--modulePath X` beside `--moduleDataPath X_data` clearly
 
 - With a module folder whose name the data directory extends, the
