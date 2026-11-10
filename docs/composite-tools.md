@@ -186,7 +186,7 @@ all.
 **The two paths also now agree on error shape.** A rejected inner hop's
 `.fault` — the callee's own structured fault payload, when it supplied one —
 was already identical on both paths. Its `.code`, the locale-independent
-`CHError`/`DeviceError` code, was not: it rode through on the
+error code, was not: it rode through on the
 direct-peer-channel path but arrived `null` on the main-thread-routed
 (then default) path, because only the direct channel's own dispatch carried it
 across the worker boundary. `DeviceManager.prototype.sendInvokeActionMessageToWorker`

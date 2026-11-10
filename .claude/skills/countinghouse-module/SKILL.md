@@ -63,6 +63,16 @@ A handler is `async (input, ctx)`; `input` is already validated.
 module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`}});
 ```
 
+To fail a call, return the module's own error code (never one of the
+runtime's):
+
+```js
+module.exports = async (input, ctx) => {
+  if (input.name.trim() === '') return ctx.error('INPUT_REJECTED', 'name must not be blank');
+  return {output: {text: `hello ${input.name}`}};
+};
+```
+
 Full reference: `docs/module-development.md`.
 
 ## The loop

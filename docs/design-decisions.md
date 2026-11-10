@@ -375,6 +375,14 @@ all).
 
 ## Handler failure is classified by the error, not by how it arrived
 
+> **Superseded by the 2026-11-09 logger-design spec**
+> (docs/superpowers/specs/2026-11-09-logger-design.md §5.1; 8.0.0, step 1
+> (d2)). `DeviceError` and `CHError` are gone: a module's typed error is
+> `ctx.error(code, …)`, or a plain `Error` carrying a module code, and a
+> synchronous throw is classified like a rejection. The untyped distinction
+> below (callback = `DEVICE_INVOKE_FAIL`, throw = `DEVICE_INVOKE_EXCEPTION`)
+> stands. The rest of this section is the 6.0.0 record, as it was.
+
 6.0.0 lets a handler be written either way:
 
 ```js

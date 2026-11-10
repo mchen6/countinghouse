@@ -2,7 +2,10 @@
 
 Status: Approved by the user 2026-11-10 (design only; landing per §9: step 1
 may start now, step 2 after R2-1 Task 4, step 3 after R2-1). Amended
-2026-11-10 during step 1: §5.1's ctx.error paragraph (the user: a handler
+2026-11-10 during step 1 (d2): §5.1's plain-Error rule, `details.cause` and
+the worker crossing; §5.2's client shapes (the user: no client shape is
+preserved); §5.6, a fault that fails its schema is delivered and logged (the
+user). Amended 2026-11-10 during step 1: §5.1's ctx.error paragraph (the user: a handler
 may return its error; how a module error renders) and §5.3's statuses line. Written 2026-11-09 by implementer B with the reviewer
 (countinghouse-a5), who holds the user's decisions. The user's decisions are
 roadmap-p1-p2.md, P1, items 1–11 (cited as "item N"). Calls that are the
@@ -191,8 +194,16 @@ returned plain object that looks like an error is a result. A module error
 renders `CODE: message` (the bare code when there is no message): a
 module's code has no catalogue text, and rendering it the old way would
 drop the module's message. A
-plain `Error` with a `.code` thrown by a module is accepted the same way, so
-authors who prefer plain errors can use them. A runtime error a module
+plain `Error` whose `.code` is a module's code is accepted the same way, so
+authors who prefer plain errors (or a helper without `ctx`) can use them: the
+code counts when it matches `/^[A-Z][A-Z0-9_]{2,}$/` and is neither a system
+error's (the error has `errno` or `syscall`) nor Node's own, a named list
+(the `ERR_` prefix, `MODULE_NOT_FOUND`, `ABORT_ERR`); anything else is
+untyped (`DEVICE_INVOKE_FAIL` reported, `DEVICE_INVOKE_EXCEPTION` thrown, a
+synchronous throw counted as a throw). `details.cause` is reserved for the
+underlying error; it is kept off every serialised form. A module's error
+crosses the worker reply whole (code, message, details), so worker mode
+answers it as single-thread mode does (step 1 (d2)). A runtime error a module
 rethrows unchanged (from `ctx.call`, say) passes through and keeps
 `origin: 'runtime'`; one it wraps with `ctx.error` is the module's, with the
 original in `cause`. Rendering to the caller stays as today (the code's text, then ": ",
@@ -213,6 +224,57 @@ response, a module's `err.message` and a rebuilt `failedReason` use the
 server's `--locale`, as today (no request locale exists); a log record's
 `msg` is en-US, and the record keeps `code` and `details` structured, so a
 reader can render it in any locale. Nothing is rendered at construction.
+
+#### Client shapes
+
+*Amended 2026-11-10 (the user: "there is no user yet, go ahead, no need to
+preserve the current client response shape"; the direction approved, the
+details for the user's glance).* These are the targets the edge-rendering
+commits (section 9, step 3) build; until then the answers are what the
+error-shape golden (`test/mcp-contract/error-shape.golden.json`) records.
+Step 1 (d2) already dropped `topic` from every answer, so an HTTP error
+body is `{code, message, fault?}` in the meantime.
+
+- **HTTP error body:** `{code, kind, origin, message, details?, fault?}`,
+  with the status from the catalogue entry (the table below). A module's
+  own error (origin `module`) is 500, with the module's code.
+- **MCP `tools/call` error:** an `isError` result, as today, with
+  `_meta["countinghouse/code"]`, `_meta["countinghouse/kind"]`,
+  `_meta["countinghouse/origin"]` and `_meta["countinghouse/fault"]`, and
+  the text content `CODE: message`.
+- **JSON-RPC errors on the auth path:** `-32603` and `-32602` stay, with
+  `data: {code, kind}` added.
+- **Job failures** (`tasks/get`'s `statusMessage`, the job routes): the same
+  `{code, kind, origin, message}` object, not a `"CODE: message"` string.
+  (Until then a module error's `statusMessage` reads `CODE: CODE: message`:
+  the job worker prefixes the code to a message that already starts with it.)
+
+The catalogue's `httpStatus` and `mcpCode` columns get these values in the
+same commits (they record today's behaviour until then, and
+test/mcp-contract/07 checks the golden against them). The mapping, by kind
+first, then the named exceptions; the per-code choices marked (B) are the
+implementer's, for review:
+
+| status | codes |
+| --- | --- |
+| 400 | caller-kind bad input: `ARGUMENTS_INVALID`, `INPUT_DATA_VALIDATION_FAIL`, `INPUT_NOT_FOUND`, `INVALID_BSON_REQUEST`, `INVALID_JSON_POINTER`, `INVALID_REDIRECT_URL`, `INVALID_MODULE_PATH`, `DEVICE_ID_INVALID_OR_NULL`, `MODULE_NAME_INVALID`, `MODULE_NAME_MISMATCH`; and the route manager's `REQUEST_INVALID` |
+| 401 | no key or an unknown key: `SYSTEM_ERROR_UNKNOWN_USER` |
+| 403 | a known caller without the right: `ADMIN_REQUIRED`, `DENY_DEVICE_ACCESS`, `USER_HAS_NO_DEVICE`, `PEER_NOT_GRANTED`, `JOB_ACCESS_DENIED`; and `HOST_NOT_ALLOWED` |
+| 404 | a missing device or tool: `DEVICE_NOT_FOUND`, `SERVICE_NOT_FOUND`, `ACTION_NOT_FOUND`, `SERVICEID_NOT_AVAILABLE`, `ACTIONNAME_NOT_AVAILABLE` (B), `IDENTITY_NOT_FOUND` (B) |
+| 413 | `REQUEST_TOO_LARGE` (as today) |
+| 429 | `RATE_LIMIT_EXCEEDED` |
+| 503 | operator-kind outages: `SYSTEM_ERROR_USERDB_NA`, `MODULE_SUSPENDED`, `MODULE_UNLOADED` (B); and the retryable runtime codes, which are transient by definition (B): `DEVICE_IN_ACTION`, `DEVICE_NOT_CONNECTED`, `DEVICE_OFFLINE`, `DEVICE_NOT_RESPONDING`, `REDIS_CLIENT_ERROR`, `PEER_GONE`, `PEER_CHANNEL_TIMEOUT`, `CTX_CALL_NOT_READY`, `MODULE_RESTARTING`, `MODULE_RELOADING` |
+| 500 | everything else: every module-kind code (the runtime's codes for a module's fault, `DEVICE_INVOKE_EXCEPTION` and `RATE_LIMITED` among them), the remaining runtime-kind and operator-kind codes, and every module's own code |
+
+`mcpCode` stays `null` for every code answered as a tool result (all of
+them on `tools/call` today). It is `-32603` for the codes the auth path
+answers as a JSON-RPC error (`SYSTEM_ERROR_UNKNOWN_USER`,
+`USER_HAS_NO_DEVICE`, `SYSTEM_ERROR_USERDB_NA`), and an unknown tool keeps
+`-32602`; that answer has no catalogue code yet, and the MCP commit adds
+one (`TOOL_NOT_FOUND`, kind caller, 404) so `data.code` can name it (B).
+`REQUEST_INVALID`, `REQUEST_TOO_LARGE` and `HOST_NOT_ALLOWED`, which the
+route manager answers today without a catalogue entry, join the catalogue
+in the HTTP commit.
 
 ### 5.3 One catalogue
 
@@ -304,7 +366,7 @@ rebases.
 `log.error(event, {err})` serialises `code`, `kind`, `details`, the `cause`
 chain (to depth 5) and the stack, redacted and bounded.
 
-### 5.6 Module faults (the reviewer's recommendation, for the user to confirm)
+### 5.6 Module faults (amended 2026-11-10: the user's decision on a fault that fails its schema)
 
 The question, from the user: does a tool call's error conform to the
 action's `fault` schema? Today it doesn't, at three levels (at `491064a`):
@@ -325,11 +387,16 @@ The design:
   action declares a `fault` schema, `details` is validated against it at the
   edge (service.js's TODO, done with the same ajv instance as input
   validation).
-- **A fault that fails its own schema is a module error.** The caller gets
-  the module's code with the catalogue or generic text and no details, and
-  the log records `fault.invalid {module, tool, errors}` at warn (kind
-  module), so a bad fault can't leak junk. The catalogue gains
-  `FAULT_INVALID` (kind module).
+- **A fault that fails its own schema is still delivered** (the user,
+  2026-11-10: "the error schema validation doesn't have to be strict: if a
+  tool defines its error schema in schema.json and the runtime's validation
+  fails against it, the fault should still be presented to the client").
+  The caller gets the fault as the module gave it, through the 8 KB bound
+  and the redaction pass like any `details`; nothing is substituted or
+  dropped. The mismatch is recorded as `fault.invalid {module, tool, errors}`
+  at warn (kind module), so the author sees it in the logs and the readback.
+  There is no client-facing code for it: the catalogue gains no
+  `FAULT_INVALID`.
 - **No `fault` schema declared:** `details` is free-form, bounded by the
   8 KB rule, redacted, and module-asserted.
 - **Runtime-origin errors** keep §5.1's allowlisted `details`; the fault
@@ -535,8 +602,8 @@ user.
     unchanged;
   - module faults (5.6): a fault that matches its schema arrives in all three
     places (MCP `_meta`, REST `fault`, the hop's `.fault`); one that doesn't is
-    replaced and logged as `fault.invalid`; with no schema declared it arrives
-    free-form within the bound; the golden tools/list is unchanged;
+    delivered as the module gave it and logged as `fault.invalid`; with no
+    schema declared it arrives free-form within the bound; the golden tools/list is unchanged;
   - the readback rings keep to their bounds, `GET /admin/logs` filters by
     module, level, event and since, and refuses a non-admin;
   - `--logFile` reopening on SIGHUP;
@@ -689,11 +756,13 @@ the file-broker spec's proposal 5 being kept.
 6. Section 6.4: the two readback rings (per module 1 000 records / 256 KB;
    global warn-and-above 2 000 records / 1 MB), `GET /admin/logs` and
    `countinghouse_logs`.
-7. Section 5.6 (the reviewer's recommendation): module faults validated
+7. Section 5.6 (decided by the user 2026-11-10): module faults validated
    against the action's `fault` schema and delivered to MCP
    (`_meta["countinghouse/fault"]`), REST and composition hops, worker mode
-   included. A deliberate client-visible change: a module error that carries
-   a fault now shows it.
+   included. A fault that fails its schema is still delivered as given, and
+   the mismatch is logged (`fault.invalid`, warn), not answered with a code.
+   A deliberate client-visible change: a module error that carries a fault
+   now shows it.
 8. Section 9: the landing plan and its order against R2-1 and the speed-ups
    (step 1 as soon as approved; step 2 after R2-1 Task 4; step 3 after all of
    R2-1; the broker area after the kept speed-ups),

@@ -1,5 +1,15 @@
 # Migration notes
 
+## 7.x -> 8.0.0: a module's errors
+
+| 7.x | 8.0.0 |
+| --- | --- |
+| `throw new DeviceError(code, …)` / `new CHError(code, …)` (module-visible globals) | `return ctx.error(code, message?, details?)` (or throw it, or `callback(err)`); a plain `Error` with a `.code` from a helper without `ctx` |
+| any code, the runtime's included (`ARGUMENTS_INVALID`) | the module's own codes only (`INPUT_REJECTED`, …) |
+
+The full list of 8.0.0 changes is in
+[docs/upgrading-to-8.md](docs/upgrading-to-8.md).
+
 ## 5.x -> 6.0.0: the module shape
 
 **Every existing module keeps working or converts with one command.** Nothing

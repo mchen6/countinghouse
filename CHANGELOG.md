@@ -27,16 +27,53 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   module's code. It answers `REPO_TOO_LARGE: over 2 GB` (the code, then the
   message). Only such an error counts: a returned plain object that looks
   like one is a result.
+- `details.cause` is reserved for the underlying error
+  (`ctx.error('INNER_CALL_FAILED', `${label}: ${e.message}`, {cause: e})`):
+  it is kept on the error and off every serialised form, so it never reaches
+  the caller.
+- A helper with no `ctx` may throw a plain `Error` carrying the module's
+  code instead. Its `.code` counts as the module's when it looks like one
+  (`/^[A-Z][A-Z0-9_]{2,}$/`) and is not a system error's (`errno`/`syscall`)
+  or Node's own (`ERR_…`, `MODULE_NOT_FOUND`, `ABORT_ERR`); anything else is
+  untyped, as before.
+
+### Changed — breaking: a module's errors are its own, and no `topic`
+
+- **`DeviceError` and `CHError` are gone**, classes and module-facing
+  globals alike: a module that names them fails at call time. Use
+  `ctx.error` ([upgrading-to-8.md](docs/upgrading-to-8.md)). A module raises
+  only its own codes: the bundled modules and examples now answer
+  `INPUT_REJECTED` where they raised `ARGUMENTS_INVALID`, and
+  `INNER_CALL_FAILED` (the original as the cause) where they raised
+  `DEVICE_ACTION_CALL_FAIL`.
+- **No `topic` in any answer.** An HTTP error body is
+  `{code, message, fault?}`; `kind` and `origin` join it with the client
+  shapes (logger-design spec §5.2, "Client shapes").
+- **Worker mode answers a module's error as single-thread mode does**: the
+  worker reply carries its code, message and details, where it used to keep
+  only the code (`SHAPE_REJECTED` instead of `SHAPE_REJECTED: shape probe`).
+  A runtime error is still rebuilt from its code alone.
+- A synchronous throw from a plain (non-async) handler is classified like a
+  rejection: `throw ctx.error(…)` keeps its code (it used to be
+  `DEVICE_INVOKE_EXCEPTION` whatever was thrown); an untyped throw is still
+  `DEVICE_INVOKE_EXCEPTION`.
+- Until the worker-side refusals raise the runtime's own error class
+  (ledgered as L2), a sandbox refusal a handler lets escape
+  (`MODULE_SANDBOX_REFUSED`, `RATE_LIMITED`) reads as a module-kind error
+  with the refusal's code: more informative than the
+  `DEVICE_INVOKE_EXCEPTION` it was, and harmless.
+- Known until the client shapes: a module error's task `statusMessage`
+  reads `CODE: CODE: message` (the job worker prefixes the code to a message
+  that already starts with it).
 
 ### Changed — one error class inside the runtime
 
 - Every error the runtime constructs is a `CountinghouseError`
   (`lib/countinghouse-error.js`); `lib/error-info.*.json` are replaced by
-  `lib/error-catalogue.js`. Answers are unchanged (pinned by
-  `test/mcp-contract/07`). What a module can see: an error made with the
-  `DeviceError` or `CHError` global is now a `CountinghouseError`, with
-  that `name` and a stack from where it was made; its `topic`, `code` and
-  `message` are as before. The globals themselves go in 8.0 (`ctx.error`).
+  `lib/error-catalogue.js`, with a name, a real stack, and kind, retryable,
+  httpStatus and mcpCode from the catalogue. The error-shape golden
+  (`test/mcp-contract/07`) records every answer, and changes only on
+  purpose, with the changed answers listed.
 
 ### Removed — 23 error codes nothing raised
 

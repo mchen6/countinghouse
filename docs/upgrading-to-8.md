@@ -83,6 +83,18 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `DeviceError` and `CHError` are gone.** Neither the classes nor
+  the module-facing globals exist; a module that names them fails at call
+  time. Report a failure with your module's own code:
+  `return ctx.error('INPUT_REJECTED', 'text must be a string')` (returning it
+  is the preferred form; throwing it or `callback(err)` give the same
+  answer), or throw a plain `Error` with a `.code` from a helper that has no
+  `ctx`. A module raises only its own codes, never the runtime's (so
+  `ARGUMENTS_INVALID` in a handler becomes a code of your own, such as
+  `INPUT_REJECTED`). Before:
+  `throw new DeviceError('ARGUMENTS_INVALID')`; after:
+  `return ctx.error('INPUT_REJECTED', 'text must be a string')`. See
+  [module-development.md](module-development.md#failing-a-call).
 - **Breaking: a device's `rateLimit` is no longer enforced.** The CDIF-era
   device fields `rateLimit` and `price` in `api.json` are retired: nothing
   reads them. A spec that still carries one loads and validates, and

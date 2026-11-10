@@ -77,20 +77,41 @@ can.
 
 ## Failing a call
 
-Throw a `DeviceError`:
+Return `ctx.error(code, message?, details?)`:
 
 ```js
 module.exports = async (input, ctx) => {
-  if (typeof input.text !== 'string') throw new DeviceError('ARGUMENTS_INVALID');
+  if (typeof input.text !== 'string') return ctx.error('INPUT_REJECTED', 'text must be a string');
   return {output: {text: input.text.toUpperCase()}};
 };
 ```
 
-A typed error (`DeviceError`/`CHError`) keeps its own code. An untyped error
-that you throw becomes `DEVICE_INVOKE_EXCEPTION` — the runtime reads a bare
-`throw` as "this handler crashed", which is why an anticipated failure should
-carry a `DeviceError`. See
+The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
+wrong (`INPUT_REJECTED` for input your schema can't rule out,
+`REPO_TOO_LARGE`, …). The runtime's codes (its error catalogue) are the
+runtime's, and a module never raises them. The caller gets your code and
+the message `CODE: message`, in worker and single-thread mode alike.
+
+Returning the error is the preferred form. Throwing it
+(`throw ctx.error(…)`), from an async function or a plain one, or passing it
+to a callback gives the same answer. A helper that has no `ctx` can throw a
+plain `Error` that carries your code instead:
+`Object.assign(new Error('path must be a string'), {code: 'INPUT_REJECTED'})`.
+Its code counts as yours when it looks like one (`/^[A-Z][A-Z0-9_]{2,}$/`)
+and is not a system error's (one with `errno` or `syscall`, such as
+`ENOENT`) or Node's own (`ERR_…`, `MODULE_NOT_FOUND`, `ABORT_ERR`).
+
+To wrap an underlying error, pass it as `details.cause`:
+`ctx.error('INNER_CALL_FAILED', `${label}: ${e.message}`, {cause: e})`. The
+cause stays on the error and is never sent to the caller. A runtime error you
+rethrow unchanged (from `ctx.call`, say) keeps its own code.
+
+Anything else you throw becomes `DEVICE_INVOKE_EXCEPTION` (the runtime reads a
+bare `throw` as "this handler crashed"), and an untyped `callback(err)`
+becomes `DEVICE_INVOKE_FAIL`. See
 [`design-decisions.md`](design-decisions.md#handler-failure-is-classified-by-the-error-not-by-how-it-arrived).
+The pre-8.0 error globals are gone
+([upgrading-to-8.md](upgrading-to-8.md)).
 
 ## Dynamic discovery: when one module has many devices
 
@@ -484,12 +505,15 @@ telling a misconfigured chain apart from a failing one is the whole point of
 the codes. Because they come from the error catalogue (`lib/error-catalogue.js`), each code's
 message text is actionable on its own.
 
-What still does not cross the MCP boundary is the per-call **detail**. Under
-`--workerThread`, `DeviceManager.prototype.invokeAction` rebuilds a worker's
-error reply from its `code` alone, so a client sees the code's generic
+What still does not cross the MCP boundary is a runtime error's per-call
+**detail**. Under `--workerThread`, the main thread rebuilds a runtime error
+from a worker's reply by its `code` alone
+(`CountinghouseError.fromReply`), so a client sees the code's generic
 message, not "… for address `x/y.z`". The full text survives in
-single-thread mode and over REST `/devices/:id/invoke-action`. The callee's
-structured `.fault` reaches neither.
+single-thread mode and over REST `/devices/:id/invoke-action`. A module's own
+error (`ctx.error`) is different: the reply carries it whole, so its code and
+message reach the client in either mode. The callee's structured `.fault`
+reaches neither.
 
 **A short startup window remains, but it now says so.** A device appears in
 `tools/list` and can serve its own actions before composition verification
@@ -669,5 +693,6 @@ module while you migrate.
 One difference worth knowing while both forms are in play: an *untyped* error
 resolves differently by route. `callback(new Error('boom'))` becomes
 `DEVICE_INVOKE_FAIL` ("I am reporting a failure"), while `throw new
-Error('boom')` becomes `DEVICE_INVOKE_EXCEPTION` ("I crashed"). A typed
-`DeviceError` keeps its own code either way, which is the reason to use one.
+Error('boom')` becomes `DEVICE_INVOKE_EXCEPTION` ("I crashed"). A module's
+own error (`ctx.error`) keeps its code either way, which is the reason to use
+one.
