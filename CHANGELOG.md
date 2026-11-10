@@ -115,6 +115,24 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   [`docs/authentication.md`](docs/authentication.md) for what to do if a
   fresh install leaves the SQLite provider without its binding.
 
+### Changed — what a module is always denied (R2-1, part 2)
+
+- Under `--moduleSandbox audit` and `enforce` a module cannot read the
+  **auth configuration** (`--authConfigPath`: the JSON file, or the sqlite
+  database with its `-wal`, `-shm` and `-journal` side files) or the
+  **identity secret** (`<moduleDataPath>/.identity-secret`), however it
+  names them -- directly, through a symlink or `..`, or through a hard link
+  in a declared directory: `EACCES`, and a `file denied` line in the log.
+  Audit used to pass such reads through. `off` decides nothing, as before.
+- **`COUNTINGHOUSE_*`** never reaches a worker's environment, declared or
+  not; the load logs the denial and `countinghouse-validate` warns about
+  the declaration.
+- A worker's options carry **no `redisUrl` and no `dbUrl`** (a password in
+  either would have reached every module), and a module's own connection to
+  the **Redis endpoint** (`net.connect`, `tls.connect`, a raw `Socket`,
+  `http.request` over its socket path) is refused with `EACCES` in audit and
+  enforce -- an in-worker check until the network broker ships.
+
 ### Added — an opaque per-user id, its secret, and the operator's lookup (R2-1, part 1)
 
 - Every user has an **opaque id**, `u_` and 22 characters, the same across

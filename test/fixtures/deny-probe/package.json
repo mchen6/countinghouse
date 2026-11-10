@@ -1,0 +1,17 @@
+{
+  "name": "deny-probe",
+  "version": "1.0.0",
+  "countinghouse": {
+    "permissions": {
+      "fs": [
+        {
+          "path": "/opt/deny-probe-rw",
+          "access": "rw"
+        }
+      ],
+      "env": [
+        "COUNTINGHOUSE_API_KEY"
+      ]
+    }
+  }
+}

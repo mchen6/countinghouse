@@ -1,0 +1,20 @@
+{
+  "device": {
+    "friendlyName": "deny-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "handlers that read files, look at the environment, open sockets and inspect the worker's options, so what a module is always denied can be seen",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {"name": "read", "description": "Reads input.path with the module fs; the content, or the error code.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}},
+          {"name": "env", "description": "Whether process.env[input.name] is present; never its value.", "input": {"schema": "/probeService/env/input"}, "output": {"schema": "/probeService/env/output"}},
+          {"name": "connect", "description": "net.connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/connect/input"}, "output": {"schema": "/probeService/connect/output"}},
+          {"name": "tlsConnect", "description": "tls.connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/tlsConnect/input"}, "output": {"schema": "/probeService/tlsConnect/output"}},
+          {"name": "socketConnect", "description": "new net.Socket().connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/socketConnect/input"}, "output": {"schema": "/probeService/socketConnect/output"}},
+          {"name": "httpSocket", "description": "http.request({socketPath: input.socketPath}): connected, or the error code.", "input": {"schema": "/probeService/httpSocket/input"}, "output": {"schema": "/probeService/httpSocket/output"}},
+          {"name": "options", "description": "Whether the options this worker received hold redisUrl or dbUrl (via require.cache).", "input": {"schema": "/probeService/options/input"}, "output": {"schema": "/probeService/options/output"}}
+        ]
+      }
+    }
+  }
+}

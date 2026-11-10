@@ -128,7 +128,9 @@ environment. So the guarantee depends on the mode:
     needed it since D5, so the fix builds the provider on the main thread
     only, and gives workers a stub that refuses. R2-1 assumes that fix: after
     it, a worker holds no Redis client at all.
-  - So R2-1 also: (a) stops sending `redisUrl` to workers. It's in
+  - So R2-1 also: (a) stops sending `redisUrl` to workers -- and `dbUrl`
+    with it: no connection string of any backend (Task 2 ruling, agreed in
+    review 2026-11-10; a CouchDB password travels in `dbUrl` the same way). It's in
     `getOptions()` today, a worker opens no Redis connection of its own
     once M6 lands, and a `--redisUrl` with a password would hand that password to every module.
     (b) Tells operators, in docs/security-model.md and the upgrade guide,

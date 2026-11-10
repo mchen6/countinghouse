@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "read": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "env": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "connect": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "tlsConnect": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "socketConnect": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "httpSocket": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "options": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}
