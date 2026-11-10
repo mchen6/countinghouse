@@ -3,16 +3,17 @@
 // Two fixes are pinned here.
 //
 // 1. TYPED CODES. Every guard clause in lib/handler-ctx.js's ctx.call used
-//    to reject with a plain Error. lib/service.js's `fail` only preserves a
-//    DeviceError/CHError; anything else is flattened to
+//    to reject with a plain Error. lib/service.js's `fail` only preserved a
+//    typed error (then DeviceError/CHError); anything else was flattened to
 //    DEVICE_INVOKE_EXCEPTION with the original text pushed into the fault
 //    payload -- and lib/mcp/gateway.js's toolCallResult builds the client
 //    shape from `err.message`/`err.code` alone, so the fault payload is
 //    dropped. Result: a typo'd address, a missing runsModules binding and a
 //    callee that genuinely threw were byte-identical to an MCP client.
-//    Rejecting with a DeviceError instead makes the code survive both the
-//    worker hop (DeviceManager.prototype.invokeAction re-wraps as
-//    `new DeviceError(err.code)`) and the gateway, with no change to either.
+//    Rejecting with a typed error instead makes the code survive both the
+//    worker hop (DeviceManager.prototype.invokeAction re-wraps a runtime
+//    error from its code, `CountinghouseError.fromReply`) and the gateway,
+//    with no change to either.
 //
 //    Because that re-wrap keeps the code and discards the message, each
 //    code's message head in error-info.*.json has to be actionable on its
@@ -100,12 +101,12 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
   // The message head has to stand on its own, because under --workerThread
   // it is all that reaches the client (see the header).
   it('gives each code a head message that is actionable without the detail', () => {
-    const DeviceError = require('../../lib/countinghouse-error').DeviceError;
+    const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
 
     for (const code of ['CTX_CALL_NOT_READY', 'CTX_CALL_UNBOUND',
                         'CTX_CALL_UNDECLARED', 'CTX_CALL_BAD_ADDRESS',
                         'CTX_CALL_UNRESOLVED']) {
-      const head = new DeviceError(code).message;
+      const head = new CountinghouseError(code).message;
       assert.notStrictEqual(head, code, `${code} has no entry in the error catalogue`);
       assert.ok(/ctx\.call/.test(head), `${code}'s head should name ctx.call: ${head}`);
     }

@@ -29,7 +29,7 @@
 //      -- so what is asserted here is the real, observable MCP shape
 //      (isError plus the code), not the per-call message text. That code is
 //      no longer the generic DEVICE_INVOKE_EXCEPTION: ctx.call's guards
-//      reject with a DeviceError, so this arrives as CTX_CALL_UNDECLARED
+//      reject with a CountinghouseError, so this arrives as CTX_CALL_UNDECLARED
 //      (test/composition/09-refusal-codes.js owns the full set).
 //
 //   3. compose-caller-noident declares a perfectly valid address, but no
@@ -154,7 +154,7 @@ describe('verifyComposition: refusal at call time, against the real spawned serv
     callTool('compose_caller_callerservice_undeclared', {}, (err, body) => {
       assert.ifError(err);
       assert.strictEqual(body.result.isError, true, JSON.stringify(body));
-      // Typed since ctx.call's guards became DeviceErrors: the code, not
+      // Typed since ctx.call's guards became typed errors: the code, not
       // just isError, is now the observable shape (09-refusal-codes.js).
       assert.strictEqual(toolErrorCode(body.result), 'CTX_CALL_UNDECLARED', JSON.stringify(body));
       done();

@@ -15,8 +15,9 @@
 // dropped by lib/countinghouse-util.js's loadFile, "drop console under
 // release mode"; smuggling the observation through a rethrown error's own
 // `.message` does not survive either, because lib/device-manager.js's own
-// cross-worker reply relays rebuild `new DeviceError(err.code)` whenever
-// a `.code` is present, discarding any extra message detail). Because of
+// cross-worker reply relays rebuild a runtime error from its code
+// (`CountinghouseError.fromReply`) whenever a `.code` is present, discarding
+// any extra message detail). Because of
 // the first of those, the servers in this file run with --debug --
 // otherwise this handler's console.log would never reach `server.stdout`.
 //

@@ -8,7 +8,7 @@ const options = require('../../lib/cli-options');
 const errors  = require('../../lib/countinghouse-error');
 
 describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
-  const {CountinghouseError, CHError, DeviceError} = errors;
+  const {CountinghouseError} = errors;
 
   it('renders the catalogue text, then ": " and the arguments, and serialises as code and message only', () => {
     const cases = [
@@ -31,20 +31,6 @@ describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
     assert.strictEqual(e.name, 'CountinghouseError');
     const firstFrame = (err) => String(err.stack).split('\n').find((l) => /^\s+at /.test(l)) || '';
     assert.ok(firstFrame(e).includes('03-error-class.js'), e.stack);
-  });
-
-  // Until a later commit of step 1 (d2) retires them, the module-facing
-  // globals are the old names, and they must make the same class lib/ makes,
-  // or lib/service.js would stop recognising a module's typed error.
-  it('the old names (behind the module-facing globals) make CountinghouseErrors, without a topic', () => {
-    const fromCH = new CHError('DEVICE_NOT_FOUND', 'd1');
-    const fromDevice = new DeviceError('DEVICE_OFFLINE', 'x');
-    assert.ok(fromCH instanceof CountinghouseError);
-    assert.ok(fromDevice instanceof CountinghouseError);
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromCH)), {code: 'DEVICE_NOT_FOUND', message: 'Device not found: d1'});
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromDevice)), {code: 'DEVICE_OFFLINE', message: 'Device is offline: x'});
-    const firstFrame = (err) => String(err.stack).split('\n').find((l) => /^\s+at /.test(l)) || '';
-    assert.ok(firstFrame(fromDevice).includes('03-error-class.js'), fromDevice.stack);
   });
 
   // It decides by arguments.length, as the old classes did: an explicit

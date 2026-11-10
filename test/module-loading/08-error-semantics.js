@@ -7,8 +7,8 @@
 // docs/design-decisions.md, "Handler failure is classified by the error, not
 // by how it arrived". The matrix below is that decision, asserted:
 //
-//   callback(new DeviceError(C))  ->  C                          }  the same
-//   throw   new DeviceError(C)    ->  C                          }  either way
+//   callback(ctx.error(C))        ->  C                          }  the same
+//   throw   ctx.error(C)          ->  C                          }  either way
 //   callback(new Error('boom'))   ->  DEVICE_INVOKE_FAIL          (reported)
 //   throw   new Error('boom')     ->  DEVICE_INVOKE_EXCEPTION     (crashed)
 //

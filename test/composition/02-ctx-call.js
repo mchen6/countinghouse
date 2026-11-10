@@ -33,14 +33,14 @@
 // that only lives there is discarded for every MCP client, in both
 // threading modes. Under --workerThread there is a second, compounding
 // loss on top of that: DeviceManager.prototype.invokeAction re-wraps a
-// worker's error reply as
-// `new DeviceError(err.code != null ? err.code : err.message)`
+// worker's runtime error reply as
+// `CountinghouseError.fromReply(err)`, from the code alone
 // (lib/device-manager.js, the `device.sendInvokeActionMessage(...)`
 // branch), so the per-call text -- which address, which module -- does not
 // survive the hop back to the main thread either.
 //
 // What DOES survive that hop is the code, and it is now a meaningful one.
-// ctx.call's guard clauses reject with a DeviceError rather than a plain
+// ctx.call's guard clauses reject with a CountinghouseError rather than a plain
 // Error (lib/handler-ctx.js), which lib/service.js's `fail` passes through
 // intact instead of flattening to DEVICE_INVOKE_EXCEPTION -- so an
 // undeclared address arrives at the client as CTX_CALL_UNDECLARED, and the
@@ -177,7 +177,7 @@ describe('ctx.call: success and refusal, against the real spawned server', funct
       // Was DEVICE_INVOKE_EXCEPTION -- the generic code every failed
       // tools/call collapsed into, which is what made this refusal
       // indistinguishable from a callee that crashed. ctx.call's guards now
-      // reject with a DeviceError, and a code survives the worker hop and
+      // reject with a CountinghouseError, and a code survives the worker hop and
       // the gateway untouched. test/composition/09-refusal-codes.js owns
       // the full set; this file keeps its own assertion honest.
       assert.strictEqual(toolErrorCode(body.result), 'CTX_CALL_UNDECLARED',

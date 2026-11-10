@@ -240,8 +240,6 @@ function serve() {
 
   global.CHUtil     = require('./lib/countinghouse-util');
   global.CHDevice   = require('./lib/countinghouse-device');
-  global.CHError    = require('./lib/countinghouse-error').CHError;
-  global.DeviceError  = require('./lib/countinghouse-error').DeviceError;
 
   //manually set CHUtil.redis because when countinghouse-util.js is first time required, redis-api.js isn't loaded and initialized yet
   global.CHUtil.redis = redisAPI.client;

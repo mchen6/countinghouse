@@ -118,7 +118,16 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
     }
   });
 
-  // Step 1 (d2): no `topic` in an answer.
+  // Step 1 (d2): no module-visible error classes, and no `topic` in an answer.
+  it('gives modules no old error globals, in either mode', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      const a = GOLDEN[mode]['http invoke-action / old globals'];
+      const body = JSON.stringify(a.body);
+      assert.strictEqual(a.status, 200, `${mode}: ${body}`);
+      assert.ok(body.includes('"deviceError":"undefined"') && body.includes('"chError":"undefined"'), `${mode}: ${body}`);
+    }
+  });
+
   it('carries no `topic` in any answer', () => {
     for (const mode of Object.keys(GOLDEN)) {
       for (const [name, a] of Object.entries(GOLDEN[mode])) {

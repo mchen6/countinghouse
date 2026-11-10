@@ -10,8 +10,8 @@ module.exports = async (input, ctx) => {
     // toolCallResult reads only `err.message`/`err.code`, and both
     // lib/service.js's Service.prototype.doActionCall (this handler's own
     // outer rejection) and lib/device-manager.js's cross-worker reply
-    // relays (e.g. `new DeviceError(err.code != null ? err.code : err.
-    // message)`) rebuild a fresh error from just a `code` whenever one is
+    // relays (`CountinghouseError.fromReply`, for a runtime error) rebuild
+    // a fresh error from just a `code` whenever one is
     // present, discarding any detail carried only in `.message` -- so
     // trying to smuggle the observation back out through a rethrown
     // error's own `.message` does not survive either (tried first; the

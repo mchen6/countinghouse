@@ -47,16 +47,14 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
     assert.deepStrictEqual(left, []);
   });
 
-  // Step 1 (c): lib/, bin/ and framework.js construct and test only
-  // CountinghouseError. The old names survive in lib/countinghouse-error.js
-  // (the shims) and on the lines that set the module-facing globals, until
-  // step 1 (d) removes both.
-  it('names the old classes nowhere in lib/, bin/ or framework.js but the shims and the globals', () => {
+  // Step 1 (d2): the old classes, their shims and the module-facing globals
+  // are gone; lib/, bin/ and framework.js name them only in comments (the
+  // history in lib/countinghouse-error.js).
+  it('names the old classes nowhere in lib/, bin/ or framework.js but comments', () => {
     const left = [];
     for (const f of sources()) {
-      if (f.endsWith(path.join('lib', 'countinghouse-error.js'))) continue;
       fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
-        if (/\b(CHError|DeviceError)\b/.test(line) && !/^\s*global\.(CHError|DeviceError)\s*=/.test(line)) {
+        if (/\b(CHError|DeviceError)\b/.test(line) && !/^\s*\/\//.test(line)) {
           left.push(`${path.relative(ROOT, f)}:${i + 1}`);
         }
       });

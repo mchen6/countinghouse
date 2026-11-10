@@ -4,7 +4,7 @@
 const assert = require('assert');
 const path = require('path');
 require('../../lib/cli-options').setOptions({workerThread: false});
-const CHError = require('../../lib/countinghouse-error').CHError;
+const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
 
 const DeviceManager = require('../../lib/device-manager');
 
@@ -104,7 +104,7 @@ describe('sandbox 15: calls to a restarting module', () => {
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(false);
     broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner'}, wm);
-    assert.strictEqual(wm.sent[0].errCode, new CHError('DEVICE_NOT_FOUND').code);
+    assert.strictEqual(wm.sent[0].errCode, new CountinghouseError('DEVICE_NOT_FOUND').code);
   });
 
   it('direct peer channels: an unknown device gives a caller without access the access error', () => {
