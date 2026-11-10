@@ -125,6 +125,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   holds one of the job worker's 1024 concurrency slots.
 - **Jobs failed `MODULE_UNLOADED` or `MODULE_SUSPENDED` are not retried**,
   whatever their `attempts`: the module is gone until an operator acts.
+- **A supervised module whose restarted worker crashes before its devices
+  are back keeps them**: its tools stay listed while it restarts and once
+  it is suspended, and after the third exit its devices answer
+  `MODULE_SUSPENDED` (they answered `MODULE_RESTARTING`, with the tools
+  gone).
 - **A reloaded worker whose discovery does not finish within 15 s is
   unloaded** (logged as an error naming the module), in every sandbox
   mode: its devices are `MODULE_UNLOADED`, the supervisor does not restart
