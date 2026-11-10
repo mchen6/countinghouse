@@ -481,7 +481,7 @@ schema even on errors):
 
 A callee that genuinely threw still reports `DEVICE_INVOKE_EXCEPTION` —
 telling a misconfigured chain apart from a failing one is the whole point of
-the codes. Because they come from `lib/error-info.*.json`, each code's
+the codes. Because they come from the error catalogue (`lib/error-catalogue.js`), each code's
 message text is actionable on its own.
 
 What still does not cross the MCP boundary is the per-call **detail**. Under

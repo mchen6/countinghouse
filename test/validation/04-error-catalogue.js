@@ -42,6 +42,11 @@ describe('validation 04: the error catalogue (logger-design §5.3)', () => {
     assert.deepStrictEqual(unused, []);
   });
 
+  it('is the only table: lib/error-info.*.json are gone', () => {
+    const left = fs.readdirSync(path.join(ROOT, 'lib')).filter((f) => /^error-info\..*\.json$/.test(f));
+    assert.deepStrictEqual(left, []);
+  });
+
   it('gives every entry a kind, retryable, httpStatus, mcpCode, and en and zh text', () => {
     for (const [code, e] of Object.entries(CODES)) {
       assert.ok(/^[A-Z][A-Z0-9_]+$/.test(code), code);

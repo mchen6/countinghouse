@@ -18,6 +18,16 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — one error class inside the runtime
+
+- Every error the runtime constructs is a `CountinghouseError`
+  (`lib/countinghouse-error.js`); `lib/error-info.*.json` are replaced by
+  `lib/error-catalogue.js`. Answers are unchanged (pinned by
+  `test/mcp-contract/07`). What a module can see: an error made with the
+  `DeviceError` or `CHError` global is now a `CountinghouseError`, with
+  that `name` and a stack from where it was made; its `topic`, `code` and
+  `message` are as before. The globals themselves go in 8.0 (`ctx.error`).
+
 ### Removed — 23 error codes nothing raised
 
 - The error catalogue (`lib/error-catalogue.js`, which replaces

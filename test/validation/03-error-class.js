@@ -36,8 +36,34 @@ describe('validation 03: CountinghouseError (logger-design §5.1)', () => {
     assert.strictEqual(e.name, 'CountinghouseError');
     const firstFrame = (err) => String(err.stack).split('\n').find((l) => /^\s+at /.test(l)) || '';
     assert.ok(firstFrame(e).includes('03-error-class.js'), e.stack);
-    // premise: the old class's stack is its prototype's, taken when lib/ loaded
-    assert.ok(firstFrame(new CHError('DEVICE_NOT_FOUND')).includes('countinghouse-error.js'), new CHError('DEVICE_NOT_FOUND').stack);
+  });
+
+  // Step 1 (c): until (d) retires them, the module-facing globals are the old
+  // names, and they must make the same class lib/ makes, or lib/service.js
+  // would stop recognising a module's typed error.
+  it('the old names (behind the module-facing globals) make CountinghouseErrors, with their topics', () => {
+    const fromCH = new CHError('DEVICE_NOT_FOUND', 'd1');
+    const fromDevice = new DeviceError('DEVICE_OFFLINE', 'x');
+    assert.ok(fromCH instanceof CountinghouseError);
+    assert.ok(fromDevice instanceof CountinghouseError);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromCH)), {topic: 'countinghouse error', code: 'DEVICE_NOT_FOUND', message: 'Device not found: d1'});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(fromDevice)), {topic: 'device error', code: 'DEVICE_OFFLINE', message: 'Device is offline: x'});
+    const firstFrame = (err) => String(err.stack).split('\n').find((l) => /^\s+at /.test(l)) || '';
+    assert.ok(firstFrame(fromDevice).includes('03-error-class.js'), fromDevice.stack);
+  });
+
+  // The old classes decided by arguments.length: an explicit undefined code
+  // (lib/device-manager.js passes `err.code != null ? err.code : err.message`)
+  // is kept as undefined, message and all, not turned into null and
+  // 'unknown error'.
+  it('keeps an explicit undefined code as the old classes did', () => {
+    for (const e of [new CountinghouseError(undefined), CountinghouseError.device(undefined)]) {
+      assert.ok(Object.prototype.hasOwnProperty.call(e, 'code'));
+      assert.strictEqual(e.code, undefined);
+      assert.strictEqual(e.message, undefined);
+    }
+    const none = new CountinghouseError();
+    assert.deepStrictEqual([none.code, none.message], [null, 'unknown error']);
   });
 
   it('takes kind, retryable, httpStatus and mcpCode from the catalogue', () => {
