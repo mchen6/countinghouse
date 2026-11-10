@@ -250,7 +250,12 @@ replaced, the new key cannot reach the old key's schedulers. Before rotating
 a key, remove its repeatable jobs (`POST /devices/:id/remove-job`
 `{name, isRepeat: true}` with the old key) and recreate them with the new
 one, or have an admin remove them afterwards by their full scheduler id
-(`<hash>:<name>`, as bullmq lists it) in place of the name.
+(`<hash>:<name>`, as bullmq lists it) in place of the name. A job is
+authorized each time it runs, so once the old key is gone from the config
+(after `POST /reload-auth`, for the file and CouchDB providers), its
+schedulers' next runs are refused `SYSTEM_ERROR_UNKNOWN_USER` and the
+schedulers removed, and its queued jobs fail the same way; recreate what is
+still wanted with the new key.
 
 ## Choosing a backend
 

@@ -79,6 +79,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   above it. Breaking for a module that makes links such as `../f`: they
   answer `EPERM` in every `--moduleSandbox` mode.
 
+### Security — what one add-job may ask for is bounded
+
+- A job's runs are not rate limited, only creating it is, so one
+  rate-limited `add-job` with `repeat.every: 1` and no limit, or with
+  `attempts: 1e9`, was unbounded work billed to its owner. Now
+  `repeat.every` must be a whole number of at least 1000 ms (a cron
+  pattern's finest step is already a second), `attempts` a whole number
+  from 1 to 10, and `repeat.limit`, when given, a whole number of at least
+  1; anything else is refused with `ADD_JOB_ERROR` and no job is created.
+  Breaking for a caller that repeats more often than once a second or asks
+  for more than 10 attempts. The cross-cutting matrix no longer implies
+  that a job's runs share the per-key rate limit.
+
 ### Security — a job is authorized when it runs
 
 - A job was authorized only when it was added. A queued, delayed, retried

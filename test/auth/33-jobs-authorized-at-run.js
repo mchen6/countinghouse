@@ -59,7 +59,7 @@ describe('auth 33: a job is authorized when it runs', function() {
   });
 
   it('a scheduler whose owner loses the grant stops running and billing, and is removed', async () => {
-    const added = await addJob({repeat: {every: 500, limit: 1000}});
+    const added = await addJob({repeat: {every: 1000, limit: 1000}});
     assert.strictEqual(added.status, 200, JSON.stringify(added.body));
     const deadline = Date.now() + 20000;
     while ((await mine('completed')).length < 2 && Date.now() < deadline) await sleep(200);
