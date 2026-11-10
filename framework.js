@@ -38,6 +38,14 @@ if (options.debugKeyMissing === true) {
   console.error('--debugKey needs a value (--debugKey <key>)');
   process.exit(2);
 }
+// A cost that is not a finite number >= 0 would credit callers or serve
+// calls free (review M9).
+if (options.mcpToolCallCostInvalid != null) {
+  var badCost = options.mcpToolCallCostInvalid.value;
+  console.error('--mcpToolCallCost must be a finite number >= 0 (got ' +
+    (typeof(badCost) === 'boolean' || badCost === '' ? 'no value' : JSON.stringify(String(badCost))) + ')');
+  process.exit(2);
+}
 var bindAddress = require('./lib/bind-address');
 if (options.debug === true && options.debugKey == null && !bindAddress.isLoopback(bindAddress.hostIp())) {
   console.error('--debug without --debugKey accepts every request as an admin, so it binds only to loopback; ' +

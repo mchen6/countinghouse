@@ -18,6 +18,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Fixed — `--mcpToolCallCost` takes only a finite number >= 0
+
+- The flag was read with `parseFloat` and never checked: a negative cost
+  credited every caller on every call, `NaN` or `Infinity` made each charge
+  fail and the call was served free, and `1abc` became `1`. Anything but a
+  finite number `>= 0` (including no value) now exits with status 2 before
+  the server starts, naming the flag.
+
 ### Security — module workers hold no metering provider
 
 - Every module worker built its own metering provider on Redis db 0, the
