@@ -44,7 +44,7 @@ function parseArgs(argv) {
 }
 
 function usageAndExit(code) {
-  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|list> [args...]');
+  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|set-id|list> [args...]');
   process.exit(code);
 }
 
@@ -122,6 +122,31 @@ function main() {
           if (this.changes === 0) { console.error(`no such user: ${apiKey} (add-user first)`); process.exit(1); }
           console.log(`ok: ${apiKey} admin -> ${flag}`);
           db.close();
+        });
+        break;
+      }
+      // The stable id behind the user's opaque id (lib/identity.js): keeps the
+      // user's id across a key rotation. 1-128 printable characters, unique.
+      case 'set-id': {
+        const apiKey = parsed.args[1], id = parsed.args[2];
+        if (apiKey == null || id == null) usageAndExit(1);
+        if (!/^[\x20-\x7e]{1,128}$/.test(id)) { console.error('id must be 1 to 128 printable characters'); process.exit(1); }
+        // The column and its unique index, for a database from before them
+        // (the same migration the provider runs on open).
+        db.run('ALTER TABLE users ADD COLUMN id TEXT', (e1) => {
+          if (e1 && !/duplicate column/i.test(e1.message)) { console.error(e1.message); process.exit(1); }
+          db.run('CREATE UNIQUE INDEX IF NOT EXISTS users_id ON users (id) WHERE id IS NOT NULL', (e2) => {
+            if (e2) { console.error(e2.message); process.exit(1); }
+            db.run('UPDATE users SET id = ? WHERE apiKey = ?', [id, apiKey], function(err) {
+              if (err) {
+                console.error(/UNIQUE|constraint/i.test(err.message) ? 'that id is already set on another user; every id must be unique' : err.message);
+                process.exit(1);
+              }
+              if (this.changes === 0) { console.error(`no such user: ${apiKey} (add-user first)`); process.exit(1); }
+              console.log(`ok: id set for ${apiKey}`);
+              db.close();
+            });
+          });
         });
         break;
       }

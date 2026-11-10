@@ -78,6 +78,17 @@ of the next restart attempt in milliseconds since the epoch (or `null`); and
 restarting or suspended is still answered, with an empty `deviceList`. The
 key is absent under `--moduleSandbox off`.
 
+**`POST /identity-lookup`** `{id}` answers `{id, userName, isAdmin}` for an
+opaque user id this server issued (`u_` and 22 characters: what a module
+sees as its caller, what a bill's `billedTo` holds, what log lines name a
+tenant by), and `IDENTITY_NOT_FOUND` otherwise; never the key. It's also the
+authoring tool `countinghouse_lookup_identity`. Admin only. The id is an
+HMAC of the auth entry's stable `id` field, else of its API key, under the
+server's identity secret: 64 hex characters in
+`<moduleDataPath>/.identity-secret` (mode 0600, generated on first start)
+or in `COUNTINGHOUSE_IDENTITY_SECRET`. Changing the secret changes every id.
+See [authentication.md](authentication.md#the-opaque-user-id).
+
 **`POST /reload-auth`** re-reads the auth configuration without a restart,
 and answers `{ok, entries, changed}`: counts only, never keys. It's also the
 authoring tool `countinghouse_reload_auth`.

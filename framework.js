@@ -163,13 +163,36 @@ logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.
 // installed, or an unreachable CouchDB) fails the whole server the same
 // way a missing module folder does above, rather than surfacing as a
 // confusing per-request 500 later.
+// The identity secret first (lib/identity.js): a secret in the wrong form, a
+// file others can read, or a file and a variable that differ refuse startup.
+var identity = require('./lib/identity');
+try {
+  identity.initSync(options);
+} catch (e) {
+  console.error(e.message);
+  process.exit(2);
+}
 if (options.debug !== true) {
+  var authProvider = null;
   try {
-    require('./lib/auth').getAuthProvider();
+    authProvider = require('./lib/auth').getAuthProvider();
   } catch (e) {
+    // A configuration the provider refuses (two entries sharing an id) is an
+    // operator error, exit 2 like the other startup checks; anything else is
+    // the backend failing.
+    if (e != null && e.code === 'AUTH_CONFIG_INVALID') {
+      console.error(e.message);
+      process.exit(2);
+    }
     logger.E(new Error('AuthProvider (--authProvider ' + options.authProvider + ') failed to initialize: ' + e.message));
     process.exit(-1);
   }
+  // The id index, from the provider's entries; rebuilt again on every reload.
+  identity.rebuild(authProvider).catch(function(e) {
+    logger.E(new Error('identity: the id index could not be built: ' + e.message));
+  });
+} else if (options.debugKey != null) {
+  identity.addKey(options.debugKey, 'debug', true);
 }
 
 try {

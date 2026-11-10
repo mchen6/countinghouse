@@ -95,6 +95,36 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   [`docs/authentication.md`](docs/authentication.md) for what to do if a
   fresh install leaves the SQLite provider without its binding.
 
+### Added — an opaque per-user id, its secret, and the operator's lookup (R2-1, part 1)
+
+- Every user has an **opaque id**, `u_` and 22 characters, the same across
+  every module on this server: an HMAC of the auth entry's optional stable
+  `id` field, else of its API key, under a server secret. It is what modules
+  will see as `ctx.caller.id` (later parts of R2-1); today it names the
+  tenant in log lines (in place of `key sha256:…`) and scopes repeatable job
+  schedulers (`<id>:<name>`; schedulers stored under the old prefix are
+  still found and removed by their owner).
+- **The stable `id` field** (file provider: `"id"` on the entry; sqlite:
+  `countinghouse-auth-sqlite.js set-id <apiKey> <id>`, a new nullable
+  column added on open; CouchDB: an `id` field on the user document, read
+  as the view's 5th value once `init-db` is re-run): 1 to 128 printable
+  characters, unique. With it, rotating a user's key keeps their id, and so
+  their per-user module data and schedulers; without it, the id changes
+  with the key. Two file entries sharing an id refuse startup (exit 2,
+  "entries 2 and 5 share id", never a key) and refuse a reload.
+- **The secret**: 32 random bytes, kept as 64 hex characters in
+  `<moduleDataPath>/.identity-secret` (0600, written atomically, never read
+  through a link, refused if group- or world-readable), or supplied as
+  `COUNTINGHOUSE_IDENTITY_SECRET` in the same form. Generated on first start
+  only when neither exists; a variable in another form, or a file and a
+  variable that differ, refuse startup with exit 2 and never echo a value.
+  Changing the secret changes every id.
+- **The operator's lookup**: `POST /identity-lookup {id}` and the authoring
+  tool `countinghouse_lookup_identity`, admin only, answer
+  `{id, userName, isAdmin}` for an id this server issued and
+  `IDENTITY_NOT_FOUND` otherwise, never the key. The index behind them is
+  rebuilt on every `POST /reload-auth`.
+
 ### Fixed — with Redis down, calls answer, and billing resumes when it is back
 
 - node_redis queued commands while disconnected, so with Redis down a
