@@ -105,15 +105,27 @@ any module code). Stops:
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker;
 - adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
-  `server.listen({fd})` and the like, which in testing let a worker take over
-  the main server's connections): refused under `enforce`, logged under
-  `audit`, and under `--hardened` this is the only guard, since the native
-  `open(fd)` backstop cannot be taken there. A handle
-  *object* given to `net.Socket` is not adoption: inside a worker the only
-  route to a foreign descriptor is a number, and the handle Node's own TLS
-  machinery hands in (`tls.connect`, `https`, `fetch`) is over a socket the
-  module was allowed to open, so TLS client connections work under `enforce`
-  as under `audit`, `--hardened` included;
+  `net.connect({fd})` and `net.createConnection({fd})`, which an `http`
+  request given an `fd` reaches through the agent (`https` goes through
+  `tls.connect`, which reads no `fd`), `server.listen({fd})` and the
+  like, which in testing let a worker take over the main server's
+  connections): refused under `enforce`, logged under `audit`. Each entry
+  point copies its options once, by their own enumerable properties as
+  Node's `Socket` constructor reads them (an inherited option is dropped),
+  and checks the copy, so a getter cannot show the check one value and Node
+  another; an array other than Node's own normalised arguments is read, as
+  Node reads it, by its own properties. Behind them, `open(fd)`
+  on the TCP, Pipe and UDP handle prototypes is locked in every mode. Under
+  `--hardened`, where `process.binding` is refused, the prototypes are taken
+  from instances the lockdown builds and destroys before module code runs.
+  If one cannot be taken, the module does not start under `enforce`, and
+  `audit` logs it. A handle *object* given to `net.Socket` is not adoption:
+  a handle a module can build is guarded at its `open(fd)`, and the handle
+  Node's own TLS machinery hands in (`tls.connect`, `https`, `fetch`) is over
+  a socket the module was allowed to open, so TLS client connections work
+  under `enforce` as under `audit`, `--hardened` included. `server.listen`
+  stays strict and refuses a handle as well: a module has no need to listen
+  on one;
 - the Redis endpoint (R2-1, part 2: `--redisUrl`'s host and port): refused
   with `EACCES` in `audit` and `enforce`, under its configured host and every
   loopback name. This is an in-worker check, not a boundary: a Redis reached
