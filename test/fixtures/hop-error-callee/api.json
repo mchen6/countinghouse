@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "hop-error-callee",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Callee half of the composition-hop error fixture: fails with the module's own error.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:calleeService": {
+        "actionList": [
+          {
+            "name": "fail",
+            "description": "Fails with ctx.error: a catalogue-named code, or the module's own.",
+            "input":  {"schema": "/calleeService/fail/input"},
+            "output": {"schema": "/calleeService/fail/output"}
+          }
+        ]
+      }
+    }
+  }
+}

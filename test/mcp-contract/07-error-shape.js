@@ -107,11 +107,12 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
   });
 
   // §5.1: a plain Error's code is the module's only when it looks like one
-  // and is not a system error's (errno/syscall) or Node's (ERR_).
+  // and is not someone else's: a system error's (errno/syscall), Node's
+  // (ERR_), or a network or TLS library's (an errno name, UND_ERR_, X509).
   it('takes a plain Error\'s code as the module\'s only when it is not a system or Node code', () => {
     for (const mode of Object.keys(GOLDEN)) {
       assert.strictEqual(GOLDEN[mode]['http invoke-action / module typed error'].body.code, 'SHAPE_OFFLINE', mode);
-      for (const f of ['plain error with a system code', 'plain error with a Node code']) {
+      for (const f of ['plain error with a system code', 'plain error with a Node code', 'plain error with a network code']) {
         const a = GOLDEN[mode][`http invoke-action / ${f}`];
         assert.strictEqual(a.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode} / ${f}: ${JSON.stringify(a)}`);
       }

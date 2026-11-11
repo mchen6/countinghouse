@@ -36,6 +36,9 @@ module.exports = {
     // DEVICE_INVOKE_EXCEPTION.
     throwSystemCoded: async () => { throw Object.assign(new Error('shape probe'), {code: 'EACCES', errno: -13, syscall: 'open'}); },
     throwNodeCoded: async () => { throw Object.assign(new TypeError('shape probe'), {code: 'ERR_INVALID_ARG_TYPE'}); },
+    // A network failure that has a code and no errno, as Node's own 'socket
+    // hang up' does: an errno name is never a module's, so it is a crash too.
+    throwNetworkCoded: async () => { throw Object.assign(new Error('socket hang up'), {code: 'ECONNRESET'}); },
 
     // A plain object that merely looks like an error is a result, not an error.
     returnLookalike: async () => ({code: 'SHAPE_REJECTED', message: 'SHAPE_REJECTED: shape probe'}),

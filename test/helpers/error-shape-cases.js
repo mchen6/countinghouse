@@ -34,12 +34,14 @@ const OUTCOMES = [
   {name: 'module error called back', action: 'callbackError', args: {}},
   {name: 'lookalike returned', action: 'returnLookalike', args: {}},
   // step 1 (d2): thrown from a plain function; a plain Error with a module's
-  // code; codes that are not a module's (a system error's, Node's ERR_); and
+  // code; codes that are not a module's (a system error's, Node's ERR_, an
+// errno name with no errno, as a network failure has); and
   // the old module-visible globals, which are gone
   {name: 'module error thrown sync', action: 'throwErrorSync', args: {}},
   {name: 'plain error with a module code', action: 'throwPlainCoded', args: {}},
   {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
   {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
+  {name: 'plain error with a network code', action: 'throwNetworkCoded', args: {}},
   {name: 'old globals', action: 'globalsProbe', args: {}}
 ];
 

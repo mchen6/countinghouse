@@ -1,0 +1,11 @@
+{
+  "composition-test-key": {
+    "userName": "composition-test",
+    "devices": ["*"]
+  },
+  "hop-error-caller-internal": {
+    "userName": "hop-error-caller-internal",
+    "devices": ["*"],
+    "runsModules": ["hop-error-caller"]
+  }
+}

@@ -147,6 +147,16 @@
             }
           },
           {
+            "name": "throwNetworkCoded",
+            "description": "error-shape case throwNetworkCoded",
+            "input": {
+              "schema": "/shapeService/throwNetworkCoded/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwNetworkCoded/output"
+            }
+          },
+          {
             "name": "globalsProbe",
             "description": "error-shape case globalsProbe",
             "input": {

@@ -56,15 +56,21 @@ const EXAMPLE = path.join(ROOT, 'examples', 'log-triage');
 
 const gen = require(path.join(EXAMPLE, 'generate-logs.js'));
 
-// the leaf handlers use the runtime's global DeviceError
-if (typeof DeviceError === 'undefined') {
-  global.DeviceError = require(path.join(ROOT, 'lib', 'countinghouse-error')).DeviceError;
-}
+// The leaf handlers as plain functions, with the one ctx method they use
+// (ctx.error, which they return). A returned error is thrown, so a failed
+// call is counted by its code as through the runtime.
+const CountinghouseError = require(path.join(ROOT, 'lib', 'countinghouse-error')).CountinghouseError;
+const LEAF_CTX = {error: (code, message, details) => CountinghouseError.module(code, message, details)};
+const leaf = (handler) => async (input) => {
+  const r = await handler(input, LEAF_CTX);
+  if (r instanceof Error) throw r;
+  return r;
+};
 const handlers = {
-  list:    require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js')),
-  read:    require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js')),
-  redact:  require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js')),
-  cluster: require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js'))
+  list:    leaf(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js'))),
+  read:    leaf(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js'))),
+  redact:  leaf(require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js'))),
+  cluster: leaf(require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js')))
 };
 
 const TRIAGE_DEVICE  = 'dad07d2a-9d65-5ef5-af59-05c0160c5fdc';

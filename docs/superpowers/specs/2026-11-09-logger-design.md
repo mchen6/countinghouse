@@ -2,8 +2,9 @@
 
 Status: Approved by the user 2026-11-10 (design only; landing per §9: step 1
 may start now, step 2 after R2-1 Task 4, step 3 after R2-1). Amended
-2026-11-10 during step 1 (d2): §5.1's plain-Error rule, `details.cause` and
-the worker crossing; §5.2's client shapes (the user: no client shape is
+2026-11-10 during step 1 (d2): §5.1's plain-Error rule (its list of
+foreign codes widened after review), `details.cause` and the worker
+crossing, composition hops included; §5.2's client shapes (the user: no client shape is
 preserved); §5.6, a fault that fails its schema is delivered and logged (the
 user). Amended 2026-11-10 during step 1: §5.1's ctx.error paragraph (the user: a handler
 may return its error; how a module error renders) and §5.3's statuses line. Written 2026-11-09 by implementer B with the reviewer
@@ -197,8 +198,17 @@ drop the module's message. A
 plain `Error` whose `.code` is a module's code is accepted the same way, so
 authors who prefer plain errors (or a helper without `ctx`) can use them: the
 code counts when it matches `/^[A-Z][A-Z0-9_]{2,}$/` and is neither a system
-error's (the error has `errno` or `syscall`) nor Node's own, a named list
-(the `ERR_` prefix, `MODULE_NOT_FOUND`, `ABORT_ERR`); anything else is
+error's (the error has `errno` or `syscall`) nor someone else's, a named
+list (`CountinghouseError.isForeignCode`, which `countinghouse-validate`
+reads too): Node's own (the `ERR_` prefix, `MODULE_NOT_FOUND`,
+`ABORT_ERR`); every errno name (`os.constants.errno`: a network failure
+such as Node's 'socket hang up' carries `ECONNRESET` with no `errno`);
+undici's `UND_ERR_` prefix; and OpenSSL's X509 verify names, by the
+prefixes `CERT_`, `UNABLE_TO_`, `DEPTH_ZERO_`, `SELF_SIGNED_`, plus
+`HOSTNAME_MISMATCH` (amended 2026-11-10, the reviewer: the
+crash-versus-rejection signal is worth more than a module's freedom to
+name its own code `ECONNRESET`; a module raises such a code with
+`ctx.error`, and step 1's validator warning makes the cost visible); anything else is
 untyped (`DEVICE_INVOKE_FAIL` reported, `DEVICE_INVOKE_EXCEPTION` thrown, a
 synchronous throw counted as a throw). `details.cause` is reserved for the
 underlying error; it is kept off every serialised form. A module's error

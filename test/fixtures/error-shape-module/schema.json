@@ -206,6 +206,20 @@
         }
       }
     },
+    "throwNetworkCoded": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
     "globalsProbe": {
       "input": {
         "type": "object",

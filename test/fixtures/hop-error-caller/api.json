@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "hop-error-caller",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Caller half of the composition-hop error fixture: reports what its ctx.call rejected with.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Calls hop-error-callee's fail and returns what the rejection looked like.",
+            "input":  {"schema": "/callerService/probe/input"},
+            "output": {"schema": "/callerService/probe/output"}
+          }
+        ]
+      }
+    }
+  }
+}

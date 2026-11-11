@@ -99,7 +99,14 @@ plain `Error` that carries your code instead:
 `Object.assign(new Error('path must be a string'), {code: 'INPUT_REJECTED'})`.
 Its code counts as yours when it looks like one (`/^[A-Z][A-Z0-9_]{2,}$/`)
 and is not a system error's (one with `errno` or `syscall`, such as
-`ENOENT`) or Node's own (`ERR_…`, `MODULE_NOT_FOUND`, `ABORT_ERR`).
+`ENOENT`) or someone else's: Node's own (`ERR_…`, `MODULE_NOT_FOUND`,
+`ABORT_ERR`), any errno name even without `errno` (`ECONNRESET`,
+`ETIMEDOUT`, …, as a network failure carries), undici's (`UND_ERR_…`, from
+`fetch`), and OpenSSL's certificate errors (`CERT_…`, `UNABLE_TO_…`,
+`DEPTH_ZERO_…`, `SELF_SIGNED_…`, `HOSTNAME_MISMATCH`). Those are crashes,
+answered as `DEVICE_INVOKE_EXCEPTION` with the original in the fault, so an
+operator can tell a failure you didn't handle from one you meant. To raise
+such a code on purpose, use `ctx.error`.
 
 To wrap an underlying error, pass it as `details.cause`:
 `ctx.error('INNER_CALL_FAILED', `${label}: ${e.message}`, {cause: e})`. The

@@ -34,8 +34,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - A helper with no `ctx` may throw a plain `Error` carrying the module's
   code instead. Its `.code` counts as the module's when it looks like one
   (`/^[A-Z][A-Z0-9_]{2,}$/`) and is not a system error's (`errno`/`syscall`)
-  or Node's own (`ERR_…`, `MODULE_NOT_FOUND`, `ABORT_ERR`); anything else is
-  untyped, as before.
+  or someone else's: Node's own (`ERR_…`, `MODULE_NOT_FOUND`, `ABORT_ERR`),
+  any errno name (`ECONNRESET` from a dropped socket has no `errno`),
+  undici's `UND_ERR_…`, or OpenSSL's certificate errors (`CERT_…`,
+  `UNABLE_TO_…`, `DEPTH_ZERO_…`, `SELF_SIGNED_…`, `HOSTNAME_MISMATCH`).
+  Anything else is untyped, as before: a crash, `DEVICE_INVOKE_EXCEPTION`.
 
 ### Changed — breaking: a module's errors are its own, and no `topic`
 
@@ -52,7 +55,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - **Worker mode answers a module's error as single-thread mode does**: the
   worker reply carries its code, message and details, where it used to keep
   only the code (`SHAPE_REJECTED` instead of `SHAPE_REJECTED: shape probe`).
-  A runtime error is still rebuilt from its code alone.
+  So do the composition hops (the main thread's reply to a composing worker,
+  and a direct peer channel's): a callee module's error reaches the composing
+  module's `ctx.call` as it would in single-thread mode, so a callee's code
+  that is also a catalogue name stays the callee's rather than turning into
+  a runtime error. A runtime error is still rebuilt from its code alone.
 - A synchronous throw from a plain (non-async) handler is classified like a
   rejection: `throw ctx.error(…)` keeps its code (it used to be
   `DEVICE_INVOKE_EXCEPTION` whatever was thrown); an untyped throw is still

@@ -1150,6 +1150,89 @@
         }
       }
     },
+    "http invoke-action / plain error with a network code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "socket hang up",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / plain error with a network code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / plain error with a network code": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
     "http invoke-action / old globals": {
       "status": 200,
       "body": {
@@ -1735,6 +1818,37 @@
             {
               "type": "text",
               "text": "Device interface call threw an exception: shape probe"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / plain error with a network code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: socket hang up",
+        "fault": {
+          "message": "socket hang up",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / plain error with a network code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: socket hang up"
             }
           ],
           "_meta": {

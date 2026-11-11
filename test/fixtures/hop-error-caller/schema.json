@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "callerService": {
+    "probe": {
+      "input":  {"type": "object", "properties": {"kind": {"enum": ["catalogue", "own"]}}, "required": ["kind"]},
+      "output": {"type": "object"}
+    }
+  }
+}

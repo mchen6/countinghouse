@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "calleeService": {
+    "fail": {
+      "input":  {"type": "object", "properties": {"kind": {"enum": ["catalogue", "own"]}}, "required": ["kind"]},
+      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+    }
+  }
+}

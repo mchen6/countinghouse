@@ -95,7 +95,11 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
 
   // §5.1's plain-Error rule (step 1 (d2)): a plain Error's .code is the
   // module's own when it looks like a code (/^[A-Z][A-Z0-9_]{2,}$/) and is
-  // neither a system error's (errno or syscall) nor Node's (ERR_).
+  // neither a system error's (errno or syscall) nor Node's (ERR_), nor, as
+  // amended (the reviewer, 2026-11-10), a network or TLS library's: an errno
+  // name with no errno, undici's UND_ERR_, OpenSSL's X509 verify names. The
+  // list is CountinghouseError.isForeignCode, which countinghouse-validate
+  // reads too.
   describe('fromModule: a plain Error with a code', () => {
     const plain = (code, extra) => Object.assign(new Error('why'), {code: code}, extra || {});
     it('is the module\'s error when its code looks like one', () => {
@@ -109,6 +113,21 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       const cases = [plain('EACCES', {errno: -13}), plain('ENOENT', {syscall: 'open'}), plain('ERR_INVALID_ARG_TYPE'),
         plain('ERR_OUT_OF_RANGE'), plain('MODULE_NOT_FOUND'), plain('ABORT_ERR'), plain('AB'), plain('lower_case'), plain('1ABC'), plain('A-B-C'), plain(42), new Error('no code'), null, undefined, 'a string'];
       for (const c of cases) assert.strictEqual(CountinghouseError.fromModule(c), null, JSON.stringify(c && c.code));
+    });
+    const FOREIGN = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+      'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+      'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'HOSTNAME_MISMATCH'];
+    it('is not, for a network or TLS library\'s code with no errno (an errno name, UND_ERR_, X509 verify names)', () => {
+      for (const code of FOREIGN) assert.strictEqual(CountinghouseError.fromModule(plain(code)), null, code);
+    });
+    it('reads its list from one exported place, CountinghouseError.isForeignCode', () => {
+      assert.strictEqual(typeof(CountinghouseError.isForeignCode), 'function');
+      for (const code of FOREIGN.concat(['ERR_INVALID_ARG_TYPE', 'MODULE_NOT_FOUND', 'ABORT_ERR'])) {
+        assert.strictEqual(CountinghouseError.isForeignCode(code), true, code);
+      }
+      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'DEVICE_OFFLINE', 'CERTIFIED_ONLY', 'SELF_TEST_FAILED']) {
+        assert.strictEqual(CountinghouseError.isForeignCode(code), false, code);
+      }
     });
     it('passes a CountinghouseError through unchanged, whatever its origin', () => {
       const r = new CountinghouseError('MODULE_RELOADING');
