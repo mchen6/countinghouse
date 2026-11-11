@@ -97,7 +97,8 @@ describe('sandbox 35: TLS client connections under enforce', function() {
         assert.deepStrictEqual(await call('fetchGet'), {code: 'ok', status: 200, body: 'hello'});
       });
 
-      it('the three connections tripped no violation', () => {
+      it('the three connections tripped no violation', async () => {
+        await new Promise((resolve) => setTimeout(resolve, 500));   // the log reaches the test asynchronously
         assert.ok(!server.output.includes(`module sandbox: ${NAME} violation`),
           server.output.split('\n').filter((l) => l.includes('module sandbox')).join('\n'));
       });
