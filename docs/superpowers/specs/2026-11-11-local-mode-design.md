@@ -110,7 +110,11 @@ load normally.
 
 Two counting points, both on the main thread:
 
-- **In**: in the remote client (RC1), for every call to a declared server:
+- **In**: recorded by the remote client (RC1, built by A after this spec)
+  through `lib/usage.js` `recordIn(call, {server, tool, bytes, lines, ms,
+  outcome, credential})`; this spec builds `lib/usage.js`, the `Out` hook,
+  the files and the receipt, tested with a stub remote that calls
+  `recordIn`; RC1 wires the real client to it. For every call to a declared server:
   bytes of the result's text content (UTF-8), lines (newline-separated,
   JSON included), the server name, the tool, the duration, the outcome, the
   name of the environment variable the credential came from.
@@ -122,11 +126,14 @@ Records are appended, one JSON object per line, to
 `<usageDir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl` (`--usageDir`, default
 `<storePath>/usage/`), written as they happen with `fs.appendFileSync` on an
 open descriptor; a crash loses at most the line being written. Fields:
-`{t, session, pack, tool, server, bytesIn, linesIn, bytesOut, linesOut, ms,
+`{t, call, pack, tool, server, bytesIn, linesIn, bytesOut, linesOut, ms,
 outcome, credential}`; a server call has `server` and the `In` fields; a
 tool result has `tool` and the `Out` fields; `pack` is the scenario's
-friendlyName; `session` is the MCP session id when the client sends one,
-else `""`. No value of any credential, no content, ever.
+friendlyName; `call` is a per-process counter that ties the `In` records of
+one `tools/call` to its `Out` record. There is no session field: MCP
+2026-07-28 is stateless and the runtime issues no session id; the file
+name (`<pid>-<startMs>`) identifies the process, which over stdio is the
+client session. No value of any credential, no content, ever.
 
 **The receipt**: for every `tools/call` on a scenario tool, the gateway sums
 the `In` records made during that call (the remote client tags each with
