@@ -157,6 +157,36 @@
             }
           },
           {
+            "name": "throwNull",
+            "description": "error-shape case throwNull",
+            "input": {
+              "schema": "/shapeService/throwNull/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwNull/output"
+            }
+          },
+          {
+            "name": "rejectEmpty",
+            "description": "error-shape case rejectEmpty",
+            "input": {
+              "schema": "/shapeService/rejectEmpty/input"
+            },
+            "output": {
+              "schema": "/shapeService/rejectEmpty/output"
+            }
+          },
+          {
+            "name": "throwPlainObject",
+            "description": "error-shape case throwPlainObject",
+            "input": {
+              "schema": "/shapeService/throwPlainObject/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwPlainObject/output"
+            }
+          },
+          {
             "name": "globalsProbe",
             "description": "error-shape case globalsProbe",
             "input": {

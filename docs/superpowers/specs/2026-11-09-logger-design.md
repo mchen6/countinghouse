@@ -214,10 +214,19 @@ crash-versus-rejection signal is worth more than a module's freedom to
 name its own code `ECONNRESET`; a module raises such a code with
 `ctx.error`, and step 1's validator warning makes the cost visible); anything else is
 untyped (`DEVICE_INVOKE_FAIL` reported, `DEVICE_INVOKE_EXCEPTION` thrown, a
-synchronous throw counted as a throw). `details.cause` is reserved for the
+synchronous throw counted as a throw). Only an `Error` counts (review of
+#37): a thrown non-Error (`null`, a rejection with nothing, a plain object
+with a code) is a crash. The design's known cost: a dependency's own coded
+`Error` (`SQLITE_BUSY`, `ER_DUP_ENTRY`) that a handler lets escape counts
+as the module's; the guide tells authors to wrap their dependencies' errors
+with `ctx.error`, and the validator's warning (step 1 (e)) can't cover it,
+since it sees the module's source, not the codes its dependencies throw. `details.cause` is reserved for the
 underlying error; it is kept off every serialised form. A module's error
-crosses the worker reply whole (code, message, details), so worker mode
-answers it as single-thread mode does (step 1 (d2)). A runtime error a module
+crosses every reply between threads whole (code, message, details; details
+that don't survive JSON arrive as `{_details: 'unserialisable'}`, with a
+warn line), so worker mode answers it as single-thread mode does, and a
+composing module's `ctx.call` gets it as it would in-process: the hop
+passes a module-origin error through, whatever its code (step 1 (d2)). A runtime error a module
 rethrows unchanged (from `ctx.call`, say) passes through and keeps
 `origin: 'runtime'`; one it wraps with `ctx.error` is the module's, with the
 original in `cause`. Rendering to the caller stays as today (the code's text, then ": ",

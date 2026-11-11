@@ -1233,6 +1233,249 @@
         }
       }
     },
+    "http invoke-action / thrown null": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "null"
+        }
+      }
+    },
+    "mcp tools/call / thrown null": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / thrown null": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / rejected with nothing": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "undefined"
+        }
+      }
+    },
+    "mcp tools/call / rejected with nothing": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / rejected with nothing": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / thrown plain object with a code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "shape probe"
+        }
+      }
+    },
+    "mcp tools/call / thrown plain object with a code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / thrown plain object with a code": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
     "http invoke-action / old globals": {
       "status": 200,
       "body": {
@@ -1849,6 +2092,93 @@
             {
               "type": "text",
               "text": "Device interface call threw an exception: socket hang up"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / thrown null": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: ",
+        "fault": {
+          "message": "null"
+        }
+      }
+    },
+    "mcp tools/call / thrown null": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: "
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / rejected with nothing": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: ",
+        "fault": {
+          "message": "undefined"
+        }
+      }
+    },
+    "mcp tools/call / rejected with nothing": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: "
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / thrown plain object with a code": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: shape probe",
+        "fault": {
+          "message": "shape probe"
+        }
+      }
+    },
+    "mcp tools/call / thrown plain object with a code": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: shape probe"
             }
           ],
           "_meta": {

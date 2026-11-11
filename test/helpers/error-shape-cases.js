@@ -42,6 +42,11 @@ const OUTCOMES = [
   {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
   {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
   {name: 'plain error with a network code', action: 'throwNetworkCoded', args: {}},
+  // review of #37: not an Error at all -- thrown null, a rejection with
+  // nothing, a thrown plain object with a code: crashes, answered at once
+  {name: 'thrown null', action: 'throwNull', args: {}},
+  {name: 'rejected with nothing', action: 'rejectEmpty', args: {}},
+  {name: 'thrown plain object with a code', action: 'throwPlainObject', args: {}},
   {name: 'old globals', action: 'globalsProbe', args: {}}
 ];
 

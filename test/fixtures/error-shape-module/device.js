@@ -39,6 +39,12 @@ module.exports = {
     // A network failure that has a code and no errno, as Node's own 'socket
     // hang up' does: an errno name is never a module's, so it is a crash too.
     throwNetworkCoded: async () => { throw Object.assign(new Error('socket hang up'), {code: 'ECONNRESET'}); },
+    // Not an Error at all: thrown null, a rejection with nothing, a thrown
+    // plain object that has a code. Each is a crash (DEVICE_INVOKE_EXCEPTION),
+    // answered at once.
+    throwNull: () => { throw null; },
+    rejectEmpty: () => Promise.reject(),
+    throwPlainObject: async () => { throw {code: 'SHAPE_REJECTED', message: 'shape probe'}; },
 
     // A plain object that merely looks like an error is a result, not an error.
     returnLookalike: async () => ({code: 'SHAPE_REJECTED', message: 'SHAPE_REJECTED: shape probe'}),

@@ -13,8 +13,9 @@
 //   one mode and not another. Before, worker mode's reply envelopes carried
 //   only errMsg/errCode, so the caller rebuilt a plain Error that hopError
 //   turned into a runtime-origin CountinghouseError.
-// - A code of the module's own is untyped to the composing module
-//   (hopError), with the callee's message.
+// - A code of the module's own crosses whole too (review of #37: hopError
+//   passes a module-origin error through, since its origin already says it
+//   is not the runtime's).
 const assert = require('assert');
 const path = require('path');
 const spawn = require('child_process').spawn;
@@ -86,13 +87,13 @@ MODES.forEach((mode) => {
       });
     });
 
-    it('a code of the module\'s own is untyped to the composing module, with the callee\'s message', (done) => {
+    it('a code of the module\'s own crosses whole too: code, origin, message and details', (done) => {
       probe(mode.port, 'own', (err, out) => {
         if (err) return done(err);
         observed.own[mode.label] = out;
         assert.deepStrictEqual(out, {
-          name: 'Error', code: null, message: 'SHAPE_GONE: the shape is gone',
-          origin: null, kind: null, details: null
+          name: 'CountinghouseError', code: 'SHAPE_GONE', message: 'SHAPE_GONE: the shape is gone',
+          origin: 'module', kind: 'module', details: {n: 1}
         });
         done();
       });

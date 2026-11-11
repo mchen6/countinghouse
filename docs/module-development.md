@@ -90,7 +90,9 @@ The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,
 `REPO_TOO_LARGE`, …). The runtime's codes (its error catalogue) are the
 runtime's, and a module never raises them. The caller gets your code and
-the message `CODE: message`, in worker and single-thread mode alike.
+the message `CODE: message`, in worker and single-thread mode alike. So
+does a module that calls yours with `ctx.call`: it gets your error whole
+(code, message and details), in either mode.
 
 Returning the error is the preferred form. Throwing it
 (`throw ctx.error(…)`), from an async function or a plain one, or passing it
@@ -109,7 +111,15 @@ Node gives a TLS error (`CERT_HAS_EXPIRED`, `INVALID_CA`,
 Those are crashes,
 answered as `DEVICE_INVOKE_EXCEPTION` with the original in the fault, so an
 operator can tell a failure you didn't handle from one you meant. To raise
-such a code on purpose, use `ctx.error`.
+such a code on purpose, use `ctx.error`. Only an `Error` counts: a thrown
+plain object (even one with a `code`), `null`, or a rejection with nothing
+is a crash too.
+
+Catch your dependencies' errors and wrap them with `ctx.error`. A
+dependency's own coded `Error` that you let escape (`SQLITE_BUSY`,
+`ER_DUP_ENTRY`) looks like a module code, so it is answered as yours, with
+its code; `countinghouse-validate` can't warn about it, since it sees your
+source, not the codes your dependencies throw.
 
 To wrap an underlying error, pass it as `details.cause`:
 `ctx.error('INNER_CALL_FAILED', `${label}: ${e.message}`, {cause: e})`. The
@@ -521,8 +531,9 @@ from a worker's reply by its `code` alone
 (`CountinghouseError.fromReply`), so a client sees the code's generic
 message, not "… for address `x/y.z`". The full text survives in
 single-thread mode and over REST `/devices/:id/invoke-action`. A module's own
-error (`ctx.error`) is different: the reply carries it whole, so its code and
-message reach the client in either mode. The callee's structured `.fault`
+error (`ctx.error`) is different: every reply between threads carries it
+whole, so its code and message reach the client in either mode, and a
+composing module's `ctx.call` gets its details too. The callee's structured `.fault`
 reaches neither.
 
 **A short startup window remains, but it now says so.** A device appears in

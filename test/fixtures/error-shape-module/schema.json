@@ -220,6 +220,48 @@
         }
       }
     },
+    "throwNull": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "rejectEmpty": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "throwPlainObject": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
     "globalsProbe": {
       "input": {
         "type": "object",

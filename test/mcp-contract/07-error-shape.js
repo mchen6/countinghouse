@@ -119,6 +119,19 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
     }
   });
 
+  // Review of #37: a thrown value that is not an Error (null, nothing, a
+  // plain object with a code) is a crash, answered at once in either mode --
+  // not left unanswered (DEVICE_NOT_RESPONDING), and not a typed module error.
+  it('answers a thrown non-Error as a crash, at once', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      for (const f of ['thrown null', 'rejected with nothing', 'thrown plain object with a code']) {
+        const a = GOLDEN[mode][`http invoke-action / ${f}`];
+        assert.ok(a !== undefined, `premise: ${mode} / ${f} in the golden`);
+        assert.strictEqual(a.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode} / ${f}: ${JSON.stringify(a)}`);
+      }
+    }
+  });
+
   // Step 1 (d2): no module-visible error classes, and no `topic` in an answer.
   it('gives modules no old error globals, in either mode', () => {
     for (const mode of Object.keys(GOLDEN)) {

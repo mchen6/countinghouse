@@ -13,13 +13,26 @@ const ROOT = path.resolve(process.argv[2]);
 const REPS = Number(process.argv[3] || 25);
 const WARMUP = 5;
 const EXAMPLE = path.join(ROOT, 'examples', 'log-triage');
-global.DeviceError = require(path.join(ROOT, 'lib', 'countinghouse-error')).DeviceError;
+// The leaf handlers as plain functions, with the one ctx method they use
+// (ctx.error, which they return; 8.0), as perf/log-triage-perf.js gives them.
+// A returned error is thrown. A pre-8.0 <repo> still gets the DeviceError
+// global its handlers used.
+const errors = require(path.join(ROOT, 'lib', 'countinghouse-error'));
+if (errors.DeviceError != null) global.DeviceError = errors.DeviceError;
+const LEAF_CTX = {error: (code, message, details) => (errors.CountinghouseError != null && errors.CountinghouseError.module != null)
+  ? errors.CountinghouseError.module(code, message, details)
+  : Object.assign(new Error(message != null ? `${code}: ${message}` : code), {code: code})};
+const leaf = (handler) => async (input) => {
+  const r = await handler(input, LEAF_CTX);
+  if (r instanceof Error) throw r;
+  return r;
+};
 const gen = require(path.join(EXAMPLE, 'generate-logs.js'));
 const h = {
-  list:    require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js')),
-  read:    require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js')),
-  redact:  require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js')),
-  cluster: require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js'))
+  list:    leaf(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'list.js'))),
+  read:    leaf(require(path.join(EXAMPLE, 'log-read', 'handlers', 'readService', 'read.js'))),
+  redact:  leaf(require(path.join(EXAMPLE, 'pii-redact', 'handlers', 'redactService', 'redact.js'))),
+  cluster: leaf(require(path.join(EXAMPLE, 'error-cluster', 'handlers', 'clusterService', 'cluster.js')))
 };
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 

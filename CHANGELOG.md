@@ -60,7 +60,17 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   and a direct peer channel's): a callee module's error reaches the composing
   module's `ctx.call` as it would in single-thread mode, so a callee's code
   that is also a catalogue name stays the callee's rather than turning into
-  a runtime error. A runtime error is still rebuilt from its code alone.
+  a runtime error, and one of its own codes arrives with its message and
+  details too. So a composite that lets a callee's own error escape answers
+  its caller with that code (it used to be `DEVICE_INVOKE_EXCEPTION`, the
+  7.x hop rule); the code is the module's, not the runtime's, in every
+  mode. A runtime error is still rebuilt from its code alone. Details
+  that don't survive JSON (a BigInt, a cycle) arrive as
+  `{_details: 'unserialisable'}`, with a warn line, instead of vanishing.
+- Only an `Error` is typed by its code: a thrown plain object with a code,
+  `throw null`, or `Promise.reject()` is a crash (`DEVICE_INVOKE_EXCEPTION`),
+  answered at once. The last two used to leave the call unanswered until
+  the device timeout.
 - A synchronous throw from a plain (non-async) handler is classified like a
   rejection: `throw ctx.error(…)` keeps its code (it used to be
   `DEVICE_INVOKE_EXCEPTION` whatever was thrown); an untyped throw is still

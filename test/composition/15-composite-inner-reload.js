@@ -5,11 +5,11 @@
 // them the hop goes through the main thread, where the inner worker's
 // in-flight work is failed as the worker ends (MODULE_RELOADING).
 //
-// A callee's own coded error reaches the composite's caller with its code
-// when the code is one of the runtime's (lib/error-info.en-US.json), on
-// either path; any other code is a callee crash to the caller
-// (DEVICE_INVOKE_EXCEPTION), so a callee cannot pass a made-up code off as
-// a runtime one.
+// A callee's error reaches the composite's caller with its code on either
+// path: a runtime code (lib/error-info.en-US.json) typed, and a callee
+// module's own code (ctx.error) as the module's error, whole (review of #37:
+// lib/countinghouse-error.js hopError passes an origin-module error through;
+// its origin already says it is not the runtime's).
 const assert  = require('assert');
 const fs      = require('fs');
 const os      = require('os');
@@ -71,9 +71,9 @@ const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').se
       assert.strictEqual(toolErrorCode(r), 'DEVICE_INVOKE_FAIL', JSON.stringify(r));
     });
 
-    it('a callee\'s made-up error code does not: the caller sees a callee crash', async () => {
+    it('a callee\'s own error code reaches the caller too, as the module\'s', async () => {
       const r = await mcpCall(variant.port, KEY, 'worker_end_caller_callerservice_callfailmadeup', {});
-      assert.strictEqual(toolErrorCode(r), 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(r));
+      assert.strictEqual(toolErrorCode(r), 'NOT_A_RUNTIME_CODE', JSON.stringify(r));
     });
   });
 });

@@ -176,4 +176,40 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     const r = new CountinghouseError('ADMIN_REQUIRED');
     assert.deepStrictEqual([r.origin, r.kind, r.httpStatus], ['runtime', 'caller', 403]);
   });
+
+  // Review of #37.
+  describe('the review of #37', () => {
+    const {hopError} = require('../../lib/countinghouse-error');
+    it('hopError passes a module\'s error through whole, its own code included', () => {
+      const own = CountinghouseError.module('SHAPE_GONE', 'the shape is gone', {n: 1});
+      assert.strictEqual(hopError(own), own);
+      const named = CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7});
+      assert.strictEqual(hopError(named), named);
+      // a callee's plain error with a made-up code is still not passed off as typed
+      const plain = Object.assign(new Error('made up'), {code: 'MADE_UP'});
+      assert.ok(!(hopError(plain) instanceof CountinghouseError) && hopError(plain).code === undefined);
+    });
+    it('the plain-Error rule needs an Error: a thrown plain object with a code is a crash', () => {
+      assert.strictEqual(CountinghouseError.fromModule({code: 'SHAPE_REJECTED', message: 'x'}), null);
+      assert.strictEqual(CountinghouseError.fromModule(Object.create(null)), null);
+      class Mine extends Error {}
+      assert.ok(CountinghouseError.fromModule(Object.assign(new Mine('m'), {code: 'MINE_CODE'})) instanceof CountinghouseError);
+    });
+    it('details are a plain non-array object: an array is {}', () => {
+      assert.deepStrictEqual(CountinghouseError.module('X_Y', 'm', [1, 2]).details, {});
+      const back = CountinghouseError.fromReplyFields({errOrigin: 'module', errCode: 'X_Y', errMsg: 'X_Y: m', errDetails: [1, 2]});
+      assert.deepStrictEqual(back.details, {});
+    });
+    it('makes dropped details visible on the envelope: unserialisable becomes {_details: \'unserialisable\'}', () => {
+      const cyc = {}; cyc.self = cyc;
+      for (const d of [{n: 1n}, cyc]) {
+        const f = CountinghouseError.replyFields(CountinghouseError.module('X_Y', 'm', d));
+        assert.deepStrictEqual(f.errDetails, {_details: 'unserialisable'});
+      }
+    });
+    it('replyFields(null) is the success pair', () => {
+      assert.deepStrictEqual(CountinghouseError.replyFields(null), {errMsg: null, errCode: null});
+      assert.deepStrictEqual(CountinghouseError.replyFields(undefined), {errMsg: null, errCode: null});
+    });
+  });
 });
