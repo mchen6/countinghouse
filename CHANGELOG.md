@@ -52,11 +52,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   adoption as well.
 - The Redis denial now covers every loopback literal (all of 127/8,
   `0.0.0.0`, `::1` and `::`, in the forms the resolver accepts, such as
-  `127.1`, and IPv4-mapped) and the loopback names, not six spellings, as
-  well as an empty host (Node connects to `localhost`), every spelling of
-  a configured address (`10.5` for `10.0.0.5`), and a port in any string
-  form Node reads as a number (`socket.connect('0x18eb', host)` took it for
-  a pipe path).
+  `127.1`, and IPv4-mapped or -compatible) and the loopback names, not six
+  spellings, as well as an empty host (Node connects to `localhost`),
+  every spelling of a configured address (`10.5` for `10.0.0.5`, and its
+  IPv4-mapped and IPv4-compatible forms), every spelling of a socket path
+  (`..`, `//`, relative), and a port in any string form Node reads as a
+  number (`socket.connect('0x18eb', host)` took it for a pipe path).
 - `_tls_wrap` and `_tls_common` are refused to modules. They were on the
   allowlist, and sit behind none of the wrappers the lockdown puts on
   `tls`, so a module could reach Node's TLS internals past them. A module
