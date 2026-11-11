@@ -70,8 +70,11 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - Only an `Error` is typed by its code: a thrown plain object with a code,
   `throw null`, or `Promise.reject()` is a crash (`DEVICE_INVOKE_EXCEPTION`),
   answered at once with the catalogue's text alone (so is a thrown value
-  whose properties throw when read, and an `Error` with no message; no
-  runtime message ends in a dangling `: ` any more). The two before used to
+  whose properties throw when read, and an `Error` with no message or a
+  blank one; no runtime message ends in a dangling `: ` any more). A
+  message that cannot be rendered (circular, or with a throwing `toJSON`)
+  reads `[unrenderable value]` instead of leaving the call unanswered, and
+  a fault keeps every field it can read, each as text. The two before used to
   leave the call unanswered until the device timeout. A callback handler's
   `callback({code: …})` with a plain object is untyped too
   (`DEVICE_INVOKE_FAIL`; it used to keep its code).

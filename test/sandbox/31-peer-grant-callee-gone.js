@@ -35,7 +35,8 @@ function run(scenario) {
       sendPeerChannelOpenToChild: (d) => sent.push({to: id, open: d.callerWorkerId}),
       sendPeerChannelAllowToChild: (d, cb) => cb(null)});
     const caller = wm(1), callee = wm(2), replacement = wm(3);
-    const dm = {deviceMap: {D: callee}, missingDeviceError: () => ({code: 'MODULE_UNLOADED', message: 'unloaded'})};
+    const unloaded = () => ({code: 'MODULE_UNLOADED', message: 'unloaded'});
+    const dm = {deviceMap: {D: callee}, missingDeviceError: unloaded, missingDeviceErrorForHop: unloaded};
     const broker = new Broker(dm);
     const scenario = ${JSON.stringify(scenario)};
     if (scenario === 'ended') during = () => { delete dm.deviceMap.D; callee.ended = {code: 'MODULE_UNLOADED'}; };

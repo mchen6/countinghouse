@@ -52,6 +52,17 @@ module.exports = {
     throwUnreadable: async () => { throw new Proxy({}, {get() { throw new Error('trap'); }}); },
     throwEmptyMessage: async () => { throw new Error(); },
     callbackObjectMessage: (input, ctx, callback) => callback({message: {reason: 'quota'}}, null),
+    // Review of c10: a fault keeps the fields it can read and renders each
+    // as text; a message that cannot be rendered still gets an answer; a
+    // whitespace-only message is no message.
+    throwStackGetterThrows: async () => {
+      const e = new Error('db down');
+      Object.defineProperty(e, 'stack', {get() { throw new Error('trap'); }});
+      throw e;
+    },
+    throwUnrenderableStack: async () => { throw Object.assign(new Error('x'), {stack: new Proxy({}, {get() { throw new Error('trap'); }})}); },
+    callbackCircularMessage: (input, ctx, callback) => { const m = {}; m.self = m; callback({message: m}, null); },
+    callbackBlankMessage: (input, ctx, callback) => callback(new Error('   '), null),
 
     // A plain object that merely looks like an error is a result, not an error.
     returnLookalike: async () => ({code: 'SHAPE_REJECTED', message: 'SHAPE_REJECTED: shape probe'}),

@@ -50,6 +50,10 @@ const OUTCOMES = [
   {name: 'thrown value with unreadable properties', action: 'throwUnreadable', args: {}},
   {name: 'thrown Error with no message', action: 'throwEmptyMessage', args: {}},
   {name: 'callback error with an object message', action: 'callbackObjectMessage', args: {}},
+  {name: 'thrown Error whose stack getter throws', action: 'throwStackGetterThrows', args: {}},
+  {name: 'thrown Error with an unrenderable stack', action: 'throwUnrenderableStack', args: {}},
+  {name: 'callback error with a circular message', action: 'callbackCircularMessage', args: {}},
+  {name: 'callback error with a blank message', action: 'callbackBlankMessage', args: {}},
   {name: 'old globals', action: 'globalsProbe', args: {}}
 ];
 

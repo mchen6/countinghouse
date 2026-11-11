@@ -168,6 +168,35 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
     assert.deepStrictEqual(w.body, wPlain.body);
   });
 
+  // Review of c10: a fault keeps what it can read, every field as text; a
+  // message that cannot be rendered is still answered; a blank one is none.
+  it('keeps a fault\'s readable fields and renders each as text', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      const g = GOLDEN[mode]['http invoke-action / thrown Error whose stack getter throws'];
+      assert.ok(g !== undefined, `premise: ${mode} in the golden`);
+      assert.strictEqual(g.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode}: ${JSON.stringify(g)}`);
+      assert.strictEqual(g.body.fault.message, 'db down', `${mode}: ${JSON.stringify(g)}`);
+      assert.strictEqual(g.body.fault.name, 'Error', `${mode}: ${JSON.stringify(g)}`);
+      const u = GOLDEN[mode]['http invoke-action / thrown Error with an unrenderable stack'];
+      assert.strictEqual(u.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode}: ${JSON.stringify(u)}`);
+      assert.strictEqual(u.body.fault.message, 'x', `${mode}: ${JSON.stringify(u)}`);
+      assert.ok(typeof(u.body.fault.stack) === 'string', `${mode}: ${JSON.stringify(u)}`);
+    }
+  });
+
+  it('answers a callback failure whose message cannot be rendered, and one whose message is blank', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      const c = GOLDEN[mode]['http invoke-action / callback error with a circular message'];
+      assert.ok(c !== undefined, `premise: ${mode} in the golden`);
+      assert.strictEqual(c.body.code, 'DEVICE_INVOKE_FAIL', `${mode}: ${JSON.stringify(c)}`);
+      const b = GOLDEN[mode]['http invoke-action / callback error with a blank message'];
+      assert.strictEqual(b.body.code, 'DEVICE_INVOKE_FAIL', `${mode}: ${JSON.stringify(b)}`);
+      assert.ok(!/:\s*$/.test(b.body.message), `${mode}: ${JSON.stringify(b)}`);
+    }
+    const st = GOLDEN['single-thread']['http invoke-action / callback error with a circular message'];
+    assert.ok(st.body.message.endsWith(': [unrenderable value]'), JSON.stringify(st));
+  });
+
   // Step 1 (d2): no module-visible error classes, and no `topic` in an answer.
   it('gives modules no old error globals, in either mode', () => {
     for (const mode of Object.keys(GOLDEN)) {

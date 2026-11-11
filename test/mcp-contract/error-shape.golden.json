@@ -1718,6 +1718,327 @@
         }
       }
     },
+    "http invoke-action / thrown Error whose stack getter throws": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "db down",
+          "name": "Error"
+        }
+      }
+    },
+    "mcp tools/call / thrown Error whose stack getter throws": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / thrown Error whose stack getter throws": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / thrown Error with an unrenderable stack": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception",
+        "fault": {
+          "message": "x",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / thrown Error with an unrenderable stack": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / thrown Error with an unrenderable stack": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_EXCEPTION: Device interface call threw an exception"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device interface call threw an exception"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / callback error with a circular message": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_FAIL",
+        "message": "Device call failed"
+      }
+    },
+    "mcp tools/call / callback error with a circular message": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device call failed"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / callback error with a circular message": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_FAIL: Device call failed"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device call failed"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            }
+          }
+        }
+      }
+    },
+    "http invoke-action / callback error with a blank message": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_FAIL",
+        "message": "Device call failed"
+      }
+    },
+    "mcp tools/call / callback error with a blank message": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device call failed"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+          }
+        }
+      }
+    },
+    "mcp tasks/result / callback error with a blank message": {
+      "created": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "task": {
+              "taskId": "<taskId>",
+              "status": "working",
+              "ttl": null,
+              "createdAt": "<time>",
+              "lastUpdatedAt": "<time>"
+            }
+          }
+        }
+      },
+      "settled": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "taskId": "<taskId>",
+            "status": "failed",
+            "ttl": null,
+            "createdAt": "<time>",
+            "lastUpdatedAt": "<time>",
+            "statusMessage": "DEVICE_INVOKE_FAIL: Device call failed"
+          }
+        }
+      },
+      "result": {
+        "status": 200,
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "isError": true,
+            "content": [
+              {
+                "type": "text",
+                "text": "Device call failed"
+              }
+            ],
+            "_meta": {
+              "countinghouse/code": "DEVICE_INVOKE_FAIL"
+            }
+          }
+        }
+      }
+    },
     "http invoke-action / old globals": {
       "status": 200,
       "body": {
@@ -2507,6 +2828,119 @@
             {
               "type": "text",
               "text": "Device call failed: {\"reason\":\"quota\"}"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+          }
+        }
+      }
+    },
+    "http invoke-action / thrown Error whose stack getter throws": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: db down",
+        "fault": {
+          "message": "db down",
+          "name": "Error"
+        }
+      }
+    },
+    "mcp tools/call / thrown Error whose stack getter throws": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: db down"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / thrown Error with an unrenderable stack": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_EXCEPTION",
+        "message": "Device interface call threw an exception: x",
+        "fault": {
+          "message": "x",
+          "name": "Error",
+          "stack": "<stack>"
+        }
+      }
+    },
+    "mcp tools/call / thrown Error with an unrenderable stack": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device interface call threw an exception: x"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_EXCEPTION"
+          }
+        }
+      }
+    },
+    "http invoke-action / callback error with a circular message": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_FAIL",
+        "message": "Device call failed: [unrenderable value]"
+      }
+    },
+    "mcp tools/call / callback error with a circular message": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device call failed: [unrenderable value]"
+            }
+          ],
+          "_meta": {
+            "countinghouse/code": "DEVICE_INVOKE_FAIL"
+          }
+        }
+      }
+    },
+    "http invoke-action / callback error with a blank message": {
+      "status": 500,
+      "body": {
+        "code": "DEVICE_INVOKE_FAIL",
+        "message": "Device call failed"
+      }
+    },
+    "mcp tools/call / callback error with a blank message": {
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "isError": true,
+          "content": [
+            {
+              "type": "text",
+              "text": "Device call failed"
             }
           ],
           "_meta": {

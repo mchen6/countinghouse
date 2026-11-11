@@ -217,6 +217,46 @@
             }
           },
           {
+            "name": "throwStackGetterThrows",
+            "description": "error-shape case throwStackGetterThrows",
+            "input": {
+              "schema": "/shapeService/throwStackGetterThrows/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwStackGetterThrows/output"
+            }
+          },
+          {
+            "name": "throwUnrenderableStack",
+            "description": "error-shape case throwUnrenderableStack",
+            "input": {
+              "schema": "/shapeService/throwUnrenderableStack/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwUnrenderableStack/output"
+            }
+          },
+          {
+            "name": "callbackCircularMessage",
+            "description": "error-shape case callbackCircularMessage",
+            "input": {
+              "schema": "/shapeService/callbackCircularMessage/input"
+            },
+            "output": {
+              "schema": "/shapeService/callbackCircularMessage/output"
+            }
+          },
+          {
+            "name": "callbackBlankMessage",
+            "description": "error-shape case callbackBlankMessage",
+            "input": {
+              "schema": "/shapeService/callbackBlankMessage/input"
+            },
+            "output": {
+              "schema": "/shapeService/callbackBlankMessage/output"
+            }
+          },
+          {
             "name": "globalsProbe",
             "description": "error-shape case globalsProbe",
             "input": {

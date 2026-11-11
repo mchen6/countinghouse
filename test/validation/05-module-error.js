@@ -215,6 +215,37 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     });
   });
 
+  // /code-review medium on c10.
+  describe('the review of c10', () => {
+    it('never throws on an extra argument it cannot render, and says so', () => {
+      const circular = {}; circular.self = circular;
+      const odd = [circular, {n: 1n}, {toJSON() { throw new Error('toJSON'); }},
+        new Proxy({}, {get() { throw new Error('trap'); }})];
+      for (const a of odd) {
+        let m;
+        assert.doesNotThrow(() => { m = new CountinghouseError('DEVICE_INVOKE_FAIL', a).message; });
+        assert.strictEqual(m, `${new CountinghouseError('DEVICE_INVOKE_FAIL').message}: [unrenderable value]`);
+      }
+      const fn = () => {}; fn.toString = () => { throw new Error('toString'); };
+      assert.doesNotThrow(() => new CountinghouseError('DEVICE_INVOKE_FAIL', fn));
+    });
+    it('treats a whitespace-only argument as empty: no dangling ": "', () => {
+      const bare = new CountinghouseError('DEVICE_INVOKE_FAIL').message;
+      assert.strictEqual(new CountinghouseError('DEVICE_INVOKE_FAIL', '   ').message, bare);
+      assert.strictEqual(new CountinghouseError('DEVICE_INVOKE_FAIL', '\t', 'a').message, `${bare}: a`);
+    });
+    it('the plain-Error rule guards only the reads on the thrown value, not the runtime\'s own building', () => {
+      const original = CountinghouseError.module;
+      CountinghouseError.module = () => { throw new Error('a runtime bug'); };
+      try {
+        assert.throws(() => CountinghouseError.fromModule(Object.assign(new Error('x'), {code: 'SHAPE_REJECTED'})), /a runtime bug/);
+      } finally {
+        CountinghouseError.module = original;
+      }
+      assert.strictEqual(CountinghouseError.fromModule(Object.assign(new Error('x'), {code: 'SHAPE_REJECTED'})).code, 'SHAPE_REJECTED');
+    });
+  });
+
   // /code-review medium on c9.
   describe('the review of c9', () => {
     it('renders no dangling ": " when the extra arguments are all empty', () => {
