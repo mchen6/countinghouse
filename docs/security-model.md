@@ -128,16 +128,18 @@ any module code). Stops:
   on one;
 - the Redis endpoint (R2-1, part 2: `--redisUrl`'s host and port): refused
   with `EACCES` in `audit` and `enforce`, under its configured host in every
-  spelling of that address (`10.5` for `10.0.0.5`), an empty host (Node's
-  `localhost`), any 127/8, `0.0.0.0`, `::1` or `::` literal in every form the
-  resolver accepts (`127.1`, `2130706433`, IPv4-mapped), a port in any
-  string form Node reads as a number (`'0x18eb'`), and the loopback
-  names (`localhost`,
-  any name under `.localhost`, `localhost.localdomain`, `ip6-localhost`,
-  `ip6-loopback`). This is an in-worker check, not a boundary: a name that
-  reaches loopback only through `/etc/hosts` or DNS, a `lookup` function the
-  module passes, and another address of the same machine (a LAN IP) are not
-  denied until the network broker (parts 3 and 4);
+  spelling of that address (`10.5` for `10.0.0.5`, and its IPv4-mapped and
+  IPv4-compatible forms), an empty host (Node's `localhost`), any 127/8,
+  `0.0.0.0`, `::1` or `::` literal in every form the resolver accepts
+  (`127.1`, `2130706433`, IPv4-mapped or -compatible), a port in any string
+  form Node reads as a number (`'0x18eb'`), and the loopback names
+  (`localhost`, any name under `.localhost`, `localhost.localdomain`,
+  `ip6-localhost`, `ip6-loopback`). A Unix-socket Redis is refused under
+  every spelling of its path (`..`, `//`, relative). This is an in-worker
+  check, not a boundary: a name that reaches loopback only through
+  `/etc/hosts` or DNS, a `lookup` function the module passes, another
+  address of the same machine (a LAN IP), and a symlink or hard link to the
+  socket are not denied until the network broker (parts 3 and 4);
 - `CHUtil.loadFile` outside the module's own directory.
 
 Each override is non-writable and non-configurable. `net`, `http` and the
