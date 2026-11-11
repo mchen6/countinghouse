@@ -2104,7 +2104,7 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
-        "message": "Device interface call threw an exception: ",
+        "message": "Device interface call threw an exception",
         "fault": {
           "message": "null"
         }
@@ -2120,7 +2120,7 @@
           "content": [
             {
               "type": "text",
-              "text": "Device interface call threw an exception: "
+              "text": "Device interface call threw an exception"
             }
           ],
           "_meta": {
@@ -2133,7 +2133,7 @@
       "status": 500,
       "body": {
         "code": "DEVICE_INVOKE_EXCEPTION",
-        "message": "Device interface call threw an exception: ",
+        "message": "Device interface call threw an exception",
         "fault": {
           "message": "undefined"
         }
@@ -2149,7 +2149,7 @@
           "content": [
             {
               "type": "text",
-              "text": "Device interface call threw an exception: "
+              "text": "Device interface call threw an exception"
             }
           ],
           "_meta": {

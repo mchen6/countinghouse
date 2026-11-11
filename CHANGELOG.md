@@ -69,8 +69,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `{_details: 'unserialisable'}`, with a warn line, instead of vanishing.
 - Only an `Error` is typed by its code: a thrown plain object with a code,
   `throw null`, or `Promise.reject()` is a crash (`DEVICE_INVOKE_EXCEPTION`),
-  answered at once. The last two used to leave the call unanswered until
-  the device timeout.
+  answered at once with the catalogue's text alone. The last two used to
+  leave the call unanswered until the device timeout. A callback handler's
+  `callback({code: …})` with a plain object is untyped too
+  (`DEVICE_INVOKE_FAIL`; it used to keep its code).
+- A module's details are a plain object; anything else (an array, a Map, a
+  class instance) is `{}`, in every mode. A composing module's `ctx.call`
+  gets a copy of a callee's error (never its `cause` or its object), in
+  single-thread mode as over a thread reply; its `origin` tells a runtime
+  code from a callee's own code of the same name.
+- A composition hop to a device never hosted here rejects with
+  `DEVICE_NOT_FOUND` on the main-thread path too (it had no code), still
+  only after the access check.
 - A synchronous throw from a plain (non-async) handler is classified like a
   rejection: `throw ctx.error(…)` keeps its code (it used to be
   `DEVICE_INVOKE_EXCEPTION` whatever was thrown); an untyped throw is still

@@ -119,6 +119,16 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
     }
   });
 
+  // /code-review medium on c8: with nothing to say, the message is the
+  // catalogue's text alone (no dangling ': '), the same in either mode.
+  it('answers a message-less crash with the catalogue text alone, alike in either mode', () => {
+    for (const f of ['thrown null', 'rejected with nothing']) {
+      const seen = Object.keys(GOLDEN).map((mode) => GOLDEN[mode][`http invoke-action / ${f}`].body.message);
+      seen.forEach((m) => assert.ok(!/:\s*$/.test(m), `${f}: ${JSON.stringify(seen)}`));
+      assert.strictEqual(new Set(seen).size, 1, `${f}: ${JSON.stringify(seen)}`);
+    }
+  });
+
   // Review of #37: a thrown value that is not an Error (null, nothing, a
   // plain object with a code) is a crash, answered at once in either mode --
   // not left unanswered (DEVICE_NOT_RESPONDING), and not a typed module error.

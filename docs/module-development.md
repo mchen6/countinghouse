@@ -92,7 +92,15 @@ wrong (`INPUT_REJECTED` for input your schema can't rule out,
 runtime's, and a module never raises them. The caller gets your code and
 the message `CODE: message`, in worker and single-thread mode alike. So
 does a module that calls yours with `ctx.call`: it gets your error whole
-(code, message and details), in either mode.
+(code, message and details, as a copy: never your `cause` or your object),
+in either mode.
+
+When you call another module, its rejection's `origin` says whose error it
+is: `'runtime'` for the runtime's (`MODULE_RELOADING`, `PEER_GONE`, a
+`CTX_CALL_…` refusal), `'module'` for the callee's own. A callee is free to
+name its code anything, a catalogue name included, so check
+`err.origin === 'runtime'` before acting on a runtime code (retrying on
+`MODULE_RELOADING`, say), not the code alone.
 
 Returning the error is the preferred form. Throwing it
 (`throw ctx.error(…)`), from an async function or a plain one, or passing it
@@ -113,7 +121,8 @@ answered as `DEVICE_INVOKE_EXCEPTION` with the original in the fault, so an
 operator can tell a failure you didn't handle from one you meant. To raise
 such a code on purpose, use `ctx.error`. Only an `Error` counts: a thrown
 plain object (even one with a `code`), `null`, or a rejection with nothing
-is a crash too.
+is a crash too, and a callback handler's `callback({code: …})` is an
+untyped failure (`DEVICE_INVOKE_FAIL`).
 
 Catch your dependencies' errors and wrap them with `ctx.error`. A
 dependency's own coded `Error` that you let escape (`SQLITE_BUSY`,

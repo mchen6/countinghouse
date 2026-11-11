@@ -76,10 +76,17 @@ describe('sandbox 15: calls to a restarting module', () => {
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 
-  it('routed path: an unknown device is answered as before, to a caller with access', () => {
+  // /code-review medium on c8: with its code, as every other missing-device
+  // reason (it used to carry only the text 'device not found in map', so the
+  // composing module's rejection had no code).
+  it('routed path: an unknown device is DEVICE_NOT_FOUND, to a caller with access', () => {
     const wm = callerWM();
     fakeDm(false).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-x', 'svc', 'act', {}, 5, wm);
-    assert.deepStrictEqual(wm.sent, [{msgID: 5, errMsg: 'device not found in map', data: null}]);
+    assert.strictEqual(wm.sent.length, 1, JSON.stringify(wm.sent));
+    assert.strictEqual(wm.sent[0].msgID, 5);
+    assert.strictEqual(wm.sent[0].errCode, 'DEVICE_NOT_FOUND', JSON.stringify(wm.sent));
+    assert.strictEqual(wm.sent[0].data, null);
+    assert.ok(typeof wm.sent[0].errMsg === 'string' && wm.sent[0].errMsg !== '', JSON.stringify(wm.sent));
   });
 
   // Whether a device is missing, and why, is answered only after the access

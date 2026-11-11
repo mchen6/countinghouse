@@ -181,10 +181,12 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   describe('the review of #37', () => {
     const {hopError} = require('../../lib/countinghouse-error');
     it('hopError passes a module\'s error through whole, its own code included', () => {
+      // whole, as a copy (review of c8)
+      const same = (a, b) => assert.deepStrictEqual([a.code, a.message, a.origin, a.details], [b.code, b.message, b.origin, b.details]);
       const own = CountinghouseError.module('SHAPE_GONE', 'the shape is gone', {n: 1});
-      assert.strictEqual(hopError(own), own);
+      same(hopError(own), own);
       const named = CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7});
-      assert.strictEqual(hopError(named), named);
+      same(hopError(named), named);
       // a callee's plain error with a made-up code is still not passed off as typed
       const plain = Object.assign(new Error('made up'), {code: 'MADE_UP'});
       assert.ok(!(hopError(plain) instanceof CountinghouseError) && hopError(plain).code === undefined);
@@ -210,6 +212,45 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     it('replyFields(null) is the success pair', () => {
       assert.deepStrictEqual(CountinghouseError.replyFields(null), {errMsg: null, errCode: null});
       assert.deepStrictEqual(CountinghouseError.replyFields(undefined), {errMsg: null, errCode: null});
+    });
+  });
+
+  // /code-review medium on c8.
+  describe('the review of c8', () => {
+    const {hopError} = require('../../lib/countinghouse-error');
+    it('hopError hands a composing module a copy of a module\'s error, as a reply would, in every mode', () => {
+      const details = {n: 1, deep: {k: 'v'}};
+      const own = CountinghouseError.module('SHAPE_GONE', 'the shape is gone', Object.assign({cause: new Error('inner secret')}, details));
+      const seen = hopError(own);
+      assert.notStrictEqual(seen, own);
+      assert.ok(seen instanceof CountinghouseError);
+      assert.deepStrictEqual([seen.code, seen.message, seen.origin, seen.kind], ['SHAPE_GONE', 'SHAPE_GONE: the shape is gone', 'module', 'module']);
+      assert.deepStrictEqual(seen.details, details);
+      assert.notStrictEqual(seen.details, own.details);
+      assert.strictEqual(seen.details.deep === own.details.deep, false);
+      assert.strictEqual(seen.cause, undefined, 'the callee\'s cause stays with the callee');
+      // what a worker reply gives the composing module
+      const viaReply = hopError(CountinghouseError.fromReplyFields(CountinghouseError.replyFields(own)));
+      assert.deepStrictEqual(JSON.stringify(viaReply), JSON.stringify(seen));
+      assert.deepStrictEqual(viaReply.details, seen.details);
+    });
+    it('details that throw when inspected never make module() or replyFields throw', () => {
+      const {proxy, revoke} = Proxy.revocable({a: 1}, {});
+      revoke();
+      const keysThrow = new Proxy({}, {ownKeys() { throw new Error('trap'); }});
+      for (const d of [proxy, keysThrow]) {
+        let e;
+        assert.doesNotThrow(() => { e = CountinghouseError.module('X_Y', 'm', d); });
+        assert.doesNotThrow(() => CountinghouseError.replyFields(e));
+        assert.doesNotThrow(() => CountinghouseError.replyFields(Object.assign(CountinghouseError.module('X_Y', 'm'), {details: d})));
+      }
+    });
+    it('details are a plain object: a Map, a Date, a Buffer or a class instance is {}', () => {
+      class Row { constructor() { this.row = 7; } }
+      for (const d of [new Map([['row', 7]]), new Date(0), Buffer.from('ab'), new Row()]) {
+        assert.deepStrictEqual(CountinghouseError.module('X_Y', 'm', d).details, {}, String(d));
+      }
+      assert.deepStrictEqual({...CountinghouseError.module('X_Y', 'm', Object.assign(Object.create(null), {row: 7})).details}, {row: 7});
     });
   });
 });

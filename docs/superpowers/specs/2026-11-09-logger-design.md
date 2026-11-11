@@ -225,8 +225,12 @@ underlying error; it is kept off every serialised form. A module's error
 crosses every reply between threads whole (code, message, details; details
 that don't survive JSON arrive as `{_details: 'unserialisable'}`, with a
 warn line), so worker mode answers it as single-thread mode does, and a
-composing module's `ctx.call` gets it as it would in-process: the hop
-passes a module-origin error through, whatever its code (step 1 (d2)). A runtime error a module
+composing module's `ctx.call` gets it alike in every mode: the hop
+passes a module-origin error through, whatever its code, as a copy (what a
+reply carries, never the callee's object or `cause`; step 1 (d2)), and the
+composing module tells a runtime code from a callee's own by `origin`.
+`details` is a plain object; anything else (an array, a Map, a class
+instance) is `{}`. A runtime error a module
 rethrows unchanged (from `ctx.call`, say) passes through and keeps
 `origin: 'runtime'`; one it wraps with `ctx.error` is the module's, with the
 original in `cause`. Rendering to the caller stays as today (the code's text, then ": ",
