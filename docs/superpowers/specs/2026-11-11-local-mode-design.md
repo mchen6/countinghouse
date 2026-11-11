@@ -55,7 +55,7 @@ What the runtime keeps in Redis today, and what replaces each in `local`:
 
 | Use today | File / module | Replacement in `local` |
 |---|---|---|
-| Metering: balances, free-call counts, `recordCall`, `checkBalance`, `rateLimit` | `lib/metering/redis-provider.js` (`MeteringProvider` interface: three methods) | `lib/metering/local-provider.js`: the same interface over an in-memory map, persisted to `<storePath>/metering.json` on change (debounced, atomic). Same semantics: the demo key's balance is unlimited as today; a configured key's balance decrements. Rate limits are per-key sliding windows in memory. |
+| Metering: balances, free-call counts, `recordCall`, `checkBalance`, `rateLimit` | `lib/metering/redis-provider.js` (`MeteringProvider` interface: three methods) | `lib/metering/local-provider.js`: the same interface over an in-memory map, persisted to `<storePath>/metering.json` on change (debounced, atomic). `recordCall` counts; `checkBalance` and `rateLimit` never refuse unless `--meter` is given (section 4): one user has no balance to run out of and no neighbour to be limited for. With `--meter`, the semantics are today's: the demo key unlimited, a configured key's balance decrementing, per-key sliding windows in memory. |
 | Module store `ctx.redis` (db 5, 23 allowed commands, `lib/redis-api.js`) | `lib/redis-api.js`, `lib/supported-redis-commands.json` | `lib/local-kv.js`: the same 23 commands over an in-memory map with Redis semantics for strings, hashes, lists, sets, expiry (the subset the allowlist names), persisted to `<storePath>/kv.json` on a timer and at shutdown. Modules see no difference in the API. |
 | Jobs: `/add-job`, job processor, schedulers, MCP `tasks/*` | `lib/job-control.js` (BullMQ Queue, Worker, QueueEvents) | `lib/job-control-local.js`: the same surface `job-control.js` exposes to the rest of the runtime (add, get, result, list, cancel, schedulers, the completion hook), run in-process by one worker loop with the same per-job timeout; state in memory, results kept until read or for `--jobResultTtl`; not persisted across restarts, said in the docs and in `tasks/get` for a job from a previous process ("not found"). |
 | API log to Redis (`--apiMonitor`) | `lib/session.js`, `lib/logger-stream-redis.js` | Already retired by the logger work; in `local` it is simply absent. |
@@ -74,8 +74,9 @@ layer parses bodies, handles batches and writes responses. `--stdio` adds a
 second route layer: newline-delimited JSON-RPC on stdin, responses on stdout,
 one line each, batches handled as the HTTP layer does (one `handle` per
 entry), notifications answered with nothing. The key is the one `--stdio`
-implies: the process's own demo key (or `COUNTINGHOUSE_API_KEY`), so no
-client header is needed; the launcher is the only client. `--stdio` and
+implies: the process's own in-memory key (section 4) or
+`COUNTINGHOUSE_API_KEY`, so no client header is needed; the launcher is the
+only client. `--stdio` and
 `--port` are exclusive. All logging goes to stderr (stdout is the transport;
 the logger already separates them, this verifies it). The process exits when
 stdin closes, after draining in-flight calls (bounded by the device timeout).
@@ -96,17 +97,52 @@ unaffected). A module loaded with `--loadModule` whose role is `part` is
 loaded listed: `false` only when a scenario pulled it in; loaded directly it
 behaves as today (listed), so parts can be exercised alone in tests.
 
-The auth binding: in `--store local`, when `--authConfigPath` names a file
-that does not exist, the runtime generates the demo key as today and, for
-each loaded scenario, a `runsModules` binding for it and its parts under one
-local identity, so `ctx.call` is authorised without the user editing
-`auth.json`. An existing file is never changed (today's rule).
+The auth binding: in `--store local` without `--authConfigPath`, the runtime
+generates the key and, for each loaded scenario, a `runsModules` binding for
+it and its parts under one local identity, all in memory (section 4), so
+`ctx.call` is authorised without the user editing anything. With
+`--authConfigPath`, the file is honoured as today and never changed.
 
 Missing part or credential: the scenario is not loaded, the log names the
 part or the variable, and the scenario's tools are absent. Other modules
 load normally.
 
-### 4. Boundary counters and usage records
+### 4. One user: the single-identity profile (maintainer, 2026-11-11)
+
+A client machine has one user, who uses every tool the process hosts. The
+multi-tenant code path stays: the same access check, the same per-key tool
+listing, the same metering interface, the same opaque caller id, so a module
+behaves identically here and on a hosted runtime, and there is one auth path
+to secure, not two. What changes is what that path is fed and what it
+writes:
+
+- **No auth file.** `--store local --stdio` without `--authConfigPath`
+  keeps the generated key and the scenario bindings in memory, per process.
+  Nothing is written, nothing is left on disk for a module to read, nothing
+  for the user to edit. The demo-key file of today's zero-config start is
+  not written in this profile.
+- **No balance gate.** The local metering provider records every call for
+  the usage records and the receipt but never refuses one for balance or
+  rate. `--meter` restores today's balances and limits for an operator
+  testing a hosted configuration locally.
+- **A stable caller id.** `ctx.caller.id` is derived as R2-1 says, from an
+  identity secret kept per install at `<storePath>/.identity-secret` (mode
+  0600, outside every module's namespace), so a module's per-user data
+  survives restarts and the id is the same across the user's packs. The
+  in-memory key changes per process; the id does not, because the secret
+  and the fixed source string `local` are its inputs, not the key.
+- **No tenant vocabulary reaches the user.** Over `--stdio`, no log line,
+  error text or tool result mentions a key, a balance, a free-call count or
+  a rate limit: the user set none. The error catalogue's balance and
+  rate-limit codes cannot be produced in this profile, so nothing is
+  reworded; the start-up banner and the per-call log lines name the pack
+  and the tool only.
+
+Hosting is untouched: `--store redis` has no profile, and an operator who
+runs `--store local --port` with an auth file gets today's multi-key
+behaviour over HTTP with a local store.
+
+### 5. Boundary counters and usage records
 
 Two counting points, both on the main thread:
 
@@ -158,12 +194,12 @@ with `RECEIPT_RESERVED`). In `--store redis` the counters and the receipt
 run the same way; the usage files are written only when `--usageDir` is
 given (hosting operators opt in).
 
-### 5. Node floor
+### 6. Node floor
 
 Local mode's floor is the runtime's: 22.16 with the resolve shim (its own
 spec, `2026-11-11-node-floor-shim-design.md`), to be merged first.
 
-### 6. What stays the same
+### 7. What stays the same
 
 Worker mode, the sandbox (`enforce` for every pack module), the fs broker,
 the always-denied set (minus the Redis endpoint in `local`), the error
@@ -172,12 +208,17 @@ codes, the MCP surface for listed modules, `countinghouse-validate`.
 ## Security and privacy
 
 - `--store local` opens no socket of its own; `--stdio` opens none at all.
-- The local store's files hold balances, counters and the modules' own
-  `ctx.redis` data: nothing the runtime did not already hold in Redis. The
-  usage files hold counts and names, never content or credential values.
+- The local store's files hold counters and the modules' own `ctx.redis`
+  data (balances only under `--meter`): nothing the runtime did not already
+  hold in Redis. The usage files hold counts and names, never content or
+  credential values.
 - The store path sits outside every module's namespace (the broker's rule
   for the launcher's home applies: `<moduleDataPath>/../`).
-- The demo key is never printed when `--stdio` is the transport.
+- In the single-identity profile no auth file exists, so the always-denied
+  set has one file fewer to guard; the identity secret under `<storePath>`
+  stays in it.
+- The key is never printed, logged or written when `--stdio` is the
+  transport; it exists only in the process's memory.
 
 ## Tests (the plan writes them; the spec names what must hold)
 
@@ -197,6 +238,16 @@ codes, the MCP surface for listed modules, `countinghouse-validate`.
   `Out` record with exact byte and line counts matching the fixtures, and a
   receipt sentence matching the regex; a module output with a `receipt`
   field is refused.
+- Single-identity profile: a `--store local --stdio` start without
+  `--authConfigPath` writes no auth file and no key anywhere under
+  `<storePath>` or `<moduleDataPath>`; a scenario tool called more times
+  than any free-call count is never refused; with `--meter` and a configured
+  key, the balance decrements as on Redis; `ctx.caller.id` is identical
+  across two process starts and differs after the identity secret is
+  replaced; the stderr output and every error text produced over stdio by
+  the profile's own refusals (missing part, missing credential,
+  `MODULE_NOT_LISTED`, output validation) contain none of the words key,
+  balance, free call, rate limit.
 - The whole suite on `--store redis` unchanged (no behaviour change).
 - CI: a local-mode smoke test (stdio, one scenario, no Redis service) on
   ubuntu, macos and windows runners; the Redis-backed suites stay on Linux.
@@ -205,7 +256,8 @@ codes, the MCP surface for listed modules, `countinghouse-validate`.
 
 Floor shim → store selection point with the Redis implementations behind
 it (no behaviour change, whole suite green) → local metering provider →
-local kv → `--stdio` → roles and scenario loading → counters, usage files,
+local kv → `--stdio` → roles and scenario loading → the single-identity
+profile (in-memory key and bindings, `--meter`) → counters, usage files,
 receipt → local job runner → docs (README, CLI reference, security-model's
 mode table: a `local` column; `docs/deployment.md`: "hosting keeps Redis").
 
