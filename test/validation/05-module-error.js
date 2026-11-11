@@ -215,8 +215,27 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     });
   });
 
-  // /code-review medium on c11.
-  describe('the review of c11', () => {
+  // /code-review medium on c13.
+  describe('the review of c13', () => {
+    it('makes a non-string code text before using it: never thrown by, never run', () => {
+      let ran = 0;
+      const code = {toString() { ran++; throw new Error('x'); }};
+      let e;
+      assert.doesNotThrow(() => { e = CountinghouseError.module(code, 'm'); });
+      assert.strictEqual(ran, 0);
+      assert.strictEqual(typeof(e.code), 'string');
+      const f = CountinghouseError.module(() => 1, 'm');
+      assert.strictEqual(f.code, '[function]');
+      assert.strictEqual(typeof(CountinghouseError.replyFields(f).errCode), 'string');
+      assert.doesNotThrow(() => structuredClone(CountinghouseError.replyFields(f)));
+    });
+    it('treats a blank module message as none: no dangling ": "', () => {
+      assert.strictEqual(CountinghouseError.module('SHAPE_REJECTED', '   ').message, 'SHAPE_REJECTED');
+    });
+  });
+
+  // /code-review medium on c12.
+  describe('the review of c12', () => {
     it('renders a module\'s non-string message as text: a function as "[function]", never its source', () => {
       const fn = function moduleSecretSource() { return 'body of the module'; };
       assert.strictEqual(CountinghouseError.module('SHAPE_REJECTED', fn).message, 'SHAPE_REJECTED: [function]');

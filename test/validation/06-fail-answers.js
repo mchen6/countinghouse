@@ -89,6 +89,26 @@ describe('validation 06: a handler failure is always answered (Service.doActionC
     }
   });
 
+  it('never logs a runtime bug\'s message, even one that looks like a stack frame, or a thrown string', async () => {
+    const original = CountinghouseError.module;
+    const originalE = LOG.E;
+    const lines = [];
+    LOG.E = (line) => { lines.push(line); return line; };
+    try {
+      CountinghouseError.module = () => { throw new TypeError('module text\n    at secret-token.js:1:1'); };
+      await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'})));
+      CountinghouseError.module = () => { throw 'bad secret-token'; };
+      const b = await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'})));
+      assert.strictEqual(b.err.code, 'DEVICE_INVOKE_EXCEPTION');
+    } finally {
+      CountinghouseError.module = original;
+      LOG.E = originalE;
+    }
+    assert.strictEqual(lines.length, 2, JSON.stringify(lines));
+    for (const line of lines) assert.ok(!line.includes('secret-token') && !line.includes('module text'), line);
+    assert.ok(/06-fail-answers\.js:\d+/.test(lines[0]), lines[0]);
+  });
+
   it('reads a failure\'s message once', async () => {
     let reads = 0;
     const thrown = {get message() { reads++; return 'counted'; }};
