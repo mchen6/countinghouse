@@ -147,6 +147,17 @@ describe('sandbox 34: the always-denied set', function() {
         assert.deepStrictEqual(toolOutput(own), {code: 'connected'}, JSON.stringify(own));
       });
 
+      // Review of #36: a loopback Redis is reached under any loopback
+      // literal (all of 127/8, the short and numeric IPv4 forms getaddrinfo
+      // accepts, ::1 written out, IPv4-mapped) and the loopback names.
+      it('the Redis endpoint is EACCES under any loopback literal and the loopback names', async () => {
+        for (const host of ['127.0.0.2', '127.1', '2130706433', '0x7f.0.0.1', '0', '0:0:0:0:0:0:0:1', '::ffff:127.0.0.2',
+          'LOCALHOST', 'localhost.', 'redis.localhost', 'localhost.localdomain', 'ip6-localhost']) {
+          const r = await mcpCall(port, ADMIN, tool('connect'), {host: host, port: REDIS.port});
+          assert.deepStrictEqual(toolOutput(r), {code: 'EACCES'}, `${host}: ${JSON.stringify(r)}`);
+        }
+      });
+
       it('http.request over the Redis unix socket', function() {
         // --redisUrl has no unix-socket form today (lib/cli-options.js), so
         // there is no socket path to deny; the wrapper is in place for when
