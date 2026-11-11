@@ -45,6 +45,13 @@ module.exports = {
     throwNull: () => { throw null; },
     rejectEmpty: () => Promise.reject(),
     throwPlainObject: async () => { throw {code: 'SHAPE_REJECTED', message: 'shape probe'}; },
+    // Review of c9: a thrown value whose properties throw when read is a
+    // crash too, answered at once; an Error with no message gets the
+    // catalogue's text alone; a callback failure whose message is an object
+    // keeps it in the message, as before.
+    throwUnreadable: async () => { throw new Proxy({}, {get() { throw new Error('trap'); }}); },
+    throwEmptyMessage: async () => { throw new Error(); },
+    callbackObjectMessage: (input, ctx, callback) => callback({message: {reason: 'quota'}}, null),
 
     // A plain object that merely looks like an error is a result, not an error.
     returnLookalike: async () => ({code: 'SHAPE_REJECTED', message: 'SHAPE_REJECTED: shape probe'}),

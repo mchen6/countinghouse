@@ -215,6 +215,22 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     });
   });
 
+  // /code-review medium on c9.
+  describe('the review of c9', () => {
+    it('renders no dangling ": " when the extra arguments are all empty', () => {
+      assert.strictEqual(new CountinghouseError('MODULE_UNLOADED', undefined).message, new CountinghouseError('MODULE_UNLOADED').message);
+      assert.strictEqual(new CountinghouseError('MODULE_UNLOADED', null, '').message, new CountinghouseError('MODULE_UNLOADED').message);
+      const two = new CountinghouseError('MODULE_UNLOADED', 'a', null).message;
+      assert.ok(/: a$/.test(two), two);
+      assert.ok(/: a b$/.test(new CountinghouseError('MODULE_UNLOADED', 'a', 'b').message));
+    });
+    it('the plain-Error rule never throws on a value whose properties throw', () => {
+      const p = new Proxy({}, {get() { throw new Error('trap'); }, getPrototypeOf() { throw new Error('trap'); }});
+      assert.doesNotThrow(() => CountinghouseError.fromModule(p));
+      assert.strictEqual(CountinghouseError.fromModule(p), null);
+    });
+  });
+
   // /code-review medium on c8.
   describe('the review of c8', () => {
     const {hopError} = require('../../lib/countinghouse-error');
@@ -229,10 +245,11 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       assert.notStrictEqual(seen.details, own.details);
       assert.strictEqual(seen.details.deep === own.details.deep, false);
       assert.strictEqual(seen.cause, undefined, 'the callee\'s cause stays with the callee');
-      // what a worker reply gives the composing module
+      // what a worker reply gives the composing module: the same, field by field
       const viaReply = hopError(CountinghouseError.fromReplyFields(CountinghouseError.replyFields(own)));
-      assert.deepStrictEqual(JSON.stringify(viaReply), JSON.stringify(seen));
-      assert.deepStrictEqual(viaReply.details, seen.details);
+      const fields = (x) => ({name: x.name, code: x.code, message: x.message, origin: x.origin, kind: x.kind,
+        httpStatus: x.httpStatus, details: x.details, cause: x.cause, keys: Object.keys(x)});
+      assert.deepStrictEqual(fields(viaReply), fields(seen));
     });
     it('details that throw when inspected never make module() or replyFields throw', () => {
       const {proxy, revoke} = Proxy.revocable({a: 1}, {});

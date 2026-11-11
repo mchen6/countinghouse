@@ -86,7 +86,8 @@ describe('sandbox 15: calls to a restarting module', () => {
     assert.strictEqual(wm.sent[0].msgID, 5);
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_NOT_FOUND', JSON.stringify(wm.sent));
     assert.strictEqual(wm.sent[0].data, null);
-    assert.ok(typeof wm.sent[0].errMsg === 'string' && wm.sent[0].errMsg !== '', JSON.stringify(wm.sent));
+    // the same text as over a direct peer channel: no device ID (review of c9)
+    assert.strictEqual(wm.sent[0].errMsg, new CountinghouseError('DEVICE_NOT_FOUND').message, JSON.stringify(wm.sent));
   });
 
   // Whether a device is missing, and why, is answered only after the access

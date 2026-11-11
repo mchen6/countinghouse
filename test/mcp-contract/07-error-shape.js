@@ -122,7 +122,7 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
   // /code-review medium on c8: with nothing to say, the message is the
   // catalogue's text alone (no dangling ': '), the same in either mode.
   it('answers a message-less crash with the catalogue text alone, alike in either mode', () => {
-    for (const f of ['thrown null', 'rejected with nothing']) {
+    for (const f of ['thrown null', 'rejected with nothing', 'thrown Error with no message']) {
       const seen = Object.keys(GOLDEN).map((mode) => GOLDEN[mode][`http invoke-action / ${f}`].body.message);
       seen.forEach((m) => assert.ok(!/:\s*$/.test(m), `${f}: ${JSON.stringify(seen)}`));
       assert.strictEqual(new Set(seen).size, 1, `${f}: ${JSON.stringify(seen)}`);
@@ -140,6 +140,32 @@ describe('mcp-contract 07: error bodies are byte-identical to the golden (logger
         assert.strictEqual(a.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode} / ${f}: ${JSON.stringify(a)}`);
       }
     }
+  });
+
+  // Review of c9: reading a thrown value never stops the answer, and a
+  // callback failure's object message is still shown where an untyped
+  // callback message is shown at all: single-thread mode (and REST in it).
+  // Over the worker hop an untyped failure is re-wrapped by its code alone
+  // (lib/handler-ctx.js, CountinghouseError.fromReply), so worker mode
+  // answers the catalogue's text, exactly as for a string message.
+  it('answers a thrown value whose properties throw as a crash, at once', () => {
+    for (const mode of Object.keys(GOLDEN)) {
+      const a = GOLDEN[mode]['http invoke-action / thrown value with unreadable properties'];
+      assert.ok(a !== undefined, `premise: ${mode} in the golden`);
+      assert.strictEqual(a.body.code, 'DEVICE_INVOKE_EXCEPTION', `${mode}: ${JSON.stringify(a)}`);
+    }
+  });
+
+  it('keeps a callback failure\'s object message as JSON in single-thread mode, and treats it as a string message in worker mode', () => {
+    const st = GOLDEN['single-thread']['http invoke-action / callback error with an object message'];
+    assert.ok(st !== undefined, 'premise: single-thread in the golden');
+    assert.strictEqual(st.body.code, 'DEVICE_INVOKE_FAIL', JSON.stringify(st));
+    assert.ok(st.body.message.includes('{"reason":"quota"}'), JSON.stringify(st));
+    const w = GOLDEN.worker['http invoke-action / callback error with an object message'];
+    const wPlain = GOLDEN.worker['http invoke-action / module callback error'];
+    assert.ok(w !== undefined && wPlain !== undefined, 'premise: worker in the golden');
+    assert.strictEqual(w.body.code, 'DEVICE_INVOKE_FAIL', JSON.stringify(w));
+    assert.deepStrictEqual(w.body, wPlain.body);
   });
 
   // Step 1 (d2): no module-visible error classes, and no `topic` in an answer.

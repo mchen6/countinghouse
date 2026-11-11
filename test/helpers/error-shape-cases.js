@@ -47,6 +47,9 @@ const OUTCOMES = [
   {name: 'thrown null', action: 'throwNull', args: {}},
   {name: 'rejected with nothing', action: 'rejectEmpty', args: {}},
   {name: 'thrown plain object with a code', action: 'throwPlainObject', args: {}},
+  {name: 'thrown value with unreadable properties', action: 'throwUnreadable', args: {}},
+  {name: 'thrown Error with no message', action: 'throwEmptyMessage', args: {}},
+  {name: 'callback error with an object message', action: 'callbackObjectMessage', args: {}},
   {name: 'old globals', action: 'globalsProbe', args: {}}
 ];
 

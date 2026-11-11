@@ -187,6 +187,36 @@
             }
           },
           {
+            "name": "throwUnreadable",
+            "description": "error-shape case throwUnreadable",
+            "input": {
+              "schema": "/shapeService/throwUnreadable/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwUnreadable/output"
+            }
+          },
+          {
+            "name": "throwEmptyMessage",
+            "description": "error-shape case throwEmptyMessage",
+            "input": {
+              "schema": "/shapeService/throwEmptyMessage/input"
+            },
+            "output": {
+              "schema": "/shapeService/throwEmptyMessage/output"
+            }
+          },
+          {
+            "name": "callbackObjectMessage",
+            "description": "error-shape case callbackObjectMessage",
+            "input": {
+              "schema": "/shapeService/callbackObjectMessage/input"
+            },
+            "output": {
+              "schema": "/shapeService/callbackObjectMessage/output"
+            }
+          },
+          {
             "name": "globalsProbe",
             "description": "error-shape case globalsProbe",
             "input": {
