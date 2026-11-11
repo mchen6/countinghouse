@@ -135,6 +135,16 @@ one `tools/call` to its `Out` record. There is no session field: MCP
 name (`<pid>-<startMs>`) identifies the process, which over stdio is the
 client session. No value of any credential, no content, ever.
 
+**Reading the records from a module**: a report module cannot declare the
+usage directory in `permissions.fs`, because that takes an absolute path
+fixed in package.json and the directory is per user. So the runtime
+provides it as a root, like `/data`: a module whose package.json declares
+`"countinghouse": {"reads": ["usage"]}` sees `--usageDir` mounted read-only
+at `/usage` through the file broker (listed in the module's permission
+report as "usage records, read-only"); no other module sees it; the
+records hold counts and names only. In `--store redis` without
+`--usageDir`, `/usage` is empty.
+
 **The receipt**: for every `tools/call` on a scenario tool, the gateway sums
 the `In` records made during that call (the remote client tags each with
 the call id) and appends to the result `receipt: {calls, linesIn, bytesIn,
