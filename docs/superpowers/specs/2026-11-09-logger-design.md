@@ -200,12 +200,16 @@ authors who prefer plain errors (or a helper without `ctx`) can use them: the
 code counts when it matches `/^[A-Z][A-Z0-9_]{2,}$/` and is neither a system
 error's (the error has `errno` or `syscall`) nor someone else's, a named
 list (`CountinghouseError.isForeignCode`, which `countinghouse-validate`
-reads too): Node's own (the `ERR_` prefix, `MODULE_NOT_FOUND`,
-`ABORT_ERR`); every errno name (`os.constants.errno`: a network failure
-such as Node's 'socket hang up' carries `ECONNRESET` with no `errno`);
-undici's `UND_ERR_` prefix; and OpenSSL's X509 verify names, by the
-prefixes `CERT_`, `UNABLE_TO_`, `DEPTH_ZERO_`, `SELF_SIGNED_`, plus
-`HOSTNAME_MISMATCH` (amended 2026-11-10, the reviewer: the
+will read too, step 1 (e)): Node's own (the `ERR_` prefix,
+`MODULE_NOT_FOUND`, `ABORT_ERR`, and llhttp's `HPE_` prefix); every errno
+name (`os.constants.errno`: a network failure such as Node's 'socket hang
+up' carries `ECONNRESET` with no `errno`); undici's `UND_ERR_` prefix; and
+the X509 verify codes Node puts on a TLS error, as an exact list
+(`CountinghouseError.X509_VERIFY_CODES`: the 27 OpenSSL names Node v24's
+`lib/_tls_wrap.js` lists and `src/crypto/crypto_common.cc` maps, plus
+`HOSTNAME_MISMATCH`), not prefixes, so a module's own `UNABLE_TO_PARSE`
+stays its own; test/validation/05 pins it, to re-check when the Node floor
+moves (amended 2026-11-10, the reviewer: the
 crash-versus-rejection signal is worth more than a module's freedom to
 name its own code `ECONNRESET`; a module raises such a code with
 `ctx.error`, and step 1's validator warning makes the cost visible); anything else is

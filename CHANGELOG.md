@@ -36,8 +36,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (`/^[A-Z][A-Z0-9_]{2,}$/`) and is not a system error's (`errno`/`syscall`)
   or someone else's: Node's own (`ERR_…`, `MODULE_NOT_FOUND`, `ABORT_ERR`),
   any errno name (`ECONNRESET` from a dropped socket has no `errno`),
-  undici's `UND_ERR_…`, or OpenSSL's certificate errors (`CERT_…`,
-  `UNABLE_TO_…`, `DEPTH_ZERO_…`, `SELF_SIGNED_…`, `HOSTNAME_MISMATCH`).
+  undici's `UND_ERR_…`, the HTTP parser's `HPE_…`, or one of the 28
+  certificate-verification codes Node gives a TLS error (`CERT_HAS_EXPIRED`,
+  `INVALID_CA`, …; an exact list, `CountinghouseError.X509_VERIFY_CODES`).
   Anything else is untyped, as before: a crash, `DEVICE_INVOKE_EXCEPTION`.
 
 ### Changed — breaking: a module's errors are its own, and no `topic`

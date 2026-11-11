@@ -52,24 +52,37 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     assert.deepStrictEqual(given, {cause: inner, hop: 2});
   });
 
-  // Step 1 (d2): the worker reply carries a module's error whole (code,
-  // message, details) as envelope fields, and the main thread rebuilds it.
-  // The details cross as JSON, the cause not at all.
-  it('crosses the worker reply envelope whole, details as JSON and no cause', () => {
-    const WorkerMessage = require('../../lib/worker-message');
+  // Step 1 (d2): every reply between threads (a worker's to the main thread,
+  // the main thread's to a composing worker, a peer channel's) carries a
+  // module's error whole (code, message, details) as envelope fields, and the
+  // other end rebuilds it. The details cross as JSON, the cause not at all.
+  it('crosses the reply envelope whole, details as JSON and no cause', () => {
     const inner = Object.assign(new Error('inner text'), {code: 'INNER'});
     const e = CountinghouseError.module('INNER_CALL_FAILED', 'hop failed', {cause: inner, hop: 2, nested: new Error('nested'), fn() {}});
-    const envelope = structuredClone(WorkerMessage.moduleErrorFields(e));
+    const envelope = structuredClone(CountinghouseError.replyFields(e));
     assert.ok(!JSON.stringify(envelope).includes('inner text'), JSON.stringify(envelope));
-    const back = WorkerMessage.replyError(envelope);
+    const back = CountinghouseError.fromReplyFields(envelope);
     assert.ok(back instanceof CountinghouseError);
     assert.deepStrictEqual([back.code, back.message, back.origin, back.kind], ['INNER_CALL_FAILED', 'INNER_CALL_FAILED: hop failed', 'module', 'module']);
     assert.deepStrictEqual(back.details, {hop: 2, nested: {}});
     assert.strictEqual(back.cause, undefined);
-    const bare = WorkerMessage.replyError(structuredClone(WorkerMessage.moduleErrorFields(CountinghouseError.module('MINE'))));
+    const bare = CountinghouseError.fromReplyFields(structuredClone(CountinghouseError.replyFields(CountinghouseError.module('MINE'))));
     assert.deepStrictEqual([bare.code, bare.message, bare.details], ['MINE', 'MINE', {}]);
-    const runtime = WorkerMessage.replyError({errMsg: 'Device is offline', errCode: 'DEVICE_OFFLINE'});
+    const runtime = CountinghouseError.fromReplyFields({errMsg: 'Device is offline', errCode: 'DEVICE_OFFLINE'});
     assert.ok(!(runtime instanceof CountinghouseError) && runtime.code === 'DEVICE_OFFLINE');
+  });
+
+  // A receiver reads a null errMsg as success, so an error always gives one:
+  // a message-less error, a thrown string, a runtime error with its code.
+  it('always gives an error a non-null errMsg on the envelope', () => {
+    const cases = [[new Error(), ''], ['boom', 'boom'], [{code: 'X_Y'}, '[object Object]'], [new CountinghouseError('DEVICE_OFFLINE'), null]];
+    for (const [err, text] of cases) {
+      const f = CountinghouseError.replyFields(err);
+      assert.ok(typeof(f.errMsg) === 'string', JSON.stringify(f));
+      if (text != null) assert.strictEqual(f.errMsg, text);
+      assert.notStrictEqual(CountinghouseError.fromReplyFields(f), null);
+    }
+    assert.deepStrictEqual(CountinghouseError.replyFields(new CountinghouseError('DEVICE_OFFLINE')).errCode, 'DEVICE_OFFLINE');
   });
 
   it('has a stack from where the module made it', () => {
@@ -97,9 +110,10 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   // module's own when it looks like a code (/^[A-Z][A-Z0-9_]{2,}$/) and is
   // neither a system error's (errno or syscall) nor Node's (ERR_), nor, as
   // amended (the reviewer, 2026-11-10), a network or TLS library's: an errno
-  // name with no errno, undici's UND_ERR_, OpenSSL's X509 verify names. The
-  // list is CountinghouseError.isForeignCode, which countinghouse-validate
-  // reads too.
+  // name with no errno, undici's UND_ERR_, llhttp's HPE_, and the exact X509
+  // verify codes Node gives a TLS error. The list is
+  // CountinghouseError.isForeignCode, which countinghouse-validate will read
+  // too (step 1 (e)).
   describe('fromModule: a plain Error with a code', () => {
     const plain = (code, extra) => Object.assign(new Error('why'), {code: code}, extra || {});
     it('is the module\'s error when its code looks like one', () => {
@@ -115,9 +129,11 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       for (const c of cases) assert.strictEqual(CountinghouseError.fromModule(c), null, JSON.stringify(c && c.code));
     });
     const FOREIGN = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+      'HPE_INVALID_CONSTANT', 'HPE_INVALID_HEADER_TOKEN',
       'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
-      'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'HOSTNAME_MISMATCH'];
-    it('is not, for a network or TLS library\'s code with no errno (an errno name, UND_ERR_, X509 verify names)', () => {
+      'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'HOSTNAME_MISMATCH', 'INVALID_CA', 'CRL_HAS_EXPIRED',
+      'ERROR_IN_CERT_NOT_AFTER_FIELD', 'OUT_OF_MEM', 'PATH_LENGTH_EXCEEDED', 'INVALID_PURPOSE', 'CERT_REVOKED'];
+    it('is not, for a network, HTTP-parser or TLS code with no errno (an errno name, UND_ERR_, HPE_, X509 verify codes)', () => {
       for (const code of FOREIGN) assert.strictEqual(CountinghouseError.fromModule(plain(code)), null, code);
     });
     it('reads its list from one exported place, CountinghouseError.isForeignCode', () => {
@@ -125,9 +141,28 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       for (const code of FOREIGN.concat(['ERR_INVALID_ARG_TYPE', 'MODULE_NOT_FOUND', 'ABORT_ERR'])) {
         assert.strictEqual(CountinghouseError.isForeignCode(code), true, code);
       }
-      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'DEVICE_OFFLINE', 'CERTIFIED_ONLY', 'SELF_TEST_FAILED']) {
+      for (const code of ['REPO_TOO_LARGE', 'ABC', 'X2_Y', 'DEVICE_OFFLINE', 'CERTIFIED_ONLY', 'SELF_TEST_FAILED',
+        'UNABLE_TO_PARSE', 'CERT_NOT_FOUND', 'SELF_SIGNED_ONLY', 'INVALID_CAPTION']) {
         assert.strictEqual(CountinghouseError.isForeignCode(code), false, code);
       }
+    });
+    // The X509 codes are an exact list, pinned here. Taken from Node v24.22.2:
+    // the 27 OpenSSL names in lib/_tls_wrap.js's 'secureConnection' comment
+    // (src/crypto/crypto_common.cc's X509ErrorCode maps them), plus that
+    // function's HOSTNAME_MISMATCH. Checked present in the v24.22.2 and
+    // v26.13.0 binaries. WHEN THE NODE FLOOR MOVES, re-check this list against
+    // the new release's lib/_tls_wrap.js and src/crypto/crypto_common.cc.
+    it('pins the X509 verify codes (re-check when the Node floor moves)', () => {
+      assert.deepStrictEqual(CountinghouseError.X509_VERIFY_CODES.slice().sort(), [
+        'CERT_CHAIN_TOO_LONG', 'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'CERT_REJECTED', 'CERT_REVOKED',
+        'CERT_SIGNATURE_FAILURE', 'CERT_UNTRUSTED', 'CRL_HAS_EXPIRED', 'CRL_NOT_YET_VALID', 'CRL_SIGNATURE_FAILURE',
+        'DEPTH_ZERO_SELF_SIGNED_CERT', 'ERROR_IN_CERT_NOT_AFTER_FIELD', 'ERROR_IN_CERT_NOT_BEFORE_FIELD',
+        'ERROR_IN_CRL_LAST_UPDATE_FIELD', 'ERROR_IN_CRL_NEXT_UPDATE_FIELD', 'HOSTNAME_MISMATCH', 'INVALID_CA',
+        'INVALID_PURPOSE', 'OUT_OF_MEM', 'PATH_LENGTH_EXCEEDED', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY',
+        'UNABLE_TO_DECRYPT_CERT_SIGNATURE', 'UNABLE_TO_DECRYPT_CRL_SIGNATURE', 'UNABLE_TO_GET_CRL', 'UNABLE_TO_GET_ISSUER_CERT',
+        'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
+      ]);
+      assert.strictEqual(CountinghouseError.X509_VERIFY_CODES.length, 28);
     });
     it('passes a CountinghouseError through unchanged, whatever its origin', () => {
       const r = new CountinghouseError('MODULE_RELOADING');

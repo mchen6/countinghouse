@@ -100,10 +100,13 @@ plain `Error` that carries your code instead:
 Its code counts as yours when it looks like one (`/^[A-Z][A-Z0-9_]{2,}$/`)
 and is not a system error's (one with `errno` or `syscall`, such as
 `ENOENT`) or someone else's: Node's own (`ERR_…`, `MODULE_NOT_FOUND`,
-`ABORT_ERR`), any errno name even without `errno` (`ECONNRESET`,
-`ETIMEDOUT`, …, as a network failure carries), undici's (`UND_ERR_…`, from
-`fetch`), and OpenSSL's certificate errors (`CERT_…`, `UNABLE_TO_…`,
-`DEPTH_ZERO_…`, `SELF_SIGNED_…`, `HOSTNAME_MISMATCH`). Those are crashes,
+`ABORT_ERR`, and the HTTP parser's `HPE_…`), any errno name even without
+`errno` (`ECONNRESET`, `ETIMEDOUT`, …, as a network failure carries),
+undici's (`UND_ERR_…`, from `fetch`), and the certificate-verification codes
+Node gives a TLS error (`CERT_HAS_EXPIRED`, `INVALID_CA`,
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, …: an exact list of 28, in
+`lib/countinghouse-error.js`, so your own `UNABLE_TO_PARSE` is still yours).
+Those are crashes,
 answered as `DEVICE_INVOKE_EXCEPTION` with the original in the fault, so an
 operator can tell a failure you didn't handle from one you meant. To raise
 such a code on purpose, use `ctx.error`.
