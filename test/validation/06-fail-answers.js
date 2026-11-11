@@ -118,3 +118,98 @@ describe('validation 06: a handler failure is always answered (Service.doActionC
     assert.strictEqual(reads, 1);
   });
 });
+
+// The review of c14: a module owns the error object it hands back and may
+// change it afterwards; the answer is the runtime's copy, which always
+// crosses a thread reply and is always written as JSON.
+describe('validation 06: the review of c14 -- a module\'s own error is answered as the runtime\'s copy', () => {
+  // The answer must survive what every edge does to it: a thread reply's
+  // structured clone, and JSON.
+  function assertAnswerable(err) {
+    assert.ok(err.code == null || typeof(err.code) === 'string', `code: ${typeof(err.code)}`);
+    assert.strictEqual(typeof(err.message), 'string');
+    structuredClone(CountinghouseError.replyFields(err));
+    JSON.stringify({code: err.code, message: err.message});
+  }
+
+  const changed = {
+    'a function code': (e) => { e.code = () => 1; },
+    'a Symbol code': (e) => { e.code = Symbol('s'); },
+    'an object code': (e) => { e.code = {a: 1}; },
+    'a code getter that throws': (e) => { Object.defineProperty(e, 'code', {get() { throw new Error('trap'); }}); },
+    'a message whose toString throws': (e) => { e.message = {toString() { throw new Error('trap'); }, toJSON() { throw new Error('trap'); }}; },
+    'a message getter that throws': (e) => { Object.defineProperty(e, 'message', {get() { throw new Error('trap'); }}); }
+  };
+  for (const [what, change] of Object.entries(changed)) {
+    it(`answers a returned module error given ${what} afterwards`, async () => {
+      const a = await answer(() => { const e = CountinghouseError.module('SHAPE_REJECTED', 'm'); change(e); return e; });
+      assertAnswerable(a.err);
+    });
+  }
+
+  it('answers an error built through the constructor with a function code', async () => {
+    const a = await answer(() => new CountinghouseError(() => 1));
+    assertAnswerable(a.err);
+  });
+
+  it('is not the module\'s object, so a later change never reaches the answer', async () => {
+    let kept;
+    const a = await answer(() => { kept = CountinghouseError.module('SHAPE_REJECTED', 'm', {n: 1}); return kept; });
+    assert.notStrictEqual(a.err, kept);
+    assert.strictEqual(a.err.code, 'SHAPE_REJECTED');
+    assert.strictEqual(a.err.message, 'SHAPE_REJECTED: m');
+    assert.strictEqual(a.err.origin, 'module');
+    assert.deepStrictEqual(CountinghouseError.replyFields(a.err).errDetails, {n: 1});
+    kept.code = () => 1;
+    assertAnswerable(a.err);
+  });
+
+  it('replyFields never throws and is always cloneable, whatever the error holds', () => {
+    for (const change of Object.values(changed)) {
+      const e = CountinghouseError.module('SHAPE_REJECTED', 'm');
+      change(e);
+      structuredClone(CountinghouseError.replyFields(e));
+    }
+  });
+
+  it('names an object code in no log line', () => {
+    const originalW = LOG.W;
+    const lines = [];
+    LOG.W = (line) => { lines.push(line); return line; };
+    try {
+      CountinghouseError.replyFields(CountinghouseError.module({apiKey: 'sk-secret'}, 'm', {n: 1n}));
+      CountinghouseError.replyFields(CountinghouseError.module('SHAPE_REJECTED', 'm', {n: 1n}));
+    } finally {
+      LOG.W = originalW;
+    }
+    assert.strictEqual(lines.length, 2, JSON.stringify(lines));
+    assert.ok(!lines[0].includes('sk-secret') && !lines[0].includes('apiKey'), lines[0]);
+    assert.ok(lines[1].includes('SHAPE_REJECTED'), lines[1]);
+  });
+
+  it('logs no line of a runtime bug\'s message, even after the message was changed, and no name of its own', async () => {
+    const original = CountinghouseError.module;
+    const originalE = LOG.E;
+    const lines = [];
+    LOG.E = (line) => { lines.push(line); return line; };
+    try {
+      CountinghouseError.module = () => {
+        const e = new TypeError('module text\n    at /secret-token.js:1:1');
+        void e.stack;
+        e.message = '';
+        throw e;
+      };
+      await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'})));
+      CountinghouseError.module = () => { throw Object.assign(new TypeError('x'), {name: 'sk_live_name'}); };
+      await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'})));
+    } finally {
+      CountinghouseError.module = original;
+      LOG.E = originalE;
+    }
+    assert.strictEqual(lines.length, 2, JSON.stringify(lines));
+    for (const line of lines) {
+      assert.ok(!line.includes('secret-token') && !line.includes('module text') && !line.includes('sk_live_name'), line);
+      assert.ok(/06-fail-answers\.js:\d+/.test(line), `names where it threw: ${line}`);
+    }
+  });
+});
