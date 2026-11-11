@@ -23,18 +23,39 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - A module under `--moduleSandbox enforce` could make no TLS connection at
   all (`tls.connect`, `https.request`, `fetch` over https): a `TLSSocket`
   hands `net.Socket` the handle Node just made, and the lockdown's
-  descriptor backstop read a handle object as adoption. Adoption is now a
-  descriptor number, as the `fd` option or as Node's bare-number form
-  `new net.Socket(fd)`: the only route to a foreign descriptor inside a
-  worker. A handle object is over a socket the module was allowed to open.
+  descriptor backstop read a handle object as adoption. For `net.Socket`,
+  adoption is now a descriptor number, as the `fd` option or as Node's
+  bare-number form `new net.Socket(fd)`. A handle object is not adoption,
+  because a handle a module can build is guarded at its `open(fd)` (below).
   TLS works under `enforce` as under `audit`, `--hardened` included.
 
-### Security — Node's TLS internals leave the built-in allowlist
+### Security — descriptor adoption closed on routes the lockdown missed
 
+- `net.connect({fd})` and `net.createConnection({fd})`, and through them
+  an `http` request given an `fd`, adopted the descriptor in every mode. They build Node's internal `Socket`, which the `net.Socket` guard
+  never saw. Without `--hardened` the native `open(fd)` backstop still
+  caught them. Under `--hardened` nothing did, so a module could take the
+  main server's listening socket. They are now checked at their entry.
+- Under `--hardened`, `open(fd)` on a TCP, Pipe or UDP handle a module built
+  from an instance's constructor was not guarded before this release, since
+  the backstop's prototypes came from `process.binding`, which the
+  permission model refuses. The lockdown now takes them from instances it
+  builds and destroys before module code runs. If it cannot take one, a
+  module does not start under `enforce`, and `audit` logs it.
+- Each guarded entry point copies its options object once, inherited
+  properties included, and checks the copy, so a getter cannot answer the
+  check `undefined` and Node a descriptor number. A non-enumerable `fd` is
+  dropped.
+- The Redis denial now covers every loopback literal (all of 127/8,
+  `0.0.0.0`, `::1` and `::`, in the forms the resolver accepts, such as
+  `127.1`, and IPv4-mapped) and the loopback names, not six spellings, as
+  well as an empty host (Node connects to `localhost`) and every spelling of
+  a configured address (`10.5` for `10.0.0.5`).
 - `_tls_wrap` and `_tls_common` are refused to modules. They were on the
   allowlist, and sit behind none of the wrappers the lockdown puts on
   `tls`, so a module could reach Node's TLS internals past them. A module
-  needs `tls`.
+  (or a dependency) that requires them directly now fails to load. Use
+  `tls`.
 
 ### Added — `ctx.error`: a handler's own error, which it may simply return
 

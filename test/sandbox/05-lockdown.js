@@ -19,7 +19,7 @@ const ROUTES = [
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
-  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['ttyFd'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
   ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
 
@@ -30,15 +30,17 @@ function serverArgs(mode) {
 // L1: adoption is a descriptor number. A handle object given to net.Socket
 // is never a route to a foreign descriptor inside a worker (Node's own
 // TLSSocket constructs one that way), so it is not a violation: the bogus
-// handle fails on its own, and no descriptor line is logged. First in each
-// mode, before any route logs a descriptor violation, and the log is read
-// after it has had time to arrive (it reaches the test asynchronously).
+// handle fails on its own, and no descriptor line is logged. Only the log
+// written since the call is read, after it has had time to arrive (it
+// reaches the test asynchronously).
 const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
 async function handleIsNotAdoption(port, server) {
+  const from = server.output.length;
   const r = await mcpCall(port, KEY, TOOL, {what: 'socketHandle'});
   assert.strictEqual(toolOutput(r).outcome, 'allowed', JSON.stringify(r));
   await settle();
-  assert.ok(!server.output.includes('violation descriptor'), server.output.split('\n').filter((l) => l.includes('violation')).join('\n'));
+  const since = server.output.slice(from);
+  assert.ok(!since.includes('violation descriptor'), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
 }
 
 describe('sandbox 05: worker lockdown', function() {

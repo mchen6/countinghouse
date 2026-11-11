@@ -20,6 +20,46 @@ function moduleRoot() {
   return root;
 }
 
+// The descriptor routes, each aimed at a descriptor number no process has.
+const FD_ATTEMPT = `const net = require('net');
+const FD = 999999;
+const viaInstance = (connectArgs) => { const s = new net.Socket(); try { s.connect(connectArgs); } catch (e) {} return s._handle.constructor; };
+const forms = {
+  option: () => new net.Socket({fd: FD}),
+  number: () => new net.Socket(FD),
+  connect: () => net.connect({fd: FD}),
+  createConnection: () => net.createConnection({fd: FD}),
+  request: () => require('http').request({host: '127.0.0.1', port: 1, fd: FD}),
+  tcpOpen: () => new (viaInstance({host: '127.0.0.1', port: 'none'}))(0).open(FD),
+  pipeOpen: () => new (viaInstance({path: 1}))(0).open(FD),
+  udpOpen: () => {
+    const u = require('dgram').createSocket('udp4');
+    const state = Object.getOwnPropertySymbols(u).map((k) => u[k]).find((v) => v != null && typeof(v) === 'object' && v.handle != null);
+    return new state.handle.constructor().open(FD);
+  },
+};
+module.exports = async (input) => {
+  try {
+    if (input.arg === 'getter') {
+      let reads = 0;
+      const s = new net.Socket({get fd() { return reads++ > 0 ? FD : undefined; }});
+      return {output: {outcome: s._handle == null ? 'not adopted' : 'adopted', reads: reads}};
+    }
+    forms[input.arg]();
+    return {output: {outcome: 'allowed', code: null}};
+  } catch (e) {
+    return {output: {outcome: e.code === 'ERR_ACCESS_DENIED' ? 'blocked' : 'allowed', code: String(e.code)}};
+  }
+};
+`;
+
+async function startFdProbe(root) {
+  fs.writeFileSync(path.join(root, 'sandbox-probe', 'handlers', 'probeService', 'attempt.js'), FD_ATTEMPT);
+  return startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+    '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
+}
+const fdAttempt = async (form) => toolOutput(await mcpCall(9614, KEY, 'sandbox_probe_probeservice_attempt', {what: 'socket', arg: form}));
+
 describe('sandbox 09: --hardened', function() {
   this.timeout(90000);
   let server = null;
@@ -60,22 +100,6 @@ describe('sandbox 09: --hardened', function() {
     // The running module was left alone by all three.
     const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_env', {});
     assert.strictEqual(r.isError, false, JSON.stringify(r));
-  });
-
-  // L1: a descriptor given to net.Socket, as the fd option and as Node's
-  // bare-number form. Under the permission model the native open(fd)
-  // backstop cannot be taken, so the public entry's check is the only guard.
-  it('refuses a descriptor given to net.Socket, as an option and as a bare number', async () => {
-    fs.writeFileSync(path.join(root, 'sandbox-probe', 'handlers', 'probeService', 'attempt.js'),
-      'module.exports = async (input) => { try { new (require("net").Socket)(input.arg === "number" ? 999999 : {fd: 999999});' +
-      ' return {output: {outcome: "allowed", code: null}}; }' +
-      ' catch (e) { return {output: {outcome: e.code === "ERR_ACCESS_DENIED" ? "blocked" : "allowed", code: String(e.code)}}; } };');
-    server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
-      '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);
-    for (const form of ['option', 'number']) {
-      const r = await mcpCall(9614, KEY, 'sandbox_probe_probeservice_attempt', {what: 'socket', arg: form});
-      assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, `${form}: ${JSON.stringify(r)}`);
-    }
   });
 
   // Review Focus 5.
@@ -149,5 +173,51 @@ describe('sandbox 09: --hardened', function() {
     server = await startServer(9614, ['--no-workerThread', '--debug', '--hardened', '--modulePath', root], {expectExit: true});
     assert.strictEqual(server.exitCode, 2);
     assert.ok(server.output.includes('--hardened needs --workerThread'), server.output);
+  });
+});
+
+// L1: the descriptor routes under --hardened, one server for all of them.
+describe('sandbox 09: --hardened descriptor routes', function() {
+  this.timeout(90000);
+  let server = null;
+  let root = null;
+  before(async () => { root = moduleRoot(); server = await startFdProbe(root); });
+  after(() => { stopServer(server); fs.rmSync(root, {recursive: true, force: true}); });
+
+  // L1: a descriptor given to net.Socket, as the fd option and as Node's
+  // bare-number form. Under the permission model the native open(fd)
+  // backstop cannot be taken from the bindings, so the entry points' checks
+  // and the prototypes taken from instances (test/sandbox/36) are the guards.
+  it('refuses a descriptor given to net.Socket, as an option and as a bare number', async () => {
+    for (const form of ['option', 'number']) {
+      assert.deepStrictEqual(await fdAttempt(form), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, form);
+    }
+  });
+
+  // Review of #36: the check reads the options once, so an fd getter that
+  // answers undefined to the check cannot answer a number to Node.
+  it('reads an fd getter once: what the check saw is what Node gets', async () => {
+    assert.deepStrictEqual(await fdAttempt('getter'), {outcome: 'not adopted', reads: 1});
+  });
+
+  // Review of #36: net.connect and createConnection build Node's internal
+  // Socket, not the exported one, so the net.Socket guard never saw them
+  // (the reviewer's probe on Node 24: zero hits). A module could guess the
+  // main server's listening fd and "connect" with it; the failed connect's
+  // destroy then closes the main thread's socket. http.request reaches the
+  // same route through the agent's net.createConnection.
+  it('refuses a descriptor given to net.connect, net.createConnection and http.request', async () => {
+    for (const form of ['connect', 'createConnection', 'request']) {
+      assert.deepStrictEqual(await fdAttempt(form), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, form);
+    }
+  });
+
+  // Review of #36 (F1): a handle the module builds from an instance's
+  // constructor; before this release its open(fd) was not guarded under
+  // --hardened.
+  it('refuses open(fd) on a TCP, a Pipe and a UDP handle the module builds', async () => {
+    for (const form of ['tcpOpen', 'pipeOpen', 'udpOpen']) {
+      assert.deepStrictEqual(await fdAttempt(form), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, form);
+    }
   });
 });
