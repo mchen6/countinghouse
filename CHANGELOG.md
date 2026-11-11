@@ -74,8 +74,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   blank one; no runtime message ends in a dangling `: ` any more). A
   message that cannot be rendered (circular, or with a throwing `toJSON`)
   reads `[unrenderable value]` instead of leaving the call unanswered, a
-  function reads `[function]` (never its source), and a fault keeps every
-  field it can read, each as text. The two before used to
+  function reads `[function]` (never its source, `ctx.error`'s message
+  included, where an object message now reads as JSON, not
+  `[object Object]`), and a fault keeps every field it can read, each as
+  text. The two before used to
   leave the call unanswered until the device timeout. A callback handler's
   `callback({code: …})` with a plain object is untyped too
   (`DEVICE_INVOKE_FAIL`; it used to keep its code).

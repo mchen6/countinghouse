@@ -2,12 +2,14 @@
 
 // Service.prototype.doActionCall's failure answers, driven directly: no
 // server, no redis. A handler's failure is always answered, whatever the
-// value, and the answer never carries more of the module than its message
-// (logger-design §5.1; reviews of c10 and c11 on #37).
+// value; a crash's answer carries the fault (message, name, stack) as a
+// crash always has, each field as text (logger-design §5.1; reviews of
+// c10, c11 and c12 on #37).
 
 const assert = require('assert');
 const Service = require('../../lib/service');
 const {CountinghouseError} = require('../../lib/countinghouse-error');
+const LOG = require('../../lib/logger');
 
 function makeService(invoke) {
   const stubDevice = {deviceID: 'stub', resolveSchemaFromPath: function() {}};
@@ -59,16 +61,40 @@ describe('validation 06: a handler failure is always answered (Service.doActionC
     assert.ok(a.err.message.endsWith(': [unrenderable value]'), a.err.message);
   });
 
-  it('answers as a crash when building a module\'s error fails (a runtime bug), not never', async () => {
+  it('answers as a crash when building a module\'s error fails (a runtime bug), not never, and logs where', async () => {
     const original = CountinghouseError.module;
-    CountinghouseError.module = () => { throw new Error('a runtime bug'); };
+    const originalE = LOG.E;
+    const lines = [];
+    CountinghouseError.module = () => { throw new TypeError('the stub\'s own message'); };
+    LOG.E = (line) => { lines.push(line); return line; };
     try {
-      const a = await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'})));
+      const a = await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'}), {fault: {kept: 'no'}}));
       assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+      assert.strictEqual(a.data.message, 'typed');
+      assert.strictEqual(a.data.name, 'Error');
+      assert.strictEqual(typeof(a.data.stack), 'string');
+      assert.ok(!('kept' in a.data), JSON.stringify(a.data));
       const b = await answer(async () => { throw Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'}); });
       assert.strictEqual(b.err.code, 'DEVICE_INVOKE_EXCEPTION');
     } finally {
       CountinghouseError.module = original;
+      LOG.E = originalE;
     }
+    assert.strictEqual(lines.length, 2, JSON.stringify(lines));
+    for (const line of lines) {
+      assert.strictEqual(typeof(line), 'string');
+      assert.ok(line.includes('TypeError'), line);
+      assert.ok(/06-fail-answers\.js:\d+/.test(line), `names where it threw: ${line}`);
+      assert.ok(!line.includes('the stub\'s own message') && !line.includes('typed'), line);
+    }
+  });
+
+  it('reads a failure\'s message once', async () => {
+    let reads = 0;
+    const thrown = {get message() { reads++; return 'counted'; }};
+    const a = await answer(async () => { throw thrown; });
+    assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+    assert.strictEqual(a.data.message, 'counted');
+    assert.strictEqual(reads, 1);
   });
 });

@@ -215,6 +215,24 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
     });
   });
 
+  // /code-review medium on c11.
+  describe('the review of c11', () => {
+    it('renders a module\'s non-string message as text: a function as "[function]", never its source', () => {
+      const fn = function moduleSecretSource() { return 'body of the module'; };
+      assert.strictEqual(CountinghouseError.module('SHAPE_REJECTED', fn).message, 'SHAPE_REJECTED: [function]');
+      assert.strictEqual(CountinghouseError.module('SHAPE_REJECTED', {a: fn}).message, 'SHAPE_REJECTED: {"a":"[function]"}');
+      assert.doesNotThrow(() => CountinghouseError.module('SHAPE_REJECTED', Symbol('s')));
+      const own = {toString() { return 'from toString'; }};
+      assert.ok(!CountinghouseError.module('SHAPE_REJECTED', own).message.includes('from toString'));
+    });
+    it('renders a function inside a message as "[function]", not null or nothing', () => {
+      const fn = () => 1;
+      const bare = new CountinghouseError('DEVICE_INVOKE_FAIL').message;
+      assert.strictEqual(new CountinghouseError('DEVICE_INVOKE_FAIL', [fn]).message, `${bare}: ["[function]"]`);
+      assert.strictEqual(new CountinghouseError('DEVICE_INVOKE_FAIL', {a: fn}).message, `${bare}: {"a":"[function]"}`);
+    });
+  });
+
   // /code-review medium on c10.
   describe('the review of c10', () => {
     it('never throws on an extra argument it cannot render, and says so', () => {
