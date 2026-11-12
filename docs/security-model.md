@@ -328,6 +328,16 @@ command, `countinghouse-meter`, reads the key from
 `COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
 fingerprint.
 
+In the single-identity profile (`--store local --stdio` without
+`--authConfigPath`) no auth file exists. The one key is made at start and
+held only in the main thread's memory: never printed, logged or written,
+kept out of the options a worker receives, and absent from every answer the
+auth provider gives, a refusal of another key included. Every loaded module
+runs as that identity, which is not admin. `ctx.caller.id` comes from the
+identity secret, `<storePath>/.identity-secret` (0600, in the always-denied
+set), and the fixed source `local`, so it survives a restart while the key
+changes per process.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
