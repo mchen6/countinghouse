@@ -411,3 +411,33 @@ describe('validation 06: the high review of #37 -- c17', () => {
     assert.strictEqual(got.message, new CountinghouseError('DEVICE_NOT_RESPONDING').message);
   });
 });
+
+// The cleanups deferred from the reviewer's high review of #37 (d2b).
+describe('validation 06: the cleanups deferred from #37', () => {
+  const {hopError} = require('../../lib/countinghouse-error');
+
+  it('a hop hands over a decoded copy as it is, and a module\'s live error as a copy', () => {
+    const originalW = LOG.W;
+    const lines = [];
+    LOG.W = (line) => { lines.push(line); return line; };
+    try {
+      const live = CountinghouseError.module('SHAPE_GONE', 'm', {n: 1n});
+      const decoded = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(live));
+      assert.strictEqual(hopError(decoded), decoded);
+      assert.notStrictEqual(hopError(live), live);
+    } finally {
+      LOG.W = originalW;
+    }
+    assert.strictEqual(lines.length, 2, JSON.stringify(lines));
+  });
+
+  it('an unreadable message reads the same on the typed path as in a crash\'s fault', async () => {
+    const typed = await answer(() => {
+      const e = CountinghouseError.module('SHAPE_GONE', 'm');
+      Object.defineProperty(e, 'message', {get() { throw new Error('trap'); }});
+      return e;
+    });
+    const crash = await answer(async () => { throw new Proxy({}, {get() { throw new Error('trap'); }}); });
+    assert.strictEqual(typed.err.message, crash.data.message);
+  });
+});
