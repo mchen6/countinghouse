@@ -191,7 +191,7 @@ describe('--loadModule expands a scenario in the module manager', () => {
 
   it('the load list holds the scenario and its parts, and the parts are recorded unlisted', () => {
     const options = require('../../lib/cli-options');
-    options.setOptions({redisUrl: 'redis://127.0.0.1:9719'});
+    options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
     require('../../lib/logger').createLogger(false);
     const ModuleManager = require('../../lib/module-manager');
     const nm = path.join(root, 'node_modules');
