@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "local-store-probe",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Stores and reads a value through ctx.redis, for the --store local smoke test.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "remember",
+            "description": "Sets a key through ctx.redis and reads it back.",
+            "input":  {"schema": "/probeService/remember/input"},
+            "output": {"schema": "/probeService/remember/output"}
+          }
+        ]
+      }
+    }
+  }
+}

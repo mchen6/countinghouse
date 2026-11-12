@@ -288,3 +288,29 @@ jobs:
 
       - name: stdio tests
         run: npx mocha --exit test/stdio/*.js
+
+  # --store local with no Redis service (LM1, the local-mode spec's CI line):
+  # the local store's own tests and a server smoke test (test/store/05: a
+  # preloaded trap fails the run if anything makes a Redis client or loads a
+  # queue library) on each OS a client machine runs. Windows is reported
+  # but does not gate yet: the module sandbox's Windows gaps are being
+  # catalogued separately (issue #40), and the smoke test's flush-on-SIGTERM
+  # check does not apply there (a Windows process cannot be sent one).
+  local-store:
+    name: local store (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+      - name: Local store tests and smoke test, no Redis
+        run: npx mocha --exit ./test/store/04-json-file.js ./test/metering/02-local-provider.js ./test/metering/03-seed-cli.js ./test/local-kv/00-allowed.js ./test/local-kv/01-semantics.js ./test/jobs-local/01-runner.js ./test/store/05-local-smoke.js
