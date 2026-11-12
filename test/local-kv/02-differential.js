@@ -51,3 +51,37 @@ describe('local-kv 02: LocalKv answers as Redis does (differential)', function()
     assert.deepStrictEqual(diffs, []);
   });
 });
+
+describe('local-kv 02: multi/exec as node_redis and Redis answer it', function() {
+  this.timeout(30000);
+  let redisClient = null;
+  before(async function() {
+    const redis = require('redis');
+    redisClient = redis.createClient('redis://127.0.0.1:6379', {db: 13});
+    redisClient.on('error', () => {});
+    const ok = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 1000);
+      redisClient.ping((err) => { clearTimeout(timer); resolve(err == null); });
+    });
+    if (!ok) { redisClient.quit(); redisClient = null; return this.skip(); }
+    await new Promise((resolve) => redisClient.flushdb(resolve));
+  });
+  after(() => { if (redisClient != null) redisClient.quit(); });
+
+  const shape = (e, r) => (e != null ? {error: e.message} : r.map((x) => (x instanceof Error ? {error: x.message} : x)));
+  for (const [label, build] of [
+    ['an arity error aborts', (m) => m.set('m1', '1').get()],
+    ['a runtime error stays in its place', (m) => m.lpush('w', 'x').get('w')],
+    ['an array of commands', null]
+  ]) {
+    it(label, async () => {
+      const kv = new LocalKv({storePath: fs.mkdtempSync(path.join(os.tmpdir(), 'ch-local-kv-02m-'))});
+      const go = (client) => new Promise((resolve) => {
+        const m = (build != null) ? build(client.multi()) : client.multi([['set', 'ma', '1'], ['get', 'ma']]);
+        m.exec((e, r) => resolve(shape(e, r)));
+      });
+      assert.deepStrictEqual(await go(kv), await go(redisClient));
+      kv.close();
+    });
+  }
+});
