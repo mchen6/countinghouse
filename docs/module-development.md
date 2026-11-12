@@ -102,13 +102,21 @@ name its code anything, a catalogue name included, so check
 `err.origin === 'runtime'` before acting on a runtime code (retrying on
 `MODULE_RELOADING`, say), not the code alone.
 
-`origin` can be trusted: only an error the runtime itself issued is
-`'runtime'`. However a module builds its error (setting `origin` on it,
-constructing one through its constructor, or changing a runtime error's
-code), it answers as the module's own, `origin: 'module'`, with no runtime
-meaning for a code that spells a catalogue name. A runtime error you were
-given and pass on unchanged (a callee's `MODULE_RELOADING`, a `CTX_CALL_…`
-refusal) stays the runtime's, with the code it was issued with.
+Under `--moduleSandbox enforce`, `origin` can be trusted: only an error
+the runtime itself issued is `'runtime'`. However a
+module builds its error (setting `origin` on it, or constructing one
+through its constructor), it answers as the module's own,
+`origin: 'module'`, with no runtime meaning for a code that spells a
+catalogue name. A runtime error you were given (a callee's
+`MODULE_RELOADING`, a `CTX_CALL_…` refusal, a `ctx.serviceClient`
+refusal) and pass on stays the runtime's, with the code and message it was
+issued with: changing them on it changes nothing, so to answer with your
+own code, return `ctx.error(...)` (with the runtime's error as its
+`cause` if you want to keep it). `audit`, the worker default, records a
+module that reaches countinghouse's own code but does not stop it, and
+single-thread mode and `--moduleSandbox off` have no sandbox
+([security model](security-model.md)): there a module can forge this as it
+can do anything else.
 
 Returning the error is the preferred form. Throwing it
 (`throw ctx.error(…)`), from an async function or a plain one, or passing it

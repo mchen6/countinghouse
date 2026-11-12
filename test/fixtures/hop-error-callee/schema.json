@@ -4,7 +4,7 @@
   "type": "object",
   "calleeService": {
     "fail": {
-      "input":  {"type": "object", "properties": {"kind": {"enum": ["catalogue", "own", "forgedOrigin", "forgedConstructor", "patchedStatics", "passThrough"]}}, "required": ["kind"]},
+      "input":  {"type": "object", "properties": {"kind": {"enum": ["catalogue", "own", "forgedOrigin", "forgedConstructor", "patchedStatics", "passThrough", "prototypeAccessor"]}}, "required": ["kind"]},
       "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
     }
   }

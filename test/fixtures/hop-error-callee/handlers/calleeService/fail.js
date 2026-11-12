@@ -21,6 +21,20 @@ module.exports = async (input, ctx) => {
     try { Object.defineProperty(C.prototype, 'kind', {get() { return 'runtime'; }}); } catch (patchErr) { /* frozen */ }
     return new C('MODULE_RELOADING');
   }
+  if (input.kind === 'prototypeAccessor') {
+    // An accessor on the prototypes that would decide the code a refusal is
+    // built and issued with (review of #45). It stays in this worker: the
+    // test runs it last.
+    const C = ctx.error('X_FORGED').constructor;
+    for (const proto of [C.prototype, Error.prototype]) {
+      try { Object.defineProperty(proto, 'code', {get() { return 'MODULE_RELOADING'; }, set() {}, configurable: true}); } catch (defineErr) { /* not extensible */ }
+    }
+    try {
+      await ctx.call('hop-error-callee/calleeService.nowhere', {});
+    } catch (e) {
+      return e;
+    }
+  }
   if (input.kind === 'passThrough') {
     try {
       await ctx.call('hop-error-callee/calleeService.nowhere', {});

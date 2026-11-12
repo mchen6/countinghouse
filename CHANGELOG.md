@@ -128,9 +128,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   with is the module's (`origin: 'module'`, no runtime kind, retry or
   status), however it was built, even when its code spells a catalogue
   name; only an error the runtime itself issued to the module (a hop's
-  `MODULE_RELOADING`, a `CTX_CALL_…` refusal), passed on, stays the
-  runtime's, with the code it was issued with. Under the module sandbox
-  the error class's statics are frozen in the worker.
+  `MODULE_RELOADING`, a `CTX_CALL_…` or `ctx.serviceClient` refusal),
+  passed on, stays the runtime's, with the code and message it was issued
+  with. This holds under `--moduleSandbox enforce`, which also freezes the
+  error class in the worker; `audit` records but does not stop a module
+  that reaches countinghouse's own code, and single-thread mode has no
+  sandbox.
 - **No `topic` in any answer.** An HTTP error body is
   `{code, message, fault?}`; `kind` and `origin` join it with the client
   shapes (logger-design spec §5.2, "Client shapes").
