@@ -1,0 +1,25 @@
+{
+  "device": {
+    "friendlyName": "usage-scenario",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a scenario with no parts, so its calls are counted and receipted with no server call (test/usage/07)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "usage_probe",
+            "description": "Answers a two-line summary.",
+            "input": {"schema": "/probeService/usage_probe/input"},
+            "output": {"schema": "/probeService/usage_probe/output"}
+          },
+          {
+            "name": "usage_reserved",
+            "description": "Answers with a top-level receipt field, which the runtime refuses.",
+            "input": {"schema": "/probeService/usage_reserved/input"},
+            "output": {"schema": "/probeService/usage_reserved/output"}
+          }
+        ]
+      }
+    }
+  }
+}

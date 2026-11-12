@@ -166,6 +166,9 @@ calls to github; 35 lines (2.4 KB) reached the model.`. `structuredContent` is
 your output exactly as validated, so a closed output schema stays the
 guarantee. A top-level output field named `receipt` is refused
 `RECEIPT_RESERVED`, because the name is the runtime's.
+A task-augmented call (`tools/call` with `task`) is counted the same way: the
+run's server calls under its own call id, and its result when the task
+finishes. `tasks/result` carries the same receipt.
 
 `countinghouse_usage_report`, listed to every key, reports the same counts by
 tool, server, pack or module. A key sees its own calls; an admin sees every
