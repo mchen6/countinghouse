@@ -191,13 +191,16 @@ a credential value, never content. **Scoping:** a key sees its own calls;
 an admin key sees every key, grouped by the opaque caller id, never by
 user name or key (R2-1). The same report is a CLI subcommand,
 `countinghouse-usage`, for the operator's shell. The aggregation and
-formatting code is the one that `ch-report` (the standalone reader in its
-own package) was built with, moved into `lib/usage/` of the runtime;
-`ch-report` keeps reading exported record files on a machine with no
-runtime, and depends on nothing here. Consequently there is no `/usage`
-root and no `reads: ["usage"]` declaration for modules: no third-party
-module reads the records, and the `usage_report` tool the packs list is
-this one, not a module (ch-packs plan Tasks 10 and 13 change
+formatting code is the one `ch-report` was built with (its lib/aggregate.js,
+format.js, read.js and the usage-fixture writer), moved into `lib/usage/`
+of the runtime with its tests; **`ch-report` as a separate package is
+retired** (maintainer, 2026-11-11: under the client-pack deployment the
+runtime's own tool is what the agent reaches, so a second reader on the
+same machine has no job): its repository is archived once this tool is
+merged, and the npm name is not published. Consequently there is no
+`/usage` root and no `reads: ["usage"]` declaration for modules: no
+third-party module reads the records, and the `usage_report` tool the
+packs list is this one, not a module (ch-packs plan Tasks 10 and 13 change
 accordingly).
 
 **The receipt**: for every `tools/call` on a scenario tool, the gateway sums
