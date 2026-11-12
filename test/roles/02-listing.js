@@ -57,6 +57,7 @@ describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity pro
     options.singleIdentity = true;
     assert.deepStrictEqual(Object.keys(toolRegistry.buildToolTargets(fakeInterface())), ['ci_failure_triage']);
     assert.ok(!toolRegistry.platformTools().some((t) => t.name === 'countinghouse_check_balance'), 'no balance exists in the profile');
+    assert.ok(toolRegistry.platformTools().some((t) => t.name === 'countinghouse_usage_report'), 'the usage report is listed in every mode');
     for (const name of ['countinghouse_check_balance', 'countinghouse_lookup_identity', 'plain_svc_go']) {
       const r = await call(fakeInterface(), name);
       assert.strictEqual(codeOf(r), 'MODULE_NOT_LISTED', name);
