@@ -30,10 +30,21 @@ function start(home) {
 }
 
 const lines = (io) => io.out.split('\n').filter((l) => l !== '');
+
+// The server's stderr for a failure message, without the Redis connection
+// noise this test causes on purpose (--redisUrl points where nothing
+// answers, so every Redis client and the job queue retry and log). Without
+// this the 2000-character tail held only that noise, and on Windows (issue
+// #40) the real reason the module never listed was cut off.
+const REDIS_NOISE = /ECONNREFUSED|Redis client error|Redis connection to|job queue error|^\s+(at |code:|errno:|syscall:|address:|port:|\[)|^Error: connect|^\s*[{}]\s*$/;
+function diagnostic(err, max = 4000) {
+  const kept = err.split('\n').filter((l) => l.trim() !== '' && !REDIS_NOISE.test(l)).join('\n');
+  return kept.length > max ? `…${kept.slice(-max)}` : kept;
+}
 function request(io, message, timeoutMs = 15000) {
   io.child.stdin.write(`${JSON.stringify(message)  }\n`);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`no answer to ${message.method}; stderr: ${io.err.slice(-2000)}`)), timeoutMs);
+    const timer = setTimeout(() => reject(new Error(`no answer to ${message.method}; stderr without the Redis noise: ${diagnostic(io.err)}`)), timeoutMs);
     const check = () => {
       const found = lines(io).map((l) => JSON.parse(l)).find((r) => r.id === message.id);
       if (found) { clearTimeout(timer); resolve(found); }
@@ -42,6 +53,20 @@ function request(io, message, timeoutMs = 15000) {
     check();
   });
 }
+
+describe('--stdio, spawned: the failure message', () => {
+  it('drops the Redis connection noise and keeps the rest', () => {
+    const err = [
+      '{"level":50,"e":"Redis client error: Redis connection to 127.0.0.1:9749 failed - connect ECONNREFUSED 127.0.0.1:9749"}',
+      'Error: connect ECONNREFUSED 127.0.0.1:9749',
+      '    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {',
+      "  errno: -4078,", "  code: 'ECONNREFUSED',", "  syscall: 'connect',", "  address: '127.0.0.1',", '  port: 9749', '}',
+      '{"level":50,"e":"job queue error: Error: connect ECONNREFUSED 127.0.0.1:9749"}',
+      '{"level":50,"e":"module handler-map-module failed to load: the real reason"}'
+    ].join('\n');
+    assert.strictEqual(diagnostic(err), '{"level":50,"e":"module handler-map-module failed to load: the real reason"}');
+  });
+});
 
 describe('--stdio, spawned', function() {
   this.timeout(60000);
@@ -62,7 +87,7 @@ describe('--stdio, spawned', function() {
       tool = (list.result.tools || []).find((t) => /hello/.test(t.name)) || null;
       if (tool == null) await new Promise((r) => setTimeout(r, 500));
     }
-    assert.ok(tool, `the module's tool is listed; stderr: ${io.err.slice(-2000)}`);
+    assert.ok(tool, `the module's tool is listed; stderr without the Redis noise: ${diagnostic(io.err)}`);
     const called = await request(io, {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: tool.name, arguments: {name: 'stdio'}}});
     assert.match(JSON.stringify(called.result), /hello stdio/);
     const exit = new Promise((resolve) => io.child.on('exit', (code) => resolve(code)));
