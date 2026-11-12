@@ -252,7 +252,7 @@ function serve() {
   //manually set CHUtil.redis because when countinghouse-util.js is first time required, redis-api.js isn't loaded and initialized yet
   global.CHUtil.redis = redisAPI.client;
 
-  var JobControl    = require('./lib/job-control');
+  var JobControl    = require('./lib/store').jobs;
   if (options.workerThread === true) {
     JobControl.initJobProcess(routeManager.cdifInterface);
     JobControl.setCompletionHook(require('./lib/mcp/gateway').stampOutputSchema(routeManager.cdifInterface));
