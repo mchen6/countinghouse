@@ -199,7 +199,7 @@ runtime's own tool is what the agent reaches, so a second reader on the
 same machine has no job): its repository is archived once this tool is
 merged, and the npm name is not published. Consequently there is no
 `/usage` root and no `reads: ["usage"]` declaration for modules: no
-third-party module reads the records, and the `usage_report` tool the
+third-party module reads the records, and the `countinghouse_usage_report` tool the
 packs list is this one, not a module (ch-packs plan Tasks 10 and 13 change
 accordingly).
 
