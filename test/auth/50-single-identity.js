@@ -162,7 +162,7 @@ describe('auth 50: the review of B4', function() {
 
   it('a bare or empty --authConfigPath refuses to start', () => {
     for (const value of [[], ['']]) {
-      const run = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9696',
+      const run = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9731',
         '--authConfigPath'].concat(value), {cwd: ROOT, encoding: 'utf8', timeout: 20000});
       assert.strictEqual(run.status, 2, run.stderr);
       assert.ok(/--authConfigPath needs a path/.test(run.stderr), run.stderr);
