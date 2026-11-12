@@ -58,6 +58,8 @@ const ATTEMPTS = {
   ttyReadCtor:      () => new (require('tty').ReadStream.prototype.constructor)(999999),
   ttySuper:         () => new (Object.getPrototypeOf(require('tty').WriteStream))(999999),
   tlsSuper:         () => new (Object.getPrototypeOf(require('tls').TLSSocket))(999999),
+  streamWrap:       () => require('_stream_wrap'),
+  streamWrapSuper:  () => new (Object.getPrototypeOf(require('_stream_wrap')))(999999),
   dgramFd:          () => new Promise((resolve, reject) => {
     const socket = require('dgram').createSocket('udp4');
     socket.once('error', (e) => (/module sandbox/.test(e.message) ? reject(e) : resolve()));

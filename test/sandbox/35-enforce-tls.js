@@ -14,7 +14,7 @@ const https  = require('https');
 const os     = require('os');
 const path   = require('path');
 const {spawnSync} = require('child_process');
-const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY     = 'aabbcc';
@@ -74,7 +74,7 @@ describe('sandbox 35: TLS client connections under enforce', function() {
     describe(mode, () => {
       let server = null;
       let world = null;
-      const call = (a) => mcpCall(port, KEY, tool(a), {port: tlsPort}).then(toolOutput);
+      const call = (a, to) => mcpCall(port, KEY, tool(a), {port: (to != null) ? to : tlsPort}).then(toolOutput);
       before(async () => {
         world = launch(dir);
         server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread'].concat(world.args),
@@ -97,10 +97,18 @@ describe('sandbox 35: TLS client connections under enforce', function() {
         assert.deepStrictEqual(await call('fetchGet'), {code: 'ok', status: 200, body: 'hello'});
       });
 
+      // The log reaches the test asynchronously: a connection to the denied
+      // Redis endpoint (the default --redisUrl; this server passes none) is
+      // made after the three, and the log is read up to its line (L1 round
+      // 5: not after a fixed wait). Nothing else here touches Redis, so the
+      // once-per-target report logs it.
       it('the three connections tripped no violation', async () => {
-        await new Promise((resolve) => setTimeout(resolve, 500));   // the log reaches the test asynchronously
-        assert.ok(!server.output.includes(`module sandbox: ${NAME} violation`),
-          server.output.split('\n').filter((l) => l.includes('module sandbox')).join('\n'));
+        assert.deepStrictEqual(await call('tlsRoundTrip', 6379), {code: 'EACCES'});
+        const mark = `module sandbox: ${NAME} violation redis 127.0.0.1:6379`;
+        await waitFor(() => server.output.includes(mark), 20000, 'the Redis violation line');
+        const before = server.output.slice(0, server.output.indexOf(mark));
+        assert.ok(!before.includes(`module sandbox: ${NAME} violation`),
+          before.split('\n').filter((l) => l.includes('module sandbox')).join('\n'));
       });
     });
   });

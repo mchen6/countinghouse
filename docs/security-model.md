@@ -94,8 +94,9 @@ any module code). Stops:
   `wasi`, `sqlite` (its `loadExtension` loads native code), `test` (its
   `run()` starts unsandboxed child processes), `sea`, `repl` and
   `trace_events`; Node 26's `ffi`, which calls native code, is not on it
-  either; nor are Node's TLS internals `_tls_wrap` and `_tls_common`: a
-  module needs `tls`), through `require`, `import()` and
+  either; nor are Node's TLS internals `_tls_wrap` and `_tls_common` (a
+  module needs `tls`), nor `_stream_wrap`, whose `JSStreamSocket` extends
+  the real `net.Socket`), through `require`, `import()` and
   `process.getBuiltinModule` alike, so a built-in a later Node adds is
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
@@ -142,8 +143,10 @@ any module code). Stops:
   (`127.1`, `2130706433`, IPv4-mapped or -compatible), a port in any string
   form Node reads as a number (`'0x18eb'`), and the loopback names
   (`localhost`, any name under `.localhost`, `localhost.localdomain`,
-  `ip6-localhost`, `ip6-loopback`). A Unix-socket Redis is refused under
-  every spelling of its path (`..`, `//`, relative). This is an in-worker
+  `localhost4`, `localhost6`, `localhost4.localdomain4`,
+  `localhost6.localdomain6`, `ip6-localhost`, `ip6-loopback`). A
+  Unix-socket Redis is refused under every spelling of its path (`..`,
+  `//`, relative). This is an in-worker
   check, not a boundary: a name that reaches loopback only through
   `/etc/hosts` or DNS, a `lookup` function the module passes, another
   address of the same machine (a LAN IP), and a symlink or hard link to the

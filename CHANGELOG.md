@@ -33,10 +33,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   them as `localhost`, and `tls.connect` over a given `socket` was read as
   a connection to its `host` and `port`. `tls.connect` has no check of its
   own now: it dials through `Socket#connect`, whose check sees the options
-  as tls merged them. `server.listen` refused an options object with a
-  null prototype or a class's as a handle; a handle is now one of the
-  kinds whose `open(fd)` is guarded (TCP, Pipe, UDP), and under `audit` it
-  is reported and passed on as given.
+  as tls merged them. A refused connect on a socket the module already has
+  connected, over TCP or a pipe, leaves that connection as it was.
+  `server.listen` refused an options object with a null prototype or a
+  class's as a handle; a handle is now one of the kinds whose `open(fd)` is
+  guarded (TCP, Pipe, UDP), and under `audit` it is reported and passed on
+  as given.
 
 ### Security — descriptor adoption closed on routes the lockdown missed
 
@@ -73,7 +75,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   adoption as well.
 - The Redis denial now covers every loopback literal (all of 127/8,
   `0.0.0.0`, `::1` and `::`, in the forms the resolver accepts, such as
-  `127.1`, and IPv4-mapped or -compatible) and the loopback names, not six
+  `127.1`, and IPv4-mapped or -compatible) and the loopback names
+  (Debian's and RHEL and Fedora's: `localhost4`, `localhost6`,
+  `localhost4.localdomain4`, `localhost6.localdomain6`), not six
   spellings, as well as an empty host (Node connects to `localhost`),
   every spelling of a configured address (`10.5` for `10.0.0.5`, and its
   IPv4-mapped and IPv4-compatible forms), every spelling of a socket path
@@ -82,7 +86,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - `_tls_wrap` and `_tls_common` are refused to modules. They were on the
   allowlist, though a module needs `tls`, not Node's TLS internals behind
   it. A module (or a dependency) that requires them directly now fails to
-  load. Use `tls`.
+  load. Use `tls`. So is `_stream_wrap` (deprecated, DEP0125): its
+  `JSStreamSocket` extends the real `net.Socket`, so
+  `Object.getPrototypeOf(require('_stream_wrap'))` was a constructor past
+  the guard. Use `stream.Duplex`.
 
 ### Added — `ctx.error`: a handler's own error, which it may simply return
 

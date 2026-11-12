@@ -69,6 +69,46 @@ describe('sandbox 38: the Redis denial reads the host as Node does', function() 
     assert.deepStrictEqual(r, {refused: 20, open: 0});
   });
 
+  // RHEL and Fedora's /etc/hosts name loopback localhost4 and localhost6,
+  // with .localdomain4 and .localdomain6 (L1 round 5).
+  it('the RHEL and Fedora loopback names are loopback', () => {
+    const r = attempts({mode: 'audit', denied: {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []}},
+      `['localhost4', 'localhost4.localdomain4', 'localhost6', 'localhost6.localdomain6', 'localhost.localdomain6', 'localhost5', 'mylocalhost4']
+          .map((host) => [host, () => net.connect(6379, host)])`);
+    assert.deepStrictEqual(r, {'localhost4': 'EACCES', 'localhost4.localdomain4': 'EACCES', 'localhost6': 'EACCES',
+      'localhost6.localdomain6': 'EACCES', 'localhost.localdomain6': 'not denied', 'localhost5': 'not denied', 'mylocalhost4': 'not denied'});
+  });
+
+  // A refused connect() on a socket the module already has connected, over
+  // TCP or a pipe, is an EACCES and nothing more: the connection stays as it
+  // was (L1 round 5).
+  it('a refused connect leaves the module\'s own live connection open', () => {
+    const r = inWorker(`${install({mode: 'audit', denied: {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []}})}
+      const net = require('net');
+      const pipe = require('path').join(require('os').tmpdir(), 'ch-38-live-' + process.pid + '.sock');
+      const out = {};
+      for (const [label, at] of [['tcp', [0, '127.0.0.1']], ['pipe', [pipe]]]) {
+        const server = net.createServer((c) => c.pipe(c));
+        await new Promise((resolve) => server.listen(...at, resolve));
+        const s = (label === 'tcp') ? net.connect(server.address().port, '127.0.0.1') : net.connect(pipe);
+        await new Promise((resolve) => s.once('connect', resolve));
+        let code = 'not denied';
+        try { s.connect(6379, '127.0.0.1'); } catch (e) { code = String(e.code); }
+        const destroyed = s.destroyed;
+        const echoed = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(null), 2000);
+          s.once('data', (d) => { clearTimeout(timer); resolve(d.toString()); });
+          s.write('still here');
+        });
+        s.destroy();
+        await new Promise((resolve) => server.close(resolve));
+        out[label] = {code, destroyed, echoed};
+      }
+      return out;`);
+    const kept = {code: 'EACCES', destroyed: false, echoed: 'still here'};
+    assert.deepStrictEqual(r, {tcp: kept, pipe: kept});
+  });
+
   // An IPv4-mapped or IPv4-compatible IPv6 literal is its IPv4 address,
   // on either side (code review of round 3).
   it('an IPv4 address is denied under its IPv6 forms, and the other way round', () => {

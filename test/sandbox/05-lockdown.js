@@ -6,7 +6,7 @@ const assert = require('assert');
 const path   = require('path');
 const Module = require('module');
 const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTINS} = require('../../lib/module-lockdown');
-const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY   = 'aabbcc';
@@ -19,7 +19,7 @@ const ROUTES = [
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
-  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['streamWrap'], ['streamWrapSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
   ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
 
@@ -30,16 +30,19 @@ function serverArgs(mode) {
 // L1: adoption is a descriptor number. A handle object given to net.Socket
 // is never a route to a foreign descriptor inside a worker (Node's own
 // TLSSocket constructs one that way), so it is not a violation: the bogus
-// handle fails on its own, and no descriptor line is logged. Only the log
-// written since the call is read, after it has had time to arrive (it
-// reaches the test asynchronously).
-const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
+// handle fails on its own, and no descriptor line is logged. The log
+// reaches the test asynchronously, so a known violation is made after the
+// call and the log is read up to its line (L1 round 5: not after a fixed
+// wait, which a slow machine outlasts). Its target is new each time, so the
+// once-per-target report always logs it.
 async function handleIsNotAdoption(port, server) {
   const from = server.output.length;
+  const mark = `/nonexistent/ch-05-mark-${process.pid}-${Date.now()}`;
   const r = await mcpCall(port, KEY, TOOL, {what: 'socketHandle'});
   assert.strictEqual(toolOutput(r).outcome, 'allowed', JSON.stringify(r));
-  await settle();
-  const since = server.output.slice(from);
+  await mcpCall(port, KEY, TOOL, {what: 'loadFileOutside', arg: mark});
+  await waitFor(() => server.output.indexOf(mark, from) !== -1, 20000, 'the loadFile violation line');
+  const since = server.output.slice(from, server.output.indexOf(mark, from));
   assert.ok(!since.includes('violation descriptor'), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
 }
 
@@ -232,6 +235,7 @@ describe('sandbox 05: the built-in allowlist', () => {
   const REFUSED = ['child_process', 'cluster', 'worker_threads', 'inspector', 'inspector/promises', 'v8', 'wasi',
     'sqlite', 'test', 'test/reporters', 'sea', 'repl', 'trace_events',
     '_tls_wrap', '_tls_common',   // Node's tls internals: a module needs tls, which carries the lockdown's wrappers
+    '_stream_wrap',   // DEP0125; its JSStreamSocket extends the real net.Socket, past the guard
     'ffi'];   // Node 26: a foreign-function interface, native code from JavaScript
 
   it('refuses each left-out built-in, with or without node:', () => {
