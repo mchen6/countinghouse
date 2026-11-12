@@ -286,8 +286,8 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
   });
 
   it('the debug API log line carries neither the caller\'s input nor the module\'s message or fault', () => {
-    // In a child process: lib/session.js opens a Redis client when it is
-    // loaded, which would keep this folder's process alive.
+    // In a child process, so the options it sets (--debug) stay out of
+    // this folder's process.
     const {spawnSync} = require('child_process');
     const lib = require('path').resolve(__dirname, '../../lib');
     const script = `
