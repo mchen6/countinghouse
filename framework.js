@@ -46,6 +46,21 @@ if (options.mcpToolCallCostInvalid != null) {
     (typeof(badCost) === 'boolean' || badCost === '' ? 'no value' : JSON.stringify(String(badCost))) + ')');
   process.exit(2);
 }
+// RC1-min: a module cannot choose where a credential goes; the operator's
+// file does. One that cannot be read as {origin: [variable]} stops the start.
+if (options.remoteLimitInvalid != null) {
+  console.error('--' + options.remoteLimitInvalid.name + ' must be a positive number (got ' +
+    JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
+  process.exit(2);
+}
+if (options.remoteCredentials != null || process.argv.some((a) => a === '--remoteCredentials' || a.startsWith('--remoteCredentials='))) {
+  try {
+    require('./lib/remote/credentials').configure(options.remoteCredentials);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
+  }
+}
 var bindAddress = require('./lib/bind-address');
 if (options.debug === true && options.debugKey == null && !bindAddress.isLoopback(bindAddress.hostIp())) {
   console.error('--debug without --debugKey accepts every request as an admin, so it binds only to loopback; ' +
