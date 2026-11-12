@@ -130,7 +130,9 @@ any module code). Stops:
   Node's own TLS machinery hands in (`tls.connect`, `https`, `fetch`) is over
   a socket the module was allowed to open, so TLS client connections work
   under `enforce` as under `audit`, `--hardened` included. `server.listen`
-  stays strict and refuses a handle as well: a module has no need to listen
+  stays strict and refuses a handle as well (a TCP, Pipe or UDP handle,
+  the kinds whose `open(fd)` is guarded; Node's `listen` takes a TCP handle
+  as one and reads another's descriptor): a module has no need to listen
   on one;
 - the Redis endpoint (R2-1, part 2: `--redisUrl`'s host and port): refused
   with `EACCES` in `audit` and `enforce`, under its configured host in every

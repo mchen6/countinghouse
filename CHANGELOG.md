@@ -33,7 +33,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   them as `localhost`, and `tls.connect` over a given `socket` was read as
   a connection to its `host` and `port`. `tls.connect` has no check of its
   own now: it dials through `Socket#connect`, whose check sees the options
-  as tls merged them.
+  as tls merged them. `server.listen` refused an options object with a
+  null prototype or a class's as a handle; a handle is now one of the
+  kinds whose `open(fd)` is guarded (TCP, Pipe, UDP), and under `audit` it
+  is reported and passed on as given.
 
 ### Security — descriptor adoption closed on routes the lockdown missed
 

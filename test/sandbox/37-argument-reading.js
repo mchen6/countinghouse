@@ -5,7 +5,7 @@
 // Node reads it, as an object of its own properties. Installed directly in
 // a worker; each refusal is synchronous, so nothing reaches the network.
 const assert = require('assert');
-const {inWorker, install} = require('../helpers/lockdown-worker');
+const {inWorker, install, CAPTURE_SOURCE} = require('../helpers/lockdown-worker');
 
 const REDIS = {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []};
 
@@ -39,6 +39,55 @@ describe('sandbox 37: the lockdown reads arguments as Node does', function() {
     // Node's own answer to connect() with no port or path.
     assert.deepStrictEqual(r.codes, {'inherited endpoint': 'ERR_MISSING_ARGS', 'inherited fd': 'not denied'});
     assert.deepStrictEqual(r.reports.filter((l) => /^(descriptor|redis) /.test(l)), [], JSON.stringify(r.reports));
+  });
+
+  // L1 round 4: server.listen tells a handle by its prototype, as Node's
+  // instanceof TCP / Pipe does, not by any prototype other than Object's.
+  it('listen takes an options object with a null prototype or a class\'s', () => {
+    const r = inWorker(`${install({mode: 'enforce'})}
+      const net = require('net');
+      class Options { constructor() { this.port = 0; this.host = '127.0.0.1'; } }
+      const codes = {};
+      for (const [label, o] of [['null prototype', {__proto__: null, port: 0, host: '127.0.0.1'}], ['class instance', new Options()]]) {
+        const server = net.createServer();
+        try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(o, resolve); }); codes[label] = 'listening'; }
+        catch (e) { codes[label] = String(e.code); }
+        server.close();
+      }
+      return {codes, reports};`);
+    assert.deepStrictEqual(r.codes, {'null prototype': 'listening', 'class instance': 'listening'});
+    assert.deepStrictEqual(r.reports.filter((l) => l.startsWith('descriptor ')), [], JSON.stringify(r.reports));
+  });
+
+  // Audit reports a handle given to listen and then runs the call as given.
+  it('under audit, listen(handle) is reported and then runs as given', () => {
+    const r = inWorker(`${CAPTURE_SOURCE}
+      const handle = new (capture.TCP().constructor)(1);
+      ${install({mode: 'audit'})}
+      const server = require('net').createServer();
+      server.on('error', () => {});
+      let code = 'no error';
+      try { server.listen(handle); } catch (e) { code = String(e.code); }
+      server.close();
+      return {code, reports};`);
+    assert.strictEqual(r.code, 'no error');
+    assert.ok(r.reports.some((l) => l.startsWith('descriptor ')), JSON.stringify(r.reports));
+  });
+
+  // A UDP handle is a kind whose open(fd) is guarded too: audit reports it,
+  // and Node's listen refuses it itself (code review of round 4).
+  it('under audit, listen on a UDP handle is reported and Node answers it', () => {
+    const r = inWorker(`${CAPTURE_SOURCE}
+      const handle = new (capture.UDP().constructor)();
+      ${install({mode: 'audit'})}
+      const server = require('net').createServer();
+      server.on('error', () => {});
+      let code = 'no error';
+      try { server.listen(handle); } catch (e) { code = String(e.code); }
+      server.close();
+      return {code, reports};`);
+    assert.strictEqual(r.code, 'ERR_INVALID_ARG_VALUE');
+    assert.ok(r.reports.some((l) => l.startsWith('descriptor ')), JSON.stringify(r.reports));
   });
 
   it('the worker helper reports a worker that ends without an answer', () => {
