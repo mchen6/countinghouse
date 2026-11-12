@@ -37,6 +37,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   saw. Without `--hardened` the native `open(fd)` backstop still
   caught them. Under `--hardened` nothing did, so a module could take the
   main server's listening socket. They are now checked at their entry.
+- `tty.ReadStream` and `tty.WriteStream` took a descriptor in every mode
+  through their `prototype.constructor`, which was the real constructor
+  behind the guard (the guard is a Proxy, whose prototype is its
+  target's). tty builds its handle from the descriptor with no `open(fd)`,
+  so no backstop saw it, and a module could write to a connection another
+  owner held in the process, the main thread's Redis connection included.
+  `prototype.constructor` of each is now the guard, and so is
+  `net.Socket`'s, and so is the constructor `tls.TLSSocket` and `tty`'s
+  streams extend (`Object.getPrototypeOf(tty.WriteStream)`). A real
+  `net.Socket` reached another way (Node's internal `JSStreamSocket`
+  extends it too) builds only a TCP or Pipe handle from a descriptor, and
+  that handle's `open(fd)` is guarded (below).
 - Under `--hardened`, `open(fd)` on a TCP, Pipe or UDP handle a module built
   from an instance's constructor was not guarded before this release, since
   the backstop's prototypes came from `process.binding`, which the

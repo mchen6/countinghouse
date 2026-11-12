@@ -37,6 +37,11 @@ const forms = {
   tcpOpen: () => new (capture.TCP().constructor)(0).open(FD),
   pipeOpen: () => new (capture.Pipe().constructor)(0).open(FD),
   udpOpen: () => new (capture.UDP().constructor)().open(FD),
+  socketCtor: () => new (net.Socket.prototype.constructor)(FD),
+  ttyWriteCtor: () => new (require('tty').WriteStream.prototype.constructor)(FD),
+  ttyReadCtor: () => new (require('tty').ReadStream.prototype.constructor)(FD),
+  ttySuper: () => new (Object.getPrototypeOf(require('tty').WriteStream))(FD),
+  tlsSuper: () => new (Object.getPrototypeOf(require('tls').TLSSocket))(FD),
 };
 module.exports = async (input) => {
   try {
@@ -218,6 +223,17 @@ describe('sandbox 09: --hardened descriptor routes', function() {
   // reaches ERR_INVALID_FD_TYPE). The check reads it the same way.
   it('refuses a descriptor given as an array\'s fd property to net.Socket, net.connect and listen', async () => {
     for (const form of ['arraySocket', 'arrayConnect', 'arrayListen']) {
+      assert.deepStrictEqual(await fdAttempt(form), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, form);
+    }
+  });
+
+  // L1 round 4: the guards are Proxies, and a Proxy's prototype is its
+  // target's, so prototype.constructor was the real constructor; tty builds
+  // its handle from the fd with no open(fd), so no backstop saw it. A
+  // subclass's [[Prototype]] is the constructor it extends: the real
+  // net.Socket, behind tty's streams and TLSSocket.
+  it('refuses a descriptor given to the constructors behind net.Socket and tty', async () => {
+    for (const form of ['socketCtor', 'ttyWriteCtor', 'ttyReadCtor', 'ttySuper', 'tlsSuper']) {
       assert.deepStrictEqual(await fdAttempt(form), {outcome: 'blocked', code: 'ERR_ACCESS_DENIED'}, form);
     }
   });
