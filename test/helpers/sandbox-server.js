@@ -38,7 +38,14 @@ function startServer(port, args, opts) {
       return;
     }
     server.on('exit', (code) => { server.exitCode = code; });
-    waitForReady(server, (err) => (err ? reject(err) : resolve(server)));
+    // A server that never got ready is stopped, so a boot failure cannot
+    // leave it holding its port and taking the queue's jobs from the next
+    // test's server (#72's hung CI run).
+    waitForReady(server, (err) => {
+      if (err == null) return resolve(server);
+      stopServer(server);
+      return reject(err);
+    });
   });
 }
 
