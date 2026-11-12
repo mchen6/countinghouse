@@ -158,6 +158,22 @@ describe('expansion, from /code-review medium on #46', () => {
     }
   });
 
+  it('a module whose api.json is not in the current format is handed to the loader, which reports it, and the others still load', () => {
+    // The pre-5.0.0 fixture module-loading 01 (case C) and 03 load: its
+    // actionList is an object. Expansion read it as an array and threw, so
+    // loadAllModules stopped before "countinghouse ready".
+    const legacy = path.join(__dirname, '..', 'fixtures', 'legacy-spec-module');
+    const healthy = moduleAt(path.join(root, 'healthy'), {name: 'healthy'});
+    const odd = path.join(root, 'odd');
+    fs.mkdirSync(odd);
+    fs.writeFileSync(path.join(odd, 'package.json'), JSON.stringify({name: 'odd', version: '1.0.0', countinghouse: {role: 'scenario'}}));
+    fs.writeFileSync(path.join(odd, 'api.json'), JSON.stringify({device: {friendlyName: 'odd', serviceList: {'urn:x:serviceID:a': {actionList: [null, 'x', {name: 'go', description: 'Go.'}]}, 'urn:x:serviceID:b': null}}}));
+    const {load, refused} = roles.expandLoadList([legacy, healthy, odd]);
+    assert.deepStrictEqual(refused, []);
+    assert.deepStrictEqual(load.map((m) => [path.basename(m.path), m.listed]), [['legacy-spec-module', true], ['healthy', true], ['odd', true]]);
+    assert.deepStrictEqual(roles.toolNamesOf(odd, 'scenario'), ['go']);
+  });
+
   it('an action with no description is never a tool, so it takes no name', () => {
     const plain = path.join(root, 'plain');
     fs.mkdirSync(plain);
@@ -185,5 +201,20 @@ describe('--loadModule expands a scenario in the module manager', () => {
     const mm = new ModuleManager();
     assert.deepStrictEqual(mm.getModuleInfoFromPath([scenario, missing]).map((m) => m.name), ['s', 'p1']);
     assert.deepStrictEqual([...mm.unlisted], ['p1']);
+  });
+
+  it('if expansion ever throws, the given modules load as given, listed, so the start still reaches ready', () => {
+    const ModuleManager = require('../../lib/module-manager');
+    const original = roles.expandLoadList;
+    roles.expandLoadList = () => { throw new TypeError('a module the expansion could not read'); };
+    try {
+      const a = moduleAt(path.join(root, 'a'), {name: 'a'});
+      const b = moduleAt(path.join(root, 'b'), {name: 'b', role: 'scenario', calls: ['p1/svc.run']});
+      const mm = new ModuleManager();
+      assert.deepStrictEqual(mm.getModuleInfoFromPath([a, b]).map((m) => [m.name, m.version]), [['a', '1.0.0'], ['b', '1.0.0']]);
+      assert.deepStrictEqual([...mm.unlisted], []);
+    } finally {
+      roles.expandLoadList = original;
+    }
   });
 });
