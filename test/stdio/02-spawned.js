@@ -38,10 +38,23 @@ const lines = (io) => io.out.split('\n').filter((l) => l !== '');
 // answers, so every Redis client and the job queue retry and log). Without
 // this the 2000-character tail held only that noise, and on Windows (issue
 // #40) the real reason the module never listed was cut off.
-const REDIS_NOISE = /ECONNREFUSED|Redis client error|Redis connection to|job queue error|^\s+(at |code:|errno:|syscall:|address:|port:|\[)|^Error: connect|^\s*[{}]\s*$/;
+// A noise block starts at one of these lines and runs through the indented
+// stack and field lines and the closing brace that follow it. Indented lines
+// after anything else (a --trace-deprecation stack, say) are kept.
+const REDIS_NOISE = /ECONNREFUSED|Redis client error|Redis connection to|job queue error/;
+const CONTINUATION = /^\s+\S|^\s*[{}]\s*$/;
 function diagnostic(err, max = 4000) {
-  const kept = err.split('\n').filter((l) => l.trim() !== '' && !REDIS_NOISE.test(l)).join('\n');
-  return kept.length > max ? `…${kept.slice(-max)}` : kept;
+  const kept = [];
+  let inNoise = false;
+  for (const l of err.split('\n')) {
+    if (l.trim() === '') continue;
+    if (REDIS_NOISE.test(l)) { inNoise = true; continue; }
+    if (inNoise && CONTINUATION.test(l)) continue;
+    inNoise = false;
+    kept.push(l);
+  }
+  const text = kept.join('\n');
+  return text.length > max ? `…${text.slice(-max)}` : text;
 }
 function request(io, message, timeoutMs = 15000) {
   io.child.stdin.write(`${JSON.stringify(message)  }\n`);
@@ -67,6 +80,8 @@ describe('--stdio, spawned: the failure message', () => {
       '{"level":50,"e":"module handler-map-module failed to load: the real reason"}'
     ].join('\n');
     assert.strictEqual(diagnostic(err), '{"level":50,"e":"module handler-map-module failed to load: the real reason"}');
+    const traced = ['(node:1) [DEP0169] DeprecationWarning: url.parse()', '    at urlParse (node:url:136:13)', '    at Object.<anonymous> (lib/job-control.js:66:20)'].join('\n');
+    assert.strictEqual(diagnostic(`${err}\n${traced}`).split('\n').slice(1).join('\n'), traced, 'a stack after a non-noise line is kept');
   });
 });
 
