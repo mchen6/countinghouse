@@ -9,7 +9,8 @@ const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, waitFor} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, waitFor, post} = require('../helpers/sandbox-server');
+const {deviceIDForName} = require('../../lib/call-address');
 
 const PORT    = 9740; // C's block, 9740-9749 (test/ports.md)
 const KEY     = 'usage-e2e-key';
@@ -70,6 +71,17 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
     }
   });
 
+  // The review of #59: a call is begun only once its caller is authenticated,
+  // and an HTTP caller's usageCall never reaches a module or a record.
+  it('a refused key opens no call, and an HTTP invoke-action caller cannot pass a usageCall', async () => {
+    const refused = await request(`http://127.0.0.1:${PORT}`).post('/mcp').set('X-CH-Key', 'not-the-key')
+      .set('Accept', 'application/json, text/event-stream').send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'usage_probe', arguments: {}}});
+    assert.ok(refused.body.error != null || (refused.body.result && refused.body.result.isError === true), JSON.stringify(refused.body));
+    const r = await post(PORT, KEY, `/devices/${deviceIDForName('usage-scenario')}/invoke-action`,
+      {serviceID: 'urn:countinghouse-test:serviceID:probeService', actionName: 'usage_probe', input: {}, usageCall: 99999});
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  });
+
   it('the usage report counts every call, the task runs included, and the files hold them', async () => {
     const report = (await mcp('tools/call', {name: 'countinghouse_usage_report', arguments: {groupBy: 'tool'}})).result;
     assert.strictEqual(report.isError, false, JSON.stringify(report));
@@ -82,5 +94,7 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
     const outs = lines.map((l) => JSON.parse(l)).filter((r) => r.bytesOut !== undefined);
     assert.deepStrictEqual(outs.map((r) => [r.tool, r.outcome]).sort(), [['usage_probe', 'ok'], ['usage_probe', 'ok'], ['usage_reserved', 'error'], ['usage_reserved', 'error']]);
     assert.ok(!lines.some((l) => l.includes(KEY)), 'no key in a usage file');
+    assert.ok(!lines.some((l) => JSON.parse(l).call === 99999), 'an HTTP caller\'s usageCall is in no record');
+    assert.ok(!lines.some((l) => l.includes('not-the-key')), 'a refused key opened no call');
   });
 });
