@@ -77,6 +77,21 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     assert.deepStrictEqual([u.records()[0].pack, u.records()[0].module, u.records()[0].outcome], [null, 'plain', 'ok']);
   });
 
+  it('the Out record counts the text tasks/result sends: built with the stamped schema, and RECEIPT_RESERVED for a reserved output', () => {
+    const seen = [];
+    const h = taskHooks({usage: () => u, targetFor: () => SCENARIO, callerOf: () => 'u_a', now: () => t,
+      buildResult: (err, results, schema) => { seen.push([err && err.code, schema]); return built(err, results); }});
+    const schema = {type: 'object'};
+    h.complete(job(SCENARIO), {output: {summary: 'x'}}, {extra: h.start(job(SCENARIO))}, schema);
+    h.complete(job(SCENARIO), {output: {receipt: 1}}, {extra: h.start(job(SCENARIO))}, schema);
+    assert.deepStrictEqual(seen, [[null, schema], ['RECEIPT_RESERVED', schema]]);
+  });
+
+  it('a job with no owner (a scheduler template, apiKey null) is not counted at all', () => {
+    assert.strictEqual(hooks.start(job(SCENARIO, null)), null);
+    assert.strictEqual(u.records().length, 0);
+  });
+
   it('a retried job is a new call each run', () => {
     const a = hooks.start(job(SCENARIO));
     const b = hooks.start(job(SCENARIO));

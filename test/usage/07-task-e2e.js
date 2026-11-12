@@ -94,7 +94,8 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
     const outs = lines.map((l) => JSON.parse(l)).filter((r) => r.bytesOut !== undefined);
     assert.deepStrictEqual(outs.map((r) => [r.tool, r.outcome]).sort(), [['usage_probe', 'ok'], ['usage_probe', 'ok'], ['usage_reserved', 'error'], ['usage_reserved', 'error']]);
     assert.ok(!lines.some((l) => l.includes(KEY)), 'no key in a usage file');
-    assert.ok(!lines.some((l) => JSON.parse(l).call === 99999), 'an HTTP caller\'s usageCall is in no record');
-    assert.ok(!lines.some((l) => l.includes('not-the-key')), 'a refused key opened no call');
+    // A refused key opening a call would add a usage_probe Out record: the
+    // exact list above, and the report's two usage_probe calls, would show
+    // it. An HTTP caller's usageCall is pinned at the route by usage/08.
   });
 });

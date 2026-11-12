@@ -221,3 +221,14 @@ the catalogue says which entries were seen there.
    (step 2).
 6. The aggregation comes from mchen6/ch-report's main, with its tests, and
    the report scopes by `caller` (step 3).
+7. Step 3b counts task-augmented `tools/call`. The call id is minted where
+   the job runs (a `startHook`); the completion hook writes the Out record,
+   counting the text `tasks/result` sends. Every run of a retried job is its
+   own call: a job failing twice and then succeeding reports three calls,
+   two of them errors, because each run did real work and made its own
+   server calls; the final run's receipt says what reached the model. A job
+   with no owner (a scheduler template) is not counted. An HTTP `/add-job`
+   of a listed tool is.
+8. Step 3c: only a worker the gateway, or a task's start hook, dispatched a
+   call to may state its `usageCall` on a hop. Anything else is
+   `USAGE_CALL_FOREIGN`, and the hop is not forwarded.
