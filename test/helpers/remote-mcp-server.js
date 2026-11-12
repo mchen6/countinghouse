@@ -6,6 +6,7 @@
 //   echo_text   {content: [{type: 'text', text: JSON of the arguments}]}
 //   fails       an isError result with GitHub's "410" text
 //   structured  content plus structuredContent
+//   mixed       a text block and an image block (called, not listed)
 //   big         one text item of 17 MiB, as JSON
 //   big_sse     the same, as an event stream
 //   sse_text    echo_text's answer, as an event stream
@@ -37,6 +38,7 @@ function answer(name, args) {
     case 'sse_text': return {content: [{type: 'text', text: text}]};
     case 'fails': return {content: [{type: 'text', text: 'failed to get job logs: unexpected status code: 410 Gone'}], isError: true};
     case 'structured': return {content: [{type: 'text', text: '{"n":3}'}], structuredContent: {n: 3}};
+    case 'mixed': return {content: [{type: 'text', text: 'ab\ncd'}, {type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png'}]};
     case 'big':
     case 'big_sse': return {content: [{type: 'text', text: 'x'.repeat(BIG)}]};
     case 'slow': return new Promise((resolve) => setTimeout(() => resolve({content: [{type: 'text', text: text}]}), 3000));
