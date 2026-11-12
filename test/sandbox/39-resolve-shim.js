@@ -119,13 +119,47 @@ describe('sandbox 39: the routes to the module resolver', function() {
       }
     });
 
-    // Below 24.15 the shim locks Module._resolveFilename in every mode; on
-    // 24.15 and later nothing is installed or locked under audit, as before
-    // the shim (the spec's non-goal: nothing changes there).
-    it('a module cannot replace Module._resolveFilename where the shim is installed', async function() {
-      if (!require('../../lib/node-version').NEEDS_RESOLVE_SHIM) this.skip();
+    // Under audit nothing locks Module._resolveFilename, on any version (on
+    // 24.15 and later nothing is installed; below it the shim locks only
+    // under enforce), so a dependency that patches it works alike.
+    it('a module may replace Module._resolveFilename, on every version', async () => {
       const a = await attempt(server, 9725, 'replaceResolveFilename');
-      assert.strictEqual(a.out.result, OWN_FILE, a.raw);
+      assert.strictEqual(a.out.result, '/replaced', a.raw);
     });
+  });
+});
+
+// Code review of the floor PR: identity's enforce wrapper takes a virtual
+// path only when it is the answer a hook gave, never a path Node's own
+// resolver found (a real host /app tree, a Docker WORKDIR, say). Checked in
+// a throwaway worker with the shim forced on, so it runs on every version.
+describe('sandbox 39: the resolve shim marks a hook\'s answer', function() {
+  this.timeout(30000);
+  it('isHookAnswer is true for a hook\'s answer and false for Node\'s resolver\'s', async () => {
+    const {Worker} = require('worker_threads');
+    const code = `
+      const {parentPort} = require('worker_threads');
+      const Module = require('module');
+      const nv = require(${JSON.stringify(path.join(ROOT, 'lib', 'node-version.js'))});
+      nv.NEEDS_RESOLVE_SHIM = true;
+      const shim = require(${JSON.stringify(path.join(ROOT, 'lib', 'resolve-shim.js'))});
+      shim.registerHooks(Module.registerHooks, {resolve(specifier, context, nextResolve) {
+        if (specifier === 'virtual-answer') return {url: 'file:///app/handlers/x.js', shortCircuit: true};
+        return nextResolve(specifier, context);
+      }});
+      const parent = new Module(${JSON.stringify(path.join(ROOT, 'lib', 'x.js'))}, null);
+      parent.filename = ${JSON.stringify(path.join(ROOT, 'lib', 'x.js'))};
+      parent.paths = Module._nodeModulePaths(${JSON.stringify(path.join(ROOT, 'lib'))});
+      const fromHook = Module._resolveFilename('virtual-answer', parent);
+      const hook = shim.isHookAnswer(fromHook);
+      const fromNode = Module._resolveFilename(${JSON.stringify(path.join(ROOT, 'lib', 'node-version.js'))}, parent);
+      const node = shim.isHookAnswer(fromNode);
+      parentPort.postMessage({fromHook, hook, node, again: shim.isHookAnswer(fromHook)});`;
+    const r = await new Promise((resolve, reject) => {
+      const w = new Worker(code, {eval: true});
+      w.once('message', resolve);
+      w.once('error', reject);
+    });
+    assert.deepStrictEqual(r, {fromHook: '/app/handlers/x.js', hook: true, node: false, again: false});
   });
 });
