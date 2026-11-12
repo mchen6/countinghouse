@@ -255,13 +255,15 @@ without the credential, and a server that needs one answers 401, logged as
 ## 6. Counting: LM1's `usage.recordIn`
 
 For every remote call, success or failure, the client calls
-`usage.recordIn(call, {server, tool, bytes, lines, ms, outcome,
-credential})`. The fields:
+`usage.recordIn(call, {server, module, tool, bytes, lines, ms, outcome,
+credential})`. The recorder is `require('./usage/runtime').usage()` (C's
+`lib/usage/`); `recordIn` is skipped when the call id is null. The fields:
 
 - `bytes`: UTF-8 bytes of the result's text content;
 - `lines`: the newline-separated lines of that text, JSON included;
 - `outcome`: `ok`, `isError`, or the rejection code;
-- `credential`: the name of the variable used, or null.
+- `credential`: the name of the variable used, or null;
+- `module`: the calling module's friendlyName (the report groups by it).
 
 This is LM1 section 5's interface, built by implementer C in `lib/usage/`.
 Until it lands, `lib/remote/` takes the recorder by injection, with a
@@ -273,8 +275,10 @@ decision, 2026-11-11, the propagation rule:**
 
 - The gateway mints the id per `tools/call`, from a per-process counter
   whose start C's `lib/usage/` defines.
-- It travels in the invoke args under a framework-injected key, and `ctx`
-  carries it unexposed to the module.
+- It travels in the invoke args under the framework-injected key
+  `usageCall` (an integer, or absent or null), set by the gateway from
+  `usage().beginCall({pack, tool, caller})`. `ctx` carries it in
+  `buildCtx`'s closure, unexposed to the module.
 - It propagates unchanged across every inner hop: composite to part, part
   to part, part to remote. Every `In` record made during one `tools/call`
   carries the same id.
@@ -331,8 +335,9 @@ RC1-min carries the id on the `remote:` route and on the existing
     thread at its own Redis or the operator's internal network. This is a
     check on the URL's literal host, the same spelling-based kind as L1's
     in-worker Redis denial. A name that resolves to a private address is
-    not caught until a resolved-address check, the network broker's
-    design, applies to the main thread too.
+    caught by the client's lookup when the plan's step lands: the client's
+    own fetch connects through an agent whose `lookup` refuses a loopback,
+    private or Redis-endpoint address before the socket opens.
 - Billing identity: the worker states it, as the existing `ctx.call` path
   does today. R2-1's per-call token (Tasks 3–5) closes that for both paths
   together.
