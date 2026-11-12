@@ -288,16 +288,43 @@ codes, the MCP surface for listed modules, `countinghouse-validate`.
 - CI: a local-mode smoke test (stdio, one scenario, no Redis service) on
   ubuntu, macos and windows runners; the Redis-backed suites stay on Linux.
 
-## Sequencing
+## Sequencing and ownership (maintainer, 2026-11-11 evening: "distribute work evenly among the three workers")
 
-Floor shim → store selection point with the Redis implementations behind
-it (no behaviour change, whole suite green) → local metering provider →
-local kv → `--stdio` → roles and scenario loading → the single-identity
-profile (in-memory key and bindings, `--meter`) → counters, usage files,
-the `countinghouse_usage_report` built-in tool and `countinghouse-usage` (lib/usage/,
-from ch-report's aggregation) →
-receipt → local job runner → docs (README, CLI reference, security-model's
-mode table: a `local` column; `docs/deployment.md`: "hosting keeps Redis").
+Three implementers build LM1 in parallel, split by the files each owns so
+their PRs rarely meet; each writes the plan for its own part from this
+spec, one PR per step, CI as the gate, the reviewer merging.
+
+- **B (store and identity):** the store selection point with the Redis
+  implementations behind it (no behaviour change, whole suite green) →
+  local metering provider with `--meter` → local kv → the single-identity
+  auth binding in memory (section 4's key and `runsModules`, the identity
+  secret under `<storePath>`) → local job runner. Files: `lib/store.js`,
+  `lib/metering/`, `lib/local-kv.js`, `lib/redis-api.js`, `lib/job-control*.js`,
+  `lib/auth/`.
+- **C (transport, loading, usage):** the `--stdio` route layer over the
+  gateway's `handle()` → roles, scenario and part loading, `MODULE_NOT_LISTED`,
+  the profile's tool listing (section 4) → boundary counters, usage files,
+  the receipt, `countinghouse_usage_report` and `countinghouse-usage`
+  (`lib/usage/`, from ch-report's code) → Windows gap catalogue with issue
+  #40. Files: `lib/mcp/stdio.js` (new), `lib/mcp/tool-registry.js`,
+  `lib/mcp/gateway.js` (receipt and the Out counter only), `lib/usage/`
+  (new), the loader paths in `lib/module-manager.js` and
+  `lib/device-manager.js`, `bin/countinghouse-usage.js`.
+- **A (remote client and the floor):** RC1-min first (its own spec), which
+  calls `lib/usage.js` `recordIn` through the interface C builds (a stub
+  until then) → the Node floor shim (its own spec; the resolve-hook work
+  sits in the sandbox A already owns) → multi-server and HTTP remotes.
+  Files: `lib/remote/` (new), `lib/handler-ctx.js` (the `remote:` route),
+  `lib/module-lockdown.js`, `lib/node-version.js`, the resolve shim.
+
+Interfaces between them, fixed here so no one waits: `createStore(options)
+-> {metering, kv, jobs}` (B) consumed by C's counters only through the
+metering provider's `recordCall`; `usage.recordIn(call, {...})` and
+`usage.recordOut(...)` (C) called by A's client and the gateway; the
+single-identity key (B) read by C's stdio layer through the existing
+options object, never a new global. Docs (README, CLI reference,
+security-model's `local` column, deployment.md) close each part, written
+by its owner.
 
 ## Left to the builder
 
