@@ -1,24 +1,32 @@
-// countinghouse 8 needs Node 24.15: its module.registerHooks resolve hooks
-// see require.resolve (earlier Node, 22 included, skips them, so module code's
-// require.resolve fails in worker mode). Older Node fails fast at startup.
+// countinghouse 8 needs Node 22.16, the first 22 with module.registerHooks.
+// Below 24.15 those hooks do not see require.resolve or
+// createRequire().resolve, so a compatibility shim routes them through the
+// sandbox's hooks (lib/module-lockdown.js; docs/superpowers/specs/
+// 2026-11-11-node-floor-shim-design.md). Older Node fails fast at startup.
 const assert = require('assert');
 const nodeVersion = require('../../lib/node-version');
 
 describe('sandbox 10: Node version floor', () => {
-  it('accepts 24.15.0 and later', () => {
-    ['v24.15.0', 'v24.15.1', 'v24.21.0', 'v24.22.2', 'v25.0.0', 'v26.12.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), true, v));
+  it('accepts 22.16.0 and later', () => {
+    ['v22.16.0', 'v22.23.4', 'v24.0.0', 'v24.14.1', 'v24.15.0', 'v24.22.2', 'v25.0.0', 'v26.12.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), true, v));
   });
 
   it('refuses anything older', () => {
-    ['v20.20.2', 'v22.16.0', 'v22.23.4', 'v24.0.0', 'v24.14.1', 'v24.14.9', 'v18.0.0'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), false, v));
+    ['v18.0.0', 'v20.20.2', 'v22.0.0', 'v22.15.1', 'v21.7.3'].forEach((v) => assert.strictEqual(nodeVersion.supported(v), false, v));
   });
 
   it('says what it needs and what it got', () => {
-    assert.strictEqual(nodeVersion.message('v20.20.2'), 'countinghouse 8 needs Node 24.15 or later (this is v20.20.2)');
+    assert.strictEqual(nodeVersion.message('v20.20.2'), 'countinghouse 8 needs Node 22.16 or later (this is v20.20.2)');
   });
 
   it('accepts the Node running this test', () => {
     assert.strictEqual(nodeVersion.supported(process.version), true);
+  });
+
+  it('needs the resolve shim below 24.15 only', () => {
+    ['v22.16.0', 'v22.23.4', 'v24.0.0', 'v24.14.1', 'v24.14.9'].forEach((v) => assert.strictEqual(nodeVersion.needsResolveShim(v), true, v));
+    ['v24.15.0', 'v24.22.2', 'v26.12.0'].forEach((v) => assert.strictEqual(nodeVersion.needsResolveShim(v), false, v));
+    assert.strictEqual(nodeVersion.NEEDS_RESOLVE_SHIM, nodeVersion.needsResolveShim(process.version));
   });
 });
 
