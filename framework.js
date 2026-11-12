@@ -239,6 +239,10 @@ if (options.workerThread === true) mm.sweepValidateRoot();
 // RouteManager listens from its constructor. A provider that cannot answer
 // at startup is a configuration error, like AUTH_CONFIG_INVALID: exit 2.
 function serve() {
+  // The store's clients that used to be made when their files loaded (the
+  // device log, the API log), made at start as before (lib/store.js).
+  require('./lib/store').getStore().open();
+
   var routeManager = new RouteManager(mm);
 
   monitor.init();

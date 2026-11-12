@@ -95,10 +95,38 @@ describe('store 01: one selection point (LM1 B1)', function() {
 
   it("the job runner's consumers reach it through the store", () => {
     const fs = require('fs');
-    for (const f of ['lib/device-manager.js', 'lib/routes/add-job.js', 'lib/routes/remove-job.js',
+    for (const f of ['framework.js', 'lib/device-manager.js', 'lib/routes/add-job.js', 'lib/routes/remove-job.js',
       'lib/routes/get-job-history.js', 'lib/routes/get-job.js', 'lib/mcp/gateway.js']) {
       const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
-      assert.ok(!/require\(['"][./]+job-control['"]\)/.test(src), `${f} requires job-control directly`);
+      assert.ok(!/require\(['"][^'"]*job-control['"]\)/.test(src), `${f} requires job-control directly`);
     }
+  });
+
+  it('the jobs facade reads and writes the runner itself, with the runner as `this`', () => {
+    const out = inChild(`
+      const jobs = lib('store').jobs;
+      const impl = lib('job-control');
+      const hook = () => {};
+      jobs.setCompletionHook(hook);
+      const viaMethod = impl.completionHook === hook;
+      const other = () => {};
+      jobs.completionHook = other;
+      const viaSet = impl.completionHook === other;
+      jobs.someMemberNotListed = 7;
+      impl.anotherMember = 8;
+      return {viaMethod, viaSet, newOnImpl: impl.someMemberNotListed === 7, readThrough: jobs.anotherMember === 8,
+        internal: jobs.INTERNAL === impl.INTERNAL};
+    `);
+    assert.deepStrictEqual(out, {viaMethod: true, viaSet: true, newOnImpl: true, readThrough: true, internal: true});
+  });
+
+  it('open() makes the device log and API log clients at start, as loading those files used to', () => {
+    const out = inChild(`
+      const options = lib('cli-options');
+      options.apiMonitor = false;
+      lib('store').getStore().open();
+      return {created: created.slice().sort(), apiLog: lib('store').getStore().apiLog != null};
+    `);
+    assert.deepStrictEqual(out, {created: [0, 10], apiLog: true});
   });
 });
