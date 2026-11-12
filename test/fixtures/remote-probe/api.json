@@ -1,0 +1,43 @@
+{
+  "device": {
+    "friendlyName": "remote-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "RC1-min test module: calls a remote MCP server through ctx.call('remote:...')",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "callTool",
+            "description": "ctx.call('remote:probe/<input.tool>', input.args): {result} or {code, message}",
+            "input": {
+              "schema": "/probeService/callTool/input"
+            },
+            "output": {
+              "schema": "/probeService/callTool/output"
+            }
+          },
+          {
+            "name": "callOther",
+            "description": "ctx.call('remote:<input.remote>/<input.tool>'): {result} or {code, message}",
+            "input": {
+              "schema": "/probeService/callOther/input"
+            },
+            "output": {
+              "schema": "/probeService/callOther/output"
+            }
+          },
+          {
+            "name": "callArgs",
+            "description": "ctx.call('remote:probe/echo_text') with a function inside the arguments, or a class instance: {result} or {code, message}",
+            "input": {
+              "schema": "/probeService/callArgs/input"
+            },
+            "output": {
+              "schema": "/probeService/callArgs/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

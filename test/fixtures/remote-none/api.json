@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "remote-none",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "RC1-min test module: calls a remote MCP server through ctx.call('remote:...')",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "callProbe",
+            "description": "ctx.call('remote:probe/echo_text') from a module that declares no remote: {result} or {code, message}",
+            "input": {
+              "schema": "/probeService/callProbe/input"
+            },
+            "output": {
+              "schema": "/probeService/callProbe/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "remote-probe",
+  "version": "1.0.0",
+  "countinghouse": {
+    "permissions": {},
+    "remotes": [
+      {
+        "name": "probe",
+        "transport": "streamable-http",
+        "url": "http://127.0.0.1:9688/mcp",
+        "headers": {"X-MCP-Toolsets": "actions,repos"},
+        "credential": {"env": "CH_TEST_REMOTE_TOKEN"}
+      }
+    ]
+  }
+}
