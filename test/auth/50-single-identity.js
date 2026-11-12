@@ -125,8 +125,101 @@ describe('auth 50: the single-identity profile (LM1 B4)', function() {
   it('the identity secret under <storePath> is always denied to modules', () => {
     const out = child(`
       const {deniedPathsFor} = lib('fs-broker/denied');
-      return deniedPathsFor({store: 'local', storePath: '/s/store', moduleDataPath: '/s/module_data', authConfigPath: null});
+      return deniedPathsFor({store: 'local', singleIdentity: true, storePath: '/s/store', moduleDataPath: '/s/module_data', authConfigPath: null});
     `);
     assert.ok(out.includes('/s/store/.identity-secret'), JSON.stringify(out));
+  });
+});
+
+// The review of B4 (/code-review medium on 20af44b).
+describe('auth 50: the review of B4', function() {
+  this.timeout(60000);
+
+  it('the secret moves to <storePath> in the profile only: a multi-tenant --store local keeps <moduleDataPath>\'s', () => {
+    const storePath = path.join(tmp('ch-auth-50r-'), 'store');
+    const moduleDataPath = path.join(tmp('ch-auth-50r-'), 'module_data');
+    const authFile = path.join(tmp('ch-auth-50r-'), 'auth.json');
+    fs.writeFileSync(authFile, JSON.stringify({'operator-key-0002': {userName: 'operator', devices: ['*']}}));
+    child(`
+      const options = lib('cli-options');
+      options.setOptions({store: 'local', storePath: ${JSON.stringify(storePath)}, moduleDataPath: ${JSON.stringify(moduleDataPath)}, authConfigPath: ${JSON.stringify(authFile)}});
+      lib('identity').initSync(options);
+      return {};
+    `);
+    assert.ok(fs.existsSync(path.join(moduleDataPath, '.identity-secret')));
+    assert.ok(!fs.existsSync(path.join(storePath, '.identity-secret')));
+    const denied = child(`return lib('fs-broker/denied').deniedPathsFor({store: 'local', storePath: '/s/store', moduleDataPath: '/s/md', authConfigPath: '/s/auth.json'});`);
+    assert.ok(!denied.includes('/s/store/.identity-secret'), JSON.stringify(denied));
+  });
+
+  it('an explicit --authProvider, or an --authConfigPath with no path, turns the profile off', () => {
+    for (const argv of [{store: 'local', stdio: true, authProvider: 'sqlite'}, {store: 'local', stdio: true, authConfigPath: ''},
+      {store: 'local', stdio: true, authConfigPath: true}]) {
+      const out = child(`const o = lib('cli-options'); o.setOptions(${JSON.stringify(argv)}); return {single: o.singleIdentity};`);
+      assert.strictEqual(out.single, false, JSON.stringify(argv));
+    }
+  });
+
+  it('a bare or empty --authConfigPath refuses to start', () => {
+    for (const value of [[], ['']]) {
+      const run = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9696',
+        '--authConfigPath'].concat(value), {cwd: ROOT, encoding: 'utf8', timeout: 20000});
+      assert.strictEqual(run.status, 2, run.stderr);
+      assert.ok(/--authConfigPath needs a path/.test(run.stderr), run.stderr);
+    }
+  });
+
+  it('the key is made once and cannot be replaced', () => {
+    const out = child(`
+      const o = lib('cli-options');
+      o.setOptions({store: 'local', stdio: true});
+      const first = o.apiKey;
+      o.setOptions({store: 'local', stdio: true});
+      let assigned = true;
+      try { 'use strict'; o.apiKey = 'other'; } catch (e) { assigned = false; }
+      return {same: o.apiKey === first, kept: o.apiKey === first};
+    `);
+    assert.deepStrictEqual(out, {same: true, kept: true});
+  });
+
+  it('under --debug the profile still indexes its stable entry, so the caller id does not follow the key', () => {
+    const out = child(`
+      const o = lib('cli-options');
+      o.setOptions({store: 'local', stdio: true, debug: true});
+      return {source: lib('auth').identitySource(o) != null};
+    `);
+    assert.deepStrictEqual(out, {source: true});
+    const plain = child(`const o = lib('cli-options'); o.setOptions({debug: true}); return {source: lib('auth').identitySource(o) != null};`);
+    assert.deepStrictEqual(plain, {source: false});
+  });
+
+  it('a module may not declare the store directory, and --hardened grants and creates it', () => {
+    const storePath = path.join(tmp('ch-auth-50r-'), 'store');
+    const out = child(`
+      const options = {store: 'local', storePath: ${JSON.stringify(storePath)}, modulePath: ${JSON.stringify(tmp('ch-auth-50m-'))},
+        moduleDataPath: ${JSON.stringify(tmp('ch-auth-50d-'))}, authProvider: 'file', debug: false};
+      const prot = lib('fs-broker').protectedPaths(options);
+      const hl = lib('hardened-launch');
+      hl.prepareGrants(options, process.cwd());
+      const flags = hl.permissionFlags(options, ${JSON.stringify(ROOT)}, process.cwd());
+      return {prot: prot.includes(${JSON.stringify(storePath)}), created: require('fs').existsSync(${JSON.stringify(storePath)}),
+        read: flags.some((f) => f.startsWith('--allow-fs-read=') && f.includes(${JSON.stringify(storePath)})),
+        write: flags.some((f) => f.startsWith('--allow-fs-write=') && f.includes(${JSON.stringify(storePath)}))};
+    `);
+    assert.deepStrictEqual(out, {prot: true, created: true, read: true, write: true});
+  });
+
+  it('--apiMonitor under --store local logs nothing and does not throw (the API log is absent)', () => {
+    const out = child(`
+      const options = lib('cli-options');
+      options.setOptions({store: 'local', apiMonitor: true});
+      const Session = lib('session');
+      const s = Object.create(Session.prototype);
+      s.serviceID = 'svc'; s.actionName = 'act'; s.deviceID = 'd'; s.appKey = 'k'; s.startTime = Date.now();
+      s.device = {spec: {device: {serviceList: {svc: {actionList: [{name: 'act'}]}}}}};
+      Session.prototype.logAPICall.call(s, null, null, null, true);
+      return {ok: true};
+    `);
+    assert.deepStrictEqual(out, {ok: true});
   });
 });
