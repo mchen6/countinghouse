@@ -43,7 +43,8 @@ const PROVIDERS = {
   local: {
     async make(seed, rate) {
       const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-metering-01-'));
-      if (seed != null) fs.writeFileSync(path.join(storePath, 'metering.json'), JSON.stringify({[KEY]: seed}));
+      const {meterId} = require('../../lib/key-fingerprint');
+      if (seed != null) fs.writeFileSync(path.join(storePath, 'metering.json'), JSON.stringify({[meterId(KEY)]: seed}));
       const {LocalMeteringProvider} = require('../../lib/metering');
       const provider = new LocalMeteringProvider({storePath, meter: true, rateLimitMaxPerInterval: rate, rateLimitIntervalMs: 1000});
       provider.close = () => {};
@@ -83,6 +84,21 @@ for (const [name, kind] of Object.entries(PROVIDERS)) {
         const limited = [];
         for (let i = 0; i < 3; i++) limited.push((await call(p, 'rateLimit', KEY)).result.limited);
         assert.deepStrictEqual(limited, [false, false, true]);
+      } finally { p.close(); }
+    });
+
+    it('counts a refused call too, as rolling-rate-limiter does: a client that keeps calling stays limited', async function() {
+      const p = await kind.make(null, 2);
+      if (p == null) return this.skip();
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      try {
+        const limited = [];
+        const at = async () => limited.push((await call(p, 'rateLimit', KEY)).result.limited);
+        await at(); await at();
+        await wait(500); await at();
+        await wait(100); await at();
+        await wait(550); await at();
+        assert.deepStrictEqual(limited, [false, false, true, true, true]);
       } finally { p.close(); }
     });
 
