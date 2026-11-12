@@ -77,8 +77,11 @@ entry), notifications answered with nothing. The key is the one `--stdio`
 implies: the process's own in-memory key (section 4) or
 `COUNTINGHOUSE_API_KEY`, so no client header is needed; the launcher is the
 only client. `--stdio` and
-`--port` are exclusive. All logging goes to stderr (stdout is the transport;
-the logger already separates them, this verifies it). The process exits when
+`--port` are exclusive. All logging goes to stderr under `--stdio` (stdout is the
+transport; today's logger writes to stdout, so this is a change, proven by
+a test). The entry a client runs is `bin/countinghouse-stdio.js`, pure
+JavaScript with no shell and no bunyan pipe (`bin/countinghouse` is a shell
+script and stays for hosting). The process exits when
 stdin closes, after draining in-flight calls (bounded by the device timeout).
 
 ### 3. Scenario loading: roles, parts, listing
@@ -89,7 +92,11 @@ it is a scenario, the loader also loads every module named in its
 `countinghouse.calls` (the module name before the slash), resolved from the
 scenario's `node_modules` (by `require.resolve('<name>/package.json', {paths:
 [dir]})`), recursively for parts that declare calls, each once, with
-`listed: false` for parts. The device manager keeps `listed` per module;
+`listed: false` for parts. A scenario's actions are listed under the bare slugified action name
+(`ci_failure_triage`), not the runtime's long `<device>_<service>_<action>`
+form; a collision with another listed tool or a built-in is refused at load.
+Parts and ordinary modules keep the long form. The device manager keeps
+`listed` per module;
 `lib/mcp/tool-registry.js` `buildToolTargets` skips unlisted modules, and the
 gateway refuses a `tools/call` or an `invoke-action` for an unlisted module
 from outside the process with `MODULE_NOT_LISTED` (the in-process hop path is
@@ -168,8 +175,10 @@ Records are appended, one JSON object per line, to
 `<usageDir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl` (`--usageDir`, default
 `<storePath>/usage/`), written as they happen with `fs.appendFileSync` on an
 open descriptor; a crash loses at most the line being written. Fields:
-`{t, call, pack, tool, server, bytesIn, linesIn, bytesOut, linesOut, ms,
-outcome, credential}`; a server call has `server` and the `In` fields; a
+`{t, call, caller, pack, tool, server, bytesIn, linesIn, bytesOut, linesOut,
+ms, outcome, credential}` (`caller` is the opaque caller id of R2-1, one
+local id in the single-identity profile, never a key or a user name; the
+report scopes a plain key by it); a server call has `server` and the `In` fields; a
 tool result has `tool` and the `Out` fields; `pack` is the scenario's
 friendlyName; `call` is a per-process counter that ties the `In` records of
 one `tools/call` to its `Out` record. There is no session field: MCP
