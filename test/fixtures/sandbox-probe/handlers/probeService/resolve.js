@@ -2,7 +2,7 @@
 // (docs/superpowers/specs/2026-11-11-node-floor-shim-design.md, section 3).
 // Below Node 24.15 the resolve hooks do not see require.resolve, so these
 // are the routes the resolve shim must bring under the sandbox's hooks.
-// test/sandbox/35-resolve-shim.js drives them; it checks the outcome
+// test/sandbox/39-resolve-shim.js drives them; it checks the outcome
 // ("blocked" is the sandbox's refusal, recognised by its message), the
 // violation the boundary records, and that no host path comes back.
 const Module = module.constructor;

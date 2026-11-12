@@ -162,9 +162,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The floor itself (lib/node-version.js), the newest 24.x, and the
-        # newest 26.x.
-        node-version: ['24.15.0', '24', '26']
+        # The floor itself (lib/node-version.js, 22.16.0), 24.15.0 (the first
+        # where Node's own resolve hook covers require.resolve), the newest
+        # 24.x and the newest 26.x. The sandbox-floor job below adds the
+        # versions on either side.
+        node-version: ['22.16.0', '24.15.0', '24', '26']
 
     services:
       redis:
@@ -220,10 +222,10 @@ jobs:
       - name: npm audit (informational)
         run: npm audit || true
 
-  # The Node floor (lib/node-version.js, 22.16) and the versions on either
-  # side of 24.15, where Node's own resolve hook starts covering
-  # require.resolve: below it the resolve shim (lib/resolve-shim.js) does,
-  # and the sandbox and file broker tests must hold the same on each
+  # The versions between the floor (22.16.0, in the test matrix above) and
+  # 24.15, where Node's own resolve hook starts covering require.resolve:
+  # below it the resolve shim (lib/resolve-shim.js) does, and the sandbox,
+  # file broker and single-thread tests must hold the same on each
   # (docs/superpowers/specs/2026-11-11-node-floor-shim-design.md, section 4).
   sandbox-floor:
     needs: golden
@@ -232,7 +234,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['22.16.0', '22', '24.0.0', '24.14', '24.15.0']
+        node-version: ['22', '24.0.0', '24.14']
 
     services:
       redis:
@@ -256,10 +258,11 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Sandbox and file broker tests
+      - name: Sandbox, file broker and single-thread tests
         run: |
           npx mocha --exit ./test/sandbox/*.js
           npx mocha ./test/fs-broker/*.js
+          npx mocha --exit ./test/single-thread/*.js
 
   # --stdio, the client-pack transport (local-mode spec §2), on the three
   # systems a client runs on, with no Redis service at all: the route layer
