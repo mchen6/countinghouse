@@ -20,7 +20,9 @@ function start(home, extra = []) {
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
   const child = spawn(process.execPath, [ENTRY, '--workerThread', '--loadModule', MODULE, '--authConfigPath', auth,
     '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749', ...extra],
-  {env: {...process.env, COUNTINGHOUSE_API_KEY: KEY}, stdio: ['pipe', 'pipe', 'pipe']});
+  // --trace-deprecation (issue #40, for B): the url.parse warning's stack says
+  // which thread printed it, so whether the worker's boot ran past the walk.
+  {env: {...process.env, COUNTINGHOUSE_API_KEY: KEY, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --trace-deprecation`.trim()}, stdio: ['pipe', 'pipe', 'pipe']});
   const io = {child, out: '', err: '', waiters: []};
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
@@ -69,7 +71,9 @@ describe('--stdio, spawned: the failure message', () => {
 });
 
 describe('--stdio, spawned', function() {
-  this.timeout(60000);
+  // Long enough that a broker request's 30 s deadline (ETIMEDOUT) or its
+  // sync backstop (EIO) lands inside the wait on a hung boot (issue #40).
+  this.timeout(120000);
   let home;
   beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-')); });
   afterEach(() => { fs.rmSync(home, {recursive: true, force: true}); });
@@ -81,7 +85,7 @@ describe('--stdio, spawned', function() {
     const io = start(home, ['--moduleSandbox', 'off']);
     await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
     let tool = null;
-    for (let i = 0; i < 60 && tool == null; i++) {
+    for (let i = 0; i < 120 && tool == null; i++) {
       const list = await request(io, {jsonrpc: '2.0', id: 100 + i, method: 'tools/list'});
       tool = (list.result.tools || []).find((x) => /hello/.test(x.name)) || null;
       if (tool == null) await new Promise((r) => setTimeout(r, 500));
@@ -102,7 +106,7 @@ describe('--stdio, spawned', function() {
     // A notification the gateway does not know is still never answered over stdio.
     io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 99}})}\n`);
     let tool = null;
-    for (let i = 0; i < 60 && tool == null; i++) {
+    for (let i = 0; i < 120 && tool == null; i++) {
       const list = await request(io, {jsonrpc: '2.0', id: 100 + i, method: 'tools/list'});
       tool = (list.result.tools || []).find((t) => /hello/.test(t.name)) || null;
       if (tool == null) await new Promise((r) => setTimeout(r, 500));
