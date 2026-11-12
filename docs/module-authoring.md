@@ -135,7 +135,9 @@ a module is listed as it always was.
   is found from the scenario's own directory, under its bare name
   (`ch-step-redact`) or under any npm scope (`@countinghouse/ch-step-redact`),
   and must be the module whose `api.json` has that `friendlyName`. Parts
-  that call parts load the same way, and each module loads once.
+  that call parts load the same way, and each module loads once. A module
+  given directly with `--loadModule` is listed whatever the order. Parts are
+  expanded at startup only: a scenario loaded later at runtime brings no parts.
 - **A part** loaded by a scenario is not listed. A `tools/call` or
   `invoke-action` from outside answers `MODULE_NOT_LISTED`, while its
   scenario's `ctx.call` reaches it as before. A part loaded directly with
