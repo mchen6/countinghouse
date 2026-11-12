@@ -88,7 +88,9 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
     const byTool = Object.fromEntries(report.structuredContent.groups.map((g) => [g.tool, g]));
     assert.strictEqual(byTool.usage_probe.calls, 2);
     assert.strictEqual(byTool.usage_reserved.calls, 2);
-    assert.ok(report.structuredContent.source.includes('memory'));
+    // The server writes --usageDir, so the report reads the files, this
+    // process's own included, not its bounded memory (the review of #59).
+    assert.deepStrictEqual(report.structuredContent.source, ['files']);
     const lines = fs.readdirSync(usageDir).flatMap((day) => fs.readdirSync(path.join(usageDir, day))
       .flatMap((f) => fs.readFileSync(path.join(usageDir, day, f), 'utf8').split('\n').filter(Boolean)));
     const outs = lines.map((l) => JSON.parse(l)).filter((r) => r.bytesOut !== undefined);
