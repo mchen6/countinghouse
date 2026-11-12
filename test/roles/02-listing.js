@@ -1,3 +1,6 @@
+// Run with --exit (package.json): requiring the module manager and the tool
+// registry leaves a Redis client retrying the unused port, which would keep a
+// mocha run without --exit alive.
 // Listing (local-mode spec §3 and §4): an unlisted part's actions are not
 // tools, a scenario's action is listed under its bare name, a direct
 // tools/call to a part is refused MODULE_NOT_LISTED, and the single-identity
