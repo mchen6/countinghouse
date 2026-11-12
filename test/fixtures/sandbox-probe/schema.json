@@ -10,6 +10,10 @@
     "env": {
       "input": {"type": "object"},
       "output": {"type": "object", "properties": {"env": {"type": "object"}}}
+    },
+    "resolve": {
+      "input": {"type": "object", "properties": {"what": {"type": "string"}, "arg": {"type": "string"}}, "required": ["what"]},
+      "output": {"type": "object", "properties": {"outcome": {"type": "string"}, "code": {"type": ["string", "null"]}, "result": {}}}
     }
   }
 }
