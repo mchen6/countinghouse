@@ -37,6 +37,7 @@ function argsTable(scanDir) {
   const line = '2026-09-01T00:00:00.000Z WARN disk usage at 91% on /var/data';
   return {
     countinghouse_check_balance:                                {args: {}, expect: 'ok'},
+    countinghouse_usage_report:                                 {args: {groupBy: 'tool'}, expect: 'ok'},
     composite_demo_compositeservice_run:                        {args: {text: 'hi'}, expect: 'ok'},
     echo_device_client_x_api:                                   {args: {}, expect: 'ok'},
     echo_device_client_errtestservice_testerrorinfo:            {args: {foo: 'x'}, expect: 'error'},
