@@ -231,4 +231,7 @@ the catalogue says which entries were seen there.
    of a listed tool is.
 8. Step 3c: only a worker the gateway, or a task's start hook, dispatched a
    call to may state its `usageCall` on a hop. Anything else is
-   `USAGE_CALL_FOREIGN`, and the hop is not forwarded.
+   `USAGE_CALL_FOREIGN`, and the hop is not forwarded. It is checked after
+   user-auth and granted where the call is actually sent. Ownership is per
+   worker; R2-1's per-call token is what binds it to one invocation. A module
+   leaving the id off undercounts only its own receipt.
