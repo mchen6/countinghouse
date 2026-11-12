@@ -143,12 +143,10 @@ describe('store 01: --store local, so far (LM1 B2)', function() {
       const local = store.metering instanceof lib('metering/local-provider');
       const limits = [];
       for (let i = 0; i < 2; i++) limits.push(await new Promise((resolve) => store.globalLimiter('g', (err, timeLeft) => resolve(timeLeft != null && timeLeft > 0))));
-      let jobsRefused = null;
-      try { void store.jobs; } catch (e) { jobsRefused = e.message; }
-      return {local, limits, apiLog: store.apiLog, jobsRefused, created};
+      const jobsLocal = store.jobs === lib('job-control-local') && typeof(store.jobs.addJob) === 'function';
+      return {local, limits, apiLog: store.apiLog, jobsLocal, created};
     `);
-    assert.deepStrictEqual(out, {local: true, limits: [false, true], apiLog: null,
-      jobsRefused: 'the local store has no job runner in this build (LM1 B5)', created: []});
+    assert.deepStrictEqual(out, {local: true, limits: [false, true], apiLog: null, jobsLocal: true, created: []});
   });
 });
 

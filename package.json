@@ -60,6 +60,7 @@
     "bullmq": "^6.0.9",
     "bunyan": "^1.8.1",
     "cors": "^2.8.1",
+    "cron-parser": "5.7.0",
     "express": "^4.22.2",
     "ioredis": "^5.11.1",
     "json-pointer": "^0.6.0",
