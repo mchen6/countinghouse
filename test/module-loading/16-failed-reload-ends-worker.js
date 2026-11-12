@@ -10,8 +10,9 @@ const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
 const {deviceIDForName} = require('../../lib/call-address');
+const {testPort} = require('../helpers/test-env');
 
-const PORT    = 9632;
+const PORT    = testPort(9632);
 const KEY     = 'failed-reload-key';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'worker-end');
 const DEVICE  = deviceIDForName('worker-end');

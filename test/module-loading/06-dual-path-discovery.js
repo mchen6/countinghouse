@@ -20,15 +20,15 @@
 // section 3.2 requires it stay unchanged through this refactor.
 const assert = require('assert');
 const http   = require('http');
-const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
-const PORT   = 9586;
+const PORT   = testPort(9586);
 const DEVICE_COUNT = 3;
 
 function startServer(done) {
-  waitForReady(exec(`DYNAMIC_DEVICE_COUNT=${DEVICE_COUNT} NODE_PATH=./lib node ./framework.js --no-workerThread --debug` +
+  waitForReady(startShell(`DYNAMIC_DEVICE_COUNT=${DEVICE_COUNT} NODE_PATH=./lib node ./framework.js${redisFlag()} --no-workerThread --debug` +
        ` --bindAddr 127.0.0.1 --port ${PORT} --debugKey aabbcc` +
        ` --loadModule ./test/fixtures/dynamic-discovery-module` +
        ` --loadModule ./test/fixtures/handler-map-module` +
@@ -77,7 +77,7 @@ describe('module-loading 06: both module shapes, in one server', function() {
   });
 
   after((done) => {
-    exec(`pkill -f "[f]ramework.js.*--port ${PORT}"`, () => { setTimeout(done, 1000); });
+    stopAll(done, 1000);
   });
 
   it('the dynamic path decides its device count at runtime', (done) => {
