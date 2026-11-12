@@ -40,6 +40,23 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Fixed — on Windows, a module worker never started (#40)
+
+On Windows every module's start stopped after "file broker: <module> spawn
+walk", with no error, under every `--moduleSandbox` mode, so no module was
+ever listed. Making a module's data directories, the server chmod'ed each
+new one from the deepest up to the first that `mkdir` created, comparing
+the two as strings. On Windows `mkdir` answers in Node's namespaced form
+(`\\?\C:\...`), so they never met, and the walk passed the drive's root and
+went on forever. It now compares both in that one form (case-folded on
+Windows), chmods only the directories that `mkdir` created, and refuses if
+`mkdir`'s answer is not the directory asked for or above it, making only
+that directory private first. On Linux and
+macOS the two strings come from the same path (the data path is resolved
+before `mkdir` sees it), so no shipped configuration there ever walked past
+what it had created; tests on all three systems pin it, with a symlinked
+data path, a trailing separator and an `x/..` in it.
+
 ### Fixed — under `enforce`, TLS client connections were refused since the sandbox lockdown
 
 - A module under `--moduleSandbox enforce` could make no TLS connection at
