@@ -70,13 +70,14 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
         if (names.indexOf('echo_device_echoservice_echo') === -1) {
           return done(new Error(`expected the echo tool, got: ${JSON.stringify(names)}`));
         }
-        // the device-less key must still see only the platform tool
+        // the device-less key must still see only the platform tools: the balance
+        // check and the usage report, listed to every key (local-mode spec §5)
         request(url).post('/mcp').set('Content-Type', 'application/json').set('X-CH-Key', OTHER)
           .send({jsonrpc: '2.0', id: 3, method: 'tools/list'})
           .end((err, res2) => {
             if (err) return done(err);
             const n2 = res2.body.result.tools.map((t) => { return t.name; });
-            if (n2.length !== 1 || n2[0] !== 'countinghouse_check_balance') {
+            if (JSON.stringify(n2.slice().sort()) !== JSON.stringify(['countinghouse_check_balance', 'countinghouse_usage_report'])) {
               return done(new Error(`per-apiKey filtering broken without sqlite3: ${JSON.stringify(n2)}`));
             }
             return done();
