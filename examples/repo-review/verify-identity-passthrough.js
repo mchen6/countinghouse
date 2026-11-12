@@ -131,7 +131,8 @@ startServer((startErr) => {
 
   listTools(CALLER, (err, names) => {
     if (err) return fail('tools/list failed', err);
-    const deviceTools = names.filter((n) => n !== 'countinghouse_check_balance');
+    // The runtime's own built-ins (countinghouse_*) are listed to every key.
+    const deviceTools = names.filter((n) => !n.startsWith('countinghouse_'));
     console.log(`\n[1] tools/list for the caller: ${JSON.stringify(deviceTools)}`);
     assert.deepStrictEqual(deviceTools, ['repo_review_reviewservice_review'],
       'only the composite tool must be exposed to a caller granted only that device');
