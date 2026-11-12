@@ -36,6 +36,15 @@ const APPROVED_REMOVALS = {
   'echo_device_echoservice_echowithapicache': 'demonstrated --apiCache, removed with it'
 };
 
+// Additions the maintainer has approved, each with the reason. A tool that
+// appears without being on this list fails the second test below: a new tool
+// is a surface change every client sees, and must be a decision too.
+const APPROVED_ADDITIONS = {
+  // Local-mode spec §5 (LM1 part C, step 3): the usage report, listed to
+  // every key in every mode, beside countinghouse_check_balance.
+  'countinghouse_usage_report': 'the usage report built-in, local-mode spec §5'
+};
+
 // Output-schema changes the maintainer has approved, each with its reason and
 // the exact value now advertised (undefined: no outputSchema at all). A
 // changed schema that is not on this list fails the third test below, and so
@@ -54,7 +63,7 @@ function byName(list) {
   return out;
 }
 
-describe('mcp-contract 02: the whole 4.x -> 5.0.0 tool-surface delta is one approved removal', () => {
+describe('mcp-contract 02: the whole 4.x -> 5.0.0 tool-surface delta is the approved removals and additions', () => {
 
   const pre = byName(PRE);
   const now = byName(GOLDEN);
@@ -68,8 +77,8 @@ describe('mcp-contract 02: the whole 4.x -> 5.0.0 tool-surface delta is one appr
 
   it('adds no tools silently', () => {
     const added = Object.keys(now).filter((n) => { return pre[n] == null; }).sort();
-    assert.deepStrictEqual(added, [],
-      `a tool appeared that the 4.x surface did not have: ${JSON.stringify(added)}`);
+    assert.deepStrictEqual(added, Object.keys(APPROVED_ADDITIONS).sort(),
+      `a tool appeared that the 4.x surface did not have and APPROVED_ADDITIONS does not name, or an approved addition is missing: ${JSON.stringify(added)}`);
   });
 
   it('leaves every surviving tool field-for-field identical to its 4.x definition, apart from approved schema changes', () => {
@@ -93,8 +102,8 @@ describe('mcp-contract 02: the whole 4.x -> 5.0.0 tool-surface delta is one appr
     });
   });
 
-  it('still protects the full surviving surface (21 module tools + 1 platform tool)', () => {
-    assert.strictEqual(GOLDEN.length, 22);
+  it('still protects the full surviving surface (21 module tools + 2 platform tools)', () => {
+    assert.strictEqual(GOLDEN.length, 23);
     assert.strictEqual(PRE.length, 23);
   });
 });
