@@ -45,10 +45,11 @@ function answer(name, args) {
 }
 
 // -> Promise<{headers: [object], calls: [tool name], connections(): number,
-// open(): number, close(): Promise, setMode(mode), extraTools: []}>
+// open(): number, sockets(): Set of the open ones, close(): Promise,
+// setMode(mode), extraTools: []}>
 function startRemoteServer(port, opts) {
   const o = Object.assign({mode: 'ok', redirectTo: null}, opts);
-  const state = {headers: [], calls: [], connections: 0, open: 0, mode: o.mode, extraTools: []};
+  const state = {headers: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: []};
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -87,7 +88,8 @@ function startRemoteServer(port, opts) {
   server.on('connection', (socket) => {
     state.connections += 1;
     state.open += 1;
-    socket.on('close', () => { state.open -= 1; });
+    state.sockets.add(socket);
+    socket.on('close', () => { state.open -= 1; state.sockets.delete(socket); });
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -96,6 +98,7 @@ function startRemoteServer(port, opts) {
       calls: state.calls,
       connections: () => state.connections,
       open: () => state.open,
+      sockets: () => new Set(state.sockets),
       setMode: (mode) => { state.mode = mode; },
       extraTools: state.extraTools,
       close: () => new Promise((done) => { server.closeAllConnections(); server.close(() => done()); })
