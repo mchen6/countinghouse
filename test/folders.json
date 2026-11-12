@@ -7,6 +7,7 @@
     {"files": ["./test/test4.js"]},
     {"files": ["./test/test5.js"], "exit": true},
     {"files": ["./test/auth/*.js", "./test/fs-broker/*.js", "./test/device-config/*.js", "./test/module-loading/*.js", "./test/spec-format/*.js", "./test/mcp-contract/*.js", "./test/validation/*.js", "./test/module-authoring/*.js", "./test/store/*.js", "./test/metering/*.js", "./test/local-kv/*.js"]},
+    {"files": ["./test/jobs-local/*.js"]},
     {"files": ["./test/composition/*.js"], "exit": true},
     {"files": ["./test/roles/*.js"], "exit": true},
     {"files": ["./test/usage/*.js"], "exit": true},

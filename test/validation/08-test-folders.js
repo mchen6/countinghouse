@@ -12,10 +12,11 @@ const ROOT = path.join(__dirname, '..', '..');
 const asLine = (run) => (run.npm != null ? `npm run ${run.npm}` : `mocha ${run.exit ? '--exit ' : ''}${run.files.join(' ')}`);
 
 // master 73984ad's `npm test`, split on &&, and its ci.yml functional step
-// (one order, see below).
-const NPM_TEST = 'mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js ./test/local-kv/*.js && mocha --exit ./test/composition/*.js && mocha --exit ./test/roles/*.js && mocha --exit ./test/usage/*.js && mocha --exit ./test/stdio/*.js && mocha --exit ./test/sandbox/*.js && mocha --exit ./test/remote/*.js && mocha --exit ./test/single-thread/*.js && mocha ./test/test8.js && npm run test:peer-standalone && mocha ./test/test6.js && mocha ./test/test7.js';
+// (one order, see below), plus the runs added since: jobs-local (LM1 B5).
+const NPM_TEST = 'mocha ./test/test1.js && mocha ./test/test2.js && mocha ./test/test3.js && mocha ./test/test4.js && mocha --exit ./test/test5.js && mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js ./test/local-kv/*.js && mocha ./test/jobs-local/*.js && mocha --exit ./test/composition/*.js && mocha --exit ./test/roles/*.js && mocha --exit ./test/usage/*.js && mocha --exit ./test/stdio/*.js && mocha --exit ./test/sandbox/*.js && mocha --exit ./test/remote/*.js && mocha --exit ./test/single-thread/*.js && mocha ./test/test8.js && npm run test:peer-standalone && mocha ./test/test6.js && mocha ./test/test7.js';
 const CI_STEP = ['mocha ./test/test1.js', 'mocha ./test/test2.js', 'mocha ./test/test3.js', 'mocha ./test/test4.js', 'mocha --exit ./test/test5.js',
   'mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js ./test/local-kv/*.js',
+  'mocha ./test/jobs-local/*.js',
   // The old ci.yml ran remote before sandbox and the npm script sandbox before
   // remote; one list keeps one order (the npm script's). The folders do not
   // depend on each other.
