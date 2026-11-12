@@ -171,15 +171,34 @@ one `tools/call` to its `Out` record. There is no session field: MCP
 name (`<pid>-<startMs>`) identifies the process, which over stdio is the
 client session. No value of any credential, no content, ever.
 
-**Reading the records from a module**: a report module cannot declare the
-usage directory in `permissions.fs`, because that takes an absolute path
-fixed in package.json and the directory is per user. So the runtime
-provides it as a root, like `/data`: a module whose package.json declares
-`"countinghouse": {"reads": ["usage"]}` sees `--usageDir` mounted read-only
-at `/usage` through the file broker (listed in the module's permission
-report as "usage records, read-only"); no other module sees it; the
-records hold counts and names only. In `--store redis` without
-`--usageDir`, `/usage` is empty.
+**`usage_report`, a built-in tool (maintainer, 2026-11-11: "default
+installed with countinghouse and reachable from the agent, so the user can
+get token usage and the traffic of each module in real time, aligned with
+countinghouse's metering").** The usage report is the runtime's own tool,
+not a module: it lives beside `countinghouse_check_balance` in
+`lib/mcp/tool-registry.js`, is listed to every key in every mode, needs no
+install and no declaration, and reads what only the runtime can read
+safely: the current process's counters (section 5's `In` and `Out`,
+in memory, so a call made a second ago is already counted), the usage
+files under `--usageDir` when there are any, and the metering provider's
+per-key counts in `--store redis`. Input: `{since?: <ISO date or
+duration>, groupBy?: "tool" | "server" | "pack" | "module"}`. Output
+(schema-closed): per group, `calls`, `serverCalls`, `bytesIn`, `linesIn`,
+`bytesOut`, `linesOut`, `tokensInEst`, `tokensOutEst` (estimated from
+bytes, the method named in a `method` field), the window, and `source:
+["memory", "files", "metering"]` saying where the numbers came from; never
+a credential value, never content. **Scoping:** a key sees its own calls;
+an admin key sees every key, grouped by the opaque caller id, never by
+user name or key (R2-1). The same report is a CLI subcommand,
+`countinghouse-usage`, for the operator's shell. The aggregation and
+formatting code is the one that `ch-report` (the standalone reader in its
+own package) was built with, moved into `lib/usage/` of the runtime;
+`ch-report` keeps reading exported record files on a machine with no
+runtime, and depends on nothing here. Consequently there is no `/usage`
+root and no `reads: ["usage"]` declaration for modules: no third-party
+module reads the records, and the `usage_report` tool the packs list is
+this one, not a module (ch-packs plan Tasks 10 and 13 change
+accordingly).
 
 **The receipt**: for every `tools/call` on a scenario tool, the gateway sums
 the `In` records made during that call (the remote client tags each with
@@ -238,6 +257,14 @@ codes, the MCP surface for listed modules, `countinghouse-validate`.
   `Out` record with exact byte and line counts matching the fixtures, and a
   receipt sentence matching the regex; a module output with a `receipt`
   field is refused.
+- `usage_report`: listed to a plain key in `--store local` and in `--store
+  redis` with no option; a call made in the same process is in the next
+  report (memory source); records from an earlier process are in it (files
+  source); a plain key's report holds only its own calls while an admin
+  key's holds every caller grouped by opaque id, with no user name or key
+  anywhere in the output; the token columns carry `method`; the output
+  validates against its closed schema; `countinghouse-usage` prints the
+  same numbers for the same window.
 - Single-identity profile: a `--store local --stdio` start without
   `--authConfigPath` writes no auth file and no key anywhere under
   `<storePath>` or `<moduleDataPath>`; a scenario tool called more times
@@ -258,6 +285,8 @@ Floor shim → store selection point with the Redis implementations behind
 it (no behaviour change, whole suite green) → local metering provider →
 local kv → `--stdio` → roles and scenario loading → the single-identity
 profile (in-memory key and bindings, `--meter`) → counters, usage files,
+the `usage_report` built-in tool and `countinghouse-usage` (lib/usage/,
+from ch-report's aggregation) →
 receipt → local job runner → docs (README, CLI reference, security-model's
 mode table: a `local` column; `docs/deployment.md`: "hosting keeps Redis").
 
