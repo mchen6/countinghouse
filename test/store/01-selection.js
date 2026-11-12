@@ -130,3 +130,24 @@ describe('store 01: one selection point (LM1 B1)', function() {
     assert.deepStrictEqual(out, {created: [0, 10], apiLog: true});
   });
 });
+
+describe('store 01: --store local, so far (LM1 B2)', function() {
+  this.timeout(60000);
+
+  it('makes the local metering provider and an in-memory global limiter, with no Redis client', () => {
+    const out = inChild(`
+      const os = require('os');
+      const fs = require('fs');
+      const storePath = fs.mkdtempSync(require('path').join(os.tmpdir(), 'ch-store-01-'));
+      const store = lib('store').createStore({store: 'local', storePath, meter: false, globalRateLimit: 1});
+      const local = store.metering instanceof lib('metering/local-provider');
+      const limits = [];
+      for (let i = 0; i < 2; i++) limits.push(await new Promise((resolve) => store.globalLimiter('g', (err, timeLeft) => resolve(timeLeft != null && timeLeft > 0))));
+      let kvRefused = null;
+      try { void store.kv; } catch (e) { kvRefused = e.message; }
+      return {local, limits, apiLog: store.apiLog, kvRefused, created};
+    `);
+    assert.deepStrictEqual(out, {local: true, limits: [false, true], apiLog: null,
+      kvRefused: 'the local store has no kv in this build (LM1 B3)', created: []});
+  });
+});
