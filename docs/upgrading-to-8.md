@@ -76,6 +76,14 @@ you have to do. What the sandbox does and does not protect is in
   gets 413 until you raise the limit. `add-job` takes JSON only; a BSON job
   never worked there (it failed with `SERVICEID_NOT_AVAILABLE`).
 
+- **Jobs that run longer than an hour need `--jobTimeout`.** A job that
+  sets no timeout of its own is now ended after `--jobTimeout` seconds
+  (default `3600`; `0` for none), so a handler that never answers cannot
+  hold a job worker slot forever. It applies when a job runs, so jobs queued
+  before the upgrade and schedulers stored earlier are bounded too. A job's
+  own `opts.timeout` still wins; either is capped at about 24 days
+  (setTimeout's maximum).
+
 - **Repeatable jobs created before 8.0.0** keep running under their old
   scheduler ids. A new `add-job` with the same name creates a second,
   owner-scoped scheduler rather than replacing the old one, so remove the
@@ -97,6 +105,15 @@ you have to do. What the sandbox does and does not protect is in
   `throw new DeviceError('ARGUMENTS_INVALID')`; after:
   `return ctx.error('INPUT_REJECTED', 'text must be a string')`. See
   [module-development.md](module-development.md#failing-a-call).
+- **New: a remote MCP server per module.** A module may declare one in
+  `countinghouse.remotes` and call it with `ctx.call('remote:<name>/<tool>')`;
+  the main thread holds the connection and the credential
+  ([module-development.md](module-development.md#calling-a-remote-mcp-server);
+  what the operator allows is under [What operators get](#what-operators-get)).
+- **A scenario module may not have a top-level `receipt` output field**
+  (`RECEIPT_RESERVED`): the runtime adds its receipt to a scenario's
+  result, and there the name is its own. Any other module's `receipt` field
+  passes through untouched.
 - **Breaking: a device's `rateLimit` is no longer enforced.** The CDIF-era
   device fields `rateLimit` and `price` in `api.json` are retired: nothing
   reads them. A spec that still carries one loads and validates, and
@@ -183,10 +200,63 @@ says how to write a module for this.
   result is whatever the inner tool returns.
 - **`countinghouse_check_balance` returns `{userName, balance}`**, not
   `{apiKey, balance}`. `userName` is `null` when it would equal the key.
+- **`tools/list` has one more built-in for every key:
+  `countinghouse_usage_report`**, a key's own usage counts (an admin's covers
+  every caller, by opaque id). A client that pins the tool list sees it.
+- **A scenario's result carries a receipt**
+  ([module-authoring.md](module-authoring.md#the-receipt-and-the-usage-report)):
+  `_meta['countinghouse/receipt']` holds the counts, and a second text block
+  holds its sentence (`read 48,210 lines (3.1 MB) in 14 calls to github; …`).
+  `structuredContent` is unchanged; a client that reads only
+  `content[0].text` is unaffected.
+- **Different error codes from the bundled modules and examples:**
+  `INPUT_REJECTED` where they answered `ARGUMENTS_INVALID`, and
+  `INNER_CALL_FAILED` where they answered `DEVICE_ACTION_CALL_FAIL`. A
+  composite that lets a callee module's own error escape now answers with
+  the callee's code; it was `DEVICE_INVOKE_EXCEPTION`. 23 catalogue codes
+  that nothing raised are gone (the CHANGELOG lists them).
 - ctx.call and HTTP `invoke-action` are unchanged: they keep `{output: …}`.
+
+## What HTTP API clients will notice
+
+- **No `topic` in an error body.** It is `{code, message, fault?}`, with
+  `kind` and `origin` beside them. Match on `code`.
+- The request-body limits, `application/json` for JSON, and the browser
+  origin check are in [Before you upgrade](#before-you-upgrade).
 
 ## What operators get
 
+- **`POST /reload-auth`** (admin key), and the authoring tool
+  `countinghouse_reload_auth`, re-read the auth configuration without a
+  restart. The file provider swaps a new file in only if it passes its
+  checks (otherwise `AUTH_RELOAD_INVALID`, and the configuration in use
+  stays); the answer never holds a key.
+- **MCP over stdin and stdout:** `--stdio`, started by a desktop MCP client
+  through `countinghouse-stdio` (`bin/countinghouse-stdio.js`; not
+  `bin/countinghouse`, which pipes the log). The log goes to stderr and no
+  port is opened ([reference](cli-and-api-reference.md)).
+- **Scenarios and parts** (`countinghouse.role` in a module's
+  `package.json`): `--loadModule <scenario>` also loads the parts its
+  `countinghouse.calls` names; a part it loads is not listed
+  (`MODULE_NOT_LISTED` from outside), and a scenario's tools are listed
+  under their bare action names. A module with no role is listed as before
+  ([module-authoring.md](module-authoring.md#roles-scenarios-and-parts)).
+- **Usage records:** every `tools/call` on a listed module is counted at the
+  runtime's boundary. `--usageDir <dir>` appends the records to daily JSON
+  Lines files (counts, tool and server names, the credential variable's
+  name and the opaque caller id; never a credential value or content), and `countinghouse-usage --usageDir <dir>` prints the
+  report in your shell. The counts, the receipt and
+  `countinghouse_usage_report` work without `--usageDir`.
+  Under `--store local` the directory defaults to `<storePath>/usage`;
+  under `--store redis` it is explicit-only.
+- **Local mode, with no Redis:** `--store local` keeps metering, a
+  module's `ctx.redis` data and jobs in files under `--storePath` and in
+  memory, for a client machine. Jobs and MCP tasks run in-process, are not
+  kept across restarts, and a finished one is readable for `--jobResultTtl`
+  seconds (default 3600). `--meter` keeps balances and limits. With
+  `--stdio` and no `--authConfigPath` it is the single-identity profile: one
+  key made at start and written nowhere. `--store redis` stays the default
+  ([reference](cli-and-api-reference.md)).
 - **`POST /uninstall-module {name, keepData}`** (admin key): removes a
   module's registry entry and deletes its data under `--moduleDataPath`
   unless `keepData` is true. It never removes the module's code. Unload the
@@ -213,6 +283,14 @@ says how to write a module for this.
   `--remoteMaxBytes` bound each call
   ([module-development.md](module-development.md#calling-a-remote-mcp-server),
   [security-model.md](security-model.md#remote-mcp-servers-a-module-cannot-choose-where-a-credential-goes)).
+
+## Modules no longer receive API keys (R2-1)
+
+> **Placeholder, written with R2-1's last task (Task 5).** What changes for
+> modules (no key, user name or `as` key in `ctx`, hops or jobs), for
+> composites (declared calls only), and what an operator checks before
+> upgrading. The opaque user id this builds on is already in
+> [Before you upgrade](#before-you-upgrade).
 
 ## Measured cost
 
