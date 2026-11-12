@@ -37,6 +37,10 @@ owner's file, the PR says so and the owner is asked first.
   they are shared);
 - `lib/logger.js`: its two `process.stdout` streams become `process.stderr`
   under `--stdio`;
+- `bin/countinghouse-stdio.js` (new): a pure JavaScript entry, with no shell and
+  no bunyan pipe, that runs `framework.js` in this process with `--stdio`. The
+  launcher runs it (reviewer, 2026-11-11: no shell script anywhere on the
+  client path). It gets a `package.json` bin entry.
 - `test/stdio/*.js` (new);
 - `package.json` test script.
 
@@ -56,9 +60,9 @@ server.
 
 **Startup** (`framework.js`):
 - `--stdio` with `--port` is exit 2, "choose one".
-- `--stdio` sends the logger to stderr before the first log line. The
-  shell `bin/countinghouse`, which pipes into bunyan, is documented as not
-  for `--stdio`; the launcher runs `node framework.js`.
+- `--stdio` sends the logger to stderr before the first log line. The shell
+  `bin/countinghouse`, which pipes into bunyan, is not for `--stdio`: the
+  entry is `bin/countinghouse-stdio.js`, and the docs say so.
 - The key, as the spec says: `options.apiKey` (B's in-memory key) or
   `COUNTINGHOUSE_API_KEY`. It is never printed.
 
@@ -92,6 +96,14 @@ server.
   (`PART_MISSING`), and other modules load normally.
 - The device manager keeps `listed` per module.
 
+**Naming (reviewer, 2026-11-11):**
+- A module with role `scenario` lists each action under its bare, slugified
+  action name (`ci_failure_triage`).
+- That name is refused at load when it collides with another listed tool or a
+  runtime built-in. The scenario does not load, and the log names both.
+- Parts and listed non-scenario modules keep today's long form,
+  `<deviceSlug>_<service>_<action>`, so the golden is unchanged.
+
 **Listing:**
 - `buildToolTargets` skips unlisted modules.
 - The gateway refuses `tools/call`, and `invoke-action` from outside the
@@ -113,6 +125,8 @@ active, read from the options object):
 - A direct `tools/call` to a part is refused with `MODULE_NOT_LISTED`.
 - A cycle loads each module once.
 - The profile's listing.
+- A scenario's tool is listed under its bare name, and a collision with a
+  listed tool or a built-in refuses the scenario.
 - The golden is unchanged: no role means today's behaviour.
 
 ## Step 3: boundary counters, usage files, the receipt, the report (PR 3; it may split as 3a/3b)
@@ -158,9 +172,9 @@ given.
   - the window;
   - `source: ["memory", "files", "metering"]`.
 - Scoping: a key sees its own calls. An admin key sees every caller, grouped
-  by the opaque caller id. This needs each record to carry the caller id;
-  *ruling:* the record gains `caller` (the opaque id, never a key or a name),
-  an addition to the spec's field list, said in the PR.
+  by the opaque caller id. Each record carries `caller`: R2-1's `u_…` id, or in
+  the single-identity profile the one local id, never a key or a name
+  (reviewer, 2026-11-11, added to the spec's field list).
 - `countinghouse-usage [--since] [--groupBy] [--json|--csv] [--usageDir]`
   prints the same numbers from the files.
 
@@ -195,12 +209,15 @@ given.
 There is no Windows machine here, so CI is the only Windows evidence, and
 the catalogue says which entries were seen there.
 
-## Open points for the reviewer
+## Decided by the reviewer (2026-11-11)
 
-1. Step 1 touches `framework.js`, `lib/route-manager.js`, `lib/cli-options.js`
-   and `lib/logger.js`, which are outside the spec's file list for C but are
-   where `--stdio` has to start. Each change is a branch on `options.stdio`.
-2. `ctx.usageCall` is how the call id reaches A's remote route (one line in
-   A's `lib/handler-ctx.js`).
-3. Each usage record gains `caller` (the opaque id), for the report's
-   scoping.
+1. The `--stdio` branches in `framework.js`, `lib/route-manager.js`,
+   `lib/cli-options.js` and `lib/logger.js` are C's to make, each a small
+   branch on `options.stdio`.
+2. The one line in `lib/handler-ctx.js` for `ctx.usageCall` is C's; A rebases.
+3. Usage records gain `caller`, the opaque id.
+4. `bin/countinghouse-stdio.js` is the launcher's entry (step 1).
+5. Scenarios are listed under the bare action name, with collisions refused
+   (step 2).
+6. The aggregation comes from mchen6/ch-report's main, with its tests, and
+   the report scopes by `caller` (step 3).
