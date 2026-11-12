@@ -5,5 +5,7 @@
 // Linux, macOS and Windows: this process becomes the runtime, serving MCP on
 // stdin and stdout, with the log on stderr. Every other option is passed
 // through to framework.js unchanged.
-process.argv.splice(2, 0, '--stdio');
+// `--stdio=true`, not a bare flag: minimist would take a first positional
+// argument as the flag's value.
+process.argv.splice(2, 0, '--stdio=true');
 require('../framework.js');

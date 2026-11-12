@@ -53,7 +53,9 @@ describe('--stdio, spawned', function() {
     const io = start(home);
     const init = await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
     assert.ok(init.result && init.result.serverInfo, JSON.stringify(init));
-    io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'})  }\n`);
+    io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'})}\n`);
+    // A notification the gateway does not know is still never answered over stdio.
+    io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 99}})}\n`);
     let tool = null;
     for (let i = 0; i < 60 && tool == null; i++) {
       const list = await request(io, {jsonrpc: '2.0', id: 100 + i, method: 'tools/list'});
@@ -69,6 +71,7 @@ describe('--stdio, spawned', function() {
     for (const l of lines(io)) {
       const m = JSON.parse(l);
       assert.strictEqual(m.jsonrpc, '2.0', `a stdout line that is not JSON-RPC: ${l.slice(0, 200)}`);
+      assert.ok(m.id !== null && m.id !== undefined, `an answer to a notification: ${l.slice(0, 200)}`);
     }
     assert.ok(io.err.length > 0, 'the logs went to stderr');
     // The fixture echoes ctx.caller.apiKey in its own result (id 2); nothing else may hold the key.
