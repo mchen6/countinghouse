@@ -9,7 +9,7 @@
 // nothing listens on before the registry is required.
 const assert = require('assert');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:9719'});
+options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
 require('../../lib/logger').createLogger(false);
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const gateway = require('../../lib/mcp/gateway');
