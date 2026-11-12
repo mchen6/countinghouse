@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "payService": {
+    "charge": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"receipt": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}, "required": ["receipt"], "additionalProperties": false}
+    }
+  }
+}

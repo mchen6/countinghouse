@@ -167,8 +167,10 @@ holds `{calls, linesIn, bytesIn, linesOut, bytesOut, servers}`, and a second
 text block holds its sentence, for example `read 48,210 lines (3.1 MB) in 14
 calls to github; 35 lines (2.4 KB) reached the model.`. `structuredContent` is
 your output exactly as validated, so a closed output schema stays the
-guarantee. A top-level output field named `receipt` is refused
-`RECEIPT_RESERVED`, because the name is the runtime's.
+guarantee. A scenario's top-level output field named `receipt` is refused
+`RECEIPT_RESERVED`, because there the name is the runtime's. Any other module's
+`receipt` field (a payments receipt, say) passes through untouched: the
+runtime adds no receipt to it.
 A task-augmented call (`tools/call` with `task`) is counted the same way: the
 run's server calls under its own call id, and its result when the task
 finishes. `tasks/result` carries the same receipt.

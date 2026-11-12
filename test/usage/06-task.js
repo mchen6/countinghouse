@@ -71,6 +71,12 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     assert.strictEqual(u.records()[0].outcome, 'error');
   });
 
+  it('a plain module\'s own top-level receipt field is not the runtime\'s: counted as a success, not RECEIPT_RESERVED', () => {
+    const extra = hooks.start(job(PLAIN));
+    hooks.complete(job(PLAIN), {output: {receipt: {id: 'r_1'}}}, {extra});
+    assert.strictEqual(u.records()[0].outcome, 'ok');
+  });
+
   it('a module that is not a scenario gets its Out record and no receipt', () => {
     const extra = hooks.start(job(PLAIN));
     assert.strictEqual(hooks.complete(job(PLAIN), {output: {ok: true}}, {extra}), null);

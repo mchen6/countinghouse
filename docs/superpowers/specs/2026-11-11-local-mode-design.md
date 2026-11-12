@@ -233,8 +233,9 @@ sentence as a second text block after the module's text:
 the model.` (several servers: `… in 14 calls to github and 2 to linear …`).
 The word "saved" never appears; the scenario's own `coverage` field carries
 pack-specific units. The receipt is added by the runtime; a module cannot
-set it (an output field named `receipt` is refused by the output validation
-with `RECEIPT_RESERVED`). `linesOut` and `bytesOut` count the module's own
+set it (a scenario's output field named `receipt` is refused by the output
+validation with `RECEIPT_RESERVED`; any other module's `receipt` field passes
+through, since the runtime adds no receipt there). `linesOut` and `bytesOut` count the module's own
 text content, not the receipt sentence. In `--store redis` the counters and the receipt
 run the same way; the usage files are written only when `--usageDir` is
 given (hosting operators opt in).

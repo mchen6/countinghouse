@@ -15,6 +15,7 @@ const {deviceIDForName} = require('../../lib/call-address');
 const PORT    = 9740; // C's block, 9740-9749 (test/ports.md)
 const KEY     = 'usage-e2e-key';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'usage-scenario');
+const PLAIN   = path.join(ROOT, 'test', 'fixtures', 'usage-plain');
 const OUTPUT  = {summary: 'first line\nsecond line'};
 
 const mcp = (method, params) => request(`http://127.0.0.1:${PORT}`).post('/mcp').set('X-CH-Key', KEY)
@@ -44,7 +45,7 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
 
   before(async () => {
     usageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-usage-e2e-'));
-    server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--usageDir', usageDir, '--loadModule', FIXTURE]);
+    server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--usageDir', usageDir, '--loadModule', FIXTURE, '--loadModule', PLAIN]);
     await waitFor(async () => {
       const listed = await mcp('tools/list', {});
       return listed.result != null && listed.result.tools.some((t) => t.name === 'usage_probe');
@@ -73,6 +74,16 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
 
   // The review of #59: a call is begun only once its caller is authenticated,
   // and an HTTP caller's usageCall never reaches a module or a record.
+  // Only a scenario's output reserves `receipt` (the runtime adds its receipt
+  // only there); a plain module's own receipt field is its business.
+  it('a plain module\'s own receipt field is answered untouched, direct and as a task', async () => {
+    for (const result of [(await mcp('tools/call', {name: 'usage_plain_payservice_charge', arguments: {}})).result, await taskResult('usage_plain_payservice_charge')]) {
+      assert.strictEqual(result.isError, false, JSON.stringify(result));
+      assert.deepStrictEqual(result.structuredContent, {receipt: {id: 'r_1'}});
+      assert.strictEqual(result.content.length, 1, 'no runtime receipt for a plain module');
+    }
+  });
+
   it('a refused key opens no call, and an HTTP invoke-action caller cannot pass a usageCall', async () => {
     const refused = await request(`http://127.0.0.1:${PORT}`).post('/mcp').set('X-CH-Key', 'not-the-key')
       .set('Accept', 'application/json, text/event-stream').send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'usage_probe', arguments: {}}});
@@ -94,7 +105,7 @@ describe('usage 07: the receipt on a running server, direct and task-augmented',
     const lines = fs.readdirSync(usageDir).flatMap((day) => fs.readdirSync(path.join(usageDir, day))
       .flatMap((f) => fs.readFileSync(path.join(usageDir, day, f), 'utf8').split('\n').filter(Boolean)));
     const outs = lines.map((l) => JSON.parse(l)).filter((r) => r.bytesOut !== undefined);
-    assert.deepStrictEqual(outs.map((r) => [r.tool, r.outcome]).sort(), [['usage_probe', 'ok'], ['usage_probe', 'ok'], ['usage_reserved', 'error'], ['usage_reserved', 'error']]);
+    assert.deepStrictEqual(outs.map((r) => [r.tool, r.outcome]).sort(), [['usage_plain_payservice_charge', 'ok'], ['usage_plain_payservice_charge', 'ok'], ['usage_probe', 'ok'], ['usage_probe', 'ok'], ['usage_reserved', 'error'], ['usage_reserved', 'error']]);
     assert.ok(!lines.some((l) => l.includes(KEY)), 'no key in a usage file');
     // A refused key opening a call would add a usage_probe Out record: the
     // exact list above, and the report's two usage_probe calls, would show

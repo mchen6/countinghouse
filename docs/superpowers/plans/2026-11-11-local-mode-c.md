@@ -235,3 +235,6 @@ the catalogue says which entries were seen there.
    user-auth and granted where the call is actually sent. Ownership is per
    worker; R2-1's per-call token is what binds it to one invocation. A module
    leaving the id off undercounts only its own receipt.
+9. `receipt` is reserved only for a scenario's output, where the runtime adds
+   its own receipt (reviewer, 2026-11-12). Any other module's `receipt` field
+   passes through untouched: a payments module's receipt is ordinary.
