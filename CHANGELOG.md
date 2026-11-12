@@ -50,6 +50,13 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `INPUT_REJECTED` where they raised `ARGUMENTS_INVALID`, and
   `INNER_CALL_FAILED` (the original as the cause) where they raised
   `DEVICE_ACTION_CALL_FAIL`.
+- **Only the runtime issues runtime errors.** An error a module answers
+  with is the module's (`origin: 'module'`, no runtime kind, retry or
+  status), however it was built, even when its code spells a catalogue
+  name; only an error the runtime itself issued to the module (a hop's
+  `MODULE_RELOADING`, a `CTX_CALL_…` refusal), passed on, stays the
+  runtime's, with the code it was issued with. Under the module sandbox
+  the error class's statics are frozen in the worker.
 - **No `topic` in any answer.** An HTTP error body is
   `{code, message, fault?}`; `kind` and `origin` join it with the client
   shapes (logger-design spec §5.2, "Client shapes").
