@@ -109,14 +109,13 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close();
   });
 
-  it('removing an active job cancels it and forgets it', async () => {
-    let cancelled = null;
-    const {runner} = runnerWith((i, cb, isCancelled) => { cancelled = isCancelled; });
-    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'x'}, 'd', 's', 'a', {});
-    assert.ok(await until(async () => cancelled != null));
+  it('removing a job not yet started cancels it, it never runs, and it is forgotten', async () => {
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, null, {}));
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'x', delay: 200}, 'd', 's', 'a', {});
     assert.deepStrictEqual((await call(runner, 'removeJob', INTERNAL, 'x', r.id, false)).r, {removed: true});
-    assert.strictEqual(cancelled(), true);
     assert.strictEqual((await call(runner, 'getJob', INTERNAL, r.id)).err.message, new (require('../../lib/countinghouse-error').CountinghouseError)('GET_JOB_ERROR', 'unknown job').message);
+    await wait(400);
+    assert.strictEqual(ci.calls.length, 0);
     runner.close();
   });
 
@@ -183,5 +182,123 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     await wait(400);
     assert.strictEqual((await call(runner, 'getJob', INTERNAL, r.id)).err.code, 'GET_JOB_ERROR');
     runner.close();
+  });
+});
+
+// The review of B5 (/code-review medium on 9795453).
+describe('jobs-local 01: the review of B5', function() {
+  this.timeout(20000);
+  const options = require('../../lib/cli-options');
+  let workerThread;
+  before(() => { workerThread = options.workerThread; options.workerThread = true; });
+  after(() => { options.workerThread = workerThread; });
+
+  it('removing a scheduler removes its run already queued for later', async () => {
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, null, {}));
+    await call(runner, 'addJob', INTERNAL, {name: 'far', repeat: {cron: '0 0 1 1 *'}}, 'd', 's', 'a', {});
+    assert.strictEqual((await call(runner, 'listJobs', INTERNAL)).r.length, 1);
+    await call(runner, 'removeJob', INTERNAL, 'far', null, true);
+    assert.strictEqual((await call(runner, 'listJobs', INTERNAL)).r.length, 0);
+    assert.strictEqual(ci.calls.length, 0);
+    runner.close();
+  });
+
+  it('a delay longer than one timer can hold waits until its time', async () => {
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, null, {}), {maxTimerMs: 40});
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'long', delay: 300}, 'd', 's', 'a', {});
+    await wait(150);
+    assert.strictEqual(ci.calls.length, 0);
+    assert.strictEqual((await state(runner, r.id)).state, 'delayed');
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
+    runner.close();
+  });
+
+  it('listJobs answers the newest first, as job-control asks BullMQ for', async () => {
+    const {runner} = runnerWith(() => {});
+    const ids = [];
+    for (let i = 0; i < 3; i++) ids.push((await call(runner, 'addJob', INTERNAL, {name: `n${i}`, delay: 60000}, 'd', 's', 'a', {})).r.id);
+    assert.deepStrictEqual((await call(runner, 'listJobs', INTERNAL)).r.map((x) => x.job.id), ids.slice().reverse());
+    runner.close();
+  });
+
+  it('removing an active job is refused, as BullMQ refuses a locked one, and the run finishes and is billed', async () => {
+    let answer = null;
+    const billed = [];
+    const {runner, ci} = runnerWith((i, cb) => { answer = cb; });
+    ci.recordCall = (key) => billed.push(key);
+    const {r} = await call(runner, 'addJob', {appKey: 'owner'}, {name: 'busy'}, 'd', 's', 'a', {});
+    assert.ok(await until(() => answer != null));
+    const refused = await call(runner, 'removeJob', {appKey: 'owner'}, 'busy', r.id, false);
+    assert.strictEqual(refused.err.code, 'REMOVE_JOB_ERROR');
+    assert.ok(/could not be removed because it is locked by another worker/.test(refused.err.message), refused.err.message);
+    answer(null, {});
+    assert.ok(await until(async () => (await state(runner, r.id, {appKey: 'owner'})).state === 'completed'));
+    assert.deepStrictEqual(billed, ['owner']);
+    runner.close();
+  });
+
+  it('a synchronous throw from invokeJobs fails the run', async () => {
+    const {runner} = runnerWith(() => { throw new Error('module state bug'); });
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'throw'}, 'd', 's', 'a', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
+    assert.strictEqual((await state(runner, r.id)).job.failedReason, 'module state bug');
+    runner.close();
+  });
+
+  it('a cleared timer is forgotten, so removed jobs leave nothing behind', async () => {
+    const {runner} = runnerWith(() => {});
+    const before = runner.pendingTimers();
+    for (let i = 0; i < 20; i++) {
+      const {r} = await call(runner, 'addJob', INTERNAL, {name: `c${i}`, delay: 60000}, 'd', 's', 'a', {});
+      await call(runner, 'removeJob', INTERNAL, `c${i}`, r.id, false);
+    }
+    assert.strictEqual(runner.pendingTimers(), before);
+    runner.close();
+  });
+
+  it('--jobResultTtl 0 keeps a finished job (0 means no expiry, as --jobTimeout 0 does)', async () => {
+    const {runner} = runnerWith((i, cb) => setImmediate(cb, null, {}), {resultTtlMs: 0});
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'keep'}, 'd', 's', 'a', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
+    await wait(200);
+    assert.strictEqual((await state(runner, r.id)).state, 'completed');
+    runner.close();
+  });
+
+  it('the job history names its owner by fingerprint, never the key, and still finds the owner\'s runs', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const LocalKv = require('../../lib/local-kv');
+    const redisAPI = require('../../lib/redis-api');
+    const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-jobs-local-01-'));
+    const kv = new LocalKv({storePath});
+    const saved = redisAPI.client;
+    redisAPI.client = kv;
+    try {
+      const {runner} = runnerWith((i, cb) => setImmediate(cb, null, {}));
+      const {r} = await call(runner, 'addJob', {appKey: 'secret-owner-key-1'}, {name: 'hist'}, 'd', 's', 'a', {});
+      assert.ok(await until(async () => (await state(runner, r.id, {appKey: 'secret-owner-key-1'})).state === 'completed'));
+      const mine = (await call(runner, 'getJobHistory', {appKey: 'secret-owner-key-1'}, 'hist')).r;
+      const theirs = (await call(runner, 'getJobHistory', {appKey: 'someone-else'}, 'hist')).r;
+      assert.ok(mine.length >= 1);
+      assert.strictEqual(theirs.length, 0);
+      runner.close();
+      kv.close();
+      assert.ok(!fs.readFileSync(path.join(storePath, 'kv.json'), 'utf8').includes('secret-owner-key-1'));
+    } finally {
+      redisAPI.client = saved;
+    }
+  });
+
+  it('the local runner loads no Redis client library', () => {
+    const {spawnSync} = require('child_process');
+    const run = spawnSync(process.execPath, ['-e', `
+      require(${JSON.stringify(require.resolve('../../lib/job-control-local'))});
+      require(${JSON.stringify(require.resolve('../../lib/metering/local-provider'))});
+      process.stdout.write(JSON.stringify(Object.keys(require.cache).filter((f) => /node_modules[\\\\/](redis|ioredis|bullmq)[\\\\/]/.test(f)).length));
+    `], {encoding: 'utf8', timeout: 20000});
+    assert.strictEqual(run.status, 0, run.stderr);
+    assert.strictEqual(run.stdout, '0');
   });
 });
