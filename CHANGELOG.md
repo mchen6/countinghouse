@@ -28,6 +28,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   bare-number form `new net.Socket(fd)`. A handle object is not adoption,
   because a handle a module can build is guarded at its `open(fd)` (below).
   TLS works under `enforce` as under `audit`, `--hardened` included.
+- `tls.connect(port, {host})` and `tls.connect(port, host, {host})` were
+  read without their options object, so the default Redis denial refused
+  them as `localhost`, and `tls.connect` over a given `socket` was read as
+  a connection to its `host` and `port`. `tls.connect` has no check of its
+  own now: it dials through `Socket#connect`, whose check sees the options
+  as tls merged them.
 
 ### Security — descriptor adoption closed on routes the lockdown missed
 
@@ -71,10 +77,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (`..`, `//`, relative), and a port in any string form Node reads as a
   number (`socket.connect('0x18eb', host)` took it for a pipe path).
 - `_tls_wrap` and `_tls_common` are refused to modules. They were on the
-  allowlist, and sit behind none of the wrappers the lockdown puts on
-  `tls`, so a module could reach Node's TLS internals past them. A module
-  (or a dependency) that requires them directly now fails to load. Use
-  `tls`.
+  allowlist, though a module needs `tls`, not Node's TLS internals behind
+  it. A module (or a dependency) that requires them directly now fails to
+  load. Use `tls`.
 
 ### Added — `ctx.error`: a handler's own error, which it may simply return
 
