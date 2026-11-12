@@ -76,6 +76,206 @@
     }
   },
   {
+    "name": "countinghouse_usage_report",
+    "description": "What this countinghouse has done for you: per tool, server, pack or module, the calls, the server calls made for them, and the lines and bytes read from servers and returned to the model, from this process and earlier ones. Token columns are an estimate (utf8 bytes / 4).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "string",
+          "description": "a day (YYYY-MM-DD), an ISO time, or a duration back from now (30m, 24h, 7d); absent: everything recorded"
+        },
+        "groupBy": {
+          "type": "string",
+          "enum": [
+            "tool",
+            "server",
+            "pack",
+            "module"
+          ],
+          "description": "what each row counts: a tool (the default), a server, a pack, or a module"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "window": {
+          "type": "object",
+          "properties": {
+            "since": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "until": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "since",
+            "until"
+          ],
+          "additionalProperties": false
+        },
+        "groupBy": {
+          "type": "string",
+          "enum": [
+            "tool",
+            "server",
+            "pack",
+            "module"
+          ]
+        },
+        "method": {
+          "type": "string",
+          "const": "utf8 bytes / 4"
+        },
+        "source": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "memory",
+              "files",
+              "metering"
+            ]
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "caller": {
+                "title": "the opaque caller id; admin reports only",
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              },
+              "server": {
+                "type": "string"
+              },
+              "pack": {
+                "type": "string"
+              },
+              "module": {
+                "type": "string"
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "serverCalls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytesIn": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "linesIn": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytesOut": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "linesOut": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tokensInEst": {
+                "title": "an estimate: utf8 bytes / 4",
+                "type": "integer",
+                "minimum": 0
+              },
+              "tokensOutEst": {
+                "title": "an estimate: utf8 bytes / 4",
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "calls",
+              "serverCalls",
+              "bytesIn",
+              "linesIn",
+              "bytesOut",
+              "linesOut",
+              "tokensInEst",
+              "tokensOutEst"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "totals": {
+          "type": "object",
+          "properties": {
+            "calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "serverCalls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bytesIn": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "linesIn": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bytesOut": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "linesOut": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokensInEst": {
+              "title": "an estimate: utf8 bytes / 4",
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokensOutEst": {
+              "title": "an estimate: utf8 bytes / 4",
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "calls",
+            "serverCalls",
+            "bytesIn",
+            "linesIn",
+            "bytesOut",
+            "linesOut",
+            "tokensInEst",
+            "tokensOutEst"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "window",
+        "groupBy",
+        "method",
+        "source",
+        "groups",
+        "totals"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "echo_device_client_errtestservice_testerrorinfo",
     "description": "Returns a device-defined error object (fault) instead of a normal result, to test structured error propagation from a client-side service module.",
     "inputSchema": {
