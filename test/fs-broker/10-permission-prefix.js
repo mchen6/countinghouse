@@ -23,12 +23,21 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
       {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim();
   }
 
-  it('reproduces the refusal on the directory itself (the assumption this works around)', () => {
+  // The quirk is Node's, and not every supported version has it: 24.0.0
+  // allows the directory itself (the floor-shim PR's 24.0.0 CI leg), while
+  // 22.23 and 24.14 refuse it. Where it is absent the case is skipped and
+  // says so; the workaround stays, and the realDir case below holds either
+  // way.
+  it('reproduces the refusal on the directory itself (the assumption this works around)', function() {
     base = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.ch-perm-')));
     const dir = path.join(base, 'ch');
     fs.mkdirSync(dir);
     fs.mkdirSync(`${dir}_data`);
     const out = underPermission(dir, `require('fs/promises').realpath(${JSON.stringify(dir)}).then(() => console.log('ok'), (e) => console.log(e.code))`);
+    if (out === 'ok') {
+      this.test.title += ` -- skipped: Node ${process.version} allows the directory itself`;
+      this.skip();
+    }
     assert.strictEqual(out, 'ERR_ACCESS_DENIED');
   });
 
