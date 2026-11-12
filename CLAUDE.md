@@ -33,7 +33,8 @@ assuming a plan doc exists.
 - @apemesh/cdif-device-db: personal code (sqlite3-based module manager),
   decision made — merge into this repo under lib/device-db/ (or similar),
   rename, drop the private registry dependency entirely.
-- Target: Node >= 24.15, JSON Schema 2020-12 (ajv 8), MCP spec 2026-07-28
+- Target: Node >= 22.16 (24.15+ for multi-tenant hosting; below 24.15 the
+  resolve shim covers require.resolve), JSON Schema 2020-12 (ajv 8), MCP spec 2026-07-28
   (stateless Streamable HTTP; do NOT implement legacy HTTP+SSE).
 
 ## Working style

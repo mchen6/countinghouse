@@ -77,11 +77,13 @@ on Node below 24.15 only:
   'node-addons', 'module-sync']}` (the context Node passes, verified
   identical on 22 and 24), and returns the host path the chain yields, or
   throws what it throws.
-- A call from countinghouse's own code (not module code) goes to the
-  original resolver, as today. The lockdown's own `reachesLib` and the
-  validator's `require.resolve` run from countinghouse code paths; they get
-  the virtual-path mapping through the identity hook only when their parent
-  is module code, which is the case the failing tests exercise.
+- As 24.15 does: every `_resolveFilename` call outside a running chain goes
+  through the hooks, whoever the caller (reviewer, 2026-11-11, on implementer
+  B's measurement on 22.23, 24.14, 24.15 and 26.13: from 24.15 Node runs them
+  for every `require.resolve` and `createRequire().resolve`). The lockdown's
+  own `reachesLib` and the validator's `require.resolve` run from
+  countinghouse code and need the identity hook's mapping, which is the case
+  the failing tests exercise.
 
 The chain is exposed by the two hook modules as a function the wrapper can
 call: `identity.js` exports `resolveForModule(specifier, context, next)` and

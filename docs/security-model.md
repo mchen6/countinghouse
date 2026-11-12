@@ -57,7 +57,10 @@ Each layer below says what it stops and what it does not.
 
 **Modes.** `--moduleSandbox off|audit|enforce`, default `audit`. The sandbox
 needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
-24.15 or later.
+22.16 or later. Below 24.15 a compatibility shim routes `require.resolve`
+through the sandbox's hooks (`lib/resolve-shim.js`); multi-tenant hosting of
+third-party modules should run 24.15 or later, where Node's own hook covers
+it.
 
 | | `off` | `audit` (default) | `enforce` |
 |---|---|---|---|

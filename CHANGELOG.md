@@ -717,10 +717,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 
 ### Changed — 8.0.0 platform
 
-- **Node 24.15 or later is required.** Startup exits with status 2 on an
-  older Node. Node 22 is not supported: `module.registerHooks` does not hook
-  `require.resolve` before 24.15 (22.x included), so module code's
-  `require.resolve` fails in worker mode there.
+- **Node 22.16 or later is required** (the first 22 with
+  `module.registerHooks`). Startup exits with status 2 on an older Node.
+  Below 24.15 `module.registerHooks` does not hook `require.resolve` or
+  `createRequire().resolve`, so a compatibility shim (`lib/resolve-shim.js`)
+  routes them through the sandbox's hooks as 24.15 does; multi-tenant hosting
+  of third-party modules should run 24.15 or later, where Node's own hook
+  covers it. The floor rises to 24 when Node 22 reaches end of life, on
+  2027-04-30. Under enforce, `require.resolve.paths()` from module code no
+  longer lists Node's global lookup directory, a host path, on any version.
 - **`--workerThread` is on by default.** Pass `--no-workerThread` (or
   `--workerThread false`) for single-thread mode, now meant only for
   debugging modules; startup logs a warning saying so. Worker mode also
