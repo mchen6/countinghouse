@@ -497,14 +497,7 @@ format did not change:
 **Bind the identity your hops run as, in the auth config — not in the
 module.** Your module's inner calls are made with an internal key that the
 operator sets up. Each entry in the auth config is one key: the entry's name
-is the key itself, and two of its fields say how it is used:
-
-- **`devices` is what this key may call**: the deviceIDs of the modules it is
-  allowed to reach. For an internal key, these are the modules your module
-  calls.
-- **`runsModules` is who uses this key**: the `friendlyName`s of the modules
-  whose inner calls are made with it. This is the link from your module to
-  the key; without it, `ctx.call` refuses with `CTX_CALL_UNBOUND`.
+is the key itself.
 
 A complete config for the `repo-review` composite (examples/repo-review) has
 two entries, one for the person calling and one for the module's inner calls:
@@ -522,6 +515,16 @@ two entries, one for the person calling and one for the module's inner calls:
   }
 }
 ```
+
+**The key idea: the internal entry's two fields answer two different
+questions.**
+
+- **`devices` is what the key may call.** It lists the tools this key is
+  allowed to reach: here, repo-scan and secret-detect.
+- **`runsModules` is who uses the key.** It lists the modules whose inner
+  calls are made with this key: here, repo-review. This is the only link
+  from a module to its key; without it, `ctx.call` refuses with
+  `CTX_CALL_UNBOUND`.
 
 Read it as: *`demo` may call repo-review; repo-review makes its inner calls
 with the internal key; that key may call repo-scan and secret-detect.* When
