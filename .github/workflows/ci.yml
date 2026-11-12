@@ -208,6 +208,7 @@ jobs:
           npx mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js
           npx mocha --exit ./test/composition/*.js
           npx mocha --exit ./test/roles/*.js
+          npx mocha --exit ./test/usage/*.js
           npx mocha --exit ./test/remote/*.js
           npx mocha --exit ./test/sandbox/*.js
           npx mocha --exit ./test/single-thread/*.js

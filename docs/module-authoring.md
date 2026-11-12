@@ -153,6 +153,24 @@ a module is listed as it always was.
   the authoring tools are not listed, and a call to them by name answers
   `MODULE_NOT_LISTED`.
 
+## The receipt and the usage report
+
+Every `tools/call` on a listed module is counted at the runtime's boundary.
+- **In:** each call to a declared server, as lines and bytes read.
+- **Out:** the lines and bytes of the tool's own text result.
+
+A scenario's result also carries a receipt. `_meta['countinghouse/receipt']`
+holds `{calls, linesIn, bytesIn, linesOut, bytesOut, servers}`, and a second
+text block holds its sentence, for example `read 48,210 lines (3.1 MB) in 14
+calls to github; 35 lines (2.4 KB) reached the model.`. `structuredContent` is
+your output exactly as validated, so a closed output schema stays the
+guarantee. A top-level output field named `receipt` is refused
+`RECEIPT_RESERVED`, because the name is the runtime's.
+
+`countinghouse_usage_report`, listed to every key, reports the same counts by
+tool, server, pack or module. A key sees its own calls; an admin sees every
+caller by opaque id.
+
 ## Why `tools/list` does not update by itself
 
 The server is already correct — `tools/list` is recomputed from live device
