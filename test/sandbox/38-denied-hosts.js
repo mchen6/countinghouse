@@ -36,6 +36,39 @@ describe('sandbox 38: the Redis denial reads the host as Node does', function() 
       'fd00:0:0::5': 'EACCES', 'FD00::5': 'EACCES', '127.0.0.1:1': 'not denied'});
   });
 
+  // tls.connect(port, [host,] options) merges the options object over the
+  // port and host, as _tls_wrap's normalizeConnectArgs does (L1 round 4).
+  it('tls.connect reads a host from an options object after the port', () => {
+    const r = attempts({mode: 'audit', denied: {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []}},
+      `[['port, {host}', () => require('tls').connect(6379, {host: 'example.invalid'})],
+        ['port, host, {host}', () => require('tls').connect(6379, '127.0.0.1', {host: 'example.invalid'})],
+        ['port, host, {}', () => require('tls').connect(6379, 'example.invalid', {})],
+        ['port, {host: loopback}', () => require('tls').connect(6379, {host: '127.0.0.1'})],
+        ['port, other host, {host: loopback}', () => require('tls').connect(6379, 'example.invalid', {host: '127.0.0.1'})]]`);
+    assert.deepStrictEqual(r, {'port, {host}': 'not denied', 'port, host, {host}': 'not denied', 'port, host, {}': 'not denied',
+      'port, {host: loopback}': 'EACCES', 'port, other host, {host: loopback}': 'EACCES'});
+  });
+
+  // With a socket option tls connects over that socket and dials nothing;
+  // the host is the name it checks the certificate against.
+  it('tls.connect over a given socket is not a connection to its host and port', () => {
+    const r = attempts({mode: 'audit', denied: {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []}},
+      `[['port, {socket, host}', () => require('tls').connect(6379, {socket: new net.Socket(), host: '127.0.0.1'})],
+        ['{socket, host, port}', () => require('tls').connect({socket: new net.Socket(), host: '127.0.0.1', port: 6379})]]`);
+    assert.deepStrictEqual(r, {'port, {socket, host}': 'not denied', '{socket, host, port}': 'not denied'});
+  });
+
+  // tls.connect has no check of its own; the refusal on Socket#connect
+  // destroys the TLSSocket it built, so no handle outlives the call.
+  it('a refused tls.connect leaves no handle open', () => {
+    const r = inWorker(`${install({mode: 'audit', denied: {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []}})}
+      let refused = 0;
+      for (let i = 0; i < 20; i++) { try { require('tls').connect(6379, '127.0.0.1'); } catch (e) { if (e.code === 'EACCES') refused++; } }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return {refused, open: process.getActiveResourcesInfo().filter((k) => /TCP|TLS|Pipe/.test(k)).length};`);
+    assert.deepStrictEqual(r, {refused: 20, open: 0});
+  });
+
   // An IPv4-mapped or IPv4-compatible IPv6 literal is its IPv4 address,
   // on either side (code review of round 3).
   it('an IPv4 address is denied under its IPv6 forms, and the other way round', () => {

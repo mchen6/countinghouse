@@ -94,8 +94,8 @@ any module code). Stops:
   `wasi`, `sqlite` (its `loadExtension` loads native code), `test` (its
   `run()` starts unsandboxed child processes), `sea`, `repl` and
   `trace_events`; Node 26's `ffi`, which calls native code, is not on it
-  either; nor are Node's TLS internals `_tls_wrap` and `_tls_common`, which
-  sit behind none of the wrappers put on `tls`), through `require`, `import()` and
+  either; nor are Node's TLS internals `_tls_wrap` and `_tls_common`: a
+  module needs `tls`), through `require`, `import()` and
   `process.getBuiltinModule` alike, so a built-in a later Node adds is
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
