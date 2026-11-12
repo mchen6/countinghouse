@@ -1,3 +1,6 @@
+// Run with --exit (package.json): requiring the module manager and the tool
+// registry leaves a Redis client retrying the unused port, which would keep a
+// mocha run without --exit alive.
 // lib/module-roles.js (local-mode spec §3): a module's role, the parts a
 // scenario declares in countinghouse.calls, where those parts are found, and
 // the load list --loadModule expands to, with listed set per module. Pure
