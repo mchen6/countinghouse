@@ -31,7 +31,9 @@ const KEY = 'composition-test-key';
 const MODES = [
   {label: 'single-thread', port: 9618, args: ['--no-workerThread']},
   {label: 'worker, main-thread hop', port: 9619, args: ['--workerThread', '--no-directPeerChannels']},
-  {label: 'worker, direct peer channel', port: 9620, args: ['--workerThread']}
+  {label: 'worker, direct peer channel', port: 9620, args: ['--workerThread']},
+  // the worker default is audit; the require routes are closed only here
+  {label: 'worker, enforce', port: 9694, args: ['--workerThread', '--moduleSandbox', 'enforce']}
 ];
 
 function startServer(mode, done) {
@@ -130,6 +132,19 @@ MODES.forEach((mode) => {
         done();
       });
     });
+
+    // Under any module sandbox the runtime's issue() is not in what a module
+    // can reach (require.cache); single-thread mode has no sandbox.
+    if (!mode.args.includes('--no-workerThread')) {
+      it('a module finds no issue() in require.cache to brand its own error with', (done) => {
+        probe(mode.port, 'requireCacheIssue', (err, out) => {
+          if (err) return done(err);
+          assert.strictEqual(out.code, 'MODULE_RELOADING', JSON.stringify(out));
+          assert.strictEqual(out.origin, 'module', JSON.stringify(out));
+          done();
+        });
+      });
+    }
 
     // Last in each mode: the callee's accessors stay in its process or worker.
     it('an accessor on a prototype cannot decide the code a runtime refusal is issued with', (done) => {

@@ -109,14 +109,18 @@ through its constructor), it answers as the module's own,
 `origin: 'module'`, with no runtime meaning for a code that spells a
 catalogue name. A runtime error you were given (a callee's
 `MODULE_RELOADING`, a `CTX_CALL_…` refusal, a `ctx.serviceClient`
-refusal) and pass on stays the runtime's, with the code and message it was
-issued with: changing them on it changes nothing, so to answer with your
+refusal) and pass on stays the runtime's, with the code it was issued
+with and the message it reached you with (in worker mode a runtime
+error's message is the catalogue's text, without the detail single-thread
+mode keeps): changing them on it changes nothing, so to answer with your
 own code, return `ctx.error(...)` (with the runtime's error as its
-`cause` if you want to keep it). `audit`, the worker default, records a
-module that reaches countinghouse's own code but does not stop it, and
-single-thread mode and `--moduleSandbox off` have no sandbox
-([security model](security-model.md)): there a module can forge this as it
-can do anything else.
+`cause` if you want to keep it). Any sandbox mode freezes the error class
+in the module's worker and keeps the runtime's way of issuing errors out
+of the module's reach; only `enforce` also blocks a module from requiring
+countinghouse's own files. `audit`, the worker default, records such a
+require but allows it, and single-thread mode and `--moduleSandbox off`
+have no sandbox ([security model](security-model.md)): there a module can
+forge this as it can do anything else.
 
 Returning the error is the preferred form. Throwing it
 (`throw ctx.error(…)`), from an async function or a plain one, or passing it

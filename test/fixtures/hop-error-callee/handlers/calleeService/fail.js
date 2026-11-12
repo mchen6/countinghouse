@@ -21,6 +21,14 @@ module.exports = async (input, ctx) => {
     try { Object.defineProperty(C.prototype, 'kind', {get() { return 'runtime'; }}); } catch (patchErr) { /* frozen */ }
     return new C('MODULE_RELOADING');
   }
+  if (input.kind === 'requireCacheIssue') {
+    // The runtime's own issue(), looked for in require.cache: under any
+    // module sandbox it is not there (the high review of #45).
+    const file = Object.keys(require.cache).find((p) => p.endsWith('countinghouse-error.js'));
+    const exported = (file != null) ? require.cache[file].exports : null;
+    const e = ctx.error('MODULE_RELOADING', 'forged');
+    return (exported != null && typeof(exported.issue) === 'function') ? exported.issue(e) : e;
+  }
   if (input.kind === 'prototypeAccessor') {
     // An accessor on the prototypes that would decide the code a refusal is
     // built and issued with (review of #45). It stays in this worker: the
