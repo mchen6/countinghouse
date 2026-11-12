@@ -289,7 +289,9 @@ function serve() {
   var JobControl    = require('./lib/store').jobs;
   if (options.workerThread === true) {
     JobControl.initJobProcess(routeManager.cdifInterface);
-    JobControl.setCompletionHook(require('./lib/mcp/gateway').stampOutputSchema(routeManager.cdifInterface));
+    const jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
+    JobControl.setStartHook(jobHooks.start);
+    JobControl.setCompletionHook(jobHooks.complete);
   }
 
   // routeManager.startServer();
