@@ -22,6 +22,7 @@ const spawn = require('child_process').spawn;
 const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
 const {toolOutput} = require('../helpers/tool-result');
+const {CountinghouseError} = require('../../lib/countinghouse-error');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
@@ -61,7 +62,7 @@ function probe(port, kind, cb) {
     });
 }
 
-const observed = {catalogue: {}, own: {}};
+const observed = {catalogue: {}, own: {}, forgedOrigin: {}, forgedConstructor: {}, passThrough: {}};
 
 MODES.forEach((mode) => {
   describe(`composition 17: a module's error over a hop (${mode.label})`, function() {
@@ -98,13 +99,48 @@ MODES.forEach((mode) => {
         done();
       });
     });
+
+    // d2b: a module cannot pass a catalogue code off as the runtime's. Only
+    // an error the runtime itself issued keeps origin 'runtime' (a private
+    // brand per thread); any other is the module's, whatever its code or
+    // `.origin` says.
+    for (const kind of ['forgedOrigin', 'forgedConstructor'].concat(mode.args.includes('--no-workerThread') ? [] : ['patchedStatics'])) {
+      it(`a callee's catalogue code is the module's however it is built (${kind})`, (done) => {
+        probe(mode.port, kind, (err, out) => {
+          if (err) return done(err);
+          observed[kind] = observed[kind] || {};
+          observed[kind][mode.label] = out;
+          assert.strictEqual(out.code, 'MODULE_RELOADING', JSON.stringify(out));
+          assert.strictEqual(out.origin, 'module', JSON.stringify(out));
+          assert.strictEqual(out.kind, 'module', JSON.stringify(out));
+          done();
+        });
+      });
+    }
+
+    it('a runtime refusal the callee passes on stays the runtime\'s', (done) => {
+      probe(mode.port, 'passThrough', (err, out) => {
+        if (err) return done(err);
+        observed.passThrough = observed.passThrough || {};
+        observed.passThrough[mode.label] = out;
+        assert.ok(/^CTX_CALL_/.test(String(out.code)), JSON.stringify(out));
+        assert.strictEqual(out.origin, 'runtime', JSON.stringify(out));
+        // the catalogue's kind for that code, whatever it is
+        assert.strictEqual(out.kind, new CountinghouseError(out.code).kind, JSON.stringify(out));
+        done();
+      });
+    });
   });
 });
 
 describe('composition 17: every mode answers alike', () => {
   it('the three modes observed the same rejections', () => {
-    for (const kind of ['catalogue', 'own']) {
-      const seen = MODES.map((m) => observed[kind][m.label]);
+    for (const kind of ['catalogue', 'own', 'forgedOrigin', 'forgedConstructor', 'passThrough']) {
+      // A runtime refusal's message keeps its detail in single-thread mode
+      // only (the documented mode difference, ledgered E3); its code, origin
+      // and kind are alike.
+      const pick = (o) => ((kind === 'passThrough' && o != null) ? {code: o.code, origin: o.origin, kind: o.kind} : o);
+      const seen = MODES.map((m) => pick(observed[kind][m.label]));
       assert.ok(seen.every((o) => o !== undefined), `every mode ran the ${kind} probe`);
       seen.forEach((o) => assert.deepStrictEqual(o, seen[0], `${kind}: ${JSON.stringify(seen)}`));
     }

@@ -102,12 +102,13 @@ name its code anything, a catalogue name included, so check
 `err.origin === 'runtime'` before acting on a runtime code (retrying on
 `MODULE_RELOADING`, say), not the code alone.
 
-One gap remains before 8.0.0: today a module can still answer with a
-catalogue code and have it treated as the runtime's (by setting `origin` on
-its error, or by building one through the error's constructor), so a caller
-can see, say, a retryable `MODULE_RELOADING` that a module raised. A
-follow-up change (d2b) closes it: only an error the runtime itself issued
-carries runtime semantics, and any other is the module's, whatever its code.
+`origin` can be trusted: only an error the runtime itself issued is
+`'runtime'`. However a module builds its error (setting `origin` on it,
+constructing one through its constructor, or changing a runtime error's
+code), it answers as the module's own, `origin: 'module'`, with no runtime
+meaning for a code that spells a catalogue name. A runtime error you were
+given and pass on unchanged (a callee's `MODULE_RELOADING`, a `CTX_CALL_…`
+refusal) stays the runtime's, with the code it was issued with.
 
 Returning the error is the preferred form. Throwing it
 (`throw ctx.error(…)`), from an async function or a plain one, or passing it
