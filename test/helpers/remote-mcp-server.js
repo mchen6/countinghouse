@@ -44,10 +44,11 @@ function answer(name, args) {
   }
 }
 
-// -> Promise<{headers: [object], connections(): number, close(): Promise, setMode(mode), extraTools: []}>
+// -> Promise<{headers: [object], calls: [tool name], connections(): number,
+// open(): number, close(): Promise, setMode(mode), extraTools: []}>
 function startRemoteServer(port, opts) {
   const o = Object.assign({mode: 'ok', redirectTo: null}, opts);
-  const state = {headers: [], connections: 0, open: 0, mode: o.mode, extraTools: []};
+  const state = {headers: [], calls: [], connections: 0, open: 0, mode: o.mode, extraTools: []};
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -65,6 +66,7 @@ function startRemoteServer(port, opts) {
       let message = null;
       try { message = body !== '' ? JSON.parse(body) : undefined; } catch (e) { res.writeHead(400); return res.end(); }
       const callName = (message != null && message.method === 'tools/call' && message.params != null) ? message.params.name : null;
+      if (callName != null) state.calls.push(callName);
       const s = new Server({name: 'remote-test', version: '1.0.0'}, {capabilities: {tools: {}}});
       s.setRequestHandler(ListToolsRequestSchema, async (r) => {
         const all = TOOLS.concat(state.extraTools).map(tool);
@@ -91,6 +93,7 @@ function startRemoteServer(port, opts) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', () => resolve({
       headers: state.headers,
+      calls: state.calls,
       connections: () => state.connections,
       open: () => state.open,
       setMode: (mode) => { state.mode = mode; },
