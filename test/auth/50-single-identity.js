@@ -38,6 +38,7 @@ describe('auth 50: the single-identity profile (LM1 B4)', function() {
   it('is on for --store local --stdio without --authConfigPath only, with a key kept out of every options copy', () => {
     const cases = [
       [{store: 'local', stdio: true}, true],
+      [{store: 'local', stdio: 'true'}, true],
       [{store: 'local', stdio: true, authConfigPath: '/x/auth.json'}, false],
       [{store: 'local'}, false],
       [{store: 'redis', stdio: true}, false]
