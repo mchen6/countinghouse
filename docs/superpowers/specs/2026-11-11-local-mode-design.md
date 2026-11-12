@@ -171,7 +171,7 @@ one `tools/call` to its `Out` record. There is no session field: MCP
 name (`<pid>-<startMs>`) identifies the process, which over stdio is the
 client session. No value of any credential, no content, ever.
 
-**`usage_report`, a built-in tool (maintainer, 2026-11-11: "default
+**`countinghouse_usage_report`, a built-in tool (maintainer, 2026-11-11: "default
 installed with countinghouse and reachable from the agent, so the user can
 get token usage and the traffic of each module in real time, aligned with
 countinghouse's metering").** The usage report is the runtime's own tool,
@@ -260,7 +260,7 @@ codes, the MCP surface for listed modules, `countinghouse-validate`.
   `Out` record with exact byte and line counts matching the fixtures, and a
   receipt sentence matching the regex; a module output with a `receipt`
   field is refused.
-- `usage_report`: listed to a plain key in `--store local` and in `--store
+- `countinghouse_usage_report`: listed to a plain key in `--store local` and in `--store
   redis` with no option; a call made in the same process is in the next
   report (memory source); records from an earlier process are in it (files
   source); a plain key's report holds only its own calls while an admin
@@ -288,7 +288,7 @@ Floor shim → store selection point with the Redis implementations behind
 it (no behaviour change, whole suite green) → local metering provider →
 local kv → `--stdio` → roles and scenario loading → the single-identity
 profile (in-memory key and bindings, `--meter`) → counters, usage files,
-the `usage_report` built-in tool and `countinghouse-usage` (lib/usage/,
+the `countinghouse_usage_report` built-in tool and `countinghouse-usage` (lib/usage/,
 from ch-report's aggregation) →
 receipt → local job runner → docs (README, CLI reference, security-model's
 mode table: a `local` column; `docs/deployment.md`: "hosting keeps Redis").
