@@ -299,6 +299,9 @@ jobs:
   local-store:
     name: local store (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A hung run frees its runner after an hour (normal runs take about 20
+    # minutes); without this, GitHub's default holds it for six.
+    timeout-minutes: 60
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
