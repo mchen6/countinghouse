@@ -10,6 +10,14 @@ the auth config.
 
 ## Unreleased
 
+Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
+groups everything below by what an operator has to do. Measured cost of the
+file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
+write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
+`--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
+1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
+([benchmarks](docs/benchmarks/sandbox-part2.md)).
+
 ### Added — local mode: `--store local`, no Redis (LM1, part B)
 
 - **`--store redis|local`** (default `redis`, unchanged). `local` keeps
@@ -31,14 +39,6 @@ the auth config.
   file, a caller id from `<storePath>/.identity-secret` that survives
   restarts.
 
-
-Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
-groups everything below by what an operator has to do. Measured cost of the
-file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
-write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
-`--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
-1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
-([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
 ### Added — a remote MCP server per module, called from the main thread (RC1-min)
 
@@ -94,6 +94,61 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   class's as a handle; a handle is now one of the kinds whose `open(fd)` is
   guarded (TCP, Pipe, UDP), and under `audit` it is reported and passed on
   as given.
+
+### Added — usage records, the receipt and `countinghouse_usage_report` (local mode, part C)
+
+- Every `tools/call` on a listed module is counted at the runtime's
+  boundary: each call to a declared server (lines and bytes read) and the
+  tool's own text result (lines and bytes out). A task-augmented call is
+  counted the same way, under its own call id.
+- A scenario's successful result carries a receipt:
+  `_meta['countinghouse/receipt']` = `{calls, linesIn, bytesIn, linesOut,
+  bytesOut, servers}`, and a second text block with its sentence.
+  `structuredContent` is the module's output exactly as validated.
+  `tasks/result` carries the same receipt.
+- A scenario's output may not have a top-level `receipt` field
+  (`RECEIPT_RESERVED`): there the name is the runtime's. Any other module's
+  `receipt` field (a payments receipt, say) passes through untouched, with
+  no runtime receipt added.
+- `countinghouse_usage_report`, listed to every key, reports the counts by
+  tool, server, pack or module: a key sees its own calls, an admin every
+  caller by opaque id.
+- `--usageDir <dir>` appends the records as daily JSON Lines files (counts,
+  names, the credential variable's name and the opaque caller id; never a
+  credential value or content), and `countinghouse-usage --usageDir <dir>`
+  prints the report in the operator's shell (`--since`, `--groupBy`,
+  `--json`, `--csv`). Under `--store local` it defaults to
+  `<storePath>/usage`, so every launcher sharing a store writes to one
+  directory; under `--store redis` it is explicit-only, and unset nothing is
+  written.
+
+### Added — scenarios and parts (local mode, part C)
+
+- `package.json` `countinghouse.role` is `"scenario"` or `"part"`; a module
+  with no role is listed as before.
+- `--loadModule <scenario>` also loads the parts its `countinghouse.calls`
+  names, found from the scenario's directory under their bare names or any
+  npm scope; parts that call parts load the same way, each once, at startup.
+- A part a scenario loaded is not listed: a `tools/call` or `invoke-action`
+  from outside answers `MODULE_NOT_LISTED`, and its scenario's `ctx.call`
+  reaches it as before. A scenario's actions are listed under their bare
+  names (`ci_failure_triage`).
+- A scenario is not loaded when a part is missing (`PART_MISSING`) or a bare
+  name is already a listed tool's, a built-in's or an earlier scenario's
+  (`TOOL_NAME_TAKEN`); the log says which.
+
+### Added — `--stdio`: MCP over stdin and stdout (local mode, part C)
+
+- `--stdio` serves MCP as newline-delimited JSON-RPC on stdin and stdout,
+  with the log on stderr and no port (`--port` with it exits 2). A desktop
+  MCP client starts it through `countinghouse-stdio`
+  (`bin/countinghouse-stdio.js`), a pure JavaScript entry. When stdin
+  closes, the calls in flight drain (up to `--requestTimeout`) and the
+  process exits 0, or 1 if the drain ran out. A notification is never
+  answered.
+- CI runs the stdio tests on Linux, macOS and Windows, with no Redis.
+  Windows does not gate a merge yet: the runtime does not bring a module
+  online there (issue #40).
 
 ### Security — descriptor adoption closed on routes the lockdown missed
 
@@ -310,8 +365,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 
 ### Added — Node 26 in CI
 
-- CI now tests the newest 26.x as well as 24.15.0 and the newest 24.x. The
-  supported floor (`engines`, `lib/node-version.js`) is still 24.15. A new
+- CI now tests the newest 26.x as well as 24.15.0 and the newest 24.x (and,
+  since the floor moved to 22.16, 22.16.0 and a sandbox-floor job on 22,
+  24.0.0 and 24.14; see "8.0.0 platform" below). A new
   push to a pull request cancels that PR's superseded CI run; runs on master
   are never cancelled.
 - **Security, Node 26 only:** Node 26 adds `fs.openAsBlobSync`, which the
@@ -604,6 +660,10 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 
 ### Changed — a composite sees an inner tool's error code only if it is a runtime code
 
+- Superseded within this release by "a module's errors are its own" above:
+  a callee module's own code now reaches the composite, and its caller, as
+  the module's; a runtime code is still rebuilt from its code alone. This
+  entry is kept as the step between.
 - On a composition hop (`ctx.call`, `ctx.serviceClient`), an inner
   failure keeps its code up to the composite's caller only if the code is
   one of the runtime's own (`lib/error-info.en-US.json`); any other code is

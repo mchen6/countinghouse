@@ -145,8 +145,8 @@ a module is listed as it always was.
 - **Tool names:** a scenario's actions are listed under their bare names
   (`ci_failure_triage`). Every other module keeps `<device>_<service>_<action>`.
 - **A scenario is not loaded** when one of its parts is missing
-  (`PART_MISSING`) or when a bare name is already a listed tool's or a runtime
-  built-in's (`TOOL_NAME_TAKEN`). The log says which. Other modules load
+  (`PART_MISSING`) or when a bare name is already a listed tool's, a runtime
+  built-in's or an earlier scenario's (`TOOL_NAME_TAKEN`). The log says which. Other modules load
   normally.
 - **The single-identity profile** (`--store local` without
   `--authConfigPath`) lists only the scenarios' tools. The balance check and
