@@ -19,9 +19,16 @@ const ROUTES = [
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
-  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['streamWrap'], ['streamWrapSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
   ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
+
+// _stream_wrap (DEP0125) is refused by the lockdown where Node still has it
+// (24). Node 26 removed it from its built-ins: there require answers
+// MODULE_NOT_FOUND, and Node itself has closed both routes.
+const STREAM_WRAP = Module.builtinModules.includes('_stream_wrap');
+const STREAM_WRAP_ROUTES = [['streamWrap'], ['streamWrapSuper']];
+if (STREAM_WRAP) ROUTES.push(...STREAM_WRAP_ROUTES);
 
 function serverArgs(mode) {
   return ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE];
@@ -64,6 +71,15 @@ describe('sandbox 05: worker lockdown', function() {
         assert.ok(server.output.includes('module sandbox: sandbox-probe violation'), server.output.slice(-2000));
       });
     });
+
+    if (!STREAM_WRAP) {
+      STREAM_WRAP_ROUTES.forEach(([what]) => {
+        it(`${what} is not found: this Node has no _stream_wrap`, async () => {
+          const r = await mcpCall(9608, KEY, TOOL, {what: what});
+          assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+        });
+      });
+    }
 
     it('a createRequire on the module directory (trailing slash) still resolves inside it', async () => {
       const r = await mcpCall(9608, KEY, TOOL, {what: 'createRequireDir'});

@@ -95,8 +95,9 @@ any module code). Stops:
   `run()` starts unsandboxed child processes), `sea`, `repl` and
   `trace_events`; Node 26's `ffi`, which calls native code, is not on it
   either; nor are Node's TLS internals `_tls_wrap` and `_tls_common` (a
-  module needs `tls`), nor `_stream_wrap`, whose `JSStreamSocket` extends
-  the real `net.Socket`), through `require`, `import()` and
+  module needs `tls`), nor `_stream_wrap` on Node 24, whose
+  `JSStreamSocket` extends the real `net.Socket` (Node 26 has removed
+  it)), through `require`, `import()` and
   `process.getBuiltinModule` alike, so a built-in a later Node adds is
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside

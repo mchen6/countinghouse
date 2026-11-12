@@ -89,7 +89,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   load. Use `tls`. So is `_stream_wrap` (deprecated, DEP0125): its
   `JSStreamSocket` extends the real `net.Socket`, so
   `Object.getPrototypeOf(require('_stream_wrap'))` was a constructor past
-  the guard. Use `stream.Duplex`.
+  the guard. Use `stream.Duplex`. (Node 26 has removed `_stream_wrap`;
+  there `require` answers `MODULE_NOT_FOUND`.)
 
 ### Added — `ctx.error`: a handler's own error, which it may simply return
 
