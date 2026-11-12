@@ -13,22 +13,24 @@ function fakeHandle(calls) {
   return (message, appKey, cb) => {
     calls.push({message, appKey});
     if (message == null || message.jsonrpc !== '2.0') return cb(null, {jsonrpc: '2.0', id: message && message.id, error: {code: -32600, message: 'invalid JSON-RPC 2.0 request'}});
-    if (message.id === undefined) return cb(null, null);
+    // Like lib/mcp/gateway.js: only notifications/initialized is silent; any other
+    // notification gets 'method not found' with no id.
+    if (message.id === undefined) return cb(null, message.method === 'notifications/initialized' ? null : {jsonrpc: '2.0', id: null, error: {code: -32601, message: `method not found: ${message.method}`}});
     if (message.method === 'boom') return cb(new Error('it broke'));
     const delay = message.params && message.params.delayMs ? message.params.delayMs : 0;
     setTimeout(() => cb(null, {jsonrpc: '2.0', id: message.id, result: {method: message.method}}), delay);
   };
 }
 
-function harness({drainMs = 2000, appKey = 'k'} = {}) {
+function harness({drainMs = 2000, appKey = 'k', maxLineBytes} = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const calls = [];
   let text = '';
   output.on('data', (d) => { text += d; });
-  const served = serveStdio({input, output, handle: fakeHandle(calls), appKey, drainMs});
+  const served = serveStdio({input, output, handle: fakeHandle(calls), appKey, drainMs, maxLineBytes});
   return {
-    input, calls, served,
+    input, output, calls, served,
     lines: () => text.split('\n').filter((l) => l !== ''),
     json: () => text.split('\n').filter((l) => l !== '').map((l) => JSON.parse(l)),
     raw: () => text
@@ -147,5 +149,55 @@ describe('--stdio route layer', () => {
     h.input.end(`${JSON.stringify(req(1, 'ping'))  }\n`);
     assert.strictEqual(await h.served.done, 0);
     assert.deepStrictEqual(h.json().map((r) => r.id), [1], 'the last line before the end is served');
+  });
+
+  // From /code-review medium on #43.
+  it('a notification is never answered, whatever handle returns for it', async () => {
+    const h = harness();
+    send(h, {jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 1}});
+    h.input.write(`${JSON.stringify([{jsonrpc: '2.0', method: 'notifications/roots/list_changed'}, req(4, 'ping')])}\n`);
+    await settle();
+    assert.deepStrictEqual(h.json(), [[{jsonrpc: '2.0', id: 4, result: {method: 'ping'}}]]);
+    h.input.end();
+    await h.served.done;
+  });
+
+  it('an input that errors or closes without an end still ends the server', async () => {
+    for (const how of ['error', 'close']) {
+      const h = harness();
+      send(h, req(1, 'tools/call', {delayMs: 30}));
+      await settle(5);
+      if (how === 'error') h.input.emit('error', new Error('EPIPE')); else h.input.emit('close');
+      assert.strictEqual(await h.served.done, 0, how);
+      assert.deepStrictEqual(h.json().map((r) => r.id), [1], `${how}: the call in flight is still answered`);
+    }
+  });
+
+  it('an output that fails ends the server: nobody is reading', async () => {
+    const h = harness();
+    h.output.emit('error', new Error('EPIPE'));
+    assert.strictEqual(await h.served.done, 1);
+  });
+
+  it('a line longer than the limit is refused, and the next line is served', async () => {
+    const h = harness({maxLineBytes: 100});
+    h.input.write('x'.repeat(60));
+    h.input.write(`${'y'.repeat(60)}\n`);
+    send(h, req(5, 'ping'));
+    await settle();
+    assert.deepStrictEqual(h.json(), [{jsonrpc: '2.0', id: null, error: {code: -32600, message: 'invalid JSON-RPC 2.0 request: the line is longer than 100 bytes'}}, {jsonrpc: '2.0', id: 5, result: {method: 'ping'}}]);
+    h.input.end();
+    await h.served.done;
+  });
+
+  it('done resolves only after the last answer has been written out', async () => {
+    const h = harness();
+    let flushed = false;
+    const write = h.output.write.bind(h.output);
+    h.output.write = (chunk, cb) => write(chunk, () => { flushed = true; if (cb) cb(); });
+    send(h, req(1, 'tools/call', {delayMs: 20}));
+    h.input.end();
+    assert.strictEqual(await h.served.done, 0);
+    assert.strictEqual(flushed, true);
   });
 });
