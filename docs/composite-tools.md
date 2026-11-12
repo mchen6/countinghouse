@@ -62,6 +62,18 @@ this document's subject, stays on `ctx.serviceClient` on purpose so both
 paths keep a live example and test coverage — see
 [Running it](#running-it) below.
 
+**`ctx.call('remote:<name>/<tool>', args)` — a remote MCP server, not a
+module.** A module that declares a remote in `countinghouse.remotes`
+calls it through the same `ctx.call`. It is not a device, so neither
+`countinghouse.calls` nor `runsModules` takes part. The main thread holds
+the credential and finds the remote by the module that owns the call. The
+answer is the server's raw `CallToolResult`, and the hop is billed to
+`ctx.caller` like any other. Each call is also a usage record under the
+outer `tools/call`, from a part too when the hop to it was routed (a direct
+peer channel does not carry the call id); see
+[`module-authoring.md`](module-authoring.md#the-receipt-and-the-usage-report).
+See [`module-development.md`](module-development.md#calling-a-remote-mcp-server).
+
 Both keep the same two-identity split: the inner hop is *authorized* as the
 module's own identity, and *billed* to `ctx.caller`, the real outer caller —
 see [In-composition metering](#in-composition-metering).

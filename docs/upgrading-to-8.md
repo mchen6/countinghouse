@@ -204,6 +204,15 @@ says how to write a module for this.
   until parts 3 and 4, host processes racing the checks, module code
   reaching countinghouse's objects) are listed in
   [`security-model.md`](security-model.md#what-this-explicitly-does-not-provide-accepted-gaps-and-limits).
+- **Remote MCP servers** (RC1-min): a module may declare one in
+  `countinghouse.remotes` and call it with `ctx.call('remote:<name>/<tool>')`
+  through the main thread, which holds the connection and the credential. A
+  credential is sent only where your `--remoteCredentials <file>` allows
+  that variable for the declared URL's exact origin; a remote whose
+  credential is not allowed is not contacted. `--remoteTimeout` and
+  `--remoteMaxBytes` bound each call
+  ([module-development.md](module-development.md#calling-a-remote-mcp-server),
+  [security-model.md](security-model.md#remote-mcp-servers-a-module-cannot-choose-where-a-credential-goes)).
 
 ## Measured cost
 

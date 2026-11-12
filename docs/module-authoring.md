@@ -177,7 +177,9 @@ The call id that ties a call's server calls to it belongs to the runtime. A
 hop that states one its worker was not given is refused with
 `USAGE_CALL_FOREIGN`, and nothing is forwarded or recorded. A hop made under a
 call that has already ended (its run timed out) goes on without the id, so
-nothing more is recorded under it.
+nothing more is recorded under it. A part makes its `ctx.call` and remote
+calls before it answers: a call made after the part answered is refused
+`USAGE_CALL_FOREIGN`, because the call is no longer the part's.
 
 Two limits, stated rather than enforced:
 - **Ownership is per worker.** A worker running two calls at once owns both,

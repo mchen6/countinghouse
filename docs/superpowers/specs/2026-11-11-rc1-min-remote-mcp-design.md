@@ -247,10 +247,12 @@ is for (reviewer, 2026-11-11).
 A listing that fails is logged with its code, and the module loads anyway
 (a laptop can start offline). The first call to that remote makes one
 listing attempt before it goes out. That is not a retry of the call. Its
-failure is logged, and the call proceeds. A missing or disallowed
-credential is logged at load by variable name; the listing still runs
-without the credential, and a server that needs one answers 401, logged as
-`REMOTE_AUTH_FAILED`.
+failure is logged, and the call proceeds. A credential is logged at load
+by variable name when it is missing or disallowed. A disallowed one means
+the remote is not contacted at all, listing included (reviewer,
+2026-11-11). An allowed but unset one disables calls, and the listing
+runs without the credential; a server that needs one answers 401, logged
+as `REMOTE_AUTH_FAILED`.
 
 ## 6. Counting: LM1's `usage.recordIn`
 
