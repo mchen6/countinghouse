@@ -64,10 +64,4 @@ describe('store 03: --store, --storePath, --meter (LM1 B2)', function() {
     assert.strictEqual(run.status, 2, run.stderr);
     assert.ok(/--store must be redis or local/.test(run.stderr), run.stderr);
   });
-
-  it('--store local refuses to start until the local store is complete (PR B5)', () => {
-    const run = start(['--store', 'local']);
-    assert.strictEqual(run.status, 2, run.stderr);
-    assert.ok(/--store local is not complete in this build/.test(run.stderr), run.stderr);
-  });
 });

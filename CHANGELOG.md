@@ -10,6 +10,28 @@ the auth config.
 
 ## Unreleased
 
+### Added — local mode: `--store local`, no Redis (LM1, part B)
+
+- **`--store redis|local`** (default `redis`, unchanged). `local` keeps
+  metering, a module's `ctx.redis` data and jobs in files under
+  `--storePath` (default `<moduleDataPath>/../store`) and in memory, with
+  no Redis client and no queue service; several processes may share one
+  store (locked, merged by key). `--redisUrl` with `--store local` exits
+  with status 2.
+- **Metering:** without `--meter` every call is recorded and none refused
+  for balance or rate; with `--meter`, Redis's semantics, balances in
+  `metering.json` under each key's fingerprint (never the key);
+  `countinghouse-meter set` seeds one, the key read from
+  `COUNTINGHOUSE_SEED_KEY` only.
+- **`ctx.redis`:** the same 21 commands with Redis's answers and errors.
+- **Jobs and MCP tasks:** an in-process runner with job-control's surface;
+  not kept across restarts; `--jobResultTtl <seconds>` (default 3600).
+- **The single-identity profile** (`--store local --stdio` without
+  `--authConfigPath`): one key made at start and written nowhere, no auth
+  file, a caller id from `<storePath>/.identity-secret` that survives
+  restarts.
+
+
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
 groups everything below by what an operator has to do. Measured cost of the
 file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
