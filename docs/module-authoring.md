@@ -125,6 +125,32 @@ substitute for each other:
   or if the bound identity lacks a grant to a declared target. Load it (step
   5 of the loop) and check the server log before declaring the chain done.
 
+## Roles: scenarios and parts
+
+`package.json` `countinghouse.role` is `"scenario"` or `"part"`. Without a role,
+a module is listed as it always was.
+
+- **A scenario** is what an agent calls. `--loadModule <scenario>` also loads
+  every module named before the slash in its `countinghouse.calls`. Each one
+  is found from the scenario's own directory, under its bare name
+  (`ch-step-redact`) or under any npm scope (`@countinghouse/ch-step-redact`),
+  and must be the module whose `api.json` has that `friendlyName`. Parts
+  that call parts load the same way, and each module loads once.
+- **A part** loaded by a scenario is not listed. A `tools/call` or
+  `invoke-action` from outside answers `MODULE_NOT_LISTED`, while its
+  scenario's `ctx.call` reaches it as before. A part loaded directly with
+  `--loadModule` is listed, so it can be exercised alone.
+- **Tool names:** a scenario's actions are listed under their bare names
+  (`ci_failure_triage`). Every other module keeps `<device>_<service>_<action>`.
+- **A scenario is not loaded** when one of its parts is missing
+  (`PART_MISSING`) or when a bare name is already a listed tool's or a runtime
+  built-in's (`TOOL_NAME_TAKEN`). The log says which. Other modules load
+  normally.
+- **The single-identity profile** (`--store local` without
+  `--authConfigPath`) lists only the scenarios' tools. The balance check and
+  the authoring tools are not listed, and a call to them by name answers
+  `MODULE_NOT_LISTED`.
+
 ## Why `tools/list` does not update by itself
 
 The server is already correct — `tools/list` is recomputed from live device
