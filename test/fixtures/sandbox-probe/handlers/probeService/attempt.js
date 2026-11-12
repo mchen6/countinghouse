@@ -51,6 +51,13 @@ const ATTEMPTS = {
   connectFd:        () => require('net').connect({fd: 999999}),
   socketHandle:     () => new (require('net').Socket)({handle: {}}),
   ttyFd:            () => new (require('tty').WriteStream)(999999),
+  // The real constructors behind the guards, through prototype.constructor
+  // (L1 round 4): tty builds its handle from the fd with no open(fd).
+  socketCtor:       () => new (require('net').Socket.prototype.constructor)(999999),
+  ttyWriteCtor:     () => new (require('tty').WriteStream.prototype.constructor)(999999),
+  ttyReadCtor:      () => new (require('tty').ReadStream.prototype.constructor)(999999),
+  ttySuper:         () => new (Object.getPrototypeOf(require('tty').WriteStream))(999999),
+  tlsSuper:         () => new (Object.getPrototypeOf(require('tls').TLSSocket))(999999),
   dgramFd:          () => new Promise((resolve, reject) => {
     const socket = require('dgram').createSocket('udp4');
     socket.once('error', (e) => (/module sandbox/.test(e.message) ? reject(e) : resolve()));

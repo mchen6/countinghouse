@@ -107,9 +107,15 @@ any module code). Stops:
 - adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
   `net.connect({fd})` and `net.createConnection({fd})`, which an `http`
   request given an `fd` reaches through the agent (`https` goes through
-  `tls.connect`, which reads no `fd`), `server.listen({fd})` and the
-  like, which in testing let a worker take over the main server's
-  connections): refused under `enforce`, logged under `audit`. Each entry
+  `tls.connect`, which reads no `fd`), `server.listen({fd})`, `tty`'s
+  streams and the like, which in testing let a worker take over the main
+  server's connections): refused under `enforce`, logged under `audit`.
+  The `prototype.constructor` of `net.Socket` and of `tty`'s streams is the
+  guard as well, not the real constructor behind it, and so is the
+  constructor `tls.TLSSocket` and `tty`'s streams extend; a real
+  `net.Socket` reached another way (Node's internal `JSStreamSocket`)
+  builds only a TCP or Pipe handle from a descriptor, whose `open(fd)` is
+  guarded (below). Each entry
   point copies its options once, by their own enumerable properties as
   Node's `Socket` constructor reads them (an inherited option is dropped),
   and checks the copy, so a getter cannot show the check one value and Node
