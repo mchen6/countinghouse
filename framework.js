@@ -69,6 +69,12 @@ if (options.remoteCredentials != null || process.argv.some((a) => a === '--remot
     process.exit(2);
   }
 }
+// An --authConfigPath with no path would fall into the zero-config file
+// provider, which writes ./auth.json and prints a demo key (review of B4).
+if (options.authConfigPathInvalid === true) {
+  console.error('--authConfigPath needs a path');
+  process.exit(2);
+}
 // --store (LM1): redis or local; local takes no Redis, so a --redisUrl is
 // one of two answers to the same question.
 if (options.store !== 'redis' && options.store !== 'local') {
@@ -211,7 +217,12 @@ try {
   process.exit(2);
 }
 var identityReady = Promise.resolve();
-if (options.debug !== true) {
+if (options.debug === true && require('./lib/auth').identitySource(options) != null) {
+  // --debug bypasses auth, but the single-identity profile still indexes its
+  // one stable entry, so its caller id comes from the secret and "local",
+  // not from the key, under --debug too (review of B4).
+  identityReady = identity.rebuild(require('./lib/auth').identitySource(options));
+} else if (options.debug !== true) {
   var authProvider = null;
   try {
     authProvider = require('./lib/auth').getAuthProvider();

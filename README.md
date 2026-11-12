@@ -166,7 +166,7 @@ without saying so. CI enforces the same thing.
 | **Tasks** | The MCP 2026-07-28 Tasks extension (`tasks/get`/`result`/`list`/`cancel`), over a job engine that predates it. |
 | **Rate limiting** | Per-API-key and global calls/second caps. |
 | **Stateless transport** | Streamable HTTP only. Legacy HTTP+SSE is deliberately not implemented. |
-| **Local mode** (being built) | `--store local` keeps metering and a module's `ctx.redis` data in files under `--storePath`, with no Redis. Over `--stdio` without an auth file it runs as one user: one key, made at start and held only in memory, every call recorded and none refused for balance or rate. Jobs in local mode and `--stdio` are still to come; until then `--store local` exits with status 2. |
+| **Local mode** (being built) | `--store local` keeps metering and a module's `ctx.redis` data in files under `--storePath`, with no Redis. Over `--stdio` without an auth file it runs as one user: one key, made at start and written nowhere, every call recorded and none refused for balance or rate. Jobs in local mode and `--stdio` are still to come; until then `--store local` exits with status 2. |
 
 Flags and endpoints: [`docs/cli-and-api-reference.md`](https://github.com/mchen6/countinghouse/blob/master/docs/cli-and-api-reference.md).
 Which guarantee applies on which entry path: [`docs/cross-cutting-matrix.md`](https://github.com/mchen6/countinghouse/blob/master/docs/cross-cutting-matrix.md).

@@ -329,14 +329,19 @@ command, `countinghouse-meter`, reads the key from
 fingerprint.
 
 In the single-identity profile (`--store local --stdio` without
-`--authConfigPath`) no auth file exists. The one key is made at start and
-held only in the main thread's memory: never printed, logged or written,
-kept out of the options a worker receives, and absent from every answer the
-auth provider gives, a refusal of another key included. Every loaded module
-runs as that identity, which is not admin. `ctx.caller.id` comes from the
+`--authConfigPath` or `--authProvider`) no auth file exists. The one key is
+made at start, read-only, and no file holds it: the runtime never prints,
+logs or writes it, keeps it out of the options a worker receives, and
+leaves it out of every answer the auth provider gives, a refusal of another
+key included. It still reaches module code as every caller's key does
+(`ctx.caller.apiKey`, and a composing module's composition identity) until
+the opaque caller id below replaces it. Every loaded module runs as that
+identity, which is not admin. The runtime's caller id for it comes from the
 identity secret, `<storePath>/.identity-secret` (0600, in the always-denied
-set), and the fixed source `local`, so it survives a restart while the key
-changes per process.
+set; the store directory is a path no module may declare), and the fixed
+source `local`, so it survives a restart while the key changes per
+process. A multi-tenant `--store local` server keeps its secret under
+`<moduleDataPath>`, so moving to the local store changes no user's id.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
