@@ -163,3 +163,18 @@ describe('sandbox 39: the resolve shim marks a hook\'s answer', function() {
     assert.deepStrictEqual(r, {fromHook: '/app/handlers/x.js', hook: true, node: false, again: false});
   });
 });
+
+// CI's 24.0.0 leg: there Node passes a resolve hook's conditions as a Set,
+// not the array 22.23 and 24.14 give, and a hook that read only an array
+// took every CommonJS require for an import (no sandboxed module loaded).
+describe('sandbox 39: a hook context\'s conditions, as an array or a Set', () => {
+  const {hasCondition} = require('../../lib/resolve-shim');
+  it('reads either form, and a missing one as absent', () => {
+    for (const conditions of [['require', 'node'], new Set(['require', 'node'])]) {
+      assert.strictEqual(hasCondition({conditions}, 'require'), true);
+      assert.strictEqual(hasCondition({conditions}, 'import'), false);
+    }
+    assert.strictEqual(hasCondition({}, 'require'), false);
+    assert.strictEqual(hasCondition(null, 'require'), false);
+  });
+});
