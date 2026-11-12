@@ -11,6 +11,7 @@ const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
+const {redisUrlFor} = require('../helpers/test-env');
 
 const KEY    = 'remote-route-key';
 const TOKEN  = `ghp_${'A'.repeat(36)}`;
@@ -39,7 +40,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     before(async () => {
       remote = await startRemoteServer(REMOTE);
       server = await startServer(port, serverArgs(thread, ALLOW), {env: {CH_TEST_REMOTE_TOKEN: TOKEN}});
-      db = redis.createClient('redis://127.0.0.1:6379', {db: 0});
+      db = redis.createClient(redisUrlFor(), {db: 0});
     });
     after(async () => {
       await stopServer(server);

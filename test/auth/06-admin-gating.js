@@ -1,9 +1,11 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+// The default port, explicit so CH_TEST_PORT_BASE can move it.
+const PORT = testPort(9527);
+const url = `http://127.0.0.1:${PORT}`;
 
 // Standalone-only, same reason as 01-file-provider-tools-list-filtering.js:
 // needs a real (non---debug) server, since --debug bypasses AuthProvider
@@ -31,7 +33,7 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for admin-gating test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
   });
@@ -42,7 +44,7 @@ describe('auth 06: module-lifecycle routes are admin-gated, not --debug/--verify
     // admin key -- if that test never ran (e.g. an earlier failure
     // aborted the suite), fall back to pkill, same technique
     // 01-file-provider-tools-list-filtering.js uses for the same reason.
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   const ADMIN_ONLY_ROUTES = [

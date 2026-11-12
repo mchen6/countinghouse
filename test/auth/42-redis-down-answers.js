@@ -18,10 +18,13 @@ const path   = require('path');
 const redis  = require('redis');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {redisUrlFor} = require('../helpers/test-env');
 
 const PORT       = 9652;
 const PROXY_PORT = 6391;
-const REAL_REDIS = {host: '127.0.0.1', port: 6379};
+// The Redis the test's proxy forwards to: the servers' own (CH_TEST_REDIS_URL
+// under run-local), else the shared default as before.
+const REAL_REDIS = (() => { const u = new URL(redisUrlFor()); return {host: u.hostname, port: Number(u.port) || 6379}; })();
 const CALLER     = `m5-caller-${process.pid}`;
 const TOOL       = 'echo_device_echoservice_echo';
 const ANSWER_MS  = 2000;
@@ -89,7 +92,7 @@ describe('auth 42: with Redis down a call still answers, and billing resumes whe
   let dir = null;
 
   before(async () => {
-    direct = redis.createClient(`redis://${REAL_REDIS.host}:${REAL_REDIS.port}`, {db: 0});
+    direct = redis.createClient(redisUrlFor(), {db: 0});
     dir = mkdtemp('m5-');
     const authPath = path.join(dir, 'auth.json');
     fs.writeFileSync(authPath, JSON.stringify({[CALLER]: {userName: 'm5', devices: ['*']}}));

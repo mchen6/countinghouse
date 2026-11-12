@@ -22,9 +22,10 @@ const request = require('supertest');
 const { exec, execFileSync } = require('child_process');
 
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 const ROOT    = path.join(__dirname, '..', '..');
-const PORT    = 9601;
+const PORT    = testPort(9601);
 const url     = `http://127.0.0.1:${PORT}`;
 const DB_PATH = `/tmp/countinghouse-test-auth-19-${process.pid}.sqlite3`;
 
@@ -75,7 +76,7 @@ describe('auth 19: revoking a module identity closes its open peer channel', fun
     authCli(['add-user', MODULE_IDENTITY, 'echo-device-client-module']);
     authCli(['grant', MODULE_IDENTITY, '*']);
 
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider sqlite --authConfigPath ${DB_PATH
          } --peerChannelAuthRecheckSeconds ${RECHECK_SECONDS
          } --loadModule ./pre-installed-packages/echo-device-module` +
@@ -84,7 +85,7 @@ describe('auth 19: revoking a module identity closes its open peer channel', fun
   });
 
   after((done) => {
-    exec(`pkill -f "[f]ramework.js.*${DB_PATH}"`, () => {
+    stopAll(() => {
       try { fs.unlinkSync(DB_PATH); } catch (e) { /* already gone */ }
       done();
     });

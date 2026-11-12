@@ -1,7 +1,7 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Standalone-only, non---debug, multi-tenant auth.json.
 //
@@ -21,7 +21,7 @@ const request = require('supertest');
 // test/auth/06-admin-gating.js covers the gate itself (who is refused).
 // This covers the other half: that the documented way through it actually
 // works end to end.
-const PORT             = 9545;
+const PORT             = testPort(9545);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-11-${process.pid}.json`;
 
@@ -57,7 +57,7 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
     console.log('starting countinghouse WITHOUT --debug, for admin module-lifecycle test...');
     // deliberately starts with only echo-device-module -- transform-demo is
     // loaded later, over HTTP, by the admin key
-    const server = exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    const server = startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); });
@@ -67,7 +67,7 @@ describe('auth 11: the documented admin workflow works with authentication ON (n
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('the module to be loaded is not present yet', (done) => {

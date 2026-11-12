@@ -1,8 +1,8 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Standalone-only, non---debug, multi-tenant auth.json.
 //
@@ -20,7 +20,7 @@ const {toolOutput} = require('../helpers/tool-result');
 // the documented grants applied. The first case must fail, the second must
 // succeed -- if both passed, the documentation would be describing a
 // requirement that doesn't exist.
-const PORT             = 9546;
+const PORT             = testPort(9546);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_UNGRANTED   = `/tmp/countinghouse-test-auth-12a-${process.pid}.json`;
 const AUTH_GRANTED     = `/tmp/countinghouse-test-auth-12b-${process.pid}.json`;
@@ -48,14 +48,14 @@ function writeAuth(path, withGrants) {
 }
 
 function startServer(authPath, done) {
-  waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+  waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${authPath
        }${MODULES.map((m) => { return ` --loadModule ${m}`; }).join('')}`,
        (err, stdout, stderr) => { console.log(err); }), done);
 }
 
 function stopServer(authPath, done) {
-  exec(`pkill -f "framework.js.*${authPath}"`, () => { setTimeout(done, 2000); });
+  stopAll(done, 2000);
 }
 
 function callComposite(cb) {

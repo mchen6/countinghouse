@@ -34,6 +34,7 @@ const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {toolErrorCode} = require('../helpers/tool-result');
+const {testPort, redisFlag, redisArgs, startShell, stopAll} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const AUTHORING_NAMES = [
@@ -76,7 +77,7 @@ function startServer(port, extraArgs, done) {
   assertPortFree(port, (err) => {
     if (err) throw err;
     const args = ['--no-workerThread', '--debug', '--bindAddr', '127.0.0.1', '--port', String(port),
-                  '--debugKey', 'aabbcc'].concat(extraArgs);
+                  '--debugKey', 'aabbcc'].concat(extraArgs, redisArgs());
     const server = spawn(path.join(ROOT, 'bin', 'countinghouse'), args,
                          {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true}); // args: --no-workerThread
     waitForReady(server, (readyErr) => {
@@ -186,7 +187,7 @@ function sameEnvelope(bodyA, nameA, bodyB, nameB) {
 describe('authoring tools: absent unless --authoringTools', function() {
   this.timeout(30000);
   let server = null;
-  const PORT = 9550;
+  const PORT = testPort(9550);
 
   before((done) => { startServer(PORT, [], (s) => { server = s; done(); }); });
   after(() => { stopServer(server); });
@@ -228,7 +229,7 @@ describe('authoring tools: absent unless --authoringTools', function() {
 describe('authoring tools: present with --authoringTools', function() {
   this.timeout(30000);
   let server = null;
-  const PORT = 9551;
+  const PORT = testPort(9551);
 
   before((done) => { startServer(PORT, ['--authoringTools'], (s) => { server = s; done(); }); });
   after(() => { stopServer(server); });
@@ -454,7 +455,7 @@ describe('authoring tools: present with --authoringTools', function() {
 // with).
 describe('authoring tools: admin gate holds under real (non-debug) auth', function() {
   this.timeout(30000);
-  const PORT = 9552;
+  const PORT = testPort(9552);
   const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-authoring-gating-${process.pid}.json`;
   const ADMIN_KEY     = 'authoring-admin-key';
   const NON_ADMIN_KEY = 'authoring-non-admin-key';
@@ -469,16 +470,15 @@ describe('authoring tools: admin gate holds under real (non-debug) auth', functi
       config[NON_ADMIN_KEY] = {userName: 'authoring-non-admin', devices: ['*']}; // no admin field: not admin
       fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
-      waitForReady(exec(`"${path.join(ROOT, 'bin', 'countinghouse')}" --no-workerThread --bindAddr 127.0.0.1 --port ${PORT} ` +
-           `--authProvider file --authConfigPath ${AUTH_CONFIG_PATH} --authoringTools`,
-           {cwd: ROOT}, (execErr) => { if (execErr) console.log(execErr); }), done);
+      waitForReady(startShell(`"${path.join(ROOT, 'bin', 'countinghouse')}"${redisFlag()} --no-workerThread --bindAddr 127.0.0.1 --port ${PORT} ` +
+           `--authProvider file --authConfigPath ${AUTH_CONFIG_PATH} --authoringTools`), done);
     });
   });
 
   after(function(done) {
     this.timeout(15000);
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) { /* already gone */ }
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => {
+    stopAll(() => {
       // Soft-fail on timeout (log, don't fail the suite): a teardown that's
       // merely slow shouldn't be reported as a test failure. What matters is
       // that we actually waited instead of racing the next file's server.

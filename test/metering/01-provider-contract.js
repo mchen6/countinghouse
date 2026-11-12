@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {redisUrlFor} = require('../helpers/test-env');
 
 const KEY = 'contract-key-0001';
 const TOOL = 'contract-tool';
@@ -22,7 +23,7 @@ const PROVIDERS = {
   redis: {
     async make(seed, rate) {
       const redis = require('redis');
-      const client = redis.createClient('redis://127.0.0.1:6379', {db: 13});
+      const client = redis.createClient(redisUrlFor(), {db: 13});
       client.on('error', () => {});
       const ok = await new Promise((resolve) => {
         const timer = setTimeout(() => resolve(false), 1000);

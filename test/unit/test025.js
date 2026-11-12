@@ -3,7 +3,8 @@ const jsf     = require('json-schema-faker');
 const chalk   = require('chalk');
 const BSON    = require('bson');
 const redis   = require('redis');
-redisClient = redis.createClient();
+const {redisUrlFor} = require('../helpers/test-env');
+redisClient = redis.createClient(redisUrlFor());
 
 jsf.option({
   alwaysFakeOptionals: true

@@ -1,7 +1,7 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Standalone-only, non---debug: --debug accepts every apiKey by
 // construction, so "an unknown key is refused" is not expressible there.
@@ -12,7 +12,7 @@ const request = require('supertest');
 // before the fix: `X-CH-Key: totally-made-up-key` answered HTTP 200
 // {"apiKey":"totally-made-up-key","balance":0} -- an unauthenticated balance
 // oracle, and an unauthenticated Redis round trip per request.
-const PORT             = 9544;
+const PORT             = testPort(9544);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-10-${process.pid}.json`;
 
@@ -37,7 +37,7 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for balance-auth test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
@@ -45,7 +45,7 @@ describe('auth 10: /balance and countinghouse_check_balance require a real apiKe
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('GET /balance: a known key gets its own balance', (done) => {

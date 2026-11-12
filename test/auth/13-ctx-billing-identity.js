@@ -26,14 +26,14 @@
 // charged to the module instead of the caller.
 const assert  = require('assert');
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 const PATHS = [
-  {label: 'main-thread-routed',   port: 9593, flags: ' --no-directPeerChannels'},
-  {label: '--directPeerChannels', port: 9598, flags: ' --directPeerChannels'}
+  {label: 'main-thread-routed',   port: testPort(9593), flags: ' --no-directPeerChannels'},
+  {label: '--directPeerChannels', port: testPort(9598), flags: ' --directPeerChannels'}
 ];
 
 PATHS.forEach((hopPath, index) => {
@@ -58,7 +58,7 @@ function writeAuth() {
 
 function startServer(done) {
   writeAuth();
-  waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+  waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${AUTH_PATH} --mcpToolCallCost 1${hopPath.flags}` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +
        ` --loadModule ./test/fixtures/ctx-compose-module`,
@@ -112,7 +112,7 @@ describe(`auth 13: inner hops are authorized as the module, billed to the caller
   });
 
   after((done) => {
-    exec(`pkill -f "[f]ramework.js.*${AUTH_PATH}"`, () => {
+    stopAll(() => {
       try { fs.unlinkSync(AUTH_PATH); } catch (e) { /* already gone */ }
       setTimeout(done, 2000);
     });

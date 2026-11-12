@@ -1,5 +1,6 @@
 const fs = require('fs');
 const cp = require('child_process');
+const {redisUrlFor} = require('./helpers/test-env');
 
 const testFiles = fs.readdirSync(`${__dirname}/job-control`);
 
@@ -16,7 +17,7 @@ describe("Start job control tests in multi thread mode", function () {
     "aabbcc",
     "--apiMonitor",
     "--redisUrl",
-    "redis://127.0.0.1:6379",
+    redisUrlFor(),
     "--loadModule",
     "./pre-installed-packages/echo-device-module",
     "--loadModule",

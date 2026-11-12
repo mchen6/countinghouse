@@ -1,7 +1,7 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Standalone-only, same reason as 01-file-provider-tools-list-filtering.js
 // and 06-admin-gating.js: needs a real (non---debug) server, since --debug
@@ -18,7 +18,7 @@ const request = require('supertest');
 //   - no apiKey at all is refused outright
 //   - the HTTP job routes (/get-job, /remove-job, /get-job-history) go
 //     through the same gate, so they aren't a bypass around the MCP one
-const PORT             = 9541;
+const PORT             = testPort(9541);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-07-${process.pid}.json`;
 
@@ -62,7 +62,7 @@ describe('auth 07: MCP tasks/* and the HTTP job routes enforce per-tenant job ow
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for task-ownership test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
@@ -70,7 +70,7 @@ describe('auth 07: MCP tasks/* and the HTTP job routes enforce per-tenant job ow
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('alice creates a task-augmented tools/call', (done) => {
