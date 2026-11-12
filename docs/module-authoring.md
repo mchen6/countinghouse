@@ -151,7 +151,10 @@ a module is listed as it always was.
 - **The single-identity profile** (`--store local` without
   `--authConfigPath`) lists only the scenarios' tools. The balance check and
   the authoring tools are not listed, and a call to them by name answers
-  `MODULE_NOT_LISTED`.
+  `MODULE_NOT_LISTED`. Direct peer channels are off there. An explicit
+  `--directPeerChannels` is refused at start (exit 2, "choose one"), because
+  a peer hop carries no usage call id: its server calls would go unrecorded,
+  and the receipt would say less was read than was.
 
 ## The receipt and the usage report
 
@@ -169,6 +172,20 @@ guarantee. A top-level output field named `receipt` is refused
 A task-augmented call (`tools/call` with `task`) is counted the same way: the
 run's server calls under its own call id, and its result when the task
 finishes. `tasks/result` carries the same receipt.
+
+The call id that ties a call's server calls to it belongs to the runtime. A
+hop that states one its worker was not given is refused with
+`USAGE_CALL_FOREIGN`, and nothing is forwarded or recorded. A hop made under a
+call that has already ended (its run timed out) goes on without the id, so
+nothing more is recorded under it.
+
+Two limits, stated rather than enforced:
+- **Ownership is per worker.** A worker running two calls at once owns both,
+  so a module can misattribute between its own concurrent calls, and nothing
+  else. R2-1's per-call token (issued and bound by the main thread, so a
+  worker cannot forge it) is what closes this.
+- **A module that leaves the id off a hop** undercounts its own receipt. It
+  cannot inflate anyone else's.
 
 `countinghouse_usage_report`, listed to every key, reports the same counts by
 tool, server, pack or module. A key sees its own calls; an admin sees every
