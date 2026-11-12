@@ -159,3 +159,120 @@ describe('store 04: the persisted maps (LM1 B2)', function() {
     void child;
   });
 });
+
+// The review of fa3e93f (B2): the lock's takeover and staleness, the event
+// loop never blocked by a busy lock, a failed write retried, a corrupt file
+// found while writing, and update() for read-modify-write across processes.
+describe('store 04: the review of B2', function() {
+  this.timeout(60000);
+
+  it('takes over a lock carrying this pid from an earlier start', () => {
+    const dir = tmpStore();
+    fs.writeFileSync(path.join(dir, '.lock'), JSON.stringify({pid: process.pid, startMs: 1, at: Date.now()}));
+    const f = openJsonFile(path.join(dir, 'm.json'));
+    f.set('k', 1);
+    f.flush();
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1});
+  });
+
+  it('takes over an empty lock, and a live pid\'s lock, older than a write can take', () => {
+    for (const content of ['', JSON.stringify({pid: process.ppid, startMs: 1, at: Date.now() - 60000})]) {
+      const dir = tmpStore();
+      const lock = path.join(dir, '.lock');
+      fs.writeFileSync(lock, content);
+      const old = (Date.now() - 60000) / 1000;
+      fs.utimesSync(lock, old, old);
+      const f = openJsonFile(path.join(dir, 'm.json'));
+      f.set('k', 1);
+      f.flush();
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1}, `lock ${JSON.stringify(content)}`);
+    }
+  });
+
+  function holdLock(dir, ms) {
+    const holder = spawn(process.execPath, ['-e', `
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held\\n'); const t = Date.now(); while (Date.now() - t < ${ms}) {} });
+    `], {stdio: ['ignore', 'pipe', 'inherit']});
+    return new Promise((resolve) => holder.stdout.once('data', () => resolve(holder)));
+  }
+  async function eventually(check, ms = 5000) {
+    const until = Date.now() + ms;
+    while (Date.now() < until) { if (check()) return true; await new Promise((resolve) => setTimeout(resolve, 25)); }
+    return false;
+  }
+
+  it('a scheduled write does not block the event loop while another process holds the lock, and lands after', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const holder = await holdLock(dir, 800);
+    const f = openJsonFile(file, {debounceMs: 10});
+    f.set('k', 'late');
+    let ticks = 0;
+    const tick = setInterval(() => { ticks++; }, 10);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    clearInterval(tick);
+    assert.ok(ticks >= 25, `the event loop ran ${ticks} ticks in 500 ms`);
+    await new Promise((resolve) => holder.on('exit', resolve));
+    assert.ok(await eventually(() => fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).k === 'late'), 'written after the lock was free');
+    f.close();
+  });
+
+  it('a write that failed is retried without another change', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const holder = await holdLock(dir, 2600);
+    const f = openJsonFile(file, {debounceMs: 10});
+    f.set('k', 'retried');
+    await new Promise((resolve) => holder.on('exit', resolve));
+    assert.ok(await eventually(() => fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).k === 'retried'), 'retried');
+    f.close();
+  });
+
+  it('a file found corrupt while writing is rewritten from this process\'s whole map', () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const f = openJsonFile(file);
+    f.set('a', 1); f.set('b', 2); f.set('c', 3);
+    f.flush();
+    fs.writeFileSync(file, '{"broken": ');
+    f.set('d', 4);
+    f.flush();
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {a: 1, b: 2, c: 3, d: 4});
+  });
+
+  it('update() is a read-modify-write under the lock: two processes counting one key lose nothing', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const counter = () => new Promise((resolve, reject) => {
+      const p = spawn(process.execPath, ['-e', `
+        const {openJsonFile} = require(${JSON.stringify(MOD)});
+        const f = openJsonFile(${JSON.stringify(file)});
+        let n = 0;
+        const next = () => f.update('n', (v) => (v || 0) + 1, (err) => {
+          if (err) { process.stderr.write(err.message); process.exit(1); }
+          if (++n < 100) return next();
+          f.close();
+        });
+        next();
+      `], {stdio: ['ignore', 'ignore', 'pipe']});
+      let err = '';
+      p.stderr.on('data', (c) => { err += c; });
+      p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(err))));
+    });
+    await Promise.all([counter(), counter()]);
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 200);
+  });
+
+  it('reload() sees what another process wrote', () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const a = openJsonFile(file);
+    const b = openJsonFile(file);
+    b.set('k', 'from b');
+    b.flush();
+    assert.strictEqual(a.data.k, undefined);
+    a.reload();
+    assert.strictEqual(a.data.k, 'from b');
+  });
+});

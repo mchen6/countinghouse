@@ -317,10 +317,13 @@ network is left to the OS. A systemd unit example is in
 namespace) and in memory, and opens no socket of its own. The directory is
 the owner's only (0700) and each file too (0600); every write is a temp
 file renamed into place under `<storePath>/.lock`, merged by key, so
-several processes may share the store. Metering without `--meter` records
-calls in memory and writes nothing keyed by an API key; with `--meter`,
-`metering.json` holds each key's balance and free calls keyed by the key,
-as Redis does (an auth file, which holds the same keys, is then in use).
+several processes may share the store. No file under it holds an API key:
+metering without `--meter` records calls in memory only, and with
+`--meter` `metering.json` keeps each key's balance and free calls under
+the key's fingerprint (a full, domain-separated sha256). The seeding
+command, `countinghouse-meter`, reads the key from
+`COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
+fingerprint.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
