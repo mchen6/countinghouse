@@ -138,6 +138,12 @@ describe('validation 07: the review of #45', () => {
     assert.strictEqual(a.err.message, new CountinghouseError('MODULE_RELOADING').message);
   });
 
+  it('a hop keeps the message a decoded runtime error carries, whatever its class (high review of #45)', () => {
+    const handed = hopError(CountinghouseError.fromReplyFields({errMsg: 'Peer gone: detail', errCode: 'PEER_GONE'}));
+    assert.strictEqual(handed.message, 'Peer gone: detail');
+    assert.strictEqual(CountinghouseError.answerable(handed).message, 'Peer gone: detail');
+  });
+
   it('a hop hands a composing module a copy of a runtime error, never the object it was given', () => {
     const live = new CountinghouseError('DEVICE_INVOKE_FAIL', 'detail');
     const handed = hopError(live);
