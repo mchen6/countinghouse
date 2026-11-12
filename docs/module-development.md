@@ -495,13 +495,27 @@ format did not change:
 ```
 
 **Bind the identity your hops run as, in the auth config — not in the
-module.** An operator lists this module's `friendlyName` in the
-`runsModules` array of whichever auth identity should authorize its inner
-hops:
+module.** Your module's inner calls are made with an internal key that the
+operator sets up. Each entry in the auth config is one key: the entry's name
+is the key itself, and two of its fields say how it is used:
+
+- **`devices` is what this key may call**: the deviceIDs of the modules it is
+  allowed to reach. For an internal key, these are the modules your module
+  calls.
+- **`runsModules` is who uses this key**: the `friendlyName`s of the modules
+  whose inner calls are made with it. This is the link from your module to
+  the key; without it, `ctx.call` refuses with `CTX_CALL_UNBOUND`.
+
+A complete config for the `repo-review` composite (examples/repo-review) has
+two entries, one for the person calling and one for the module's inner calls:
 
 ```json
 {
-  "<a key that is not its user name>": {
+  "<the caller's key>": {
+    "userName": "demo",
+    "devices": ["<deviceID of repo-review>"]
+  },
+  "<an internal key that is not its user name>": {
     "userName": "repo-review-internal",
     "devices": ["<deviceID of repo-scan>", "<deviceID of secret-detect>"],
     "runsModules": ["repo-review"]
@@ -509,10 +523,36 @@ hops:
 }
 ```
 
-Give the identity a key that differs from its `userName`: user names are shown
-to callers (a composite's bill, `check_balance`), so a key that doubles as one
-is handed to every caller. The file provider warns at startup when it sees
-one.
+Read it as: *`demo` may call repo-review; repo-review makes its inner calls
+with the internal key; that key may call repo-scan and secret-detect.* When
+`demo` calls repo-review:
+
+1. The call is allowed because repo-review is in `demo`'s `devices`. `demo`
+   needs no access to repo-scan or secret-detect.
+2. repo-review's handler calls `ctx.call('repo-scan/scanService.scan', …)`.
+   The runtime finds the entry whose `runsModules` lists repo-review and
+   checks the call against that entry's `devices`. It passes.
+3. The hop is billed to `demo`, not to the internal key (see below).
+
+Each inner call needs both halves: the address in your `package.json`'s
+`countinghouse.calls` (the author's declaration) and the target in the bound
+key's `devices` (the operator's grant). Either one missing fails the module
+when it loads, with a message naming the address and the file to fix.
+
+**When the modules you call make calls of their own**, each of them gets its
+own internal entry the same way, with its own `runsModules` and only the
+`devices` it calls. A module that calls nothing needs no entry. One entry may
+list several modules in `runsModules`, but a module may be listed by only one
+entry (a second claim is refused as a conflict). Separate entries keep each
+module limited to the calls the operator granted it, so a module update that
+declares a new call gets nothing until the operator grants it. Don't grant a
+set of modules that lets them call each other in a loop: no hop-depth limit
+ends one, only the call timeouts.
+
+Give an internal key a value that differs from its `userName`: user names are
+shown to callers (a composite's bill, `check_balance`), so a key that doubles
+as one is handed to every caller. The file provider warns at startup when it
+sees one.
 
 That split is deliberate: which identity a module runs as is the operator's
 decision, not the author's, so the same module can be deployed twice under
