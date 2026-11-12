@@ -19,7 +19,7 @@ function start(home) {
   const auth = path.join(home, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
   const child = spawn(process.execPath, [ENTRY, '--workerThread', '--loadModule', MODULE, '--authConfigPath', auth,
-    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9719'],
+    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'],
   {env: {...process.env, COUNTINGHOUSE_API_KEY: KEY}, stdio: ['pipe', 'pipe', 'pipe']});
   const io = {child, out: '', err: '', waiters: []};
   child.stdout.setEncoding('utf8');
@@ -80,7 +80,7 @@ describe('--stdio, spawned', function() {
   });
 
   it('--stdio with --port is refused: choose one', () => {
-    const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', '9718'], {encoding: 'utf8', timeout: 30000});
+    const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', '9748'], {encoding: 'utf8', timeout: 30000});
     assert.strictEqual(r.status, 2, r.stderr);
     assert.match(r.stderr, /--stdio and --port: choose one/);
     assert.strictEqual(r.stdout, '');
