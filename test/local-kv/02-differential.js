@@ -11,6 +11,7 @@ const os = require('os');
 const path = require('path');
 const LocalKv = require('../../lib/local-kv');
 const SCRIPT = require('./script');
+const {redisUrlFor} = require('../helpers/test-env');
 
 function run(client, cmd, ...args) {
   return new Promise((resolve) => {
@@ -28,7 +29,7 @@ describe('local-kv 02: LocalKv answers as Redis does (differential)', function()
 
   before(async function() {
     const redis = require('redis');
-    redisClient = redis.createClient('redis://127.0.0.1:6379', {db: 13});
+    redisClient = redis.createClient(redisUrlFor(), {db: 13});
     redisClient.on('error', () => {});
     const ok = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve(false), 1000);
@@ -57,7 +58,7 @@ describe('local-kv 02: multi/exec as node_redis and Redis answer it', function()
   let redisClient = null;
   before(async function() {
     const redis = require('redis');
-    redisClient = redis.createClient('redis://127.0.0.1:6379', {db: 13});
+    redisClient = redis.createClient(redisUrlFor(), {db: 13});
     redisClient.on('error', () => {});
     const ok = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve(false), 1000);

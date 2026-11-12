@@ -1,7 +1,7 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Standalone-only, non---debug: this is about *whose* balance moves, which
 // only means anything when apiKeys are real identities resolved by
@@ -15,7 +15,7 @@ const request = require('supertest');
 //
 // apiKeys are suffixed with the pid so each run starts from a clean,
 // never-before-billed balance in redis (balances are keyed by apiKey).
-const PORT             = 9542;
+const PORT             = testPort(9542);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-08-${process.pid}.json`;
 
@@ -48,7 +48,7 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
     // a nonzero cost is what makes recordCall's effect observable as a
     // balance delta at all -- with the default 0 every assertion below would
     // pass trivially whether or not the fix works.
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --mcpToolCallCost 1` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
@@ -57,7 +57,7 @@ describe('auth 08: a job is billed to the authenticated caller, never to a reque
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('both tenants start from a zero balance', (done) => {

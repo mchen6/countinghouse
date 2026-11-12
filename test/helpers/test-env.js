@@ -39,6 +39,11 @@ const redisUrl = () => (process.env.CH_TEST_REDIS_URL != null && process.env.CH_
 const redisFlag = () => (redisUrl() != null ? ` --redisUrl ${redisUrl()}` : '');
 // For an argument list: ['--redisUrl', url] or [].
 const redisArgs = () => (redisUrl() != null ? ['--redisUrl', redisUrl()] : []);
+// For a test's own Redis client: the same Redis as the servers it starts
+// (CH_TEST_REDIS_URL when set), else the URL it used before. Without it, a
+// test run through run-local.js would seed the shared Redis while its server
+// read the private one.
+const redisUrlFor = (fallback = 'redis://127.0.0.1:6379') => (redisUrl() != null ? redisUrl() : fallback);
 
 const started = [];
 
@@ -91,4 +96,4 @@ function startPrivateRedis({port = 9749, readyMs = 5000} = {}) {
   });
 }
 
-module.exports = {testPort, redisFlag, redisArgs, startShell, stopAll, startPrivateRedis};
+module.exports = {testPort, redisFlag, redisArgs, redisUrlFor, startShell, stopAll, startPrivateRedis};

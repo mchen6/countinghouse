@@ -2,8 +2,11 @@ const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+// The default port, explicit so CH_TEST_PORT_BASE can move it.
+const PORT = testPort(9527);
+const url = `http://127.0.0.1:${PORT}`;
 
 // Standalone-only: needs a real (non---debug) server, so it can't share
 // test1.js's/test8.js's shared --debug instance -- every other test file
@@ -36,7 +39,7 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --authProvider file, for AuthProvider e2e test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/transform-demo`,
          (err, stdout, stderr) => { console.log(err); }), done);
   });
@@ -54,7 +57,7 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     // deliberately-non-debug, non-admin server to shut itself down via
     // HTTP). Kill the actual node process directly instead, matched via
     // the unique --authConfigPath value on its command line.
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   function deviceList(apiKey, cb) {

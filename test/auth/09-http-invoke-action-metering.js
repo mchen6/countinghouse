@@ -1,8 +1,8 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const redis   = require('redis');
+const {testPort, redisFlag, startShell, stopAll, redisUrlFor} = require('../helpers/test-env');
 
 // Standalone-only, non---debug, --mcpToolCallCost 1.
 //
@@ -21,7 +21,7 @@ const redis   = require('redis');
 // from that one shared counter. If the two paths recorded under different
 // tool strings, only one of them would draw on the seeded quota and the
 // other would fall through to a balance deduction.
-const PORT             = 9543;
+const PORT             = testPort(9543);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-09-${process.pid}.json`;
 
@@ -80,20 +80,20 @@ describe('auth 09: HTTP invoke-action is metered, with the same record MCP tools
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, --mcpToolCallCost 1, for HTTP metering test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --mcpToolCallCost 1` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
 
-    redisClient = redis.createClient('redis://127.0.0.1:6379', {db: 0});
+    redisClient = redis.createClient(redisUrlFor(), {db: 0});
   });
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
     redisClient.del(ALICE, () => {
       redisClient.quit(() => {
-        exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+        stopAll(done);
       });
     });
   });

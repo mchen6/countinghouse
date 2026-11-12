@@ -2,6 +2,7 @@ const assert = require('assert');
 const util   = require('util');
 
 const RedisMeteringProvider = require('../../lib/metering/redis-provider');
+const {redisUrlFor} = require('../helpers/test-env');
 
 // Pure unit tests -- no server needed, RedisMeteringProvider is instantiated
 // directly against the same db (0) lib/countinghouse-interface.js hands it.
@@ -27,7 +28,7 @@ describe('auth 18: RedisMeteringProvider.recordCall keeps every charge under con
   let recordCall = null;
 
   before(() => {
-    provider   = new RedisMeteringProvider({redisUrl: 'redis://127.0.0.1:6379', redisDb: 0});
+    provider   = new RedisMeteringProvider({redisUrl: redisUrlFor(), redisDb: 0});
     recordCall = util.promisify(provider.recordCall.bind(provider));
   });
 

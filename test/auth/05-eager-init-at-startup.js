@@ -1,8 +1,10 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+// The default port, explicit so CH_TEST_PORT_BASE can move it.
+const PORT = testPort(9527);
+const url = `http://127.0.0.1:${PORT}`;
 
 // Regression test: the AuthProvider (lib/auth/) used to be instantiated
 // lazily, on the first authenticated request -- meaning FileAuthProvider's
@@ -29,11 +31,11 @@ describe('auth 05: AuthProvider initializes at startup, not lazily on first requ
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('auth.json exists shortly after server startup, before any request is sent', (done) => {
-    exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --authConfigPath ${AUTH_CONFIG_PATH
+    startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT} --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); });
 

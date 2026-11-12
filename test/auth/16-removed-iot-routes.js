@@ -1,8 +1,8 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const assert  = require('assert');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Covers the 7.0.0 removal of the IoT-era entry paths. None was a working
 // feature when it was removed; this file exists so that reinstating any of
@@ -20,7 +20,7 @@ const assert  = require('assert');
 //   /devices/:deviceID/presentation -- dead twice: deviceManager never emitted
 //     the 'presentation' event that mounts it, and the mount handler called
 //     cdifInterface.getDeviceRootUrl, never defined on CdifInterface.
-const PORT             = 9547;
+const PORT             = testPort(9547);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-16-${process.pid}.json`;
 
@@ -37,7 +37,7 @@ describe('auth 16: the dead IoT-era entry paths are gone', function() {
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse WITHOUT --debug, for removed IoT-route test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
@@ -45,7 +45,7 @@ describe('auth 16: the dead IoT-era entry paths are gone', function() {
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   // Without this, every 404 below could pass because the server never booted.
@@ -95,7 +95,7 @@ describe('auth 16: the dead IoT-era entry paths are gone', function() {
 // user auth"), one flag away from live; --loadProfile mounted /load-profile.
 // Both flags are gone in 7.0.0, so a server given them must still boot and
 // must not mount anything.
-const PORT_FLAGS  = 9548;
+const PORT_FLAGS  = testPort(9548);
 const urlFlags    = `http://127.0.0.1:${PORT_FLAGS}`;
 const FLAGS_AUTH  = `/tmp/countinghouse-test-auth-16b-${process.pid}.json`;
 const BOB         = `bob-key-16b-${process.pid}`;
@@ -111,7 +111,7 @@ describe('auth 16b: the vestigial flag-gated surface is gone', function() {
     fs.writeFileSync(FLAGS_AUTH, JSON.stringify(config));
 
     console.log('starting countinghouse WITH --simOpenStackAPI --loadProfile (both now no-ops)...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT_FLAGS
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT_FLAGS
          } --authProvider file --authConfigPath ${FLAGS_AUTH
          } --simOpenStackAPI --loadProfile` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
@@ -120,7 +120,7 @@ describe('auth 16b: the vestigial flag-gated surface is gone', function() {
 
   after((done) => {
     try { fs.unlinkSync(FLAGS_AUTH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${FLAGS_AUTH}"`, () => { done(); });
+    stopAll(done);
   });
 
   // An unknown flag must not stop the server booting -- otherwise the 404s

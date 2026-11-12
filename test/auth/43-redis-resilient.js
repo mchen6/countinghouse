@@ -7,6 +7,7 @@ const assert = require('assert');
 const net    = require('net');
 const redis  = require('redis');
 const redisResilient = require('../../lib/redis-resilient');
+const {redisUrlFor} = require('../helpers/test-env');
 
 // A port that refuses connections: bound once, then closed.
 function deadPort() {
@@ -45,7 +46,7 @@ describe('auth 43: the resilient Redis client and rate limiter (M5)', function()
   // The first connect is the one wait allowed: code that issues a command
   // right after creating a client (auth/18, every provider at start) works.
   it('a command issued right after creation succeeds when Redis is up', async () => {
-    const c = redisResilient.createClient('redis://127.0.0.1:6379', {db: 0});
+    const c = redisResilient.createClient(redisUrlFor(), {db: 0});
     try {
       const reply = await new Promise((resolve, reject) => c.ping((e, r) => (e ? reject(e) : resolve(r))));
       assert.strictEqual(reply, 'PONG');
@@ -55,7 +56,7 @@ describe('auth 43: the resilient Redis client and rate limiter (M5)', function()
 
   it('with Redis down at creation, a queued command fails at the first-connect bound', async () => {
     const port = await deadPort();
-    const c = redisResilient.createClient(`redis://127.0.0.1:${port}`, {}, 300);
+    const c = redisResilient.createClient(`redis://127.0.0.1:${port}`, {}, 300); // run-local: not the shared Redis
     c.on('error', () => {});
     try {
       const t0 = Date.now();
@@ -68,7 +69,7 @@ describe('auth 43: the resilient Redis client and rate limiter (M5)', function()
 
   it('after the first connect (or its bound), a command while disconnected fails at once', async () => {
     const port = await deadPort();
-    const c = redisResilient.createClient(`redis://127.0.0.1:${port}`, {}, 300);
+    const c = redisResilient.createClient(`redis://127.0.0.1:${port}`, {}, 300); // run-local: not the shared Redis
     c.on('error', () => {});
     try {
       await new Promise((r) => setTimeout(r, 400));

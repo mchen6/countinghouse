@@ -1,7 +1,7 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // The CEAMS-era package routes. countinghouse was the verification half of
 // CEAMS, an external all-in-one API package platform (now retired) that
@@ -18,7 +18,7 @@ const request = require('supertest');
 //     download, which was CEAMS's download step. npm serves packages now.
 //
 // The other two survive and are covered further down this file.
-const PORT             = 9549;
+const PORT             = testPort(9549);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-auth-17-${process.pid}.json`;
 
@@ -35,7 +35,7 @@ describe('auth 17: the CEAMS-era package routes with no consumer are gone', func
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse for removed-package-route test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
@@ -43,7 +43,7 @@ describe('auth 17: the CEAMS-era package routes with no consumer are gone', func
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   // Without this, every 404 below could pass because the server never booted.

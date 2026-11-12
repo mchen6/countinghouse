@@ -1,8 +1,8 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
 const {toolErrorCode} = require('../helpers/tool-result');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // Covers audit leftover #6 (7.0.0 / A1): the authenticated *read* paths had
 // no rate limiter at all. An authenticated caller could poll GET /balance,
@@ -20,10 +20,10 @@ const {toolErrorCode} = require('../helpers/tool-result');
 //
 // Standalone-only, non---debug, same reason as 07/10: --debug resolves every
 // key to an isAdmin session, and these limits are per resolved appKey.
-const PORT              = 9545;
+const PORT              = testPort(9545);
 const url               = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH  = `/tmp/countinghouse-test-auth-15-${process.pid}.json`;
-const OPEN_PORT         = 9546;
+const OPEN_PORT         = testPort(9546);
 const openUrl           = `http://127.0.0.1:${OPEN_PORT}`;
 const OPEN_CONFIG_PATH  = `/tmp/countinghouse-test-auth-15-open-${process.pid}.json`;
 
@@ -107,7 +107,7 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(authConfig()));
 
     console.log('starting countinghouse WITHOUT --debug, --apiKeyRateLimit, for read-path rate-limit test...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --apiKeyRateLimit ${LIMIT
          } --loadModule ./pre-installed-packages/echo-device-module`,
@@ -116,7 +116,7 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
 
   after((done) => {
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('GET /balance: a single call within budget still succeeds', (done) => {
@@ -283,7 +283,7 @@ describe('auth 15b: without --apiKeyRateLimit nothing is limited', function() {
     fs.writeFileSync(OPEN_CONFIG_PATH, JSON.stringify(authConfig()));
 
     console.log('starting countinghouse WITHOUT --apiKeyRateLimit, to check the paths stay open...');
-    waitForReady(exec(`"./bin/countinghouse" --workerThread --bindAddr 127.0.0.1 --port ${OPEN_PORT
+    waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${OPEN_PORT
          } --authProvider file --authConfigPath ${OPEN_CONFIG_PATH
          } --loadModule ./pre-installed-packages/echo-device-module`,
          (err, stdout, stderr) => { console.log(err); }), done);
@@ -291,7 +291,7 @@ describe('auth 15b: without --apiKeyRateLimit nothing is limited', function() {
 
   after((done) => {
     try { fs.unlinkSync(OPEN_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${OPEN_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   // The gate must be inert unless the operator opted in -- this is what

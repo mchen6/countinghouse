@@ -9,6 +9,7 @@ const path   = require('path');
 const redis  = require('redis');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
+const {redisUrlFor} = require('../helpers/test-env');
 
 const KEY    = 'm6-debug-key';
 const PORT   = 9650;
@@ -22,7 +23,7 @@ describe('auth 40: a module worker holds no metering provider (M6)', function() 
   const cmd = (name, ...args) => new Promise((resolve, reject) => client[name](...args, (e, r) => (e ? reject(e) : resolve(r))));
 
   before(async () => {
-    client = redis.createClient('redis://127.0.0.1:6379', {db: 0});
+    client = redis.createClient(redisUrlFor(), {db: 0});
     await cmd('hset', VICTIM, 'balance', '50');
   });
   after(async () => {
