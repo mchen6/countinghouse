@@ -42,6 +42,14 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 
 ### Security — descriptor adoption closed on routes the lockdown missed
 
+- On Node 24.0, `http.Agent.prototype.createConnection` is
+  `net.createConnection` itself, taken when `http` loads (22 and 24.14
+  give the agent a function of its own that looks `net` up at each call).
+  The lockdown wraps `net.connect` and `net.createConnection`, so on 24.0
+  an `http` request given an `fd` reached the unwrapped function and was
+  not refused at its entry, under `--hardened` included; only the
+  `open(fd)` backstop stood. Where the agent holds that original, it is
+  replaced by the guarded one as well. Found by the new Node floor CI legs.
 - `net.connect({fd})` and `net.createConnection({fd})`, and through them
   an `http` request given an `fd`, adopted the descriptor in every mode.
   They build Node's internal `Socket`, which the `net.Socket` guard never
