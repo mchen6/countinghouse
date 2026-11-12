@@ -42,6 +42,10 @@ Without it the hook is silently absent. It does two things worth having:
 
 ## Running the tests
 
+To run test files where they cannot meet another run's ports or Redis (a
+shared machine, or a clean "stranger's machine" check), use
+`scripts/run-in-docker.js`; see [`testing.md`](testing.md).
+
 `npm test` runs everything, but its last segment is `test/test7.js`, a
 **benchmark** rather than a correctness test — it is slow and its numbers
 depend on the machine. For ordinary verification, run the first ten segments:
