@@ -169,7 +169,10 @@ async function verifyPath(p, dirs) {
   const server = await startServer(p.port, authPath, p.flags);
 
   try {
-    const tools = (await listTools(url, caller)).filter((n) => n !== 'countinghouse_check_balance');
+    // The runtime's own built-ins (countinghouse_*: the balance check, the usage
+    // report, and whatever comes next) are listed to every key; the claim is
+    // about module tools.
+    const tools = (await listTools(url, caller)).filter((n) => !n.startsWith('countinghouse_'));
     assert.deepStrictEqual(tools, [TOOL], 'only the composite must be visible to the caller');
     console.log(`[1] tools/list for the caller: ${JSON.stringify(tools)}`);
 
