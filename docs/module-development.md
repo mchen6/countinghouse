@@ -567,6 +567,14 @@ identities**: the hop is authorized as the bound identity above, but billed
 to `ctx.caller` — the real outer caller — so per-hop cost lands on whoever
 actually called your tool, not on the module.
 
+**Only the key the call came in with is billed.** That is the key the
+client authenticated with, over any route (an HTTP request, an MCP client,
+or a job, whose run is billed to the key that added it). It pays for the
+call itself and for every inner hop the call causes, however deep the
+chain. No other key is charged: an internal key only authorizes, so it
+needs no balance. The auth config has no billing field; who pays is a fixed
+rule of the runtime, not something an entry can change or redirect.
+
 **Everything is verified at load time, not at first call.** For modules
 present at startup, every address in `countinghouse.calls` is resolved
 against the target's real spec, the identity is bound via `runsModules`, a
