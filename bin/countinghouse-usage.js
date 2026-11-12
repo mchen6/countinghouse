@@ -6,6 +6,7 @@
 //
 //   countinghouse-usage --usageDir <dir> [--since <day|ISO time|30m|24h|7d>]
 //                       [--groupBy tool|server|pack|module] [--json|--csv]
+const fs = require('fs');
 const {usageReport, reportText, reportCsv} = require('../lib/usage/report');
 
 const USAGE = 'usage: countinghouse-usage --usageDir <dir> [--since <day|ISO time|duration>] [--groupBy tool|server|pack|module] [--json|--csv]\n';
@@ -22,6 +23,10 @@ function main(argv) {
   }
   if (opts['--usageDir'] === undefined) return fail('--usageDir is required');
   if (opts['--json'] && opts['--csv']) return fail('--json or --csv, not both');
+  // A misspelled directory must not read as "no usage recorded".
+  let isDir = false;
+  try { isDir = fs.statSync(opts['--usageDir']).isDirectory(); } catch (_) { isDir = false; }
+  if (!isDir) return fail(`no usage directory at ${opts['--usageDir']}`);
   const args = {};
   if (opts['--since'] !== undefined) args.since = opts['--since'];
   if (opts['--groupBy'] !== undefined) args.groupBy = opts['--groupBy'];
