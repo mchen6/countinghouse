@@ -130,6 +130,16 @@ MODES.forEach((mode) => {
         done();
       });
     });
+
+    // Last in each mode: the callee's accessors stay in its process or worker.
+    it('an accessor on a prototype cannot decide the code a runtime refusal is issued with', (done) => {
+      probe(mode.port, 'prototypeAccessor', (err, out) => {
+        if (err) return done(err);
+        assert.ok(/^CTX_CALL_/.test(String(out.code)), JSON.stringify(out));
+        assert.strictEqual(out.origin, 'runtime', JSON.stringify(out));
+        done();
+      });
+    });
   });
 });
 
