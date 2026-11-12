@@ -221,6 +221,47 @@ jobs:
       - name: npm audit (informational)
         run: npm audit || true
 
+  # The Node floor (lib/node-version.js, 22.16) and the versions on either
+  # side of 24.15, where Node's own resolve hook starts covering
+  # require.resolve: below it the resolve shim (lib/resolve-shim.js) does,
+  # and the sandbox and file broker tests must hold the same on each
+  # (docs/superpowers/specs/2026-11-11-node-floor-shim-design.md, section 4).
+  sandbox-floor:
+    needs: golden
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22.16.0', '22', '24.0.0', '24.14', '24.15.0']
+
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Sandbox and file broker tests
+        run: |
+          npx mocha --exit ./test/sandbox/*.js
+          npx mocha ./test/fs-broker/*.js
+
   # --stdio, the client-pack transport (local-mode spec §2), on the three
   # systems a client runs on, with no Redis service at all: the route layer
   # over in-memory streams, then countinghouse-stdio spawned with one module.
