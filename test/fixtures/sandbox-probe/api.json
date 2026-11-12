@@ -9,7 +9,9 @@
           {"name": "attempt", "description": "Try one blocked operation.",
            "input": {"schema": "/probeService/attempt/input"}, "output": {"schema": "/probeService/attempt/output"}},
           {"name": "env", "description": "Report the environment the module sees.",
-           "input": {"schema": "/probeService/env/input"}, "output": {"schema": "/probeService/env/output"}}
+           "input": {"schema": "/probeService/env/input"}, "output": {"schema": "/probeService/env/output"}},
+          {"name": "resolve", "description": "Try one route to the module resolver, and report what came back.",
+           "input": {"schema": "/probeService/resolve/input"}, "output": {"schema": "/probeService/resolve/output"}}
         ]
       }
     }
