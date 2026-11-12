@@ -19,11 +19,11 @@
 // plain Errors, and no test even referenced it).
 const assert = require('assert');
 const http   = require('http');
-const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
-const PORT = 9595;
+const PORT = testPort(9595);
 
 function rpc(tool, cb) {
   const payload = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/call',
@@ -53,13 +53,13 @@ describe('module-loading 08: handler failure classification and style detection'
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse for the error-semantics matrix...');
-    waitForReady(exec(`NODE_PATH=./lib node ./framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --no-workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
          } --debugKey aabbcc --loadModule ./test/fixtures/error-semantics-module` +
          ` 2> /dev/null`, () => {}), done);
   });
 
   after((done) => {
-    exec(`pkill -f "[f]ramework.js.*--port ${PORT}"`, () => { setTimeout(done, 1000); });
+    stopAll(done, 1000);
   });
 
   it('a typed error keeps its code when reported through a callback', (done) => {

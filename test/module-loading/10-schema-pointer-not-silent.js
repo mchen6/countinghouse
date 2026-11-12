@@ -19,10 +19,10 @@
 const assert = require('assert');
 const fs     = require('fs');
 const http   = require('http');
-const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
-const PORT             = 9575;
+const PORT             = testPort(9575);
 const LOG              = `/tmp/countinghouse-test-schema-pointer-${process.pid}.log`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-schema-pointer-auth-${process.pid}.json`;
 const KEY              = `schema-pointer-key-${process.pid}`;
@@ -40,7 +40,7 @@ function startServer(done) {
   config[KEY] = {userName: 'schema-pointer-test', devices: ['*']};
   fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
-  exec(`NODE_PATH=./lib node ./framework.js --workerThread --bindAddr 127.0.0.1 --port ${PORT
+  startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
        } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
        } --loadModule ./test/fixtures/dangling-schema-pointer` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +
@@ -97,7 +97,7 @@ describe('module-loading 10: an unresolvable schema pointer is not a silent down
   after((done) => {
     try { fs.unlinkSync(LOG); } catch (e) {}
     try { fs.unlinkSync(AUTH_CONFIG_PATH); } catch (e) {}
-    exec(`pkill -f "framework.js.*${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('logs the failed resolution at error level', () => {

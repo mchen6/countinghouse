@@ -1,6 +1,6 @@
 const fs      = require('fs');
-const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 // A module that fails to load used to disappear silently: the log said
 // "module: <name>@1.0.0 loaded" and then nothing ever appeared in tools/list,
@@ -40,7 +40,7 @@ const LOG_LEGACY   = `${SP}-legacy.log`;
 // server's log as data rather than talking to its API, so it is the only one
 // that cares. NODE_PATH mirrors what bin/countinghouse and the npm scripts set.
 function startAndCapture(modulePath, port, logPath, done) {
-  exec(`NODE_PATH=./lib node ./framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port ${port
+  startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --no-workerThread --debug --bindAddr 127.0.0.1 --port ${port
        } --loadModule ${modulePath} > ${logPath} 2>&1`,
        () => {});
   waitForReady.inFile(logPath, done);
@@ -70,12 +70,12 @@ describe('module-loading 01: a module that fails to load says why, with a locata
   describe('A. package.json "main" points at device.js (no index.js)', () => {
     before(function(done) {
       this.timeout(0);
-      startAndCapture('./test/fixtures/no-index-module', 9571, LOG_NO_INDEX, done);
+      startAndCapture('./test/fixtures/no-index-module', testPort(9571), LOG_NO_INDEX, done);
     });
 
     after((done) => {
       try { fs.unlinkSync(LOG_NO_INDEX); } catch (e) {}
-      exec('pkill -f "framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port 9571"', () => { done(); });
+      stopAll(done);
     });
 
     it('logs an error naming the module (previously: no error at any level)', () => {
@@ -102,12 +102,12 @@ describe('module-loading 01: a module that fails to load says why, with a locata
   describe('B. api.json fails the meta-schema', () => {
     before(function(done) {
       this.timeout(0);
-      startAndCapture('./test/fixtures/invalid-spec-module', 9572, LOG_INVALID, done);
+      startAndCapture('./test/fixtures/invalid-spec-module', testPort(9572), LOG_INVALID, done);
     });
 
     after((done) => {
       try { fs.unlinkSync(LOG_INVALID); } catch (e) {}
-      exec('pkill -f "framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port 9572"', () => { done(); });
+      stopAll(done);
     });
 
     it('logs an error naming the module and the failing stage', () => {
@@ -149,12 +149,12 @@ describe('module-loading 01: a module that fails to load says why, with a locata
   describe('C. api.json is still in the pre-5.0.0 spec format', () => {
     before(function(done) {
       this.timeout(0);
-      startAndCapture('./test/fixtures/legacy-spec-module', 9573, LOG_LEGACY, done);
+      startAndCapture('./test/fixtures/legacy-spec-module', testPort(9573), LOG_LEGACY, done);
     });
 
     after((done) => {
       try { fs.unlinkSync(LOG_LEGACY); } catch (e) {}
-      exec('pkill -f "framework.js --no-workerThread --debug --bindAddr 127.0.0.1 --port 9573"', () => { done(); });
+      stopAll(done);
     });
 
     it('names the module and the failing stage', () => {

@@ -18,6 +18,7 @@ const spawn   = require('child_process').spawn;
 const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort, redisArgs} = require('../helpers/test-env');
 
 const ROOT    = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'reload-fresh-code');
@@ -42,7 +43,7 @@ function setGreeting(dir, word) {
 function startServer(port, extraArgs, done) {
   const server = spawn(process.execPath,
     // every caller's extraArgs carries --workerThread or --no-workerThread
-    [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(extraArgs),
+    [path.join(ROOT, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(extraArgs, redisArgs()),
     {cwd: ROOT, env: Object.assign({}, process.env, {NODE_PATH: path.join(ROOT, 'lib')}),
      stdio: ['ignore', 'pipe', 'ignore'], detached: true});
   server.output = '';
@@ -109,7 +110,7 @@ describe('module reload runs the current code', function() {
   this.timeout(60000);
 
   describe('under --workerThread', () => {
-    const PORT = 9602;
+    const PORT = testPort(9602);
     let server = null;
     let dir = null;
 
@@ -163,7 +164,7 @@ describe('module reload runs the current code', function() {
   });
 
   describe('in single-thread mode', () => {
-    const PORT = 9603;
+    const PORT = testPort(9603);
     let server = null;
     let dir = null;
 
@@ -194,7 +195,7 @@ describe('module reload runs the current code', function() {
   // Release mode (no --debug) drops module console output. That used to be
   // done per file by rewire, so a module's dependencies kept printing.
   describe('console in release mode under --workerThread', () => {
-    const PORT = 9604;
+    const PORT = testPort(9604);
     let server = null;
     let dir = null;
 

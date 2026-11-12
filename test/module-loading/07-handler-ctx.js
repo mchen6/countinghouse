@@ -10,13 +10,13 @@
 // anything -- single-thread mode would pass either way.
 const assert = require('assert');
 const http   = require('http');
-const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
 const handlerCtx = require('../../lib/handler-ctx');
 const {toolOutput} = require('../helpers/tool-result');
 
-const PORT = 9590;
+const PORT = testPort(9590);
 
 describe('handler-ctx: identity extraction', () => {
   it('reads a Session (main thread) and a forwarded identity the same way', () => {
@@ -75,7 +75,7 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
   before(function(done) {
     this.timeout(0);
     console.log('starting countinghouse in --workerThread mode for ctx.caller...');
-    waitForReady(exec(`NODE_PATH=./lib node ./framework.js --debug --workerThread` +
+    waitForReady(startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --debug --workerThread` +
          ` --bindAddr 127.0.0.1 --port ${PORT} --debugKey aabbcc` +
          ` --loadModule ./test/fixtures/handler-map-module` +
          ` --loadModule ./test/fixtures/handler-map-convention` +
@@ -83,7 +83,7 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
   });
 
   after((done) => {
-    exec(`pkill -f "[f]ramework.js.*--port ${PORT}"`, () => { setTimeout(done, 1000); });
+    stopAll(done, 1000);
   });
 
   it('a callback handler sees the authenticated apiKey, not null', (done) => {

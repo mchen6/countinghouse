@@ -20,17 +20,17 @@
 const assert = require('assert');
 const fs     = require('fs');
 const http   = require('http');
-const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 
-const PORT = 9574;
+const PORT = testPort(9574);
 const LOG  = `/tmp/countinghouse-test-legacy-${process.pid}.log`;
 
 // framework.js directly, not bin/countinghouse: the launcher pipes stdout
 // through bunyan when bunyan is on PATH (npm/npx put node_modules/.bin there),
 // and this file reads the log as JSON. Same reasoning as 01.
 function startServer(done) {
-  exec(`NODE_PATH=./lib node ./framework.js --workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
+  startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
        } --debugKey aabbcc` +
        ` --loadModule ./test/fixtures/legacy-spec-module` +
        ` --loadModule ./pre-installed-packages/echo-device-module` +
@@ -91,7 +91,7 @@ describe('module-loading 03: an un-migrated 4.x module fails loudly, specificall
 
   after((done) => {
     try { fs.unlinkSync(LOG); } catch (e) {}
-    exec(`pkill -f "framework.js --workerThread --debug --bindAddr 127.0.0.1 --port ${PORT}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('does not fail silently: the module error is visible at error level', () => {

@@ -16,18 +16,18 @@
 const assert = require('assert');
 const fs     = require('fs');
 const http   = require('http');
-const exec   = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
-const PORT = 9584;
+const PORT = testPort(9584);
 const LOG  = `/tmp/countinghouse-test-handler-map-${process.pid}.log`;
 
 // framework.js directly, not bin/countinghouse: the launcher pipes stdout
 // through bunyan when bunyan is on PATH, and this file reads the log as JSON.
 // Same reasoning as 01 and 03.
 function startServer(done) {
-  exec(`NODE_PATH=./lib node ./framework.js --workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
+  startShell(`NODE_PATH=./lib node ./framework.js${redisFlag()} --workerThread --debug --bindAddr 127.0.0.1 --port ${PORT
        } --debugKey aabbcc` +
        ` --loadModule ./test/fixtures/handler-map-missing-action` +
        ` --loadModule ./test/fixtures/handler-map-undeclared-action` +
@@ -89,7 +89,7 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
 
   after((done) => {
     rpc({jsonrpc: '2.0', id: 99, method: 'tools/list'}, () => {
-      exec(`pkill -f "[f]ramework.js.*--port ${PORT}"`, () => { setTimeout(done, 1000); });
+      stopAll(done, 1000);
     });
   });
 
