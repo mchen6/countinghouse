@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "usage-plain",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a plain module (no role) whose output has its own receipt field, which is not the runtime's (test/usage/07)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:payService": {
+        "actionList": [
+          {
+            "name": "charge",
+            "description": "Answers a payment receipt of its own.",
+            "input": {"schema": "/payService/charge/input"},
+            "output": {"schema": "/payService/charge/output"}
+          }
+        ]
+      }
+    }
+  }
+}
