@@ -131,6 +131,12 @@ writes:
   survives restarts and the id is the same across the user's packs. The
   in-memory key changes per process; the id does not, because the secret
   and the fixed source string `local` are its inputs, not the key.
+- **Only the pack's tools and the usage report are listed.** In this profile
+  `tools/list` holds the scenario's tools and `countinghouse_usage_report`;
+  `countinghouse_check_balance` (no balance exists), the admin lookup and
+  the authoring tools are not listed and answer `MODULE_NOT_LISTED`-style
+  refusals if called by name. To the agent the launcher's runtime is one
+  server with the pack's tool and the report.
 - **No tenant vocabulary reaches the user.** Over `--stdio`, no log line,
   error text or tool result mentions a key, a balance, a free-call count or
   a rate limit: the user set none. The error catalogue's balance and
