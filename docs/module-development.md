@@ -66,7 +66,7 @@ name and the fix. A module never half-loads.
 | `ctx.serviceClient(opts, cb)` | call another module by deviceID — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
 | `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
-| `ctx.redis` | the shared Redis client |
+| `ctx.redis` | the shared key-value store, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset`, `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `multi`/`exec`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance |
 | `ctx.httpHeaders` | request headers, when the call arrived over HTTP |
 

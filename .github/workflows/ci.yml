@@ -210,7 +210,7 @@ jobs:
           npx mocha ./test/test3.js
           npx mocha ./test/test4.js
           npx mocha --exit ./test/test5.js
-          npx mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js
+          npx mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js ./test/local-kv/*.js
           npx mocha --exit ./test/composition/*.js
           npx mocha --exit ./test/roles/*.js
           npx mocha --exit ./test/usage/*.js
