@@ -143,11 +143,31 @@ describe('store 01: --store local, so far (LM1 B2)', function() {
       const local = store.metering instanceof lib('metering/local-provider');
       const limits = [];
       for (let i = 0; i < 2; i++) limits.push(await new Promise((resolve) => store.globalLimiter('g', (err, timeLeft) => resolve(timeLeft != null && timeLeft > 0))));
-      let kvRefused = null;
-      try { void store.kv; } catch (e) { kvRefused = e.message; }
-      return {local, limits, apiLog: store.apiLog, kvRefused, created};
+      let jobsRefused = null;
+      try { void store.jobs; } catch (e) { jobsRefused = e.message; }
+      return {local, limits, apiLog: store.apiLog, jobsRefused, created};
     `);
     assert.deepStrictEqual(out, {local: true, limits: [false, true], apiLog: null,
-      kvRefused: 'the local store has no kv in this build (LM1 B3)', created: []});
+      jobsRefused: 'the local store has no job runner in this build (LM1 B5)', created: []});
+  });
+});
+
+describe('store 01: --store local kv and device log (LM1 B3)', function() {
+  this.timeout(60000);
+
+  it('the local kv is LocalKv behind ctx.redis, and the device log keeps the last 1000 entries per device in memory', () => {
+    const out = inChild(`
+      const os = require('os');
+      const fs = require('fs');
+      const storePath = fs.mkdtempSync(require('path').join(os.tmpdir(), 'ch-store-01-'));
+      const store = lib('store').createStore({store: 'local', storePath, meter: false});
+      const isLocal = store.kv instanceof lib('local-kv');
+      for (let i = 0; i < 1005; i++) await new Promise((resolve) => store.deviceLog('dev', 'e' + i, i, resolve));
+      const log = store.deviceLog.entries('dev');
+      store.kv.close();
+      return {isLocal, n: log.length, first: log[0].data, last: log[log.length - 1].data,
+        files: fs.readdirSync(storePath).filter((f) => f.startsWith('devicelog')), created};
+    `);
+    assert.deepStrictEqual(out, {isLocal: true, n: 1000, first: 'e1004', last: 'e5', files: [], created: []});
   });
 });
