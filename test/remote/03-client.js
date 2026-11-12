@@ -191,6 +191,18 @@ describe('remote 03: the client', function() {
     assert.strictEqual(await codeOf(c.list()), 'REMOTE_PROTOCOL');
   });
 
+  // Code review of step 4: a call that reaches a client after close() (a
+  // reload while it waited) must not connect it again.
+  it('a closed client does not connect again', async () => {
+    c = client();
+    await c.call('echo_text', {});
+    await c.close();
+    const opened = server.connections();
+    assert.strictEqual(await codeOf(c.call('echo_text', {})), 'REMOTE_UNREACHABLE');
+    assert.strictEqual(server.connections(), opened, 'no new connection');
+    c = null;
+  });
+
   it('calls without a credential send no Authorization header', async () => {
     c = createRemoteClient(remote(PORT), null, {timeoutMs: 10000, maxBytes: 1024 * 1024, debug: true});
     await c.call('echo_text', {});
