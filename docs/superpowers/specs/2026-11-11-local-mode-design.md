@@ -173,8 +173,10 @@ Two counting points, both on the main thread:
   per tool.
 
 Records are appended, one JSON object per line, to
-`<usageDir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl` (`--usageDir`, default
-`<storePath>/usage/`), written as they happen with `fs.appendFileSync` on an
+`<usageDir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl` (`--usageDir`; under
+`--store local` it defaults to `<storePath>/usage/`, so every launcher sharing
+a store writes one record across agents; under `--store redis` it is
+explicit-only, a hosted operator opting in to disk writes), written as they happen with `fs.appendFileSync` on an
 open descriptor; a crash loses at most the line being written. Fields:
 `{t, call, caller, pack, tool, server, bytesIn, linesIn, bytesOut, linesOut,
 ms, outcome, credential}` (`caller` is the opaque caller id of R2-1, one
