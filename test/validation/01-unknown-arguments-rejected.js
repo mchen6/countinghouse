@@ -55,6 +55,11 @@ describe('validation 01: unknown arguments are rejected, not ignored', () => {
     assert.strictEqual(r.err, null, r.err && r.err.message);
   });
 
+  it('accepts usageCall, the usage counters\' call id the gateway injects (local-mode spec §5)', () => {
+    const r = validate({input: {v: 'x'}, usageCall: 3}, true);
+    assert.strictEqual(r.err, null, JSON.stringify(r));
+  });
+
   it('rejects an unknown key on the way in, naming it', () => {
     const r = validate({input: {v: 'x'}, surprise: 1}, true);
     assert.ok(r.err != null, 'an unknown input argument must not be accepted');
