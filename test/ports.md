@@ -114,6 +114,7 @@ one) as well as the ports it binds.
 | `test/remote/04-resolved-address.js` | 9687–9688 |
 | `test/remote/05-route.js` | 9688, 9720–9721 |
 | `test/remote/06-listing.js` | 9722–9723 |
+| `test/remote/07-counting.js` | 9728–9729 |
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
@@ -139,8 +140,10 @@ one) as well as the ports it binds.
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
 | `test/sandbox/35-enforce-tls.js` | 9683–9685 |
+| `test/sandbox/39-resolve-shim.js` | 9724–9725 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
+| `test/single-thread/03-resolve.js` | 9727 |
 | `test/test1.js` | 9527 |
 | `test/test2.js` | 9527 |
 | `test/test3.js` | 9527 |
