@@ -220,14 +220,19 @@ accordingly).
 
 **The receipt**: for every `tools/call` on a scenario tool, the gateway sums
 the `In` records made during that call (the remote client tags each with
-the call id) and appends to the result `receipt: {calls, linesIn, bytesIn,
-linesOut, bytesOut, servers: [name]}` and one sentence in the text content:
+the call id) and adds to the result `_meta['countinghouse/receipt'] =
+{calls, linesIn, bytesIn, linesOut, bytesOut, servers: [name]}` (beside
+`countinghouse/code`; `structuredContent` stays exactly the module's
+validated output, because closed output schemas are the guarantee and a
+client that validates them must keep validating them unchanged) and one
+sentence as a second text block after the module's text:
 `read 48,210 lines (3.1 MB) in 14 calls to github; 35 lines (2.4 KB) reached
 the model.` (several servers: `… in 14 calls to github and 2 to linear …`).
 The word "saved" never appears; the scenario's own `coverage` field carries
 pack-specific units. The receipt is added by the runtime; a module cannot
 set it (an output field named `receipt` is refused by the output validation
-with `RECEIPT_RESERVED`). In `--store redis` the counters and the receipt
+with `RECEIPT_RESERVED`). `linesOut` and `bytesOut` count the module's own
+text content, not the receipt sentence. In `--store redis` the counters and the receipt
 run the same way; the usage files are written only when `--usageDir` is
 given (hosting operators opt in).
 
