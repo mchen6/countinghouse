@@ -115,6 +115,27 @@ describe('sandbox 15: calls to a restarting module', () => {
     assert.strictEqual(wm.sent[0].errCode, new CountinghouseError('DEVICE_NOT_FOUND').code);
   });
 
+  // The composing worker's side of that denial reads the same answer as the
+  // routed path: the code and the catalogue's text once (high review of #37:
+  // it rendered the text twice, "Device not found: Device not found").
+  it('direct peer channels: the composing worker decodes the denial as the routed path answers it', () => {
+    const wm = callerWM();
+    const broker = Object.create(PeerChannelBroker.prototype);
+    broker.dm = fakeDm(false);
+    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner'}, wm);
+    let got = null;
+    DeviceManager.prototype.onPeerChannelDeny.call({flushPendingPeerInvokes: (deviceID, workerId, err) => { got = err; }}, wm.sent[0]);
+    assert.strictEqual(got.code, 'DEVICE_NOT_FOUND');
+    assert.strictEqual(got.message, new CountinghouseError('DEVICE_NOT_FOUND').message);
+  });
+
+  it('direct peer channels: a denial with no code is PEER_CHANNEL_DENIED', () => {
+    let got = null;
+    DeviceManager.prototype.onPeerChannelDeny.call({flushPendingPeerInvokes: (deviceID, workerId, err) => { got = err; }},
+      {targetDeviceID: 'dev-x', errMsg: 'refused', errCode: null});
+    assert.strictEqual(got.code, 'PEER_CHANNEL_DENIED');
+  });
+
   it('direct peer channels: an unknown device gives a caller without access the access error', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);

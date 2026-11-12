@@ -315,3 +315,99 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     }
   });
 });
+
+// The reviewer's high review of #37 (c17): a trap that throws a boolean is
+// still a crash; every reply encoder answers an uncloneable body; a timed
+// out composed call keeps its code.
+describe('validation 06: the high review of #37 -- c17', () => {
+  for (const thrown of [false, true]) {
+    it(`answers a returned value whose prototype trap throws ${thrown} as a crash`, async () => {
+      const a = await answer(() => new Proxy({}, {getPrototypeOf() { throw thrown; }}));
+      assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+    });
+    it(`answers a resolved value whose prototype trap throws ${thrown} as a crash`, async () => {
+      const a = await answer(async () => new Proxy({}, {getPrototypeOf() { throw thrown; }}));
+      assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+    });
+  }
+
+  // The first message on port2, or a failure if none comes.
+  function firstMessage(port) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no reply')), 3000);
+      port.once('message', (m) => { clearTimeout(timer); resolve(m); });
+    });
+  }
+
+  it('a direct peer channel answers a callee result that cannot be cloned, and takes the next request', async () => {
+    const {MessageChannel} = require('worker_threads');
+    const PeerChannel = require('../../lib/peer-channel');
+    const {port1, port2} = new MessageChannel();
+    const channel = Object.create(PeerChannel.prototype);
+    channel.port = port1;
+    channel.activeDispatches = 0;
+    channel.dispatchQueue = [];
+    let drained = 0;
+    channel._drainDispatchQueue = () => { drained++; };
+    channel.onInvoke = (msg, cb) => cb(null, {fn() { return 1; }}, null);
+    try {
+      const reply = firstMessage(port2);
+      channel._dispatchInvoke({id: 4});
+      const msg = await reply;
+      assert.strictEqual(msg.id, 4);
+      assert.strictEqual(msg.category, 'peer-reply');
+      assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
+      assert.strictEqual(msg.data, null);
+      assert.strictEqual(drained, 1);
+      assert.strictEqual(channel.activeDispatches, 0);
+    } finally {
+      port1.close();
+      port2.close();
+    }
+  });
+
+  it('the main thread answers a composing worker whose reply body cannot be cloned', async () => {
+    const {MessageChannel} = require('worker_threads');
+    const WorkerMessage = require('../../lib/worker-message');
+    const {port1, port2} = new MessageChannel();
+    const wm = Object.create(WorkerMessage.prototype);
+    wm.worker = port1;
+    wm.ended = null;
+    try {
+      const reply = firstMessage(port2);
+      wm.sendActionInvokeReplyToChild({msgID: 3, errMsg: null, errCode: null, data: {fn() { return 1; }}});
+      const msg = await reply;
+      assert.strictEqual(msg.command, 'invoke-action-reply');
+      assert.strictEqual(msg.msgID, 3);
+      assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
+      assert.strictEqual(msg.data, null);
+    } finally {
+      port1.close();
+      port2.close();
+    }
+  });
+
+  it('a composed call that timed out keeps its code (DEVICE_NOT_RESPONDING)', () => {
+    // In a child process: lib/session.js opens a Redis client when loaded.
+    const {spawnSync} = require('child_process');
+    const lib = require('path').resolve(__dirname, '../../lib');
+    const script = `
+      const {CountinghouseError} = require(${JSON.stringify(`${lib}/countinghouse-error`)});
+      const Session = require(${JSON.stringify(`${lib}/session`)});
+      const s = Object.create(Session.prototype);
+      s.timer = {expired: true};
+      s.localInput = null;
+      s.logAPICall = () => {};
+      let got = null;
+      s.localCallback = (err) => { got = err; };
+      Session.prototype.callback.call(s, new CountinghouseError('DEVICE_NOT_RESPONDING'), null);
+      process.stdout.write(JSON.stringify({code: got && got.code, message: got && got.message}));
+      process.exit(0);
+    `;
+    const run = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000});
+    assert.strictEqual(run.status, 0, run.stderr);
+    const got = JSON.parse(run.stdout);
+    assert.strictEqual(got.code, 'DEVICE_NOT_RESPONDING', run.stdout);
+    assert.strictEqual(got.message, new CountinghouseError('DEVICE_NOT_RESPONDING').message);
+  });
+});
