@@ -32,6 +32,14 @@ process.on('warning', function(e) {
 
 options.setOptions(argv);
 
+// --stdio: stdout is the transport from here on; everything else that writes
+// to it lands on stderr (lib/mcp/stdio.js takeStdout).
+if (options.stdioWithPort === true) {
+  console.error('--stdio and --port: choose one');
+  process.exit(2);
+}
+if (options.stdio === true) require('./lib/mcp/stdio').takeStdout();
+
 // --debug without --debugKey makes every request an admin (load_module
 // included): only on a loopback address (review R1-2).
 if (options.debugKeyMissing === true) {
