@@ -471,6 +471,51 @@ and the short list of what the in-process sandbox cannot give.
   below: "validate" means structural conformance, not authorship or
   integrity attestation.
 
+### Remote MCP servers: a module cannot choose where a credential goes
+
+A module may declare one remote MCP server (`countinghouse.remotes`) and
+call it with `ctx.call('remote:<name>/<tool>', args)`. The connection is
+the main thread's, not the module's (spec:
+`docs/superpowers/specs/2026-11-11-rc1-min-remote-mcp-design.md`):
+
+- **The credential stays on the main thread.** It is read from the
+  environment at load, held in the client's request headers, and never
+  put in a worker message, the worker's environment, a log line, an error
+  message or a result. `COUNTINGHOUSE_*` variables are still never handed
+  to a worker; a remote's credential may be one of them, because only the
+  main thread reads it.
+- **The threat it answers.** A declaration is the module author's, and the
+  token is the user's. If the declaration alone decided what is read, any
+  installed module could name `GITHUB_TOKEN` and a `url` of its own, and
+  the runtime would send the user's token there: exfiltration by
+  declaration, with no code. So the operator's `--remoteCredentials` file
+  says which variables may go to which origin (scheme, host and port,
+  matched exactly), and a credential is sent only where the declared URL's
+  origin is allowed that variable. A variable the file does not allow
+  there is not read, and the remote is not contacted at
+  all (`REMOTE_CREDENTIAL_NOT_ALLOWED`). Without the option no credential
+  is ever read. The client packs' `ch-local install` writes the file from
+  its allowlist, so for the single local user the user is the operator.
+- **What a remote can reach.**
+  - https only (http only to a loopback host under `--debug`, for tests);
+  - redirects refused, never followed, so a credential never goes to a
+    second location;
+  - outside `--debug`, a URL whose host is a loopback or non-public
+    address is refused at load: private, link-local, CGNAT, multicast and
+    reserved ranges, and IPv6 forms that carry such an IPv4 address;
+  - the same rule is applied by the client's own lookup to every address
+    a name resolves to, before the socket opens
+    (`REMOTE_ADDRESS_REFUSED`);
+  - the Redis endpoint is refused always, by host, by the addresses its
+    host resolves to, and as loopback on its port;
+  - an answer is cut off at `--remoteMaxBytes` as it streams, and one
+    deadline (`--remoteTimeout`) covers connecting and calling.
+- **Not provided.** A remote's answer is the remote's data: the module
+  treats it as untrusted input, as it would any answer. The billing
+  identity of a remote hop is the one the worker states, as on every
+  existing `ctx.call` path, until R2-1's per-call token (Tasks 3–5) closes
+  that for all of them together.
+
 ## Current mitigations inventory
 
 These are real, and worth being specific about rather than waving at
