@@ -113,6 +113,7 @@ one) as well as the ports it binds.
 | `test/remote/03-client.js` | 9686–9687 |
 | `test/remote/04-resolved-address.js` | 9687–9688 |
 | `test/remote/05-route.js` | 9688, 9720–9721 |
+| `test/remote/06-listing.js` | 9722–9723 |
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |

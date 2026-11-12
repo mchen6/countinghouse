@@ -176,10 +176,13 @@ describe('remote 05: the credential at load', function() {
     try {
       const inFlight = call(PORT, 'remote-probe', 'callTool', {tool: 'slow', args: {}}).catch((e) => ({code: `rejected ${e.message}`}));
       await waitFor(() => remote.calls.includes('slow'), 5000, 'the slow call to reach the remote');
+      const before = remote.sockets();   // the old client's
       await request(`http://127.0.0.1:${PORT}`).post('/reload-module').set('X-CH-Key', KEY).send({path: PROBE});
       const out = await inFlight;
       assert.strictEqual(out.code, 'REMOTE_UNREACHABLE', JSON.stringify(out));
-      await waitFor(() => remote.open() === 0, 5000, 'the remote\'s connections to close');
+      // The new registration lists at load (step 4) on a connection of its
+      // own; every one the old client had is closed.
+      await waitFor(() => Array.from(before).every((socket) => !remote.sockets().has(socket)), 5000, 'the old client\'s connections to close');
       assert.deepStrictEqual(await call(PORT, 'remote-probe', 'callTool', {tool: 'echo_text', args: {r: 1}}),
         {result: {content: [{type: 'text', text: '{"r":1}'}]}});
     } finally {
