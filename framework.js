@@ -38,6 +38,12 @@ if (options.stdioWithPort === true) {
   console.error('--stdio and --port: choose one');
   process.exit(2);
 }
+// The single-identity profile: no direct peer channels (lib/local-profile.js).
+const profileRefusal = require('./lib/local-profile').profileStart(options);
+if (profileRefusal != null) {
+  console.error(profileRefusal);
+  process.exit(2);
+}
 if (options.stdio === true) require('./lib/mcp/stdio').takeStdout();
 
 // --debug without --debugKey makes every request an admin (load_module
