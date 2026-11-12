@@ -622,6 +622,84 @@ looked up yourself — there is no name resolution.
 deliberately, so both paths keep a live example and test coverage; see
 [`composite-tools.md`](composite-tools.md#every-composing-module-needs-its-internal-identity-granted).
 
+## Calling a remote MCP server
+
+A module can call one remote MCP server, the user's own GitHub for
+example, without ever holding the user's credential. The runtime's main
+thread connects to the server, adds the credential the operator allowed,
+and hands the module the server's answer.
+
+Declare it in `package.json`:
+
+```json
+"countinghouse": {
+  "remotes": [
+    {
+      "name": "github",
+      "transport": "streamable-http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {"X-MCP-Toolsets": "actions,repos"},
+      "credential": {"env": "COUNTINGHOUSE_GITHUB_TOKEN", "fallbackEnv": "GITHUB_TOKEN",
+                     "header": "Authorization", "scheme": "Bearer"}
+    }
+  ]
+}
+```
+
+- `name`: lower-case letters, digits and `-`, starting with a letter. It
+  is the name in the address below.
+- `transport`: `"streamable-http"`, the only one.
+- `url`: `https:`, with no user info and no fragment. `http:` is accepted
+  only for a loopback host under `--debug`, for local testing. A loopback
+  or private address, or the Redis endpoint, is refused.
+- `headers` (optional): static, non-secret headers, sent as written on
+  every request. A secret goes only through `credential`. The
+  credential's header, hop-by-hop headers and the headers the transport
+  sets itself (`Host`, `Content-Type`, `Accept`, `Mcp-Session-Id` and the
+  like) are refused.
+- `credential` (optional): the environment variable to read (`env`, then
+  `fallbackEnv` when `env` is empty), the header (default
+  `Authorization`) and the scheme (default `Bearer`; `""` sends the bare
+  value). It is a request, not a grant: the operator's
+  `--remoteCredentials` file decides which variables may go to which
+  origin.
+
+One remote per module in this version. `countinghouse-validate` reports a
+declaration problem by position and field, and the load refuses the
+module with `REMOTE_DECLARATION_INVALID`.
+
+Call it from a handler:
+
+```js
+const result = await ctx.call('remote:github/actions_list', {method: 'list_workflow_runs', owner, repo});
+// result: {content: [{type: 'text', text}], isError?, structuredContent?}
+```
+
+The result is the MCP `CallToolResult` as the server sent it, with nothing
+parsed and nothing stripped. A tool's own error (`isError: true`) is a
+result, so the module can read its text. Only a failure to get an answer
+rejects, with a code:
+
+| Code | When | Retryable |
+|---|---|---|
+| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect (refused, never followed), a 502 or 503, or the module was reloaded during the call | yes |
+| `REMOTE_TIMEOUT` | no answer within `--remoteTimeout`, or a 504 | yes |
+| `REMOTE_AUTH_FAILED` | the server answered 401 or 403; the message names the variable, never its value | no |
+| `REMOTE_PROTOCOL` | an answer that is not valid MCP | no |
+| `REMOTE_RESULT_TOO_LARGE` | an answer over `--remoteMaxBytes` | no |
+| `REMOTE_ADDRESS_REFUSED` | the host resolves to a loopback, private or Redis-endpoint address | no |
+| `REMOTE_UNDECLARED` | the module declares no remote by that name | no |
+| `REMOTE_ARGS_INVALID` | not an address `remote:<name>/<tool>`, or the arguments are not a plain JSON object | no |
+| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin; the remote is disabled | no |
+| `REMOTE_CREDENTIAL_MISSING` | the variable is allowed but was not set when the module loaded | no |
+
+A remote needs no `net` permission: the connection is the main thread's,
+and the module never sees the credential, the socket or any header. Each
+call is metered to the outer caller as an inner hop. The server's
+tools/list is taken at load and recorded with a hash in the log. It
+refuses nothing in this version: a tool missing from it is called all the
+same.
+
 ## Troubleshooting: my module doesn't appear in `tools/list`
 
 Work down this list in order. Every case below now logs an explicit error —

@@ -26,6 +26,9 @@ simulation).
 | `--peerChannelAuthRecheckSeconds <n>` | `5` | How often the authorization behind each open peer channel is re-checked, so a grant revoked while the server runs closes the channel. `0` turns the re-check off. |
 | `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path (the default path). |
 | `--mcpToolCallCost <n>` | `0` | Cost recorded via `MeteringProvider.recordCall` for every MCP `tools/call`. A finite number `>= 0`; anything else exits with status 2. |
+| `--remoteCredentials <file>` | none: no credential is read | Which environment variables may be sent to which remote MCP server: JSON `{"<origin>": ["VAR", ...]}`, where an origin is scheme, host and port, matched exactly. A module's `countinghouse.remotes` names the variable it would like; a credential is sent only where this file allows that variable for the declared URL's origin. A file that is not this shape exits with status 2. See [`module-development.md`](module-development.md#calling-a-remote-mcp-server). |
+| `--remoteTimeout <seconds>` | `60` | One deadline for a remote MCP call, connecting included. A positive number; anything else exits with status 2. |
+| `--remoteMaxBytes <n>` | `16777216` | Largest answer a remote MCP server may send, cut off as it streams (`REMOTE_RESULT_TOO_LARGE`). A positive number; anything else exits with status 2. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |

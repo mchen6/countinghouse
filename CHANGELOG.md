@@ -11,7 +11,31 @@ the auth config.
 ## Unreleased
 
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
-groups everything below by what an operator has to do. Measured cost of the
+groups everything below by what an operator has to do.
+
+### Added — a remote MCP server per module, called from the main thread (RC1-min)
+
+- A module declares one remote MCP server in `package.json`
+  `countinghouse.remotes` (`name`, `transport: "streamable-http"`, an https
+  `url`, static `headers`, a `credential` naming an environment variable)
+  and calls it with `ctx.call('remote:<name>/<tool>', args)`. The result is
+  the server's `CallToolResult` as sent; a tool's `isError` is a result.
+  Transport and protocol failures reject with `REMOTE_*` codes.
+- The main thread holds the connection and the credential: the module needs
+  no `net` permission and never sees the token. A credential is sent only
+  where the operator's new `--remoteCredentials <file>` allows that
+  variable for the declared URL's exact origin, so a module cannot choose
+  where a credential goes.
+- `--remoteTimeout` (default 60 s, one deadline for connecting and calling)
+  and `--remoteMaxBytes` (default 16 MiB, an answer cut off as it streams).
+  Redirects are refused, and a loopback, private or Redis-endpoint address
+  is refused by URL at load and by resolved address before the socket
+  opens.
+- Each remote call is metered to the outer caller as an inner hop. The
+  server's tools/list is recorded at load with a hash in the log; it
+  refuses nothing yet.
+- `countinghouse-validate` reports declaration problems; a bad declaration
+  refuses the load (`REMOTE_DECLARATION_INVALID`). Measured cost of the
 file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
 write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 `--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
