@@ -26,7 +26,7 @@ function optionsFor(argv) {
 }
 
 function start(args) {
-  return spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9695'].concat(args),
+  return spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', '9730'].concat(args),
     {cwd: ROOT, encoding: 'utf8', timeout: 20000});
 }
 
