@@ -40,6 +40,39 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — a remote MCP server per module, called from the main thread (RC1-min)
+
+- A module declares one remote MCP server in `package.json`
+  `countinghouse.remotes` (`name`, `transport: "streamable-http"`, an https
+  `url`, static `headers`, a `credential` naming an environment variable)
+  and calls it with `ctx.call('remote:<name>/<tool>', args)`. The result is
+  the server's `CallToolResult` as sent; a tool's `isError` is a result.
+  Transport and protocol failures reject with `REMOTE_*` codes.
+- The main thread holds the connection and the credential: the module needs
+  no `net` permission and never sees the token. A credential is sent only
+  where the operator's new `--remoteCredentials <file>` allows that
+  variable for the declared URL's exact origin, so a module cannot choose
+  where a credential goes.
+- `--remoteTimeout` (default 60 s, one deadline for connecting and calling)
+  and `--remoteMaxBytes` (default 16 MiB, an answer cut off as it streams).
+  Redirects are refused, and a loopback, private or Redis-endpoint address
+  is refused by URL at load and by resolved address before the socket
+  opens.
+- Each remote call is metered to the outer caller as an inner hop. The
+  server's tools/list is recorded at load with a hash in the log; it
+  refuses nothing yet.
+- `countinghouse-validate` reports declaration problems; a bad declaration
+  refuses the load (`REMOTE_DECLARATION_INVALID`).
+- Each remote call is a usage record under the `tools/call` it was made
+  for, so the receipt and `countinghouse_usage_report` count it as a
+  server call: the remote's name, the tool, the text content's lines and
+  bytes (other blocks are passed on, not counted), the time, the outcome
+  (`ok`, `isError` or the rejection's code) and the credential's variable
+  name. No content and no credential value is recorded. The call id rides
+  routed hops; a direct peer channel does not carry it, so when hosting
+  (peer channels on) a part's server calls are missing from the outer
+  receipt. In the single-identity profile peer channels are off.
+
 ### Fixed — under `enforce`, TLS client connections were refused since the sandbox lockdown
 
 - A module under `--moduleSandbox enforce` could make no TLS connection at
