@@ -83,3 +83,79 @@ describe('local-kv 01: LocalKv semantics', () => {
     kv.close();
   });
 });
+
+// The review of B3 (/code-review medium on d18b4e9).
+describe('local-kv 01: the review of B3', () => {
+  it('a trailing undefined with no callback after it is the callback slot, as node_redis takes it', async () => {
+    const kv = new LocalKv({storePath: tmpStore()});
+    kv.set('t', 'v', undefined);
+    kv.lpush('l', 'x', undefined);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(await run(kv, 'get', 't'), 'v');
+    assert.deepStrictEqual(await run(kv, 'lrange', 'l', 0, -1), ['x']);
+    kv.close();
+  });
+
+  it('never throws out of a command: a bad argument or a malformed stored entry reaches the callback', async () => {
+    const storePath = tmpStore();
+    fs.writeFileSync(path.join(storePath, 'kv.json'), JSON.stringify({bad: {t: 'hash', v: null}, z: {t: 'zset', v: 'no'}}));
+    const kv = new LocalKv({storePath});
+    assert.strictEqual(await run(kv, 'hget', 'bad', 'f'), null);
+    assert.deepStrictEqual(await run(kv, 'zrange', 'z', 0, -1), []);
+    const r = await run(kv, 'set', 'k', Object.create(null));
+    assert.ok(typeof(r.error) === 'string', JSON.stringify(r));
+    kv.close();
+  });
+
+  it('multi: an arity error aborts the whole transaction (EXECABORT), and nothing is written', async () => {
+    const kv = new LocalKv({storePath: tmpStore()});
+    const err = await new Promise((resolve) => kv.multi().set('m', '1').get().exec((e) => resolve(e)));
+    assert.strictEqual(err.message, 'EXECABORT Transaction discarded because of previous errors.');
+    assert.strictEqual(await run(kv, 'get', 'm'), null);
+    kv.close();
+  });
+
+  it('multi: a queued command\'s own callback is called, and multi([[...]]) queues the commands it is given', async () => {
+    const kv = new LocalKv({storePath: tmpStore()});
+    let cbArgs = null;
+    await new Promise((resolve) => kv.multi().set('q', '1', (e, r) => { cbArgs = [e, r]; }).exec(resolve));
+    assert.deepStrictEqual(cbArgs, [null, 'OK']);
+    const replies = await new Promise((resolve) => kv.multi([['set', 'mx', '1'], ['get', 'mx']]).exec((e, r) => resolve(r)));
+    assert.deepStrictEqual(replies, ['OK', '1']);
+    kv.close();
+  });
+
+  it('sweeps an expired key nobody reads, from memory and from kv.json', async () => {
+    let now = 1000000;
+    const storePath = tmpStore();
+    const kv = new LocalKv({storePath, now: () => now});
+    await run(kv, 'set', 'tmp', 'v', 'PX', 10);
+    now += 20;
+    kv.sweep();
+    kv.close();
+    assert.ok(!Object.prototype.hasOwnProperty.call(JSON.parse(fs.readFileSync(path.join(storePath, 'kv.json'), 'utf8')), 'tmp'));
+  });
+
+  it('sees a key another process wrote to the same store, after its reload', async () => {
+    const storePath = tmpStore();
+    const a = new LocalKv({storePath});
+    const b = new LocalKv({storePath});
+    await run(a, 'set', 'shared', 'A');
+    a.close();
+    b.reload();
+    assert.strictEqual(await run(b, 'get', 'shared'), 'A');
+    b.close();
+  });
+
+  it('keeps __proto__ as a key and a hash field, across a restart', async () => {
+    const storePath = tmpStore();
+    const a = new LocalKv({storePath});
+    await run(a, 'set', '__proto__', 'v');
+    await run(a, 'hset', 'h', '__proto__', 'x');
+    a.close();
+    const b = new LocalKv({storePath});
+    assert.strictEqual(await run(b, 'get', '__proto__'), 'v');
+    assert.strictEqual(await run(b, 'hget', 'h', '__proto__'), 'x');
+    b.close();
+  });
+});
