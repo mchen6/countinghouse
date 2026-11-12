@@ -200,23 +200,9 @@ jobs:
       # test7 is a multi-thread performance benchmark, not a correctness
       # check - it takes several minutes and isn't meant to gate CI, so
       # this deliberately excludes it (mirrors the local dev-loop workflow)
+      # The runs are listed once, in test/folders.json (npm test reads it too).
       - name: Run functional tests
-        run: |
-          npx mocha ./test/test1.js
-          npx mocha ./test/test2.js
-          npx mocha ./test/test3.js
-          npx mocha ./test/test4.js
-          npx mocha --exit ./test/test5.js
-          npx mocha ./test/auth/*.js ./test/fs-broker/*.js ./test/device-config/*.js ./test/module-loading/*.js ./test/spec-format/*.js ./test/mcp-contract/*.js ./test/validation/*.js ./test/module-authoring/*.js ./test/store/*.js ./test/metering/*.js
-          npx mocha --exit ./test/composition/*.js
-          npx mocha --exit ./test/roles/*.js
-          npx mocha --exit ./test/usage/*.js
-          npx mocha --exit ./test/remote/*.js
-          npx mocha --exit ./test/sandbox/*.js
-          npx mocha --exit ./test/single-thread/*.js
-          npx mocha ./test/test8.js
-          npm run test:peer-standalone
-          npx mocha ./test/test6.js
+        run: node scripts/run-tests.js --ci
 
       # informational only for now - the dependency tree isn't at zero
       # vulnerabilities yet, so this doesn't gate CI; it's here so the

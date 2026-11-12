@@ -1,6 +1,8 @@
 const assert = require('assert');
 const {ModuleLifecycle} = require('../../lib/module-lifecycle');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
+const PORT = testPort(9634);
 
 describe('module-loading 14: the per-name lifecycle lock', () => {
   it('runs one critical section per name at a time, others in parallel', async () => {
@@ -58,7 +60,7 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
   });
 });
 
-// Wired (port 9634): the broker's writes are held by the test-only delay hook
+// Wired (PORT): the broker's writes are held by the test-only delay hook
 // (lib/fs-broker/broker.js testDelayMs), so the old worker's write is still
 // running when the next spawn wants to empty /tmp.
 describe('module-loading 14: the lock in a running server', function() {
@@ -74,7 +76,7 @@ describe('module-loading 14: the lock in a running server', function() {
 
   const start = () => {
     base = mkdtemp('lifecycle-');
-    return startServer(9634, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit',
+    return startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit',
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')],
     {env: {COUNTINGHOUSE_TEST_BROKER_DELAY_MS: '1500'}});
   };
@@ -88,23 +90,23 @@ describe('module-loading 14: the lock in a running server', function() {
 
   it('a restart waits for the old worker\'s write to settle before emptying /tmp', async () => {
     server = await start();
-    assert.deepStrictEqual(toolOutput(await mcpCall(9634, 'k', tool('slowwrite'), {})), {ok: true, code: null});
-    const r = await post(9634, 'k', '/restart-module', {name: 'fs-probe'});
+    assert.deepStrictEqual(toolOutput(await mcpCall(PORT, 'k', tool('slowwrite'), {})), {ok: true, code: null});
+    const r = await post(PORT, 'k', '/restart-module', {name: 'fs-probe'});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
     await waitFor(async () => walkWaitedForSettle(server.output), 20000, 'second walk after settle');
     await waitFor(async () => {
-      const read = await mcpCall(9634, 'k', tool('read'), {path: '/tmp/slow'});
+      const read = await mcpCall(PORT, 'k', tool('read'), {path: '/tmp/slow'});
       return read.isError === false && toolOutput(read).code === 'ENOENT';
     }, 20000, '/tmp emptied by the new spawn');
   });
 
   it('a crash while the broker is busy still restarts after backoff (review I5)', async () => {
     server = await start();
-    assert.deepStrictEqual(toolOutput(await mcpCall(9634, 'k', tool('slowwrite'), {})), {ok: true, code: null});
-    assert.deepStrictEqual(toolOutput(await mcpCall(9634, 'k', tool('exit'), {})), {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(PORT, 'k', tool('slowwrite'), {})), {ok: true, code: null});
+    assert.deepStrictEqual(toolOutput(await mcpCall(PORT, 'k', tool('exit'), {})), {ok: true, code: null});
     await waitFor(async () => walkWaitedForSettle(server.output), 30000, 'supervised restart after settle');
     await waitFor(async () => {
-      const w = await mcpCall(9634, 'k', tool('write'), {path: '/data/after', content: 'x'});
+      const w = await mcpCall(PORT, 'k', tool('write'), {path: '/data/after', content: 'x'});
       return w.isError === false && toolOutput(w).ok === true;
     }, 30000, 'module back');
     assert.ok(!server.output.includes('superseded'), 'nobody superseded the restart');

@@ -1,6 +1,7 @@
 const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env');
 const request = require('supertest');
 
 // sqlite3 is an optionalDependency, and the failure mode that matters is not
@@ -13,7 +14,7 @@ const request = require('supertest');
 // everything except the sqlite backend works normally. The server is started
 // with a preload that makes require('sqlite3') throw ERR_DLOPEN_FAILED, so
 // the environment is genuinely sqlite3-less without touching node_modules.
-const PORT             = 9591;
+const PORT             = testPort(9591);
 const url              = `http://127.0.0.1:${PORT}`;
 const AUTH_CONFIG_PATH = `/tmp/countinghouse-test-nosqlite-${process.pid}.json`;
 const PRELOAD          = './test/fixtures/no-sqlite3-preload.js';
@@ -36,7 +37,7 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
     fs.writeFileSync(AUTH_CONFIG_PATH, JSON.stringify(config));
 
     console.log('starting countinghouse with sqlite3 made unloadable, --authProvider file...');
-    waitForReady(exec(`node -r ${PRELOAD} ./framework.js --workerThread --bindAddr 127.0.0.1 --port ${PORT
+    waitForReady(startShell(`node -r ${PRELOAD} ./framework.js${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider file --authConfigPath ${AUTH_CONFIG_PATH
          } --mcpToolCallCost 1` +
          ` --loadModule ./pre-installed-packages/echo-device-module`,
@@ -48,7 +49,7 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
     // matched on the per-pid auth config path, not on the preload filename:
     // a pattern like "no-sqlite3-preload" also matches any shell that merely
     // mentions it, including the one running mocha.
-    exec(`pkill -f "${AUTH_CONFIG_PATH}"`, () => { done(); });
+    stopAll(done);
   });
 
   it('the server starts at all (the documented --loadModule path never touches the registry DB)', (done) => {

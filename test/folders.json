@@ -1,0 +1,22 @@
+{
+  "//": "Every test run, in order: `npm test` (scripts/run-tests.js) and ci.yml's functional step (`--ci`) both read this list. Adding a folder is one line here. exit: true runs mocha with --exit. ci: false is npm test only (stdio has its own CI job; test7 is a multi-thread benchmark, not a gate).",
+  "runs": [
+    {"files": ["./test/test1.js"]},
+    {"files": ["./test/test2.js"]},
+    {"files": ["./test/test3.js"]},
+    {"files": ["./test/test4.js"]},
+    {"files": ["./test/test5.js"], "exit": true},
+    {"files": ["./test/auth/*.js", "./test/fs-broker/*.js", "./test/device-config/*.js", "./test/module-loading/*.js", "./test/spec-format/*.js", "./test/mcp-contract/*.js", "./test/validation/*.js", "./test/module-authoring/*.js", "./test/store/*.js", "./test/metering/*.js"]},
+    {"files": ["./test/composition/*.js"], "exit": true},
+    {"files": ["./test/roles/*.js"], "exit": true},
+    {"files": ["./test/usage/*.js"], "exit": true},
+    {"files": ["./test/stdio/*.js"], "exit": true, "ci": false},
+    {"files": ["./test/sandbox/*.js"], "exit": true},
+    {"files": ["./test/remote/*.js"], "exit": true},
+    {"files": ["./test/single-thread/*.js"], "exit": true},
+    {"files": ["./test/test8.js"]},
+    {"npm": "test:peer-standalone"},
+    {"files": ["./test/test6.js"]},
+    {"files": ["./test/test7.js"], "ci": false}
+  ]
+}
