@@ -213,3 +213,105 @@ describe('validation 06: the review of c14 -- a module\'s own error is answered 
     }
   });
 });
+
+// The review of c15: what a handler returns, and what it reports with its
+// failure, is read guarded too; a reply that cannot be cloned is still a
+// reply; no log line names a file outside the runtime or the caller's input.
+describe('validation 06: the review of c15 -- every failure is answered, and logged without module or caller data', () => {
+  const trapPrototype = () => new Proxy({}, {getPrototypeOf() { throw new Error('trap'); }});
+
+  it('answers a returned value whose prototype trap throws', async () => {
+    const a = await answer(() => trapPrototype());
+    assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+  });
+
+  it('answers a returned value whose then getter throws', async () => {
+    const a = await answer(() => ({get then() { throw new Error('trap'); }}));
+    assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+  });
+
+  it('answers a promise that resolves to a value whose prototype trap throws', async () => {
+    const a = await answer(async () => trapPrototype());
+    assert.strictEqual(a.err.code, 'DEVICE_INVOKE_EXCEPTION');
+  });
+
+  it('answers a failure whose output\'s fault getter throws', async () => {
+    const output = new Proxy({}, {get() { throw new Error('trap'); }});
+    const a = await answer((args, callback) => callback(CountinghouseError.module('SHAPE_REJECTED', 'm'), output));
+    assert.strictEqual(a.err.code, 'SHAPE_REJECTED');
+  });
+
+  it('a worker reply whose data cannot be cloned is answered as a crash', async () => {
+    const {Worker} = require('worker_threads');
+    const lib = require('path').resolve(__dirname, '../../lib/worker-message.js');
+    const worker = new Worker(`
+      const WorkerMessage = require(${JSON.stringify(lib)});
+      WorkerMessage.prototype.sendMessageToParent.call({}, 7, null, {f() {}});
+    `, {eval: true});
+    const msg = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no reply')), 5000);
+      worker.once('message', (m) => { clearTimeout(timer); resolve(m); });
+      worker.once('error', (e) => { clearTimeout(timer); reject(e); });
+    });
+    await worker.terminate();
+    assert.strictEqual(msg.id, 7);
+    assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
+    assert.ok(msg.errMsg != null);
+  });
+
+  it('logs no file outside the runtime\'s root for a runtime bug', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch06-alice-'));
+    const file = path.join(dir, 'alice-thrower.js');
+    fs.writeFileSync(file, 'module.exports = function() { throw new TypeError(\'x\'); };\n');
+    const thrower = require(file);
+    const original = CountinghouseError.module;
+    const originalE = LOG.E;
+    const lines = [];
+    LOG.E = (line) => { lines.push(line); return line; };
+    try {
+      CountinghouseError.module = () => thrower();
+      await answer((args, callback) => callback(Object.assign(new Error('typed'), {code: 'SHAPE_REJECTED'})));
+    } finally {
+      CountinghouseError.module = original;
+      LOG.E = originalE;
+      delete require.cache[file];
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+    assert.strictEqual(lines.length, 1, JSON.stringify(lines));
+    assert.ok(!lines[0].includes('alice') && !lines[0].includes(os.tmpdir()), lines[0]);
+    assert.ok(/06-fail-answers\.js:\d+/.test(lines[0]), `names the runtime's own frame: ${lines[0]}`);
+  });
+
+  it('the debug API log line carries neither the caller\'s input nor the module\'s message or fault', () => {
+    // In a child process: lib/session.js opens a Redis client when it is
+    // loaded, which would keep this folder's process alive.
+    const {spawnSync} = require('child_process');
+    const lib = require('path').resolve(__dirname, '../../lib');
+    const script = `
+      const options = require(${JSON.stringify(`${lib}/cli-options`)});
+      options.debug = true;
+      options.apiMonitor = false;
+      const LOG = require(${JSON.stringify(`${lib}/logger`)});
+      const {CountinghouseError} = require(${JSON.stringify(`${lib}/countinghouse-error`)});
+      const Session = require(${JSON.stringify(`${lib}/session`)});
+      const lines = [];
+      LOG.E = (line) => { lines.push(String(line && line.message != null ? line.message : line)); return line; };
+      const err = CountinghouseError.module('UPSTREAM_FAIL', 'token sk-module-secret rejected');
+      Session.prototype.logAPICall.call({}, err, {input: {apiKey: 'sk-caller-secret'}}, {fault: 'f-secret'}, true);
+      Session.prototype.logAPICall.call({}, err, null, {fault: 'f-secret'}, true);
+      process.stdout.write(JSON.stringify(lines));
+      process.exit(0);
+    `;
+    const run = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000});
+    assert.strictEqual(run.status, 0, run.stderr);
+    const lines = JSON.parse(run.stdout);
+    assert.strictEqual(lines.length, 2, run.stdout);
+    for (const line of lines) {
+      assert.ok(!/sk-module-secret|sk-caller-secret|f-secret/.test(line), line);
+      assert.ok(line.includes('UPSTREAM_FAIL'), line);
+    }
+  });
+});

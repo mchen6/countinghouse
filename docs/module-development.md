@@ -102,6 +102,13 @@ name its code anything, a catalogue name included, so check
 `err.origin === 'runtime'` before acting on a runtime code (retrying on
 `MODULE_RELOADING`, say), not the code alone.
 
+One gap remains before 8.0.0: today a module can still answer with a
+catalogue code and have it treated as the runtime's (by setting `origin` on
+its error, or by building one through the error's constructor), so a caller
+can see, say, a retryable `MODULE_RELOADING` that a module raised. A
+follow-up change (d2b) closes it: only an error the runtime itself issued
+carries runtime semantics, and any other is the module's, whatever its code.
+
 Returning the error is the preferred form. Throwing it
 (`throw ctx.error(…)`), from an async function or a plain one, or passing it
 to a callback gives the same answer. A helper that has no `ctx` can throw a
