@@ -76,7 +76,8 @@ describe('module roles, scenarios and parts', () => {
     moduleAt(path.join(nm, 'p2'), {name: 'p2', role: 'part', calls: ['p1/svc.run']});
     const {load, refused} = roles.expandLoadList([scenario, path.join(nm, 'p1')]);
     assert.deepStrictEqual(refused, []);
-    assert.deepStrictEqual(load.map((m) => [m.name, m.listed]), [['s', true], ['p1', false], ['p2', false]], 'p1, also given directly, still loads once, as the scenario\'s part');
+    // p1 is also given directly: it loads once, and is listed (a module given directly always is).
+    assert.deepStrictEqual(load.map((m) => [m.name, m.listed]), [['s', true], ['p1', true], ['p2', false]]);
   });
 
   it('a scenario with a missing part does not load, and says which part', () => {
@@ -122,12 +123,54 @@ describe('module roles, scenarios and parts', () => {
   });
 });
 
-describe('--loadModule expands a scenario in the module manager', function() {
+describe('expansion, from /code-review medium on #46', () => {
+  let root;
+  beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-roles-r-')); });
+  afterEach(() => { fs.rmSync(root, {recursive: true, force: true}); });
+
+  it('a refused scenario does not take away a part that another scenario also needs', () => {
+    const nm = path.join(root, 'node_modules');
+    const a = moduleAt(path.join(nm, 'a'), {name: 'a', role: 'scenario', calls: ['p1/svc.run'], actions: ['countinghouse_check_balance']});
+    const b = moduleAt(path.join(nm, 'b'), {name: 'b', role: 'scenario', calls: ['p1/svc.run'], actions: ['b_tool']});
+    moduleAt(path.join(nm, 'p1'), {name: 'p1', role: 'part'});
+    const {load, refused} = roles.expandLoadList([a, b], {reserved: ['countinghouse_check_balance']});
+    assert.deepStrictEqual(refused.map((r) => [r.name, r.code]), [['a', 'TOOL_NAME_TAKEN']]);
+    assert.deepStrictEqual(load.map((m) => [m.name, m.listed]), [['b', true], ['p1', false]]);
+  });
+
+  it('a part loaded directly brings the parts it calls, unlisted, and stays listed itself', () => {
+    const nm = path.join(root, 'node_modules');
+    moduleAt(path.join(nm, 'p1'), {name: 'p1', role: 'part', calls: ['p2/svc.run']});
+    moduleAt(path.join(nm, 'p2'), {name: 'p2', role: 'part'});
+    assert.deepStrictEqual(roles.expandLoadList([path.join(nm, 'p1')]).load.map((m) => [m.name, m.listed]), [['p1', true], ['p2', false]]);
+  });
+
+  it('a module given directly is listed whatever the order of --loadModule', () => {
+    const nm = path.join(root, 'node_modules');
+    const s = moduleAt(path.join(nm, 's'), {name: 's', role: 'scenario', calls: ['p1/svc.run']});
+    const p1 = moduleAt(path.join(nm, 'p1'), {name: 'p1', role: 'part'});
+    for (const order of [[s, p1], [p1, s]]) {
+      const listed = Object.fromEntries(roles.expandLoadList(order).load.map((m) => [m.name, m.listed]));
+      assert.deepStrictEqual(listed, {s: true, p1: true}, order.map((d) => path.basename(d)).join(','));
+    }
+  });
+
+  it('an action with no description is never a tool, so it takes no name', () => {
+    const plain = path.join(root, 'plain');
+    fs.mkdirSync(plain);
+    fs.writeFileSync(path.join(plain, 'package.json'), JSON.stringify({name: 'plain', version: '1.0.0'}));
+    fs.writeFileSync(path.join(plain, 'api.json'), JSON.stringify({device: {friendlyName: 'triage', serviceList: {'urn:x:serviceID:run': {actionList: [{name: 'it'}]}}}}));
+    const s = moduleAt(path.join(root, 's'), {name: 's', role: 'scenario', actions: ['triage_run_it']});
+    assert.deepStrictEqual(roles.expandLoadList([plain, s]).refused, []);
+  });
+});
+
+describe('--loadModule expands a scenario in the module manager', () => {
   let root;
   beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-roles-mm-')); });
   afterEach(() => { fs.rmSync(root, {recursive: true, force: true}); });
 
-  it('the load list holds the scenario and its parts, and the parts are recorded unlisted', function() {
+  it('the load list holds the scenario and its parts, and the parts are recorded unlisted', () => {
     const options = require('../../lib/cli-options');
     options.setOptions({redisUrl: 'redis://127.0.0.1:9719'});
     require('../../lib/logger').createLogger(false);
