@@ -91,11 +91,6 @@ if (options.store === 'local' && options.redisUrlExplicit === true) {
   console.error('--store local keeps no Redis, and --redisUrl names one: choose one');
   process.exit(2);
 }
-// Until the local store's parts all exist (plan PR B5).
-if (options.store === 'local') {
-  console.error('--store local is not complete in this build');
-  process.exit(2);
-}
 var bindAddress = require('./lib/bind-address');
 if (options.debug === true && options.debugKey == null && !bindAddress.isLoopback(bindAddress.hostIp())) {
   console.error('--debug without --debugKey accepts every request as an admin, so it binds only to loopback; ' +

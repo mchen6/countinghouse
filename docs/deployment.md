@@ -206,6 +206,25 @@ The same posture, in outline:
     boundary for modules.
 - **Restart policy:** the Deployment default (`Always`).
 
+## Local mode: `--store local`, no Redis
+
+For a client machine (the client-pack launcher), `--store local` keeps
+what the runtime held in Redis in files under `--storePath` (default
+`<moduleDataPath>/../store`) and in memory, and opens no socket of its own:
+metering (`metering.json` with `--meter`; without it calls are counted in
+memory and none is refused), a module's `ctx.redis` data (`kv.json`), and
+jobs and MCP tasks in an in-process runner. `--redisUrl` with
+`--store local` is refused ("choose one"). Several runtime processes may
+share one store directory: every write is locked and merged by key.
+
+What local mode does not keep: jobs and tasks live in memory only, so a
+restart forgets them (`tasks/get` for a task from an earlier process
+answers "not found"), and a finished job is kept for `--jobResultTtl`
+seconds. The device log is kept in memory only, the last 1000 entries per
+device. The API monitor's log (`--apiMonitor`) is absent. Over `--stdio`
+without `--authConfigPath` the server runs as one user, its key made at
+start and written nowhere ([security model](security-model.md)).
+
 ## Without a container
 
 The same layers on a plain host: a dedicated user, systemd's sandboxing and
