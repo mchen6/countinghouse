@@ -22,7 +22,8 @@ describe('direct peer channels 07: the callee serves only granted devices', func
     const authPath = path.join(base, 'auth.json');
     fs.writeFileSync(authPath, JSON.stringify({
       forger: {userName: 'forger', devices: [deviceIDForName('peer-forge'), dev1]},
-      both:   {userName: 'both', devices: [deviceIDForName('peer-forge'), dev1, dev2]}
+      // peer-forge declares its calls (R2-1 Task 4), resolved under 'both'
+      both:   {userName: 'both', devices: [deviceIDForName('peer-forge'), dev1, dev2], runsModules: ['peer-forge']}
     }));
     server = await startServer(9668, ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'dynamic-discovery-module'),

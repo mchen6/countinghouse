@@ -49,7 +49,7 @@ const normalised = (seen) => ({code: seen.code, message: String(seen.message).re
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-hop-oracle-'));
       const authPath = path.join(base, 'auth.json');
       fs.writeFileSync(authPath, JSON.stringify({
-        [ADMIN]: {userName: 'admin', devices: ['*'], admin: true},
+        [ADMIN]: {userName: 'admin', devices: ['*'], admin: true, runsModules: ['hop-prober']},
         [GRANTED]: {userName: 'granted', devices: [DEVICE, NEVER]},
         [UNGRANTED]: {userName: 'ungranted', devices: [deviceIDForName('some-other-module')]},
         [GRANTED_FRESH]: {userName: 'granted-fresh', devices: [DEVICE, NEVER]},

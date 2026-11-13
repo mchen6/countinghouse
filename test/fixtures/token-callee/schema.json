@@ -64,6 +64,23 @@
           "n"
         ]
       }
+    },
+    "tick": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "n"
+        ]
+      }
     }
   }
 }

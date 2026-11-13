@@ -62,6 +62,18 @@ this document's subject, stays on `ctx.serviceClient` on purpose so both
 paths keep a live example and test coverage — see
 [Running it](#running-it) below.
 
+Either way, in worker mode (the default) a module reaches only what it
+declared. The main thread checks every hop against the calling module's
+`countinghouse.calls`, read from its package.json on the main thread and
+resolved at load, whatever API the module used: `ctx.call`,
+`ctx.serviceClient` by raw deviceID, or a message built by hand. (Under
+`--no-workerThread` modules share one process and nothing isolates them;
+there `ctx.call` checks its address, `ctx.serviceClient` does not.) A hop to anything else is refused
+`CTX_CALL_UNDECLARED`, runs no handler and costs nothing. On the direct
+peer path the channel opens only to a declared device, and the callee
+serves only the declared actions on it. A worker runs one module: a second
+load into it is refused.
+
 **`ctx.call('remote:<name>/<tool>', args)` — a remote MCP server, not a
 module.** A module that declares a remote in `countinghouse.remotes`
 calls it through the same `ctx.call`. It is not a device, so neither
@@ -269,25 +281,42 @@ straight through, as `MISSING_OUTPUT_ARGUMENT`). This is `AuthProvider`
 correctly refusing an identity it has never seen, not a bug in composition.
 
 Every bundled module that composes has one, and **all of them need this**,
-not just `composite-demo`:
+not just `composite-demo`. Each declares its calls in `countinghouse.calls`,
+so each identity must also run its module (`runsModules`, by the device's
+friendly name): a declaring module that no identity runs is unloaded at
+startup with `MODULE_COMPOSITION_INVALID`.
 
-| Module | Internal apiKey | Calls |
-|---|---|---|
-| `composite-demo` | `composite-demo-internal` | `transform-demo`, `echo-device-module` |
-| `echo-device-client-module` | `aabbcc` | `echo-device-module` |
-| `perf-caller-demo` | `perf-caller-demo-internal` | `perf-callee-demo` |
+| Module | Internal apiKey | Runs (`runsModules`) | Calls |
+|---|---|---|---|
+| `composite-demo` | `composite-demo-internal` | `composite-demo` | `transform-demo`, `echo-device-module` |
+| `echo-device-client-module` | `aabbcc` | `echo-device-client` | `echo-device-module` |
+| `perf-caller-demo` | `perf-caller-demo-internal` | `perf-caller-demo` | `perf-callee-demo` |
 
 Grant whichever ones you load, before starting the server:
 
 ```sh
 node -e "var f='auth.json',fs=require('fs');
   var c=JSON.parse(fs.readFileSync(f));
-  [['composite-demo-internal','composite-demo-identity'],['aabbcc','echo-client-identity'],
-   ['perf-caller-demo-internal','perf-caller-demo-identity']].forEach(function(p){
-    c[p[0]]={userName:p[1], devices:['*']};
+  [['composite-demo-internal','composite-demo-identity','composite-demo'],
+   ['aabbcc','echo-client-identity','echo-device-client'],
+   ['perf-caller-demo-internal','perf-caller-demo-identity','perf-caller-demo']].forEach(function(p){
+    c[p[0]]={userName:p[1], devices:['*'], runsModules:[p[2]]};
   });
   fs.writeFileSync(f, JSON.stringify(c,null,2));"
 ```
+
+Under `--debug` with no auth file (the file provider with no
+`--authConfigPath` and no `COUNTINGHOUSE_API_KEY`: single-tenant, admin), a
+declaring module that no identity runs is bound to the debug key instead
+(to the session identity `debug` when there is no `--debugKey`), so it
+loads. The module is not handed the key: its worker sees a placeholder,
+which the main thread reads as the call's own identity. The log says so
+once per module: "`<module>`: its declared calls authorize as
+the debug key (--debug, no auth file)". Its hops still authorize as the
+identity the module itself names (`as`), which under `--debug` with a
+`--debugKey` must be that key, as before; billing is unchanged: the
+caller's token decides who pays. Under `--debug` with an auth file, a
+declaration no identity runs is the startup error it is everywhere else.
 
 Each gets a `userName` different from its key: user names are shown to callers
 (bills, `check_balance`), so a key must not double as one, and the file auth

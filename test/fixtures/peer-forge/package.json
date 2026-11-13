@@ -1,1 +1,11 @@
-{"name": "peer-forge", "version": "1.0.0", "main": "device.js"}
+{
+  "name": "peer-forge",
+  "version": "1.0.0",
+  "main": "device.js",
+  "countinghouse": {
+    "calls": [
+      "dynamic-device-1/dynService.hello",
+      "dynamic-device-2/dynService.hello"
+    ]
+  }
+}

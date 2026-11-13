@@ -8,5 +8,11 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "mchen6",
-  "license": "MIT"
+  "license": "MIT",
+  "countinghouse": {
+    "calls": [
+      "echo-device/echoService.echo",
+      "echo-device/errorInfoTestService.testErrorInfo"
+    ]
+  }
 }

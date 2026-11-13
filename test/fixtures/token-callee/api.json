@@ -35,6 +35,16 @@
             "output": {
               "schema": "/tokenCallee/slow/output"
             }
+          },
+          {
+            "name": "tick",
+            "description": "Counts one run, like bump; what a caller that declares only bump may not call.",
+            "input": {
+              "schema": "/tokenCallee/tick/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/tick/output"
+            }
           }
         ]
       }

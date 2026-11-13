@@ -75,6 +75,17 @@ describe('auth 19: revoking a module identity closes its open peer channel', fun
     authCli(['grant', CALLER, '*']);
     authCli(['add-user', MODULE_IDENTITY, 'echo-device-client-module']);
     authCli(['grant', MODULE_IDENTITY, '*']);
+    // echo-device-client declares its calls (R2-1 Task 4), so the identity
+    // must run it: the sqlite provider's module_identities row, which the
+    // auth CLI has no command for
+    execFileSync(process.execPath, ['-e', `
+      const sqlite3 = require(${JSON.stringify(require.resolve('sqlite3', {paths: [ROOT]}))});
+      const db = new sqlite3.Database(${JSON.stringify(DB_PATH)});
+      db.serialize(() => {
+        db.run('CREATE TABLE IF NOT EXISTS module_identities (moduleName TEXT PRIMARY KEY, apiKey TEXT NOT NULL)');
+        db.run('INSERT OR REPLACE INTO module_identities (moduleName, apiKey) VALUES (?, ?)', ['echo-device-client', ${JSON.stringify(MODULE_IDENTITY)}]);
+      });
+      db.close((e) => { if (e) { console.error(e.message); process.exit(1); } });`], {cwd: ROOT, stdio: 'pipe'});
 
     waitForReady(startShell(`"./bin/countinghouse"${redisFlag()} --workerThread --bindAddr 127.0.0.1 --port ${PORT
          } --authProvider sqlite --authConfigPath ${DB_PATH

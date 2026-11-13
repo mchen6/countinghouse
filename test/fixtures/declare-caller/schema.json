@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "declareService": {
+    "attempt": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "string",
+            "enum": [
+              "declared",
+              "clientOtherDevice",
+              "rawHopOtherDevice",
+              "rawHopOtherAction",
+              "clientOtherAction",
+              "loadSecond",
+              "seeComposition"
+            ]
+          },
+          "as": {
+            "type": "string"
+          },
+          "callee": {
+            "type": "string"
+          },
+          "other": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "route"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "n": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "n"
+        ]
+      }
+    }
+  }
+}
