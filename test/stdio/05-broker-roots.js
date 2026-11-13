@@ -5,7 +5,8 @@
 // true). The rule for each platform is a pure function, so these run on every
 // system (the stdio job: ubuntu, macos, windows).
 const assert = require('assert');
-const {underFor} = require('../../lib/fs-broker/roots');
+const {underFor, virtualFormFor} = require('../../lib/fs-broker/roots');
+const {toVirtualPath} = require('../../lib/fs-broker/namespace');
 
 describe('stdio 05: a path under the granted roots (issue #40)', () => {
   describe('POSIX: as before', () => {
@@ -56,6 +57,47 @@ describe('stdio 05: a path under the granted roots (issue #40)', () => {
       assert.strictEqual(under('E:\\a\\lib\\x.js', ['D:\\a\\lib']), false);
       assert.strictEqual(under('D:\\a\\lib/x.js', ['D:\\a\\lib']), false);
       assert.strictEqual(under('D:\\a\\lib\\x.js', []), false);
+    });
+  });
+
+  // Round 2: a namespace path (/app, /data, /tmp) built with Windows' path
+  // functions arrives in "\" form; the patch gives it the POSIX form before
+  // anything else sees it, so the broker's namespace and ".." checks see what
+  // they see for the "/" form.
+  describe('a namespace path\'s form for the broker', () => {
+    const asBroker = (form, v) => toVirtualPath(form(v), '/app');
+
+    it('Windows: \\app\\package.json is the module\'s /app/package.json', () => {
+      const form = virtualFormFor('win32');
+      assert.strictEqual(form('\\app\\package.json'), '/app/package.json');
+      assert.strictEqual(asBroker(form, '\\app\\package.json'), '/app/package.json');
+      assert.strictEqual(form('\\data\\a.txt'), '/data/a.txt');
+      assert.strictEqual(form('\\tmp'), '/tmp');
+    });
+
+    it('Windows: "\\" with ".." reaches the namespace exactly as the "/" form does', () => {
+      const form = virtualFormFor('win32');
+      const posixForm = toVirtualPath('/app/../../x', '/app');
+      assert.strictEqual(asBroker(form, '\\app\\..\\..\\x'), posixForm);
+      assert.strictEqual(asBroker(form, '/app\\..\\..\\x'), posixForm);
+      assert.strictEqual(asBroker(form, '\\data\\..\\app\\x'), toVirtualPath('/data/../app/x', '/app'));
+    });
+
+    it('Windows: nothing else is converted: a host path, a UNC or device path, a relative path, a look-alike, a non-string', () => {
+      const form = virtualFormFor('win32');
+      for (const v of ['D:\\app\\x', 'd:\\data\\x', '\\\\srv\\share\\app\\x', '\\\\?\\C:\\app\\x', 'data\\x', '\\application\\x', '\\apps\\x', '/app/x']) {
+        assert.strictEqual(form(v), v, v);
+      }
+      const buf = Buffer.from('\\app\\x');
+      assert.strictEqual(form(buf), buf);
+    });
+
+    it('POSIX: unchanged; a "\\" in a file name stays a literal', () => {
+      for (const platform of ['linux', 'darwin']) {
+        const form = virtualFormFor(platform);
+        for (const v of ['/app/a\\b', '/app\\..\\..\\x', '\\app\\x', 'a\\b']) assert.strictEqual(form(v), v, `${platform} ${v}`);
+        assert.strictEqual(asBroker(form, '/app/a\\b'), '/app/a\\b');
+      }
     });
   });
 });
