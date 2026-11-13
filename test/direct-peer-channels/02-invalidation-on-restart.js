@@ -53,19 +53,31 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
       .send({path: './pre-installed-packages/echo-device-module', name: 'echo-device-module', version: '1.3.0'})
       .end(() => {}); // response timing isn't needed -- the race calls below are what matters
 
+      // The window opens when the old worker has ended (it may take up to 3 s
+      // to acknowledge; until then the channel still reaches it) and closes
+      // when the new one is online. test8.js holds it open 2 s
+      // (COUNTINGHOUSE_TEST_RESTART_HOLD_MS, lib/module-manager.js), whatever
+      // the boot time. So calls go back to back from the moment the restart is
+      // asked for, until the window has opened (a PEER_GONE or
+      // MODULE_RELOADING) and closed again (the steady DEVICE_INVOKE_FAIL), or
+      // 60 s: a call of a few ms cannot miss a 2 s window. Fixed delays did
+      // (CI run 43361707636: five calls at 200 ms steps, all before it opened
+      // or after it closed).
       const raceResults = [];
-      let racesRemaining = 5;
-      const raceInterval = setInterval(() => {
+      const raceUntil = Date.now() + 60000;
+      let opened = false;
+      let openedAt = null;
+      const requestedAt = Date.now();
+      function race() {
         invoke((err, result) => {
-          if (err) { raceResults.push({error: err.message}); } else { raceResults.push(result); }
+          raceResults.push(err ? {error: err.message} : Object.assign(result, {at: Date.now()}));
+          const code = err ? null : result.code;
+          if ((code === 'PEER_GONE' || code === 'MODULE_RELOADING') && !opened) { opened = true; openedAt = Date.now(); }
+          if ((opened && code === 'DEVICE_INVOKE_FAIL') || Date.now() > raceUntil) return checkRaces();
+          return setImmediate(race);
         });
-        racesRemaining--;
-        if (racesRemaining === 0) {
-          clearInterval(raceInterval);
-          // give the races a moment to all resolve before inspecting them
-          setTimeout(() => { checkRaces(); }, 500);
-        }
-      }, 200);
+      }
+      race();
 
       function checkRaces() {
         // Every race call must resolve fast -- PeerChannel's own local
@@ -81,7 +93,7 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
             return done(new Error(`direct-peer-channels 02 fail: race call ${i} took ${r.ms}ms -- looks like it hung waiting for a stale port instead of being invalidated (got code: ${r.code})`));
           }
           if (r.code === 'DEVICE_NOT_FOUND') {
-            return done(new Error(`direct-peer-channels 02 fail: race call ${i} got DEVICE_NOT_FOUND inside a restart window -- the reload's state was recorded too late or cleared too early: ${JSON.stringify(raceResults)}`));
+            return done(new Error(`direct-peer-channels 02 fail: race call ${i} got DEVICE_NOT_FOUND inside a restart window -- the reload's state was recorded too late or cleared too early: ${JSON.stringify(raceResults.slice(Math.max(0, i - 3), i + 3))}`));
           }
         }
 
@@ -99,8 +111,11 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
         const sawChannelDisruption = raceResults.some((r) => {
           return r.code === 'PEER_GONE' || r.code === 'MODULE_RELOADING';
         });
+        // What the run saw, for the log: how long the window stayed open.
+        const closedAt = raceResults.length > 0 ? raceResults[raceResults.length - 1].at : null;
+        console.log(`    [observed] restart window opened ${openedAt != null ? openedAt - requestedAt : '?'} ms after the request and stayed open ${openedAt != null && closedAt != null ? closedAt - openedAt : '?'} ms; ${raceResults.length} calls`);
         if (sawChannelDisruption !== true) {
-          return done(new Error(`direct-peer-channels 02 fail: no race call observed PEER_GONE or MODULE_RELOADING -- test did not exercise the restart window: ${JSON.stringify(raceResults)}`));
+          return done(new Error(`direct-peer-channels 02 fail: no race call observed PEER_GONE or MODULE_RELOADING in 60 s of calls -- test did not exercise the restart window: ${raceResults.length} calls, codes ${JSON.stringify([...new Set(raceResults.map((r) => r.code))])}`));
         }
 
         // Finally, wait for the new worker instance to be fully back
