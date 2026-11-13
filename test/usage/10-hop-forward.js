@@ -4,8 +4,10 @@
 // hop's usageCall only once user-auth has let the hop through (so a refusal
 // reveals nothing about devices the caller may not use), grants the callee's
 // worker just before the send and releases it when the hop answers; a direct
-// peer hop gives the callee only {input}. Driven directly: fake workers and a
-// user-auth stub, restored after.
+// peer hop gives the callee only {input} and its caller. On both routes the
+// callee gets its caller (args.ctx: the hop's identity and the key it bills),
+// so a part's own remote calls are billed (test/remote/11). Driven directly:
+// fake workers and a user-auth stub, restored after.
 const assert = require('assert');
 const path = require('path');
 const {MessageChannel} = require('worker_threads');
@@ -53,6 +55,9 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const caller = {workerId: 1, sendActionInvokeReplyToChild: (m) => replies.push(m)};
     return {sent, replies, callee, caller, dm: {deviceMap: {d2: callee}}};
   }
+  // The callee's caller on the main-thread route: the stub session's identity
+  // (it has no appKey) and the hop's billing key.
+  const CTX = {appKey: null, username: null, isAdmin: false, billingKey: 'k'};
   const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', args, 'm1', w.caller);
   const begin = () => { const c = usage().beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
 
@@ -99,7 +104,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {v: 1}, usageCall: call});
     assert.strictEqual(w.sent.length, 1);
-    assert.deepStrictEqual(w.sent[0].m.args, {input: {v: 1}, usageCall: call});
+    assert.deepStrictEqual(w.sent[0].m.args, {input: {v: 1}, usageCall: call, ctx: CTX});
     assert.strictEqual(usage().ownsCall(call, 2), true, 'the part may call on under it');
     w.sent[0].cb(null, {output: {}});
     assert.strictEqual(usage().ownsCall(call, 2), false, 'released when the hop answers');
@@ -146,7 +151,13 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {}, usageCall: call});
     assert.deepStrictEqual([w.sent.length, w.replies.length], [1, 0]);
-    assert.deepStrictEqual(w.sent[0].m.args, {input: {}});
+    assert.deepStrictEqual(w.sent[0].m.args, {input: {}, ctx: CTX});
+  });
+
+  it('a hop whose args are null is forwarded without a throw on the main thread', () => {
+    const w = workers();
+    assert.doesNotThrow(() => forward(w, null));
+    assert.strictEqual(w.sent.length, 1);
   });
 
   it('a hop with no usageCall is forwarded as it always was', () => {
@@ -158,7 +169,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   let peerRestore = null;
   afterEach(() => { if (peerRestore != null) { peerRestore(); peerRestore = null; } });
 
-  it('a direct peer hop gives the callee only {input}: no usageCall crosses it', (done) => {
+  it('a direct peer hop gives the callee only {input} and its caller: no usageCall crosses it', (done) => {
     const CHUtil = require(path.join(LIB, 'countinghouse-util'));
     const ci = CHUtil.ci;
     const seen = [];
@@ -170,7 +181,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     ch.port1.postMessage({id: 1, command: 'peer-invoke', deviceID: 'd2', serviceID: 'svc', actionName: 'act', input: {v: 1}, billingKey: 'k', usageCall: 5});
     function finish() {
       try {
-        assert.deepStrictEqual(seen, [{input: {v: 1}}]);
+        assert.deepStrictEqual(seen, [{input: {v: 1}, ctx: {appKey: null, username: null, isAdmin: false, billingKey: 'k'}}]);
         done();
       } catch (e) { done(e); }
     }
