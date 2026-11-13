@@ -375,7 +375,7 @@ operator adds an entry for it: no access outside its own directory, and no
 environment variables at all. Under `audit` the declaration is granted.
 `fs`, `env` and `limits` take effect now. `net` is validated and logged, and
 takes effect when the network brokers ship, so declare it now and expect to
-need it. Targets of `CHUtil.request` and `CHUtil.createSOAPClient` are already checked
+need it. Targets of `CHUtil.request` are already checked
 against the effective `net` entries: under `audit` a disallowed target is
 logged and the request still goes ahead; only `enforce` refuses it. Under
 `enforce`, `CHUtil.request` also accepts only the ordinary request options (`method`,

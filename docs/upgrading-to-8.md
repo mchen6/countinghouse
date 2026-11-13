@@ -105,6 +105,11 @@ you have to do. What the sandbox does and does not protect is in
   `throw new DeviceError('ARGUMENTS_INVALID')`; after:
   `return ctx.error('INPUT_REJECTED', 'text must be a string')`. See
   [module-development.md](module-development.md#failing-a-call).
+- **Removed: `CHUtil.createSOAPClient`.** SOAP support and the `soap`
+  dependency are gone; a module that calls it fails at call time
+  (`CHUtil.createSOAPClient is not a function`). A module that needs SOAP
+  depends on a SOAP library of its own and declares its hosts under
+  `countinghouse.permissions.net`.
 - **New: a remote MCP server per module.** A module may declare one in
   `countinghouse.remotes` and call it with `ctx.call('remote:<name>/<tool>')`;
   the main thread holds the connection and the credential
