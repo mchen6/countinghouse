@@ -117,6 +117,7 @@ one) as well as the ports it binds.
 | `test/remote/07-counting.js` | 9728–9729 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
+| `test/remote/11-hop-then-remote.js` | 9742–9743 |
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
