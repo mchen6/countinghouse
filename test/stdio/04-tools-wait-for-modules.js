@@ -6,7 +6,8 @@
 // Under --stdio:
 // - initialize answers at once, and declares tools.listChanged;
 // - tools/list, and tools/call of a module's tool, wait for the startup
-//   discovery of the --loadModule modules (loaded or failed), bounded (20 s;
+//   discovery of the --loadModule modules (loaded or failed, failing
+//   composition verification included; test/composition/19), bounded (20 s;
 //   the suite shortens it with COUNTINGHOUSE_TEST_STDIO_READY_BOUND_MS); a
 //   call of a built-in tool does not wait; the client leaving opens the gate;
 // - once a client has listed, a change to the tool list it was shown sends
