@@ -67,6 +67,21 @@ if (options.remoteLimitInvalid != null) {
     JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// --remoteOriginMap moves where a credential goes, so it is honoured only
+// with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a
+// module never sees: every COUNTINGHOUSE_* is withheld), and says so.
+if (options.remoteOriginMapInvalid != null) {
+  console.error(options.remoteOriginMapInvalid);
+  process.exit(2);
+}
+if (options.remoteOriginMap != null) {
+  if (process.env.COUNTINGHOUSE_ACCEPTANCE !== '1') {
+    console.error('--remoteOriginMap needs COUNTINGHOUSE_ACCEPTANCE=1 in the environment: it sends a declared origin\'s calls, credential included, to a local stand-in, for acceptance runs only');
+    process.exit(2);
+  }
+  options.remoteOriginMapActive = true;
+  for (const [from, to] of Object.entries(options.remoteOriginMap)) console.error(`remote origin mapped: ${from} -> ${to} (acceptance only)`);
+}
 if (options.remoteCredentials != null || process.argv.some((a) => a === '--remoteCredentials' || a.startsWith('--remoteCredentials='))) {
   try {
     require('./lib/remote/credentials').configure(options.remoteCredentials);

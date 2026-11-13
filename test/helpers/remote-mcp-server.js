@@ -46,17 +46,18 @@ function answer(name, args) {
   }
 }
 
-// -> Promise<{headers: [object], calls: [tool name], connections(): number,
+// -> Promise<{headers: [object], paths: [request path], calls: [tool name], connections(): number,
 // open(): number, sockets(): Set of the open ones, close(): Promise,
 // setMode(mode), extraTools: []}>
 function startRemoteServer(port, opts) {
   const o = Object.assign({mode: 'ok', redirectTo: null}, opts);
-  const state = {headers: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: []};
+  const state = {headers: [], paths: [], calls: [], connections: 0, open: 0, sockets: new Set(), mode: o.mode, extraTools: []};
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
     req.on('end', async () => {
       state.headers.push(req.headers);
+      state.paths.push(req.url);
       if (state.mode === '401') { res.writeHead(401, {'content-type': 'text/plain'}); return res.end('unauthorized'); }
       if (state.mode === 'redirect') { res.writeHead(302, {location: o.redirectTo}); return res.end(); }
       if (state.mode === 'garbage') { res.writeHead(200, {'content-type': 'application/json'}); return res.end('not json'); }
@@ -97,6 +98,7 @@ function startRemoteServer(port, opts) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', () => resolve({
       headers: state.headers,
+      paths: state.paths,
       calls: state.calls,
       connections: () => state.connections,
       open: () => state.open,
