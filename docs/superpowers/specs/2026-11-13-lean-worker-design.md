@@ -185,29 +185,42 @@ output check that makes a closed output schema a guarantee runs in the
 module's own worker, where code in the module can interfere with it. On the
 main thread the module cannot reach it.
 
-### 5. A cap on result size
+### 5. Results: what the main thread unpacks, and the cap on it
 
-Today nothing caps the size of a module's result. The main thread pays to
-unpack whatever a worker sends (303 ms at 23 MB in the measurement), whatever
-the validation does.
+Today a worker's reply crosses with a plain postMessage, which rebuilds the
+whole object on the main thread before any code there can look at it, and
+nothing caps its size (unpacking 23 MB took 303 ms in the measurement).
 
-New option `--maxResultBytes`, default 16 MiB, matching the file broker's
-largest single transfer, measured as the v8-serialised size.
+The maintainer asked (2026-11-13) that a size cap not become a hard limit on
+what modules can pass to each other. So the design separates two kinds of
+result (the reviewer's call, refining the first draft):
 
-Today a reply crosses with a plain postMessage, which rebuilds the whole
-object on the main thread before any code there can look at its size. So
-the cap needs one protocol change (the reviewer's call): a worker's reply to
-an invoke (result, fault and job result alike) crosses as a buffer made with
-`v8.serialize` and transferred, not copied. The main thread reads the
-buffer's length first; over the cap it answers RESULT_TOO_LARGE (a new code,
-with the size and the cap in its text) and never deserialises it; under the
-cap it deserialises, then validates. The worker also checks before sending,
-to give a clear error early, but only the main-side check is the guarantee,
-since code in the worker can interfere with the worker's own check.
+- **A hop's result, passed from one module to another,** crosses as a buffer
+  made with `v8.serialize` and transferred, not copied. The main thread
+  routes it without deserialising it: it reads only the buffer's length (for
+  the receipt and usage records) and transfers it on to the calling module's
+  worker, which deserialises it and validates it against the called action's
+  output schema with standalone validation code (as on the peer path,
+  section 6). The calling module is the one that consumes it, so the check
+  protects the right party, and the main thread's event loop never pays for
+  the size. Its only limit is memory: `--maxHopResultBytes`, default
+  256 MiB, configurable.
+- **A final result, leaving the runtime** (an MCP tools/call result, an HTTP
+  invoke-action answer, a job's stored result), is deserialised and
+  validated on the main thread, which needs the object to answer the client.
+  Its cap is `--maxResultBytes`, default 16 MiB, configurable by the
+  operator. A result for a model is far smaller in practice: 16 MiB is
+  millions of tokens, well past any model's context, so the default never
+  binds a tool whose answer a model can actually read.
 
-This applies to every worker's invoke replies. A peer-channel
-reply is checked by the calling worker, which protects only itself.
-Single-thread mode has no cross-thread copy and is not capped.
+Over either cap, the main thread answers RESULT_TOO_LARGE (a new code, with
+the size and the cap in its text) from the buffer's length alone, never
+deserialising it. The worker also checks before sending, to give the error
+early, but only the main thread's check is the guarantee. Single-thread mode
+has no cross-thread copy and is not capped. A module that needs to hand a
+client something larger than any sensible cap (a file, a dataset) returns a
+reference to it (a path in its data namespace, a URL), which is the right
+shape for large data anyway.
 
 ### 6. Direct peer channels
 
@@ -278,8 +291,11 @@ handler-map module has no device class.
 - Validation on the main thread: a bad input never reaches the worker; a bad
   output is refused with today's code and text; a module that tampers with
   globals in its worker cannot make an invalid output pass.
-- Result size cap: a result over the cap is refused with RESULT_TOO_LARGE
-  without the main thread unpacking it; one just under the cap passes.
+- Result size caps: a final result over --maxResultBytes and a hop result
+  over --maxHopResultBytes are refused with RESULT_TOO_LARGE without the main
+  thread deserialising them; one just under each cap passes; a hop result
+  larger than --maxResultBytes reaches the calling module intact, and the
+  main thread's time on it does not grow with its size.
 - Peer channels: invalid input over a peer channel is refused before the
   called handler runs; an invalid output is refused to the caller.
 - The golden tools/list sample and mcp-contract 07's error golden do not move.
@@ -304,7 +320,8 @@ reviewer's high review:
    routed calls, with today's workers otherwise unchanged (they skip their
    own validation). This step alone moves the guarantee to the main thread.
    CDIF-style modules are refused from this step on.
-2. The result size cap.
+2. Results as transferred buffers: hop results routed undeserialised and
+   validated in the calling worker, final results capped on the main thread.
 3. The lean worker entry and the CHUtil facade for every module, with the
    allowed-files test; today's runtime-per-worker boot, dynamic discovery and
    device events removed.
@@ -321,7 +338,8 @@ kind of worker.
 Decided, 2026-11-13: the lean worker is in the first release (the
 maintainer: "I hope lean worker feature is in the first release"). So steps 1
 and 2 start now, before R2-1 merges, and steps 3-5 follow R2-1 directly.
-The default result cap stays at 16 MiB unless the maintainer says otherwise.
+Result caps: 16 MiB for a final result leaving the runtime, 256 MiB for a
+hop result between modules, both configurable (section 5).
 
 ## Left to the builder
 
