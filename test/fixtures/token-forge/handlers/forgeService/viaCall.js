@@ -5,10 +5,23 @@ const {state, waitFor, holds} = require('../../lib/forge');
 // until another call (by marker) has finished, so a token stashed from it is
 // still live while the other call uses it. `exposed`: whether the token the
 // hop carried can be read off ctx (it must not be).
+// What the worker's own options say (lib/cli-options.js, reached through
+// require.cache under --moduleSandbox off): the review of #138 found a
+// worker reading the request timer as seconds again.
+function workerOptions() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/cli-options.js') && !k.startsWith('/app/'));
+  return (key != null) ? require.cache[key].exports : null;
+}
+
 module.exports = async (input, ctx) => {
   const marker = input.marker;
   const forge = input.forge || {};
-  const out = {code: null, n: null, stashed: false, exposed: null, tookMs: null};
+  const out = {code: null, n: null, stashed: false, exposed: null, requestTimeout: null, requestTimeoutMs: null, tookMs: null};
+  if (input.probe === 'requestTimeout') {
+    const o = workerOptions();
+    if (o != null) { out.requestTimeout = o.requestTimeout; out.requestTimeoutMs = o.requestTimeoutMs; }
+    return {output: out};
+  }
   // drainFirst: that many Redis commands first, fire and forget, each a
   // message to the main thread, so that under a low --moduleMessageRate the
   // hop's own announcement is the message refused (the review of #138, 6).

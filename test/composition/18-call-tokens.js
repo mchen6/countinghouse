@@ -250,6 +250,12 @@ describe('composition 18: the caller\'s timeout, the worker\'s timer, and the me
     });
   });
 
+  it('(#138-2b) a worker reads the request timer in milliseconds, as the main thread gave it', async () => {
+    server = await start(['--requestTimeout', '2', '--directPeerChannels']);
+    const out = await via({marker: 'probe', probe: 'requestTimeout'});
+    assert.deepStrictEqual([out.requestTimeout, out.requestTimeoutMs], [2000, 2000], JSON.stringify(out));
+  });
+
   // The caller worker spends its message budget first, so the hop's own
   // announcement is the message the main thread refuses: the hop fails
   // RATE_LIMITED at once, not CALL_TOKEN_INVALID a second later.
