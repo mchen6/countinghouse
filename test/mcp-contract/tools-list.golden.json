@@ -262,6 +262,38 @@
             "tokensOutEst"
           ],
           "additionalProperties": false
+        },
+        "standIn": {
+          "title": "server calls an acceptance stand-in answered (--remoteOriginMap): in no group or total",
+          "type": "object",
+          "properties": {
+            "serverCalls": {
+              "type": "integer"
+            },
+            "bytesIn": {
+              "type": "integer"
+            },
+            "linesIn": {
+              "type": "integer"
+            },
+            "tokensInEst": {
+              "type": "integer"
+            },
+            "servers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "required": [
+            "serverCalls",
+            "bytesIn",
+            "linesIn",
+            "tokensInEst",
+            "servers"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
