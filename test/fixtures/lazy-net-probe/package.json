@@ -1,0 +1,10 @@
+{
+  "name": "lazy-net-probe",
+  "version": "1.0.0",
+  "main": "device.js",
+  "countinghouse": {
+    "permissions": {
+      "net": [{"host": "127.0.0.1"}]
+    }
+  }
+}
