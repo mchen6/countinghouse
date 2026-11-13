@@ -166,6 +166,23 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close();
   });
 
+  // #141 N6: the start hook's answer cannot set the run's bookkeeping; #141
+  // (item 3's edge): a job's own timeout is validated where it comes in, and
+  // the token's bound is the run's real timer.
+  it('the start hook\'s answer cannot name the owner or the timeout; a job\'s timeout is a whole number of milliseconds', async () => {
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, null, {}));
+    runner.setStartHook(() => ({usageCall: 8, ownerKey: 'victim', timeoutMs: 1}));
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'h', timeout: 5000}, 'd', 's', 'act', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
+    const got = ci.calls[0].extraArgs;
+    assert.notStrictEqual(got.ownerKey, 'victim', 'the start hook named the owner');
+    assert.deepStrictEqual([got.usageCall, got.timeoutMs], [8, 5000], JSON.stringify(got));
+    const words = (opts) => call(runner, 'addJob', INTERNAL, Object.assign({name: 't'}, opts), 'd', 's', 'a', {}).then((x) => (x.err != null ? x.err.message : null));
+    const expected = new (require('../../lib/countinghouse-error').CountinghouseError)('ADD_JOB_ERROR', 'timeout must be a whole number of milliseconds, at least 1').message;
+    assert.deepStrictEqual([await words({timeout: 0}), await words({timeout: -5}), await words({timeout: 'soon'}), await words({timeout: 1.5})], [expected, expected, expected, expected]);
+    runner.close();
+  });
+
   it('refuses what job-control refuses, in the same words', async () => {
     const {runner} = runnerWith((i, cb) => setImmediate(cb, null, {}));
     assert.strictEqual((await call(runner, 'addJob', INTERNAL, {name: 'b', attempts: 11}, 'd', 's', 'a', {})).err.message,

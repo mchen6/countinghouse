@@ -441,10 +441,23 @@ and bill the caller's tenant for hops that never happened. So:
   with its token (the call answered, or its worker ended) or with its
   channel; held metering requests are capped per channel (64 at once), and
   one beyond the cap is refused at once.
-- **The deduction is waited for** (the review of #138, 7), as the routed
-  path waits for it: a deadline that answered "served unbilled" while the
-  deduction could still charge told the log something false. The token
-  check stays in memory and fails closed.
+- **The deduction is waited for up to 500 ms** (the review of #138, 7, and
+  the medium review of its fix); past that the hop is answered with its
+  billing pending (`billingPending: true`, which reaches the caller as the
+  hop's `platformMetering`), never "unbilled": the deduction may still
+  charge, and its outcome is logged when it comes. The bound keeps a
+  stalled Redis from holding the callee's dispatch slots. The token check
+  stays in memory and fails closed.
+- **The deadline is enforced on the match too** (the review of #141, N1):
+  the announcement's time starts the caller's clock, and a module can post
+  an announcement itself, early; so a metering request for an announcement
+  older than the caller's timeout is refused (no handler runs), a bill
+  arriving past the deadline is refused `PEER_CHANNEL_TIMEOUT`, and the
+  callee delivers nothing on a refused bill (as on `RATE_LIMITED`): a late
+  hop is neither billed nor served. A pair forgotten (a channel closed)
+  takes its matched invokes with it, so a hop the caller saw fail
+  `PEER_GONE` is not billed. The chain's depth is bounded at 64 hops:
+  deeper, the hop is refused `HOP_CHAIN_TOO_DEEP`.
 - **Bounds and the chain** (the review of #138, 1, 2a, 4, 8): a child token
   expires no later than its parent, goes with it, and resolves only while
   every ancestor is live, so a part that never answered cannot mint itself a

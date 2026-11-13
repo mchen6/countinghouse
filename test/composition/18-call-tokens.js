@@ -468,6 +468,23 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       tokens().dropFor(6);   // the parent's worker ended: everything under it is over too
       assert.strictEqual(tokens().resolve(c3, {workerId: 7}), null, 'the chain outlived the parent\'s worker');
     });
+
+    // #141 N2: the chain's depth is bounded (mutual recursion between two
+    // composites would otherwise grow it without end), and dropping a chain
+    // does not recurse.
+    it('(#141-N2) a chain at the depth limit refuses the next hop with HOP_CHAIN_TOO_DEEP; dropping a deep chain does not throw', () => {
+      const limit = tokens().MAX_CHAIN_DEPTH;
+      assert.ok(Number.isInteger(limit) && limit >= 8, 'no depth limit');
+      const root = tokens().issue(ENTRY(9));
+      let last = root;
+      for (let i = 0; i < limit; i++) last = tokens().issue(Object.assign(ENTRY(9), {parent: last}));
+      let err = null;
+      try { tokens().issue(Object.assign(ENTRY(9), {parent: last})); } catch (e) { err = e; }
+      assert.ok(err != null && err.code === 'HOP_CHAIN_TOO_DEEP', `the hop past the limit was issued: ${err && err.code}`);
+      assert.notStrictEqual(tokens().resolve(last, {workerId: 9}), null);
+      assert.doesNotThrow(() => tokens().drop(root));
+      assert.strictEqual(tokens().resolve(last, {workerId: 9}), null, 'the deep chain survived its root\'s drop');
+    });
   });
 
   describe('the broker: announce and match', () => {
@@ -733,9 +750,58 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       bill(replyTo('m14').token, 'b14');
       await sleep(50);
       const r = replyTo('b14');
-      assert.ok(r != null && !refused(r) && r.errMsg == null && r.meteringResult == null, JSON.stringify(r));
+      // #141 N1: a coded refusal, which the callee treats as RATE_LIMITED (the
+      // result is not delivered), so a late hop is neither billed nor served
+      assert.ok(r != null && r.errCode === 'PEER_CHANNEL_TIMEOUT' && r.meteringResult == null, JSON.stringify(r));
       assert.deepStrictEqual(billed, [], 'charged after the caller\'s timeout');
       assert.strictEqual(broker.unbilled.size, 0);
+    });
+
+    // #141 N1: the announcement's time is the deadline's start, and a module
+    // can post an announcement itself, early. So the match too is refused
+    // once the deadline has passed: no handler runs for an invoke whose
+    // announcement is older than the caller's timeout.
+    it('(#141-N1) an announcement older than the caller\'s timeout matches nothing: no handler runs', async () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, requestTimeout: 0.15});
+      announce(22, tokens().issue(ENTRY(caller.workerId)));
+      await sleep(200);
+      meter(22, 'm22');
+      await sleep(50);
+      assert.ok(refused(replyTo('m22')), `served past the deadline: ${JSON.stringify(replyTo('m22'))}`);
+      assert.strictEqual(broker.announced.size, 0, 'the stale announcement stayed');
+      assert.deepStrictEqual(billed, []);
+    });
+
+    // #141 N5: a channel gone (PEER_GONE for the caller) takes its matched
+    // invokes with it: a bill for one of them is refused, nothing charged.
+    // #141 N4: the worker's bill credit goes with the entry.
+    it('(#141-N5, N4) a forgotten pair takes its matched invokes and the worker\'s bill credits with it', async () => {
+      const e = ENTRY(caller.workerId);
+      announce(23, tokens().issue(e));
+      meter(23, 'm23');
+      await sleep(50);
+      assert.ok(served('m23'));
+      assert.strictEqual(callee.billCredits, 1);
+      const token = replyTo('m23').token;
+      broker.forgetPair(pair());
+      assert.strictEqual(broker.unbilled.size, 0, 'the pair\'s matched invoke outlived the pair');
+      assert.strictEqual(callee.billCredits, 0, 'the credit outlived the entry');
+      bill(token, 'b23');
+      await sleep(50);
+      assert.ok(refused(replyTo('b23')), JSON.stringify(replyTo('b23')));
+      assert.deepStrictEqual(billed, []);
+    });
+
+    it('(#141-N4) the sweep forgetting a matched invoke past its deadline takes the credit too', async () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, requestTimeout: 0.15});
+      announce(24, tokens().issue(ENTRY(caller.workerId)));
+      meter(24, 'm24');
+      await sleep(50);
+      assert.strictEqual(callee.billCredits, 1);
+      await sleep(200);
+      broker.sweep();
+      assert.strictEqual(broker.unbilled.size, 0);
+      assert.strictEqual(callee.billCredits, 0, 'the credit outlived the sweep');
     });
 
     // The review of #138 (4): the cap on matched, unbilled invokes used to
@@ -760,8 +826,11 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       bill(replyTo('m1000').token, 'b1000');
       await sleep(50);
       assert.deepStrictEqual(billed, [e.billingKey], 'the oldest match went free');
-      // a channel granted again on the same pair is a new entry: its count starts over
+      // the count is by pair key (#141 N3), carried across grants; a pair
+      // forgotten takes its matched invokes with it (N5), so a channel
+      // granted again on it starts clean
       broker.forgetPair(pair());
+      assert.strictEqual(broker.unbilled.size, 0);
       broker.channelRegistry[pair()] = {callerWM: caller, calleeWM: callee, grants: {}};
       announce(2000 + cap, tokens().issue(e));
       meter(2000 + cap, 'm-regranted');
@@ -858,6 +927,20 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       } finally {
         cli.setOptions({workerThread: false});
       }
+    });
+  });
+
+  // #141 N1: a bill refused as late (PEER_CHANNEL_TIMEOUT) or unmatched
+  // (CALL_TOKEN_INVALID) is not served, as a rate-refused one is not.
+  describe('the callee\'s metered finish', () => {
+    it('(#141-N1) delivers nothing on a late or unmatched bill, as on a rate-limited one', () => {
+      const PeerChannel = require('../../lib/peer-channel');
+      const out = [];
+      for (const code of ['RATE_LIMITED', 'PEER_CHANNEL_TIMEOUT', 'CALL_TOKEN_INVALID']) {
+        PeerChannel.finishMeteredHop(Object.assign(new Error('x'), {code: code}), {served: true}, null, (e, d) => out.push([code, e != null ? e.code : null, d]));
+      }
+      PeerChannel.finishMeteredHop(Object.assign(new Error('redis'), {code: 'SYSTEM_ERROR_USERDB_NA'}), {served: true}, null, (e, d) => out.push(['other', e != null ? e.code : null, d]));
+      assert.deepStrictEqual(out, [['RATE_LIMITED', 'RATE_LIMITED', null], ['PEER_CHANNEL_TIMEOUT', 'PEER_CHANNEL_TIMEOUT', null], ['CALL_TOKEN_INVALID', 'CALL_TOKEN_INVALID', null], ['other', null, {served: true}]]);
     });
   });
 
