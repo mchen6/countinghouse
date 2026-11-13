@@ -7,7 +7,7 @@ const path    = require('path');
 const spawn   = require('child_process').spawn;
 const request = require('supertest');
 const waitForReady = require('./wait-for-ready');
-const {redisArgs} = require('./test-env');
+const {redisArgsFor} = require('./test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 
@@ -22,9 +22,7 @@ function startServer(port, args, opts) {
   const root = opts.root || ROOT;
   return new Promise((resolve, reject) => {
     const server = spawn(process.execPath,
-      // --redisUrl from CH_TEST_REDIS_URL (test/helpers/test-env.js) unless the test
-      // passes its own: two would reach minimist as an array.
-      [path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(args, args.includes('--redisUrl') ? [] : redisArgs()),
+      [path.join(root, 'framework.js'), '--bindAddr', '127.0.0.1', '--port', String(port)].concat(args, redisArgsFor(args)),
       {cwd: opts.cwd || root,
        env: Object.assign({}, process.env, {NODE_PATH: path.join(root, 'lib')}, opts.env || {}),
        stdio: ['ignore', 'pipe', 'pipe'], detached: true});
@@ -113,4 +111,4 @@ function waitFor(predicate, timeoutMs, label, describe) {
   });
 }
 
-module.exports = {ROOT, startServer, stopServer, mcpCall, post, waitFor};
+module.exports = {ROOT, startServer, stopServer, mcpCall, post, waitFor, redisArgsFor};

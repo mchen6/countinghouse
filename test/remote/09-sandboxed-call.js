@@ -39,17 +39,11 @@ describe('remote 09: a module\'s remote call under --moduleSandbox enforce', fun
     const allowance = path.join(root, 'remote-credentials.json');
     fs.writeFileSync(allowance, JSON.stringify({[`http://127.0.0.1:${STAND_IN}`]: ['CH_TEST_REMOTE_TOKEN']}));
     standIn = await startRemoteServer(STAND_IN);
-    // --store local keeps no Redis, and startServer would add the harness's
-    // --redisUrl (CH_TEST_REDIS_URL), which the runtime refuses beside it.
-    const redisUrl = process.env.CH_TEST_REDIS_URL;
-    delete process.env.CH_TEST_REDIS_URL;
-    try {
+    // --store local keeps no Redis: startServer gives it no --redisUrl
+    // (test/helpers/test-env.js redisArgsFor).
     server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', 'enforce',
       '--store', 'local', '--storePath', path.join(root, 'store'), '--moduleDataPath', path.join(root, 'module_data'), '--modulePath', path.join(root, 'modules'),
       '--remoteCredentials', allowance, '--loadModule', probe], {env: {CH_TEST_REMOTE_TOKEN: TOKEN}});
-    } finally {
-      if (redisUrl !== undefined) process.env.CH_TEST_REDIS_URL = redisUrl;
-    }
   });
   after(async () => {
     if (server != null) await stopServer(server);
