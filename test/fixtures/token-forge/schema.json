@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "forgeService": {
+    "viaCall": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "marker": {"type": "string"},
+          "forge": {
+            "type": "object",
+            "properties": {
+              "billingKey": {"type": "string"},
+              "token": {"type": "string"},
+              "everyToken": {"type": "boolean"},
+              "stash": {"type": "string"},
+              "tokenFrom": {"type": "string"},
+              "holdUntil": {"type": "string"}
+            }
+          }
+        },
+        "required": ["marker"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "code": {"type": ["string", "null"]},
+          "n": {"type": ["number", "null"]},
+          "stashed": {"type": "boolean"},
+          "exposed": {"type": ["boolean", "null"]}
+        },
+        "required": ["code", "n"]
+      }
+    }
+  }
+}

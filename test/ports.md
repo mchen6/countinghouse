@@ -12,6 +12,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9680–9685 | A: L1's sandbox tests (34, 35) |
 | 9686–9689 | A: RC1-min test/remote 01–05's remote and listener ports |
 | 9693–9694 | composition/17 |
+| 9695–9699 | R2-1 (A) |
 | 9700–9719 | the registry |
 | 9720–9729 | A: RC1-min, step 3 onward |
 | 9730–9739 | B |
@@ -70,6 +71,7 @@ one) as well as the ports it binds.
 | `test/composition/15-composite-inner-reload.js` | 9609–9610 |
 | `test/composition/16-hop-missing-device-oracle.js` | 9616–9617 |
 | `test/composition/17-hop-module-error.js` | 9618–9620 |
+| `test/composition/18-call-tokens.js` | 9695–9698 |
 | `test/device-config/02-from-main-thread.js` | 9629 |
 | `test/device-config/03-json-errors-without-content.js` | 9629 |
 | `test/direct-peer-channels/01-echo-roundtrip.js` | 9527 |

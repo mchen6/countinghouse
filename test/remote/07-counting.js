@@ -175,11 +175,13 @@ describe('remote 07: usage records for remote calls, and the call id across ever
 
   describe('the remote message, answered on the main thread', () => {
     const W = 41;
+    // the call's token, as the main thread issues one to worker W (R2-1 Task 3)
+    const tokenFor = (workerId) => require('../../lib/call-tokens').issue({billingKey: KEY, module: 'count-probe', workerId: workerId, deviceID: 'd-count'});
 
     it('an id the worker owns is recorded', async () => {
       const id = u.beginCall({tool: 'outer'});
       const release = u.grantCall(id, W);
-      await registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: id}, W);
+      await registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: id, token: tokenFor(W)}, W);
       release();
       assert.deepStrictEqual(ins().map((r) => r.call), [id]);
     });
@@ -187,21 +189,32 @@ describe('remote 07: usage records for remote calls, and the call id across ever
     it('an id the worker was not given is refused USAGE_CALL_FOREIGN, and the server is not called', async () => {
       const id = u.beginCall({tool: 'outer'});
       const before = remote.calls.length;
-      await assert.rejects(registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: id}, W),
+      await assert.rejects(registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: id, token: tokenFor(W)}, W),
         {code: 'USAGE_CALL_FOREIGN'});
       assert.strictEqual(remote.calls.length, before);
       assert.deepStrictEqual(ins(), []);
     });
 
+    it('a token issued to another worker is refused CALL_TOKEN_INVALID, and the server is not called', async () => {
+      const id = u.beginCall({tool: 'outer'});
+      const release = u.grantCall(id, W);
+      const before = remote.calls.length;
+      await assert.rejects(registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: id, token: tokenFor(W + 1)}, W),
+        {code: 'CALL_TOKEN_INVALID'});
+      release();
+      assert.strictEqual(remote.calls.length, before);
+      assert.deepStrictEqual(ins(), []);
+    });
+
     it('a remote the module does not declare is refused as such whatever the id says', async () => {
-      await assert.rejects(registry.answerRemoteMessage('count-probe', {remote: 'nope', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: 424242}, W),
+      await assert.rejects(registry.answerRemoteMessage('count-probe', {remote: 'nope', tool: 'echo_text', args: {}, billingKey: KEY, usageCall: 424242, token: tokenFor(W)}, W),
         {code: 'REMOTE_UNDECLARED'});
     });
 
     it('a finished id goes on and records nothing', async () => {
       const id = u.beginCall({tool: 'outer'});
       u.recordOut(id, {tool: 'outer', bytes: 0, lines: 0, ms: 0, outcome: 'ok'});
-      const r = await registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {n: 5}, billingKey: KEY, usageCall: id}, W);
+      const r = await registry.answerRemoteMessage('count-probe', {remote: 'probe', tool: 'echo_text', args: {n: 5}, billingKey: KEY, usageCall: id, token: tokenFor(W)}, W);
       assert.deepStrictEqual(r.content, [{type: 'text', text: JSON.stringify({n: 5})}]);
       assert.deepStrictEqual(ins(), []);
     });

@@ -261,7 +261,13 @@ identifies the call to the main thread, and is useless outside it.
   else, a token is **foreign** and refused. So a callee that keeps the
   caller's token it received on a peer invoke can't use it for hops of its
   own.
-- **The peer path meters before it serves.** Today the callee runs the
+- **The peer path meters before it serves.** *Amended (the reviewer's
+  ruling, 2026-11-13, Task 3): "meters before it serves" means* authorizes
+  *before it serves and bills on success. The token check and the
+  announcement match (10b) come before the handler and fail closed; the
+  balance deduction comes after the handler succeeds, as the routed path's
+  does, so a failed hop costs nothing on either path. The cost is one more
+  main-thread round trip per successful peer invoke.* Today the callee runs the
   action and then sends the metering request, and metering errors fail open
   (`PeerChannel.finishMeteredHop`: everything but `RATE_LIMITED` is
   served). After R2-1 the callee meters first, and runs no handler unless
@@ -425,6 +431,19 @@ and bill the caller's tenant for hops that never happened. So:
   before it serves, so no handler runs).
 - A caller that suppresses its announcements gets its own calls refused,
   which fails safe.
+- **Who may announce** (reviewer, 2026-11-09): main accepts an announcement
+  only on the WorkerMessage of the worker the token is bound to, and only
+  for a channel whose caller is that worker; anything else is refused and
+  logged, and a metering request citing it stays unmatched, so it is
+  refused after the wait. A callee that announces with its caller's token
+  bills no one.
+- **Bounds** (reviewer, 2026-11-09): an unmatched announcement is dropped
+  with its token (the call answered, or its worker ended) or with its
+  channel; held metering requests are capped per channel (64 at once), and
+  one beyond the cap is refused at once.
+- **The deduction's deadline**: the balance deduction, the one step that may
+  fail open, is bounded (about 500 ms); past it the hop is served unbilled,
+  and the log says so. The token check stays in memory and fails closed.
 - The cost is one extra one-way message per peer invoke, with no added
   serial latency except when the metering request wins the race.
 

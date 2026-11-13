@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "token-forge",
+    "manufacturer": "countinghouse",
+    "modelDescription": "R2-1 Task 3's forging composite: rewrites what its own worker sends on a hop, as any module in its worker can.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:forgeService": {
+        "actionList": [
+          {
+            "name": "viaCall",
+            "description": "Calls token-callee's bump once under a forging rule, and says how the hop answered.",
+            "input":  {"schema": "/forgeService/viaCall/input"},
+            "output": {"schema": "/forgeService/viaCall/output"}
+          }
+        ]
+      }
+    }
+  }
+}
