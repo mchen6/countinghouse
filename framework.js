@@ -249,7 +249,7 @@ if (options.debug === true && require('./lib/auth').identitySource(options) != n
 try {
   // create module folder
   fs.mkdirSync(options.modulePath, {recursive: true});
-  fs.accessSync(options.modulePath, fs.W_OK);
+  fs.accessSync(options.modulePath, fs.constants.W_OK);
 } catch (e) {
   logger.E(new Error('cannot access module folder: ' + e.message));
   process.exit(-1);
