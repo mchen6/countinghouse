@@ -117,6 +117,7 @@ one) as well as the ports it binds.
 | `test/remote/05-route.js` | 9688, 9720–9721 |
 | `test/remote/06-listing.js` | 9722–9723 |
 | `test/remote/07-counting.js` | 9728–9729 |
+| `test/module-loading/21-module-layout.js` | 9740–9741 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
