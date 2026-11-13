@@ -89,6 +89,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   refuses nothing yet.
 - `countinghouse-validate` reports declaration problems; a bad declaration
   refuses the load (`REMOTE_DECLARATION_INVALID`).
+- Under `--hardened`, the `--remoteCredentials` file is among what the
+  server may read (the file alone); before, a server given one under
+  `--hardened` exited 2, unable to read it.
 - Each remote call is a usage record under the `tools/call` it was made
   for, so the receipt and `countinghouse_usage_report` count it as a
   server call: the remote's name, the tool, the text content's lines and
