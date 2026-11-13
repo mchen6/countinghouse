@@ -133,12 +133,15 @@ function toolsCall(port, apiKey, id, name, toolArgs, cb) {
 }
 
 // Builds a throwaway module directory on disk -- api.json/schema.json/
-// handlers/ identical in shape to test/fixtures/handler-map-convention, plus
-// an index.js whose content the caller controls. Used by the Task 8 defect-A
-// (require() cache staleness) proof below, which needs to edit a module's
-// main entry BETWEEN two validate calls -- that can't be done against a
-// fixture checked into the repo without leaving the working tree dirty.
-function writeTempModule(indexContent) {
+// handlers/ identical in shape to test/fixtures/handler-map-convention, its
+// handler file starting with code the caller controls (a main entry is never
+// run, lib/module-layout.js; a handler file is required by every validate).
+// Used by the Task 8 defect-A (require() cache staleness) proof below, which
+// needs to edit a module's code BETWEEN two validate calls -- that can't be
+// done against a fixture checked into the repo without leaving the working
+// tree dirty.
+const HELLO = 'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}});\n';
+function writeTempModule(prelude) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-cache-'));
   fs.writeFileSync(path.join(dir, 'package.json'),
     JSON.stringify({name: 'cache-staleness-fixture', version: '1.0.0'}));
@@ -168,9 +171,7 @@ function writeTempModule(indexContent) {
     }
   }));
   fs.mkdirSync(path.join(dir, 'handlers', 'greetService'), {recursive: true});
-  fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'),
-    'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}});\n');
-  fs.writeFileSync(path.join(dir, 'index.js'), indexContent);
+  fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'), `${prelude}${HELLO}`);
   return dir;
 }
 
@@ -331,32 +332,32 @@ describe('authoring tools: present with --authoringTools', function() {
   // this long-lived gateway process, so Node's module cache returned the
   // FIRST validate's already-loaded export on every subsequent call against
   // the same path, no matter what the file on disk said by then. Proven here
-  // by validating a module whose index.js does not throw, editing that same
+  // by validating a module whose handler file does not throw, editing that same
   // file on disk to throw, and validating the same path again: the second
   // result must reflect the edit. Against the pre-Task-8 in-process
   // implementation this test fails (second result is still ok:true, from the
   // stale cached export) -- against the child-process implementation it
   // passes, because there is no require() cache spanning two separate
   // `node bin/countinghouse-validate.js` processes.
-  it('reflects an edited entry file on the very next validate call (Task 8, defect A: no stale require cache)', function(done) {
+  it('reflects an edited handler file on the very next validate call (Task 8, defect A: no stale require cache)', function(done) {
     this.timeout(15000);
-    const dir = writeTempModule('module.exports = {};\n');
+    const dir = writeTempModule('');
 
     toolsCall(PORT, 'aabbcc', 10, 'countinghouse_validate_module', {path: dir}, (err, first) => {
       assert.ifError(err);
       assert.strictEqual(first.result.structuredContent.ok, true,
         `expected the first validate to be clean, got: ${JSON.stringify(first.result)}`);
 
-      fs.writeFileSync(path.join(dir, 'index.js'), "throw new Error('edited-after-first-validate');\n");
+      fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'), `throw new Error('edited-after-first-validate');\n${HELLO}`);
 
       toolsCall(PORT, 'aabbcc', 11, 'countinghouse_validate_module', {path: dir}, (err, second) => {
         assert.ifError(err);
         const out = second.result.structuredContent;
         assert.strictEqual(out.ok, false,
           `expected the edit to be picked up by the second validate, got: ${JSON.stringify(out)}`);
-        const entryProblems = out.problems.filter((p) => p.stage === 'loadModuleEntry');
+        const entryProblems = out.problems.filter((p) => p.stage === 'resolveHandlerMap' && /could not be loaded/.test(p.message));
         assert.strictEqual(entryProblems.length, 1,
-          `expected exactly one loadModuleEntry problem, got: ${JSON.stringify(out.problems)}`);
+          `expected exactly one "handler map could not be loaded" problem, got: ${JSON.stringify(out.problems)}`);
         assert.ok(/edited-after-first-validate/.test(entryProblems[0].message),
           `expected the SECOND validate's problem to name the edit, got: ${entryProblems[0].message}`);
         done();
@@ -364,7 +365,7 @@ describe('authoring tools: present with --authoringTools', function() {
     });
   });
 
-  // Task 8, item B: a module whose main entry calls process.exit() during
+  // Task 8, item B: a module whose code (its handler file) calls process.exit() during
   // require() used to take the whole gateway process down with it -- there
   // is no try/catch that survives a require() calling process.exit()
   // in-process. Proven here two ways: the tool call itself answers with a
@@ -390,7 +391,7 @@ describe('authoring tools: present with --authoringTools', function() {
     });
   });
 
-  // Task 8 review round: a module whose main entry writes to stdout during
+  // Task 8 review round: a module whose code (its handler file) writes to stdout during
   // require() -- an ordinary startup log line, not adversarial -- used to
   // corrupt the machine-readable channel bin/countinghouse-validate.js --json
   // promises. The child's stdout became "<module's log line>\n<the real JSON
@@ -426,7 +427,7 @@ describe('authoring tools: present with --authoringTools', function() {
   // would win lib/mcp/gateway.js's end-of-stream scan for "the last line
   // that parses as JSON" -- a bare {shutdown:'clean',...} object parses fine,
   // it just isn't the validator's result. See
-  // test/fixtures/handler-map-logs-on-exit/index.js for the exact reproducer
+  // test/fixtures/handler-map-logs-on-exit/handlers/greetService/hello.js for the exact reproducer
   // and parseValidateChildOutput's shape check for the fix.
   it('a module that logs at process-exit time still validates cleanly (final review: stale stdout scan)', (done) => {
     const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-logs-on-exit');
