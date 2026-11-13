@@ -9,7 +9,10 @@
 // (data.token of invokeforeignaction); a peer invoke carries none, its
 // caller worker announcing {channel, invokeId, token} to the main thread
 // instead, so for a peer hop the rule is applied to the announcement whose
-// invokeId is the hop's id.
+// invokeId is the hop's id. The runtime announces before it posts the
+// invoke (the timer and the announcement start together), so an
+// announcement for an invoke not yet seen is held here until the invoke
+// is posted, then rewritten under its rule and posted after it.
 //
 // Rules are keyed by the marker the hop's input carries:
 //   billingKey  every billingKey (and the routed hop's appKey) becomes it
@@ -27,6 +30,7 @@ const MessagePort = (typeof(globalThis.MessagePort) === 'function') ? globalThis
 
 const state = globalThis.__tokenForge || (globalThis.__tokenForge = {rules: {}, stash: {}, done: {}, seen: {}});
 const hops = new Map();   // a peer invoke's id -> its marker
+const deferred = new Map();   // a peer invoke's id -> its announcement, held until the invoke is posted
 
 function hopInput(m) {
   if (m == null || typeof(m) !== 'object') return null;
@@ -77,8 +81,23 @@ if (MessagePort != null && state.hooked !== true) {
   state.hooked = true;
   const post = MessagePort.prototype.postMessage;
   MessagePort.prototype.postMessage = function(message, ...rest) {
-    try { rewrite(message); } catch (e) { /* never break the worker */ }
-    return post.call(this, message, ...rest);
+    try {
+      if (message != null && message.command === 'peer-announce' && message.data != null && !hops.has(message.data.invokeId)) {
+        deferred.set(message.data.invokeId, {port: this, message: message, rest: rest});
+        return undefined;
+      }
+      rewrite(message);
+    } catch (e) { /* never break the worker */ }
+    const r = post.call(this, message, ...rest);
+    try {
+      if (message != null && message.command === 'peer-invoke' && deferred.has(message.id)) {
+        const d = deferred.get(message.id);
+        deferred.delete(message.id);
+        rewrite(d.message);
+        post.call(d.port, d.message, ...d.rest);
+      }
+    } catch (e) { /* never break the worker */ }
+    return r;
   };
 }
 
