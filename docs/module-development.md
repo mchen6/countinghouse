@@ -16,9 +16,12 @@ my-module/
         └── <actionName>.js     # one handler per action
 ```
 
-That is the whole module. There is no `index.js` and no `device.js`: since
-6.0.0 the framework assembles the device from `api.json`, reads `schema.json`
-itself, and matches handlers by name. See
+That is the whole module, and the only format: the framework assembles the
+device from `api.json`, reads `schema.json` itself, and matches handlers by
+name. A module has no main entry. One with a main entry (`package.json`
+`"main"`, or an `index.js`) and no `handlers/` directory is refused before any
+of its code runs, with `MODULE_LAYOUT_UNSUPPORTED`; one that has both loads
+from `handlers/`, and its main entry is never run. See
 [`design-decisions.md`](design-decisions.md#module-shape-600-handlers-by-default-discovery-when-you-need-it)
 for why the old boilerplate went away.
 
@@ -34,20 +37,13 @@ module.exports = async (input, ctx) => ({
 `input` is the validated input object. `ctx` carries the caller, this device's
 identity, and the helpers a handler needs — see [`ctx`](#ctx) below.
 
-If you would rather keep everything in one file, export the same thing as a
-map from `device.js` instead of using the `handlers/` tree:
+Code that several handlers share goes in an ordinary file of the module that
+the handlers require (`require('../../lib/shared.js')`); it runs when a handler
+file is first required, never as a main entry.
 
-```js
-// device.js -- an alternative to handlers/, not an addition
-module.exports = {
-  greetService: {                                    // service SHORT name
-    hello: async (input, ctx) => ({output: {text: `hello ${input.name}`}})
-  }
-};
-```
-
-Top-level keys are service **short** names — the part after `:serviceID:` in
-the URN. `api.json` remains the only place the full URN appears.
+The directories under `handlers/` are service **short** names — the part after
+`:serviceID:` in the URN. `api.json` remains the only place the full URN
+appears.
 
 **Mismatches are startup errors, not silent omissions.** An action declared in
 `api.json` with no handler, a handler `api.json` does not declare, a service
@@ -162,33 +158,19 @@ becomes `DEVICE_INVOKE_FAIL`. See
 The pre-8.0 error globals are gone
 ([upgrading-to-8.md](upgrading-to-8.md)).
 
-## Dynamic discovery: when one module has many devices
+## Retired: main entries and dynamic discovery
 
-Everything above describes a module that is one device, described statically.
-If your module decides at runtime how many devices to expose — one per
-configured database connection, say — or needs to withdraw one when its
-backing resource disappears, export a class or EventEmitter instead of a
-handler map and the 5.x discovery path applies unchanged:
-
-```js
-// index.js -- still supported, and still the right answer for this case
-function DeviceModule() {
-  this.on('discover',     this.discoverDevices.bind(this));
-  this.on('stopdiscover', this.stopDiscoverDevices.bind(this));
-}
-util.inherits(DeviceModule, events.EventEmitter);
-
-DeviceModule.prototype.discoverDevices = function() {
-  for (const conn of readConfig()) this.emit('deviceonline', new Device(conn), this);
-};
-```
-
-`discover`, `deviceonline` and `deviceoffline` behave exactly as they did.
-Note that `deviceoffline` marks a device offline rather than unlisting it: it
-stays in `tools/list` and fails at call time with `DEVICE_OFFLINE`.
-
-The framework chooses between the two shapes by what your module exports — a
-plain object is a handler map, anything else takes the discovery path.
+Before 8.0, a module could also be a main entry: a `device.js` exporting a
+handler map, or an `index.js` exporting a class or EventEmitter that decided
+at runtime how many devices to expose (`discover`, `deviceonline`,
+`deviceoffline`). Both are retired. Such a module is refused at load, by
+`countinghouse-validate` (stage `layout`) and by the runtime, with
+`MODULE_LAYOUT_UNSUPPORTED`, which names the file that made it a main entry.
+For a `device.js` handler map, move each entry into its own
+`handlers/<service>/<action>.js` (`module.exports = <the entry's function>`);
+for a 5.x module (a `CHDevice` with `setAction`),
+`npx countinghouse-migrate-module ./my-module` converts it to `handlers/`. A module is one device, described by its `api.json`; a module
+that needs several devices is several modules.
 
 ## `api.json`
 
@@ -760,19 +742,18 @@ same.
 Work down this list in order. Every case below now logs an explicit error —
 **check the server log first**, it very likely already names the cause.
 
-### 1. The log says `MODULE_NOT_DISCOVERABLE`
+### 1. The log says `MODULE_LAYOUT_UNSUPPORTED`
 
 ```
-Device module is not discoverable: my-module its main entry point registers no
-"discover" listener, so it can never emit "deviceonline" ...
+my-module: a module is api.json, schema.json and handlers/<service>/<action>.js; this one has package.json "main": "device.js" and no handlers/ directory. See docs/module-development.md.
 ```
 
-This applies to the dynamic-discovery shape only. Your `package.json`'s `main`
-points at the device instead of the module that announces it. A handler-map
-module cannot hit this — the framework supplies the discovery shim itself.
-This is the most common failure by a wide margin: the module loads without
-error, reports success, and then nothing else ever happens, because nothing is
-listening for the `discover` request.
+The module has a main entry (`package.json` `"main"`, or an `index.js`) and no
+`handlers/` directory: the retired format (see
+[Retired: main entries and dynamic discovery](#retired-main-entries-and-dynamic-discovery)).
+None of its code was run. Move each action into
+`handlers/<service>/<action>.js` and remove the main entry (for a 5.x
+module, `npx countinghouse-migrate-module ./my-module` does it).
 
 ### 2. The log says `DEVICE_SPEC_VALIDATION_FAIL`
 
@@ -789,14 +770,12 @@ missing `device.modelDescription`, an action without a `name`, an
 
 ### 3. The log says `MODULE_NO_DEVICE_ONLINE`
 
-The device object failed its interface check — usually it isn't a `CHDevice`
-(check that `device.js` calls `CHDevice.call(this, spec)` and
-`CHUtil.inherits(Device, CHDevice)`), or an earlier error on the device was
-recorded and the message will quote it.
+The device assembled from your `api.json` failed its interface check: an
+earlier error on the device was recorded, and the message quotes it.
 
 ### 4. The log says `LOAD_MODULE_FAIL`
 
-Your module threw while being constructed — a syntax error, a missing
+A handler file threw while being required — a syntax error, a missing
 `require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
 
 ### 5. No error at all, and the module is listed as loaded

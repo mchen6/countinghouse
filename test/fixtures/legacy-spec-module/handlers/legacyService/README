@@ -1,0 +1,1 @@
+api.json is in the pre-5.0.0 format (the point of this fixture), which declares no action the handler check can read, so there is no handler file.

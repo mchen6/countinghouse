@@ -1,1 +1,4 @@
-{"name": "redis-forge", "version": "1.0.0", "main": "device.js"}
+{
+  "name": "redis-forge",
+  "version": "1.0.0"
+}

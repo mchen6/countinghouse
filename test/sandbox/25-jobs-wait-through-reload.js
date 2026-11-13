@@ -22,13 +22,12 @@ const END_SVC = 'urn:countinghouse-test:serviceID:endService';
 const sleep   = (ms) => new Promise((r) => setTimeout(r, ms));
 const codeOf  = (r) => (r.body != null ? r.body.code : undefined);
 
-// v2: answers {v: 'v2'}, and takes `loadMs` to load (a blocking require).
+// v2: answers {v: 'v2'}, and takes `loadMs` to load (a blocking require of
+// its handler file, which every load requires).
 function writeV2(dir, loadMs) {
-  const device = path.join(dir, 'device.js');
-  fs.writeFileSync(device, fs.readFileSync(path.join(STRAY, 'device.js'), 'utf8')
-    .replace("return callback(null, {output: {v: args.input.v}});", "return callback(null, {output: {v: 'v2'}});"));
-  const index = path.join(dir, 'index.js');
-  fs.writeFileSync(index, `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${loadMs});\n${fs.readFileSync(path.join(STRAY, 'index.js'), 'utf8')}`);
+  fs.writeFileSync(path.join(dir, 'handlers', 'svc', 'returnsCleanly.js'),
+    `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${loadMs});\n` +
+    "module.exports = (input, ctx, callback) => callback(null, {output: {v: 'v2'}});\n");
 }
 
 function suite(label, port, extraArgs) {

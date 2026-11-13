@@ -583,11 +583,10 @@ these are the checks that predate them and still apply:
   names, resolvable schema pointers, handlers that actually exist for every
   declared action — and every problem found is reported, not just the
   first. **Doing this requires actually running the module's own code.**
-  `loadExported` (`lib/module-validator.js:61`) calls `require()` on the
-  module's main entry, and `resolveHandlerMap`
-  (`lib/module-validator.js:180`) calls `require()` on every handler file —
-  there is no way to resolve the handler map without loading the JS that
-  defines it. Under `--moduleSandbox audit` and `enforce` that `require()`
+  `resolveHandlerMap` (in `lib/module-validator.js`) calls `require()` on
+  every handler file — there is no way to resolve the handler map without
+  loading the JS that defines it. A module's main entry, if it has one, is
+  never run (`lib/module-layout.js`, the one module format). Under `--moduleSandbox audit` and `enforce` that `require()`
   runs in a module worker set up exactly as a load of that module would be
   (its policy, declared environment, limits, `--hardened` root, file
   namespace and lockdown), which is then discarded: it gets no main-thread

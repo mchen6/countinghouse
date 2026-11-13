@@ -1,1 +1,4 @@
-{"name": "ctx-compose-module", "version": "1.0.0", "main": "device.js"}
+{
+  "name": "ctx-compose-module",
+  "version": "1.0.0"
+}

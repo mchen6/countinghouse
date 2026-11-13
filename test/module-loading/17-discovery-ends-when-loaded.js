@@ -3,9 +3,9 @@
 // modules then waited 5,001 ms after the last had loaded). A handler-map
 // module, which is every module in the current format, brings its one device
 // online at once on discover, so its discovery is over as soon as that device
-// is online. A discovery-style module (its own index.js, which may bring
-// devices online over time) keeps today's 5 s hold as the cap. Both thread
-// modes.
+// is online. Both thread modes. (A discovery-style module, whose own main
+// entry brought devices online over time under a 5 s hold, is retired: it is
+// refused before it runs, test/module-loading/06 and 21.)
 //
 // The local stdio profile: no Redis, no port.
 const assert = require('assert');
@@ -64,12 +64,6 @@ function discoveryTime(thread, fixture, name) {
       const ms = await discoveryTime(thread, 'usage-scenario', 'usage-scenario');
       assert.ok(ms != null, 'the load was logged');
       assert.ok(ms < 2000, `discovered ${ms} ms after loading`);
-    });
-
-    it('a discovery-style module keeps the 5 s hold as its cap', async () => {
-      const ms = await discoveryTime(thread, 'dynamic-discovery-module', 'dynamic-discovery-module');
-      assert.ok(ms != null, 'the load was logged');
-      assert.ok(ms >= 4500, `discovered ${ms} ms after loading`);
     });
   });
 });

@@ -1,1 +1,4 @@
-{"name": "peer-forge", "version": "1.0.0", "main": "device.js"}
+{
+  "name": "peer-forge",
+  "version": "1.0.0"
+}

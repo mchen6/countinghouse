@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "peer-callee-1",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "peer-callee-1: a peer-channel callee (test/direct-peer-channels/07)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:dynService": {
+        "actionList": [
+          {
+            "name": "hello",
+            "description": "Returns this module's name.",
+            "input": {
+              "schema": "/dynService/hello/input"
+            },
+            "output": {
+              "schema": "/dynService/hello/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
