@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "callerService": {
+    "hop": {
+      "input":  {"type": "object", "properties": {"action": {"enum": ["take", "give"]}, "args": {"type": "object"}}, "required": ["action", "args"]},
+      "output": {"type": "object"}
+    }
+  }
+}

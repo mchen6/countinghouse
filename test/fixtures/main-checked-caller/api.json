@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "main-checked-caller",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Calls main-checked over a hop and reports what came back (test/sandbox/41).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:callerService": {
+        "actionList": [
+          {
+            "name": "hop",
+            "description": "Calls main-checked with the given action and input; reports the result or the rejection's code.",
+            "input":  {"schema": "/callerService/hop/input"},
+            "output": {"schema": "/callerService/hop/output"}
+          }
+        ]
+      }
+    }
+  }
+}

@@ -12,19 +12,24 @@ const assert = require('assert');
 const {EventEmitter} = require('events');
 
 const MODULE = 'going-worker-module';
-const DEVICE = 'going-worker-device-id';
 
 describe('module-loading 22: a device announced by a worker that is going is not registered', function() {
   // Requiring the device manager loads much of the runtime: 30 s, as 18 has.
   this.timeout(30000);
   let DeviceManager = null;
+  // The main thread's copy of the module's spec (lib/module-spec.js), which
+  // the worker announces exactly, so only the guard decides.
+  let own = null;
+  let DEVICE = null;
   // The info lines logged, in place of the logger (none in this process).
   const LOG = require('../../lib/logger');
   const logged = [];
   let info = null;
-  before(() => {
+  before(async () => {
     require('../../lib/cli-options').setOptions({workerThread: true});
     DeviceManager = require('../../lib/device-manager');
+    own = await require('../../lib/module-spec').fromParts({device: {friendlyName: MODULE}}, null);
+    DEVICE = own.deviceID;
     info = LOG.I;
     LOG.I = (line) => { logged.push(String(line)); return line; };
   });
@@ -40,6 +45,7 @@ describe('module-loading 22: a device announced by a worker that is going is not
   function announce(shape) {
     const wm = new EventEmitter();
     wm.deviceList = {};
+    wm.moduleSpec = own;
     wm.hostModulePath = '/host/going-worker-module';
     const cleared = [];
     const dm = {
@@ -51,7 +57,7 @@ describe('module-loading 22: a device announced by a worker that is going is not
     shape(wm, dm);
     DeviceManager.prototype.onWorkerLoaded.call(dm, wm);
     wm.emit('deviceonline', {data: {deviceID: DEVICE, moduleName: MODULE, packageInfo: {name: MODULE},
-      spec: {device: {friendlyName: MODULE}}, modulePath: '/app'}}, wm);
+      spec: JSON.parse(own.specText), modulePath: '/app'}}, wm);
     return {dm, wm, cleared};
   }
 
