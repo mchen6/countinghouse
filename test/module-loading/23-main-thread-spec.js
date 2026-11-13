@@ -112,7 +112,7 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
       const wm = new EventEmitter();
       wm.deviceList = {};
       wm.moduleSpec = wmSpec;
-      const dm = {deviceMap: {}, allDevicesLoaded: true, notifyDeviceLoad: {},
+      const dm = {deviceMap: {}, allDevicesLoaded: true, notifyDeviceLoad: {}, toolsetChanged: () => {},
         moduleManager: {modules: {'main-checked': wm}, clearEndedDevice: () => {}}};
       DeviceManager.prototype.onWorkerLoaded.call(dm, wm);
       wm.emit('deviceonline', {data: {deviceID: deviceID, moduleName: 'main-checked', packageInfo: {name: 'main-checked'},
