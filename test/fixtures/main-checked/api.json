@@ -1,0 +1,53 @@
+{
+  "device": {
+    "friendlyName": "main-checked",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Main-thread validation fixture (test/sandbox/41): on request, its worker turns off its own validation where module code can reach it.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:checkService": {
+        "actionList": [
+          {
+            "name": "take",
+            "description": "Counts a run and returns its input's n.",
+            "input": {
+              "schema": "/checkService/take/input"
+            },
+            "output": {
+              "schema": "/checkService/take/output"
+            }
+          },
+          {
+            "name": "give",
+            "description": "Returns a valid output, or one its schema refuses.",
+            "input": {
+              "schema": "/checkService/give/input"
+            },
+            "output": {
+              "schema": "/checkService/give/output"
+            }
+          },
+          {
+            "name": "count",
+            "description": "How many times take ran, and whether this worker's own validation has been turned off.",
+            "input": {
+              "schema": "/checkService/count/input"
+            },
+            "output": {
+              "schema": "/checkService/count/output"
+            }
+          },
+          {
+            "name": "tamper",
+            "description": "Turns off this worker's own validation where module code can reach it.",
+            "input": {
+              "schema": "/checkService/tamper/input"
+            },
+            "output": {
+              "schema": "/checkService/tamper/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

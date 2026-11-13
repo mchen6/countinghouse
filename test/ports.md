@@ -148,6 +148,7 @@ one) as well as the ports it binds.
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
 | `test/sandbox/35-enforce-tls.js` | 9683–9685 |
 | `test/sandbox/39-resolve-shim.js` | 9724–9725 |
+| `test/sandbox/41-main-thread-validation.js` | 9749 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |

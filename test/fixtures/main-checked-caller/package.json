@@ -1,0 +1,11 @@
+{
+  "name": "main-checked-caller",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "main-checked/checkService.take",
+      "main-checked/checkService.give"
+    ]
+  }
+}
