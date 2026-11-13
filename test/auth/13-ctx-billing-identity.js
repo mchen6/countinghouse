@@ -52,7 +52,8 @@ const ECHO_DEVICE  = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
 function writeAuth() {
   const config = {};
   config[CALLER]      = {userName: 'caller', devices: ['*']};
-  config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [ECHO_DEVICE]};
+  // bound to the module (R2-1 Task 4: its declared call resolves under it)
+  config[AS_IDENTITY] = {userName: AS_IDENTITY, devices: [ECHO_DEVICE], runsModules: ['ctx-compose-module']};
   fs.writeFileSync(AUTH_PATH, JSON.stringify(config));
 }
 

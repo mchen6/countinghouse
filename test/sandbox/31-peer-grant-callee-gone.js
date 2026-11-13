@@ -35,6 +35,8 @@ function run(scenario) {
       sendPeerChannelOpenToChild: (d) => sent.push({to: id, open: d.callerWorkerId}),
       sendPeerChannelAllowToChild: (d, cb) => cb(null)});
     const caller = wm(1), callee = wm(2), replacement = wm(3);
+    // the calling module (device C) declared its call to D (R2-1 Task 4)
+    caller.bindings = {C: {identity: null, module: 'c', targets: new Set(['D|svc|act'])}};
     const unloaded = () => ({code: 'MODULE_UNLOADED', message: 'unloaded'});
     const dm = {deviceMap: {D: callee}, missingDeviceError: unloaded, missingDeviceErrorForHop: unloaded};
     const broker = new Broker(dm);
@@ -44,7 +46,7 @@ function run(scenario) {
     if (scenario === 'replaced') during = () => { dm.deviceMap.D = replacement; };
     if (scenario === 'caller-ended') during = () => { caller.ended = {code: 'MODULE_UNLOADED'}; };
     // the open takes the call's token (the review of #138, 5a)
-    const token = require(${JSON.stringify(path.join(LIB, 'call-tokens'))}).issue({billingKey: 'k', workerId: caller.workerId});
+    const token = require(${JSON.stringify(path.join(LIB, 'call-tokens'))}).issue({billingKey: 'k', workerId: caller.workerId, deviceID: 'C'});
     broker.handleRequest({targetDeviceID: 'D', appKey: 'k', token: token}, caller);
     setTimeout(() => { process.stdout.write('SENT ' + JSON.stringify(sent) + '\\n'); process.exit(0); }, 100);`;
   const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000});

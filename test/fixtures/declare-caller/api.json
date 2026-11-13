@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "declare-caller",
+    "manufacturer": "countinghouse",
+    "modelDescription": "R2-1 Task 4: a composite that declares one call and tries others by every route.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:declareService": {
+        "actionList": [
+          {
+            "name": "attempt",
+            "description": "One hop by the route named, answered as {code, n}.",
+            "input":  {"schema": "/declareService/attempt/input"},
+            "output": {"schema": "/declareService/attempt/output"}
+          }
+        ]
+      }
+    }
+  }
+}

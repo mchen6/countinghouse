@@ -42,7 +42,10 @@ function writeAuth(path, withGrants) {
   config[CALLER] = {userName: 'caller', devices: ['*']};
   if (withGrants === true) {
     // Each with a user name that is not its key, as docs/composite-tools.md now shows.
-    INTERNAL_IDENTITIES.forEach((k, i) => { config[k] = {userName: `bundled-demo-identity-${i + 1}`, devices: ['*']}; });
+    // each bound to its module (R2-1 Task 4: the demos declare their calls,
+    // which resolve under the binding; the `as` constants stay until Task 5)
+    const RUNS = {'composite-demo-internal': 'composite-demo', 'aabbcc': 'echo-device-client', 'perf-caller-demo-internal': 'perf-caller-demo'};
+    INTERNAL_IDENTITIES.forEach((k, i) => { config[k] = {userName: `bundled-demo-identity-${i + 1}`, devices: ['*'], runsModules: [RUNS[k]]}; });
   }
   fs.writeFileSync(path, JSON.stringify(config));
 }

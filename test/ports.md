@@ -72,6 +72,7 @@ one) as well as the ports it binds.
 | `test/composition/16-hop-missing-device-oracle.js` | 9616–9617 |
 | `test/composition/17-hop-module-error.js` | 9618–9620 |
 | `test/composition/18-call-tokens.js` | 9695–9698 |
+| `test/composition/21-declared-calls-enforced.js` | 9699 (also remote/10's stand-in port; the two never run concurrently) |
 | `test/device-config/02-from-main-thread.js` | 9629 |
 | `test/device-config/03-json-errors-without-content.js` | 9629 |
 | `test/direct-peer-channels/01-echo-roundtrip.js` | 9527 |

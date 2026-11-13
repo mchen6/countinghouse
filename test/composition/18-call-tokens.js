@@ -90,7 +90,7 @@ PATHS.forEach((hopPath) => {
         [KEYS.other]: {userName: `other-${hex()}`, devices: ['*']},
         [KEYS.reader]: {userName: `reader-${hex()}`, devices: ['*']},
         [KEYS.internal]: {userName: `forge-internal-${hex()}`, devices: ['*'], runsModules: ['token-forge']},
-        [KEYS.admin]: {userName: `admin-${hex()}`, devices: ['*'], admin: true},
+        [KEYS.admin]: {userName: `admin-${hex()}`, devices: ['*'], admin: true, runsModules: ['hop-prober']},
         [KEYS.granted]: {userName: `granted-${hex()}`, devices: [WORKER_END]},
         [KEYS.ungranted]: {userName: `ungranted-${hex()}`, devices: [deviceIDForName('some-other-module')]}
       }));
@@ -534,6 +534,9 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const PeerChannelBroker = require('../../lib/peer-channel-broker');
       caller = wm(11);
       callee = wm(12);
+      // the calling module (its token's device, d-callee in ENTRY) declared
+      // bump on the devices these cases invoke (R2-1 Task 4)
+      caller.bindings = {'d-callee': {identity: null, module: 'token-forge', targets: new Set(['d-callee|svc|bump', 'd-other|svc|bump'])}};
       broker = new PeerChannelBroker({deviceMap: {}});
       broker.channelRegistry[pair()] = {callerWM: caller, calleeWM: callee, grants: {}};
     });
@@ -785,6 +788,17 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.strictEqual(broker.unbilled.size, 0);
     });
 
+    // Task 4's review: the main thread checks the invoke's action against the
+    // caller's declarations at the match too, not only the callee worker.
+    it('(T4-review) a metering request for an action the caller did not declare is refused CTX_CALL_UNDECLARED', async () => {
+      announce(30, tokens().issue(ENTRY(caller.workerId)));
+      broker.handleMeteringRequest({channel: pair(), invokeId: 30, deviceID: 'd-callee', serviceID: 'svc', actionName: 'tick'}, 'm30', callee);
+      await sleep(50);
+      const r = replyTo('m30');
+      assert.ok(r != null && r.errCode === 'CTX_CALL_UNDECLARED' && typeof(r.token) !== 'string', JSON.stringify(r));
+      assert.strictEqual(broker.unbilled.size, 0);
+    });
+
     // #141 N1: the announcement's time is the deadline's start, and a module
     // can post an announcement itself, early. So the match too is refused
     // once the deadline has passed: no handler runs for an invoke whose
@@ -910,7 +924,10 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const PeerChannelBroker = require('../../lib/peer-channel-broker');
         const b = new PeerChannelBroker({deviceMap: {}});
         const denied = [];
-        const requester = {workerId: 15, sendPeerChannelDenyToChild: (m) => denied.push(m)};
+        // the requesting module declared a call on d-callee (R2-1 Task 4: a
+        // channel opens only to a declared device)
+        const requester = {workerId: 15, sendPeerChannelDenyToChild: (m) => denied.push(m),
+          bindings: {'d-callee': {identity: null, module: 'token-forge', targets: new Set(['d-callee|svc|bump'])}}};
         b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k'}, requester);
         b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: `made-up-${hex()}`}, requester);
         b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(16))}, requester);
@@ -920,6 +937,21 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(15))}, requester);
         await sleep(20);
         assert.strictEqual(lookups, 1, 'the request with the worker\'s own token did not reach the lookup');
+        // R2-1 Task 4: a device the module declared nothing on is refused
+        // CTX_CALL_UNDECLARED, also before any lookup
+        b.handleRequest({targetDeviceID: 'd-other', appKey: 'k', token: tokens().issue(ENTRY(15))}, requester);
+        await sleep(20);
+        assert.strictEqual(denied[denied.length - 1].errCode, 'CTX_CALL_UNDECLARED', JSON.stringify(denied));
+        assert.strictEqual(lookups, 1, 'a lookup ran for an undeclared device');
+        // Task 4's review: before the verdict there is no binding: not ready;
+        // and a request for the worker's own device is PEER_SELF_TARGET first
+        const early = {workerId: 17, sendPeerChannelDenyToChild: (m) => denied.push(m)};
+        b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(17))}, early);
+        b.dm = {deviceMap: {'d-mine': requester}};
+        b.handleRequest({targetDeviceID: 'd-mine', appKey: 'k', token: tokens().issue(ENTRY(15))}, requester);
+        await sleep(20);
+        assert.deepStrictEqual(denied.slice(-2).map((m) => m.errCode), ['CTX_CALL_NOT_READY', 'PEER_SELF_TARGET'], JSON.stringify(denied));
+        assert.strictEqual(lookups, 1);
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         delete require.cache[require.resolve('../../lib/peer-channel-broker')];
@@ -1018,6 +1050,58 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
   });
 
+  // R2-1 Task 4's review: a module's declarations are the main thread's own
+  // read of its package.json at the host path, never the worker's statement;
+  // and a routed hop before the verdict is not ready, not undeclared.
+  describe('declarations: whose package.json, and before the verdict', () => {
+    it('(T4-review) the main thread reads the package.json at the host path, not the one the worker states', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const wmStub = {hostModulePath: path.join(ROOT, 'test', 'fixtures', 'declare-caller')};
+      const forged = {name: 'declare-caller', countinghouse: {calls: ['token-callee/tokenCallee.tick', 'compose-callee/calleeService.double']}};
+      const got = DeviceManager.hostPackageInfo(wmStub, forged);
+      assert.deepStrictEqual(got.countinghouse.calls, ['token-callee/tokenCallee.bump']);
+      assert.strictEqual(DeviceManager.hostPackageInfo(wmStub, forged), got, 'read again');
+    });
+
+    it('(T4-review) a routed hop before the composition verdict is CTX_CALL_NOT_READY', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const replies = [];
+      const caller = {workerId: 61, sendActionInvokeReplyToChild: (m) => replies.push(m)};
+      const token = tokens().issue(Object.assign(ENTRY(61), {deviceID: 'd-early'}));
+      DeviceManager.prototype.sendInvokeActionMessageToWorker.call({deviceMap: {}}, 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
+      assert.strictEqual(replies[0].errCode, 'CTX_CALL_NOT_READY', JSON.stringify(replies));
+    });
+  });
+
+  // R2-1 Task 4's review: a failed re-verification disables the binding's
+  // declarations too, so the declared-target check refuses every hop; and a
+  // grant that arrives without its action list grants nothing, loudly.
+  describe('declarations: a disabled binding and a grant without its actions', () => {
+    it('(T4-review) clearBinding leaves no identity and no targets', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const device = {bindings: {d1: {identity: 'k', module: 'm', targets: new Set(['d2|svc|act'])}}};
+      assert.strictEqual(tokens().declaredTarget(device.bindings.d1, 'd2', 'svc', 'act'), true);
+      DeviceManager.prototype.clearBinding.call({}, device, 'd1');
+      assert.strictEqual(device.bindings.d1.identity, null);
+      assert.strictEqual(tokens().declaredTarget(device.bindings.d1, 'd2', 'svc', 'act'), false, 'a disabled binding still allowed its old targets');
+    });
+
+    it('(T4-review) a grant without its action list grants no action, and says so', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const lines = [];
+      const savedE = LOG.E;
+      LOG.E = (e) => lines.push(String(e && e.message ? e.message : e));
+      try {
+        const allowedDevices = new Map();
+        DeviceManager.prototype.onPeerChannelAllow.call({peerChannels: {7: {allowedDevices}}}, {callerWorkerId: 7, deviceID: 'd9'});
+        assert.deepStrictEqual([...allowedDevices.get('d9')], []);
+        assert.ok(lines.some((l) => /no declared actions/.test(l)), JSON.stringify(lines));
+      } finally {
+        LOG.E = savedE;
+      }
+    });
+  });
+
   // The review of #138 (3): a token lives as long as its call, and no
   // longer: a call's session timeout ends the sync token, a run's timeout
   // the job token (which used to live 25 h whatever the run's timeout, and
@@ -1079,6 +1163,43 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   });
 
   describe('the broker: the grant re-check', () => {
+    // R2-1 Task 4's review: grants are keyed by the identity's id, and two
+    // keys of one identity share the record; the re-check asks for every
+    // key, so revoking either closes the channel.
+    it('(T4-review) two keys of one identity on a pair: revoking the first closes the channel', async () => {
+      const authPath = require.resolve('../../lib/user-auth');
+      const idPath = require.resolve('../../lib/identity');
+      const brokerPath = require.resolve('../../lib/peer-channel-broker');
+      const savedAuth = require.cache[authPath];
+      const savedId = require.cache[idPath];
+      const revoked = new Set();
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
+        exports: (a, b, deviceID, appKey, c, d, localCB, cb) => setImmediate(() => cb(revoked.has(appKey) ? Object.assign(new Error('revoked'), {code: 'USER_HAS_NO_DEVICE'}) : null))};
+      require.cache[idPath] = {id: idPath, filename: idPath, loaded: true, exports: Object.assign({}, require('../../lib/identity'), {idForKey: () => 'u_same'})};
+      delete require.cache[brokerPath];
+      try {
+        cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0, peerChannelAuthLookupTimeoutMs: 500});
+        const PeerChannelBroker = require('../../lib/peer-channel-broker');
+        const sent = [];
+        const callee = {workerId: 52, ended: null, unloading: false, sendPeerChannelOpenToChild: () => {}, sendPeerChannelAllowToChild: (m, cb) => cb(null), sendPeerInvalidateToChild: () => {}};
+        const caller = {workerId: 51, ended: null, unloading: false, sendPeerChannelGrantToChild: (m) => sent.push(m), sendPeerInvalidateToChild: () => {}};
+        const b = new PeerChannelBroker({deviceMap: {d: callee}});
+        b.grant('d', 'k1', caller, callee, ['svc|act']);
+        b.grant('d', 'k2', caller, callee, ['svc|act']);
+        const grants = b.channelRegistry['51:52'].grants;
+        assert.strictEqual(Object.keys(grants).length, 1, 'one record per identity and device');
+        revoked.add('k1');
+        b.recheckGrants();
+        await sleep(100);
+        assert.strictEqual(b.channelRegistry['51:52'], undefined, 'the channel stayed open after the first key was revoked');
+      } finally {
+        if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+        if (savedId != null) require.cache[idPath] = savedId; else delete require.cache[idPath];
+        delete require.cache[brokerPath];
+        cli.setOptions({workerThread: false});
+      }
+    });
+
     it('(4) a hung auth lookup times out and closes the channel; later re-checks still run', async () => {
       const authPath = require.resolve('../../lib/user-auth');
       const brokerPath = require.resolve('../../lib/peer-channel-broker');

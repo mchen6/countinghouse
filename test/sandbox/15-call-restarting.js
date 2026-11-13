@@ -34,12 +34,15 @@ function fakeDm(restarting) {
 // The calling worker, and the call's token the main thread issued to it
 // (R2-1 Task 3): every hop and channel request cites one, so each case below
 // reaches the restart, access and missing-device answers it is about.
+// The calling module (device dev-a) declared its calls to dev-b and dev-x
+// (R2-1 Task 4: a hop reaches only a declared target).
 const WORKER = 9;
+const DECLARES = {'dev-a': {identity: null, module: 'a', targets: new Set(['dev-b|svc|act', 'dev-x|svc|act'])}};
 function callerWM() {
   const sent = [];
-  return {sent, workerId: WORKER, sendActionInvokeReplyToChild: (m) => sent.push(m), sendPeerChannelDenyToChild: (m) => sent.push(m)};
+  return {sent, workerId: WORKER, bindings: DECLARES, sendActionInvokeReplyToChild: (m) => sent.push(m), sendPeerChannelDenyToChild: (m) => sent.push(m)};
 }
-const tokenFor = (key) => require(path.join(LIB, 'call-tokens')).issue({billingKey: key, workerId: WORKER});
+const tokenFor = (key) => require(path.join(LIB, 'call-tokens')).issue({billingKey: key, workerId: WORKER, deviceID: 'dev-a'});
 
 describe('sandbox 15: calls to a restarting module', () => {
   before(() => {

@@ -8,5 +8,10 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "mchen6",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "perf-callee-demo/perfCalleeService.echoPayload"
+    ]
+  }
 }
