@@ -30,6 +30,13 @@ the auth config.
   `--authConfigPath`): one key made at start and written nowhere, no auth
   file, a caller id from `<storePath>/.identity-secret` that survives
   restarts.
+- **On Windows:** the store's lock waits while another process is deleting
+  it (Windows refuses opens of a file being deleted with EPERM), and a lock
+  still refused when the two-second wait ends fails with EPERM and its
+  path. A kill there ends the process with no handler run, so the writes
+  since the last scheduled one are lost (up to about half a second of
+  metering, five seconds of `ctx.redis` data); a clean stop (stdin
+  closing, Ctrl-C) writes them.
 
 
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)

@@ -125,7 +125,10 @@ describe('store 04: the persisted maps (LM1 B2)', function() {
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1});
   });
 
-  it('flushes on SIGTERM', async () => {
+  // On Windows a kill ends the process at once, with no handler run, so the
+  // last unflushed writes are lost there (docs/deployment.md, "Local mode");
+  // the clean stop below is what flushes on every system.
+  (process.platform === 'win32' ? it.skip : it)('flushes on SIGTERM (POSIX)', async () => {
     const dir = tmpStore();
     const file = path.join(dir, 'm.json');
     const p = spawn(process.execPath, ['-e', `
@@ -139,6 +142,24 @@ describe('store 04: the persisted maps (LM1 B2)', function() {
     await new Promise((resolve) => p.stdout.once('data', resolve));
     p.kill('SIGTERM');
     await new Promise((resolve) => p.on('exit', resolve));
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {k: 'kept'});
+  });
+
+  it('flushes when the process ends on its own (a --stdio server\'s stop when stdin closes)', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const p = spawn(process.execPath, ['-e', `
+      const {openJsonFile, flushAllOnExit} = require(${JSON.stringify(MOD)});
+      flushAllOnExit();
+      const f = openJsonFile(${JSON.stringify(file)}, {debounceMs: 60000});
+      f.set('k', 'kept');
+      process.stdin.on('end', () => process.exit(0));
+      process.stdin.resume();
+      process.stdout.write('set\\n');
+    `], {stdio: ['pipe', 'pipe', 'inherit']});
+    await new Promise((resolve) => p.stdout.once('data', resolve));
+    p.stdin.end();
+    assert.strictEqual(await new Promise((resolve) => p.on('exit', resolve)), 0);
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {k: 'kept'});
   });
 
@@ -262,6 +283,62 @@ describe('store 04: the review of B2', function() {
     });
     await Promise.all([counter(), counter()]);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 200);
+  });
+
+  // Windows: a file being deleted while a handle is open on it (delete
+  // pending) refuses opens with EPERM until the handle closes. A lock in that
+  // state is busy, not an error; one still refused at the deadline fails with
+  // EPERM and the lock's path, as a genuine permission error would (the
+  // reviewer's rule: retry only under the deadline, keep the code).
+  const winIt = process.platform === 'win32' ? it : it.skip;
+  // The lock under `dir` held in delete pending: -> close(), or null where
+  // this Windows removes an open file's name at once (POSIX delete
+  // semantics), so delete pending cannot be made here.
+  function deletePendingLock(dir) {
+    const lock = path.join(dir, '.lock');
+    const fd = fs.openSync(lock, 'w');
+    fs.unlinkSync(lock);
+    try {
+      fs.writeFileSync(lock, 'probe', {flag: 'wx'});
+    } catch (e) {
+      if (e.code === 'EPERM') return () => fs.closeSync(fd);
+      fs.closeSync(fd);
+      throw e;
+    }
+    fs.unlinkSync(lock);
+    fs.closeSync(fd);
+    return null;
+  }
+
+  winIt('update() waits while the lock is being deleted, then writes (Windows)', async function() {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const close = deletePendingLock(dir);
+    if (close == null) return this.skip();   // POSIX delete semantics here: no delete pending to wait on
+    const f = openJsonFile(file);
+    setTimeout(close, 300);
+    const value = await new Promise((resolve, reject) => f.update('n', (v) => (v || 0) + 1, (err, v) => (err ? reject(err) : resolve(v))));
+    assert.strictEqual(value, 1);
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 1);
+    f.close();
+  });
+
+  winIt('a lock still refused at the deadline fails with EPERM and the lock\'s path, within the deadline (Windows)', function() {
+    const dir = tmpStore();
+    const close = deletePendingLock(dir);
+    if (close == null) return this.skip();   // POSIX delete semantics here: no refusal to hold
+    const started = Date.now();
+    try {
+      assert.throws(() => withStoreLock(dir, () => 'ran'), (e) => {
+        assert.strictEqual(e.code, 'EPERM');
+        assert.ok(e.message.includes(path.join(dir, '.lock')), e.message);
+        return true;
+      });
+      const took = Date.now() - started;
+      assert.ok(took >= 1900 && took < 4000, `failed after ${took} ms (the wait is 2000 ms)`);
+    } finally {
+      close();
+    }
   });
 
   it('reload() sees what another process wrote', () => {
