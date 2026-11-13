@@ -228,4 +228,62 @@ describe('module-loading 21: one module format, decided statically', function() 
       assert.strictEqual(called.result.structuredContent.text, 'hello x');
     });
   });
+
+  // Checked before anything is unloaded (reviewer, 2026-11-13): a loaded
+  // module whose files change to a main entry with no handlers/ is refused
+  // on every way back in -- a load of the same name, POST /reload-module,
+  // POST /restart-module -- and the version already loaded keeps serving.
+  // HTTP, because /reload-module and /restart-module have no stdio route.
+  [
+    ['in a worker', 9740, ['--workerThread']],
+    ['in single-thread mode', 9741, ['--no-workerThread']]
+  ].forEach(([where, port, flags]) => {
+    describe(`a reload into the retired layout is refused, and the loaded version keeps serving, ${where}`, () => {
+      const {startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+      const {deviceIDForName} = require('../../lib/call-address');
+      const HTTP_KEY = 'module-loading-21-http';
+      const NAME = 'reload-refused';
+      const ID = deviceIDForName(NAME);
+      let server = null;
+      let dir = null;
+      const ping = () => post(port, HTTP_KEY, `/devices/${ID}/invoke-action`, {serviceID: 'urn:countinghouse-test:serviceID:layoutService', actionName: 'ping', input: {}});
+      const serving = async () => {
+        const r = await ping();
+        assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+        assert.deepStrictEqual(r.body.output, {text: 'pong'}, JSON.stringify(r.body));
+      };
+      const refused = (r) => {
+        assert.notStrictEqual(r.status, 200, JSON.stringify(r.body));
+        assert.strictEqual(r.body.code, 'MODULE_LAYOUT_UNSUPPORTED', JSON.stringify(r.body));
+      };
+
+      before(async () => {
+        dir = writeModule(path.join(home, `reload-${port}`, NAME), NAME, {handlers: true});
+        server = await startServer(port, ['--debug', '--debugKey', HTTP_KEY, ...flags]);
+        const loaded = await post(port, HTTP_KEY, '/load-module', {path: dir, name: NAME});
+        assert.strictEqual(loaded.status, 200, JSON.stringify(loaded.body));
+        await waitFor(async () => (await ping()).status === 200, 20000, `${NAME} to answer`);
+        // The files change to the retired layout: a main entry, no handlers/.
+        fs.rmSync(path.join(dir, 'handlers'), {recursive: true, force: true});
+        fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: NAME, version: '1.0.0', main: 'device.js'}));
+        fs.writeFileSync(path.join(dir, 'device.js'), EXITS);
+      });
+      after(() => stopServer(server));
+
+      it('a load of the same name', async () => {
+        refused(await post(port, HTTP_KEY, '/load-module', {path: dir, name: NAME}));
+        await serving();
+      });
+
+      it('POST /reload-module', async () => {
+        refused(await post(port, HTTP_KEY, '/reload-module', {path: dir}));
+        await serving();
+      });
+
+      it('POST /restart-module', async () => {
+        refused(await post(port, HTTP_KEY, '/restart-module', {path: dir, name: NAME, version: '1.0.0'}));
+        await serving();
+      });
+    });
+  });
 });
