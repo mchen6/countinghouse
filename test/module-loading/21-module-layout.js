@@ -88,6 +88,17 @@ describe('module-loading 21: one module format, decided statically', function() 
       assert.match(e.message, /this one has index\.js and no handlers\/ directory/, 'names the file that triggered it');
     });
 
+    it('a "main" that names no file there (npm init\'s "index.js") is not a main entry', () => {
+      const dir = path.join(home, 'rule-main-missing');
+      fs.mkdirSync(dir, {recursive: true});
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: 'rule-main-missing', version: '1.0.0', main: 'index.js'}));
+      assert.strictEqual(layoutRefusal(dir, 'rule-main-missing'), null);
+      assert.strictEqual(require('../../lib/module-layout').mainEntry(dir), null);
+      fs.writeFileSync(path.join(dir, 'lib.js'), EXITS);
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: 'rule-main-missing', version: '1.0.0', main: 'lib'}));
+      assert.strictEqual(require('../../lib/module-layout').mainEntry(dir), 'package.json "main": "lib"', 'resolved as Node would, with .js');
+    });
+
     it('a handlers/ directory is the format, with or without a main entry', () => {
       assert.strictEqual(layoutRefusal(writeModule(path.join(home, 'rule-both'), 'rule-both', {handlers: true, main: 'device.js'}), 'rule-both'), null);
       assert.strictEqual(layoutRefusal(writeModule(path.join(home, 'rule-handlers'), 'rule-handlers', {handlers: true}), 'rule-handlers'), null);
