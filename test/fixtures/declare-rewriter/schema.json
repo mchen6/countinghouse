@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "rewriterService": {
+    "attempt": {
+      "input": {
+        "type": "object",
+        "properties": {"other": {"type": "string"}, "as": {"type": "string"}},
+        "required": ["other", "as"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {"code": {"type": ["string", "null"]}, "n": {"type": ["number", "null"]}, "write": {"type": "string"}},
+        "required": ["code", "n", "write"]
+      }
+    }
+  }
+}

@@ -120,6 +120,9 @@ const IDS = {callee: deviceIDForName('token-callee'), other: deviceIDForName('co
       const {out} = await tried('loadSecond');
       assert.strictEqual(out.code, 'LOAD_MODULE_FAIL', JSON.stringify(out));
       assert.match(String(out.message), /one module/);
+      // nor through the lower-level entry (Task 4's review)
+      const {out: code} = await tried('loadSecondCode');
+      assert.match(String(code.message), /one module/, JSON.stringify(code));
     });
   });
 });
@@ -177,5 +180,85 @@ describe('composition 21: a declaring module under --debug', function() {
     const tools = await TOOLS(KEY);
     assert.ok(!tools.includes(ATTEMPT), `declare-caller stayed loaded: ${tools.join(' ')}`);
     assert.ok(!/authorize as the debug key/.test(server.output), 'bound to the debug key with an auth file present');
+  });
+});
+
+// R2-1 Task 4's review: a module that rewrites its own package.json at load,
+// to declare a call it was not given, gains no target. The main thread reads
+// the file before the module runs (and keeps that copy across supervised
+// restarts); under audit the write itself is refused EACCES. Under off the
+// write lands and changes nothing.
+[['audit', 'EACCES'], ['off', 'written']].forEach(([mode, write]) => {
+  describe(`composition 21: a module that rewrites its declarations at load (--moduleSandbox ${mode})`, function() {
+    this.timeout(120000);
+    const KEY = `rw-key-${hex()}`;
+    const INTERNAL = `rw-internal-${hex()}`;
+    let base = null;
+    let server = null;
+    before(async () => {
+      base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21r-'));
+      const copy = path.join(base, 'declare-rewriter');
+      fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'declare-rewriter'), copy, {recursive: true});
+      fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
+        [KEY]: {userName: `rw-${hex()}`, devices: ['*']},
+        [INTERNAL]: {userName: `rw-internal-${hex()}`, devices: ['*'], runsModules: ['declare-rewriter']}
+      }));
+      server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
+        '--mcpToolCallCost', '1', '--moduleSandbox', mode, '--moduleDataPath', path.join(base, 'store'),
+        '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
+        '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-callee'),
+        '--loadModule', copy]);
+    });
+    after(() => {
+      stopServer(server);
+      if (base != null) fs.rmSync(base, {recursive: true, force: true});
+    });
+
+    it(`the rewritten call is refused CTX_CALL_UNDECLARED; the write: ${write}`, async () => {
+      const r = await request(URL).post('/mcp').set('X-CH-Key', KEY).set('Accept', 'application/json, text/event-stream')
+        .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'declare_rewriter_rewriterservice_attempt', arguments: {other: IDS.other, as: INTERNAL}}}).then((x) => x.body);
+      assert.ok(r.result != null && r.result.isError === false, JSON.stringify(r).slice(0, 600));
+      const out = toolOutput(r.result);
+      assert.strictEqual(out.write, write, JSON.stringify(out));
+      assert.strictEqual(out.code, 'CTX_CALL_UNDECLARED', `the rewritten declaration was taken: ${JSON.stringify(out)}`);
+    });
+  });
+});
+
+// R2-1 Task 4's review, spec section 8: in single-thread mode the hop is
+// checked in the calling module's ctx, against its composition's targets.
+describe('composition 21: declared calls in single-thread mode', function() {
+  this.timeout(120000);
+  const KEY = `st-key-${hex()}`;
+  const INTERNAL = `st-internal-${hex()}`;
+  let base = null;
+  let server = null;
+  const attempt = async (route) => {
+    const r = await request(URL).post('/mcp').set('X-CH-Key', KEY).set('Accept', 'application/json, text/event-stream')
+      .send({jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: {name: ATTEMPT, arguments: Object.assign({route, as: INTERNAL}, IDS)}}).then((x) => x.body);
+    assert.ok(r.result != null && r.result.isError === false, JSON.stringify(r).slice(0, 600));
+    return toolOutput(r.result);
+  };
+  before(async () => {
+    base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21s-'));
+    fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
+      [KEY]: {userName: `st-${hex()}`, devices: ['*']},
+      [INTERNAL]: {userName: `st-internal-${hex()}`, devices: ['*'], runsModules: ['declare-caller']}
+    }));
+    server = await startServer(PORT, ['--no-workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
+      '--mcpToolCallCost', '1', '--moduleDataPath', path.join(base, 'store'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-callee'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'declare-caller')]);
+  });
+  after(() => {
+    stopServer(server);
+    if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  it('the declared call works; ctx.serviceClient to an undeclared device or action is CTX_CALL_UNDECLARED', async () => {
+    assert.strictEqual((await attempt('declared')).code, null);
+    assert.strictEqual((await attempt('clientOtherDevice')).code, 'CTX_CALL_UNDECLARED');
+    assert.strictEqual((await attempt('clientOtherAction')).code, 'CTX_CALL_UNDECLARED');
   });
 });

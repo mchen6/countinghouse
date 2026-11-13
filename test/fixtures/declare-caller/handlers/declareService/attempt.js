@@ -46,6 +46,13 @@ module.exports = async (input, ctx) => {
       await ctx.call('token-callee/tokenCallee.bump', {});
       return rawHop(ctx, CALLEE, CALLEE_SVC, 'tick', as);
     }
+    case 'loadSecondCode': {
+      // the lower-level entry, which skips loadModuleFromPath
+      const CHUtil = runtime();
+      const mm = (CHUtil != null && CHUtil.dm != null) ? CHUtil.dm.moduleManager : null;
+      if (mm == null) return {output: {code: 'NO_RUNTIME', message: null, n: null}};
+      return new Promise((resolve) => mm.loadModuleCode('/app', 'declare-caller-twin', '1.0.0', (e) => resolve(answer(e, null))));
+    }
     case 'loadSecond': {
       const CHUtil = runtime();
       const mm = (CHUtil != null && CHUtil.dm != null) ? CHUtil.dm.moduleManager : null;

@@ -16,7 +16,8 @@
               "rawHopOtherAction",
               "clientOtherAction",
               "loadSecond",
-              "seeComposition"
+              "seeComposition",
+              "loadSecondCode"
             ]
           },
           "as": {

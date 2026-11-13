@@ -1166,6 +1166,21 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     // R2-1 Task 4's review: grants are keyed by the identity's id, and two
     // keys of one identity share the record; the re-check asks for every
     // key, so revoking either closes the channel.
+    it('(T4-review) the channel open carries no key to the callee worker', () => {
+      cli.setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0});   // no re-check timer left behind
+      try {
+        const PeerChannelBroker = require('../../lib/peer-channel-broker');
+        const opened = [];
+        const callee = {workerId: 72, sendPeerChannelOpenToChild: (m) => opened.push(m)};
+        const caller = {workerId: 71, sendPeerChannelGrantToChild: () => {}};
+        new PeerChannelBroker({deviceMap: {}}).grant('d', `caller-key-${hex()}`, caller, callee, ['svc|act']);
+        assert.strictEqual(opened.length, 1);
+        assert.ok(!('appKey' in opened[0]), `a key crossed to the callee: ${JSON.stringify(opened[0])}`);
+      } finally {
+        cli.setOptions({workerThread: false});
+      }
+    });
+
     it('(T4-review) two keys of one identity on a pair: revoking the first closes the channel', async () => {
       const authPath = require.resolve('../../lib/user-auth');
       const idPath = require.resolve('../../lib/identity');
