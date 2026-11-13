@@ -1,0 +1,14 @@
+{
+  "device": {
+    "friendlyName": "fails-load-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "A module whose handler throws when its worker loads it (test/stdio/04)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:failService": {
+        "actionList": [
+          {"name": "ping", "description": "Answers pong.", "input": {"schema": "/failService/ping/input"}, "output": {"schema": "/failService/ping/output"}}
+        ]
+      }
+    }
+  }
+}
