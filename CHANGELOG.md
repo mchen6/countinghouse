@@ -40,6 +40,25 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   restarts.
 
 
+### Fixed — on Windows, a module worker never started (#40)
+
+- On Windows every module's start stopped after "file broker: <module>
+  spawn walk", with no error, under every `--moduleSandbox` mode, so no
+  module was ever listed. Making a module's data directories, the server
+  chmod'ed each one `mkdir` had created, walking up from the deepest to
+  `mkdir`'s answer and comparing the two as strings. On Windows `mkdir`
+  answers in Node's namespaced form (`\\?\C:\...`), so they never met, and
+  the walk passed the drive's root and went on forever.
+- The walk is gone. `mkdir` already makes every directory at most 0700 (a
+  umask can only clear bits), and a module's own `data` and `tmp` are now
+  set to 0700 on every start, by their paths, never through a symbolic
+  link. A `data` or `tmp` left with other modes is made 0700 at the
+  module's next start; the directories above them (`--moduleDataPath`) are
+  left as they are.
+- On Linux and macOS the walk's two strings always came from the same path
+  (the data path is resolved before `mkdir` sees it), so no shipped
+  configuration there was affected.
+
 ### Added — a remote MCP server per module, called from the main thread (RC1-min)
 
 - A module declares one remote MCP server in `package.json`

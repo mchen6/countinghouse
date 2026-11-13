@@ -12,4 +12,10 @@ function mkdtemp(prefix) {
   return fs.realpathSync(fs.mkdtempSync(path.join(BASE, prefix)));
 }
 
-module.exports = {mkdtemp};
+// A test directory's removal, retried: on Windows a process just ended can
+// still hold handles under it for a moment.
+function remove(dir) {
+  if (dir != null) fs.rmSync(dir, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
+}
+
+module.exports = {mkdtemp, remove};
