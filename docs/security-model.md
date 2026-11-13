@@ -543,6 +543,17 @@ the main thread's, not the module's (spec:
     host resolves to, and as loopback on its port;
   - an answer is cut off at `--remoteMaxBytes` as it streams, and one
     deadline (`--remoteTimeout`) covers connecting and calling.
+  - `--remoteOriginMap`, for acceptance runs, moves a declared origin's
+    transport (credential included) to a loopback stand-in. It needs
+    `COUNTINGHOUSE_ACCEPTANCE=1` in the server's environment at start: the
+    gate is read once there, so nothing later turns a map on or off, and
+    no worker-thread module sees the variable. It accepts only
+    `http://127.0.0.1:<port>` or `http://[::1]:<port>` as a target, never
+    the Redis endpoint's port, and logs each mapping at start. The
+    declared path is set on the target, never read as another host. A
+    mapped call is not metered, its usage records are marked, the usage
+    report keeps it in a row of its own, and its receipt says so, so
+    acceptance data is never taken for a real measurement.
 - **Not provided.** A remote's answer is the remote's data: the module
   treats it as untrusted input, as it would any answer. The billing
   identity of a remote hop is the one the worker states, as on every
