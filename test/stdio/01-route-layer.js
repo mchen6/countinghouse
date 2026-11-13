@@ -117,6 +117,24 @@ describe('--stdio route layer', () => {
     await h.served.done;
   });
 
+  it('a notification the server sends while calls are held is a line of its own: every line one message', async () => {
+    const h = harness();
+    send(h, req(1, 'tools/call', {delayMs: 60}));
+    send(h, req(2, 'tools/list', {delayMs: 30}));
+    for (let i = 0; i < 5; i++) {
+      h.served.notify({jsonrpc: '2.0', method: 'notifications/tools/list_changed'});
+      await settle(10);
+    }
+    await settle(120);
+    const all = h.json();
+    assert.strictEqual(all.length, 7, h.raw());
+    assert.strictEqual(all.filter((m) => m.method === 'notifications/tools/list_changed').length, 5);
+    assert.deepStrictEqual(all.filter((m) => m.id != null).map((m) => m.id), [2, 1]);
+    assert.ok(h.raw().endsWith('\n') && h.lines().every((l) => { JSON.parse(l); return true; }));
+    h.input.end();
+    await h.served.done;
+  });
+
   it('a handle that fails answers the internal error for that id', async () => {
     const h = harness();
     send(h, req(9, 'boom'));

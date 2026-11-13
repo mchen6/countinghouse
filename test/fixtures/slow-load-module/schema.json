@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "slowService": {
+    "ping": {
+      "input": {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"text": {"type": "string"}}}
+    }
+  }
+}
