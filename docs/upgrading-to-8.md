@@ -84,6 +84,12 @@ you have to do. What the sandbox does and does not protect is in
   own `opts.timeout` still wins; either is capped at about 24 days
   (setTimeout's maximum).
 
+- **`add-job`'s `opts.timeout` must be a whole number of milliseconds, at
+  least 1.** A string (`"5000"`), a fraction, zero or a negative value used
+  to be coerced or to fail the run; it is now refused at once with
+  `ADD_JOB_ERROR`. A job stored earlier with such a value runs under
+  `--jobTimeout`, as if it had set none.
+
 - **Repeatable jobs created before 8.0.0** keep running under their old
   scheduler ids. A new `add-job` with the same name creates a second,
   owner-scoped scheduler rather than replacing the old one, so remove the

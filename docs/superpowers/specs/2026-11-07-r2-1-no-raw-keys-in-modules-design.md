@@ -451,10 +451,15 @@ and bill the caller's tenant for hops that never happened. So:
 - **The deadline is enforced on the match too** (the review of #141, N1):
   the announcement's time starts the caller's clock, and a module can post
   an announcement itself, early; so a metering request for an announcement
-  older than the caller's timeout is refused (no handler runs), a bill
-  arriving past the deadline is refused `PEER_CHANNEL_TIMEOUT`, and the
-  callee delivers nothing on a refused bill (as on `RATE_LIMITED`): a late
-  hop is neither billed nor served. A pair forgotten (a channel closed)
+  older than the caller's timeout is refused `PEER_CHANNEL_TIMEOUT` (no
+  handler runs), a bill arriving past the deadline is refused
+  `PEER_CHANNEL_TIMEOUT`, and the callee delivers nothing on a refused bill
+  (as on `RATE_LIMITED`): a late hop is not billed and its result is not
+  delivered; the handler may have run. That residual is by design: an
+  invoke sent just before the deadline, or a caller that invalidates its
+  own channel mid-handler, runs the handler and gets nothing for it. A
+  bill request is exempt from the message rate only while it cites a
+  matched, unbilled invoke of its worker. A pair forgotten (a channel closed)
   takes its matched invokes with it, so a hop the caller saw fail
   `PEER_GONE` is not billed. The chain's depth is bounded at 64 hops:
   deeper, the hop is refused `HOP_CHAIN_TOO_DEEP`.

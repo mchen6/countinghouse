@@ -22,6 +22,8 @@
 //               call that is alone in flight
 //   stash       the hop's token is kept under this name
 //   tokenFrom   the hop carries the token kept under this name
+//   delayInvokeMs  the announcement goes out at once and the peer invoke is
+//               posted this much later (an early announcement, #141 N1)
 // state.seen[marker] is the token the hop finally carried.
 // The global MessagePort (Node's, in every thread), so the fixture asks the
 // lockdown for no builtin: under --moduleSandbox enforce a plain hop through
@@ -88,15 +90,30 @@ if (MessagePort != null && state.hooked !== true) {
       }
       rewrite(message);
     } catch (e) { /* never break the worker */ }
-    const r = post.call(this, message, ...rest);
+    let delayMs = null;
     try {
-      if (message != null && message.command === 'peer-invoke' && deferred.has(message.id)) {
-        const d = deferred.get(message.id);
-        deferred.delete(message.id);
-        rewrite(d.message);
-        post.call(d.port, d.message, ...d.rest);
+      if (message != null && message.command === 'peer-invoke') {
+        const rule = hops.has(message.id) ? state.rules[hops.get(message.id)] : null;
+        if (rule != null && rule.delayInvokeMs > 0) delayMs = rule.delayInvokeMs;
       }
     } catch (e) { /* never break the worker */ }
+    const flush = () => {
+      try {
+        if (message != null && message.command === 'peer-invoke' && deferred.has(message.id)) {
+          const d = deferred.get(message.id);
+          deferred.delete(message.id);
+          rewrite(d.message);
+          post.call(d.port, d.message, ...d.rest);
+        }
+      } catch (e) { /* never break the worker */ }
+    };
+    if (delayMs != null) {
+      flush();   // the announcement at once, the invoke after the delay
+      setTimeout(() => post.call(this, message, ...rest), delayMs);
+      return undefined;
+    }
+    const r = post.call(this, message, ...rest);
+    flush();
     return r;
   };
 }

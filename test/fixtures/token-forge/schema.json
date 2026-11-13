@@ -30,6 +30,9 @@
               },
               "holdUntil": {
                 "type": "string"
+              },
+              "delayInvokeMs": {
+                "type": "number"
               }
             }
           },

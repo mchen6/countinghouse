@@ -250,6 +250,34 @@ describe('composition 18: the caller\'s timeout, the worker\'s timer, and the me
     });
   });
 
+  // #141 N1 on a server: a job's token outlives the caller's per-invoke
+  // timeout (the run is bounded by its own timeout, not the request timer),
+  // so an early announcement still matches a live token. The forge
+  // announces at once and posts the invoke only after the deadline, while
+  // the run waits (it does not await its hop). No handler runs, nothing is
+  // delivered, and only the run itself is billed.
+  it('(#141-N1) a job: an early announcement with the invoke after the deadline runs no handler and bills only the run', async () => {
+    server = await start(['--requestTimeout', '2', '--directPeerChannels']);
+    await via({marker: 'warm-job'});   // the channel is open
+    const before = await balance();
+    const ranBefore = await runs();
+    const FORGE = deviceIDForName('token-forge');
+    const added = await request(URL).post(`/devices/${FORGE}/add-job`).set('X-CH-Key', KEY)
+      .send({serviceID: 'urn:countinghouse-test:serviceID:forgeService', actionName: 'viaCall', opts: {name: `early-${hex()}`},
+        input: {marker: 'job-early', answerAfterMs: 5000, forge: {delayInvokeMs: 2600}}});
+    assert.ok(added.body != null && added.body.id != null, JSON.stringify(added.body));
+    // get-job answers {job, state}
+    const done = await waitFor(async () => {
+      const r = await request(URL).post(`/devices/${FORGE}/get-job`).set('X-CH-Key', KEY).send({id: added.body.id});
+      return (r.body != null && ['completed', 'failed'].includes(r.body.state)) ? r.body : null;
+    }, 20000, 'the job to finish');
+    assert.strictEqual(done.state, 'completed', JSON.stringify(done).slice(0, 400));
+    assert.strictEqual(done.job.returnvalue.output.code, 'PEER_CHANNEL_TIMEOUT', `the caller's own timer: ${JSON.stringify(done.job.returnvalue)}`);
+    await new Promise((ok) => setTimeout(ok, 1000));
+    assert.strictEqual(await runs(), ranBefore, 'the handler ran for an invoke past the deadline');
+    assert.strictEqual(before - await balance(), 1, 'more than the run was billed');
+  });
+
   it('(#138-2b) a worker reads the request timer in milliseconds, as the main thread gave it', async () => {
     server = await start(['--requestTimeout', '2', '--directPeerChannels']);
     const out = await via({marker: 'probe', probe: 'requestTimeout'});
@@ -767,41 +795,64 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       await sleep(200);
       meter(22, 'm22');
       await sleep(50);
-      assert.ok(refused(replyTo('m22')), `served past the deadline: ${JSON.stringify(replyTo('m22'))}`);
+      const r22 = replyTo('m22');
+      assert.ok(r22 != null && r22.errCode === 'PEER_CHANNEL_TIMEOUT' && typeof(r22.token) !== 'string', `served past the deadline, or refused as a bad token: ${JSON.stringify(r22)}`);
       assert.strictEqual(broker.announced.size, 0, 'the stale announcement stayed');
       assert.deepStrictEqual(billed, []);
     });
 
     // #141 N5: a channel gone (PEER_GONE for the caller) takes its matched
     // invokes with it: a bill for one of them is refused, nothing charged.
-    // #141 N4: the worker's bill credit goes with the entry.
-    it('(#141-N5, N4) a forgotten pair takes its matched invokes and the worker\'s bill credits with it', async () => {
+    // #141 N4: the token leaves the worker's rate-exempt set with the entry.
+    it('(#141-N5, N4) a forgotten pair takes its matched invokes, and their tokens leave the rate-exempt set', async () => {
       const e = ENTRY(caller.workerId);
       announce(23, tokens().issue(e));
       meter(23, 'm23');
       await sleep(50);
       assert.ok(served('m23'));
-      assert.strictEqual(callee.billCredits, 1);
       const token = replyTo('m23').token;
+      assert.ok(callee.unbilledTokens.has(token), 'the matched token is not rate-exempt');
       broker.forgetPair(pair());
       assert.strictEqual(broker.unbilled.size, 0, 'the pair\'s matched invoke outlived the pair');
-      assert.strictEqual(callee.billCredits, 0, 'the credit outlived the entry');
+      assert.ok(!callee.unbilledTokens.has(token), 'the token stayed rate-exempt after its entry went');
       bill(token, 'b23');
       await sleep(50);
       assert.ok(refused(replyTo('b23')), JSON.stringify(replyTo('b23')));
       assert.deepStrictEqual(billed, []);
     });
 
-    it('(#141-N4) the sweep forgetting a matched invoke past its deadline takes the credit too', async () => {
+    it('(#141-N4) the sweep forgetting a matched invoke past its deadline takes it out of the rate-exempt set', async () => {
       cli.setOptions({workerThread: true, mcpToolCallCost: 1, requestTimeout: 0.15});
       announce(24, tokens().issue(ENTRY(caller.workerId)));
       meter(24, 'm24');
       await sleep(50);
-      assert.strictEqual(callee.billCredits, 1);
+      const token = replyTo('m24').token;
+      assert.ok(callee.unbilledTokens.has(token));
       await sleep(200);
       broker.sweep();
       assert.strictEqual(broker.unbilled.size, 0);
-      assert.strictEqual(callee.billCredits, 0, 'the credit outlived the sweep');
+      assert.ok(!callee.unbilledTokens.has(token), 'the token stayed rate-exempt after the sweep');
+    });
+
+    // The narrow pass over #141: the exemption is the token's, not a count. A
+    // late bill for a forgotten invoke is counted against the rate and cannot
+    // use up the exemption a live invoke's bill needs.
+    it('(#141-credits) under an empty message budget, only a bill citing a live match passes the rate', () => {
+      const WorkerMessage = require('../../lib/worker-message');
+      const posted = [];
+      const emitted = [];
+      const wmMain = new WorkerMessage(null);
+      wmMain.worker = {postMessage: (m) => posted.push(m)};
+      wmMain.messageRate = 1;
+      wmMain.rateTokens = 0;
+      wmMain.rateRefillAt = Date.now() + 60000;   // no refill during the test
+      wmMain.on('peer-bill-request', (m) => emitted.push(m.data.token));
+      wmMain.unbilledTokens = new Set(['live']);
+      wmMain.onWorkerMessage({id: 1, category: 'child', command: 'peer-bill-request', data: {token: 'forgotten'}});
+      wmMain.onWorkerMessage({id: 2, category: 'child', command: 'peer-bill-request', data: {token: 'live'}});
+      wmMain.onWorkerMessage({id: 3, category: 'child', command: 'peer-bill-request', data: {token: 'made-up'}});
+      assert.deepStrictEqual(emitted, ['live'], `passed the rate: ${JSON.stringify(emitted)}`);
+      assert.deepStrictEqual(posted.map((m) => [m.command, m.msgID]), [['rate-limited-reply', 1], ['rate-limited-reply', 3]]);
     });
 
     // The review of #138 (4): the cap on matched, unbilled invokes used to
