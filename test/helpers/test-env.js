@@ -39,6 +39,16 @@ const redisUrl = () => (process.env.CH_TEST_REDIS_URL != null && process.env.CH_
 const redisFlag = () => (redisUrl() != null ? ` --redisUrl ${redisUrl()}` : '');
 // For an argument list: ['--redisUrl', url] or [].
 const redisArgs = () => (redisUrl() != null ? ['--redisUrl', redisUrl()] : []);
+// The --redisUrl a server start with arguments `args` gets: none when the
+// test passes its own ("--redisUrl <url>" or "--redisUrl=<url>"; two would
+// reach minimist as an array), none for --store local ("--store local" or
+// "--store=local"), which keeps no Redis and refuses a --redisUrl ("choose
+// one"), else redisArgs().
+function redisArgsFor(args) {
+  if (args.some((a) => a === '--redisUrl' || String(a).startsWith('--redisUrl='))) return [];
+  const local = args.some((a, i) => a === '--store=local' || (a === '--store' && args[i + 1] === 'local'));
+  return local ? [] : redisArgs();
+}
 // For a test's own Redis client: the same Redis as the servers it starts
 // (CH_TEST_REDIS_URL when set), else the URL it used before. Without it, a
 // test run through run-local.js would seed the shared Redis while its server
@@ -96,4 +106,4 @@ function startPrivateRedis({port = 9749, readyMs = 5000} = {}) {
   });
 }
 
-module.exports = {testPort, redisFlag, redisArgs, redisUrlFor, startShell, stopAll, startPrivateRedis};
+module.exports = {testPort, redisFlag, redisArgs, redisArgsFor, redisUrlFor, startShell, stopAll, startPrivateRedis};
