@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "forgeService": {
+    "viaCall": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "marker": {
+            "type": "string"
+          },
+          "forge": {
+            "type": "object",
+            "properties": {
+              "billingKey": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              },
+              "everyToken": {
+                "type": "boolean"
+              },
+              "stash": {
+                "type": "string"
+              },
+              "tokenFrom": {
+                "type": "string"
+              },
+              "holdUntil": {
+                "type": "string"
+              },
+              "delayInvokeMs": {
+                "type": "number"
+              }
+            }
+          },
+          "slowMs": {
+            "type": "number"
+          },
+          "answerAfterMs": {
+            "type": "number"
+          },
+          "drainFirst": {
+            "type": "number"
+          },
+          "viaClient": {
+            "type": "boolean"
+          },
+          "callee": {
+            "type": "string"
+          },
+          "as": {
+            "type": "string"
+          },
+          "probe": {
+            "type": "string",
+            "enum": [
+              "requestTimeout"
+            ]
+          }
+        },
+        "required": [
+          "marker"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "n": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stashed": {
+            "type": "boolean"
+          },
+          "exposed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tookMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "requestTimeout": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "requestTimeoutMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "n"
+        ]
+      }
+    }
+  }
+}

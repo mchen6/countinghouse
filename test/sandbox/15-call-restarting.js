@@ -31,10 +31,15 @@ function fakeDm(restarting) {
   return dm;
 }
 
+// The calling worker, and the call's token the main thread issued to it
+// (R2-1 Task 3): every hop and channel request cites one, so each case below
+// reaches the restart, access and missing-device answers it is about.
+const WORKER = 9;
 function callerWM() {
   const sent = [];
-  return {sent, sendActionInvokeReplyToChild: (m) => sent.push(m), sendPeerChannelDenyToChild: (m) => sent.push(m)};
+  return {sent, workerId: WORKER, sendActionInvokeReplyToChild: (m) => sent.push(m), sendPeerChannelDenyToChild: (m) => sent.push(m)};
 }
+const tokenFor = (key) => require(path.join(LIB, 'call-tokens')).issue({billingKey: key, workerId: WORKER});
 
 describe('sandbox 15: calls to a restarting module', () => {
   before(() => {
@@ -54,7 +59,7 @@ describe('sandbox 15: calls to a restarting module', () => {
 
   it('routed path: answers MODULE_RESTARTING', () => {
     const wm = callerWM();
-    fakeDm(true).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-b', 'svc', 'act', {}, 5, wm);
+    fakeDm(true).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-b', 'svc', 'act', {}, 5, wm, tokenFor('owner'));
     assert.strictEqual(wm.sent[0].errCode, 'MODULE_RESTARTING', JSON.stringify(wm.sent));
     assert.strictEqual(wm.sent[0].msgID, 5);
   });
@@ -63,7 +68,7 @@ describe('sandbox 15: calls to a restarting module', () => {
   // why: the reason can be a crash message.
   it('routed path: a caller without access gets the access error, not the restart', () => {
     const wm = callerWM();
-    fakeDm(true).sendInvokeActionMessageToWorker('stranger', 'stranger', 'dev-b', 'svc', 'act', {}, 5, wm);
+    fakeDm(true).sendInvokeActionMessageToWorker('stranger', 'stranger', 'dev-b', 'svc', 'act', {}, 5, wm, tokenFor('stranger'));
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
     assert.ok(!/exit code 3/.test(JSON.stringify(wm.sent)));
   });
@@ -72,7 +77,7 @@ describe('sandbox 15: calls to a restarting module', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(true);
-    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'stranger'}, wm);
+    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'stranger', token: tokenFor('stranger')}, wm);
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 
@@ -81,7 +86,7 @@ describe('sandbox 15: calls to a restarting module', () => {
   // composing module's rejection had no code).
   it('routed path: an unknown device is DEVICE_NOT_FOUND, to a caller with access', () => {
     const wm = callerWM();
-    fakeDm(false).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-x', 'svc', 'act', {}, 5, wm);
+    fakeDm(false).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-x', 'svc', 'act', {}, 5, wm, tokenFor('owner'));
     assert.strictEqual(wm.sent.length, 1, JSON.stringify(wm.sent));
     assert.strictEqual(wm.sent[0].msgID, 5);
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_NOT_FOUND', JSON.stringify(wm.sent));
@@ -95,7 +100,7 @@ describe('sandbox 15: calls to a restarting module', () => {
   // here from one that never was.
   it('routed path: an unknown device gives a caller without access the access error', () => {
     const wm = callerWM();
-    fakeDm(false).sendInvokeActionMessageToWorker('k', 'k', 'dev-x', 'svc', 'act', {}, 5, wm);
+    fakeDm(false).sendInvokeActionMessageToWorker('k', 'k', 'dev-x', 'svc', 'act', {}, 5, wm, tokenFor('k'));
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 
@@ -103,7 +108,7 @@ describe('sandbox 15: calls to a restarting module', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(true);
-    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'owner'}, wm);
+    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'owner', token: tokenFor('owner')}, wm);
     assert.strictEqual(wm.sent[0].errCode, 'MODULE_RESTARTING', JSON.stringify(wm.sent));
   });
 
@@ -111,7 +116,7 @@ describe('sandbox 15: calls to a restarting module', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(false);
-    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner'}, wm);
+    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner', token: tokenFor('owner')}, wm);
     assert.strictEqual(wm.sent[0].errCode, new CountinghouseError('DEVICE_NOT_FOUND').code);
   });
 
@@ -122,7 +127,7 @@ describe('sandbox 15: calls to a restarting module', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(false);
-    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner'}, wm);
+    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'owner', token: tokenFor('owner')}, wm);
     let got = null;
     DeviceManager.prototype.onPeerChannelDeny.call({flushPendingPeerInvokes: (deviceID, workerId, err) => { got = err; }}, wm.sent[0]);
     assert.strictEqual(got.code, 'DEVICE_NOT_FOUND');
@@ -136,11 +141,28 @@ describe('sandbox 15: calls to a restarting module', () => {
     assert.strictEqual(got.code, 'PEER_CHANNEL_DENIED');
   });
 
+  // Without the call's token the hop and the channel request are refused
+  // CALL_TOKEN_INVALID first, before any restart, access or missing-device
+  // answer: nothing about the device is told to a worker that cites no call.
+  it('without the call\'s token: CALL_TOKEN_INVALID before any restart or access answer, on both paths', () => {
+    const routed = callerWM();
+    fakeDm(true).sendInvokeActionMessageToWorker('owner', 'owner', 'dev-b', 'svc', 'act', {}, 5, routed);
+    fakeDm(true).sendInvokeActionMessageToWorker('stranger', 'stranger', 'dev-b', 'svc', 'act', {}, 6, routed);
+    assert.deepStrictEqual(routed.sent.map((m) => [m.msgID, m.errCode]), [[5, 'CALL_TOKEN_INVALID'], [6, 'CALL_TOKEN_INVALID']], JSON.stringify(routed.sent));
+    assert.ok(!/exit code 3/.test(JSON.stringify(routed.sent)));
+    const peer = callerWM();
+    const broker = Object.create(PeerChannelBroker.prototype);
+    broker.dm = fakeDm(true);
+    broker.handleRequest({targetDeviceID: 'dev-b', appKey: 'owner'}, peer);
+    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'stranger', token: `made-up-${Date.now()}`}, peer);
+    assert.deepStrictEqual(peer.sent.map((m) => m.errCode), ['CALL_TOKEN_INVALID', 'CALL_TOKEN_INVALID'], JSON.stringify(peer.sent));
+  });
+
   it('direct peer channels: an unknown device gives a caller without access the access error', () => {
     const wm = callerWM();
     const broker = Object.create(PeerChannelBroker.prototype);
     broker.dm = fakeDm(false);
-    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'k'}, wm);
+    broker.handleRequest({targetDeviceID: 'dev-x', appKey: 'k', token: tokenFor('k')}, wm);
     assert.strictEqual(wm.sent[0].errCode, 'DEVICE_ACCESS_DENIED', JSON.stringify(wm.sent));
   });
 });

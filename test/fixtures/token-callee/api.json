@@ -1,0 +1,43 @@
+{
+  "device": {
+    "friendlyName": "token-callee",
+    "manufacturer": "countinghouse",
+    "modelDescription": "R2-1 Task 3's callee: counts how often its handler ran, so a refused hop can be shown to have run nothing.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:tokenCallee": {
+        "actionList": [
+          {
+            "name": "bump",
+            "description": "Counts one run and returns the count.",
+            "input": {
+              "schema": "/tokenCallee/bump/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/bump/output"
+            }
+          },
+          {
+            "name": "count",
+            "description": "Returns the count without changing it.",
+            "input": {
+              "schema": "/tokenCallee/count/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/count/output"
+            }
+          },
+          {
+            "name": "slow",
+            "description": "Counts one run after input.ms milliseconds: a callee that answers after its caller's timeout.",
+            "input": {
+              "schema": "/tokenCallee/slow/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/slow/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
