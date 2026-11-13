@@ -51,6 +51,7 @@ describe('module-loading 22: a device announced by a worker that is going is not
     const dm = {
       deviceMap: {},
       allDevicesLoaded: true,
+      toolsetChanged: () => {},
       notifyDeviceLoad: {},
       moduleManager: {modules: {[MODULE]: wm}, clearEndedDevice: (id) => { cleared.push(id); }}
     };
