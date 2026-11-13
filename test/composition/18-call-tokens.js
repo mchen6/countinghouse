@@ -196,6 +196,76 @@ describe('composition 18: a hop under --moduleSandbox enforce, on both paths', f
   });
 });
 
+// The review of #138 (8, 2b, 6), on a server of its own per case: the
+// request timer short, so a callee can answer after its caller's timeout;
+// the worker's reading of that timer; and the message rate on the peer path.
+describe('composition 18: the caller\'s timeout, the worker\'s timer, and the message rate', function() {
+  this.timeout(120000);
+  const PORT = testPort(9698);
+  const URL = `http://127.0.0.1:${PORT}`;
+  const KEY = `bound-key-${hex()}`;
+  const READER = `reader-key-${hex()}`;
+  const INTERNAL = `forge-internal-${hex()}`;
+  let base = null;
+  let server = null;
+  const mcp = (key, name, args) => request(URL).post('/mcp').set('X-CH-Key', key).set('Accept', 'application/json, text/event-stream')
+    .send({jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: {name, arguments: args}}).then((x) => x.body);
+  const via = async (args) => {
+    const r = await mcp(KEY, VIA, args);
+    assert.ok(r.result != null && r.result.isError === false, JSON.stringify(r).slice(0, 600));
+    return toolOutput(r.result);
+  };
+  const runs = async () => toolOutput((await mcp(READER, COUNT, {})).result).n;
+  const balance = () => request(URL).get('/balance').set('X-CH-Key', KEY).then((r) => r.body.balance);
+  // sandbox: 'off' lets the probe reach the worker's options; the message
+  // rate applies under the sandbox ('audit', the worker-thread default)
+  const start = (flags, sandbox = 'off') => startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
+    '--mcpToolCallCost', '1', '--moduleSandbox', sandbox, '--moduleDataPath', path.join(base, 'store')].concat(flags, [
+    '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-forge')]));
+  before(() => {
+    base = fs.mkdtempSync(path.join(os.homedir(), '.ch-tokens-18b-'));
+    fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
+      [KEY]: {userName: `bound-${hex()}`, devices: ['*']},
+      [READER]: {userName: `reader-${hex()}`, devices: ['*']},
+      [INTERNAL]: {userName: `forge-internal-${hex()}`, devices: ['*'], runsModules: ['token-forge']}
+    }));
+  });
+  afterEach(() => { stopServer(server); server = null; });
+  after(() => { if (base != null) fs.rmSync(base, {recursive: true, force: true}); });
+
+  [['routed', '--no-directPeerChannels'], ['direct peer channels', '--directPeerChannels']].forEach(([label, flag]) => {
+    // The caller answers at 1 s without awaiting its hop; the callee answers
+    // at 3 s, past the 2 s request timer. The handler ran (the count moved),
+    // and the hop costs 0: only the outer call is billed.
+    it(`(#138-8) ${label}: a callee that answers after the caller's timeout is billed 0`, async () => {
+      server = await start(['--requestTimeout', '2', flag]);
+      const before = await balance();
+      const ranBefore = await runs();
+      const out = await via({marker: 'late', slowMs: 3000, answerAfterMs: 1000});
+      assert.strictEqual(out.code, null, JSON.stringify(out));
+      await waitFor(async () => (await runs()) > ranBefore, 6000);
+      assert.strictEqual(await runs(), ranBefore + 1, 'the slow handler did not run');
+      await new Promise((ok) => setTimeout(ok, 1500));
+      assert.strictEqual(before - await balance(), 1, 'the late hop was billed');
+    });
+  });
+
+  // The caller worker spends its message budget first, so the hop's own
+  // announcement is the message the main thread refuses: the hop fails
+  // RATE_LIMITED at once, not CALL_TOKEN_INVALID a second later.
+  it('(#138-6) direct peer channels: a hop whose announcement is rate-limited fails RATE_LIMITED at once', async () => {
+    server = await start(['--moduleMessageRate', '5', '--directPeerChannels'], 'audit');
+    const client = {viaClient: true, callee: deviceIDForName('token-callee'), as: INTERNAL};   // the cached client: no device query per hop
+    const warm = await via(Object.assign({marker: 'warm'}, client));   // the channel is open, the client cached
+    assert.strictEqual(warm.code, null, JSON.stringify(warm));
+    const ranBefore = await runs();
+    const out = await via(Object.assign({marker: 'limited', drainFirst: 30}, client));
+    assert.strictEqual(out.code, 'RATE_LIMITED', JSON.stringify(out));
+    assert.ok(out.tookMs < 800, `the hop took ${out.tookMs} ms to fail`);
+    assert.strictEqual(await runs(), ranBefore, 'the callee\'s handler ran');
+  });
+});
+
 // Jobs carry their owner's opaque id, not a key (Review Focus 4): a run's
 // token is issued for that owner. A job or scheduler stored before the
 // upgrade, with an apiKey only, still runs, bills and is its owner's.
@@ -365,6 +435,32 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.strictEqual(tokens().resolve(a, {workerId: 4}), null);
       assert.strictEqual(tokens().resolve(b, {workerId: 4}), null);
       assert.notStrictEqual(tokens().resolve(c, {workerId: 5}), null);
+    });
+
+    // The review of #138 (1): a child token is its parent's call's, so it
+    // lives no longer than the parent, goes when the parent goes, and is
+    // nothing once any ancestor is. Otherwise a colluding part could mint
+    // itself a new token each time the last one neared its end, and one
+    // call would bill its caller for ever.
+    it('(#138-1) a child expires no later than its parent; dropping a token drops its descendants; an ancestor gone ends the chain', async () => {
+      const parent = tokens().issue(Object.assign(ENTRY(6), {ttlMs: 80}));
+      const child = tokens().issue(Object.assign(ENTRY(7), {parent: parent}));
+      const e = tokens().resolve(child, {workerId: 7});
+      assert.ok(e != null && e.expires <= tokens().resolve(parent, {workerId: 6}).expires, 'the child outlives its parent');
+      await sleep(100);
+      assert.strictEqual(tokens().resolve(child, {workerId: 7}), null, 'the child is live after its parent expired');
+
+      const p2 = tokens().issue(ENTRY(6));
+      const c2 = tokens().issue(Object.assign(ENTRY(7), {parent: p2}));
+      const g2 = tokens().issue(Object.assign(ENTRY(8), {parent: c2}));
+      tokens().drop(p2);
+      assert.strictEqual(tokens().resolve(c2, {workerId: 7}), null, 'the child survived its parent\'s drop');
+      assert.strictEqual(tokens().resolve(g2, {workerId: 8}), null, 'the grandchild survived');
+
+      const p3 = tokens().issue(ENTRY(6));
+      const c3 = tokens().issue(Object.assign(ENTRY(7), {parent: p3}));
+      tokens().dropFor(6);   // the parent's worker ended: everything under it is over too
+      assert.strictEqual(tokens().resolve(c3, {workerId: 7}), null, 'the chain outlived the parent\'s worker');
     });
   });
 
@@ -547,7 +643,10 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.ok(refused(replyTo('m8')), JSON.stringify(callee.replies));
     });
 
-    it('(5) a hung deduction: served unbilled within its deadline, and the log says so', async () => {
+    // The review of #138 (7): the routed path waits for the deduction; so
+    // does this one now. A deadline that answered "served unbilled" while
+    // recordCall could still charge told the log something false.
+    it('(5) a hung deduction leaves the bill request waiting, as the routed path waits; nothing is logged as unbilled', async () => {
       const lines = [];
       const savedE = LOG.E, savedI = LOG.I;
       LOG.E = (e) => lines.push(String(e && e.message ? e.message : e));
@@ -558,16 +657,131 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         meter(9, 'm9');
         await sleep(50);
         assert.ok(served('m9'), JSON.stringify(callee.replies));
-        const started = Date.now();
         bill(replyTo('m9').token, 'b9');
-        while (replyTo('b9') == null && Date.now() - started < 1500) await sleep(20);
-        assert.ok(replyTo('b9') != null, 'not answered within 1.5 s');
-        assert.ok(Date.now() - started < 1000, `answered after ${Date.now() - started} ms`);
-        assert.ok(!refused(replyTo('b9')) && replyTo('b9').errMsg == null, JSON.stringify(replyTo('b9')));
-        assert.ok(lines.some((l) => /unbilled/i.test(l)), `the log did not say it went unbilled: ${JSON.stringify(lines)}`);
+        await sleep(900);
+        assert.strictEqual(replyTo('b9'), undefined, `answered while the deduction was still pending: ${JSON.stringify(replyTo('b9'))}`);
+        assert.ok(!lines.some((l) => /unbilled/i.test(l)), `logged as unbilled: ${JSON.stringify(lines)}`);
       } finally {
         LOG.E = savedE;
         LOG.I = savedI;
+      }
+    });
+
+    // The review of #138 (2a): the bill is for the matched invoke, and the
+    // match is what says whom to bill. The callee's token may be gone by
+    // then (its call's chain answered: a caller that did not await its hop),
+    // and the handler still ran, inside the caller's timeout.
+    it('(#138-2a) a bill for a matched invoke whose token has gone is billed from the match, inside the caller\'s timeout', async () => {
+      const e = ENTRY(caller.workerId);
+      const outer = tokens().issue(e);
+      announce(12, outer);
+      meter(12, 'm12');
+      await sleep(50);
+      assert.ok(served('m12'), JSON.stringify(callee.replies));
+      const token = replyTo('m12').token;
+      tokens().drop(outer);   // the outer call answered: its chain is dropped
+      assert.strictEqual(tokens().resolve(token, {workerId: callee.workerId}), null, 'the callee\'s token outlived its parent');
+      bill(token, 'b12');
+      await sleep(50);
+      assert.ok(replyTo('b12') != null && !refused(replyTo('b12')) && replyTo('b12').meteringResult != null && replyTo('b12').meteringResult.charged === 1, JSON.stringify(replyTo('b12')));
+      assert.deepStrictEqual(billed, [e.billingKey]);
+      bill(token, 'b12-again');
+      await sleep(50);
+      assert.ok(refused(replyTo('b12-again')), 'billed twice');
+      assert.deepStrictEqual(billed, [e.billingKey]);
+    });
+
+    it('(#138-2a) a bill from a worker other than the matched callee is refused', async () => {
+      const e = ENTRY(caller.workerId);
+      announce(13, tokens().issue(e));
+      meter(13, 'm13');
+      await sleep(50);
+      const token = replyTo('m13').token;
+      const other = wm(13);
+      broker.handleBillRequest({token: token}, 'b13', other);
+      await sleep(50);
+      assert.ok(refused(other.replies.find((r) => r.msgID === 'b13')), JSON.stringify(other.replies));
+      assert.deepStrictEqual(billed, []);
+    });
+
+    // The review of #138 (8), as the reviewer narrowed it: main saw the
+    // announcement, and knows the caller's per-invoke timeout; a bill after
+    // announce + timeout charges nothing. The caller worker is told nothing
+    // and says nothing: a worker's word on billing is what R2-1 removes.
+    it('(#138-8) a bill arriving after the announcement plus the caller\'s timeout charges nothing, and the reply says so', async () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, requestTimeout: 0.15});   // seconds, as the CLI takes it: 150 ms
+      const e = ENTRY(caller.workerId);
+      announce(14, tokens().issue(e));
+      meter(14, 'm14');
+      await sleep(50);
+      assert.ok(served('m14'), JSON.stringify(callee.replies));
+      await sleep(200);
+      bill(replyTo('m14').token, 'b14');
+      await sleep(50);
+      const r = replyTo('b14');
+      assert.ok(r != null && !refused(r) && r.errMsg == null && r.meteringResult == null, JSON.stringify(r));
+      assert.deepStrictEqual(billed, [], 'charged after the caller\'s timeout');
+      assert.strictEqual(broker.unbilled.size, 0);
+    });
+
+    // The review of #138 (4): the cap on matched, unbilled invokes used to
+    // evict the oldest, which then went free; it is per channel now, and
+    // fails closed: past it, a metering request is refused, and what is
+    // there stays billable.
+    it('(#138-4) past the cap on matched unbilled invokes on one channel, the next request is refused; nothing goes free', async () => {
+      const PeerChannelBroker = require('../../lib/peer-channel-broker');
+      const cap = PeerChannelBroker.UNBILLED_PER_CHANNEL_MAX;
+      assert.ok(Number.isInteger(cap) && cap > 0, 'no per-channel cap');
+      const e = ENTRY(caller.workerId);
+      const first = tokens().issue(e);
+      announce(1000, first);
+      meter(1000, 'm1000');
+      for (let i = 1; i < cap; i++) { announce(1000 + i, tokens().issue(e)); meter(1000 + i, `m${1000 + i}`); }
+      assert.ok(served('m1000') && served(`m${1000 + cap - 1}`), 'the matches under the cap were not served');
+      announce(1000 + cap, tokens().issue(e));
+      meter(1000 + cap, 'm-over');
+      await sleep(50);
+      assert.ok(refused(replyTo('m-over')), `served past the cap: ${JSON.stringify(replyTo('m-over'))}`);
+      assert.strictEqual(broker.unbilled.size, cap, 'an entry was evicted');
+      bill(replyTo('m1000').token, 'b1000');
+      await sleep(50);
+      assert.deepStrictEqual(billed, [e.billingKey], 'the oldest match went free');
+      // a second channel is not bounded by the first's
+      const other = wm(14);
+      broker.channelRegistry[`${caller.workerId}:${other.workerId}`] = {callerWM: caller, calleeWM: other, grants: {}};
+      broker.handleAnnouncement({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, token: tokens().issue(e)}, caller);
+      broker.handleMeteringRequest({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'}, 'm-other', other);
+      await sleep(50);
+      const r = other.replies.find((x) => x.msgID === 'm-other');
+      assert.ok(r != null && !refused(r) && typeof(r.token) === 'string', `the other channel was refused: ${JSON.stringify(r)}`);
+    });
+
+    // The review of #138 (5a): the channel open takes the call's token too
+    // (spec section 3; "every worker message needs a token"). Without one,
+    // or with another worker's, the request is denied before any lookup.
+    it('(#138-5a) a channel request without the call\'s token, or with a foreign one, is denied CALL_TOKEN_INVALID before any lookup', async () => {
+      const authPath = require.resolve('../../lib/user-auth');
+      const savedAuth = require.cache[authPath];
+      let lookups = 0;
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: () => { lookups++; }};
+      try {
+        delete require.cache[require.resolve('../../lib/peer-channel-broker')];
+        const PeerChannelBroker = require('../../lib/peer-channel-broker');
+        const b = new PeerChannelBroker({deviceMap: {}});
+        const denied = [];
+        const requester = {workerId: 15, sendPeerChannelDenyToChild: (m) => denied.push(m)};
+        b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k'}, requester);
+        b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: `made-up-${hex()}`}, requester);
+        b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(16))}, requester);
+        await sleep(20);
+        assert.deepStrictEqual(denied.map((m) => m.errCode), ['CALL_TOKEN_INVALID', 'CALL_TOKEN_INVALID', 'CALL_TOKEN_INVALID'], JSON.stringify(denied));
+        assert.strictEqual(lookups, 0, 'a lookup ran for a request with no valid token');
+        b.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(15))}, requester);
+        await sleep(20);
+        assert.strictEqual(lookups, 1, 'the request with the worker\'s own token did not reach the lookup');
+      } finally {
+        if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+        delete require.cache[require.resolve('../../lib/peer-channel-broker')];
       }
     });
   });
@@ -594,6 +808,94 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       } finally {
         if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         cli.setOptions({workerThread: false});
+      }
+    });
+  });
+
+  // The review of #138 (5b): the device query takes the call's token too,
+  // and fails closed without it: a worker message with no token, or
+  // another worker's, is answered with nothing, device present or not.
+  describe('the device query without a token', () => {
+    it('(#138-5b) is refused CALL_TOKEN_INVALID, the device present or not', async () => {
+      const DeviceManager = require('../../lib/device-manager');
+      cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
+      try {
+        const replies = [];
+        const wm = {workerId: 32, sendDeviceQueryReplyToChild: (m) => replies.push(m)};
+        const present = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(null, {deviceList: {[d]: {device: {friendlyName: 'present'}}}}), missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-present', 'q1', wm, null);
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-present', 'q2', wm, {token: `made-up-${hex()}`, appKey: 'k'});
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-present', 'q3', wm, {token: tokens().issue(ENTRY(33)), appKey: 'k'});
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-present', 'q4', wm, {token: tokens().issue(ENTRY(32)), appKey: 'k'});
+        await sleep(50);
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]), [['q1', false, 'CALL_TOKEN_INVALID'], ['q2', false, 'CALL_TOKEN_INVALID'], ['q3', false, 'CALL_TOKEN_INVALID'], ['q4', true, undefined]], JSON.stringify(replies));
+        const missing = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(new Error('missing'), null), missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
+        DeviceManager.prototype.queryDeviceForChild.call(missing, 'd-gone', 'q5', wm, null);
+        await sleep(50);
+        const r = replies.find((x) => x.msgID === 'q5');
+        assert.ok(r != null && r.spec == null && r.errCode === 'CALL_TOKEN_INVALID', JSON.stringify(r));
+      } finally {
+        cli.setOptions({workerThread: false});
+      }
+    });
+  });
+
+  // The review of #138 (3): a token lives as long as its call, and no
+  // longer: a call's session timeout ends the sync token, a run's timeout
+  // the job token (which used to live 25 h whatever the run's timeout, and
+  // to die mid-run past it).
+  describe('the token bounds of a call and of a run', () => {
+    const DeviceManager = require('../../lib/device-manager');
+    const device = (workerId, sent) => ({workerId: workerId, bindings: {}, deviceList: {}, sendInvokeActionMessage: (m) => sent.push(m)});   // never answers
+    afterEach(() => cli.setOptions({workerThread: false}));
+
+    it('(#138-3) a call\'s token is dropped when its session times out', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 0.1});   // seconds, as the CLI takes it: 100 ms
+      const sent = [];
+      const session = {appKey: `caller-${hex()}`, callback: () => {}};
+      session.setDeviceTimer = (dev, cb) => cb.call(session, null, dev, null);
+      DeviceManager.prototype.invokeAction.call({}, device(41, sent), 'd-41', 'svc', 'act', {input: {}}, session);
+      assert.strictEqual(sent.length, 1);
+      const token = sent[0].args.token;
+      assert.notStrictEqual(tokens().resolve(token, {workerId: 41}), null);
+      await sleep(160);
+      assert.strictEqual(tokens().resolve(token, {workerId: 41}), null, 'the token outlived the session');
+    });
+
+    it('(#138-3) a run\'s token is dropped at the run\'s timeout, and lives as long as a run that has none', async () => {
+      cli.setOptions({workerThread: true, requestTimeout: 30});
+      const sent = [];
+      const dm = {};
+      DeviceManager.prototype.invokeJobs.call(dm, device(42, sent), 'd-42', 'svc', 'act', {}, 'job-1', () => {}, {ownerKey: `owner-${hex()}`, timeoutMs: 100});
+      DeviceManager.prototype.invokeJobs.call(dm, device(42, sent), 'd-42', 'svc', 'act', {}, 'job-2', () => {}, {ownerKey: `owner-${hex()}`});
+      assert.strictEqual(sent.length, 2);
+      const [bounded, open] = sent.map((m) => m.args.token);
+      assert.ok(!('timeoutMs' in sent[0].args) && !('ownerKey' in sent[0].args), 'the run\'s bookkeeping was sent to the worker');
+      assert.notStrictEqual(tokens().resolve(bounded, {workerId: 42}), null);
+      await sleep(160);
+      assert.strictEqual(tokens().resolve(bounded, {workerId: 42}), null, 'the token outlived the run\'s timeout');
+      const o = tokens().resolve(open, {workerId: 42});
+      assert.ok(o != null && o.expires === Infinity, `a run with no timeout has a token that ends: ${o != null ? o.expires - Date.now() : null}`);
+      tokens().drop(open);
+    });
+  });
+
+  // The review of #138 (9): the unknown-key answer named the key.
+  describe('SYSTEM_ERROR_UNKNOWN_USER', () => {
+    it('(#138-9) names no key, from the file provider', async () => {
+      const FileAuthProvider = require('../../lib/auth/file-provider');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-18-unknown-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({[`known-${hex()}`]: {userName: 'known', devices: ['*']}}));
+        const provider = new FileAuthProvider({configPath: path.join(dir, 'auth.json')});
+        await new Promise((resolve, reject) => provider.reload((e) => (e ? reject(e) : resolve())));
+        const key = `unknown-${hex()}`;
+        const result = await new Promise((resolve, reject) => provider.authenticate(key, null, null, null, (e, r) => (e ? reject(e) : resolve(r))));
+        assert.strictEqual(result.ok, false);
+        assert.strictEqual(result.err.code, 'SYSTEM_ERROR_UNKNOWN_USER');
+        assert.ok(!String(result.err.message).includes(key), `the key is in the message: ${result.err.message}`);
+      } finally {
+        fs.rmSync(dir, {recursive: true, force: true});
       }
     });
   });

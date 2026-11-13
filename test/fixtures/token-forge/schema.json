@@ -7,30 +7,90 @@
       "input": {
         "type": "object",
         "properties": {
-          "marker": {"type": "string"},
+          "marker": {
+            "type": "string"
+          },
           "forge": {
             "type": "object",
             "properties": {
-              "billingKey": {"type": "string"},
-              "token": {"type": "string"},
-              "everyToken": {"type": "boolean"},
-              "stash": {"type": "string"},
-              "tokenFrom": {"type": "string"},
-              "holdUntil": {"type": "string"}
+              "billingKey": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              },
+              "everyToken": {
+                "type": "boolean"
+              },
+              "stash": {
+                "type": "string"
+              },
+              "tokenFrom": {
+                "type": "string"
+              },
+              "holdUntil": {
+                "type": "string"
+              }
             }
+          },
+          "slowMs": {
+            "type": "number"
+          },
+          "answerAfterMs": {
+            "type": "number"
+          },
+          "drainFirst": {
+            "type": "number"
+          },
+          "viaClient": {
+            "type": "boolean"
+          },
+          "callee": {
+            "type": "string"
+          },
+          "as": {
+            "type": "string"
           }
         },
-        "required": ["marker"]
+        "required": [
+          "marker"
+        ]
       },
       "output": {
         "type": "object",
         "properties": {
-          "code": {"type": ["string", "null"]},
-          "n": {"type": ["number", "null"]},
-          "stashed": {"type": "boolean"},
-          "exposed": {"type": ["boolean", "null"]}
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "n": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "stashed": {
+            "type": "boolean"
+          },
+          "exposed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tookMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
         },
-        "required": ["code", "n"]
+        "required": [
+          "code",
+          "n"
+        ]
       }
     }
   }
