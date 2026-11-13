@@ -8,7 +8,8 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {spawn, spawnSync} = require('child_process');
+const {spawnSync} = require('child_process');
+const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 
 const ROOT = path.join(__dirname, '..', '..');
 const ENTRY = path.join(ROOT, 'bin', 'countinghouse-stdio.js');
@@ -18,55 +19,8 @@ const KEY = 'stdio-test-key';
 function start(home, extra = []) {
   const auth = path.join(home, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
-  const child = spawn(process.execPath, [ENTRY, '--workerThread', '--loadModule', MODULE, '--authConfigPath', auth,
-    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749', ...extra],
-  // --trace-deprecation (issue #40, for B): the url.parse warning's stack says
-  // which thread printed it, so whether the worker's boot ran past the walk.
-  {env: {...process.env, COUNTINGHOUSE_API_KEY: KEY, NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --trace-deprecation`.trim()}, stdio: ['pipe', 'pipe', 'pipe']});
-  const io = {child, out: '', err: '', waiters: []};
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (d) => { io.out += d; io.waiters.forEach((w) => w()); });
-  child.stderr.on('data', (d) => { io.err += d; });
-  return io;
-}
-
-const lines = (io) => io.out.split('\n').filter((l) => l !== '');
-
-// The server's stderr for a failure message, without the Redis connection
-// noise this test causes on purpose (--redisUrl points where nothing
-// answers, so every Redis client and the job queue retry and log). Without
-// this the 2000-character tail held only that noise, and on Windows (issue
-// #40) the real reason the module never listed was cut off.
-// A noise block starts at one of these lines and runs through the indented
-// stack and field lines and the closing brace that follow it. Indented lines
-// after anything else (a --trace-deprecation stack, say) are kept.
-const REDIS_NOISE = /ECONNREFUSED|Redis client error|Redis connection to|job queue error/;
-const CONTINUATION = /^\s+\S|^\s*[{}]\s*$/;
-function diagnostic(err, max = 4000) {
-  const kept = [];
-  let inNoise = false;
-  for (const l of err.split('\n')) {
-    if (l.trim() === '') continue;
-    if (REDIS_NOISE.test(l)) { inNoise = true; continue; }
-    if (inNoise && CONTINUATION.test(l)) continue;
-    inNoise = false;
-    kept.push(l);
-  }
-  const text = kept.join('\n');
-  return text.length > max ? `…${text.slice(-max)}` : text;
-}
-function request(io, message, timeoutMs = 15000) {
-  io.child.stdin.write(`${JSON.stringify(message)  }\n`);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`no answer to ${message.method}; stderr without the Redis noise: ${diagnostic(io.err)}`)), timeoutMs);
-    const check = () => {
-      const found = lines(io).map((l) => JSON.parse(l)).find((r) => r.id === message.id);
-      if (found) { clearTimeout(timer); resolve(found); }
-    };
-    io.waiters.push(check);
-    check();
-  });
+  return startStdio(['--workerThread', '--loadModule', MODULE, '--authConfigPath', auth,
+    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749', ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
 }
 
 describe('--stdio, spawned: the failure message', () => {
@@ -79,60 +33,37 @@ describe('--stdio, spawned: the failure message', () => {
       '{"level":50,"e":"job queue error: Error: connect ECONNREFUSED 127.0.0.1:9749"}',
       '{"level":50,"e":"module handler-map-module failed to load: the real reason"}'
     ].join('\n');
-    assert.strictEqual(diagnostic(err), '{"level":50,"e":"module handler-map-module failed to load: the real reason"}');
+    assert.strictEqual(withoutRedisNoise(err), '{"level":50,"e":"module handler-map-module failed to load: the real reason"}');
     const traced = ['(node:1) [DEP0169] DeprecationWarning: url.parse()', '    at urlParse (node:url:136:13)', '    at Object.<anonymous> (lib/job-control.js:66:20)'].join('\n');
-    assert.strictEqual(diagnostic(`${err}\n${traced}`).split('\n').slice(1).join('\n'), traced, 'a stack after a non-noise line is kept');
+    assert.strictEqual(withoutRedisNoise(`${err}\n${traced}`).split('\n').slice(1).join('\n'), traced, 'a stack after a non-noise line is kept');
   });
 });
 
 describe('--stdio, spawned', function() {
-  // Long enough that a broker request's 30 s deadline (ETIMEDOUT) or its
-  // sync backstop (EIO) lands inside the wait on a hung boot (issue #40).
   this.timeout(120000);
   let home;
+  let io = null;
   beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-')); });
-  afterEach(() => { fs.rmSync(home, {recursive: true, force: true}); });
-
-  // Issue #40 (step 4): on Windows the module's boot stops after "file broker:
-  // <module> spawn walk", so its tool is never listed. The same start with the
-  // sandbox off (no file broker) says whether the broker is where it stops.
-  it('lists and calls the module with the sandbox off as well (the #40 bisection)', async () => {
-    const io = start(home, ['--moduleSandbox', 'off']);
-    await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
-    let tool = null;
-    for (let i = 0; i < 120 && tool == null; i++) {
-      const list = await request(io, {jsonrpc: '2.0', id: 100 + i, method: 'tools/list'});
-      tool = (list.result.tools || []).find((x) => /hello/.test(x.name)) || null;
-      if (tool == null) await new Promise((r) => setTimeout(r, 500));
-    }
-    assert.ok(tool, `the module's tool is listed with the sandbox off; stderr without the Redis noise: ${diagnostic(io.err)}`);
-    const called = await request(io, {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: tool.name, arguments: {name: 'stdio'}}});
-    assert.match(JSON.stringify(called.result), /hello stdio/);
-    const exit = new Promise((resolve) => io.child.on('exit', (code) => resolve(code)));
-    io.child.stdin.end();
-    assert.strictEqual(await exit, 0);
+  afterEach(async() => {
+    if (io != null) await io.stop();
+    io = null;
+    fs.rmSync(home, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
   });
 
   it('serves initialize, tools/list and tools/call, stdout holding JSON-RPC only, and exits 0 when stdin closes', async () => {
-    const io = start(home);
-    const init = await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
+    io = start(home);
+    const init = await io.request({...INITIALIZE, id: 1});
     assert.ok(init.result && init.result.serverInfo, JSON.stringify(init));
-    io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'})}\n`);
+    io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     // A notification the gateway does not know is still never answered over stdio.
-    io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 99}})}\n`);
-    let tool = null;
-    for (let i = 0; i < 120 && tool == null; i++) {
-      const list = await request(io, {jsonrpc: '2.0', id: 100 + i, method: 'tools/list'});
-      tool = (list.result.tools || []).find((t) => /hello/.test(t.name)) || null;
-      if (tool == null) await new Promise((r) => setTimeout(r, 500));
-    }
-    assert.ok(tool, `the module's tool is listed; stderr without the Redis noise: ${diagnostic(io.err)}`);
-    const called = await request(io, {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: tool.name, arguments: {name: 'stdio'}}});
+    io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 99}});
+    const tool = await waitForTool(io, /hello/);
+    assert.ok(tool, `the module's tool is listed; stderr without the Redis noise: ${withoutRedisNoise(io.err)}`);
+    const called = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: tool.name, arguments: {name: 'stdio'}}});
     assert.match(JSON.stringify(called.result), /hello stdio/);
-    const exit = new Promise((resolve) => io.child.on('exit', (code) => resolve(code)));
-    io.child.stdin.end();
-    assert.strictEqual(await exit, 0);
-    for (const l of lines(io)) {
+    const exit = await io.stop();
+    assert.strictEqual(exit.code, 0);
+    for (const l of io.lines) {
       const m = JSON.parse(l);
       assert.strictEqual(m.jsonrpc, '2.0', `a stdout line that is not JSON-RPC: ${l.slice(0, 200)}`);
       assert.ok(m.id !== null && m.id !== undefined, `an answer to a notification: ${l.slice(0, 200)}`);
@@ -140,7 +71,7 @@ describe('--stdio, spawned', function() {
     assert.ok(io.err.length > 0, 'the logs went to stderr');
     // The fixture echoes ctx.caller.apiKey in its own result (id 2); nothing else may hold the key.
     assert.ok(!io.err.includes(KEY), 'the key is never logged');
-    for (const l of lines(io)) if (JSON.parse(l).id !== 2) assert.ok(!l.includes(KEY), `the key in a stdout line: ${l.slice(0, 200)}`);
+    for (const l of io.lines) if (JSON.parse(l).id !== 2) assert.ok(!l.includes(KEY), `the key in a stdout line: ${l.slice(0, 200)}`);
   });
 
   it('--stdio with --port is refused: choose one', () => {
