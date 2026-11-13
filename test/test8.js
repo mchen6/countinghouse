@@ -21,6 +21,10 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
+    // direct-peer-channels/02 (D4): a restart of echo-device-module keeps its
+    // window open 2 s, whatever the boot time (lib/module-manager.js restartModule).
+    process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MS = '2000';
+    process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MODULE = 'echo-device-module';
     const server = exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
