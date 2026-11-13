@@ -55,10 +55,23 @@ async function refusalOf(ctx, address) {
 }
 
 describe('ctx.call refusals carry a code an MCP client can branch on', () => {
-  it('refuses with CTX_CALL_NOT_READY before verification has delivered a verdict', async () => {
+  it('refuses with CTX_CALL_NOT_READY when no verdict has been delivered by the bound', async function() {
     // No setComposition call at all: this is the startup window, not a
-    // misconfigured module.
-    const err = await refusalOf(buildCtx(fakeDevice()), 'compose-callee/calleeService.double');
+    // misconfigured module. ctx.call waits for a verdict for
+    // min(25 s, requestTimeout - 2 s) (test/composition/19); a 3 s request
+    // timer makes that 1 s here.
+    this.timeout(10000);
+    const options = require('../../lib/cli-options');
+    const before = options.requestTimeoutMs;
+    options.requestTimeoutMs = 3000;
+    const started = Date.now();
+    let err;
+    try {
+      err = await refusalOf(buildCtx(fakeDevice()), 'compose-callee/calleeService.double');
+    } finally {
+      options.requestTimeoutMs = before;
+    }
+    assert.ok(Date.now() - started >= 900, 'it waited for a verdict first');
 
     assert.strictEqual(err.code, 'CTX_CALL_NOT_READY', err.message);
     assert.ok(!/runsModules/.test(err.message),
@@ -100,6 +113,19 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
 
   // The message head has to stand on its own, because under --workerThread
   // it is all that reaches the client (see the header).
+  it('bounds the wait for a verdict under the request timer: min(25 s, timer - 2 s), and 0 for a timer of 0 or less', () => {
+    const options = require('../../lib/cli-options');
+    const before = options.requestTimeoutMs;
+    try {
+      for (const [timer, bound] of [[30000, 25000], [60000, 25000], [10000, 8000], [1500, 0], [0, 0], [-5, 0]]) {
+        options.requestTimeoutMs = timer;
+        assert.strictEqual(handlerCtx.verdictWaitMs(), bound, String(timer));
+      }
+    } finally {
+      options.requestTimeoutMs = before;
+    }
+  });
+
   it('gives each code a head message that is actionable without the detail', () => {
     const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
 
