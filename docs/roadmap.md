@@ -44,3 +44,28 @@ that LM1 adds.
   the usage ownership check states.
 - Outside access and refusals are also what the audit work (P2, after the
   logger) records in full. The two are built on one path, not two.
+
+## Changing runtime limits by asking the agent
+
+**Why.** The maintainer, 2026-11-13: an agent that uses our packs should
+recognise when a result is over the size cap (`--maxResultBytes`, default
+16 MiB), and the user should be able to change the cap by asking the agent
+in plain language.
+
+**Already in the first release:** a too-large result answers with the
+`RESULT_TOO_LARGE` code, structured fields naming the setting, the size and
+the cap, and text that tells the agent the user can raise it and how.
+
+**Later, to design:**
+
+- a launcher setting (`ch-local config set maxResultBytes 64MiB`, persisted
+  in the user's home), applied on the next start, which an agent with a
+  shell can run for the user;
+- for agents without a shell (Claude Desktop, ChatGPT), a built-in settings
+  tool listed only in the single-identity profile, changing only an
+  allowlisted set of settings within fixed bounds, with the agent's own
+  tool-approval prompt as the user's consent;
+- never settable by a module, and never above a hard ceiling the operator
+  fixes, so a prompt injected through a tool result cannot raise a limit
+  without the user seeing the request.
+
