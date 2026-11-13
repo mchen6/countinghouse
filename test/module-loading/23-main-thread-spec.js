@@ -54,6 +54,25 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
     }
   });
 
+  it('each build has its own validators: an absolute $id builds again at the next start, and in another module', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-main-spec-id-'));
+    try {
+      for (const name of ['id-one', 'id-two']) {
+        const m = path.join(dir, name);
+        fs.mkdirSync(m);
+        fs.writeFileSync(path.join(m, 'api.json'), JSON.stringify({device: {friendlyName: name, serviceList: {'urn:countinghouse-test:serviceID:s': {
+          actionList: [{name: 'a', input: {schema: '/s/a/input'}}]}}}}));
+        fs.writeFileSync(path.join(m, 'schema.json'), JSON.stringify({$id: '#/', s: {a: {input: {$id: 'https://example.invalid/same', type: 'object'}}}}));
+      }
+      const builds = [await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-two'))];
+      for (const b of builds) {
+        assert.strictEqual(typeof(b.services['urn:countinghouse-test:serviceID:s'].actions.a.input.validator), 'function', JSON.stringify(b.error));
+      }
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   it('checks in a worker\'s order: the service, the action, an input at all, then the input', () => {
     const bad = {input: {n: 'x'}};
     assert.deepStrictEqual(answer(check('urn:countinghouse-test:serviceID:nowhere', 'take', bad)).slice(0, 1), ['SERVICE_NOT_FOUND']);
