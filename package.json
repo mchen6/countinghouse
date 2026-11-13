@@ -52,6 +52,7 @@
   "author": "Miaobo Chen",
   "license": "Apache-2.0",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "async": "^3.2.6",
@@ -89,7 +90,6 @@
     }
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.32.2",
     "bench-rest": "^1.2.4",
     "chalk": "^2.4.2",
     "chmod": "^0.2.1",
