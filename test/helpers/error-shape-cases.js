@@ -122,13 +122,9 @@ async function runCases(port, tasks) {
     if (tasks) out[`mcp tasks/result / ${o.name}`] = await viaTask(port, KEY, o.action, o.args);
   }
   out['http invoke-action / missing device'] = await http(port, KEY, MISSING, 'ok', {});
-  // Known exception, kept on purpose: the "unknown key" answers echo the
-  // presented key ("Unknown user: <key>", HTTP and MCP). An API key in error
-  // text is what R2-1 Task 5 removes (implementer A: "SYSTEM_ERROR_UNKNOWN_USER
-  // names no key at all", with a near-miss test; the R2-1 plan,
-  // docs/superpowers/plans/2026-11-08-r2-1-no-raw-keys-in-modules.md, and the
-  // logger-design spec). Task 5 updates this golden deliberately, as a listed
-  // exception: do not "fix" it in step 1 or step 3 of the logger series.
+  // The "unknown key" answers used to echo the presented key ("Unknown
+  // user: <key>", HTTP and MCP); SYSTEM_ERROR_UNKNOWN_USER names no key at
+  // all since the review of #138 (R2-1 Task 3), and the golden says so.
   for (const [label, key] of [['no access', NO_ACCESS], ['unknown key', UNKNOWN], ['no key', null]]) {
     out[`http invoke-action / ${label}`] = await http(port, key, DEVICE, 'ok', {});
     out[`mcp tools/call / ${label}`] = answer(await mcp(port, key, 'tools/call', {name: tool('ok'), arguments: {}}));

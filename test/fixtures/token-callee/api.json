@@ -9,14 +9,32 @@
           {
             "name": "bump",
             "description": "Counts one run and returns the count.",
-            "input":  {"schema": "/tokenCallee/bump/input"},
-            "output": {"schema": "/tokenCallee/bump/output"}
+            "input": {
+              "schema": "/tokenCallee/bump/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/bump/output"
+            }
           },
           {
             "name": "count",
             "description": "Returns the count without changing it.",
-            "input":  {"schema": "/tokenCallee/count/input"},
-            "output": {"schema": "/tokenCallee/count/output"}
+            "input": {
+              "schema": "/tokenCallee/count/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/count/output"
+            }
+          },
+          {
+            "name": "slow",
+            "description": "Counts one run after input.ms milliseconds: a callee that answers after its caller's timeout.",
+            "input": {
+              "schema": "/tokenCallee/slow/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/slow/output"
+            }
           }
         ]
       }

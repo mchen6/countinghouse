@@ -441,9 +441,33 @@ and bill the caller's tenant for hops that never happened. So:
   with its token (the call answered, or its worker ended) or with its
   channel; held metering requests are capped per channel (64 at once), and
   one beyond the cap is refused at once.
-- **The deduction's deadline**: the balance deduction, the one step that may
-  fail open, is bounded (about 500 ms); past it the hop is served unbilled,
-  and the log says so. The token check stays in memory and fails closed.
+- **The deduction is waited for** (the review of #138, 7), as the routed
+  path waits for it: a deadline that answered "served unbilled" while the
+  deduction could still charge told the log something false. The token
+  check stays in memory and fails closed.
+- **Bounds and the chain** (the review of #138, 1, 2a, 4, 8): a child token
+  expires no later than its parent, goes with it, and resolves only while
+  every ancestor is live, so a part that never answered cannot mint itself a
+  token for ever. The bill is for the matched invoke, found by the callee's
+  token among the matches of its worker, whatever became of that token
+  meanwhile (a caller that did not await its hop). At most 4096 matched
+  invokes await their bill per channel; one beyond that is refused, nothing
+  is evicted. A bill arriving after the announcement plus the caller's
+  per-invoke timeout (`--requestTimeout`, the same value main gave the
+  worker) charges nothing: the caller has failed the hop by then, and a
+  failed hop costs 0 on both paths; the caller worker is told nothing and
+  asked nothing about it, since a worker's word on billing is what this
+  design removes. The routed hop applies the same rule to an answer after
+  the hop's session timer.
+- **Every worker message takes the token** (the review of #138, 5): the
+  peer-channel open and the device query cite the call's token too, and
+  are refused without it or with another worker's. An announcement the
+  message rate refuses is answered at once, so the invoke fails
+  `RATE_LIMITED` now rather than `CALL_TOKEN_INVALID` a second later; the
+  bill request is exempt from the rate, being one per matched announcement.
+- **A token lives as long as its call** (the review of #138, 3): dropped at
+  the call's session timeout and at a run's timeout, not only when the call
+  answers; a run with no timeout has a token with no end but its worker's.
 - The cost is one extra one-way message per peer invoke, with no added
   serial latency except when the metering request wins the race.
 

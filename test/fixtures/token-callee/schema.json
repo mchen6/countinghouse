@@ -4,12 +4,66 @@
   "type": "object",
   "tokenCallee": {
     "bump": {
-      "input":  {"type": "object", "properties": {"marker": {"type": "string"}}},
-      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+      "input": {
+        "type": "object",
+        "properties": {
+          "marker": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "n"
+        ]
+      }
     },
     "count": {
-      "input":  {"type": "object", "properties": {}},
-      "output": {"type": "object", "properties": {"n": {"type": "number"}}, "required": ["n"]}
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "n"
+        ]
+      }
+    },
+    "slow": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ms"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "n"
+        ]
+      }
     }
   }
 }
