@@ -50,6 +50,12 @@
           },
           "as": {
             "type": "string"
+          },
+          "probe": {
+            "type": "string",
+            "enum": [
+              "requestTimeout"
+            ]
           }
         },
         "required": [
@@ -81,6 +87,18 @@
             ]
           },
           "tookMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "requestTimeout": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "requestTimeoutMs": {
             "type": [
               "number",
               "null"
