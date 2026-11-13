@@ -1,8 +1,8 @@
 # Lean worker: one module per worker, without a runtime per worker
 
-Status: approved direction (2026-11-13); in the first release. The maintainer decided, 2026-11-13: "CDIF style modules should be retired". Not to be built
-before R2-1 (no raw keys in modules) is merged: both change the worker's
-message handling and handler-ctx.
+Status: approved direction (2026-11-13); in the first release. The maintainer decided, 2026-11-13: "CDIF style modules should be retired". Steps 1 and 2
+start now; steps 3-5 wait for R2-1 (no raw keys in modules), since both
+change the worker's message handling and handler-ctx.
 
 ## Intent
 
