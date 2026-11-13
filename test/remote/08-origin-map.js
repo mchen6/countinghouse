@@ -96,6 +96,20 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       delete cli.remoteOriginMap; delete cli.remoteOriginMapActive;
       om.deactivateForTests();
     });
+    it('the tests\' reset works only under the test flag, as the other test-only hooks do', () => {
+      useMap(MAP());
+      const fixed = om.current();
+      const saved = process.env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG;
+      delete process.env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG;
+      try {
+        assert.throws(() => om.deactivateForTests(), /only under the test flag/);
+        assert.strictEqual(om.current(), fixed, 'the map stays');
+      } finally {
+        process.env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG = saved;
+      }
+      om.deactivateForTests();
+      assert.strictEqual(om.current(), null);
+    });
   });
 
   describe('a mapped remote', () => {
