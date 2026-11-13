@@ -627,6 +627,16 @@ these are the checks that predate them and still apply:
   the caller. This bounds the *shape* of data reaching a module's code and
   the *shape* of what a module can claim to return — it does not sandbox
   what the module's handler does internally with valid input.
+  In worker mode, both checks run on the main thread for every call it
+  sends to a worker (a client's call, a job's run, a hop routed through the
+  main thread), against schemas the main thread builds from the module's
+  files before the worker starts (`lib/module-spec.js`), so module code
+  cannot reach them. A module's code can reach its own worker's copy: under
+  `audit` and `off` the runtime's files are in that worker's
+  `require.cache`. So the in-worker check is now used only for a call over
+  a direct peer channel, where a module that interferes with it harms its
+  own input check; moving that check out of reach is lean worker step 4
+  (`docs/superpowers/specs/2026-11-13-lean-worker-design.md`).
 - **Redis command allowlist** (`lib/supported-redis-commands.json`,
   enforced in `lib/redis-api.js` via `_.intersection(redisCommands.list,
   supportedCommands)`). Modules access Redis only through a wrapper that

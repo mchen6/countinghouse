@@ -79,6 +79,33 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - `CountinghouseError.withFields(code, fields, ...args)`: a catalogue text's
   `{placeholders}` filled in for the locale.
 
+### Security — a module's input and output are checked on the main thread
+
+- **Every call the main thread sends to a module's worker** (an MCP
+  `tools/call`, an HTTP `invoke-action`, a job's run, a hop routed through
+  the main thread) is validated on the main thread (lean worker, step 1):
+  the input before the call is sent, so a bad input never reaches the
+  worker, and the output on the reply. The schemas are built there from the
+  module's own `api.json` and `schema.json` before its worker starts
+  (`lib/module-spec.js`), with the same `Service` code a worker uses, so
+  every refusal keeps its code, text and fault. Those calls' workers skip
+  their own validation.
+- **Why:** the checks ran in the module's own worker, where its code could
+  reach them. Under the default sandbox (`audit`) and with none, the
+  runtime's `Service` and validator are in the worker's `require.cache`, and
+  a module could replace them and return an output its schema refuses
+  (`test/sandbox/41`).
+- **A worker's device is registered only if it announces exactly that spec,**
+  and it is listed as the main thread's copy.
+- **Unchanged:** a call over a direct peer channel is still validated in the
+  called worker (until step 4), and single-thread mode validates in-process
+  as before.
+- **One answer changes:** a result that cannot cross between threads (a
+  function or a Symbol inside a module's output) is answered
+  `DEVICE_INVOKE_EXCEPTION` ("the result could not be sent between
+  threads"), where the worker's own check used to refuse it first with
+  `OUTPUT_DATA_VALIDATION_FAIL`.
+
 ### Fixed — on Windows, a module worker never started (#40)
 
 - On Windows every module's start stopped after "file broker: <module>
