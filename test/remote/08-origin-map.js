@@ -77,6 +77,19 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
         assert.ok(typeof p.problem === 'string' && /--remoteOriginMap/.test(p.problem), JSON.stringify(bad));
       }
     });
+    it('the option is a string, not a boolean: --no-remoteOriginMap is none, a bare one is refused', () => {
+      try {
+        cli.setOptions({workerThread: false, remoteOriginMap: false});
+        assert.strictEqual(cli.remoteOriginMapArg, null);
+        cli.setOptions({workerThread: false, remoteOriginMap: true});
+        assert.match(String(om.parse(cli.remoteOriginMapArg).problem), /--remoteOriginMap/);
+        cli.setOptions({workerThread: false, remoteOriginMap: [`${GITHUB}=http://127.0.0.1:9`]});
+        assert.deepStrictEqual(cli.remoteOriginMapArg, [`${GITHUB}=http://127.0.0.1:9`]);
+      } finally {
+        cli.setOptions({workerThread: false});
+      }
+    });
+
     it('a target on the Redis endpoint is a problem of the option; with no Redis configured there is none', () => {
       const {map} = om.parse(`${GITHUB}=http://127.0.0.1:${UNMAPPED}`);
       assert.match(om.problems(map, {host: '127.0.0.1', port: UNMAPPED}).join('\n'), /--remoteOriginMap .* the target is refused: it is the Redis endpoint/);
