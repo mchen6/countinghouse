@@ -14,6 +14,13 @@
 // delivery back; COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MODULE limits it to one
 // package.
 //
+// tools/list over stdio waits for the startup discovery, which ends when every
+// verdict has been decided (a module failing verification is purged, never
+// listed), not when the verdicts reach their workers. So a listed tool can
+// still be waiting for its verdict, which is the window these cases test. The
+// last case lists past that gate (its bound shortened to 1 ms, the suite's own
+// knob), the only way a client sees a module before it fails verification.
+//
 // The server is the local single-identity profile over stdio: no Redis and
 // no port. The modules are written to a temporary directory, the parts under
 // the scenario's node_modules, where the runtime resolves parts.
@@ -55,13 +62,22 @@ function fixture(root, {slowStartMs = 0, badCall = false} = {}) {
 }
 
 // A stdio server and a newline-delimited JSON-RPC client for it.
-function serve({delayMs, delayModule, args = [], slowStartMs, badCall}) {
+function serve({delayMs, delayModule, args = [], slowStartMs, badCall, stdioBoundMs, slowSibling}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-composition-19-'));
+  const more = [];
+  if (slowSibling === true) {
+    // A valid scenario, no calls, whose handler takes about 3 s to load.
+    const sibling = path.join(root, 'compose-slow');
+    writeModule(sibling, {name: 'compose-slow', role: 'scenario', service: 'slowService', action: 'compose_slow',
+      handler: 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);\nmodule.exports = async (input) => ({output: {n: input.n}});\n'});
+    more.push('--loadModule', sibling);
+  }
   // The hook is honoured only under the test suite's marker.
   const env = {...process.env, COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG: '1', COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MS: String(delayMs)};
   if (delayModule != null) env.COUNTINGHOUSE_TEST_COMPOSITION_DELAY_MODULE = delayModule;
+  if (stdioBoundMs != null) env.COUNTINGHOUSE_TEST_STDIO_READY_BOUND_MS = String(stdioBoundMs);
   const child = spawn(process.execPath, [ENTRY, '--workerThread', '--store', 'local', '--storePath', path.join(root, 'store'),
-    '--moduleDataPath', path.join(root, 'module_data'), '--modulePath', path.join(root, 'modules'), '--loadModule', fixture(root, {slowStartMs, badCall}), ...args],
+    '--moduleDataPath', path.join(root, 'module_data'), '--modulePath', path.join(root, 'modules'), '--loadModule', fixture(root, {slowStartMs, badCall}), ...more, ...args],
   {env, stdio: ['pipe', 'pipe', 'pipe']});
   let out = '';
   let err = '';
@@ -114,6 +130,7 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
       const {r, waited} = await timedCall(s, 40000);
       assert.strictEqual(r.result.isError, false, `${JSON.stringify(r)}\n${s.stderr().slice(-1500)}`);
       assert.deepStrictEqual(r.result.structuredContent, {n: 41});
+      assert.ok(waited >= 1500, `listed before the verdict reached the worker, so the call waited for it (${waited} ms)`);
       assert.ok(waited < 20000, `answered when the verdict landed (${waited} ms), not at the bound`);
       assert.match(s.stderr(), /test hook: composition verdicts delivered 3000 ms late/, 'the hook says it is active');
     } finally {
@@ -170,8 +187,24 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     }
   });
 
-  it('a module that fails verification at startup releases its waiting calls at once', async () => {
-    const s = serve({delayMs: 3000, badCall: true});
+  // compose-slow, a valid scenario beside it, takes about 3 s to load: a
+  // first list that has its tool was answered after the startup discovery.
+  it('through the stdio gate, a module that fails verification at startup is never listed: the first list is final', async () => {
+    const s = serve({delayMs: 3000, badCall: true, slowSibling: true});
+    try {
+      await s.request('initialize', {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'composition-19', version: '0'}});
+      const first = await s.request('tools/list', {});
+      const names = (first.result.tools || []).map((t) => t.name);
+      assert.ok(names.includes('compose_slow'), `the list waited for the startup discovery: ${names.join(', ')}`);
+      assert.ok(!names.includes('compose_wait'), `purged before the list was answered: ${names.join(', ')}`);
+      assert.doesNotMatch(s.stderr(), /stdio: the modules are still loading/, 'answered by the gate, not its bound');
+    } finally {
+      s.stop();
+    }
+  });
+
+  it('a module that fails verification at startup releases its waiting calls at once (listed past the stdio gate)', async () => {
+    const s = serve({delayMs: 3000, badCall: true, stdioBoundMs: 1});
     try {
       await listed(s);
       const {r, waited} = await timedCall(s, 40000);
