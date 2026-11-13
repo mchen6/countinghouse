@@ -1,8 +1,11 @@
 // The broker authorises one (appKey, device) per grant, but a channel joins
-// two workers, and the callee served any device its worker hosts. Module code
-// can post on its own end of the channel, so a caller granted one device
-// could invoke another on the same worker without any check (review R2-2).
-// The callee now serves only the devices granted on that channel.
+// two workers, and module code can post on its own end of the channel, so a
+// caller granted one device could ask the callee for another (review R2-2).
+// The callee serves only the devices granted on that channel. Before the one
+// module format, the other device was a sibling in the same worker (a
+// dynamic-discovery module with two devices); a module is now one device in
+// its own worker, so the other device is one the channel was never granted:
+// a device of another worker, granted to the key or not.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -15,8 +18,8 @@ describe('direct peer channels 07: the callee serves only granted devices', func
   this.timeout(120000);
   let server = null;
   let base = null;
-  const dev1 = deviceIDForName('dynamic-device-1');
-  const dev2 = deviceIDForName('dynamic-device-2');
+  const dev1 = deviceIDForName('peer-callee-1');
+  const dev2 = deviceIDForName('peer-callee-2');
   before(async () => {
     base = mkdtemp('peer-grants-');
     const authPath = path.join(base, 'auth.json');
@@ -26,24 +29,27 @@ describe('direct peer channels 07: the callee serves only granted devices', func
       both:   {userName: 'both', devices: [deviceIDForName('peer-forge'), dev1, dev2], runsModules: ['peer-forge']}
     }));
     server = await startServer(9668, ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
-      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'dynamic-discovery-module'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-callee-1'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-callee-2'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-forge')]);
   });
   after(() => { stopServer(server); if (base) fs.rmSync(base, {recursive: true, force: true}); });
 
-  it('a granted device is served; another device on the same worker is refused', async () => {
+  it('a granted device is served; a device the channel was not granted is refused', async () => {
     const r = await mcpCall(9668, 'forger', 'peer_forge_forgeservice_forge', {appKey: 'forger', granted: dev1, other: dev2});
     const out = toolOutput(r);
-    assert.ok(/^ok: .*dynamic-device-1/.test(String(out.granted)), JSON.stringify(r) + server.output.slice(-1500));
+    assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r) + server.output.slice(-1500));
     assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));
   });
 
-  // The same worker pair, now with a key granted both: the broker's later
-  // grant on the open channel reaches the callee before the caller uses it.
-  it('a device granted later on the open channel is served', async () => {
-    const r = await mcpCall(9668, 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev2, other: dev1});
+  // The same channel, now with a key granted both devices: the broker's
+  // later grant on the open channel reaches the callee before the caller
+  // uses it, and the other device, granted to the key but hosted by another
+  // worker, is still not served on this channel.
+  it('a key granted later on the open channel is served; its other device is not served on this channel', async () => {
+    const r = await mcpCall(9668, 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev1, other: dev2});
     const out = toolOutput(r);
-    assert.ok(/^ok: .*dynamic-device-2/.test(String(out.granted)), JSON.stringify(r));
-    assert.ok(/^ok: .*dynamic-device-1/.test(String(out.other)), JSON.stringify(out));
+    assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r));
+    assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));
   });
 });

@@ -121,7 +121,7 @@ see [In-composition metering](#in-composition-metering).
 1. Takes `{text: string}`.
 2. Calls `transform-demo`'s `uppercase` action on `text`, via a
    `ServiceClient` created at module-init time
-   (`pre-installed-packages/composite-demo/device.js`).
+   (`pre-installed-packages/composite-demo/handlers/compositeService/run.js`).
 3. Feeds the uppercased result into `echo-device-module`'s `echo` action,
    via a second `ServiceClient`, to demonstrate a second independent hop.
 4. Returns `{finalText, bill}`, where `bill` is an array with one entry per
@@ -141,7 +141,7 @@ the module calling it.
 
 Target modules are addressed by their deterministic `deviceID`
 (`UUID.v5` of a fixed namespace and the target module's `api.json`
-`friendlyName`), computed offline and hardcoded in `device.js`, the same
+`friendlyName`), computed offline and hardcoded in its handler file, the same
 pattern used by `echo-device-client-module`. No runtime discovery is
 needed to call a known module.
 
