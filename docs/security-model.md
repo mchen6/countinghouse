@@ -369,7 +369,13 @@ and the short list of what the in-process sandbox cannot give.
   still use modules countinghouse loaded before the lockdown, and read
   countinghouse's own code files. `CHUtil` and everything else loaded before
   lockdown stay part of the review checklist for every change to
-  `lib/countinghouse-util.js`.
+  `lib/countinghouse-util.js`. postman-request and soap, behind
+  `CHUtil.request`, `CHUtil.createSOAPClient` and a remote service client,
+  load on their first use instead (`lib/lazy-require.js`), after module code
+  has run, so a module can plant `require.cache` entries for them in its own
+  worker first. That reaches only calls made in that worker, which carry the
+  keys the module itself passes; the library is loaded once and kept, so
+  nothing planted after its first use is read.
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
   (`CHUtil.ci.deviceManager.workerMessage`, `CHUtil.redis.clientInstance`,

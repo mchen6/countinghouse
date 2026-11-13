@@ -8,6 +8,7 @@ const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 const {CAPTURE_SOURCE} = require('../helpers/lockdown-worker');
+const {startStandIn} = require('../helpers/lazy-net-stand-in');
 
 const KEY = 'aabbcc';
 
@@ -135,6 +136,29 @@ describe('sandbox 09: --hardened', function() {
   // --moduleDataPath is a sibling of the install dir whose name extends it
   // (<repo>_data-…), the grant layout that tripped Node 24's prefix bug
   // (test/fs-broker/10-permission-prefix.js) with the default under $HOME.
+  // CHUtil's HTTP and SOAP libraries load on first use (lib/lazy-require.js),
+  // so their files are read after the permission model is live, not in the
+  // worker's boot (reviewer, 2026-11-12). The fixture declares 127.0.0.1 and a
+  // policy approves it; the stand-in is an ephemeral loopback server.
+  it('the first CHUtil.request and CHUtil.createSOAPClient work under --hardened, loading their libraries only then', async () => {
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'lazy-net-probe'), path.join(root, 'lazy-net-probe'), {recursive: true});
+    const policy = path.join(root, 'policy.json');
+    fs.writeFileSync(policy, JSON.stringify({modules: {'lazy-net-probe': {approve: 'as-declared'}}}));
+    const standIn = await startStandIn();
+    try {
+      server = await startServer(9614, ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
+        '--modulePolicy', policy, '--modulePath', root, '--loadModule', path.join(root, 'lazy-net-probe')]);
+      const probe = async (args) => toolOutput(await mcpCall(9614, KEY, 'lazy_net_probe_netservice_probe', args));
+      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: false, soap: false});
+      const r = await probe({what: 'request', url: `${standIn.base}/`});
+      assert.deepStrictEqual([r.outcome, r.status, r.body, r.loaded], ['ok', 200, 'ok', {request: true, soap: false}], JSON.stringify(r));
+      const s = await probe({what: 'soap', url: `${standIn.base}/svc?wsdl`});
+      assert.deepStrictEqual([s.outcome, s.services, s.loaded], ['ok', ['ProbeService'], {request: true, soap: true}], JSON.stringify(s));
+    } finally {
+      await standIn.close();
+    }
+  });
+
   it('a module writes and reads /data under --hardened', async () => {
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(root, 'fs-probe'), {recursive: true});
     const data = `${fs.realpathSync(ROOT)}_data-${process.pid}`;

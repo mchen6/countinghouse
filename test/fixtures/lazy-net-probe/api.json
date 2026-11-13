@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "lazy-net-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "CHUtil's HTTP and SOAP helpers, loaded on first use (test/sandbox/40)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:netService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Reports whether the helpers' libraries are loaded, or makes one CHUtil.request or CHUtil.createSOAPClient call.",
+            "input": {"schema": "/netService/probe/input"},
+            "output": {"schema": "/netService/probe/output"}
+          }
+        ]
+      }
+    }
+  }
+}
