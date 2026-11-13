@@ -17,12 +17,38 @@ const ENTRY = path.join(ROOT, 'bin', 'countinghouse-stdio.js');
 const MODULE = path.join(ROOT, 'test', 'fixtures', 'handler-map-module');
 const KEY = 'stdio-test-key';
 
-function start(home, extra = []) {
+function start(home, extra = [], module = MODULE) {
   const auth = path.join(home, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
-  return startStdio(['--workerThread', '--loadModule', MODULE, '--authConfigPath', auth,
+  return startStdio(['--workerThread', '--loadModule', module, '--authConfigPath', auth,
     '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749', ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
 }
+
+describe('--stdio: a flag given twice, as --hardened\'s relaunch gives it (#124)', () => {
+  const options = require('../../lib/cli-options');
+  // Every option as it was, values only (setOptions(getOptions()) would not
+  // undo everything: localModulePath, durations in ms).
+  let saved = null;
+  before(() => { saved = Object.fromEntries(Object.entries(options).filter(([, v]) => typeof(v) !== 'function')); });
+  after(() => {
+    for (const k of Object.keys(options)) if (typeof(options[k]) !== 'function' && !(k in saved)) delete options[k];
+    Object.assign(options, saved);
+  });
+
+  // minimist makes an array only of string values: `--stdio=true --stdio=true`.
+  it('a repeated boolean flag counts by its last value; a repeated --loadModule stays a list', () => {
+    options.setOptions({stdio: ['true', 'true'], store: 'local', workerThread: ['true', 'false'], directPeerChannels: ['false', 'true'], loadModule: ['a', 'b']});
+    assert.deepStrictEqual([options.stdio, options.singleIdentity, options.workerThread, options.directPeerChannels], [true, true, false, true]);
+    assert.deepStrictEqual(options.localModulePath, ['a', 'b']);
+  });
+
+  it('every flag cli-options tests as a boolean is one it collapses', () => {
+    const src = require('fs').readFileSync(require.resolve('../../lib/cli-options'), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+    const tested = new Set([...src.matchAll(/argv\.([A-Za-z]+)\s*(?:===|!==)\s*(?:true|false|'true'|'false')/g)].map((m) => m[1]));
+    for (const k of ['authConfigPath']) tested.delete(k);   // a path, tested for a bare flag with no value
+    assert.deepStrictEqual([...tested].filter((k) => !options.BOOLEAN_FLAGS.includes(k)), []);
+  });
+});
 
 describe('--stdio, spawned: the failure message', () => {
   it('drops the Redis connection noise and keeps the rest', () => {
@@ -73,6 +99,25 @@ describe('--stdio, spawned', function() {
     // The fixture echoes ctx.caller.apiKey in its own result (id 2); nothing else may hold the key.
     assert.ok(!io.err.includes(KEY), 'the key is never logged');
     for (const l of io.lines) if (JSON.parse(l).id !== 2) assert.ok(!l.includes(KEY), `the key in a stdout line: ${l.slice(0, 200)}`);
+  });
+
+  // --hardened relaunches the entry under --permission, and the relaunched
+  // entry is still stdio: its --stdio=true used to be added a second time,
+  // which minimist reads as an array and cli-options as false, so the child
+  // served HTTP and never answered (#124).
+  it('under --hardened: still stdio, answering initialize with stdout holding JSON-RPC only', async function() {
+    // --hardened is tested on Linux (the sandbox jobs); not on the macOS and
+    // Windows stdio legs.
+    if (process.platform !== 'linux') this.skip();
+    const modules = path.join(home, 'modules');
+    fs.cpSync(MODULE, path.join(modules, 'handler-map-module'), {recursive: true});
+    io = start(home, ['--hardened', '--modulePath', modules], path.join(modules, 'handler-map-module'));
+    const init = await io.request({...INITIALIZE, id: 1});
+    assert.ok(init.result && init.result.serverInfo, `${JSON.stringify(init)}; stderr: ${withoutRedisNoise(io.err).slice(-1500)}`);
+    const exit = await io.stop();
+    assert.strictEqual(exit.code, 0);
+    for (const l of io.lines) assert.strictEqual(JSON.parse(l).jsonrpc, '2.0', `a stdout line that is not JSON-RPC: ${l.slice(0, 200)}`);
+    assert.ok(!/countinghouse listen on/.test(io.err), 'it started the HTTP server');
   });
 
   it('--stdio with --port is refused: choose one', () => {
