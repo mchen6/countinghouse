@@ -58,7 +58,11 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   // The callee's caller on the main-thread route: the stub session's identity
   // (it has no appKey) and the hop's billing key.
   const CTX = {appKey: null, username: null, isAdmin: false, billingKey: 'k'};
-  const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', args, 'm1', w.caller);
+  // the call's token, as the main thread issued one to the caller worker
+  // (R2-1 Task 3); the forwarded args carry the callee's own
+  const tokenFor = (workerId) => require(path.join(LIB, 'call-tokens')).issue({billingKey: 'k', workerId: workerId});
+  const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', args, 'm1', w.caller, tokenFor(w.caller.workerId));
+  const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return rest; };
   const begin = () => { const c = usage().beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
 
   it('the gateway\'s call is granted to the worker invokeAction sends it to', () => {
@@ -104,7 +108,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {v: 1}, usageCall: call});
     assert.strictEqual(w.sent.length, 1);
-    assert.deepStrictEqual(w.sent[0].m.args, {input: {v: 1}, usageCall: call, ctx: CTX});
+    assert.deepStrictEqual(forwarded(w), {input: {v: 1}, usageCall: call, ctx: CTX});
     assert.strictEqual(usage().ownsCall(call, 2), true, 'the part may call on under it');
     w.sent[0].cb(null, {output: {}});
     assert.strictEqual(usage().ownsCall(call, 2), false, 'released when the hop answers');
@@ -121,7 +125,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w2 = workers();
     w2.dm.deviceMap = {d2: {workerId: 3, sendInvokeActionMessage: (m, cb) => w2.sent.push({m, cb})}};
     const fromCallee = {workerId: 2, sendActionInvokeReplyToChild: (m) => w2.replies.push(m)};
-    DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w2.dm, 'k', 'k', 'd2', 'svc', 'act', {input: {}, usageCall: call}, 'm2', fromCallee);
+    DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w2.dm, 'k', 'k', 'd2', 'svc', 'act', {input: {}, usageCall: call}, 'm2', fromCallee, tokenFor(2));
     assert.deepStrictEqual([w2.sent.length, w2.replies.length], [1, 0], JSON.stringify(w2.replies));
     w.sent[0].cb(null, {output: {}}); // the first callee answers at last
     assert.strictEqual(usage().ownsCall(call, 2), false);
@@ -151,7 +155,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {}, usageCall: call});
     assert.deepStrictEqual([w.sent.length, w.replies.length], [1, 0]);
-    assert.deepStrictEqual(w.sent[0].m.args, {input: {}, ctx: CTX});
+    assert.deepStrictEqual(forwarded(w), {input: {}, ctx: CTX});
   });
 
   it('a hop whose args are null is forwarded without a throw on the main thread', () => {
@@ -169,19 +173,22 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   let peerRestore = null;
   afterEach(() => { if (peerRestore != null) { peerRestore(); peerRestore = null; } });
 
-  it('a direct peer hop gives the callee only {input} and its caller: no usageCall crosses it', (done) => {
+  // R2-1 Task 3: the callee meters before it serves, and its metering reply
+  // carries the callee's own token for the invoke, which goes to the
+  // handler's args beside its caller; the usageCall still never crosses.
+  it('a direct peer hop gives the callee only {input}, its caller and its own token: no usageCall crosses it', (done) => {
     const CHUtil = require(path.join(LIB, 'countinghouse-util'));
     const ci = CHUtil.ci;
     const seen = [];
     CHUtil.ci = {invokeDeviceAction: (d, s, a, args) => { seen.push(args); finish(); }};
     const ch = new MessageChannel();
     peerRestore = () => { CHUtil.ci = ci; ch.port1.close(); };
-    const self = {peerChannels: {}, workerMessage: {sendPeerMeteringRequestToParent: () => {}}};
+    const self = {peerChannels: {}, workerMessage: {sendPeerMeteringRequestToParent: (data, cb) => cb(null, {charged: 0}, 'tok')}};
     DeviceManager.prototype.onPeerChannelOpen.call(self, {callerWorkerId: 1, appKey: 'k', targetDeviceID: 'd2', port: ch.port2});
     ch.port1.postMessage({id: 1, command: 'peer-invoke', deviceID: 'd2', serviceID: 'svc', actionName: 'act', input: {v: 1}, billingKey: 'k', usageCall: 5});
     function finish() {
       try {
-        assert.deepStrictEqual(seen, [{input: {v: 1}, ctx: {appKey: null, username: null, isAdmin: false, billingKey: 'k'}}]);
+        assert.deepStrictEqual(seen, [{input: {v: 1}, ctx: {appKey: null, username: null, isAdmin: false, billingKey: 'k'}, token: 'tok'}]);
         done();
       } catch (e) { done(e); }
     }

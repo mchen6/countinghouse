@@ -5,11 +5,11 @@
 // tell it whether a device was ever hosted here. Both hop paths: a direct
 // peer channel and the main thread.
 //
-// A hop's client is built by asking main for the device's spec, a query
-// that carries no identity: for a device that is not loaded it answers the
-// same whether the device was unloaded or never hosted, so a module learns
-// nothing from it either. The specific codes reach a caller only through a
-// client built while the device was loaded.
+// A hop's client is built by asking main for the device's spec. That query
+// carries the call's token and the identity named (R2-1 Task 3), so main
+// can run the access check: an identity granted the device is told why it
+// is missing, any other gets the access error, and so sees the same for a
+// device that was unloaded as for one never hosted.
 const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
@@ -77,12 +77,18 @@ const normalised = (seen) => ({code: seen.code, message: String(seen.message).re
       assert.strictEqual(toolErrorCode(r), 'USER_HAS_NO_DEVICE', JSON.stringify(r));
     });
 
-    it('a client built now: the module sees the same for an unloaded device as for one never hosted', async () => {
-      for (const as of [GRANTED_FRESH, UNGRANTED_FRESH]) {
-        const unloaded = await observe(as, DEVICE);
-        const never = await observe(as, NEVER);
-        assert.deepStrictEqual(normalised(unloaded), normalised(never), `${as}: ${JSON.stringify(unloaded)} vs ${JSON.stringify(never)}`);
-      }
+    it('a client built now: the identity granted the device is told why it is missing (R2-1 Task 3)', async () => {
+      const unloaded = await observe(GRANTED_FRESH, DEVICE);
+      const never = await observe(GRANTED_FRESH, NEVER);
+      assert.strictEqual(unloaded.code, 'MODULE_UNLOADED', JSON.stringify(unloaded));
+      assert.strictEqual(never.code, 'DEVICE_NOT_FOUND', JSON.stringify(never));
+    });
+
+    it('a client built now: an identity without a grant sees the same for an unloaded device as for one never hosted', async () => {
+      const unloaded = await observe(UNGRANTED_FRESH, DEVICE);
+      const never = await observe(UNGRANTED_FRESH, NEVER);
+      assert.deepStrictEqual(normalised(unloaded), normalised(never), `${JSON.stringify(unloaded)} vs ${JSON.stringify(never)}`);
+      assert.strictEqual(unloaded.code, 'USER_HAS_NO_DEVICE', JSON.stringify(unloaded));
     });
   });
 });
