@@ -546,14 +546,20 @@ the main thread's, not the module's (spec:
   - `--remoteOriginMap`, for acceptance runs, moves a declared origin's
     transport (credential included) to a loopback stand-in. It needs
     `COUNTINGHOUSE_ACCEPTANCE=1` in the server's environment at start: the
-    gate is read once there, so nothing later turns a map on or off, and
-    no worker-thread module sees the variable. It accepts only
+    map is checked whole and fixed there, once, in lib/remote/origin-map.js's
+    closure, never on the shared options object, so no option, setOptions()
+    call or later environment change turns it on or off (in single-thread
+    mode a module has this process's full privileges anyway), and no
+    worker-thread module sees the variable. While it is in effect, a remote
+    it does not cover is disabled and never contacted. It accepts only
     `http://127.0.0.1:<port>` or `http://[::1]:<port>` as a target, never
     the Redis endpoint's port, and logs each mapping at start. The
     declared path is set on the target, never read as another host. A
-    mapped call is not metered, its usage records are marked, the usage
-    report keeps it in a row of its own, and its receipt says so, so
-    acceptance data is never taken for a real measurement.
+    mapped call is not metered and its usage records are marked; the usage
+    report and its aggregate count it in no group or total, only in their
+    `standIn` section, and its receipt lists the stand-in's servers under
+    `standIn` and says so in its sentence, so acceptance data is never
+    taken for a real measurement.
 - **Not provided.** A remote's answer is the remote's data: the module
   treats it as untrusted input, as it would any answer. The billing
   identity of a remote hop is the one the worker states, as on every
