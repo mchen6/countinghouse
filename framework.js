@@ -69,18 +69,30 @@ if (options.remoteLimitInvalid != null) {
 }
 // --remoteOriginMap moves where a credential goes, so it is honoured only
 // with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a
-// module never sees: every COUNTINGHOUSE_* is withheld), and says so.
-if (options.remoteOriginMapInvalid != null) {
-  console.error(options.remoteOriginMapInvalid);
-  process.exit(2);
-}
-if (options.remoteOriginMap != null) {
+// module never sees: every COUNTINGHOUSE_* is withheld), checked whole here,
+// targets against the Redis endpoint included, and fixed once
+// (lib/remote/origin-map.js). Under --hardened the child, which serves, says so.
+if (options.remoteOriginMapArg != null) {
+  var originMap = require('./lib/remote/origin-map');
+  var parsedMap = originMap.parse(options.remoteOriginMapArg);
+  if (parsedMap.problem != null) {
+    console.error(parsedMap.problem);
+    process.exit(2);
+  }
   if (process.env.COUNTINGHOUSE_ACCEPTANCE !== '1') {
     console.error('--remoteOriginMap needs COUNTINGHOUSE_ACCEPTANCE=1 in the environment: it sends a declared origin\'s calls, credential included, to a local stand-in, for acceptance runs only');
     process.exit(2);
   }
-  options.remoteOriginMapActive = true;
-  for (const [from, to] of Object.entries(options.remoteOriginMap)) console.error(`remote origin mapped: ${from} -> ${to} (acceptance only)`);
+  // No Redis is configured under --store local, so no endpoint to avoid.
+  var mapProblems = originMap.problems(parsedMap.map, options.store === 'local' ? null : require('./lib/remote/client').configuredRedis());
+  if (mapProblems.length > 0) {
+    console.error(mapProblems.join('\n'));
+    process.exit(2);
+  }
+  originMap.activate(parsedMap.map);
+  if (options.hardened !== true || process.permission != null) {
+    for (const [from, to] of Object.entries(parsedMap.map)) console.error(`remote origin mapped: ${from} -> ${to.target} (acceptance only)`);
+  }
 }
 if (options.remoteCredentials != null || process.argv.some((a) => a === '--remoteCredentials' || a.startsWith('--remoteCredentials='))) {
   try {
