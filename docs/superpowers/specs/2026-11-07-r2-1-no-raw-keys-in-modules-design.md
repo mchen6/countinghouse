@@ -261,7 +261,13 @@ identifies the call to the main thread, and is useless outside it.
   else, a token is **foreign** and refused. So a callee that keeps the
   caller's token it received on a peer invoke can't use it for hops of its
   own.
-- **The peer path meters before it serves.** Today the callee runs the
+- **The peer path meters before it serves.** *Amended (the reviewer's
+  ruling, 2026-11-13, Task 3): "meters before it serves" means* authorizes
+  *before it serves and bills on success. The token check and the
+  announcement match (10b) come before the handler and fail closed; the
+  balance deduction comes after the handler succeeds, as the routed path's
+  does, so a failed hop costs nothing on either path. The cost is one more
+  main-thread round trip per successful peer invoke.* Today the callee runs the
   action and then sends the metering request, and metering errors fail open
   (`PeerChannel.finishMeteredHop`: everything but `RATE_LIMITED` is
   served). After R2-1 the callee meters first, and runs no handler unless
@@ -425,6 +431,61 @@ and bill the caller's tenant for hops that never happened. So:
   before it serves, so no handler runs).
 - A caller that suppresses its announcements gets its own calls refused,
   which fails safe.
+- **Who may announce** (reviewer, 2026-11-09): main accepts an announcement
+  only on the WorkerMessage of the worker the token is bound to, and only
+  for a channel whose caller is that worker; anything else is refused and
+  logged, and a metering request citing it stays unmatched, so it is
+  refused after the wait. A callee that announces with its caller's token
+  bills no one.
+- **Bounds** (reviewer, 2026-11-09): an unmatched announcement is dropped
+  with its token (the call answered, or its worker ended) or with its
+  channel; held metering requests are capped per channel (64 at once), and
+  one beyond the cap is refused at once.
+- **The deduction is waited for up to 500 ms** (the review of #138, 7, and
+  the medium review of its fix); past that the hop is answered with its
+  billing pending (`billingPending: true`, which reaches the caller as the
+  hop's `platformMetering`), never "unbilled": the deduction may still
+  charge, and its outcome is logged when it comes. The bound keeps a
+  stalled Redis from holding the callee's dispatch slots. The token check
+  stays in memory and fails closed.
+- **The deadline is enforced on the match too** (the review of #141, N1):
+  the announcement's time starts the caller's clock, and a module can post
+  an announcement itself, early; so a metering request for an announcement
+  older than the caller's timeout is refused `PEER_CHANNEL_TIMEOUT` (no
+  handler runs), a bill arriving past the deadline is refused
+  `PEER_CHANNEL_TIMEOUT`, and the callee delivers nothing on a refused bill
+  (as on `RATE_LIMITED`): a late hop is not billed and its result is not
+  delivered; the handler may have run. That residual is by design: an
+  invoke sent just before the deadline, or a caller that invalidates its
+  own channel mid-handler, runs the handler and gets nothing for it. A
+  bill request is exempt from the message rate only while it cites a
+  matched, unbilled invoke of its worker. A pair forgotten (a channel closed)
+  takes its matched invokes with it, so a hop the caller saw fail
+  `PEER_GONE` is not billed. The chain's depth is bounded at 64 hops:
+  deeper, the hop is refused `HOP_CHAIN_TOO_DEEP`.
+- **Bounds and the chain** (the review of #138, 1, 2a, 4, 8): a child token
+  expires no later than its parent, goes with it, and resolves only while
+  every ancestor is live, so a part that never answered cannot mint itself a
+  token for ever. The bill is for the matched invoke, found by the callee's
+  token among the matches of its worker, whatever became of that token
+  meanwhile (a caller that did not await its hop). At most 4096 matched
+  invokes await their bill per channel; one beyond that is refused, nothing
+  is evicted. A bill arriving after the announcement plus the caller's
+  per-invoke timeout (`--requestTimeout`, the same value main gave the
+  worker) charges nothing: the caller has failed the hop by then, and a
+  failed hop costs 0 on both paths; the caller worker is told nothing and
+  asked nothing about it, since a worker's word on billing is what this
+  design removes. The routed hop applies the same rule to an answer after
+  the hop's session timer.
+- **Every worker message takes the token** (the review of #138, 5): the
+  peer-channel open and the device query cite the call's token too, and
+  are refused without it or with another worker's. An announcement the
+  message rate refuses is answered at once, so the invoke fails
+  `RATE_LIMITED` now rather than `CALL_TOKEN_INVALID` a second later; the
+  bill request is exempt from the rate, being one per matched announcement.
+- **A token lives as long as its call** (the review of #138, 3): dropped at
+  the call's session timeout and at a run's timeout, not only when the call
+  answers; a run with no timeout has a token with no end but its worker's.
 - The cost is one extra one-way message per peer invoke, with no added
   serial latency except when the metering request wins the race.
 

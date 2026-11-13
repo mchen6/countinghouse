@@ -43,7 +43,9 @@ function run(scenario) {
     if (scenario === 'unloading') callee.unloading = true;
     if (scenario === 'replaced') during = () => { dm.deviceMap.D = replacement; };
     if (scenario === 'caller-ended') during = () => { caller.ended = {code: 'MODULE_UNLOADED'}; };
-    broker.handleRequest({targetDeviceID: 'D', appKey: 'k'}, caller);
+    // the open takes the call's token (the review of #138, 5a)
+    const token = require(${JSON.stringify(path.join(LIB, 'call-tokens'))}).issue({billingKey: 'k', workerId: caller.workerId});
+    broker.handleRequest({targetDeviceID: 'D', appKey: 'k', token: token}, caller);
     setTimeout(() => { process.stdout.write('SENT ' + JSON.stringify(sent) + '\\n'); process.exit(0); }, 100);`;
   const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000});
   const line = (r.stdout || '').split('\n').find((l) => l.startsWith('SENT '));

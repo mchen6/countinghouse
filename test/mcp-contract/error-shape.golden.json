@@ -2162,7 +2162,7 @@
       "status": 500,
       "body": {
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
-        "message": "Unknown user: error-shape-unknown-key"
+        "message": "Unknown user"
       }
     },
     "mcp tools/call / unknown key": {
@@ -2172,7 +2172,7 @@
         "id": 1,
         "error": {
           "code": -32603,
-          "message": "Unknown user: error-shape-unknown-key"
+          "message": "Unknown user"
         }
       }
     },
@@ -2184,7 +2184,7 @@
           "id": 1,
           "error": {
             "code": -32603,
-            "message": "Unknown user: error-shape-unknown-key"
+            "message": "Unknown user"
           }
         }
       }
@@ -3007,7 +3007,7 @@
       "status": 500,
       "body": {
         "code": "SYSTEM_ERROR_UNKNOWN_USER",
-        "message": "Unknown user: error-shape-unknown-key"
+        "message": "Unknown user"
       }
     },
     "mcp tools/call / unknown key": {
@@ -3017,7 +3017,7 @@
         "id": 1,
         "error": {
           "code": -32603,
-          "message": "Unknown user: error-shape-unknown-key"
+          "message": "Unknown user"
         }
       }
     },
