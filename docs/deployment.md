@@ -171,6 +171,10 @@ networks:
 Notes:
 - `back` holds only countinghouse and Redis, and is `internal`, so it has no
   route out.
+- Each module's `data` and `tmp` under `--moduleDataPath` are made 0700 at
+  every start of the module, group and setgid bits included: they are the
+  module's private directories by design. A backup that needs them runs as
+  the runtime's user, or backs up `--moduleDataPath` as a whole.
 - `--modulePath` and `--moduleDataPath` are distinct names: under
   `--hardened`, a granted directory whose name another grant extends is
   refused (`X` beside `X_data`; see
@@ -224,6 +228,14 @@ seconds. The device log is kept in memory only, the last 1000 entries per
 device. The API monitor's log (`--apiMonitor`) is absent. Over `--stdio`
 without `--authConfigPath` the server runs as one user, its key made at
 start and written nowhere ([security model](security-model.md)).
+
+Writes reach the store's files on a schedule (metering within about half
+a second, a module's `ctx.redis` data within five seconds), and at once
+when the process stops cleanly: stdin closing (how a `--stdio` client ends
+it), SIGINT (Ctrl-C), or SIGTERM on Linux and macOS. On Windows a kill
+(`taskkill /F`, a terminated job) ends the process with no handler run, so
+the writes since the last scheduled one are lost there: up to about half a
+second of metering and five seconds of `ctx.redis` data.
 
 ## Without a container
 
