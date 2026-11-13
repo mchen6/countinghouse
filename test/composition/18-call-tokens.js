@@ -649,24 +649,32 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.ok(refused(replyTo('m8')), JSON.stringify(callee.replies));
     });
 
-    // The review of #138 (7): the routed path waits for the deduction; so
-    // does this one now. A deadline that answered "served unbilled" while
-    // recordCall could still charge told the log something false.
-    it('(5) a hung deduction leaves the bill request waiting, as the routed path waits; nothing is logged as unbilled', async () => {
+    // The review of #138 (7): a deadline that answered "served unbilled"
+    // while recordCall could still charge told the log something false. The
+    // wait is bounded still (a stalled deduction must not hold the callee's
+    // dispatch slots), and the answer says the billing is pending; the
+    // deduction's outcome is logged when it comes.
+    it('(5) a hung deduction: answered within the bound as billing pending, never as unbilled; the late charge is logged', async () => {
       const lines = [];
       const savedE = LOG.E, savedI = LOG.I;
       LOG.E = (e) => lines.push(String(e && e.message ? e.message : e));
       LOG.I = (m) => lines.push(String(m));
-      CHUtil.ci = {recordCall: () => {}};   // a Redis that accepts and never answers
+      let answerLate = null;
+      CHUtil.ci = {recordCall: (key, tool, cost, cb) => { answerLate = () => cb(null, {charged: cost, balance: 98}); }};
       try {
         announce(9, tokens().issue(ENTRY(caller.workerId)));
         meter(9, 'm9');
         await sleep(50);
         assert.ok(served('m9'), JSON.stringify(callee.replies));
+        const started = Date.now();
         bill(replyTo('m9').token, 'b9');
-        await sleep(900);
-        assert.strictEqual(replyTo('b9'), undefined, `answered while the deduction was still pending: ${JSON.stringify(replyTo('b9'))}`);
-        assert.ok(!lines.some((l) => /unbilled/i.test(l)), `logged as unbilled: ${JSON.stringify(lines)}`);
+        while (replyTo('b9') == null && Date.now() - started < 1500) await sleep(20);
+        assert.ok(replyTo('b9') != null && Date.now() - started < 1000, `not answered within the bound (${Date.now() - started} ms)`);
+        assert.ok(!refused(replyTo('b9')) && replyTo('b9').errMsg == null && replyTo('b9').billingPending === true, JSON.stringify(replyTo('b9')));
+        assert.ok(lines.some((l) => /billing pending/i.test(l)) && !lines.some((l) => /unbilled/i.test(l)), JSON.stringify(lines));
+        answerLate();
+        assert.ok(lines.some((l) => /pending billing landed/i.test(l)), `the late charge was not logged: ${JSON.stringify(lines)}`);
+        assert.strictEqual(callee.replies.filter((r) => r.msgID === 'b9').length, 1, 'answered twice');
       } finally {
         LOG.E = savedE;
         LOG.I = savedI;
@@ -752,6 +760,13 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       bill(replyTo('m1000').token, 'b1000');
       await sleep(50);
       assert.deepStrictEqual(billed, [e.billingKey], 'the oldest match went free');
+      // a channel granted again on the same pair is a new entry: its count starts over
+      broker.forgetPair(pair());
+      broker.channelRegistry[pair()] = {callerWM: caller, calleeWM: callee, grants: {}};
+      announce(2000 + cap, tokens().issue(e));
+      meter(2000 + cap, 'm-regranted');
+      await sleep(50);
+      assert.ok(served('m-regranted'), `the re-granted channel inherited the old count: ${JSON.stringify(replyTo('m-regranted'))}`);
       // a second channel is not bounded by the first's
       const other = wm(14);
       broker.channelRegistry[`${caller.workerId}:${other.workerId}`] = {callerWM: caller, calleeWM: other, grants: {}};
@@ -843,6 +858,29 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       } finally {
         cli.setOptions({workerThread: false});
       }
+    });
+  });
+
+  // The medium review of the fix: the channel request carries the first
+  // queued call's token; that token refused, only that call fails, and the
+  // next queued call asks again with its own.
+  describe('a channel request denied for its token', () => {
+    it('fails the call whose token it was, and asks again with the next call\'s', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const sent = [];
+      const failed = [];
+      const dm = {pendingPeerInvokes: {}, peerChannels: {}, peerDeviceWorkerMap: {}, workerMessage: {sendPeerChannelRequestToParent: (m) => sent.push(m)},
+        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes};
+      const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'k', 'k', 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
+      invoke('t-dead');
+      invoke('t-live');
+      invoke('t-live-2');
+      assert.deepStrictEqual(sent.map((m) => m.token), ['t-dead']);
+      DeviceManager.prototype.onPeerChannelDeny.call(dm, {targetDeviceID: 'd-callee', errMsg: 'x', errCode: 'CALL_TOKEN_INVALID'});
+      assert.deepStrictEqual(failed, ['CALL_TOKEN_INVALID'], 'the other calls failed too');
+      assert.deepStrictEqual(sent.map((m) => m.token), ['t-dead', 't-live'], 'no new request with the next call\'s token');
+      DeviceManager.prototype.onPeerChannelDeny.call(dm, {targetDeviceID: 'd-callee', errMsg: 'x', errCode: 'PEER_SELF_TARGET'});
+      assert.deepStrictEqual(failed, ['CALL_TOKEN_INVALID', 'PEER_SELF_TARGET', 'PEER_SELF_TARGET'], 'any other denial fails every queued call');
     });
   });
 
