@@ -1054,13 +1054,16 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   // read of its package.json at the host path, never the worker's statement;
   // and a routed hop before the verdict is not ready, not undeclared.
   describe('declarations: whose package.json, and before the verdict', () => {
-    it('(T4-review) the main thread reads the package.json at the host path, not the one the worker states', () => {
+    it('(T4-review) the declarations are the main thread\'s pin, not the ones the worker states', () => {
       const DeviceManager = require('../../lib/device-manager');
-      const wmStub = {hostModulePath: path.join(ROOT, 'test', 'fixtures', 'declare-caller')};
+      const pinned = {name: 'declare-caller', countinghouse: {calls: ['token-callee/tokenCallee.bump']}};
+      const wmStub = {hostModulePath: path.join(ROOT, 'test', 'fixtures', 'declare-caller'), hostPackageInfo: pinned};
       const forged = {name: 'declare-caller', countinghouse: {calls: ['token-callee/tokenCallee.tick', 'compose-callee/calleeService.double']}};
-      const got = DeviceManager.hostPackageInfo(wmStub, forged);
-      assert.deepStrictEqual(got.countinghouse.calls, ['token-callee/tokenCallee.bump']);
-      assert.strictEqual(DeviceManager.hostPackageInfo(wmStub, forged), got, 'read again');
+      assert.strictEqual(DeviceManager.hostPackageInfo(wmStub, forged), pinned);
+      // a pin that could not be read: no declarations, whatever the worker states
+      const unread = DeviceManager.hostPackageInfo(Object.assign({}, wmStub, {hostPackageInfo: null}), forged);
+      assert.strictEqual(unread.countinghouse, undefined);
+      assert.strictEqual(unread.name, 'declare-caller');
     });
 
     it('(T4-review) a routed hop before the composition verdict is CTX_CALL_NOT_READY', () => {

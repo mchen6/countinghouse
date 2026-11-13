@@ -18,7 +18,7 @@ const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, waitFor} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, waitFor, mcpCall} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
 const {testPort} = require('../helpers/test-env');
@@ -222,6 +222,52 @@ describe('composition 21: a declaring module under --debug', function() {
       assert.strictEqual(out.write, write, JSON.stringify(out));
       assert.strictEqual(out.code, 'CTX_CALL_UNDECLARED', `the rewritten declaration was taken: ${JSON.stringify(out)}`);
     });
+  });
+});
+
+// R2-1 Task 4's re-review, item 1: validation runs the module's code, so the
+// main thread pins its package.json before the validation, and the load
+// that follows takes that copy. A call added to the file in between -- here
+// by the test, standing for a module that changes it during its validation
+// by a route the file broker does not see under audit -- is not taken, and
+// is logged.
+describe('composition 21: validated, then loaded (--moduleSandbox audit)', function() {
+  this.timeout(120000);
+  const KEY = `vl-key-${hex()}`;
+  const ADDED = 'compose-callee/calleeService.double';
+  let base = null;
+  let server = null;
+  before(async () => {
+    base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21v-'));
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'declare-rewriter'), path.join(base, 'declare-rewriter'), {recursive: true});
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--authoringTools', '--moduleSandbox', 'audit',
+      '--mcpToolCallCost', '1', '--moduleDataPath', path.join(base, 'store'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-callee')]);
+  });
+  after(() => {
+    stopServer(server);
+    if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  it('a call added to package.json after the validation is not taken by the load, and is logged', async () => {
+    const copy = path.join(base, 'declare-rewriter');
+    await mcpCall(PORT, KEY, 'countinghouse_validate_module', {path: copy});
+    const file = path.join(copy, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+    pkg.countinghouse.calls.push(ADDED);
+    fs.writeFileSync(file, JSON.stringify(pkg, null, 2));
+    const loaded = await mcpCall(PORT, KEY, 'countinghouse_load_module', {path: copy, name: 'declare-rewriter'});
+    assert.ok(loaded != null && loaded.isError !== true, JSON.stringify(loaded).slice(0, 600));
+    // the composition verdict lands shortly after the load answers
+    const out = await waitFor(async () => {
+      const o = toolOutput(await mcpCall(PORT, KEY, 'declare_rewriter_rewriterservice_attempt', {other: IDS.other, as: KEY}));
+      return (o != null && o.code !== 'CTX_CALL_NOT_READY') ? o : null;
+    }, 20000, 'the composition verdict');
+    assert.strictEqual(out.code, 'CTX_CALL_UNDECLARED', `the call added after validation was taken: ${JSON.stringify(out)}`);
+    // the log line is JSON: the address's quotes arrive escaped
+    await waitFor(() => /declare-rewriter declared call added since its last pin: [^\n]*compose-callee\/calleeService\.double[^\n]*not adopted/.test(server.output),
+      5000, 'the added call in the log', async () => server.output.slice(-3000));
   });
 });
 

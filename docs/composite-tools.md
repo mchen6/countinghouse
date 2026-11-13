@@ -68,11 +68,30 @@ declared. The main thread checks every hop against the calling module's
 resolved at load, whatever API the module used: `ctx.call`,
 `ctx.serviceClient` by raw deviceID, or a message built by hand. (Under
 `--no-workerThread` modules share one process and nothing isolates them;
-there `ctx.call` checks its address, `ctx.serviceClient` does not.) A hop to anything else is refused
-`CTX_CALL_UNDECLARED`, runs no handler and costs nothing. On the direct
-peer path the channel opens only to a declared device, and the callee
-serves only the declared actions on it. A worker runs one module: a second
-load into it is refused.
+there `ctx.call` and `ctx.serviceClient` check the target,
+`CHUtil.createServiceClient` with a raw key does not.) A hop to anything
+else is refused `CTX_CALL_UNDECLARED`, runs no handler and costs nothing.
+On the direct peer path the channel opens only to a declared device, and
+the callee serves only the declared actions on it. A worker runs one
+module: a second load into it is refused.
+
+The main thread reads the declarations before any of the module's code
+runs: when it starts the module's worker, or before
+`countinghouse_validate_module` runs the module, in which case the load of
+that path that follows takes that copy. An operator's load, reload or
+restart reads the file again; a supervised restart keeps the last copy.
+Under `--moduleSandbox enforce` the module can't write the file, so the
+declaration holds. Under `audit` this raises the bar and records the
+change: the file broker refuses writes to the file by any name it sees,
+but routes it doesn't see remain (renaming a directory above the module, a
+child process), so each time the file is read again, every call added
+since the last read is logged as an error (`module sandbox: <module>
+declared call added since its last pin: "<address>" (adopted)`, or `(not
+adopted: ...)` when the previous copy stays). The last copy's calls are
+kept under `<moduleDataPath>/.pins`, so a server restart compares too.
+This covers `countinghouse.calls` only: the module's permissions and
+remotes are read from disk at every start, a supervised restart's
+included.
 
 **`ctx.call('remote:<name>/<tool>', args)` — a remote MCP server, not a
 module.** A module that declares a remote in `countinghouse.remotes`

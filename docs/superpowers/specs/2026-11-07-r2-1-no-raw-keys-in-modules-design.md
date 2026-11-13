@@ -308,6 +308,29 @@ that the invoked device is in the channel's grants is enough.
   serviceID, action) against the declaring module's resolved set, whatever
   API the module used, and refuses with `CTX_CALL_UNDECLARED`, the code
   `ctx.call` uses today.
+- **Where the declarations come from.** The main thread reads the module's
+  package.json itself, before any of the module's code runs: when it spawns
+  the module's worker, or, when the operator validates the module first
+  (`countinghouse_validate_module`, which runs the module's code), before
+  that validation, and the operator's load of that path that follows takes
+  that copy. That pin is what the main thread enforces. An operator's load,
+  reload or restart pins again; a supervised restart keeps the last pin.
+  What holds the file afterwards depends on the mode. Under `enforce` the
+  file broker refuses every write to it and the module reaches nothing
+  outside its namespace, so the declaration holds. Under `audit` the pin
+  raises the bar and records the change: the broker refuses a write to the
+  file by any name it sees (its `/app` path, its host path, a symlink, a
+  hard link, a rename onto it), but routes it doesn't see remain (a rename
+  of an ancestor directory, a child process, both report-only under
+  audit). So every re-pin (an operator's load, reload or restart, a
+  supervised restart, a server restart) is compared with the module's
+  previous pin, and each call added since is logged as an error, in full,
+  saying whether it was adopted, with no key, user name or secret in the
+  line. The previous pin survives a server restart as a record of its calls
+  only, under `<moduleDataPath>/.pins`. Under `off` nothing stops a write;
+  the pin and the log still apply. The pin covers `countinghouse.calls`
+  only: permissions and remotes are read from disk again at every spawn, a
+  supervised restart's included.
 - **Direct peer channels.** The broker already authorizes a channel once per
   `(identity, device)` (D3). It now also checks the declared set before
   opening, and the grant it records is keyed by the module's identity id,
@@ -360,7 +383,11 @@ module code runs on the main thread, and the docs already say that mode
 gives no isolation. `ctx` has the same shape there (`{id, isAdmin}`, no key,
 no user name, `as` refused, declared calls enforced on hops), so a module
 behaves the same in both modes. Tokens aren't needed for the guarantee
-there, but the plan may use the same code path for simplicity.
+there, but the plan may use the same code path for simplicity. The
+declared-call check there covers the `ctx` paths only (`ctx.call` and
+`ctx.serviceClient`). `CHUtil.createServiceClient({appKey})` called with a
+raw key isn't checked: nothing on that path says which module is calling,
+and nothing isolates modules in this mode anyway.
 
 ### 9. New codes
 
