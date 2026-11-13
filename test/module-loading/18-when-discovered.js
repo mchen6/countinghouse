@@ -12,7 +12,14 @@ const ModuleManager = require('../../lib/module-manager');
 function handlerMapLike() { const m = new EventEmitter(); m.discoversAtOnce = true; return m; }
 const settle = () => new Promise((r) => setImmediate(r));
 
-describe('module-loading 18: whenDiscovered', () => {
+// Timing (reviewer, 2026-11-12: 1 failure in 5 runs at load 2): each case
+// waits on the events it checks, not on wall-clock margins. The cap is a
+// timer, measured on the monotonic clock, with a margin over it that holds
+// on a loaded machine; instantiating a fixture loads files, so the whole
+// describe has 30 s, not mocha's 2.
+describe('module-loading 18: whenDiscovered', function() {
+  this.timeout(30000);
+
   it('ends once every module has reported a device after it started listening', async () => {
     const a = handlerMapLike();
     const b = handlerMapLike();
@@ -35,7 +42,8 @@ describe('module-loading 18: whenDiscovered', () => {
     a.emit('devicereported', {});            // the earlier discovery's device
     let done = 0;
     ModuleManager.whenDiscovered({a}, () => { done++; });
-    await new Promise((r) => setTimeout(r, 50));
+    // Nothing but a new report could end it: a few turns of the loop, no clock.
+    for (let i = 0; i < 5; i++) await settle();
     assert.strictEqual(done, 0);
     a.emit('devicereported', {});
     await settle();
@@ -43,12 +51,14 @@ describe('module-loading 18: whenDiscovered', () => {
   });
 
   it('a discovery-style module keeps the hold as the cap, even if it reports at once', function(done) {
-    this.timeout(ModuleManager.DISCOVERY_HOLD_MS + 3000);
+    this.timeout(ModuleManager.DISCOVERY_HOLD_MS + 20000);
+    const {performance} = require('perf_hooks');
     const legacy = new EventEmitter();
-    const start = Date.now();
+    const start = performance.now();
     ModuleManager.whenDiscovered({a: handlerMapLike(), legacy}, () => {
-      const ms = Date.now() - start;
-      try { assert.ok(ms >= ModuleManager.DISCOVERY_HOLD_MS - 50, `ended after ${ms} ms`); done(); } catch (e) { done(e); }
+      // A timer never fires early on the monotonic clock; 5 ms for rounding.
+      const ms = performance.now() - start;
+      try { assert.ok(ms >= ModuleManager.DISCOVERY_HOLD_MS - 5, `ended after ${ms} ms`); done(); } catch (e) { done(e); }
     });
     legacy.emit('devicereported', {});
   });
