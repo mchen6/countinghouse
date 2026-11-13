@@ -60,6 +60,25 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   closing, Ctrl-C) writes them.
 
 
+### Removed — CDIF-style modules: one module format (breaking)
+
+- **A module is `api.json`, `schema.json` and `handlers/<service>/<action>.js`**
+  (lean worker, step 1; Matt, 2026-11-13). A module with a main entry
+  (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
+  refused before any of its code runs, at every way in (start, load, reload,
+  restart) and by `countinghouse-validate` (stage `layout`), with the new code
+  `MODULE_LAYOUT_UNSUPPORTED`, whose text names the file. That retires a
+  `device.js` exporting a handler map and an `index.js` class or EventEmitter
+  doing its own discovery (`discover`, `deviceonline`, `deviceoffline`). With
+  a `handlers/` directory, a main entry is never run, by the runtime or the
+  validator (whose `loadModuleEntry` stage is gone).
+- **`MODULE_NOT_DISCOVERABLE` is gone**: only the retired shape could raise it.
+- `npx countinghouse-migrate-module ./my-module` converts a 5.x module (a
+  `CHDevice` with `setAction`); a `device.js` handler map is converted by
+  moving each entry into its own handler file.
+- `CountinghouseError.withFields(code, fields, ...args)`: a catalogue text's
+  `{placeholders}` filled in for the locale.
+
 ### Fixed — on Windows, a module worker never started (#40)
 
 - On Windows every module's start stopped after "file broker: <module>
