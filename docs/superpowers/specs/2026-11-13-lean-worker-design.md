@@ -1,6 +1,6 @@
 # Lean worker: one module per worker, without a runtime per worker
 
-Status: draft for the maintainer's approval (2026-11-13). The maintainer decided, 2026-11-13: "CDIF style modules should be retired". Not to be built
+Status: approved direction (2026-11-13); in the first release. The maintainer decided, 2026-11-13: "CDIF style modules should be retired". Not to be built
 before R2-1 (no raw keys in modules) is merged: both change the worker's
 message handling and handler-ctx.
 
@@ -294,9 +294,10 @@ handler-map module has no device class.
 Steps 1 and 2 touch neither handler-ctx's hops nor the peer path and can be
 planned now. Steps 3-5 are planned only after R2-1 merges (A's Tasks 3-6,
 expected about Nov 17), against the code R2-1 leaves, not against its spec.
-#126 (lazy request and SOAP) is assumed merged before step 3. Proposed owner:
-B, once the Windows work for the first release is done; A answers questions
-about the sandbox prelude and the hop path. Each step a separate PR with the
+#126 (lazy request and SOAP) is assumed merged before step 3. Owners: C takes
+steps 1 and 2 now; steps 3-5 go to whichever of B and C is free when R2-1
+merges (B's Windows work comes first); A answers questions about the sandbox
+prelude and the hop path. Each step a separate PR with the
 reviewer's high review:
 
 1. Main-side spec and validators, and validation on the main thread for
@@ -317,13 +318,10 @@ reviewer's high review:
 Decided, 2026-11-13: CDIF-style modules are retired, not kept on a second
 kind of worker.
 
-Still open:
-
-1. Whether this waits for the release after the first one, or goes into the
-   first release if R2-1 and the Windows work finish early. The reviewer's
-   recommendation: it does not hold up the first release. Pack 1 already
-   starts in about 10 s with the fixes merged this week.
-2. The default result size cap, 16 MiB.
+Decided, 2026-11-13: the lean worker is in the first release (the
+maintainer: "I hope lean worker feature is in the first release"). So steps 1
+and 2 start now, before R2-1 merges, and steps 3-5 follow R2-1 directly.
+The default result cap stays at 16 MiB unless the maintainer says otherwise.
 
 ## Left to the builder
 
