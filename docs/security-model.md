@@ -257,7 +257,7 @@ countinghouse's own module objects. Modules and data under `/app` are fine.
 `package.json`; the operator's `--modulePolicy` file can only narrow that,
 never widen it (a wider entry is reported and ignored). `fs` (outside paths,
 `r` or `rw` each), `env` and `limits` take effect; so does the host check on
-`CHUtil.request` and `CHUtil.createSOAPClient` described below. The rest of
+`CHUtil.request` described below. The rest of
 `net` is parsed, validated and logged as effective permissions, and takes
 effect when parts 3 (HTTP broker) and 4 (TCP/TLS relay) ship.
 
@@ -369,7 +369,12 @@ and the short list of what the in-process sandbox cannot give.
   still use modules countinghouse loaded before the lockdown, and read
   countinghouse's own code files. `CHUtil` and everything else loaded before
   lockdown stay part of the review checklist for every change to
-  `lib/countinghouse-util.js`.
+  `lib/countinghouse-util.js`. postman-request, behind `CHUtil.request` and
+  a remote service client, loads on its first use instead
+  (`lib/lazy-require.js`), after module code has run, so a module can plant
+  `require.cache` entries for it in its own worker first. That reaches only calls made in that worker, which carry the
+  keys the module itself passes; the library is loaded once and kept, so
+  nothing planted after its first use is read.
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
   (`CHUtil.ci.deviceManager.workerMessage`, `CHUtil.redis.clientInstance`,
@@ -394,7 +399,7 @@ and the short list of what the in-process sandbox cannot give.
   including to Unix-socket paths (`net.connect(path)`,
   `http.request({socketPath})`), which the file namespace does not cover.
 - **The `CHUtil.request` host check is not the network boundary.** The check
-  on `CHUtil.request` (and `CHUtil.createSOAPClient`) governs only that
+  on `CHUtil.request` governs only that
   convenience route. Code running in the module's worker can also interfere
   with objects in that same worker, including the wrappers themselves. The
   network boundary is part 3's main-thread broker, not this check. Under

@@ -11,6 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {builtinModules} = require('module');
+const {spawnSync} = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -37,7 +38,8 @@ function sources() {
 
 // The package a bare specifier names: @scope/name or name.
 const packageOf = (spec) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]);
-const SPECIFIERS = [/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g, /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/g, /^\s*import\s[^'"]*(['"])([^'"]+)\1/gm, /^\s*export\s[^'"]*\sfrom\s*(['"])([^'"]+)\1/gm];
+// lazy('name'): a library loaded on first use (lib/lazy-require.js).
+const SPECIFIERS = [/\brequire\(\s*(['"])([^'"]+)\1\s*\)/g, /\blazy\(\s*(['"])([^'"]+)\1\s*\)/g, /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/g, /^\s*import\s[^'"]*(['"])([^'"]+)\1/gm, /^\s*export\s[^'"]*\sfrom\s*(['"])([^'"]+)\1/gm];
 
 describe('validation 11: the shipped runtime requires only builtins and its own dependencies', () => {
   it('finds the files and their specifiers', () => {
@@ -58,5 +60,27 @@ describe('validation 11: the shipped runtime requires only builtins and its own 
       }
     }
     assert.deepStrictEqual(missing, [], 'required at run time but not in dependencies');
+  });
+
+  it('a library loaded on first use is found by the scan: postman-request in lib/countinghouse-util.js', () => {
+    const text = fs.readFileSync(path.join(ROOT, 'lib', 'countinghouse-util.js'), 'utf8');
+    assert.ok(SPECIFIERS.some((re) => [...text.matchAll(re)].some((m) => m[2] === 'postman-request')));
+  });
+
+  // SOAP support is retired (Matt, 2026-11-13): no dependency, no source that
+  // loads it, and no CHUtil.createSOAPClient.
+  it('soap is gone: in no dependency field, loaded by no source, and CHUtil has no createSOAPClient', () => {
+    for (const field of ['dependencies', 'optionalDependencies', 'devDependencies', 'peerDependencies']) {
+      assert.ok(!Object.prototype.hasOwnProperty.call(pkg[field] || {}, 'soap'), `soap in ${field}`);
+    }
+    const loads = [];
+    for (const file of sources()) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const re of SPECIFIERS) for (const m of text.matchAll(re)) if (packageOf(m[2]) === 'soap') loads.push(path.relative(ROOT, file));
+    }
+    assert.deepStrictEqual(loads, []);
+    const r = spawnSync(process.execPath, ['-e', "console.log('RESULT ' + typeof require('./lib/countinghouse-util').createSOAPClient)"], {cwd: ROOT, encoding: 'utf8', timeout: 30000});
+    const line = r.stdout.split('\n').filter((l) => l.startsWith('RESULT ')).pop();
+    assert.strictEqual(line, 'RESULT undefined', `exit ${r.status}: ${r.stderr.slice(-2000)}`);
   });
 });

@@ -130,7 +130,7 @@ Only:
 
 Not loaded: the module manager, countinghouse-interface and its device manager,
 countinghouse-device, lib/service.js, lib/validator.js and ajv,
-json-schema-ref-parser, redis-api, postman-request, soap, axios and the rest
+json-schema-ref-parser, redis-api, postman-request, axios and the rest
 of countinghouse-util's dependency tree.
 
 The builder writes a test that lists every file a lean worker has required
@@ -141,7 +141,7 @@ That test is what keeps the worker lean as the code changes.
 
 `CHUtil` stays a global with the same methods. In a lean worker it is a facade
 whose helpers load their implementation on first use, the way #126 already
-made `CHUtil.request` and `createSOAPClient` lazy. A module that never uses a
+made `CHUtil.request` lazy (SOAP support was removed then, Matt, 2026-11-13). A module that never uses a
 helper never loads its library. The lockdown's host check wraps the facade's
 methods, so it applies on the first call too.
 
@@ -310,7 +310,7 @@ handler-map module has no device class.
 Steps 1 and 2 touch neither handler-ctx's hops nor the peer path and can be
 planned now. Steps 3-5 are planned only after R2-1 merges (A's Tasks 3-6,
 expected about Nov 17), against the code R2-1 leaves, not against its spec.
-#126 (lazy request and SOAP) is assumed merged before step 3. Owners: C takes
+#126 (lazy request; SOAP removed) is assumed merged before step 3. Owners: C takes
 steps 1 and 2 now; steps 3-5 go to whichever of B and C is free when R2-1
 merges (B's Windows work comes first); A answers questions about the sandbox
 prelude and the hop path. Each step a separate PR with the

@@ -18,6 +18,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Removed — SOAP support: `CHUtil.createSOAPClient` (breaking)
+
+- **`CHUtil.createSOAPClient` is gone**, with the `soap` dependency and its
+  lockdown host check (Matt, 2026-11-13). Nothing in the repository, the
+  bundled modules or the packs used it. A module that still needs SOAP
+  depends on a SOAP library itself and declares its hosts under
+  `countinghouse.permissions.net`. The ONVIF WSDL files under `spec/tools`
+  stay, as data.
+- **`CHUtil.request` loads postman-request on its first call**, as does a
+  remote service client on its first post, instead of in every module
+  worker's boot. The first such call in a worker costs about 200-350 ms,
+  once. In docker, pack 1's median worker boot went from 1,004 to 802 ms.
+
 ### Added — local mode: `--store local`, no Redis (LM1, part B)
 
 - **`--store redis|local`** (default `redis`, unchanged). `local` keeps
