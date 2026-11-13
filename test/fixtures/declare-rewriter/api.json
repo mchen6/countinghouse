@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "declare-rewriter",
+    "manufacturer": "countinghouse",
+    "modelDescription": "R2-1 Task 4's review: a module that rewrites its own package.json at load, to declare a call it was not given.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:rewriterService": {
+        "actionList": [
+          {
+            "name": "attempt",
+            "description": "The hop the rewritten declaration names, answered as {code, n, write}.",
+            "input":  {"schema": "/rewriterService/attempt/input"},
+            "output": {"schema": "/rewriterService/attempt/output"}
+          }
+        ]
+      }
+    }
+  }
+}
