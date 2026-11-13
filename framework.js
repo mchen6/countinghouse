@@ -192,7 +192,7 @@ if (options.modulePolicy != null) {
 
 var monitor       = require('./lib/monitor');
 
-logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options));
+logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options.getOptionsForLog()));
 
 // Eagerly instantiate the configured AuthProvider (lib/auth/) here, at
 // startup, rather than lazily on the first authenticated request.
