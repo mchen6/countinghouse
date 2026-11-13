@@ -274,8 +274,8 @@ namespace, the same in every `--moduleSandbox` mode:
 `process.cwd()` is `/app`, and `os.tmpdir()` is `/tmp`. Paths in results and
 errors are virtual too. Use `require` and relative paths as usual; build file
 paths from `__dirname` (or `import.meta.dirname`) rather than from a host path
-you know. Paths inside a module use `/` on every OS; a `\` is part of a file
-name.
+you know. Paths inside a module use `/` on every OS. On Linux and macOS a `\`
+is part of a file name; on Windows it is a separator, the same as `/`.
 
 **Write under `/data` or `/tmp`.** Writing next to your code under `/app` is
 refused under `enforce` (`EROFS`). `/data` is for what must survive a

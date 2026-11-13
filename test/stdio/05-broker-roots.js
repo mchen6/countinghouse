@@ -83,13 +83,13 @@ describe('stdio 05: a path under the granted roots (issue #40)', () => {
       assert.strictEqual(asBroker(form, '\\data\\..\\app\\x'), toVirtualPath('/data/../app/x', '/app'));
     });
 
-    it('Windows: nothing else is converted: a host path, a UNC or device path, a relative path, a look-alike, a non-string', () => {
+    // Round 4 converts every other path too, relative ones and Buffers
+    // included (test/stdio/07-backslash-paths.js).
+    it('Windows: a host path, a UNC or device path, and a path with no "\\" are kept as given', () => {
       const form = virtualFormFor('win32');
-      for (const v of ['D:\\app\\x', 'd:\\data\\x', '\\\\srv\\share\\app\\x', '\\\\?\\C:\\app\\x', 'data\\x', '\\application\\x', '\\apps\\x', '/app/x']) {
+      for (const v of ['D:\\app\\x', 'd:\\data\\x', '\\\\srv\\share\\app\\x', '\\\\?\\C:\\app\\x', '/app/x']) {
         assert.strictEqual(form(v), v, v);
       }
-      const buf = Buffer.from('\\app\\x');
-      assert.strictEqual(form(buf), buf);
     });
 
     it('POSIX: unchanged; a "\\" in a file name stays a literal', () => {
