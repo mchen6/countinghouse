@@ -33,4 +33,34 @@ describe('stdio 13: pack change notices', () => {
     assert.ok(!t.includes('\n'));
     assert.strictEqual(t.length, 200);
   });
+
+  it('past PER_MODULE_MAX, the newest are kept and the others counted in one line: never silent', () => {
+    for (let n = 1; n <= notices.PER_MODULE_MAX + 3; n++) notices.add('ch-pack-x', `change ${n}`);
+    const out = notices.take('ch-pack-x');
+    assert.strictEqual(out.length, notices.PER_MODULE_MAX + 1);
+    assert.strictEqual(out[0], '3 earlier changes to ch-pack-x not listed here');
+    assert.strictEqual(out[out.length - 1], `change ${notices.PER_MODULE_MAX + 3}`);
+  });
+
+  it('logging/setLevel: answered over stdio; a level above notice stops the notifications, never the result line; refused over HTTP', (done) => {
+    const gateway = require('../../lib/mcp/gateway');
+    gateway.handle({jsonrpc: '2.0', id: 1, method: 'logging/setLevel', params: {level: 'warning'}}, null, null, (e1, r1) => {
+      assert.deepStrictEqual(r1.result, {});
+      notices.add('ch-pack-x', 'quiet');
+      assert.deepStrictEqual(sent, [], 'no notification');
+      assert.deepStrictEqual(notices.take('ch-pack-x'), ['quiet']);
+      gateway.handle({jsonrpc: '2.0', id: 2, method: 'logging/setLevel', params: {level: 'loud'}}, null, null, (e2, r2) => {
+        assert.ok(r2.error != null, 'an unknown level');
+        gateway.handle({jsonrpc: '2.0', id: 3, method: 'logging/setLevel', params: {level: 'debug'}}, null, null, (e3, r3) => {
+          assert.ok(r3.error != null && /method not found/.test(r3.error.message), 'HTTP declares no logging');
+          gateway.handle({jsonrpc: '2.0', id: 4, method: 'logging/setLevel', params: {level: 'debug'}}, null, null, () => {
+            notices.add('ch-pack-x', 'heard');
+            assert.strictEqual(sent.length, 1);
+            notices.take('ch-pack-x');
+            done();
+          }, {listChanged: true});
+        });
+      }, {listChanged: true});
+    }, {listChanged: true});
+  });
 });

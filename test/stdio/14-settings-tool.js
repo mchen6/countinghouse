@@ -122,6 +122,8 @@ describe('stdio 14: countinghouse_settings', () => {
   it('control set applies in the runtime\'s unit: requestTimeout in seconds; a call already running keeps its timer', () => {
     const Timer = require('../../lib/timer');
     options.requestTimeout = 30000;
+    options.maxOutputBytes = 8 * MiB;
+    settingsTool.resetForTests();
     const running = new Timer();
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 20}), {ok: true});
     assert.strictEqual(options.requestTimeout, 20000);
@@ -133,8 +135,45 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'locale', value: 'zh-CN'}), {ok: true});
     assert.strictEqual(options.locale, 'zh-CN');
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'locale', value: 'zh'}), {ok: false, code: 'SETTING_OUT_OF_BOUNDS'}, 'the runtime\'s unit: en-US or zh-CN');
-    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'moduleSandbox', value: 'audit'}), {ok: false, code: 'SETTING_APPLIES_AT_START'});
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'moduleSandbox', value: 'audit'}), {ok: false, code: 'CONTROL_NOT_LIVE'});
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'pack.ci-failure-triage', value: false}), {ok: false, code: 'CONTROL_NOT_LIVE'}, 'a pack is turned off by unload');
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'nope', value: 1}), {ok: false, code: 'CONTROL_UNKNOWN_SETTING'});
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 9999}), {ok: false, code: 'SETTING_OUT_OF_BOUNDS'});
+  });
+
+  it('control set: a value above the one the workers started with applies at the next start; back to it applies now', () => {
+    options.requestTimeout = 30000;
+    options.maxOutputBytes = 8 * MiB;
+    settingsTool.resetForTests();
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 2 * MiB}), {ok: true});
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 16 * MiB}), {ok: false, code: 'CONTROL_APPLIES_AT_START'}, 'the validators\' heap is sized at start');
+    assert.strictEqual(options.maxOutputBytes, 2 * MiB, 'unchanged');
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 8 * MiB}), {ok: true});
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 60}), {ok: false, code: 'CONTROL_APPLIES_AT_START'});
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 30}), {ok: true});
+  });
+
+  it('an earlier {autoUpgrade} that is not a boolean makes the file unusable: never dropped by the next write', async () => {
+    fs.writeFileSync(file, JSON.stringify({autoUpgrade: 'yes'}));
+    await refused(tool.set('locale', 'zh'), 'SETTINGS_FILE_INVALID');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {autoUpgrade: 'yes'});
+    fs.writeFileSync(file, JSON.stringify({autoUpgrade: true}));
+    await tool.set('locale', 'zh');
+    assert.deepStrictEqual(stored(), {autoUpgrade: true, locale: 'zh'});
+  });
+
+  it('a home it cannot write to: SETTINGS_FILE_INVALID naming what failed; the history shows no change', async function() {
+    if (process.platform === 'win32' || process.getuid() === 0) this.skip();
+    fs.writeFileSync(path.join(home, 'history.jsonl'), '');
+    fs.chmodSync(home, 0o555);
+    try {
+      const err = await refused(tool.set('locale', 'zh'), 'SETTINGS_FILE_INVALID');
+      assert.match(err.message, /its lock cannot be created \(EACCES\)/);
+    } finally {
+      fs.chmodSync(home, 0o755);
+    }
+    assert.strictEqual(fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8'), '');
+    assert.ok(!fs.readdirSync(home).some((n) => n.endsWith('.tmp')));
   });
 
   it('listed only in the single-identity profile with --settingsFile; never addressable by ctx.call', () => {
