@@ -46,6 +46,8 @@ describe('--stdio: a flag given twice, as --hardened\'s relaunch gives it (#124)
     const src = require('fs').readFileSync(require.resolve('../../lib/cli-options'), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
     const tested = new Set([...src.matchAll(/argv\.([A-Za-z]+)\s*(?:===|!==)\s*(?:true|false|'true'|'false')/g)].map((m) => m[1]));
     for (const k of ['authConfigPath']) tested.delete(k);   // a path, tested for a bare flag with no value
+    // getOptions()'s own marker that its durations are in ms (#112), never a CLI flag
+    tested.delete('durationsInMs');
     assert.deepStrictEqual([...tested].filter((k) => !options.BOOLEAN_FLAGS.includes(k)), []);
   });
 });
