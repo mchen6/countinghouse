@@ -272,6 +272,25 @@ runs, so a gap is recorded in the bill (`charged`/`balance` set to `null`)
 rather than returning an error for what the caller experiences as a
 successful request.
 
+**A hop's result the caller cannot read is still billed** (lean worker
+step 2; the reviewer, 2026-11-14). On the main-thread-routed path a hop's
+result crosses as bytes: the callee's worker serializes it, a validator
+checks it against the callee's output schema, and only then does the
+calling worker decode it. The hop is metered once the callee has answered
+and its result has passed that check, before the bytes reach the caller.
+So if the caller's own worker cannot decode bytes that passed (its heap is
+exhausted, for example), the hop is still billed: the callee served the
+call, and the failure is on the caller's side.
+
+The caller gets a clear error, never a crash. `ctx.call` (or
+`ServiceClient.invoke`) rejects with `DEVICE_INVOKE_EXCEPTION`, "a module's
+result could not be read". If the decode instead runs the caller's worker
+out of memory, that worker ends, as any out-of-memory worker does: its
+pending calls are answered with the code that says why, and the supervisor
+restarts it. A hop refused before it reaches the caller is not billed, as
+before. That covers a result over `--maxOutputBytes`, one that fails the
+callee's output schema, and one whose check timed out.
+
 ### Example
 
 ```
