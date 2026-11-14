@@ -141,6 +141,31 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
     }
   });
 
+  (process.platform === 'win32' ? it : it.skip)('on Windows under --hardened: a secret swapped while the parent checks it is never handed on as checked', () => {
+    const lib = JSON.stringify(path.join(__dirname, '..', '..', 'lib', 'identity.js'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-idfd-'));
+    const opts = JSON.stringify({singleIdentity: true, storePath: dir});
+    try {
+      // a first, private secret, so the check passes on whatever the path then names
+      assert.strictEqual(spawnSync(process.execPath, ['-e', `require(${lib}).prepareForHardened(${opts})`], {encoding: 'utf8'}).status, 0);
+      // between the parent's open and its check: the file renamed away, another (also private) put in its place
+      const r = spawnSync(process.execPath, ['-e', `
+        const fs = require('fs');
+        const id = require(${lib});
+        try {
+          id.prepareForHardened(${opts}, {afterOpen: (file) => {
+            fs.renameSync(file, file + '.old');
+            fs.copyFileSync(file + '.old', file);
+          }});
+          process.stdout.write('handed on ' + (process.env.COUNTINGHOUSE_IDENTITY_ACL_CHECKED || ''));
+        } catch (e) { process.stderr.write(e.message); process.exit(2); }`], {encoding: 'utf8'});
+      assert.strictEqual(r.status, 2, r.stdout);
+      assert.match(r.stderr, /was changed or replaced while its permissions were checked/);
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   (process.platform !== 'win32' ? it : it.skip)('elsewhere: the mode bits as before (a 0644 secret is refused)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-idsec-'));
     try {
