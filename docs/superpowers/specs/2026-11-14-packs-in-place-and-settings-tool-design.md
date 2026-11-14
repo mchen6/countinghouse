@@ -74,7 +74,14 @@ single-identity profile passes. For packs it takes three requests (as
 implemented in `lib/packs-in-place.js`; besides them, `set` and `notice`).
 `name` is always the scenario's **package name** (the reviewer's ruling),
 for packs given at start (`--loadModule`) and loaded in place alike; a name
-the runtime does not hold is refused. `scenario` and `remoteCredentials` are
+the runtime does not hold is refused. That name and the settings key are
+separate namespaces: the settings tool's `pack.<name>` takes ch-local's pack
+name (`ci-failure-triage`), and ch-local maps it to its scenario
+(`@countinghouse/ch-pack-ci-failure-triage`), so any pack ch-local installs
+can be turned off. The refusal codes on this channel (`CONTROL_*`, among
+them `CONTROL_PACK_UNCERTAIN` for a reload whose rollback could not put
+everything back) are internal to `start` and the runtime: never a client's,
+and not in the error catalogue. `scenario` and `remoteCredentials` are
 absolute paths, and the device config stays the runtime's own
 (`--deviceConfigPath`).
 
