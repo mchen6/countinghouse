@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {PACK_NAME, insideRoots} = require('../../lib/packs-in-place');
+const {PACK_NAME, insideRoots, linkOut} = require('../../lib/packs-in-place');
 const {mergedAllowance, START_ALLOWANCE} = require('../../lib/module-manager');
 
 describe('stdio 17: packs in place, server-free', () => {
@@ -41,6 +41,27 @@ describe('stdio 17: packs in place, server-free', () => {
       assert.strictEqual(insideRoots(path.join(root, 'p', 'node_modules', 'link'), rs), false);
       assert.strictEqual(insideRoots(path.join(base, 'packs-evil', 'm'), rs), false);
       assert.strictEqual(insideRoots(path.join(root, 'missing'), rs), false);
+    } finally {
+      fs.rmSync(base, {recursive: true, force: true});
+    }
+  });
+
+  it('a module\'s links are found by walking it: a file link out is named; a link inside the root is not', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-17-'));
+    try {
+      const root = path.join(base, 'packs');
+      const m = path.join(root, 'p', 'node_modules', 'm');
+      fs.mkdirSync(path.join(m, 'handlers', 's'), {recursive: true});
+      fs.writeFileSync(path.join(root, 'p', 'inside.js'), '');
+      fs.symlinkSync(path.join(root, 'p', 'inside.js'), path.join(m, 'handlers', 's', 'ok.js'));
+      const rs = [fs.realpathSync(root)];
+      assert.strictEqual(linkOut(fs.realpathSync(m), rs), null);
+      fs.writeFileSync(path.join(base, 'away.js'), '');
+      fs.symlinkSync(path.join(base, 'away.js'), path.join(m, 'handlers', 's', 'out.js'));
+      assert.strictEqual(linkOut(fs.realpathSync(m), rs), path.join(fs.realpathSync(m), 'handlers', 's', 'out.js'));
+      fs.rmSync(path.join(m, 'handlers', 's', 'out.js'));
+      fs.symlinkSync(path.join(base, 'missing.js'), path.join(m, 'handlers', 's', 'dangling.js'));
+      assert.ok(linkOut(fs.realpathSync(m), rs) != null, 'a dangling link');
     } finally {
       fs.rmSync(base, {recursive: true, force: true});
     }

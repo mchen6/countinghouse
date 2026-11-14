@@ -47,10 +47,15 @@ function writeModule(dir, {name, version = '1.0.0', role, calls, remotes, servic
 // base: where the trees are (<home>/packs, the runtime's --packsRoot, unless
 // a case puts one elsewhere). brokenPart: the scenario also calls a part
 // whose handler file is missing, so that part's load is refused.
-function packVersion(home, scenario, tool, version, {slow = false, remote = false, base = path.join(home, 'packs'), brokenPart = false} = {}) {
+// sharedVersion, sharedBroken: the shared part at another version, whose
+// handler file is missing, so its spawn is refused (lib/module-manager.js
+// spawnModuleWorker's layout check, after a reload has unloaded the old one).
+function packVersion(home, scenario, tool, version, {slow = false, remote = false, base = path.join(home, 'packs'), brokenPart = false,
+  sharedVersion = '1.0.0', sharedBroken = false} = {}) {
   const nm = path.join(base, scenario, version, 'node_modules');
-  writeModule(path.join(nm, 'ch-step-shared'), {name: 'ch-step-shared', role: 'part', service: 'stepService',
+  const shared = writeModule(path.join(nm, 'ch-step-shared'), {name: 'ch-step-shared', version: sharedVersion, role: 'part', service: 'stepService',
     actions: {run: 'module.exports = async () => ({output: {part: "shared"}});\n'}});
+  if (sharedBroken) fs.rmSync(path.join(shared, 'handlers', 'stepService', 'run.js'));
   if (brokenPart) {
     const dir = writeModule(path.join(nm, 'ch-step-broken'), {name: 'ch-step-broken', role: 'part', service: 'brokenService',
       actions: {run: 'module.exports = async () => ({output: {}});\n'}});
@@ -204,5 +209,29 @@ describe('stdio 16: packs loaded, unloaded and reloaded in place', function() {
     const ok = await io.control({type: 'reload', name: 'ch-pack-two', scenario: again});
     assert.strictEqual(ok.ok, true, `${JSON.stringify(ok)}: the record was left at the failed version`);
     assert.deepStrictEqual(outOf(await call('tool_two')), {version: '5.0.0', part: 'shared'});
+  });
+
+  // The re-review (1): a module whose switch unloaded its old version, and
+  // whose new version then fails to spawn, is put back too.
+  it('a reload whose switched part fails to spawn puts the part\'s old version back: the pack answers as before', async () => {
+    const bad = packVersion(home, 'ch-pack-two', 'tool_two', '6.0.0', {slow: true, sharedVersion: '2.0.0', sharedBroken: true});
+    const r = await io.control({type: 'reload', name: 'ch-pack-two', scenario: bad});
+    assert.strictEqual(r.ok, false, JSON.stringify(r));
+    assert.deepStrictEqual(outOf(await call('tool_two')), {version: '5.0.0', part: 'shared'});
+  });
+
+  // (3): a file link out of --packsRoot inside a confined module is refused.
+  it('a scenario whose handler file is a link out of --packsRoot is refused; nothing loads', async () => {
+    const six = packVersion(home, 'ch-pack-six', 'tool_six', '1.0.0');
+    const handler = path.join(six, 'handlers', 'packService', 'tool_six.js');
+    const away = path.join(home, 'elsewhere', 'tool_six.js');
+    fs.mkdirSync(path.dirname(away), {recursive: true});
+    fs.copyFileSync(handler, away);
+    fs.rmSync(handler);
+    fs.symlinkSync(away, handler);
+    const r = await io.control({type: 'load', name: 'ch-pack-six', scenario: six});
+    assert.deepStrictEqual([r.ok, r.code], [false, 'CONTROL_FAILED'], JSON.stringify(r));
+    assert.match(r.message, /has a link outside --packsRoot/);
+    assert.ok(!(await listed()).includes('tool_six'));
   });
 });
