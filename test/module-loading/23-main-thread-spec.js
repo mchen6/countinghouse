@@ -74,6 +74,9 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
         fs.writeFileSync(path.join(m, 'schema.json'), JSON.stringify({$id: '#/', s: {a: {input: {$id: 'https://example.invalid/same', type: 'object', required: ['k']}}}}));
       }
       for (const b of [await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-two'))]) {
+        // compiled first, as a load does (a call never waits on a compile
+        // past its own deadline: the review of #165)
+        assert.strictEqual(await moduleSpec.warm(b), null);
         assert.strictEqual(await full(b, 'urn:countinghouse-test:serviceID:s', 'a', {input: {k: 1}}), null, JSON.stringify(b.error));
         assert.strictEqual((await full(b, 'urn:countinghouse-test:serviceID:s', 'a', {input: {}}))[0].code, 'INPUT_DATA_VALIDATION_FAIL');
       }

@@ -34,6 +34,11 @@ const SERVICE = 'urn:countinghouse-test:serviceID:checkService';
 
 const invoke = (actionName, input, serviceID) => post(PORT, KEY, `/devices/${deviceIDForName('main-checked')}/invoke-action`,
   {serviceID: serviceID || SERVICE, actionName: actionName, input: input});
+// The floods' own key: an input's stalls are held against its caller (the
+// review of #165), so KEY, which the other cases use, is never throttled.
+const FLOOD_KEY = 'main-checked-flood-key';
+const flood = (actionName, input) => post(PORT, FLOOD_KEY, `/devices/${deviceIDForName('main-checked')}/invoke-action`,
+  {serviceID: SERVICE, actionName: actionName, input: input});
 const hop = (action, args) => post(PORT, KEY, `/devices/${deviceIDForName('main-checked-caller')}/invoke-action`,
   {serviceID: 'urn:countinghouse-test:serviceID:callerService', actionName: 'hop', input: {action: action, args: args}});
 const count = async () => (await invoke('count', {})).body.output;
@@ -130,7 +135,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       {serviceID: 'urn:countinghouse-test:serviceID:callerService', actionName: 'ping', input: {}});
 
     it('a value its validation takes seconds over is refused at the deadline, and another module answers meanwhile', async () => {
-      const slow = invoke('slow', {s: `${'a'.repeat(40)}!`});
+      const slow = flood('slow', {s: `${'a'.repeat(40)}!`});
       await new Promise((r) => setTimeout(r, 50));
       const started = Date.now();
       const other = await ping();
@@ -149,7 +154,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
     // shown server-free, by the pool's count of what it sent: module-loading 24.)
     it('during a flood of one module\'s slow inputs, another module answers at once, and the flood is refused at the deadline', async () => {
       const stalling = Array.from({length: 20000}, (_, i) => ({i}));
-      const flood = Array.from({length: 4}, () => invoke('stall', {items: stalling}));
+      const flooded = Array.from({length: 4}, () => flood('stall', {items: stalling}));
       await new Promise((r) => setTimeout(r, 100));
       for (let i = 0; i < 3; i++) {
         const started = Date.now();
@@ -157,7 +162,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
         assert.strictEqual(r.status, 200, `${JSON.stringify(r.body)}\n${server.output.slice(-3000)}`);
         assert.ok(Date.now() - started < 250, `${Date.now() - started} ms`);
       }
-      for (const r of await Promise.all(flood)) assert.strictEqual(r.body.code, 'VALIDATION_TIMEOUT', JSON.stringify(r.body));
+      for (const r of await Promise.all(flooded)) assert.ok(['VALIDATION_TIMEOUT', 'VALIDATION_CALLER_THROTTLED'].includes(r.body.code), JSON.stringify(r.body));
       // the flood's last validators finish or are replaced before this key's
       // next calls (one validation in flight per caller)
       await new Promise((resolve) => setTimeout(resolve, 1500));
