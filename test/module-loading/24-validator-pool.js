@@ -146,6 +146,8 @@ describe('module-loading 24: the validator pool', function() {
       assert.strictEqual(codeOf(await checkOut(m, STALLING)), 'VALIDATION_TIMEOUT');
       await cooled();
     }
+    // the third strike counts when its validator is replaced: waited for
+    for (let w = 0; !pool.isQuarantined(m.name) && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
     assert.ok(pool.isQuarantined(m.name));
     assert.ok(errors.some((l) => l.includes(`${m.name}: quarantined after 3`)), errors.join('\n'));
     const started = Date.now();
@@ -542,7 +544,12 @@ describe('module-loading 24: the validator pool', function() {
       const answer = await checkBytes(m, bytesOf({output: STALLING}));
       assert.strictEqual(answer.buffer, null);
       assert.strictEqual(codeOf(answer.refused), 'VALIDATION_TIMEOUT');
-      assert.strictEqual((pool.strikes.get(m.name) || []).length, before + 1);
+      // the strike counts when the stalled validator is replaced, which may
+      // come after the answer (a call refused first as a late start): waited
+      // for, with a bound, not assumed (CI's test (24) at 39d6606)
+      const struck = () => (pool.strikes.get(m.name) || []).length;
+      for (let w = 0; struck() < before + 1 && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
+      assert.strictEqual(struck(), before + 1);
       await cooled();
       await warmed(pool);
       assert.strictEqual((await checkBytes(m, bytesOf({output: [1, 2]}))).refused, null);
