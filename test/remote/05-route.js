@@ -8,15 +8,13 @@ const os      = require('os');
 const path    = require('path');
 const redis   = require('redis');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, mcpCall, waitFor, testPort} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {redisUrlFor} = require('../helpers/test-env');
 
 const KEY    = 'remote-route-key';
 const TOKEN  = `ghp_${'A'.repeat(36)}`;
-// the stand-in's port is the one test/fixtures/remote-probe declares in its
-// package.json, so it is never mapped (CH_TEST_PORT_BASE)
 const REMOTE = 9688;
 const PROBE  = path.join(ROOT, 'test', 'fixtures', 'remote-probe');
 const NONE   = path.join(ROOT, 'test', 'fixtures', 'remote-none');
@@ -33,7 +31,7 @@ const serverArgs = (thread, allowance, extra) => ['--debug', '--debugKey', KEY, 
 const call = (port, module, action, input) => mcpCall(port, KEY, tool(module, action), input).then(toolOutput);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-[['worker mode', '--workerThread', testPort(9720)], ['single-thread mode', '--no-workerThread', testPort(9721)]].forEach(([mode, thread, port]) => {
+[['worker mode', '--workerThread', 9720], ['single-thread mode', '--no-workerThread', 9721]].forEach(([mode, thread, port]) => {
   describe(`remote 05: the remote: route, ${mode}`, function() {
     this.timeout(120000);
     let remote = null;
@@ -144,7 +142,7 @@ describe('remote 05: the registry', () => {
 
 describe('remote 05: the credential at load', function() {
   this.timeout(120000);
-  const PORT = testPort(9721);
+  const PORT = 9721;
   let remote = null;
   before(async () => { remote = await startRemoteServer(REMOTE); });
   after(async () => { await remote.close(); });

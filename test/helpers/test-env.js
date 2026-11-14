@@ -27,18 +27,24 @@ const path = require('path');
 const BASE = process.env.CH_TEST_PORT_BASE != null && process.env.CH_TEST_PORT_BASE !== ''
   ? Number(process.env.CH_TEST_PORT_BASE) : null;
 const assigned = new Map();
-const handedOut = new Set();
 
-// A port this process already handed out is returned as it is, so a test
-// may map its constant once (const PORT = testPort(9749)) and pass it to a
-// helper that maps every port it takes (test/helpers/sandbox-server.js,
-// remote-mcp-server.js) without it being mapped twice.
+// Each test maps every port it uses here, once, by its default: the helpers
+// (sandbox-server.js, remote-mcp-server.js) take ports as given, so the one
+// mapping is the test's own and its URLs, Host headers and --port agree
+// (validation 14 checks every server test for an unmapped port). The port
+// of CH_TEST_REDIS_URL (run-local's private Redis, 9749 by default) is never
+// handed out.
+const reservedPort = (() => {
+  try { return Number(new URL(process.env.CH_TEST_REDIS_URL).port) || null; } catch (e) { return null; }
+})();
 function testPort(defaultPort) {
   if (BASE == null || !Number.isInteger(BASE)) return defaultPort;
-  if (handedOut.has(defaultPort)) return defaultPort;
   if (!assigned.has(defaultPort)) {
-    assigned.set(defaultPort, BASE + assigned.size);
-    handedOut.add(assigned.get(defaultPort));
+    let next = BASE + assigned.size;
+    const taken = new Set(assigned.values());
+    if (reservedPort != null) taken.add(reservedPort);
+    while (taken.has(next)) next++;
+    assigned.set(defaultPort, next);
   }
   return assigned.get(defaultPort);
 }

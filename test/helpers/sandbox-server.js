@@ -7,7 +7,7 @@ const path    = require('path');
 const spawn   = require('child_process').spawn;
 const request = require('supertest');
 const waitForReady = require('./wait-for-ready');
-const {redisArgsFor, testPort} = require('./test-env');
+const {redisArgsFor} = require('./test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 
@@ -17,12 +17,7 @@ const ROOT = path.join(__dirname, '..', '..');
 // opts.env: extra environment variables for the server.
 // opts.cwd: the server's working directory (default: the repo root).
 // opts.root: a countinghouse installed somewhere else (default: this repo).
-// Every port this helper takes is mapped by testPort (CH_TEST_PORT_BASE under
-// test/helpers/run-local.js, unset in CI): a test passes its default, or the
-// constant it mapped itself (testPort returns a mapped port as it is). A test
-// that builds a URL of its own uses url(port).
 function startServer(port, args, opts) {
-  port = testPort(port);
   opts = opts || {};
   const root = opts.root || ROOT;
   return new Promise((resolve, reject) => {
@@ -65,7 +60,6 @@ function stopServer(server) {
 // names are lowercased) name fails the test that wrote it instead of passing
 // silently. opts.allowUnknownTool: for tests that expect a tool to be missing.
 function mcpCall(port, key, name, args, opts) {
-  port = testPort(port);
   return new Promise((resolve, reject) => {
     request(`http://127.0.0.1:${port}`)
       .post('/mcp')
@@ -87,7 +81,6 @@ function mcpCall(port, key, name, args, opts) {
 }
 
 function post(port, key, route, body) {
-  port = testPort(port);
   return new Promise((resolve, reject) => {
     request(`http://127.0.0.1:${port}`)
       .post(route)
@@ -118,7 +111,4 @@ function waitFor(predicate, timeoutMs, label, describe) {
   });
 }
 
-// The server's base URL, its port mapped as startServer maps it.
-const url = (port) => `http://127.0.0.1:${testPort(port)}`;
-
-module.exports = {ROOT, startServer, stopServer, mcpCall, post, waitFor, redisArgsFor, url, testPort};
+module.exports = {ROOT, startServer, stopServer, mcpCall, post, waitFor, redisArgsFor};

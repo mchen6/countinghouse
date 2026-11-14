@@ -10,8 +10,7 @@
 //   2026-11-04); it was every origin.
 const assert = require('assert');
 const path = require('path');
-const {ROOT, startServer, stopServer, testPort} = require('../helpers/sandbox-server');
-const PORT_22 = testPort(9665);
+const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
 
 function request(port, route, headers, body) {
   return new Promise((resolve, reject) => {
@@ -36,29 +35,29 @@ describe('auth 22: browser origins', function() {
   afterEach(() => { stopServer(server); server = null; });
 
   it('a form post cannot drive /load-module under --debug (R1-2a)', async () => {
-    server = await startServer(PORT_22, ['--workerThread', '--debug']);
+    server = await startServer(9665, ['--workerThread', '--debug']);
     const fixture = path.join(ROOT, 'test', 'fixtures', 'handler-map-module');
-    await request(PORT_22, '/load-module', {'Content-Type': 'application/x-www-form-urlencoded'},
+    await request(9665, '/load-module', {'Content-Type': 'application/x-www-form-urlencoded'},
       `path=${encodeURIComponent(fixture)}&name=handler-map-module&version=1.0.0`);
-    const list = await request(PORT_22, '/mcp', MCP, RPC);
+    const list = await request(9665, '/mcp', MCP, RPC);
     assert.ok(!/handler_map_module/.test(list.text), `the form post loaded the module: ${list.text.slice(0, 300)}`);
   });
 
   it('under --debug without --debugKey, a Host that is not this loopback server is refused (rebinding)', async () => {
-    server = await startServer(PORT_22, ['--workerThread', '--debug']);
-    const rebound = await request(PORT_22, '/mcp', Object.assign({Host: `attacker.example:${PORT_22}`}, MCP), RPC);
+    server = await startServer(9665, ['--workerThread', '--debug']);
+    const rebound = await request(9665, '/mcp', Object.assign({Host: 'attacker.example:9665'}, MCP), RPC);
     assert.strictEqual(rebound.status, 403, rebound.text);
-    const own = await request(PORT_22, '/mcp', Object.assign({Host: `127.0.0.1:${PORT_22}`}, MCP), RPC);
+    const own = await request(9665, '/mcp', Object.assign({Host: '127.0.0.1:9665'}, MCP), RPC);
     assert.strictEqual(own.status, 200, own.text);
-    const named = await request(PORT_22, '/mcp', Object.assign({Host: `localhost:${PORT_22}`}, MCP), RPC);
+    const named = await request(9665, '/mcp', Object.assign({Host: 'localhost:9665'}, MCP), RPC);
     assert.strictEqual(named.status, 200, named.text);
   });
 
   it('/mcp refuses an Origin that is not allowed, and serves a request with none', async () => {
-    server = await startServer(PORT_22, ['--workerThread', '--debug', '--debugKey', 'k']);
-    const evil = await request(PORT_22, '/mcp', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
+    server = await startServer(9665, ['--workerThread', '--debug', '--debugKey', 'k']);
+    const evil = await request(9665, '/mcp', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
     assert.strictEqual(evil.status, 403, evil.text);
-    const none = await request(PORT_22, '/mcp', MCP, RPC);
+    const none = await request(9665, '/mcp', MCP, RPC);
     assert.strictEqual(none.status, 200, none.text);
   });
 
@@ -66,25 +65,25 @@ describe('auth 22: browser origins', function() {
   // and carries the real loopback Host, so the Origin check is app-wide, not
   // only on /mcp, and does not depend on the path's case (review R1-2c, R1-2d).
   it('an unlisted Origin is refused on every route: POST /shutdown under --debug, and /MCP', async () => {
-    server = await startServer(PORT_22, ['--workerThread', '--debug']);
-    const shutdown = await request(PORT_22, '/shutdown', {Origin: 'http://evil.example'});
+    server = await startServer(9665, ['--workerThread', '--debug']);
+    const shutdown = await request(9665, '/shutdown', {Origin: 'http://evil.example'});
     assert.strictEqual(shutdown.status, 403, shutdown.text);
-    const upper = await request(PORT_22, '/MCP', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
+    const upper = await request(9665, '/MCP', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
     assert.strictEqual(upper.status, 403, upper.text);
-    const still = await request(PORT_22, '/mcp', MCP, RPC);
+    const still = await request(9665, '/mcp', MCP, RPC);
     assert.strictEqual(still.status, 200, 'the server is still up');
   });
 
   it('no CORS headers by default; --allowedOrigins opts an origin in', async () => {
-    server = await startServer(PORT_22, ['--workerThread', '--debug', '--debugKey', 'k']);
-    const plain = await request(PORT_22, '/mcp', MCP, RPC);
+    server = await startServer(9665, ['--workerThread', '--debug', '--debugKey', 'k']);
+    const plain = await request(9665, '/mcp', MCP, RPC);
     assert.strictEqual(plain.headers['access-control-allow-origin'], undefined);
     stopServer(server);
-    server = await startServer(PORT_22, ['--workerThread', '--debug', '--debugKey', 'k', '--allowedOrigins', 'http://app.example,http://other.example']);
-    const listed = await request(PORT_22, '/mcp', Object.assign({Origin: 'http://app.example'}, MCP), RPC);
+    server = await startServer(9665, ['--workerThread', '--debug', '--debugKey', 'k', '--allowedOrigins', 'http://app.example,http://other.example']);
+    const listed = await request(9665, '/mcp', Object.assign({Origin: 'http://app.example'}, MCP), RPC);
     assert.strictEqual(listed.status, 200, listed.text);
     assert.strictEqual(listed.headers['access-control-allow-origin'], 'http://app.example');
-    const unlisted = await request(PORT_22, '/mcp', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
+    const unlisted = await request(9665, '/mcp', Object.assign({Origin: 'http://evil.example'}, MCP), RPC);
     assert.strictEqual(unlisted.status, 403);
   });
 });

@@ -9,14 +9,12 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const wt     = require('worker_threads');
-const {ROOT, testPort} = require('../helpers/sandbox-server');
+const {ROOT} = require('../helpers/sandbox-server');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {createUsage} = require('../../lib/usage');
 require('../../lib/logger').createLogger(false);
 
-const REMOTE = testPort(9728);
-// a port nothing listens on, mapped like the others (it was REMOTE + 1)
-const NOBODY = testPort(9729);
+const REMOTE = 9728;
 const KEY = 'remote-counting-key';
 const TOKEN = `ghp_${'A'.repeat(36)}`;
 
@@ -43,7 +41,7 @@ describe('remote 07: usage records for remote calls, and the call id across ever
   before(async () => {
     cli.setOptions({workerThread: false, debug: true});
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-07a-')), 'remote-credentials.json');
-    fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${REMOTE}`]: ['CH_TEST_REMOTE_TOKEN'], [`http://127.0.0.1:${NOBODY}`]: ['CH_TEST_REMOTE_TOKEN']}));
+    fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${REMOTE}`]: ['CH_TEST_REMOTE_TOKEN'], [`http://127.0.0.1:${REMOTE + 1}`]: ['CH_TEST_REMOTE_TOKEN']}));
     credentials.configure(file);
     process.env.CH_TEST_REMOTE_TOKEN = TOKEN;
     remote = await startRemoteServer(REMOTE);
@@ -81,7 +79,7 @@ describe('remote 07: usage records for remote calls, and the call id across ever
     const id = u.beginCall({tool: 'outer'});
     await call('fails', {}, {usageCall: id});
     await registry.unregister('count-probe');
-    registry.register('count-probe', probeAt(NOBODY));     // nothing listens there
+    registry.register('count-probe', probeAt(REMOTE + 1));     // nothing listens there
     try {
       await assert.rejects(call('echo_text', {}, {usageCall: id}), {code: 'REMOTE_UNREACHABLE'});
     } finally {

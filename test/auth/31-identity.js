@@ -13,7 +13,7 @@ const os      = require('os');
 const path    = require('path');
 const {spawn, spawnSync} = require('child_process');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, testPort} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
 const waitForReady = require('../helpers/wait-for-ready');
 
 const LIB   = path.join(ROOT, 'lib');
@@ -80,7 +80,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
   });
 
   describe('with the file provider', () => {
-    const PORT = testPort(9646);
+    const PORT = 9646;
     const URL  = `http://127.0.0.1:${PORT}`;
     let base = null;
     let authPath = null;
@@ -166,7 +166,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
   });
 
   describe('a start that is refused', () => {
-    const PORT = testPort(9647);
+    const PORT = 9647;
     let base = null;
     beforeEach(() => { base = fs.mkdtempSync(path.join(os.homedir(), '.ch-identity-refused-')); });
     afterEach(() => { if (base != null) fs.rmSync(base, {recursive: true, force: true}); base = null; });
@@ -239,7 +239,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
   });
 
   describe('(e) COUNTINGHOUSE_IDENTITY_SECRET overrides the file', () => {
-    const PORT = testPort(9648);
+    const PORT = 9648;
     const SECRET = hex(32);
     let base = null;
     let proc = null;
@@ -277,7 +277,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
         const dbPath = path.join(base, 'auth.db');
         fs.writeFileSync(dbPath, crypto.randomBytes(4096));   // not a database
         const r = await startAndWait(['--workerThread', '--authProvider', 'sqlite', '--authConfigPath', dbPath,
-          '--moduleDataPath', path.join(base, 'store'), '--port', String(testPort(9647))]);
+          '--moduleDataPath', path.join(base, 'store'), '--port', '9647']);
         assert.strictEqual(r.code, 2, r.output.slice(-600));
         assert.match(r.output, /identity|id index/);
       } finally {
@@ -345,7 +345,7 @@ describe('auth 31: the opaque per-user id, its secret, and the operator\'s looku
       try {
         const secret = fs.readFileSync(path.join(store, '.identity-secret'), 'utf8').trim();
         const carolId = idIn(secret, {id: 'carol'}, CAROL);
-        const r = await request(`http://127.0.0.1:${testPort(9649)}`).post('/identity-lookup').set('X-CH-Key', ADMIN).send({id: carolId});
+        const r = await request('http://127.0.0.1:9649').post('/identity-lookup').set('X-CH-Key', ADMIN).send({id: carolId});
         assert.deepStrictEqual(r.body, {id: carolId, userName: 'carol', isAdmin: false});
       } finally {
         stopServer(server);
