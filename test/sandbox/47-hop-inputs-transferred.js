@@ -25,8 +25,9 @@ describe('sandbox 47: lib/hop-input.js, server-free', () => {
     assert.deepStrictEqual(hopInput.decodeArgs(args), {token: 't', usageCall: 3, input: {s: 'abc', n: [1, 2]}});
   });
 
-  it('an input structured clone cannot carry throws in the calling worker, as postMessage would', () => {
+  it('an input structured clone cannot carry throws in the calling worker, as postMessage would; so does shared memory', () => {
     assert.throws(() => hopInput.encode({input: {f: () => 1}}), /could not be cloned/);
+    assert.throws(() => hopInput.encode({input: {buf: new SharedArrayBuffer(16)}}));
   });
 
   it('args with no input, or a value input (an older or tampered worker), are left as they are', () => {
@@ -44,8 +45,8 @@ describe('sandbox 47: lib/hop-input.js, server-free', () => {
     assert.strictEqual(err.message, `m/a: its input is ${n} bytes, over the ${n - 1}-byte limit (--maxOutputBytes), so the call was refused`);
   });
 
-  it('bytes that cannot be read are DEVICE_INVOKE_EXCEPTION, never a crash', () => {
-    assert.throws(() => hopInput.decodeArgs({inputBytes: new Uint8Array([1, 2, 3]).buffer}), {code: 'DEVICE_INVOKE_EXCEPTION'});
+  it('bytes that cannot be read are DEVICE_INVOKE_EXCEPTION naming the input, never a crash', () => {
+    assert.throws(() => hopInput.decodeArgs({inputBytes: new Uint8Array([1, 2, 3]).buffer}), (e) => e.code === 'DEVICE_INVOKE_EXCEPTION' && /a hop's input could not be read/.test(e.message));
   });
 });
 
@@ -87,6 +88,14 @@ describe('sandbox 47: a routed hop\'s input crosses as a transferred buffer', fu
     const r = await callerDo('send', {n: CAP + 1});
     assert.strictEqual(r.body.output.code, 'INPUT_TOO_LARGE', JSON.stringify(r.body).slice(0, 500));
     assert.match(r.body.output.message, /^hop-input-callee\/sink: its input is \d+ bytes, over the 4194304-byte limit/);
+    assert.strictEqual(await runs(), before);
+  });
+
+  it('a hop whose module swaps its input bytes for a value is refused on the main thread, and the callee does not run', async () => {
+    const before = await runs();
+    const r = await callerDo('sendAsValue', {});
+    assert.strictEqual(r.body.output.code, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(r.body).slice(0, 500));
+    assert.match(r.body.output.message, /a hop's input must cross as bytes/);
     assert.strictEqual(await runs(), before);
   });
 

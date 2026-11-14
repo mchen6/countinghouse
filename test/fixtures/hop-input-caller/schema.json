@@ -4,12 +4,42 @@
   "type": "object",
   "sendService": {
     "send": {
-      "input":  {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0}, "wrong": {"type": "boolean"}}, "required": ["n"]},
-      "output": {"type": "object"}
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wrong": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "n"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
     },
     "runs": {
-      "input":  {"type": "object", "properties": {}},
-      "output": {"type": "object"}
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "sendAsValue": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

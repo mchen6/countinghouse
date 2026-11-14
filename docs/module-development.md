@@ -230,7 +230,10 @@ validator workers, which all modules share:
 - three such refusals of your own outputs (or compiles) in five minutes
   quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
 - an output over `--maxOutputBytes` (8 MiB by default) is refused
-  `OUTPUT_TOO_LARGE`.
+  `OUTPUT_TOO_LARGE`, and so is a `ctx.call` input over it, `INPUT_TOO_LARGE`,
+  on the main-thread-routed path. A hop's input is sent as bytes: a value
+  structured clone cannot carry, or a `SharedArrayBuffer`, fails the
+  `ctx.call` in your own worker.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load

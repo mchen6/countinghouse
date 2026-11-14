@@ -18,6 +18,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — a routed hop's input crosses the main thread as bytes (#185)
+
+- A `ctx.call` routed through the main thread (`--no-directPeerChannels`)
+  sends its input as `v8.serialize` bytes, transferred: the main thread
+  checks it in a validator and hands the checked bytes to the called module,
+  never deserialising or cloning it. On 1 MB hops the main thread's CPU per
+  hop fell from 5.3–6.0 ms to 2.6–3.9 ms (the PR has the table).
+- **`INPUT_TOO_LARGE`** (new): a hop's input over `--maxOutputBytes`, the
+  one cap, is refused on the main thread before any check or handler runs.
+- A hop's input that structured clone cannot carry, or a
+  `SharedArrayBuffer` (which a hop used to share between two modules'
+  workers), now fails the `ctx.call` in the calling worker.
+
 ### Added — a bound on a module's load, in every sandbox mode (#144)
 
 - **`--moduleLoadTimeout <seconds>`** (default 120): a module's worker that
