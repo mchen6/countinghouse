@@ -40,6 +40,29 @@
       "output": {
         "type": "object"
       }
+    },
+    "call": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "enum": [
+              "big",
+              "bad"
+            ]
+          },
+          "args": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "args"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

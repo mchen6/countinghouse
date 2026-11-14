@@ -5,7 +5,9 @@
   "countinghouse": {
     "calls": [
       "hop-input-callee/sinkService.sink",
-      "hop-input-callee/sinkService.count"
+      "hop-input-callee/sinkService.count",
+      "hop-input-callee/sinkService.big",
+      "hop-input-callee/sinkService.bad"
     ]
   }
 }

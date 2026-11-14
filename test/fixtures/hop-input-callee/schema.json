@@ -4,12 +4,92 @@
   "type": "object",
   "sinkService": {
     "sink": {
-      "input":  {"type": "object", "properties": {"s": {"type": "string"}}, "required": ["s"], "additionalProperties": false},
-      "output": {"type": "object", "properties": {"length": {"type": "integer"}, "sha256": {"type": "string"}}, "required": ["length", "sha256"]}
+      "input": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "s"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "length": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "length",
+          "sha256"
+        ]
+      }
     },
     "count": {
-      "input":  {"type": "object", "properties": {}},
-      "output": {"type": "object", "properties": {"runs": {"type": "integer"}}, "required": ["runs"]}
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runs"
+        ]
+      }
+    },
+    "big": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "n"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "s"
+        ]
+      }
+    },
+    "bad": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "length": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "length"
+        ]
+      }
     }
   }
 }
