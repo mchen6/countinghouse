@@ -1,0 +1,43 @@
+{
+  "device": {
+    "friendlyName": "hop-input-caller",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Caller of the hop-input fixture: sends a large or a wrong input over a hop (test/sandbox/47).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:sendService": {
+        "actionList": [
+          {
+            "name": "send",
+            "description": "Sends hop-input-callee's sink an input of n characters, or a wrong one.",
+            "input": {
+              "schema": "/sendService/send/input"
+            },
+            "output": {
+              "schema": "/sendService/send/output"
+            }
+          },
+          {
+            "name": "runs",
+            "description": "hop-input-callee's count, over a hop.",
+            "input": {
+              "schema": "/sendService/runs/input"
+            },
+            "output": {
+              "schema": "/sendService/runs/output"
+            }
+          },
+          {
+            "name": "sendAsValue",
+            "description": "A hop whose input bytes its own module swaps for a value.",
+            "input": {
+              "schema": "/sendService/sendAsValue/input"
+            },
+            "output": {
+              "schema": "/sendService/sendAsValue/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -34,9 +34,22 @@ const state = globalThis.__tokenForge || (globalThis.__tokenForge = {rules: {}, 
 const hops = new Map();   // a peer invoke's id -> its marker
 const deferred = new Map();   // a peer invoke's id -> its announcement, held until the invoke is posted
 
+// A routed hop's input crosses as v8.serialize bytes (lib/hop-input.js); a
+// module reading its own worker's messages reads them too. The marker is a
+// one-byte string: '"', its length, then its characters, after the key.
+function markerInBytes(bytes) {
+  const text = Buffer.from(bytes).toString('latin1');
+  const at = text.indexOf('"\x06marker"');
+  if (at < 0) return null;
+  const len = text.charCodeAt(at + 9);
+  return {marker: text.slice(at + 10, at + 10 + len)};
+}
+
 function hopInput(m) {
   if (m == null || typeof(m) !== 'object') return null;
-  if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) return m.data.args.input;
+  if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) {
+    return (m.data.args.inputBytes instanceof ArrayBuffer) ? markerInBytes(m.data.args.inputBytes) : m.data.args.input;
+  }
   if (m.command === 'peer-invoke') return m.input;
   return null;
 }
