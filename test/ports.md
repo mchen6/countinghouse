@@ -143,7 +143,7 @@ one) as well as the ports it binds.
 | `test/sandbox/28-crash-during-restart-discovery.js` | 9638 |
 | `test/sandbox/29-link-to-module-parent.js` | 9650 |
 | `test/sandbox/30-deviceonline-while-unloading.js` | 9640 |
-| `test/sandbox/41-load-bound.js` | 9734–9735 |
+| `test/sandbox/45-load-bound.js` | 9734–9735 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
