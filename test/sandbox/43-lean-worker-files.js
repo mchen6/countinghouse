@@ -68,34 +68,10 @@ const ALLOWED_AFTER_CALL = ALLOWED.concat([
   'lib/query-device.js',
   'lib/service-client.js',
   'lib/session.js',
-  'lib/timer.js',
-  'lib/store.js',
-  // made at the attach today (lib/lean-worker.js): the worker's logger, and
-  // the Redis bridge
-  'lib/logger.js',
-  'lib/worker-logger.js',
-  'node_modules/bunyan/',
-  'node_modules/source-map-support/',
-  'node_modules/buffer-from/',
-  'node_modules/safe-json-stringify/',
-  'node_modules/dtrace-provider/',
-  'node_modules/mv/',
-  'node_modules/mkdirp/',
-  'node_modules/ncp/',
-  'node_modules/minimatch/',
-  'node_modules/brace-expansion/',
-  'node_modules/balanced-match/',
-  'node_modules/concat-map/',
-  'node_modules/inflight/',
   'node_modules/once/',
   'node_modules/wrappy/',
-  'node_modules/inherits/',
-  'node_modules/path-is-absolute/',
-  'lib/redis-api.js',
-  'lib/supported-redis-commands.json',
-  'node_modules/lodash/',
-  'node_modules/string-hash/',
-  'node_modules/redis-commands/'
+  'lib/timer.js',
+  'lib/store.js'
 ]);
 
 const allowedIn = (list) => (rel) => list.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
