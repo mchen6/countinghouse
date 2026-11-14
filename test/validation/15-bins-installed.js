@@ -27,10 +27,21 @@ describe('validation 15: every bin/ command is installed', () => {
     }
   });
 
-  it('the two added in 8.0.0 answer --help with their usage', () => {
-    for (const [f, usage] of [['bin/countinghouse-auth-sqlite.js', /bind-module/], ['bin/countinghouse-meter.js', /countinghouse-meter set/]]) {
-      const r = spawnSync(process.execPath, [path.join(ROOT, f), '--help'], {encoding: 'utf8', timeout: 20000, env: Object.assign({}, process.env, {COUNTINGHOUSE_SEED_KEY: ''})});
-      assert.match(`${r.stdout}${r.stderr}`, usage, f);
+  // Neither command has a --help of its own: each prints its usage for it as
+  // for any command it does not know, and exits non-zero (auth-sqlite 1,
+  // meter 2). Run in a throwaway directory: auth-sqlite opens its default
+  // database, ./auth.sqlite3, before it reads the command.
+  it('the two added in 8.0.0 print their usage when given --help, and leave nothing behind', () => {
+    const cwd = fs.mkdtempSync(path.join(require('os').tmpdir(), 'ch-bins-'));
+    try {
+      for (const [f, usage, status] of [['bin/countinghouse-auth-sqlite.js', /bind-module/, 1], ['bin/countinghouse-meter.js', /countinghouse-meter set/, 2]]) {
+        const r = spawnSync(process.execPath, [path.join(ROOT, f), '--help'], {cwd, encoding: 'utf8', timeout: 20000, env: Object.assign({}, process.env, {COUNTINGHOUSE_SEED_KEY: ''})});
+        assert.match(`${r.stdout}${r.stderr}`, usage, f);
+        assert.strictEqual(r.status, status, f);
+      }
+      assert.ok(!fs.existsSync(path.join(ROOT, 'auth.sqlite3')), 'nothing written in the repository');
+    } finally {
+      fs.rmSync(cwd, {recursive: true, force: true});
     }
   });
 });

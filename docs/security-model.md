@@ -659,10 +659,13 @@ these are the checks that predate them and still apply:
   - None of the pool's bounds below applies to a peer call: no deadline, no
     caller throttle, no quarantine. A caller can tie up a called module's
     worker with an input that makes that module's own pattern backtrack.
+  - Nor does the output cap (`--maxOutputBytes`): a peer callee's result
+    goes to the caller's worker unmeasured. A buggy or tampering callee can
+    make its caller deserialise a value of any size.
 
   Lean worker step 4 moves peer calls' checks into the validator pool, with
   the same rules as routed calls; until then, use `--no-directPeerChannels`
-  where the guarantee matters.
+  where these guarantees matter.
 
   The main thread never compiles or walks a module's schema, because no
   check made beforehand bounds JSON Schema validation: some patterns
@@ -714,8 +717,8 @@ these are the checks that predate them and still apply:
     commands that affect the whole instance or read across keyspaces:
     `flushall`, `flushdb`, `config`, `keys`, `client`, `monitor`,
     `shutdown`, and Lua via `eval`/`evalscript`.
-  - Every key a module names is stored under `m:<module name>:` (#164,
-    `lib/redis-namespace.js`). That's the name the main thread loaded the
+  - Every key a module names is stored under its namespace: `m:`, then the
+    module's name URI-encoded, then `:` (#164, `lib/redis-namespace.js`). That's the name the main thread loaded the
     module under, never one its worker states. So a module can't read,
     overwrite or delete another module's keys or the runtime's own
     (`jobinfo:*`).
