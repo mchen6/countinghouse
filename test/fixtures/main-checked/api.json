@@ -45,6 +45,16 @@
             "output": {
               "schema": "/checkService/tamper/output"
             }
+          },
+          {
+            "name": "slow",
+            "description": "Its input's pattern passes every check made at load and still takes seconds on a crafted value: the validator's deadline refuses it.",
+            "input": {
+              "schema": "/checkService/slow/input"
+            },
+            "output": {
+              "schema": "/checkService/slow/output"
+            }
           }
         ]
       }

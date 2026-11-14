@@ -627,23 +627,30 @@ these are the checks that predate them and still apply:
   the caller. This bounds the *shape* of data reaching a module's code and
   the *shape* of what a module can claim to return — it does not sandbox
   what the module's handler does internally with valid input.
-  In worker mode, both checks run on the main thread for every call it
-  sends to a worker (a client's call, a job's run, a hop routed through the
-  main thread), against schemas the main thread builds from the module's
-  files before the worker starts (`lib/module-spec.js`), so module code
-  cannot reach them. A module's code can reach its own worker's copy: under
-  `audit` and `off` the runtime's files are in that worker's
-  `require.cache`. So the in-worker check is now used only for a call over
-  a direct peer channel, where a module that interferes with it harms its
-  own input check; moving that check out of reach is lean worker step 4
+  In worker mode, both checks run in a validator worker
+  (`lib/validator-pool.js`) for every call the main thread sends to a
+  module's worker (a client's call, a job's run, a hop routed through the
+  main thread). That is neither the main thread nor the module's own worker,
+  and no module code runs there. A module's code can reach its own worker's
+  copy: under `audit` and `off` the runtime's files are in that worker's
+  `require.cache`. So the in-worker check is used only for a call over a
+  direct peer channel, where a module that interferes with it harms its own
+  input check; moving that check out of reach is lean worker step 4
   (`docs/superpowers/specs/2026-11-13-lean-worker-design.md`).
-  Since the module's schema now runs on the main thread, outside its
-  worker's limits, a `schema.json` that could stall or exhaust that thread
-  is refused at load (`lib/schema-safety.js`): over 1 MB, a regular
-  expression that can backtrack catastrophically (a repetition inside a
-  repeated group, the safe-regex check) or over 1000 characters, and
-  schemas over 100,000 nodes with their `$ref`s expanded, or with a `$ref`
-  cycle.
+
+  The main thread never compiles or walks a module's schema, because no
+  check made beforehand bounds JSON Schema validation: some patterns
+  backtrack for seconds, some small schemas compile for seconds. The
+  validators are bounded instead:
+  - their resource limits;
+  - a deadline per request (`--validationTimeoutMs`), past which the
+    validator is replaced and the call refused `VALIDATION_TIMEOUT`;
+  - a quarantine for a module that keeps missing it (`VALIDATION_QUARANTINED`).
+
+  A `schema.json` that is plainly unsafe is also refused at load as a
+  courtesy, checked in a validator (`lib/schema-safety.js`): over 1 MB, a
+  pattern over 1000 characters or of star height above 1, or over 100,000
+  nodes with its `$ref`s expanded.
 - **Redis command allowlist** (`lib/supported-redis-commands.json`,
   enforced in `lib/redis-api.js` via `_.intersection(redisCommands.list,
   supportedCommands)`). Modules access Redis only through a wrapper that

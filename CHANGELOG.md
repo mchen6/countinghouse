@@ -79,45 +79,66 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - `CountinghouseError.withFields(code, fields, ...args)`: a catalogue text's
   `{placeholders}` filled in for the locale.
 
-### Security — a module's input and output are checked on the main thread
+### Security — a module's input and output are checked in validator workers, out of its reach
 
 - **Every call the main thread sends to a module's worker** (an MCP
   `tools/call`, an HTTP `invoke-action`, a job's run, a hop routed through
-  the main thread) is validated on the main thread (lean worker, step 1):
-  the input before the call is sent, so a bad input never reaches the
-  worker, and the output on the reply. The schemas are built there from the
-  module's own `api.json` and `schema.json` before its worker starts
-  (`lib/module-spec.js`), with the same `Service` code a worker uses, so
-  every refusal keeps its code, text and fault. Those calls' workers skip
-  their own validation.
+  the main thread) is validated (lean worker, step 1(b)). The input is
+  checked before the call is sent, so a bad input never reaches the worker,
+  and the output on the reply.
+- **Where:** in a validator worker (`lib/validator-pool.js`), neither on the
+  main thread nor in the module's own worker. No module code runs there.
+- **How:** the main thread reads the module's `api.json` and `schema.json`
+  before its worker starts (`lib/module-spec.js`) and keeps only structural
+  facts: names, the spec text, a hash. The validator compiles the schemas
+  lazily with the same `Service` code a worker uses, so every refusal keeps
+  its code, text and fault. The module's worker skips its own validation for
+  those calls.
 - **Why:** the checks ran in the module's own worker, where its code could
   reach them. Under the default sandbox (`audit`) and with none, the
   runtime's `Service` and validator are in the worker's `require.cache`, and
   a module could replace them and return an output its schema refuses
-  (`test/sandbox/41`).
+  (`test/sandbox/41`). They could not move to the shared main thread: no
+  check made beforehand bounds JSON Schema validation of a module's schema.
+  Some patterns take seconds (`^(\w|a)+$`), a 700-byte `anyOf` schema takes
+  seconds to compile, and so does `uniqueItems` over 20000 items.
+- **`--validatorWorkers <n>`** (default 2) sets the pool's size, each worker
+  with resource limits.
+- **`--validationTimeoutMs <n>`** (default 1000) is one validation's deadline,
+  a module's first compile included. Past it, or when a validator ends, the
+  validator is replaced and the call refused `VALIDATION_TIMEOUT` (naming the
+  module, the action and the side, never a value).
+- **A module that misses the deadline 3 times in 5 minutes** is refused
+  `VALIDATION_QUARANTINED` until it is reloaded.
+- **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
+  a 100 KB output.
 - **A worker's device is registered only if it announces exactly that spec,**
-  and it is listed as the main thread's copy; any other is neither
-  registered nor listed, and the mismatch is logged.
+  with schema.json unchanged by hash, and it is listed as the main thread's
+  copy. Any other is neither registered nor listed, and the mismatch is
+  logged.
 - **A service or action named like an `Object.prototype` member**
   (`constructor`, `__proto__`, `toString`...) is the module's own or not
   found, in every mode: an undeclared one is answered `SERVICE_NOT_FOUND` or
   `ACTION_NOT_FOUND`, and a declared one works. A device's services and
-  actions were plain objects, so such a name found the prototype's member:
-  an undeclared one answered `ACTION_NOT_IMPLEMENTED` or crashed, and a
+  actions were plain objects, so such a name found the prototype's member.
+  An undeclared one answered `ACTION_NOT_IMPLEMENTED` or crashed, and a
   declared one's handler was set on `Object.prototype`'s function.
 - **Unchanged:** a call over a direct peer channel is still validated in the
   called worker (until step 4), and single-thread mode validates in-process
   as before.
-- **A schema.json that could stall or exhaust the main thread is refused at
-  load** (`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the module and
-  the schema path, never the pattern), at every way in and in single-thread
-  mode too (`lib/schema-safety.js`): one over 1 MB; a regular expression
-  (`pattern`, a `patternProperties` key, a `propertyNames` pattern) over 1000
-  characters or with a repetition inside a repeated group (`^(a+)+$`); and
-  actions whose schemas come to more than 100,000 nodes with their `$ref`s
-  expanded (an expansion bomb, measured without expanding it) or whose
-  `$ref` refers to itself. The main thread dereferences a module's schema
-  once, not once per action.
+- **A courtesy refusal at load** (`MODULE_ASSEMBLY_FAIL`, stage
+  `schemaSafety`, naming the module and the schema path, never the pattern),
+  run in a validator in worker mode (`lib/schema-safety.js`). It refuses:
+  - a schema.json over 1 MB;
+  - a regular expression (`pattern`, a `patternProperties` key, a
+    `propertyNames` pattern) over 1000 characters, or with a repetition
+    inside a repeated group (`^(a+)+$`) or alternatives that start alike in
+    one (`(a|aa)+`);
+  - a document over 100,000 nodes with its `$ref`s and `$dynamicRef`s
+    expanded (measured without expanding it), a `$ref` cycle, and a `$ref`
+    that names no place in schema.json.
+
+  A refused reload leaves the loaded version serving.
 - **One answer changes:** a result that cannot cross between threads (a
   function or a Symbol inside a module's output) is answered
   `DEVICE_INVOKE_EXCEPTION` ("the result could not be sent between
