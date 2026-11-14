@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {spawnSync, execFileSync} = require('child_process');
-const {privateProblem} = require('../../lib/win-acl');
+const {privateProblem, fixHint} = require('../../lib/win-acl');
 
 const ME = 'S-1-5-21-1-2-3-1001';
 const OTHER = 'S-1-5-21-1-2-3-1002';
@@ -24,7 +24,7 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
   this.timeout(120000);
 
   it('the rules: this user, SYSTEM and Administrators only; anything unrecognised fails closed', () => {
-    const acl = (owner, rules) => ({user: ME, owner: owner, rules: rules});
+    const acl = (owner, rules) => ({user: ME, owner: owner, conditional: false, rules: rules});
     const own = [{sid: ME, rights: FULL, type: 'Allow'}, {sid: 'S-1-5-18', rights: FULL, type: 'Allow'}, {sid: 'S-1-5-32-544', rights: FULL, type: 'Allow'}];
     assert.strictEqual(privateProblem('s', acl(ME, own)), null, 'a profile directory\'s inherited rules');
     assert.strictEqual(privateProblem('s', acl('S-1-5-32-544', own)), null);
@@ -40,21 +40,27 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
     assert.match(privateProblem('s', acl(ME, own.concat({sid: EVERYONE, rights: FULL, type: 'AllowCallback'}))), /access rule of type AllowCallback/);
     assert.match(privateProblem('s', acl(ME, own.concat({sid: EVERYONE, rights: 'many', type: 'Allow'}))), /could not be read/);
     assert.match(privateProblem('s', {owner: ME, rules: own}), /could not be read/, 'no current user');
+    // a conditional rule (XA, ZA, XU), which GetAccessRules does not list, or no word on it
+    assert.match(privateProblem('s', Object.assign(acl(ME, own), {conditional: true})), /s has a conditional access rule/);
+    assert.match(privateProblem('s', {user: ME, owner: ME, rules: own}), /s has a conditional access rule, or its rules could not all be read/);
+    // the fix, by SID: nothing inherited, this user and SYSTEM, the others removed, the user the owner
+    assert.strictEqual(fixHint('C:\\d\\.identity-secret', acl(OTHER, own.concat({sid: EVERYONE, rights: READ, type: 'Allow'}))),
+      `icacls "C:\\d\\.identity-secret" /inheritance:r /grant:r *${ME}:F *S-1-5-18:F /remove *S-1-5-32-544 /remove *S-1-1-0 && icacls "C:\\d\\.identity-secret" /setowner *${ME}`);
     assert.match(privateProblem('s', null), /could not be read/);
   });
 
   it('the PowerShell it runs names no cmdlet (a lookup rebuilds the module cache, and would load module code)', () => {
-    const {FILE_ACL_SCRIPT, RESTRICT_SCRIPT} = require('../../lib/win-acl');
-    for (const script of [FILE_ACL_SCRIPT, RESTRICT_SCRIPT]) {
+    const {FILE_ACL_SCRIPT, CREATE_SCRIPT} = require('../../lib/win-acl');
+    for (const script of [FILE_ACL_SCRIPT, CREATE_SCRIPT]) {
       const code = script.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
       assert.doesNotMatch(code, /\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/, code);
     }
   });
 
   // A start's identity, in a process of its own: exit 0, or 2 with the refusal.
-  const start = (dir) => spawnSync(process.execPath, ['-e', `
+  const start = (dir, cwd) => spawnSync(process.execPath, ['-e', `
     try { require(${JSON.stringify(path.join(__dirname, '..', '..', 'lib', 'identity.js'))}).initSync({singleIdentity: true, storePath: process.argv[1]}); }
-    catch (e) { process.stderr.write(e.message); process.exit(2); }`, dir], {encoding: 'utf8'});
+    catch (e) { process.stderr.write(e.message); process.exit(2); }`, dir], {encoding: 'utf8', cwd: cwd});
 
   (process.platform === 'win32' ? it : it.skip)('on Windows: a first start writes it for this user only, a second start reads it, a world-readable one is refused', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-idsec-'));
@@ -70,7 +76,34 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
       execFileSync('icacls', [file, '/grant', '*S-1-1-0:(R)'], {stdio: 'ignore'});
       const third = start(dir);
       assert.strictEqual(third.status, 2);
-      assert.match(third.stderr, /is accessible by S-1-1-0; the identity secret must be readable by this user only/);
+      assert.match(third.stderr, /is accessible by S-1-1-0; the identity secret must be readable by this user only \(icacls ".*" \/inheritance:r \/grant:r \*S-1-5-21-[0-9-]+:F \*S-1-5-18:F .*\/remove \*S-1-1-0/);
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
+  (process.platform === 'win32' ? it : it.skip)('on Windows: created with its DACL in one call (only this user and SYSTEM, nothing inherited, no conditional rule); a name that exists is never written', () => {
+    const {createPrivate, fileAcl} = require('../../lib/win-acl');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-idsec-'));
+    try {
+      const f = path.join(dir, 'x.tmp');
+      createPrivate(f, 'a'.repeat(64));
+      assert.strictEqual(fs.readFileSync(f, 'utf8'), 'a'.repeat(64));
+      const acl = fileAcl(f);
+      assert.strictEqual(acl.conditional, false);
+      const rules = Array.isArray(acl.rules) ? acl.rules : [acl.rules];
+      assert.deepStrictEqual([...new Set(rules.map((r) => r.sid))].sort(), [acl.user, 'S-1-5-18'].sort(), JSON.stringify(acl));
+      assert.doesNotMatch(execFileSync('icacls', [f], {encoding: 'utf8'}), /\(I\)/);
+      // planted ahead: CreateNew refuses it, nothing is written into it
+      const planted = path.join(dir, 'planted.tmp');
+      fs.writeFileSync(planted, 'mine');
+      assert.throws(() => createPrivate(planted, 'b'.repeat(64)));
+      assert.strictEqual(fs.readFileSync(planted, 'utf8'), 'mine');
+      // a relative store path (PowerShell runs in System32)
+      fs.mkdirSync(path.join(dir, 'rel'));
+      const rel = start('rel', dir);
+      assert.strictEqual(rel.status, 0, rel.stderr);
+      assert.strictEqual(start('rel', dir).status, 0);
     } finally {
       fs.rmSync(dir, {recursive: true, force: true});
     }
