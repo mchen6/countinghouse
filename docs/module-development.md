@@ -265,6 +265,23 @@ curl -X POST http://127.0.0.1:9527/load-module \
 You do **not** need `--debug` for either. `--debug` disables authentication
 for the whole server; it is not how you get access to an endpoint.
 
+### What your module's worker loads
+
+Under `--workerThread` your module runs in a worker of its own
+(`lib/lean-worker.js`). The main thread reads your `api.json` and
+`schema.json` itself, before the worker starts; the worker only requires
+your handler files, each once, and answers the calls the main thread sends
+it. Your device is what the main thread read from `api.json`. Nothing your
+code does in the worker can change it, add a device or rename one.
+
+The worker loads as little of the runtime as it can. `CHUtil` is a facade:
+each helper (`CHUtil.request`, `createServiceClient`, `deviceLog`, and the
+rest) loads its implementation the first time it is called, so a module
+that uses none never pays for them. `ctx` works the same way: `ctx.call`,
+`ctx.log` and `ctx.redis` load what they need on first use. `CHUtil` has no
+`dm` or `ci`. Those were the runtime's own objects, never part of the
+module API.
+
 ## Files and paths
 
 Since 8.0.0 a module in worker mode (the default) sees its own file
@@ -811,7 +828,9 @@ these checks still takes too long to compile or to validate a value.
 ### 5. The log says `LOAD_MODULE_FAIL`
 
 A handler file threw while being required — a syntax error, a missing
-`require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
+`require`, a bad path in `CHUtil.loadFile`. The message names the handler
+file (`handlers/<service>/<action>.js`) and its error; the worker is ended
+and the module is not loaded.
 
 ### 6. No error at all, and the module is listed as loaded
 

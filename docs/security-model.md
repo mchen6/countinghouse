@@ -32,6 +32,13 @@ instead; that mode is for debugging modules and has no sandbox at all
   (`lib/worker-message.js`) and the file bridge (`lib/fs-broker/`), with a
   fixed set of commands, not shared memory or arbitrary main-thread object
   references.
+- **A device the worker cannot state.** The worker loads only the module's
+  handler files and a small part of the runtime (the dispatcher, `ctx`, and
+  a `CHUtil` facade whose helpers load on first use). A module's device is
+  registered from the main thread's own reading of its `api.json` once the
+  worker has loaded. The worker announces nothing, so module code cannot add,
+  change or rename a device. `test/sandbox/43-lean-worker-files.js` lists
+  every runtime file a worker may load.
 - **Crash containment at the worker level.** `module-manager.js` listens for
   `worker.on('error', ...)` and `worker.on('exit', ...)` and unloads the
   corresponding module rather than letting a worker's end take down the

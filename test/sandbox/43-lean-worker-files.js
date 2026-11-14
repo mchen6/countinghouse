@@ -43,8 +43,7 @@ const ALLOWED = [
 
 const allowed = (rel) => ALLOWED.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
 
-// Skipped until step 3's Task 4 switches every module to the lean worker.
-describe.skip('sandbox 43: a lean worker loads only what it needs (lean worker step 3)', function() {
+describe('sandbox 43: a lean worker loads only what it needs (lean worker step 3)', function() {
   this.timeout(120000);
   let base = null;
   let server = null;
