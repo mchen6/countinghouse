@@ -14,7 +14,12 @@ const ROOT = path.join(__dirname, '..', '..');
 const MODULE = path.join(ROOT, 'test', 'fixtures', 'stdout-flood');
 const KEY = 'stdio-output-key';
 
-describe('--stdio: a module\'s output goes to stderr, bounded (--moduleSandbox enforce)', function() {
+// enforce on Linux and macOS; audit on Windows, where enforce refuses to
+// start until a module's identity is designed for Windows file URLs (#195).
+// The swap of the module's streams is the same in both modes.
+const MODE = process.platform === 'win32' ? 'audit' : 'enforce';
+
+describe(`--stdio: a module's output goes to stderr, bounded (--moduleSandbox ${MODE})`, function() {
   this.timeout(120000);
   let home = null;
   let io = null;
@@ -27,7 +32,7 @@ describe('--stdio: a module\'s output goes to stderr, bounded (--moduleSandbox e
   it('a line on each stream and a 10 MB flood: stdout holds JSON-RPC only; stderr has the lines named, and at most 256 KiB of the flood', async () => {
     const auth = path.join(home, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
-    io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
+    io = startStdio(['--workerThread', '--moduleSandbox', MODE, '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     await io.request({...INITIALIZE, id: 1});
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
