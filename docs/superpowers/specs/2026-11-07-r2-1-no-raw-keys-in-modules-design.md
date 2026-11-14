@@ -326,9 +326,16 @@ that the invoked device is in the channel's grants is enough.
   supervised restart, a server restart) is compared with the module's
   previous pin, and each call added since is logged as an error, in full,
   saying whether it was adopted, with no key, user name or secret in the
-  line. The previous pin survives a server restart as a record of its calls
-  only, under `<moduleDataPath>/.pins`. Under `off` nothing stops a write;
-  the pin and the log still apply. The pin covers `countinghouse.calls`
+  line (each call capped at 256 characters, at most 16 lines a re-pin). The
+  previous pin survives a server restart as a record of its calls only,
+  under `<moduleDataPath>/.pins`, which the file broker refuses to every
+  module's write in `audit` and `enforce`; a validation records its copy
+  when the module has no record yet, and the copy is found by the module
+  path as named and by package name. Under `audit` a module that uses
+  `child_process` or `worker_threads` (report-only there) can still change
+  its declarations and the pin records; that use is itself logged, and only
+  `enforce` holds the declarations. Under `off` nothing stops a write; the
+  pin and the log still apply. The pin covers `countinghouse.calls`
   only: permissions and remotes are read from disk again at every spawn, a
   supervised restart's included.
 - **Direct peer channels.** The broker already authorizes a channel once per

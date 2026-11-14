@@ -10,8 +10,6 @@ const path = require('path');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {FsBroker} = require('../../lib/fs-broker/broker');
 const {DeniedSet} = require('../../lib/fs-broker/denied');
-// required where used, so the other cases run before it exists
-const guardedPaths = (...a) => require('../../lib/manifest-pins').guardedPaths(...a);
 const {mkdtemp} = require('../helpers/test-tmp');
 
 const MANIFEST = JSON.stringify({name: 'm', countinghouse: {calls: ['a/b.c']}});
@@ -26,7 +24,7 @@ async function setup(mode) {
   await namespace.prepare();
   const reports = [];
   const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/app',
-    report: (rule, target) => reports.push(`${rule} ${target}`), ownManifest: new DeniedSet(guardedPaths(dirs.app, 'm', dirs.store))});
+    report: (rule, target) => reports.push(`${rule} ${target}`), ownManifest: new DeniedSet([host]), pinsDir: path.join(dirs.store, '.pins')});
   return {base, dirs, host, broker, reports,
     unchanged: () => assert.strictEqual(fs.readFileSync(host, 'utf8'), MANIFEST, 'the manifest was written'),
     done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
@@ -76,14 +74,32 @@ const eacces = (e) => e.code === 'EACCES';
       t.unchanged();
     });
 
-    it('its pin record and the record directory take no write either (the module\'s own audit trail)', async () => {
+    it('no write reaches the pin records, any module\'s, nor their directory (Task 4\'s last re-review, MED-2)', async () => {
       const pins = path.join(t.dirs.store, '.pins');
       fs.mkdirSync(pins, {recursive: true});
       fs.writeFileSync(path.join(pins, 'm.json'), '{"calls":[]}');
+      fs.writeFileSync(path.join(pins, 'm2.json'), '{"calls":[]}');
+      await assert.rejects(t.broker.handle('writeFile', [path.join(pins, 'm2.json'), '{"calls":["x/y.z"]}']), eacces);
+      await assert.rejects(t.broker.handle('writeFile', [path.join(pins, 'm3.json'), '{"calls":["x/y.z"]}']), eacces);
       await assert.rejects(t.broker.handle('writeFile', [path.join(pins, 'm.json'), '{"calls":["x/y.z"]}']), eacces);
       await assert.rejects(t.broker.handle('unlink', [path.join(pins, 'm.json')]), eacces);
       await assert.rejects(t.broker.handle('rename', [pins, path.join(t.dirs.store, 'gone')]), eacces);
-      assert.strictEqual(fs.readFileSync(path.join(pins, 'm.json'), 'utf8'), '{"calls":[]}');
+      // through a link in /tmp to the directory
+      fs.symlinkSync(pins, path.join(t.dirs.tmp, 'p'));
+      await assert.rejects(t.broker.handle('writeFile', ['/tmp/p/m2.json', '{}']), eacces);
+      assert.strictEqual(fs.readFileSync(path.join(pins, 'm2.json'), 'utf8'), '{"calls":[]}');
+      assert.ok(!fs.existsSync(path.join(pins, 'm3.json')));
+    });
+
+    it('no hard link is made to a pin record, so none is written through (the review of the last round)', async () => {
+      const pins = path.join(t.dirs.store, '.pins');
+      fs.mkdirSync(pins, {recursive: true});
+      fs.writeFileSync(path.join(pins, 'm2.json'), '{"calls":[]}');
+      const outside = path.join(t.base, 'outside-link');
+      await assert.rejects(t.broker.handle('link', [path.join(pins, 'm2.json'), outside]),
+        (e) => (mode === 'audit' ? e.code === 'EACCES' : e.code === 'ENOENT' || e.code === 'EACCES'));
+      assert.ok(!fs.existsSync(outside), 'the link was made');
+      assert.strictEqual(fs.statSync(path.join(pins, 'm2.json')).nlink, 1);
     });
 
     it('a write to any other file is untouched', async () => {

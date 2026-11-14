@@ -88,10 +88,13 @@ child process), so each time the file is read again, every call added
 since the last read is logged as an error (`module sandbox: <module>
 declared call added since its last pin: "<address>" (adopted)`, or `(not
 adopted: ...)` when the previous copy stays). The last copy's calls are
-kept under `<moduleDataPath>/.pins`, so a server restart compares too.
-This covers `countinghouse.calls` only: the module's permissions and
-remotes are read from disk at every start, a supervised restart's
-included.
+kept under `<moduleDataPath>/.pins`, which no module can write through the
+file broker, so a server restart compares too. Under `audit` a module that
+uses `child_process` or `worker_threads` can still change its declarations
+and those records: that use is itself logged, and only `enforce` holds the
+declarations. This covers `countinghouse.calls` only: the module's
+permissions and remotes are read from disk at every start, a supervised
+restart's included.
 
 **`ctx.call('remote:<name>/<tool>', args)` — a remote MCP server, not a
 module.** A module that declares a remote in `countinghouse.remotes`

@@ -131,10 +131,103 @@ describe('composition 22: declarations pinned before the module runs, and every 
     assert.strictEqual(fs.statSync(file).mtimeMs, old.getTime());
   });
 
-  it('the paths a module may not write: its package.json, its pin record and the record directory', () => {
-    const {guardedPaths} = require('../../lib/manifest-pins');
-    assert.deepStrictEqual(guardedPaths('/mods/m', '@s/m', '/data'),
-      ['/mods/m/package.json', path.join('/data', '.pins', `${encodeURIComponent('@s/m')}.json`), path.join('/data', '.pins')]);
+  // Task 4's last re-review, MED-1: the copy read before validation is not
+  // memory only, is compared with what came before, and is found by the
+  // path as named and by package name.
+  const logged = (call) => lines.filter((l) => l.includes(JSON.stringify(call)));
+
+  it('validate, widen, restart, load: the call added after validation is logged', () => {
+    write([A]);
+    pins().forValidation(mod);
+    write([A, B]);
+    pins().pin('m', mod, true);   // a new server: the validation's copy is gone, its record is not
+    assert.strictEqual(logged(B).length, 1, lines.join('\n'));
+  });
+
+  it('validate twice with a widen in between: the second validation logs the added call', () => {
+    const p = pins();
+    write([A]);
+    p.forValidation(mod);
+    write([A, B]);
+    p.forValidation(mod);
+    assert.strictEqual(logged(B).length, 1, lines.join('\n'));
+  });
+
+  it('the module root swapped for a symlink to a staged directory during validation: the load takes the copy, and logs the call', () => {
+    const p = pins();
+    write([A]);
+    p.forValidation(mod);
+    const staged = path.join(base, 'staged');
+    fs.mkdirSync(staged);
+    fs.writeFileSync(path.join(staged, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A, B]}}));
+    fs.renameSync(mod, path.join(base, 'm-old'));
+    fs.symlinkSync(staged, mod);
+    assert.deepStrictEqual(callsOf(p.pin('m', mod, true)), [A]);
+    assert.ok(logged(B).length >= 1, lines.join('\n'));
+  });
+
+  it('the copy is found by package name too, loaded by another path to the module', () => {
+    const p = pins();
+    write([A]);
+    p.forValidation(mod);
+    write([A, B]);
+    const other = path.join(base, 'other-name');
+    fs.symlinkSync(mod, other);
+    assert.deepStrictEqual(callsOf(p.pin('m', other, true)), [A]);
+  });
+
+  it('a copy found by package name only, from another directory: what it adds to the file loaded is logged', () => {
+    const p = pins();
+    const staging = path.join(base, 'staging');
+    fs.mkdirSync(staging);
+    fs.writeFileSync(path.join(staging, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A, B]}}));
+    p.forValidation(staging);
+    write([A]);
+    lines = [];
+    p.pin('m', mod, true);
+    assert.ok(lines.some((l) => l.includes(JSON.stringify(B)) && /another path/.test(l)), lines.join('\n'));
+  });
+
+  // MED-2: the record cannot be steered by a planted link.
+  it('a symlink planted where the record is written: not followed', () => {
+    write([A]);
+    const dir = path.join(base, 'store', '.pins');
+    fs.mkdirSync(dir, {recursive: true});
+    const target = path.join(base, 'target');
+    fs.writeFileSync(target, 'untouched');
+    // the name the record's temporary file used to have
+    fs.symlinkSync(target, path.join(dir, `m.json.${process.pid}.tmp`));
+    pins().pin('m', mod, true);
+    assert.strictEqual(fs.readFileSync(target, 'utf8'), 'untouched');
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {calls: [A]});
+  });
+
+  it('a record replaced by a symlink is not read: every declared call is logged', () => {
+    write([A]);
+    pins().pin('m', mod, true);
+    const dir = path.join(base, 'store', '.pins');
+    const forged = path.join(base, 'forged.json');
+    fs.writeFileSync(forged, JSON.stringify({calls: [A, B]}));
+    fs.unlinkSync(path.join(dir, 'm.json'));
+    fs.symlinkSync(forged, path.join(dir, 'm.json'));
+    write([A, B]);
+    pins().pin('m', mod, true);
+    assert.strictEqual(logged(B).length, 1, lines.join('\n'));
+  });
+
+  // LOW: each call capped in the log, and the lines per re-pin.
+  it('a long call is logged capped at 256 characters, and the lines of one re-pin are capped', () => {
+    const long = `x/${'y'.repeat(1000)}.z`;
+    const many = Array.from({length: 100}, (_, i) => `d${i}/s.a`);
+    write([A]);
+    const p = pins();
+    p.pin('m', mod, true);
+    write([A, long].concat(many));
+    p.pin('m', mod, true);
+    assert.ok(!lines.some((l) => l.includes('y'.repeat(300))), 'the call was logged in full');
+    assert.ok(lines.some((l) => l.includes(`${long.slice(0, 256)}…`)), lines[0]);
+    assert.ok(lines.length <= 20, `${lines.length} lines`);
+    assert.ok(lines.some((l) => /more added calls not shown/.test(l)));
   });
 
   it('a package.json that cannot be read is logged, without its content, and pins no declarations', () => {
