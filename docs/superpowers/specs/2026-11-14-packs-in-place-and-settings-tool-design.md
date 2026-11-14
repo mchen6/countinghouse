@@ -70,13 +70,30 @@ On a change, it compares the new pack set against what its runtime loaded:
 channel, so `start` speaks to its runtime over a separate channel. It
 spawns the runtime with an IPC fd (`stdio: [..., 'ipc']`). The runtime
 honours the channel only with `--controlChannel ipc`, which only the
-single-identity profile passes, and accepts exactly three messages:
+single-identity profile passes. For packs it takes three requests (as
+implemented in `lib/packs-in-place.js`; besides them, `set` and `notice`).
+`name` is always the scenario's **package name** (the reviewer's ruling),
+for packs given at start (`--loadModule`) and loaded in place alike; a name
+the runtime does not hold is refused. `scenario` and `remoteCredentials` are
+absolute paths, and the device config stays the runtime's own
+(`--deviceConfigPath`).
 
-| Message | What the runtime does |
+**Confinement and records** (#205's review):
+- `start` passes `--packsRoot <home>/packs`. The real path of the scenario
+  and of every module in its closure must be inside it, or the request is
+  refused. With no `--packsRoot`, nothing loads in place.
+- What a pack owns is recorded when it loads, at start or in place. Unload,
+  reload and the parts kept for other packs are decided from that record,
+  never from disk.
+- A pack's credentials file is its own allowance, merged with the other
+  packs' for a shared part (and the process's for one loaded at start);
+  removing a pack removes only its own.
+
+| Request | What the runtime does |
 |---|---|
-| `load {name, path, deviceConfig, remotes}` | Loads the module with the same checks as at start, and registers its remotes from the credentials file `start` wrote for it in its run directory. |
-| `unload {name}` | `unloadModuleExternal`. Calls in flight are answered with the code that says why (`WORKER_ENDED`-style), as a supervised restart answers them today. |
-| `reload {name, path}` | Drain, then switch (the reviewer's ruling A, 2026-11-14, replacing "beside the old one": one worker and one file broker per module, as the lifecycle lock keeps). Calls in flight finish on the old version, bounded by `--requestTimeout`; what it still owes then is answered `MODULE_RELOADING`. New calls wait meanwhile and are served by the new version once it is up. The wait, at most `--requestTimeout` plus the spawn, is the latency cost of a reload in place. |
+| `load {name, scenario, remoteCredentials, notice}` | Loads the scenario and the parts no other pack holds, with the same checks as at start, and registers their remotes against the pack's credentials file. Refused whole on a part held at another version, a missing part or a taken tool name. A failure part-way unloads what the request loaded. |
+| `unload {name, notice}` | Unloads the scenario and each part no other pack's record holds (`unloadModuleExternal`). Calls in flight are answered with the code that says why, as a supervised restart answers them today. |
+| `reload {name, scenario, remoteCredentials, notice}` | All or none: a failure part-way switches back what it changed. Drain, then switch (the reviewer's ruling A, 2026-11-14, replacing "beside the old one": one worker and one file broker per module, as the lifecycle lock keeps). Calls in flight finish on the old version, bounded by `--requestTimeout`; what it still owes then is answered `MODULE_RELOADING`. New calls wait meanwhile and are served by the new version once it is up. The wait, at most `--requestTimeout` plus the spawn, is the latency cost of a reload in place. |
 
 Module code must never reach this channel: modules run in workers, and the
 channel exists only on the runtime's main process. A test pins that.

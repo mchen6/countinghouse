@@ -76,9 +76,9 @@ PR B depends on PR A's channel. Each PR is its own branch, reviewed separately.
 **Interfaces:**
 - Produces: messages over `process.on('message')` / `process.send`:
   - **request:** `{id, type: 'load' | 'unload' | 'reload' | 'set', ...}`
-    - `load {name, scenario, remoteCredentials, deviceConfigDir, notice}`: `name` is the pack name; `scenario` and `remoteCredentials` are absolute paths.
+    - `load {name, scenario, remoteCredentials, notice}`: `name` is the scenario's package name (the reviewer's ruling); `scenario` and `remoteCredentials` are absolute paths. The device config stays the runtime's own `--deviceConfigPath`.
     - `unload {name, notice}`
-    - `reload {name, scenario, remoteCredentials, deviceConfigDir, notice}`
+    - `reload {name, scenario, remoteCredentials, notice}`
     - `set {name, value}`
   - **reply:** `{id, ok: true, tools: [names]}` or `{id, ok: false, code, message}`.
   - Requests are applied one at a time, in order.

@@ -44,15 +44,23 @@ function writeModule(dir, {name, version = '1.0.0', role, calls, remotes, servic
 
 // A pack version as ch-local lays it out: <home>/packs/<pack>/<version>/
 // node_modules/<scenario>, with the shared part beside it.
-function packVersion(home, scenario, tool, version, {slow = false, remote = false} = {}) {
-  const nm = path.join(home, 'packs', scenario, version, 'node_modules');
+// base: where the trees are (<home>/packs, the runtime's --packsRoot, unless
+// a case puts one elsewhere). brokenPart: the scenario also calls a part
+// whose handler file is missing, so that part's load is refused.
+function packVersion(home, scenario, tool, version, {slow = false, remote = false, base = path.join(home, 'packs'), brokenPart = false} = {}) {
+  const nm = path.join(base, scenario, version, 'node_modules');
   writeModule(path.join(nm, 'ch-step-shared'), {name: 'ch-step-shared', role: 'part', service: 'stepService',
     actions: {run: 'module.exports = async () => ({output: {part: "shared"}});\n'}});
+  if (brokenPart) {
+    const dir = writeModule(path.join(nm, 'ch-step-broken'), {name: 'ch-step-broken', role: 'part', service: 'brokenService',
+      actions: {run: 'module.exports = async () => ({output: {}});\n'}});
+    fs.rmSync(path.join(dir, 'handlers', 'brokenService', 'run.js'));
+  }
   const body = slow
     ? `module.exports = async (input, ctx) => { await new Promise((r) => setTimeout(r, Number(input.sleepMs) || 0)); const p = await ctx.call('ch-step-shared/stepService.run', {}); return {output: {version: '${version}', part: p.output.part}}; };\n`
     : `module.exports = async (input, ctx) => { const p = await ctx.call('ch-step-shared/stepService.run', {}); return {output: {version: '${version}', part: p.output.part}}; };\n`;
   return writeModule(path.join(nm, scenario), {name: scenario, version, role: 'scenario', service: 'packService',
-    calls: ['ch-step-shared/stepService.run'], actions: {[tool]: body},
+    calls: ['ch-step-shared/stepService.run'].concat(brokenPart ? ['ch-step-broken/brokenService.run'] : []), actions: {[tool]: body},
     remotes: remote ? [{name: 'needs', transport: 'streamable-http', url: 'https://remote.invalid/mcp', credential: {env: 'CH_TEST_PACK_TOKEN'}}] : undefined});
 }
 
@@ -79,7 +87,7 @@ describe('stdio 16: packs loaded, unloaded and reloaded in place', function() {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-16-'));
     const one = packVersion(home, 'ch-pack-one', 'tool_one', '1.0.0');
     io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
-      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--requestTimeout', '4', '--loadModule', one],
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'), '--requestTimeout', '4', '--loadModule', one],
     {ipc: true, env: {CH_TEST_PACK_TOKEN: ''}});
     const init = await io.request(INITIALIZE, 30000);
     assert.ok(init.result != null, JSON.stringify(init));
@@ -149,5 +157,52 @@ describe('stdio 16: packs loaded, unloaded and reloaded in place', function() {
     const r = await io.control({type: 'load', name: 'ch-pack-three', scenario: three, remoteCredentials: creds});
     assert.deepStrictEqual([r.ok, r.code], [false, 'REMOTE_CREDENTIAL_MISSING'], JSON.stringify(r));
     assert.ok(!(await listed()).includes('tool_three'));
+  });
+
+  // #205's review (1): confinement to --packsRoot, by real path.
+  it('a scenario outside --packsRoot is refused, and so is one whose part is a link out of it; nothing loads', async () => {
+    const outside = packVersion(home, 'ch-pack-out', 'tool_out', '1.0.0', {base: path.join(home, 'elsewhere')});
+    const r1 = await io.control({type: 'load', name: 'ch-pack-out', scenario: outside});
+    assert.deepStrictEqual([r1.ok, r1.code], [false, 'CONTROL_FAILED']);
+    assert.match(r1.message, /outside --packsRoot/);
+    const linked = packVersion(home, 'ch-pack-link', 'tool_link', '1.0.0');
+    const nm = path.dirname(linked);
+    const away = path.join(home, 'elsewhere', 'ch-step-shared');
+    fs.cpSync(path.join(nm, 'ch-step-shared'), away, {recursive: true});
+    fs.rmSync(path.join(nm, 'ch-step-shared'), {recursive: true, force: true});
+    fs.symlinkSync(away, path.join(nm, 'ch-step-shared'), 'dir');
+    const r2 = await io.control({type: 'load', name: 'ch-pack-link', scenario: linked});
+    assert.deepStrictEqual([r2.ok, r2.code], [false, 'CONTROL_FAILED'], JSON.stringify(r2));
+    assert.match(r2.message, /ch-step-shared is outside --packsRoot/);
+    const tools = await listed();
+    assert.ok(!tools.includes('tool_out') && !tools.includes('tool_link'));
+  });
+
+  // (2): what a pack owns is its record's, not what disk says at unload.
+  it('a pack whose tree was removed before its unload is still unloaded: its tool goes', async () => {
+    const four = packVersion(home, 'ch-pack-four', 'tool_four', '1.0.0');
+    const r = await io.control({type: 'load', name: 'ch-pack-four', scenario: four});
+    assert.strictEqual(r.ok, true, JSON.stringify(r));
+    assert.ok((await listed()).includes('tool_four'));
+    fs.rmSync(path.join(home, 'packs', 'ch-pack-four'), {recursive: true, force: true});
+    const u = await io.control({type: 'unload', name: 'ch-pack-four'});
+    assert.strictEqual(u.ok, true, JSON.stringify(u));
+    let tools = await listed();
+    for (let i = 0; tools.includes('tool_four') && i < 100; i++) { await new Promise((res) => setTimeout(res, 50)); tools = await listed(); }
+    assert.ok(!tools.includes('tool_four'), 'its tool stayed listed');
+    // the shared part is still the other pack's
+    assert.deepStrictEqual(outOf(await call('tool_two')), {version: '3.0.0', part: 'shared'});
+  });
+
+  // (3): a reload switches all or none.
+  it('a reload that fails part-way switches back: the old version answers, and nothing of the new one stays', async () => {
+    const bad = packVersion(home, 'ch-pack-two', 'tool_two', '4.0.0', {slow: true, brokenPart: true});
+    const r = await io.control({type: 'reload', name: 'ch-pack-two', scenario: bad});
+    assert.strictEqual(r.ok, false, JSON.stringify(r));
+    assert.deepStrictEqual(outOf(await call('tool_two')), {version: '3.0.0', part: 'shared'});
+    const again = packVersion(home, 'ch-pack-two', 'tool_two', '5.0.0', {slow: true});
+    const ok = await io.control({type: 'reload', name: 'ch-pack-two', scenario: again});
+    assert.strictEqual(ok.ok, true, `${JSON.stringify(ok)}: the record was left at the failed version`);
+    assert.deepStrictEqual(outOf(await call('tool_two')), {version: '5.0.0', part: 'shared'});
   });
 });
