@@ -1,0 +1,42 @@
+# A fast Windows-only round for chosen test files (#195), started by hand:
+# Actions -> "Windows subset" -> Run workflow, or
+#   gh workflow run windows-subset.yml --ref <branch> -f tests="test/stdio/11-*.js test/sandbox/49-*.js"
+# For quick feedback only. Full three-OS CI (ci.yml) still gates every
+# merge (the maintainer, 2026-11-14).
+name: Windows subset
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: 'Test files or globs, space-separated (e.g. test/stdio/11-*.js)'
+        required: true
+        type: string
+
+jobs:
+  subset:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Chosen tests
+        shell: bash
+        env:
+          TESTS: ${{ inputs.tests }}
+        run: |
+          # word-split the list on purpose; globs expand in bash
+          set -f; files=($TESTS); set +f
+          expanded=()
+          for f in "${files[@]}"; do for g in $f; do expanded+=("$g"); done; done
+          echo "running: ${expanded[*]}"
+          npx mocha --exit "${expanded[@]}"
