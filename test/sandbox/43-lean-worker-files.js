@@ -91,34 +91,38 @@ function runtimeFiles(files) {
     .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-describe('sandbox 43: a lean worker loads only what it needs (lean worker step 3)', function() {
-  this.timeout(120000);
-  let base = null;
-  let server = null;
-  before(async () => {
-    base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-lean-43-'));
-    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit',
-      '--no-directPeerChannels', '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe'),
-      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe-caller')]);
-  });
-  after(() => {
-    stopServer(server);
-    if (base != null) fs.rmSync(base, {recursive: true, force: true});
-  });
+// One server per path, in turn on the same port: direct peer channels (the
+// default) and routed (--no-directPeerChannels).
+[['direct peer channels', []], ['routed', ['--no-directPeerChannels']]].forEach(([label, flags]) => {
+  describe(`sandbox 43: a lean worker loads only what it needs (lean worker step 3), ${label}`, function() {
+    this.timeout(120000);
+    let base = null;
+    let server = null;
+    before(async () => {
+      base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-lean-43-'));
+      server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit'].concat(flags, [
+        '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe'),
+        '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe-caller')]));
+    });
+    after(() => {
+      stopServer(server);
+      if (base != null) fs.rmSync(base, {recursive: true, force: true});
+    });
 
-  it('after its first invoke, has required nothing of the runtime outside the allowed list', async () => {
-    const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_probeservice_files', {}));
-    const runtime = runtimeFiles(out.files);
-    assert.ok(runtime.length > 0, `no runtime file seen: ${JSON.stringify(out.files).slice(0, 300)}`);
-    const extra = runtime.filter((rel) => !allowed(rel)).sort();
-    assert.deepStrictEqual(extra, [], `required outside the allowed list (${extra.length}):\n  ${extra.join('\n  ')}`);
-  });
+    it('after its first invoke, has required nothing of the runtime outside the allowed list', async () => {
+      const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_probeservice_files', {}));
+      const runtime = runtimeFiles(out.files);
+      assert.ok(runtime.length > 0, `no runtime file seen: ${JSON.stringify(out.files).slice(0, 300)}`);
+      const extra = runtime.filter((rel) => !allowed(rel)).sort();
+      assert.deepStrictEqual(extra, [], `required outside the allowed list (${extra.length}):\n  ${extra.join('\n  ')}`);
+    });
 
-  it('after one routed ctx.call, has required nothing outside the hop\'s list (no validator, no device model)', async () => {
-    const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_caller_probecallerservice_filesaftercall', {}));
-    assert.match(out.called, /^ok \d+$/, `the hop did not answer: ${out.called}`);
-    const runtime = runtimeFiles(out.files);
-    const extra = runtime.filter((rel) => !allowedAfterCall(rel)).sort();
-    assert.deepStrictEqual(extra, [], `required outside the hop's list (${extra.length}):\n  ${extra.join('\n  ')}`);
+    it(`after one ctx.call (${label}), has required nothing outside the hop's list (no validator, no device model, no logger)`, async () => {
+      const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_caller_probecallerservice_filesaftercall', {}));
+      assert.match(out.called, /^ok \d+$/, `the hop did not answer: ${out.called}`);
+      const runtime = runtimeFiles(out.files);
+      const extra = runtime.filter((rel) => !allowedAfterCall(rel)).sort();
+      assert.deepStrictEqual(extra, [], `required outside the hop's list (${extra.length}):\n  ${extra.join('\n  ')}`);
+    });
   });
 });
