@@ -27,10 +27,19 @@ const path = require('path');
 const BASE = process.env.CH_TEST_PORT_BASE != null && process.env.CH_TEST_PORT_BASE !== ''
   ? Number(process.env.CH_TEST_PORT_BASE) : null;
 const assigned = new Map();
+const handedOut = new Set();
 
+// A port this process already handed out is returned as it is, so a test
+// may map its constant once (const PORT = testPort(9749)) and pass it to a
+// helper that maps every port it takes (test/helpers/sandbox-server.js,
+// remote-mcp-server.js) without it being mapped twice.
 function testPort(defaultPort) {
   if (BASE == null || !Number.isInteger(BASE)) return defaultPort;
-  if (!assigned.has(defaultPort)) assigned.set(defaultPort, BASE + assigned.size);
+  if (handedOut.has(defaultPort)) return defaultPort;
+  if (!assigned.has(defaultPort)) {
+    assigned.set(defaultPort, BASE + assigned.size);
+    handedOut.add(assigned.get(defaultPort));
+  }
   return assigned.get(defaultPort);
 }
 

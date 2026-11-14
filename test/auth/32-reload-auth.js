@@ -8,9 +8,9 @@ const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, testPort} = require('../helpers/sandbox-server');
 
-const PORT      = 9628;
+const PORT      = testPort(9628);
 const URL       = `http://127.0.0.1:${PORT}`;
 // Random, so a 6-character piece of a key can't be an ordinary word in a
 // message or a path.

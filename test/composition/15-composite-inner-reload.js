@@ -15,7 +15,7 @@ const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, post, waitFor, testPort} = require('../helpers/sandbox-server');
 const {toolErrorCode} = require('../helpers/tool-result');
 
 const INNER = path.join(ROOT, 'test', 'fixtures', 'worker-end');
@@ -29,8 +29,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const balance = (port) => request(`http://127.0.0.1:${port}`).get('/balance').set('X-CH-Key', KEY).then((r) => r.body.balance);
 
-[{label: 'with direct peer channels', port: 9609, flags: [], reloadCode: 'PEER_GONE'},
-  {label: 'without direct peer channels', port: 9610, flags: ['--no-directPeerChannels'], reloadCode: 'MODULE_RELOADING'}].forEach((variant) => {
+[{label: 'with direct peer channels', port: testPort(9609), flags: [], reloadCode: 'PEER_GONE'},
+  {label: 'without direct peer channels', port: testPort(9610), flags: ['--no-directPeerChannels'], reloadCode: 'MODULE_RELOADING'}].forEach((variant) => {
   describe(`composition 15: a composite's in-flight hop when its inner module reloads, ${variant.label}`, function() {
     this.timeout(120000);
     let base = null;

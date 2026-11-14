@@ -11,10 +11,10 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
-const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, testPort} = require('../helpers/sandbox-server');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT    = 9642;
+const PORT    = testPort(9642);
 const URL     = `http://127.0.0.1:${PORT}`;
 const KEY     = `job-bounds-${process.pid}`;
 const DEVICE  = deviceIDForName('job-snoop');

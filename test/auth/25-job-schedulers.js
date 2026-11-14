@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
-const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, testPort} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 
@@ -21,7 +21,7 @@ describe('auth 25: repeatable job schedulers are per owner', function() {
   let server = null;
   let base = null;
   let queue = null;
-  const url = 'http://127.0.0.1:9670';
+  const url = `http://127.0.0.1:${testPort(9670)}`;
   const schedulers = async () => (await queue.getJobSchedulers(0, -1)).filter((s) => String(s.key || s.id || s.name).includes(NAME) || s.name === NAME);
   before(async () => {
     base = mkdtemp('schedulers-');

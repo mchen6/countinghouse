@@ -7,7 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, testPort} = require('../helpers/sandbox-server');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 const {toolOutput} = require('../helpers/tool-result');
@@ -19,7 +19,7 @@ describe('auth 24: a module reaches only its own jobs', function() {
   this.timeout(120000);
   let server = null;
   let base = null;
-  const url = 'http://127.0.0.1:9669';
+  const url = `http://127.0.0.1:${testPort(9669)}`;
   before(async () => {
     base = mkdtemp('jobs-');
     const authPath = path.join(base, 'auth.json');

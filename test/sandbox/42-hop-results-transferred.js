@@ -13,10 +13,10 @@ const assert = require('assert');
 const crypto = require('crypto');
 const path   = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, post, testPort} = require('../helpers/sandbox-server');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT   = 9749;
+const PORT   = testPort(9749);
 const KEY    = 'main-checked-key';
 const AUTH   = path.join(__dirname, '41-auth.json');
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'main-checked');
