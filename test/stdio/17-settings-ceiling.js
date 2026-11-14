@@ -100,6 +100,16 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
       /its directory is owned by S-1-5-21-1-2-3-1001, not Administrators, SYSTEM or TrustedInstaller/);
   });
 
+  it('Windows: the PowerShell it runs names no cmdlet (a lookup rebuilds the module cache, and would load module code)', () => {
+    const {ACL_SCRIPT, PROGRAMDATA_SCRIPT} = require('../../lib/settings-ceiling');
+    for (const script of [ACL_SCRIPT, PROGRAMDATA_SCRIPT]) {
+      // a Verb-Noun outside quotes (the JSON's own text is quoted)
+      const code = script.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+      assert.doesNotMatch(code, /\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/, code);
+      assert.doesNotMatch(code, /\bImport-Module\b|\bGet-Acl\b|ConvertTo-Json/i);
+    }
+  });
+
   it('Windows: PowerShell is started from the Windows directory, which must be a drive path', () => {
     const {windowsDir} = require('../../lib/settings-ceiling');
     const saved = {SystemRoot: process.env.SystemRoot, windir: process.env.windir};
