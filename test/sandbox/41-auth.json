@@ -1,11 +1,23 @@
 {
   "main-checked-key": {
     "userName": "main-checked-test",
-    "devices": ["*"]
+    "devices": [
+      "*"
+    ]
   },
   "main-checked-caller-internal": {
     "userName": "main-checked-caller-internal",
-    "devices": ["*"],
-    "runsModules": ["main-checked-caller"]
+    "devices": [
+      "*"
+    ],
+    "runsModules": [
+      "main-checked-caller"
+    ]
+  },
+  "main-checked-other-key": {
+    "userName": "main-checked-other",
+    "devices": [
+      "*"
+    ]
   }
 }

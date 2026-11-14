@@ -122,7 +122,7 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   check made beforehand bounds JSON Schema validation of a module's schema.
   Some patterns take seconds (`^(\w|a)+$`), a 700-byte `anyOf` schema takes
   seconds to compile, and so does `uniqueItems` over 20000 items.
-- **`--validatorWorkers <n>`** (default 2) sets the pool's size, each worker
+- **`--validatorWorkers <n>`** (default one per spare CPU, 2 to 4) sets the pool's size, each worker
   with resource limits.
 - **`--validationTimeoutMs <n>`** (default 1000) is one validation's
   deadline, counted from when it is queued (queue wait plus run). Past it the
