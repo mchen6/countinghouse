@@ -36,6 +36,8 @@ function gate() {
 
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
+const WIN = process.platform === 'win32';
+
 describe('fs-broker 03: broker operations', function() {
   this.timeout(10000);
 
@@ -175,7 +177,8 @@ describe('fs-broker 03: broker operations', function() {
     }
   });
 
-  it('chmod strips setuid, setgid and sticky bits', async () => {
+  // Windows has no setuid, setgid or sticky bit to strip (chmod sets only the read-only attribute).
+  (WIN ? it.skip : it)('chmod strips setuid, setgid and sticky bits', async () => {
     const t = await setup('off');
     try {
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
@@ -254,8 +257,10 @@ describe('fs-broker 03: broker operations', function() {
       const names = await t.broker.handle('readdir', ['/', {}]);
       assert.ok(['app', 'data', 'tmp'].every((n) => names.includes(n)), names.join(','));
       assert.strictEqual((await t.broker.handle('stat', ['/'])).fields.mode & 0o170000, 0o040000);
-      // the parent of the declared ro root is a synthesised ancestor: not writable
-      await assert.rejects(t.broker.handle('utimes', [t.base, 0, 0]), (e) => e.code === 'EROFS');
+      // the parent of the declared ro root is a synthesised ancestor: not
+      // writable. (On Windows a declared root, a drive path, is outside the
+      // namespace; "/" is the synthesised ancestor there.)
+      await assert.rejects(t.broker.handle('utimes', [WIN ? '/' : t.base, 0, 0]), (e) => e.code === 'EROFS');
       // a new name beside the roots is outside the namespace
       await assert.rejects(t.broker.handle('mkdir', ['/new', {}]), (e) => e.code === 'ENOENT');
     } finally { await t.done(); }

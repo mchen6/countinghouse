@@ -25,8 +25,10 @@ describe('sandbox 36: handle prototypes under the permission model', function() 
   it('takes all three kinds from instances, opening no socket and no file but libuv\'s /dev/null reserve', () => {
     const r = inWorker(`
       const fs = require('fs');
-      const fds = () => fs.readdirSync('/proc/self/fd').map((f) => { try { return fs.readlinkSync('/proc/self/fd/' + f); } catch (e) { return null; } })
-        .filter((l) => l != null);
+      // the descriptors open, where /proc says (Linux); elsewhere none are
+      // counted and the refusals below are the check
+      const fds = () => { try { return fs.readdirSync('/proc/self/fd').map((f) => { try { return fs.readlinkSync('/proc/self/fd/' + f); } catch (e) { return null; } })
+        .filter((l) => l != null); } catch (e) { return []; } };
       let binding; try { process.binding('tcp_wrap'); binding = 'allowed'; } catch (e) { binding = String(e.code); }
       const before = fds();
       require(${JSON.stringify(LOCKDOWN)});

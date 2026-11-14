@@ -68,7 +68,7 @@ describe('sandbox 03: tree checks', () => {
     });
     const r = checkTree(d);
     assert.deepStrictEqual(r.problems, []);
-    assert.match(r.warnings[0], /node_modules\/s.*postinstall/);
+    assert.match(r.warnings[0], /node_modules[\\/]s.*postinstall/);
   });
 
   it('reports a directory symlink that leaves the module', () => {
@@ -82,7 +82,7 @@ describe('sandbox 03: tree checks', () => {
     const d = mk({'package.json': {name: 'm'}, 'lib/keep': ''});
     const outside = mk({'x.node': 'bin'});
     fs.symlinkSync(path.join(outside, 'x.node'), path.join(d, 'lib', 'x.node'));
-    assert.match(checkTree(d).problems.join('\n'), /lib\/x\.node is a symlink to .*, outside the module/);
+    assert.match(checkTree(d).problems.join('\n'), /lib[\\/]x\.node is a symlink to .*, outside the module/);
   });
 
   it('accepts a symlink that stays inside the module, and ignores a dangling one', () => {
@@ -96,11 +96,14 @@ describe('sandbox 03: tree checks', () => {
     if (process.getuid && process.getuid() === 0) return this.skip();
     const d = mk({'package.json': {name: 'm'}, 'locked/f': ''});
     const locked = path.join(d, 'locked');
-    fs.chmodSync(locked, 0);
+    // a mode does not stop a read on Windows: a rule denying Everyone does
+    const WIN = process.platform === 'win32';
+    const icacls = (...a) => require('child_process').execFileSync('icacls', [locked, ...a], {stdio: 'ignore'});
+    if (WIN) icacls('/deny', '*S-1-1-0:(RX)'); else fs.chmodSync(locked, 0);
     try {
-      assert.match(checkTree(d).problems.join('\n'), /cannot read locked: EACCES/);
+      assert.match(checkTree(d).problems.join('\n'), WIN ? /cannot read locked: E(ACCES|PERM)/ : /cannot read locked: EACCES/);
     } finally {
-      fs.chmodSync(locked, 0o755);
+      if (WIN) icacls('/remove:d', '*S-1-1-0'); else fs.chmodSync(locked, 0o755);
     }
   });
 
@@ -111,7 +114,7 @@ describe('sandbox 03: tree checks', () => {
     });
     const r = checkTree(d);
     assert.strictEqual(r.problems.length, 1, r.problems.join('\n'));
-    assert.match(r.problems[0], /node_modules\/bad\/package\.json cannot be parsed/);
+    assert.match(r.problems[0], /node_modules[\\/]bad[\\/]package\.json cannot be parsed/);
   });
 });
 

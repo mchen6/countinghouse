@@ -8,6 +8,14 @@ const {mkdtemp} = require('../helpers/test-tmp');
 const identity = () => require('../../lib/fs-broker/identity');
 const {toolOutput} = require('../helpers/tool-result');
 
+// A module's own path as it sees it: /app/... on POSIX; on Windows the same
+// in its virtual drive's form, <V>:\app\... (#195), the letter picked per
+// process.
+const WIN = process.platform === 'win32';
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const asSeen = (posix) => (WIN ? new RegExp(`^[A-Z]:${escapeRe(posix.replace(/\//g, '\\'))}$`) : null);
+const seen = (actual, posix, msg) => (WIN ? assert.match(String(actual), asSeen(posix), msg) : assert.strictEqual(actual, posix, msg));
+
 describe('fs-broker 12: virtual identity', function() {
   this.timeout(120000);
   let server = null;
@@ -25,13 +33,13 @@ describe('fs-broker 12: virtual identity', function() {
       server = await start(mode, 'fs-probe');
       const res = await mcpCall(9630, 'k', 'fs_probe_probeservice_where', {});
       const r = toolOutput(res);
-      assert.strictEqual(r.dirname, '/app/handlers/probeService', JSON.stringify(res));
-      assert.strictEqual(r.filename, '/app/handlers/probeService/where.js');
-      assert.strictEqual(r.cwd, '/app');
-      assert.strictEqual(r.tmpdir, '/tmp');
-      assert.strictEqual(r.resolve, '/app/handlers/probeService/read.js');
-      assert.strictEqual(r.dirResolve, '/app/handlers/probeService/read.js');
-      assert.ok(r.frame.includes('/app/handlers/probeService/where.js'), r.frame);
+      seen(r.dirname, '/app/handlers/probeService', JSON.stringify(res));
+      seen(r.filename, '/app/handlers/probeService/where.js');
+      seen(r.cwd, '/app');
+      seen(r.tmpdir, '/tmp');
+      seen(r.resolve, '/app/handlers/probeService/read.js');
+      seen(r.dirResolve, '/app/handlers/probeService/read.js');
+      assert.ok(WIN ? /[A-Z]:\\app\\handlers\\probeService\\where\.js/.test(r.frame) : r.frame.includes('/app/handlers/probeService/where.js'), r.frame);
       assert.strictEqual(r.own, 'fs-probe');
     });
   });
@@ -40,8 +48,9 @@ describe('fs-broker 12: virtual identity', function() {
     server = await start('enforce', 'esm-probe');
     const res = await mcpCall(9630, 'k', 'esm_probe_probeservice_where', {});
     const r = toolOutput(res);
-    assert.strictEqual(r.url, 'file:///app/handlers/probeService/where.js', JSON.stringify(res));
-    assert.strictEqual(r.dirname, '/app/handlers/probeService');
+    if (WIN) assert.match(r.url, /^file:\/\/\/[A-Z]:\/app\/handlers\/probeService\/where\.js$/, JSON.stringify(res));
+    else assert.strictEqual(r.url, 'file:///app/handlers/probeService/where.js', JSON.stringify(res));
+    seen(r.dirname, '/app/handlers/probeService');
     assert.strictEqual(r.helper, 'helped');
     assert.strictEqual(r.dep, 'plain');
     // Pins identity.js's one host-URL case: a CommonJS file reached by import
@@ -57,7 +66,10 @@ describe('fs-broker 12: virtual identity', function() {
 
   // Review C2's cases, restated for decision 12: countinghouse's own code is
   // never under /app (refused below), so a parent under /app is the module's.
-  it('maps parents and specifiers: countinghouse parents stay host, /app parents are the module\'s', () => {
+  // POSIX host paths in file URLs; on Windows file:///opt/... is no path.
+  // There the forms are fs-broker 26's and stdio 16's, and the module
+  // scheme's refusal is the case below.
+  (WIN ? it.skip : it)('maps parents and specifiers: countinghouse parents stay host, /app parents are the module\'s', () => {
     const m = identity().mapper('/app/modules/x');
     const ch = m.parent('file:///opt/ch/lib/handler-ctx.js');
     assert.deepStrictEqual(ch, {host: '/opt/ch/lib/handler-ctx.js', fromModule: false});
@@ -71,6 +83,15 @@ describe('fs-broker 12: virtual identity', function() {
     assert.strictEqual(m.specifier('countinghouse-module:/../../etc/passwd', mod), '/app/modules/x/etc/passwd', 'the module scheme never leaves /app');
     assert.deepStrictEqual(m.parent('data:text/javascript,1'), {host: null, fromModule: true});
     assert.deepStrictEqual(m.parent(undefined), {host: null, fromModule: true});
+  });
+
+  (WIN ? it : it.skip)('Windows: the module scheme never leaves the module\'s root', () => {
+    const m = identity().mapper('C:\\mods\\x');
+    const mod = {host: 'C:\\mods\\x\\index.js', fromModule: true};
+    for (const spec of ['countinghouse-module:/../../etc/passwd', 'countinghouse-module:/..\\..\\Windows\\win.ini']) {
+      const host = m.specifier(spec, mod);
+      assert.ok(typeof host === 'string' && host.startsWith('C:\\mods\\x') && !/\.\./.test(host), `${spec} -> ${host}`);
+    }
   });
 
   it('refuses when countinghouse code is under /app (Node caches are keyed by filename)', () => {

@@ -21,6 +21,8 @@ function pick(r) {
   return {kind: r.kind, host: r.host, name: r.root.name, writable: r.root.writable};
 }
 
+const WIN = process.platform === 'win32';
+
 describe('fs-broker 02: namespace', () => {
   it('maps the three virtual roots and declared paths, longest match first', async () => {
     const n = await prepared(CFG);
@@ -44,7 +46,10 @@ describe('fs-broker 02: namespace', () => {
     assert.deepStrictEqual(n.resolve('/var/log', '/'), {kind: 'ancestor', virtual: '/var/log', children: [{name: 'app', type: 'dir'}]});
   });
 
-  it('a declared root that is a file is listed as a file', async () => {
+  // A declared root is a host path, which on Windows carries a drive and is
+  // outside the namespace there: declared roots do not work on Windows yet
+  // (they fail closed; reported with #197).
+  (WIN ? it.skip : it)('a declared root that is a file is listed as a file', async () => {
     // Not under os.tmpdir() (test/helpers/test-tmp.js): /tmp is itself a virtual root, and the validator
     // forbids declaring paths there.
     const base = mkdtemp('ns-');
@@ -71,7 +76,9 @@ describe('fs-broker 02: namespace', () => {
   it('accepts Buffers and file: URLs', async () => {
     const n = await prepared(CFG);
     assert.strictEqual(n.resolve(Buffer.from('/data/x'), '/').host, '/srv/data/weather/data/x');
-    assert.strictEqual(n.resolve(new URL('file:///tmp/y'), '/').host, '/srv/data/weather/tmp/y');
+    // (on Windows the worker's patch reads a file URL as its path before the
+    // broker sees it, and file:///tmp/y names no path: lib/fs-broker/patch.js)
+    if (!WIN) assert.strictEqual(n.resolve(new URL('file:///tmp/y'), '/').host, '/srv/data/weather/tmp/y');
   });
 
   it('maps host paths back to virtual ones', async () => {
