@@ -63,4 +63,12 @@ describe('stdio 13: pack change notices', () => {
       }, {listChanged: true});
     }, {listChanged: true});
   });
+
+  it('a notice and its module key are cleaned of every control character and line separator, and bounded', () => {
+    notices.add('ch-pack-\u001b[31mx\u2028', 'a\u0007b\u001b[2Jc\u0085d\u2029e\r\nf');
+    assert.deepStrictEqual(sent.map((m) => m.params.data), ['a b [2Jc d e f']);
+    assert.deepStrictEqual(notices.take('ch-pack-\u001b[31mx\u2028'), ['a b [2Jc d e f'], 'the same key, cleaned');
+    notices.add('m'.repeat(500), 'long key');
+    assert.deepStrictEqual(notices.take('m'.repeat(128)), ['long key']);
+  });
 });

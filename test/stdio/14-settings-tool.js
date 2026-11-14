@@ -176,6 +176,46 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.ok(!fs.readdirSync(home).some((n) => n.endsWith('.tmp')));
   });
 
+  it('get reads only the history\'s tail, the last 50, and never shows ch-local\'s host or pid', async () => {
+    const lines = [];
+    for (let n = 0; n < 2000; n++) lines.push(JSON.stringify({at: `t${n}`, host: 'box', pid: 7, by: 'cli', setting: 'locale', old: 'en', new: 'zh', pad: 'x'.repeat(40)}));
+    fs.writeFileSync(path.join(home, 'history.jsonl'), `${lines.join('\n')}\n`);
+    assert.ok(fs.statSync(path.join(home, 'history.jsonl')).size > 64 * 1024, 'premise: larger than the tail read');
+    const {history: h} = await tool.get();
+    assert.strictEqual(h.length, 50);
+    assert.strictEqual(h[49].at, 't1999');
+    assert.strictEqual(h[0].at, 't1950');
+    assert.deepStrictEqual(Object.keys(h[0]).sort(), ['at', 'by', 'new', 'old', 'setting']);
+  });
+
+  it('every set is said on stderr too', async () => {
+    const LOG = require('../../lib/logger');
+    const said = [];
+    const was = LOG.I;
+    LOG.I = (line) => said.push(line);
+    try { await tool.set('locale', 'zh'); } finally { LOG.I = was; }
+    assert.deepStrictEqual(said, ['countinghouse_settings: locale changed from "en" to "zh" by settings tool']);
+  });
+
+  it('a live set reaches every running module worker, only its fields; a worker takes only those, each of its own type', () => {
+    options.requestTimeout = 30000;
+    options.requestTimeoutMs = 30000;
+    options.maxOutputBytes = 8 * MiB;
+    options.locale = 'en-US';
+    settingsTool.resetForTests();
+    settingsTool.applyControlSet({name: 'requestTimeout', value: 20});
+    const sent = [];
+    settingsTool.broadcastLiveOptions({a: {sendMessageToWorker: (m) => sent.push(m)}, b: {sendMessageToWorker: (m) => sent.push(m)}, gone: null});
+    assert.deepStrictEqual(sent, [0, 1].map(() => ({command: 'live-options', options: {maxOutputBytes: 8 * MiB, requestTimeout: 20000, requestTimeoutMs: 20000, locale: 'en-US'}})));
+    // a worker started after the tighten holds 20 s; a loosening back to 30 s reaches it
+    const worker = {requestTimeout: 20000, requestTimeoutMs: 20000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'};
+    settingsTool.applyControlSet({name: 'requestTimeout', value: 30});
+    settingsTool.applyLiveOptions(worker, settingsTool.liveOptions());
+    assert.strictEqual(worker.requestTimeout, 30000);
+    settingsTool.applyLiveOptions(worker, {moduleSandbox: 'audit', requestTimeout: 'soon', locale: 'fr', maxOutputBytes: -1});
+    assert.deepStrictEqual(worker, {requestTimeout: 30000, requestTimeoutMs: 30000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'});
+  });
+
   it('listed only in the single-identity profile with --settingsFile; never addressable by ctx.call', () => {
     const toolRegistry = require('../../lib/mcp/tool-registry');
     const callAddress = require('../../lib/call-address');
