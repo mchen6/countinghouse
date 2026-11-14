@@ -28,6 +28,8 @@ describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)
       '--moduleDataPath', path.join(base, 'store')]);
     const loaded = await post(PORT, KEY, '/load-module', {path: path.join(ROOT, 'test', 'fixtures', PROBE), name: PROBE});
     assert.strictEqual(loaded.status, 200, JSON.stringify(loaded.body));
+    const attach = await post(PORT, KEY, '/load-module', {path: path.join(ROOT, 'test', 'fixtures', 'lean-attach-probe'), name: 'lean-attach-probe'});
+    assert.strictEqual(attach.status, 200, JSON.stringify(attach.body));
   });
   after(() => {
     stopServer(server);
@@ -72,6 +74,21 @@ describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)
   it('CHUtil.recordUsage, its implementation loaded on first use under the lockdown: answers', async () => {
     const out = await call('recordusage', {});
     assert.deepStrictEqual(out, {outcome: 'ok', tool: 'tool'});
+  });
+
+  // #177's re-review, item 2: module code that reaches countinghouse-util
+  // through chutil-facade's module object (require.cache, which the
+  // lockdown does not close: spec section 3's residual) and attaches it
+  // before the facade has gets nothing back, and its requests through it
+  // are refused, never sent unchecked.
+  it('countinghouse-util attached by module code hands out nothing, and its requests are refused', async () => {
+    const r = await post(PORT, KEY, `/devices/${deviceIDForName('lean-attach-probe')}/invoke-action`,
+      {serviceID: 'urn:countinghouse-test:serviceID:attachService', actionName: 'attach', input: {url: 'http://127.0.0.1:9'}});
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    const out = r.body.output;
+    assert.strictEqual(out.facadeInCache, true, JSON.stringify(out));
+    assert.strictEqual(out.handed, 'undefined', `the attach handed out a ${out.handed}`);
+    assert.deepStrictEqual(out.request, {outcome: 'error', code: 'ERR_ACCESS_DENIED'}, JSON.stringify(out));
   });
 
   it('a handler file that requires a refused built-in while it loads: the load fails, naming the file', async () => {

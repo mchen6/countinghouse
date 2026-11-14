@@ -322,6 +322,17 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
       assert.match(moduleSpec.specFailureDetail(bad.specError), /stage=validateDeviceSpec .*manufacturer/);
     });
 
+    it('a spec the validators do not hold (never given, or forgotten) fails closed, never passes', async () => {
+      const own = await moduleSpec.fromParts(minimal({}), null);
+      const never = await moduleSpec.deviceSpec(own);
+      assert.ok(never != null && never.specError != null, JSON.stringify(never));
+      assert.match(never.specError.message, /not loaded/);
+      moduleSpec.register(own);
+      moduleSpec.release(own);
+      const forgotten = await moduleSpec.deviceSpec(own);
+      assert.ok(forgotten != null && forgotten.specError != null, JSON.stringify(forgotten));
+    });
+
     it('a deviceList of more than 64 entries is refused', async () => {
       const entry = (i) => ({friendlyName: `d${i}`, manufacturer: 'm', modelDescription: 'd', serviceList: {}});
       const bad = await check(minimal({deviceList: Array.from({length: 65}, (v, i) => entry(i))}));
@@ -336,6 +347,11 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
         const own = await moduleSpec.build(dir, 'too-big');
         assert.strictEqual(own.refused, true, JSON.stringify(own).slice(0, 200));
         assert.match(own.error, /over the 256 KB/);
+        // nor by the first read, the device IDs pinned at the spawn (#177's re-review, item 3)
+        const declaredDeviceIDs = require('../../lib/module-manager').declaredDeviceIDs;
+        assert.strictEqual(declaredDeviceIDs(dir), null);
+        fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify(minimal({})));
+        assert.ok(declaredDeviceIDs(dir) instanceof Set, 'a small api.json declares its device');
       } finally {
         fs.rmSync(dir, {recursive: true, force: true});
       }
@@ -352,12 +368,35 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
       assert.strictEqual(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names}), null);
     });
 
+    // #177's re-review, item 1: a handler file can post the acknowledgement
+    // itself while it loads, with any names; the check is linear, and more
+    // names than api.json declares are refused before any is compared.
+    it('a forged acknowledgement of a million names is refused at once, against 2048 declared actions', async () => {
+      const serviceList = {};
+      for (let i = 0; i < 32; i++) {
+        serviceList[`urn:countinghouse-test:serviceID:s${i}`] = {actionList: Array.from({length: 64}, (v, j) => ({name: `a${j}`}))};
+      }
+      const big = await moduleSpec.fromParts({device: {friendlyName: 'ack-flood', serviceList}}, null);
+      const names = Array.from({length: 1000000}, (v, i) => `urn:x:serviceID:s|n${i}`);
+      let t = Date.now();
+      assert.match(loadAckMismatch(big, {loaded: true, deviceID: big.deviceID, names}), /more names/);
+      assert.ok(Date.now() - t < 200, `${Date.now() - t} ms`);
+      // as many names as declared, none of them right: compared in one pass
+      const same = Array.from({length: 2048}, (v, i) => `urn:x:serviceID:s|n${i}`);
+      t = Date.now();
+      assert.match(loadAckMismatch(big, {loaded: true, deviceID: big.deviceID, names: same}), /no handler loaded/);
+      assert.ok(Date.now() - t < 200, `${Date.now() - t} ms`);
+    });
+
     it('another device, a missing handler, an undeclared action, or no acknowledgement: a mismatch', () => {
       const names = [];
       for (const serviceID of Object.keys(own.names)) for (const action of own.names[serviceID]) names.push(`${serviceID}|${action}`);
       assert.match(loadAckMismatch(own, {loaded: true, deviceID: 'another', names}), /device another/);
       assert.match(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names: names.slice(1)}), /no handler loaded/);
-      assert.match(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names: names.concat(['urn:x:serviceID:s|extra'])}), /does not declare/);
+      // an undeclared name on top of every declared one: more than api.json declares
+      assert.match(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names: names.concat(['urn:x:serviceID:s|extra'])}), /more names/);
+      // in place of a declared one: that one has no handler
+      assert.match(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names: names.slice(1).concat(['urn:x:serviceID:s|extra'])}), /no handler loaded/);
       assert.match(loadAckMismatch(own, null), /no load acknowledgement/);
     });
   });
