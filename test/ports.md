@@ -148,6 +148,7 @@ one) as well as the ports it binds.
 | `test/sandbox/45-load-bound.js` | 9734–9735 |
 | `test/sandbox/46-redis-namespace.js` | 9736–9737 |
 | `test/sandbox/49-message-bound.js` | 9739 |
+| `test/sandbox/50-module-stdio.js` | 9790 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |

@@ -1,0 +1,17 @@
+{
+  "device": {
+    "friendlyName": "stdout-flood",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "writes to its worker's stdout and stderr, for the worker output bound test",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:outService": {
+        "actionList": [
+          {"name": "say", "description": "Write one line to stdout and one to stderr, each with a terminal escape, and a line of 20 000 characters to stdout.", "input": {"schema": "/outService/say/input"}, "output": {"schema": "/outService/say/output"}},
+          {"name": "flood", "description": "Write input.mb megabytes to stdout in 64 KiB writes.", "input": {"schema": "/outService/flood/input"}, "output": {"schema": "/outService/flood/output"}},
+          {"name": "routes", "description": "Look for Node's own stdio streams or a MessagePort by every route the review named, and write through process._rawDebug.", "input": {"schema": "/outService/routes/input"}, "output": {"schema": "/outService/routes/output"}},
+          {"name": "logFlood", "description": "Call the runtime's logger input.n times with a 4 KiB message (reached through require.cache, as a module under --moduleSandbox off can).", "input": {"schema": "/outService/logFlood/input"}, "output": {"schema": "/outService/logFlood/output"}}
+        ]
+      }
+    }
+  }
+}
