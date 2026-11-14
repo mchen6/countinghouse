@@ -8,7 +8,7 @@ const fs = require('fs');
 
 const linux = fs.existsSync('/proc/self/status');
 
-(linux ? describe : describe.skip)('module-loading 28: the lean worker\'s measurement harness reads every metric', function() {
+(linux ? describe : describe.skip)('module-loading 30: the lean worker\'s measurement harness reads every metric', function() {
   this.timeout(180000);
 
   it('--self-check: ready, RSS, worker boot and the spawn walk, and the RSS slope', async () => {

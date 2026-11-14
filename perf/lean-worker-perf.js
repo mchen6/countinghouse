@@ -206,7 +206,7 @@ async function main(argv) {
 const argsFile = path.join(__dirname, 'lean-worker-perf.args.json');
 // Its own suite only when mocha loads this file directly
 // (scripts/run-in-docker.js); a test that requires it
-// (test/module-loading/28) calls main itself.
+// (test/module-loading/30) calls main itself.
 const loadedByMocha = module.parent != null && /[\\/]mocha[\\/]/.test(String(module.parent.filename));
 if (typeof(describe) === 'function' && typeof(it) === 'function' && loadedByMocha) {
   describe('perf: lean-worker-perf', function() {
