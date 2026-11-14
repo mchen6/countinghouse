@@ -204,7 +204,7 @@ if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   process.exit(2);
 }
 // enforce does not hold on Windows yet (#195): refused, never half-working.
-const sandboxRefusal = require('./lib/sandbox-platform').platformRefusal(options.moduleSandbox, process.platform);
+const sandboxRefusal = require('./lib/sandbox-platform').platformRefusal(options.moduleSandbox, process.platform, process.env);
 if (sandboxRefusal != null) {
   console.error(sandboxRefusal);
   process.exit(2);
