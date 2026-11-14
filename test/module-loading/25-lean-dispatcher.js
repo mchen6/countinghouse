@@ -19,7 +19,7 @@ describe('module-loading 25: the lean dispatcher (lean worker step 3)', () => {
 
   it('answers a handler\'s output, and lists the actions it serves', async () => {
     const d = dispatcher();
-    assert.deepStrictEqual([...d.names].sort(), [`${SERVICE}|fails`, `${SERVICE}|ok`, `${SERVICE}|throws`]);
+    assert.deepStrictEqual([...d.names].sort(), [`${SERVICE}|fails`, `${SERVICE}|fn`, `${SERVICE}|ok`, `${SERVICE}|throws`]);
     const {err, data} = await invoke(d, SERVICE, 'ok', {input: {v: 7}});
     assert.strictEqual(err, null);
     assert.deepStrictEqual(data, {output: {v: 7}});
@@ -37,6 +37,14 @@ describe('module-loading 25: the lean dispatcher (lean worker step 3)', () => {
     assert.strictEqual(thrown.err.code, 'DEVICE_INVOKE_EXCEPTION');
     assert.strictEqual(thrown.data.message, 'boom');
     assert.strictEqual((await invoke(d, SERVICE, 'fails', {input: {}})).err.code, 'DEVICE_INVOKE_FAIL');
+  });
+
+  // as lib/service.js answered it, checked call or not (test/unit/test020)
+  it('a handler whose output is a function: OUTPUT_DATA_VALIDATION_FAIL, even for a call the main thread checked', async () => {
+    const d = dispatcher();
+    const r = await invoke(d, SERVICE, 'fn', {input: {}});
+    assert.strictEqual(r.err.code, 'OUTPUT_DATA_VALIDATION_FAIL');
+    assert.deepStrictEqual(r.data, {reason: 'output argument not found', info: ''});
   });
 
   it('loads no CHDevice, Service or validator', () => {

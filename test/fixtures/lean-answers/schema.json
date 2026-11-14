@@ -32,6 +32,16 @@
         "type": "object",
         "properties": {}
       }
+    },
+    "fn": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {}
+      }
     }
   }
 }

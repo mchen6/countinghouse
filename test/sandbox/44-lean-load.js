@@ -41,7 +41,7 @@ describe('sandbox 44: the lean worker loads a module and answers (lean worker st
     const loaded = await w.send('load-module', {path: path.join(FIXTURES, 'lean-answers'), name: 'lean-answers', version: '1.0.0', deviceConfig: null});
     assert.strictEqual(loaded.errMsg, null, JSON.stringify(loaded));
     assert.strictEqual(loaded.data.loaded, true);
-    assert.deepStrictEqual([...loaded.data.names].sort(), [`${SERVICE}|fails`, `${SERVICE}|ok`, `${SERVICE}|throws`]);
+    assert.deepStrictEqual([...loaded.data.names].sort(), [`${SERVICE}|fails`, `${SERVICE}|fn`, `${SERVICE}|ok`, `${SERVICE}|throws`]);
     const out = await w.send('invoke-action', {deviceID: loaded.data.deviceID, serviceID: SERVICE, actionName: 'ok', args: {input: {v: 3}}, mainChecked: true});
     assert.strictEqual(out.errMsg, null, JSON.stringify(out));
     assert.deepStrictEqual(out.data, {output: {v: 3}});

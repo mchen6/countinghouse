@@ -35,6 +35,16 @@
             "output": {
               "schema": "/answerService/fails/output"
             }
+          },
+          {
+            "name": "fn",
+            "description": "Returns a function as its output.",
+            "input": {
+              "schema": "/answerService/fn/input"
+            },
+            "output": {
+              "schema": "/answerService/fn/output"
+            }
           }
         ]
       }
