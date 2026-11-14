@@ -68,7 +68,11 @@ describe('fs-broker 14: a hoisted npm install', function() {
     const modules = path.join(project, 'modules');
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(modules, 'fs-probe'), {recursive: true});
     server = await startServer(9633, ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
-      '--modulePath', modules, '--moduleDataPath', `${fs.realpathSync(installed)}_data`, '--loadModule', path.join(modules, 'fs-probe')], {root: installed});
+      // (on Windows a data path that extends no grant's name: Node 24.22's
+      // permission model refuses X beside X_data there, nodejs/node#66812,
+      // which countinghouse's probe reports before relaunching)
+      '--modulePath', modules, '--moduleDataPath', process.platform === 'win32' ? path.join(project, 'hardened-store') : `${fs.realpathSync(installed)}_data`,
+      '--loadModule', path.join(modules, 'fs-probe')], {root: installed});
     const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'hoisted'});
     assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, server.output.slice(-3000));
   });
