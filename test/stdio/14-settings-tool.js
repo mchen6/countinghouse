@@ -158,13 +158,17 @@ describe('stdio 14: countinghouse_settings', () => {
     });
 
     it('a loosening it forbids, or a value above it: SETTING_ABOVE_CEILING; get shows the lowered bound', async () => {
-      const t = withCeiling(trusted({maxOutputBytes: 16 * MiB, forbid: ['packs', 'autoUpgrade']}));
+      // packs: the operator's allowlist; ci-failure-triage is not on it
+      const t = withCeiling(trusted({maxOutputBytes: 16 * MiB, forbid: ['autoUpgrade'], packs: ['other']}));
       await t.set('maxOutputBytes', '4MiB');
       assert.match((await refused(t.set('maxOutputBytes', '32MiB'), 'SETTING_ABOVE_CEILING')).message, /maxOutputBytes 32MiB is above the ceiling this machine's operator set \(at most 16MiB\)/);
       await refused(t.set('maxOutputBytes', '8MiB'), 'SETTING_NEEDS_CONFIRMATION');
       await t.set('pack.ci-failure-triage', 'off');
       assert.match((await refused(t.set('pack.ci-failure-triage', 'on'), 'SETTING_FORBIDDEN_BY_CEILING')).message, /pack\.ci-failure-triage cannot be changed to on on this machine: its operator's ceiling forbids it/);
       await refused(t.set('autoUpgrade', 'on'), 'SETTING_FORBIDDEN_BY_CEILING');
+      // a pack on the allowlist may be turned on as before (asked for: not confirmed in conversation)
+      await t.set('pack.other', 'off');
+      await refused(t.set('pack.other', 'on'), 'SETTING_NEEDS_CONFIRMATION');
       const got = await t.get();
       assert.strictEqual(got.settings.find((x) => x.name === 'maxOutputBytes').bounds.max, 16 * MiB);
       // grouped per kind and outcome: the 8MiB request is not filed under the ceiling's refusal

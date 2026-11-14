@@ -403,12 +403,17 @@ conversation or the `ch-local` command, with an optional, machine-wide file:
 
 ```json
 {"version": 1, "maxOutputBytes": 16777216, "requestTimeout": 60000,
- "forbid": ["moduleSandbox", "autoUpgrade", "packs"], "conversation": false}
+ "forbid": ["moduleSandbox", "autoUpgrade"], "packs": ["ci-failure-triage"],
+ "conversation": false}
 ```
 
 Every key but `version` is optional: `maxOutputBytes` and `requestTimeout`
-lower the hard bounds; `forbid` refuses loosening the sandbox, automatic
-upgrades or turning a pack on; `"conversation": false` refuses every
+lower the hard bounds (`requestTimeout` in whole seconds, as milliseconds:
+the runtime takes seconds, so any other value fails closed); `forbid`
+refuses loosening the sandbox or turning automatic upgrades on; `packs` is
+the operator's allowlist of packs: when present, only those packs ever
+load, at start, in place and on install, whatever `settings.json` or the
+history say, and installing another is refused; `"conversation": false` refuses every
 loosening asked for in conversation (it takes effect once a client can
 confirm one in conversation, part 3's elicitation; until then every such
 loosening already ends at the terminal command). A value above it is
@@ -432,8 +437,14 @@ check, or holds anything else, **fails closed**: every loosening is refused
 file in it. No directory and no file: the hard bounds apply. On Windows the
 ACL is read by the PowerShell in the Windows directory, started by its full
 path with a minimal environment. Not checked, because each needs root or an
-administrator to set: macOS extended ACLs (`chmod +a`) and Windows
-conditional access rules.
+administrator to set: macOS extended ACLs (`chmod +a`). A Windows
+conditional access rule, which the ACL's rules do not list, fails closed.
+
+Two limits. `<home>/history.jsonl` is a record for the user, not a security
+boundary: the user can write it, so nothing the ceiling enforces rests on
+it. And ch-local reads the ceiling with the runtime installed under its
+home (`app/node_modules/countinghouse`): whoever can replace that code is
+beyond any ceiling, as they are beyond the runtime itself.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
