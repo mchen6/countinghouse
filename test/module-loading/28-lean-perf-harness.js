@@ -18,6 +18,23 @@ const linux = fs.existsSync('/proc/self/status');
     assert.ok(result.targets.workerBootMedianMs > 0, JSON.stringify(result.targets));
     assert.ok(result.targets.spawnWalkMedianMs >= 0, JSON.stringify(result.targets));
     assert.ok(result.targets.addedRssPerWorkerMb != null, JSON.stringify(result.targets));
+    assert.ok(result.targets.fixedRssMb != null, JSON.stringify(result.targets));
+    assert.ok(result.targets.addedRssPerWorkerThroughZeroMb != null, JSON.stringify(result.targets));
+  });
+
+  // The per-worker slope is fitted over 1..N workers; what the first worker
+  // brings once (the validator pool, main's share) is its own number, the
+  // fit's intercept above the 0-module RSS. The old slope, through the
+  // 0-module row, is kept for comparison with earlier tables.
+  it('the RSS fit: a per-worker slope over 1..N workers, the fixed cost beside it, and the old slope through 0', () => {
+    const {rssFit} = require('../../perf/lean-worker-perf');
+    // 100 MB with no module; 40 MB once with the first worker; 20 MB per worker
+    const f = rssFit([[0, 100], [1, 160], [3, 200], [5, 240]]);
+    assert.ok(Math.abs(f.perWorkerMb - 20) < 1e-9, JSON.stringify(f));
+    assert.ok(Math.abs(f.fixedMb - 40) < 1e-9, JSON.stringify(f));
+    assert.ok(Math.abs(f.throughZeroMb - 385 / 14.75) < 1e-9, JSON.stringify(f));
+    // one point past 0 fits no slope, and so no fixed cost
+    assert.deepStrictEqual(rssFit([[0, 100], [1, 160]]), {perWorkerMb: null, fixedMb: null, throughZeroMb: 60});
   });
 
   it('the least-squares slope and the median', () => {
