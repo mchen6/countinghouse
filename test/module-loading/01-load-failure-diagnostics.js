@@ -13,8 +13,10 @@ const {testPort, redisFlag, startShell, stopAll} = require('../helpers/test-env'
 //   A. package.json "main" points at device.js instead of index.js -- so the
 //      loaded object registers no 'discover' listener and the
 //      discover -> deviceonline handshake never happens. This was the
-//      *completely* silent one, and it is the shape README itself used to
-//      document (its module layout omitted index.js entirely).
+//      *completely* silent one. Since the one module format (lean worker,
+//      step 1), a main entry with no handlers/ directory is refused before
+//      any of its code runs (MODULE_LAYOUT_UNSUPPORTED), so case A now
+//      checks that refusal's log line.
 //   B. api.json fails the framework's meta-schema. This did log, but only
 //      errors[0].message with no instancePath -- "must have required property
 //      'argumentList'" with no way to tell which action.
@@ -67,7 +69,7 @@ function errorRecords(logPath) {
 describe('module-loading 01: a module that fails to load says why, with a locatable reason', function() {
   this.timeout(0);
 
-  describe('A. package.json "main" points at device.js (no index.js)', () => {
+  describe('A. package.json "main" points at device.js, and there is no handlers/ directory', () => {
     before(function(done) {
       this.timeout(0);
       startAndCapture('./test/fixtures/no-index-module', testPort(9571), LOG_NO_INDEX, done);
@@ -89,9 +91,9 @@ describe('module-loading 01: a module that fails to load says why, with a locata
       }
     });
 
-    it('the message says what is wrong and how to fix it', () => {
+    it('the message says what is wrong, which file made it so, and where the format is described', () => {
       const text = errorRecords(LOG_NO_INDEX).join('\n');
-      ['discover', 'deviceonline', 'index.js', 'main'].forEach((needle) => {
+      ['no-index-module: a module is api.json, schema.json and handlers/<service>/<action>.js', 'package.json "main": "device.js"', 'docs/module-development.md'].forEach((needle) => {
         if (text.indexOf(needle) === -1) {
           throw new Error(`expected the diagnostic to mention "${needle}", got: ${text}`);
         }

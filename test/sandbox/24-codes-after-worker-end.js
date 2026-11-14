@@ -27,6 +27,17 @@ async function loadFrom(port, dir) {
   await waitFor(async () => (await invoke(port)).status === 200, 20000, 'worker-end to answer');
 }
 
+// stray-output-module's returnsCleanly handler file, rewritten in a copy:
+// `prelude` runs while the file is required (every load requires it), and
+// v 'crash' ends the worker 50 ms after answering.
+const BLOCK_AFTER_LOAD = 'setImmediate(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000));';
+function writeReturnsCleanly(dir, prelude) {
+  fs.writeFileSync(path.join(dir, 'handlers', 'svc', 'returnsCleanly.js'), `${prelude}\n` +
+    "module.exports = (input, ctx, callback) => {\n" +
+    "  if (input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }\n" +
+    '  return callback(null, {output: {v: input.v}});\n};\n');
+}
+
 describe('sandbox 24: a request for a module that is gone says why', function() {
   this.timeout(120000);
 
@@ -102,7 +113,8 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
 
     // Under the supervisor, a worker whose discovery outlasts the bound (its
     // block limit set above it) is unloaded, not restarted: it would only
-    // block again.
+    // block again. Its handler file schedules the block for just after its
+    // load, before the worker answers discover.
     it('a supervised module whose discovery outlasts the bound is unloaded, not restarted', async function() {
       this.timeout(90000);
       const dir = path.join(base, 'stray-output-module');
@@ -115,9 +127,7 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
         {serviceID: 'urn:countinghouse-test:serviceID:svc', actionName: 'returnsCleanly', input: {v: 'x'}});
       await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
       await waitFor(async () => (await call()).status === 200, 20000, 'stray-output-module to answer');
-      const index = path.join(dir, 'index.js');
-      fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("this.emit('deviceonline', new Device(), this);",
-        'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000);'));
+      writeReturnsCleanly(dir, BLOCK_AFTER_LOAD);
       const mark = server.output.length;
       assert.strictEqual((await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'})).status, 200);
       await waitFor(() => /discovery did not finish within 15 s; worker terminated/.test(server.output.slice(mark)), 30000, 'the bound to end the worker',
@@ -130,23 +140,18 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
     });
 
     // The same for a supervised restart after a crash: from the crash until
-    // the restarted worker's devices are back -- which, for a module whose
-    // discovery takes a while, is seconds after the supervisor has it
-    // running again -- never DEVICE_NOT_FOUND.
+    // the restarted worker's devices are back -- which, for a module that
+    // takes a while to load (3 s here), is seconds after the supervisor has
+    // it running again -- never DEVICE_NOT_FOUND.
     it('between a crash and the restarted worker\'s devices coming back, a request is never DEVICE_NOT_FOUND', async function() {
       this.timeout(60000);
-      const dir = path.join(base, 'slow-discovery', 'stray-output-module');
+      const dir = path.join(base, 'slow-load', 'stray-output-module');
       fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'stray-output-module'), dir, {recursive: true});
-      const index = path.join(dir, 'index.js');
-      fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("this.emit('deviceonline', new Device(), this);",
-        "setTimeout(() => this.emit('deviceonline', new Device(), this), 3000);"));
-      const device = path.join(dir, 'device.js');
-      fs.writeFileSync(device, fs.readFileSync(device, 'utf8').replace("this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {",
-        "this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {\n    if (args.input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }"));
+      writeReturnsCleanly(dir, 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);');
       const id = deviceIDForName('stray-output-module');
       const call = (v) => post(PORT, KEY, `/devices/${id}/invoke-action`, {serviceID: 'urn:countinghouse-test:serviceID:svc', actionName: 'returnsCleanly', input: {v: v}});
       await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
-      await waitFor(async () => (await call('x')).status === 200, 20000, 'the slow-discovery copy to answer');
+      await waitFor(async () => (await call('x')).status === 200, 20000, 'the slow-load copy to answer');
       await call('crash');
       const seen = new Set();
       const deadline = Date.now() + 30000;
@@ -221,8 +226,9 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
     after(() => stopServer(server));
 
     // With the sandbox off nothing stops a worker that blocks, so a module
-    // whose discovery never returns must not leave its devices reloading
-    // forever: past the discovery bound, what did not come back is unloaded.
+    // whose discovery never returns (its handler file blocks just after its
+    // load) must not leave its devices reloading forever: past the discovery
+    // bound, what did not come back is unloaded.
     it('a reload whose discovery never returns ends MODULE_UNLOADED, its worker ended', async function() {
       this.timeout(90000);
       const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-discover-blocks-'));
@@ -234,9 +240,7 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
           {serviceID: 'urn:countinghouse-test:serviceID:svc', actionName: 'returnsCleanly', input: {v: 'x'}});
         await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
         await waitFor(async () => (await call()).status === 200, 20000, 'stray-output-module to answer', async () => JSON.stringify((await call()).body));
-        const index = path.join(dir, 'index.js');
-        fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("this.emit('deviceonline', new Device(), this);",
-          'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000);'));
+        writeReturnsCleanly(dir, BLOCK_AFTER_LOAD);
         const reloaded = await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
         assert.strictEqual(reloaded.status, 200, JSON.stringify(reloaded.body));
         const during = await call();

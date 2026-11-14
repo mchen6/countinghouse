@@ -32,8 +32,8 @@ if (target == null || target === '' || target === '-h' || target === '--help') {
   process.exit(2);
 }
 
-// validateModule requires the module under test (loadExported,
-// resolveHandlerMap) -- ordinary module code, not just adversarial code, can
+// validateModule requires the module's handler files (resolveHandlerMap)
+// -- ordinary module code, not just adversarial code, can
 // write to stdout while doing that (a startup log line, a dependency's
 // deprecation notice). In --json mode that would land in the middle of the
 // one line of JSON this file promises to be the caller's only signal, so

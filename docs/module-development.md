@@ -16,9 +16,12 @@ my-module/
         └── <actionName>.js     # one handler per action
 ```
 
-That is the whole module. There is no `index.js` and no `device.js`: since
-6.0.0 the framework assembles the device from `api.json`, reads `schema.json`
-itself, and matches handlers by name. See
+That is the whole module, and the only format: the framework assembles the
+device from `api.json`, reads `schema.json` itself, and matches handlers by
+name. A module has no main entry. One with a main entry (`package.json`
+`"main"`, or an `index.js`) and no `handlers/` directory is refused before any
+of its code runs, with `MODULE_LAYOUT_UNSUPPORTED`; one that has both loads
+from `handlers/`, and its main entry is never run. See
 [`design-decisions.md`](design-decisions.md#module-shape-600-handlers-by-default-discovery-when-you-need-it)
 for why the old boilerplate went away.
 
@@ -34,20 +37,13 @@ module.exports = async (input, ctx) => ({
 `input` is the validated input object. `ctx` carries the caller, this device's
 identity, and the helpers a handler needs — see [`ctx`](#ctx) below.
 
-If you would rather keep everything in one file, export the same thing as a
-map from `device.js` instead of using the `handlers/` tree:
+Code that several handlers share goes in an ordinary file of the module that
+the handlers require (`require('../../lib/shared.js')`); it runs when a handler
+file is first required, never as a main entry.
 
-```js
-// device.js -- an alternative to handlers/, not an addition
-module.exports = {
-  greetService: {                                    // service SHORT name
-    hello: async (input, ctx) => ({output: {text: `hello ${input.name}`}})
-  }
-};
-```
-
-Top-level keys are service **short** names — the part after `:serviceID:` in
-the URN. `api.json` remains the only place the full URN appears.
+The directories under `handlers/` are service **short** names — the part after
+`:serviceID:` in the URN. `api.json` remains the only place the full URN
+appears.
 
 **Mismatches are startup errors, not silent omissions.** An action declared in
 `api.json` with no handler, a handler `api.json` does not declare, a service
@@ -68,6 +64,7 @@ name and the fix. A module never half-loads.
 | `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
+| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
 | `ctx.httpHeaders` | request headers, when the call arrived over HTTP, minus `X-CH-Key`, `X-App-Key` and `Authorization` |
 
 A module is never handed an API key or a user name (R2-1): not in `ctx`,
@@ -169,33 +166,19 @@ becomes `DEVICE_INVOKE_FAIL`. See
 The pre-8.0 error globals are gone
 ([upgrading-to-8.md](upgrading-to-8.md)).
 
-## Dynamic discovery: when one module has many devices
+## Retired: main entries and dynamic discovery
 
-Everything above describes a module that is one device, described statically.
-If your module decides at runtime how many devices to expose — one per
-configured database connection, say — or needs to withdraw one when its
-backing resource disappears, export a class or EventEmitter instead of a
-handler map and the 5.x discovery path applies unchanged:
-
-```js
-// index.js -- still supported, and still the right answer for this case
-function DeviceModule() {
-  this.on('discover',     this.discoverDevices.bind(this));
-  this.on('stopdiscover', this.stopDiscoverDevices.bind(this));
-}
-util.inherits(DeviceModule, events.EventEmitter);
-
-DeviceModule.prototype.discoverDevices = function() {
-  for (const conn of readConfig()) this.emit('deviceonline', new Device(conn), this);
-};
-```
-
-`discover`, `deviceonline` and `deviceoffline` behave exactly as they did.
-Note that `deviceoffline` marks a device offline rather than unlisting it: it
-stays in `tools/list` and fails at call time with `DEVICE_OFFLINE`.
-
-The framework chooses between the two shapes by what your module exports — a
-plain object is a handler map, anything else takes the discovery path.
+Before 8.0, a module could also be a main entry: a `device.js` exporting a
+handler map, or an `index.js` exporting a class or EventEmitter that decided
+at runtime how many devices to expose (`discover`, `deviceonline`,
+`deviceoffline`). Both are retired. Such a module is refused at load, by
+`countinghouse-validate` (stage `layout`) and by the runtime, with
+`MODULE_LAYOUT_UNSUPPORTED`, which names the file that made it a main entry.
+For a `device.js` handler map, move each entry into its own
+`handlers/<service>/<action>.js` (`module.exports = <the entry's function>`);
+for a 5.x module (a `CHDevice` with `setAction`),
+`npx countinghouse-migrate-module ./my-module` converts it to `handlers/`. A module is one device, described by its `api.json`; a module
+that needs several devices is several modules.
 
 ## `api.json`
 
@@ -244,6 +227,34 @@ error says so and names the converter:
 Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
 pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
+
+Every call's input and output is validated in one of the server's
+validator workers, which all modules share:
+- your schemas are compiled at load, every action, within
+  `--validationCompileMs` (10 s by default), or the load is refused
+  (`MODULE_ASSEMBLY_FAIL`, stage `schemaCompile`);
+- a validation has a deadline (`--validationTimeoutMs`, 1000 ms by default),
+  past which the call is refused `VALIDATION_TIMEOUT`;
+- three such refusals of your own outputs (or compiles) in five minutes
+  quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
+- an output over `--maxOutputBytes` (8 MiB by default) is refused
+  `OUTPUT_TOO_LARGE`, and so is a `ctx.call` input over it, `INPUT_TOO_LARGE`,
+  on the main-thread-routed path. A hop's input is sent as bytes: a value
+  structured clone cannot carry, or a `SharedArrayBuffer`, fails the
+  `ctx.call` in your own worker.
+
+Keep patterns simple, schemas small, and outputs modest: return a reference
+(a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
+(`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the schema path):
+
+- `schema.json` larger than 1 MB;
+- a regular expression (`pattern`, a `patternProperties` key, a
+  `propertyNames` pattern) longer than 1000 characters, or with a repetition
+  inside a repeated group, such as `^(a+)+$` or `(\d+)*`, which can
+  backtrack catastrophically. Write `^a+$`, or `^\d+(?:,\d+)?$` with a
+  bounded group, instead;
+- actions whose schemas come to more than 100,000 nodes once their `$ref`s
+  are expanded, or a `$ref` that refers to itself.
 
 ## Loading your module
 
@@ -762,19 +773,18 @@ same.
 Work down this list in order. Every case below now logs an explicit error —
 **check the server log first**, it very likely already names the cause.
 
-### 1. The log says `MODULE_NOT_DISCOVERABLE`
+### 1. The log says `MODULE_LAYOUT_UNSUPPORTED`
 
 ```
-Device module is not discoverable: my-module its main entry point registers no
-"discover" listener, so it can never emit "deviceonline" ...
+my-module: a module is api.json, schema.json and handlers/<service>/<action>.js; this one has package.json "main": "device.js" and no handlers/ directory. See docs/module-development.md.
 ```
 
-This applies to the dynamic-discovery shape only. Your `package.json`'s `main`
-points at the device instead of the module that announces it. A handler-map
-module cannot hit this — the framework supplies the discovery shim itself.
-This is the most common failure by a wide margin: the module loads without
-error, reports success, and then nothing else ever happens, because nothing is
-listening for the `discover` request.
+The module has a main entry (`package.json` `"main"`, or an `index.js`) and no
+`handlers/` directory: the retired format (see
+[Retired: main entries and dynamic discovery](#retired-main-entries-and-dynamic-discovery)).
+None of its code was run. Move each action into
+`handlers/<service>/<action>.js` and remove the main entry (for a 5.x
+module, `npx countinghouse-migrate-module ./my-module` does it).
 
 ### 2. The log says `DEVICE_SPEC_VALIDATION_FAIL`
 
@@ -791,17 +801,24 @@ missing `device.modelDescription`, an action without a `name`, an
 
 ### 3. The log says `MODULE_NO_DEVICE_ONLINE`
 
-The device object failed its interface check — usually it isn't a `CHDevice`
-(check that `device.js` calls `CHDevice.call(this, spec)` and
-`CHUtil.inherits(Device, CHDevice)`), or an earlier error on the device was
-recorded and the message will quote it.
+The device assembled from your `api.json` failed its interface check: an
+earlier error on the device was recorded, and the message quotes it.
 
-### 4. The log says `LOAD_MODULE_FAIL`
+### 4. The log says `MODULE_ASSEMBLY_FAIL` with `stage=schemaSafety`
 
-Your module threw while being constructed — a syntax error, a missing
+Your `schema.json` is one the validators will not compile: too large, a
+pattern that can backtrack catastrophically, or `$ref`s that expand too far,
+refer to themselves or name no place in the file. The message names the
+schema path; see [`schema.json`](#schemajson) for the limits. A call refused
+`VALIDATION_TIMEOUT` or `VALIDATION_QUARANTINED` means a schema that passed
+these checks still takes too long to compile or to validate a value.
+
+### 5. The log says `LOAD_MODULE_FAIL`
+
+A handler file threw while being required — a syntax error, a missing
 `require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
 
-### 4a. The log says `MODULE_LOAD_TIMEOUT`
+### 6. The log says `MODULE_LOAD_TIMEOUT`
 
 Your module did not finish loading within the operator's
 `--moduleLoadTimeout` (120 s by default), and its worker was ended. Something
@@ -809,7 +826,7 @@ your module runs while it is required never returns: a busy loop, an
 `Atomics.wait`, a synchronous read that never ends. Do that work in an action,
 or start it asynchronously after load.
 
-### 5. No error at all, and the module is listed as loaded
+### 7. No error at all, and the module is listed as loaded
 
 Then the device did come online, and the problem is downstream:
 

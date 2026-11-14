@@ -69,7 +69,10 @@ describe('validation 11: the shipped runtime requires only builtins and its own 
 
   // SOAP support is retired (Matt, 2026-11-13): no dependency, no source that
   // loads it, and no CHUtil.createSOAPClient.
-  it('soap is gone: in no dependency field, loaded by no source, and CHUtil has no createSOAPClient', () => {
+  it('soap is gone: in no dependency field, loaded by no source, and CHUtil has no createSOAPClient', function() {
+    // a child that requires countinghouse-util: its own 30 s bound, not
+    // mocha's 2 s default, which a busy machine overran
+    this.timeout(40000);
     for (const field of ['dependencies', 'optionalDependencies', 'devDependencies', 'peerDependencies']) {
       assert.ok(!Object.prototype.hasOwnProperty.call(pkg[field] || {}, 'soap'), `soap in ${field}`);
     }

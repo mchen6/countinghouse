@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "validate-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "validate-probe: its code runs when a handler file is required (test/sandbox/21, 22)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "probe (validate-probe)",
+            "input": {
+              "schema": "/probeService/probe/input"
+            },
+            "output": {
+              "schema": "/probeService/probe/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

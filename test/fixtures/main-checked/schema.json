@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "checkService": {
+    "take": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "give": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "good",
+              "badType",
+              "extraKey",
+              "noOutput"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "v": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "v"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "count": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "takes": {
+            "type": "integer"
+          },
+          "tampered": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "takes",
+          "tampered"
+        ]
+      }
+    },
+    "tamper": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "tampered": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tampered"
+        ]
+      }
+    },
+    "slow": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string",
+            "pattern": "^(\\w|a)+$"
+          }
+        },
+        "required": [
+          "s"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "stall": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "big": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "n"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "s"
+        ]
+      }
+    },
+    "odd": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "forge": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "garbage",
+              "invalid",
+              "deep",
+              "huge"
+            ]
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "cheat": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "getter",
+              "message",
+              "details",
+              "byteLength",
+              "plain"
+            ]
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}

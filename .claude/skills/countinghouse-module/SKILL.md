@@ -57,6 +57,11 @@ my-module/
         └── hello.js       # one file per action
 ```
 
+That is the only format: no `index.js`, no `device.js`, no `"main"` in
+`package.json`. A main entry without `handlers/` is refused
+(`MODULE_LAYOUT_UNSUPPORTED`); shared code goes in a plain file the handlers
+require.
+
 A handler is `async (input, ctx)`; `input` is already validated.
 
 ```js
@@ -93,20 +98,22 @@ check from a shell (exit 0 clean, 1 problems, 2 unusable path).
 
 The authoring tools need the runtime started with `--authoringTools` and an
 admin key. If they are missing from `tools/list`, that is why. Keep the
-default worker mode: a module whose main entry crashes or calls
-`process.exit()` during `countinghouse_load_module` is a reported failure in
-worker mode, but takes the whole runtime down under `--no-workerThread`.
+default worker mode: a module whose handler file crashes or calls
+`process.exit()` while being required by `countinghouse_load_module` is a
+reported failure in worker mode, but takes the whole runtime down under
+`--no-workerThread`.
 
 ## When it does not appear in tools/list
 
 `docs/module-development.md` has the full checklist. The five that account for
 almost everything:
 
-1. `MODULE_NOT_DISCOVERABLE` — `package.json` `main` points at the wrong file.
+1. `MODULE_LAYOUT_UNSUPPORTED` — a main entry (`"main"` or `index.js`) and no
+   `handlers/`: the retired format; the error names the file.
 2. `DEVICE_SPEC_VALIDATION_FAIL` — `api.json` fails the meta-schema; the error
    names the instance path.
-3. `MODULE_NO_DEVICE_ONLINE` — a dynamic-discovery module that never emitted
-   `deviceonline`.
-4. `LOAD_MODULE_FAIL` — the module threw while loading.
+3. `MODULE_NO_DEVICE_ONLINE` — the device assembled from `api.json` failed;
+   the message quotes the earlier error.
+4. `LOAD_MODULE_FAIL` — a handler file threw while being required.
 5. Loaded but absent — an action with no `description` is skipped, and
    `tools/list` is filtered per apiKey.

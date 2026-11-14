@@ -36,19 +36,22 @@ describe('sandbox 27: a reload inside the old worker\'s discovery bound', functi
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-reload-in-bound-'));
     const dir = path.join(base, 'stray-output-module');
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'stray-output-module'), dir, {recursive: true});
-    const index = path.join(dir, 'index.js');
-    const original = fs.readFileSync(index, 'utf8');
-    // The device comes online, then the worker blocks before its own 5 s
-    // discovery answer, so the 15 s bound is what would end it.
-    fs.writeFileSync(index, original.replace("this.emit('deviceonline', new Device(), this);",
-      "this.emit('deviceonline', new Device(), this);\n  setTimeout(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40000), 4000);"));
+    const handler = path.join(dir, 'handlers', 'svc', 'returnsCleanly.js');
+    const original = fs.readFileSync(handler, 'utf8');
     await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
-    await waitFor(async () => (await call()).status === 200, 3000, 'the device to answer before the worker blocks');
+    await waitFor(async () => (await call()).status === 200, 20000, 'the device to answer');
+    // A reload whose new code blocks just after its load, before its worker
+    // answers discover: the device is reloading, and the 15 s bound is what
+    // would end that worker.
+    fs.writeFileSync(handler, `setImmediate(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40000));\n${original}`);
+    const blocked = await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
+    assert.strictEqual(blocked.status, 200, JSON.stringify(blocked.body));
     const answered = Date.now();
-    fs.writeFileSync(index, original);
+    assert.strictEqual(codeOf(await call()), 'MODULE_RELOADING');
+    fs.writeFileSync(handler, original);
 
     // Into the unload's 3 s window just before the bound (15 s from the start
-    // of discovery, which is a little before the first answer).
+    // of the blocked worker's discovery, just after its load was answered).
     await sleep(Math.max(0, answered + 12500 - Date.now()));
     const mark = server.output.length;
     const seen = [];

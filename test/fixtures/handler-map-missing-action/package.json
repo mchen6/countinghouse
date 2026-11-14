@@ -1,1 +1,4 @@
-{"name": "handler-map-missing-action", "version": "1.0.0", "main": "device.js"}
+{
+  "name": "handler-map-missing-action",
+  "version": "1.0.0"
+}

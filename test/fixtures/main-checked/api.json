@@ -1,0 +1,113 @@
+{
+  "device": {
+    "friendlyName": "main-checked",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Main-thread validation fixture (test/sandbox/41): on request, its worker turns off its own validation where module code can reach it.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:checkService": {
+        "actionList": [
+          {
+            "name": "take",
+            "description": "Counts a run and returns its input's n.",
+            "input": {
+              "schema": "/checkService/take/input"
+            },
+            "output": {
+              "schema": "/checkService/take/output"
+            }
+          },
+          {
+            "name": "give",
+            "description": "Returns a valid output, or one its schema refuses.",
+            "input": {
+              "schema": "/checkService/give/input"
+            },
+            "output": {
+              "schema": "/checkService/give/output"
+            }
+          },
+          {
+            "name": "count",
+            "description": "How many times take ran, and whether this worker's own validation has been turned off.",
+            "input": {
+              "schema": "/checkService/count/input"
+            },
+            "output": {
+              "schema": "/checkService/count/output"
+            }
+          },
+          {
+            "name": "tamper",
+            "description": "Turns off this worker's own validation where module code can reach it.",
+            "input": {
+              "schema": "/checkService/tamper/input"
+            },
+            "output": {
+              "schema": "/checkService/tamper/output"
+            }
+          },
+          {
+            "name": "slow",
+            "description": "Its input's pattern passes every check made at load and still takes seconds on a crafted value: the validator's deadline refuses it.",
+            "input": {
+              "schema": "/checkService/slow/input"
+            },
+            "output": {
+              "schema": "/checkService/slow/output"
+            }
+          },
+          {
+            "name": "stall",
+            "description": "Its input's uniqueItems over many objects outlasts any validation deadline: queued calls behind it time out unsent.",
+            "input": {
+              "schema": "/checkService/stall/input"
+            },
+            "output": {
+              "schema": "/checkService/stall/output"
+            }
+          },
+          {
+            "name": "big",
+            "description": "Returns an output of n characters, for the output size cap.",
+            "input": {
+              "schema": "/checkService/big/input"
+            },
+            "output": {
+              "schema": "/checkService/big/output"
+            }
+          },
+          {
+            "name": "odd",
+            "description": "Answers values structured clone carries and JSON does not; a function inside when kind is 'function' (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/odd/input"
+            },
+            "output": {
+              "schema": "/checkService/odd/output"
+            }
+          },
+          {
+            "name": "forge",
+            "description": "Answers {ok: true} but posts hand-made bytes through its worker's send path (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/forge/input"
+            },
+            "output": {
+              "schema": "/checkService/forge/output"
+            }
+          },
+          {
+            "name": "cheat",
+            "description": "Tries to get an output or an error past --maxOutputBytes in its own worker (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/cheat/input"
+            },
+            "output": {
+              "schema": "/checkService/cheat/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

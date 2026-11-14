@@ -1,0 +1,15 @@
+{
+  "device": {
+    "friendlyName": "hop-input-callee",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Callee of the hop-input fixture: takes a string and answers its length and digest (test/sandbox/48).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:sinkService": {
+        "actionList": [
+          {"name": "sink", "description": "The length and sha256 of input.s.", "input": {"schema": "/sinkService/sink/input"}, "output": {"schema": "/sinkService/sink/output"}},
+          {"name": "count", "description": "How many times sink ran.", "input": {"schema": "/sinkService/count/input"}, "output": {"schema": "/sinkService/count/output"}}
+        ]
+      }
+    }
+  }
+}

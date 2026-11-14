@@ -88,21 +88,6 @@ describe('module-validator: spec problems', () => {
     });
   });
 
-  // This fixture's index.js is written for the vm-sandboxed load path (see
-  // lib/sandbox.js), so it also throws ReferenceError: CHUtil is not defined
-  // when required directly outside the sandbox -- a genuine load-time failure
-  // this validator must surface, not a phantom to be filtered out.
-  it('also reports the main entry throwing, naming the sandbox-globals cause', (done) => {
-    moduleValidator.validateModule(fixture('invalid-spec-module'), (err, result) => {
-      assert.ifError(err);
-      const entry = result.problems.filter((p) => p.stage === 'loadModuleEntry');
-      assert.strictEqual(entry.length, 1);
-      assert.ok(/CHUtil/.test(entry[0].message));
-      assert.ok(/sandbox/.test(entry[0].fix));
-      done();
-    });
-  });
-
   it('names the migrator for a pre-5.0.0 spec instead of an ajv symptom', (done) => {
     moduleValidator.validateModule(fixture('legacy-spec-module'), (err, result) => {
       assert.ifError(err);
@@ -112,41 +97,34 @@ describe('module-validator: spec problems', () => {
     });
   });
 
-  it('also reports that fixture\'s main entry throwing, same sandbox cause', (done) => {
-    moduleValidator.validateModule(fixture('legacy-spec-module'), (err, result) => {
-      assert.ifError(err);
-      const entry = result.problems.filter((p) => p.stage === 'loadModuleEntry');
-      assert.strictEqual(entry.length, 1);
-      assert.ok(/CHUtil/.test(entry[0].message));
-      done();
-    });
-  });
 });
 
-describe('module-validator: a main entry that exists and throws', () => {
-  // Before the loadModuleEntry check existed, this fixture -- main entry
-  // present on disk and throwing, but with a valid handlers/ tree that
-  // resolveHandlerMap can assemble independently of that entry file --
-  // validated as {ok: true, problems: []}. An author would have shipped a
-  // module that crashes the real server, having been told it was fine.
-  it('reports ok:false with a loadModuleEntry problem, even though handlers/ resolves fine', (done) => {
-    moduleValidator.validateModule(fixture('handler-map-entry-throws'), (err, result) => {
+describe('module-validator: one module format (lib/module-layout.js)', () => {
+  it('a main entry with no handlers/ directory is a "layout" problem with the load\'s code and text', (done) => {
+    moduleValidator.validateModule(fixture('no-index-module'), (err, result) => {
       assert.ifError(err);
       assert.strictEqual(result.ok, false);
-      const entry = result.problems.filter((p) => p.stage === 'loadModuleEntry');
-      assert.strictEqual(entry.length, 1);
-      assert.ok(/boom/.test(entry[0].message));
+      const layout = result.problems.filter((p) => p.stage === 'layout');
+      assert.strictEqual(layout.length, 1, JSON.stringify(result.problems));
+      assert.strictEqual(layout[0].code, 'MODULE_LAYOUT_UNSUPPORTED');
+      assert.match(layout[0].message, /^no-index-module: a module is api\.json, schema\.json and handlers\/<service>\/<action>\.js/);
+      assert.match(layout[0].message, /package\.json "main": "device\.js"/);
       done();
     });
   });
 
-  // The guard: a convention-shaped module with no index.js at all must not
-  // produce a loadModuleEntry problem -- package.json's default main
-  // ('index.js') legitimately does not exist on disk, and require() throwing
-  // MODULE_NOT_FOUND for a file that was never supposed to exist is not an
-  // author error. Already covered by 'reports ok with no problems' above
-  // (handler-map-convention has no index.js and asserts an empty problem
-  // list), so it is not duplicated here.
+  // handler-map-entry-throws: an index.js that throws, beside a valid
+  // handlers/ tree. A main entry is never run, by the runtime or the
+  // validator, so the module is clean (before the one format, the validator
+  // required it and reported a loadModuleEntry problem).
+  it('a module with handlers/ is clean whatever its main entry does: the main entry is never run', (done) => {
+    moduleValidator.validateModule(fixture('handler-map-entry-throws'), (err, result) => {
+      assert.ifError(err);
+      assert.deepStrictEqual(result.problems, []);
+      assert.strictEqual(result.ok, true);
+      done();
+    });
+  });
 });
 
 describe('module-validator: countinghouse.calls', () => {

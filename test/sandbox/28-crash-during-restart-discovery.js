@@ -39,17 +39,17 @@ describe('sandbox 28: a crash during a restarted worker\'s discovery', function(
     const dir = path.join(base, 'stray-output-module');
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'stray-output-module'), dir, {recursive: true});
     const marker = path.join(dir, 'crash-in-discovery');
-    // Once the marker exists, every worker crashes 500 ms into discovery,
-    // before its device would come online (at 3 s).
-    const index = path.join(dir, 'index.js');
-    fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace("this.emit('deviceonline', new Device(), this);",
-      "if (require('fs').existsSync(`${__dirname}/crash-in-discovery`)) {\n" +
-      "    setTimeout(() => process.exit(3), 500);\n" +
-      "    setTimeout(() => this.emit('deviceonline', new Device(), this), 3000);\n" +
-      "  } else this.emit('deviceonline', new Device(), this);"));
-    const device = path.join(dir, 'device.js');
-    fs.writeFileSync(device, fs.readFileSync(device, 'utf8').replace("this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {",
-      "this.setAction('urn:countinghouse-test:serviceID:svc', 'returnsCleanly', (args, callback) => {\n    if (args.input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }"));
+    // Once the marker exists, every worker crashes just after its load has
+    // been answered, before it answers discover: its handler file holds the
+    // worker 500 ms (so the main thread has the load's answer and has sent
+    // discover), then exits. v 'crash' ends a running worker.
+    fs.writeFileSync(path.join(dir, 'handlers', 'svc', 'returnsCleanly.js'),
+      "if (require('fs').existsSync(`${__dirname}/../../crash-in-discovery`)) {\n" +
+      '  setImmediate(() => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500); process.exit(3); });\n' +
+      '}\n' +
+      'module.exports = (input, ctx, callback) => {\n' +
+      "  if (input.v === 'crash') { setTimeout(() => process.exit(3), 50); return callback(null, {output: {v: 'bye'}}); }\n" +
+      '  return callback(null, {output: {v: input.v}});\n};\n');
 
     await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
     await waitFor(async () => (await call('x')).status === 200, 20000, 'the module to answer');

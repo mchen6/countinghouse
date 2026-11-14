@@ -44,6 +44,17 @@ LOG.createLogger(false);
 
 const DeviceManager = require('../../lib/device-manager');
 const WorkerMessage = require('../../lib/worker-message');
+const moduleSpec = require('../../lib/module-spec');
+
+// The main thread's copy of the module's spec (lib/module-spec.js): a worker's
+// device is registered only when it matches, and then as that copy. Each
+// worker here announces exactly its own spec, so the handler reaches the
+// branches under test.
+async function workerWithSpec(friendlyName) {
+  const wm = new WorkerMessage(null);
+  wm.moduleSpec = await moduleSpec.fromParts({device: {friendlyName: friendlyName}}, null);
+  return wm;
+}
 
 // DeviceManager's constructor only ever calls mm.on(...) to wire its own
 // listeners; nothing else on mm is touched by the path under test.
@@ -56,11 +67,11 @@ function emitDeviceOnline(wm, data) {
 }
 
 describe('worker-mode deviceonline handler: conflict guard', () => {
-  it('a refused (conflicting) registration mutates nothing on the WorkerMessage or deviceMap', () => {
+  it('a refused (conflicting) registration mutates nothing on the WorkerMessage or deviceMap', async () => {
     const deviceManager = new DeviceManager(stubModuleManager());
-    const wm = new WorkerMessage(null);
+    const wm = await workerWithSpec('colliding-name');
 
-    const deviceID = 'conflict-device-id';
+    const deviceID = wm.moduleSpec.deviceID;
     const existingEntry = {modulePath: '/modules/holder'};
     deviceManager.deviceMap[deviceID] = existingEntry;
 
@@ -68,7 +79,7 @@ describe('worker-mode deviceonline handler: conflict guard', () => {
 
     emitDeviceOnline(wm, {
       deviceID: deviceID,
-      spec: {device: {friendlyName: 'colliding-name'}},
+      spec: JSON.parse(wm.moduleSpec.specText),
       moduleName: 'incoming-module',
       packageInfo: {name: 'incoming-module'},
       modulePath: '/modules/incoming'
@@ -85,18 +96,17 @@ describe('worker-mode deviceonline handler: conflict guard', () => {
     assert.strictEqual(deviceManager.deviceMap[deviceID], existingEntry);
   });
 
-  it('a non-conflicting registration completes normally', () => {
+  it('a non-conflicting registration completes normally', async () => {
     const deviceManager = new DeviceManager(stubModuleManager());
-    const wm = new WorkerMessage(null);
+    const wm = await workerWithSpec('unique-name');
 
-    const deviceID = 'ok-device-id';
-    const spec = {device: {friendlyName: 'unique-name'}};
+    const deviceID = wm.moduleSpec.deviceID;
 
     deviceManager.onWorkerLoaded(wm);
 
     emitDeviceOnline(wm, {
       deviceID: deviceID,
-      spec: spec,
+      spec: JSON.parse(wm.moduleSpec.specText),
       moduleName: 'a-module',
       packageInfo: {name: 'a-module'},
       modulePath: '/modules/a'
@@ -105,7 +115,8 @@ describe('worker-mode deviceonline handler: conflict guard', () => {
     assert.strictEqual(wm.moduleName, 'a-module');
     assert.deepStrictEqual(wm.packageInfo, {name: 'a-module'});
     assert.strictEqual(wm.modulePath, '/modules/a');
-    assert.strictEqual(wm.deviceList[deviceID], spec);
+    // registered as the main thread's own copy, not the announced object
+    assert.strictEqual(wm.deviceList[deviceID], wm.moduleSpec.spec);
     assert.strictEqual(wm.online, true);
     assert.strictEqual(deviceManager.deviceMap[deviceID], wm);
   });
