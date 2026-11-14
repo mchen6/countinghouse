@@ -960,20 +960,33 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
   });
 
-  // The review of #163 (5): at any time, a worker announces only the
-  // devices its own module's api.json declares (read on the main thread at
-  // the spawn); any other device ID is refused.
-  it('(#163-5) a worker announcing a device its module does not declare is refused, at any time', () => {
+  // The review of #163 (5), as re-checked: device IDs by ownership. A worker
+  // may not announce an ID another module's api.json declares, nor one
+  // another module owns now or owned before; any other ID is owned by the
+  // first module that announces it (a module that makes its devices in
+  // code, test/fixtures/dynamic-discovery-module, still loads).
+  it('(#163-5) device IDs by ownership: another module\'s declared or owned ID is refused; a new one is the first announcer\'s', () => {
     const EventEmitter = require('events');
     const DeviceManager = require('../../lib/device-manager');
-    const wmM = Object.assign(new EventEmitter(), {hostModuleName: 'M', hostModulePath: '/mods/M', hostDeviceIDs: new Set(['dev-M']), deviceList: {}, workerId: 73});
+    const wm = (name, id) => Object.assign(new EventEmitter(), {hostModuleName: name, hostModulePath: `/mods/${name}`, deviceList: {}, workerId: id});
+    const wmM = wm('M', 73);
+    const wmN = wm('N', 74);
     const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true,
-      moduleManager: {modules: {M: wmM}, endedStateForDevice: () => null, clearEndedDevice: () => {}}});
+      moduleManager: {modules: {M: wmM, N: wmN}, endedStateForDevice: () => null, clearEndedDevice: () => {},
+        pinnedDeviceIDs: {T: new Set(['dev-T']), M: new Set(['dev-M']), N: null}}});
     DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
-    const announce = (id) => wmM.emit('deviceonline', {data: {deviceID: id, spec: {device: {friendlyName: id}}, moduleName: 'M', modulePath: '/app'}}, wmM);
-    announce('dev-T');
-    assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took a device it does not declare');
-    announce('dev-M');
+    DeviceManager.prototype.onWorkerLoaded.call(self, wmN);
+    const announce = (w, name, id) => w.emit('deviceonline', {data: {deviceID: id, spec: {device: {friendlyName: id}}, moduleName: name, modulePath: '/app'}}, w);
+    announce(wmM, 'M', 'dev-T');
+    assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took a device T declares');
+    announce(wmM, 'M', 'dev-dyn');
+    assert.strictEqual(self.deviceMap['dev-dyn'], wmM, 'a new device was not its first announcer\'s');
+    delete self.deviceMap['dev-dyn'];   // M's device goes (an unload)
+    announce(wmN, 'N', 'dev-dyn');
+    assert.strictEqual(self.deviceMap['dev-dyn'], undefined, 'N took a device M owned before');
+    announce(wmM, 'M', 'dev-dyn');
+    assert.strictEqual(self.deviceMap['dev-dyn'], wmM, 'its owner could not announce it again');
+    announce(wmM, 'M', 'dev-M');
     assert.strictEqual(self.deviceMap['dev-M'], wmM);
   });
 
