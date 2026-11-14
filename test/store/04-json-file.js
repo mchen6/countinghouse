@@ -375,12 +375,17 @@ describe('store 04: a waiter is not starved (#150)', function() {
       assert.strictEqual(withStoreLock.waited, true, 'did not yield');
       assert.ok(Date.now() - t >= 200, `yielded only ${Date.now() - t} ms`);
       // a dead one, and an old one, are not
-      announce(999999, 0);
+      const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+      announce(Number(gone.stdout), 0);
       withStoreLock(dir, () => {});
       assert.strictEqual(withStoreLock.waited, false, 'yielded to a dead waiter');
       announce(sleeper.pid, 5000);
       withStoreLock(dir, () => {});
       assert.strictEqual(withStoreLock.waited, false, 'yielded to an old announcement');
+      // one dated in the future (a clock stepped back since): not fresh
+      announce(sleeper.pid, -60000);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to an announcement from the future');
     } finally {
       sleeper.kill();
     }
@@ -406,6 +411,52 @@ describe('store 04: a waiter is not starved (#150)', function() {
     assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
   });
 
+  // the review of #160: an announcement is withdrawn on every way out of a
+  // wait, a throw included; a wait that ends yielding says so
+  it('a wait that throws withdraws its announcement', async () => {
+    const dir = tmpStore();
+    const holder = spawn(process.execPath, ['-e', `
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + 300; while (Date.now() < t) { /* hold */ } });
+    `], {stdio: ['ignore', 'pipe', 'ignore']});
+    await new Promise((resolve) => holder.stdout.once('data', resolve));
+    let calls = 0;
+    const realWrite = fs.writeFileSync;
+    fs.writeFileSync = function(file, ...rest) {
+      // the second attempt at the lock file fails with an I/O error
+      if (String(file).endsWith(`${path.sep}.lock`) && ++calls === 2) throw Object.assign(new Error('EIO: i/o error'), {code: 'EIO'});
+      return realWrite.call(this, file, ...rest);
+    };
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}), /EIO/);
+    } finally {
+      fs.writeFileSync = realWrite;
+    }
+    assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
+    await new Promise((resolve) => holder.on('exit', resolve));
+  });
+
+  it('a wait that ends yielding to a waiter names the waiter, not a holder', async () => {
+    const dir = tmpStore();
+    // a live waiter that keeps its announcement fresh for longer than the wait
+    const waiter = spawn(process.execPath, ['-e', `
+      const fs = require('fs');
+      const file = ${JSON.stringify(path.join(dir, '.lock.waiting'))};
+      // renamed over, as the runtime writes it, so no read sees it half written
+      const renew = () => { fs.writeFileSync(file + '.tmp', JSON.stringify({pid: process.pid, startMs: 1, at: Date.now()})); fs.renameSync(file + '.tmp', file); };
+      renew();
+      process.stdout.write('on');
+      setInterval(renew, 100);
+      setTimeout(() => process.exit(0), 6000);
+    `], {stdio: ['ignore', 'pipe', 'ignore']});
+    await new Promise((resolve) => waiter.stdout.once('data', resolve));
+    try {
+      assert.throws(() => withStoreLock(dir, () => {}), (e) => e.message.includes(String(waiter.pid)) && !/held by pid unknown/.test(e.message));
+    } finally {
+      waiter.kill();
+    }
+  });
+
   it('two processes hammering one key both finish, every operation within LOCK_WAIT_MS', async () => {
     const dir = tmpStore();
     const file = path.join(dir, 'm.json');
@@ -420,7 +471,6 @@ describe('store 04: a waiter is not starved (#150)', function() {
     });
     // takes the lock again at once, each time holding it about 2 ms
     const hammer = run(`
-      const f = openJsonFile(${JSON.stringify(file)});
       const end = Date.now() + 3000;
       let n = 0;
       while (Date.now() < end) {
