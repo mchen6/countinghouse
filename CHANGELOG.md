@@ -18,6 +18,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+
+### Added — guarding settings by conversation, part 3
+
+- `countinghouse_settings` answers a raised cap or timeout, or a pack
+  turned on, with `SETTING_NEEDS_CONFIRMATION`, naming the `ch-local`
+  command the user runs to allow it; loosening the sandbox or automatic
+  upgrades is terminal only (`SETTING_LOOSENS_A_GUARD`, naming the command).
+  Requests not made are recorded in the history, once per kind per start.
+- The operator's ceiling (`/etc/countinghouse/ceiling.json`,
+  `%ProgramData%\countinghouse\ceiling.json`): lowers the hard bounds or
+  forbids a loosening; a file an ordinary user could have written fails
+  closed (docs/security-model.md).
 ### Added — packs in place, runtime side: a control channel, change notices and `countinghouse_settings` (#183)
 
 For ch-local's single-identity runtime (`--store local --stdio`, no auth
