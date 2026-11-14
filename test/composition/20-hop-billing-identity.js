@@ -98,7 +98,9 @@ describe('composition 20: a worker states no billing key', () => {
     const wm = new WorkerMessage(worker);
     let seen = null;
     wm.on('querydevice', (m) => { seen = m; });
-    worker.emit('message', {id: 1, category: 'child', command: 'querydevice', errMsg: null, data: {deviceID: 'd', token: 't', appKey: 'stated-key'}});
+    // as a worker sends it: an envelope (#170)
+    const sent = {id: 1, category: 'child', command: 'querydevice', errMsg: null, data: {deviceID: 'd', token: 't', appKey: 'stated-key'}};
+    worker.emit('message', require('../../lib/message-envelope').wrap(sent, Infinity).envelope);
     assert.ok(seen != null, 'the query was not emitted');
     assert.ok(!('appKey' in seen), JSON.stringify(seen));
   });

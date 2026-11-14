@@ -37,10 +37,15 @@ describe('module-loading 25: a serialized reply crosses with its buffer transfer
         }
         const buffer = toArrayBuffer(serialize({output: {n: 7}}));
         wm.sendSerializedReplyToParent(m.id, buffer);
-        parentPort.postMessage({id: 'left', left: buffer.byteLength});
+        // the test's own report, as an envelope too (#170)
+        const w = require(${JSON.stringify(path.join(LIB, 'message-envelope'))}).wrap({id: 'left', left: buffer.byteLength}, 1e6);
+        parentPort.postMessage(w.envelope, w.transfer);
       });`, {eval: true});
     try {
-      const left = new Promise((resolve) => worker.on('message', (m) => { if (m != null && m.id === 'left') resolve(m.left); }));
+      const left = new Promise((resolve) => worker.on('message', (raw) => {
+        const m = require(path.join(LIB, 'message-envelope')).unwrap(raw, 1e6).message;
+        if (m != null && m.id === 'left') resolve(m.left);
+      }));
       const main = new WorkerMessage(worker);
       const real = v8.deserialize;
       let reads = 0;

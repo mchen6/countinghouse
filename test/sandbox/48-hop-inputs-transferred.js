@@ -132,16 +132,31 @@ describe('sandbox 48: a routed hop\'s input crosses as a transferred buffer', fu
     assert.strictEqual(await runs(), before);
   });
 
+  it('one just under the cap passes', async () => {
+    const n = CAP - 64;
+    assert.deepStrictEqual((await callerDo('send', {n: n})).body.output.result, expected(n));
+  });
+});
+
+// The swap needs a module that shares its worker's realm and posts past the
+// runtime: --moduleSandbox off. Under audit and enforce that route is closed
+// by #186's pinning of the worker's port (a patched MessagePort.prototype
+// never sees the runtime's messages). The main thread's refusal is what is
+// tested.
+describe('sandbox 48: a value where a hop\'s input bytes belong (--moduleSandbox off)', function() {
+  this.timeout(180000);
+  let server = null;
+  before(async () => {
+    server = await startServer(PORT, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
+      '--no-directPeerChannels', '--moduleSandbox', 'off', '--maxOutputBytes', String(CAP), '--requestTimeout', '60']);
+  });
+  after(() => stopServer(server));
+
   it('a hop whose module swaps its input bytes for a value is refused on the main thread, and the callee does not run', async () => {
     const before = await runs();
     const r = await callerDo('sendAsValue', {});
     assert.strictEqual(r.body.output.code, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(r.body).slice(0, 500));
     assert.match(r.body.output.message, /a hop's input must cross as bytes/);
     assert.strictEqual(await runs(), before);
-  });
-
-  it('one just under the cap passes', async () => {
-    const n = CAP - 64;
-    assert.deepStrictEqual((await callerDo('send', {n: n})).body.output.result, expected(n));
   });
 });

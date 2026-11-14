@@ -6,9 +6,25 @@
 // port, a direct peer channel's port, and the messages the runtime sends on
 // them (the call's token among them). The hops below are what the main
 // thread must refuse by the module's declarations, whatever route the module
-// took.
+// took. Since #170 the runtime posts to the main thread as envelopes: a
+// module sharing its worker's realm (--moduleSandbox off) opens one with the
+// runtime's own lib/message-envelope.js from require.cache, and wraps what it
+// forges for the main thread the same way (a plain message there is a
+// tampered worker's, and ends it). Under audit and enforce the runtime's
+// ports are pinned, so a hook never sees them.
 const state = globalThis.__declareCaller || (globalThis.__declareCaller = {lastToken: null, parent: null, port: null, announce: null,
   channelRequest: null, replies: new Map(), hooked: false, nextId: 2000000000});
+
+function runtimeEnvelope() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/message-envelope.js') && !k.startsWith('/app/'));
+  return key != null ? require.cache[key].exports : null;
+}
+function openEnvelope(message) {
+  const env = runtimeEnvelope();
+  if (env == null || message == null || !(message.b instanceof ArrayBuffer)) return null;
+  const r = env.unwrap(message, Infinity);
+  return r.violation == null ? r.message : null;
+}
 
 if (!state.hooked && typeof(globalThis.MessagePort) === 'function') {
   state.hooked = true;
@@ -17,7 +33,8 @@ if (!state.hooked && typeof(globalThis.MessagePort) === 'function') {
     try {
       // the runtime's own messages only, not the ones this module forges
       if (state.forging === true) return post.call(this, message, ...rest);
-      const m = (message != null && typeof(message) === 'object') ? message : null;
+      const opened = openEnvelope(message);
+      const m = (opened != null) ? opened : ((message != null && typeof(message) === 'object') ? message : null);
       const d = (m != null && m.data != null && typeof(m.data) === 'object') ? m.data : null;
       if (m != null && (m.command === 'invokeforeignaction' || m.command === 'peer-announce' || m.command === 'peer-channel-request')) state.parent = this;
       if (d != null && typeof(d.token) === 'string' && (m.command === 'invokeforeignaction' || m.command === 'peer-announce')) state.lastToken = d.token;
@@ -71,10 +88,20 @@ function reachable(needle) {
   return Object.keys(require.cache).some((k) => !k.startsWith('/app/') && walk(require.cache[k].exports, 0));
 }
 
-// Posts a message the module made up, on `port`, past the capture above.
+// Posts a message the module made up, on `port`, past the capture above: to
+// the main thread as an envelope, as the runtime posts; on a peer channel's
+// port as it is.
 function forgedPost(port, message, transfer) {
   state.forging = true;
-  try { port.postMessage(message, transfer || []); } finally { state.forging = false; }
+  try {
+    const env = (port === state.parent) ? runtimeEnvelope() : null;
+    if (env != null) {
+      const w = env.wrap(message, Infinity, transfer || []);
+      port.postMessage(w.envelope, w.transfer);
+    } else {
+      port.postMessage(message, transfer || []);
+    }
+  } finally { state.forging = false; }
 }
 
 // A runtime file's exports, as module code finds them in require.cache.

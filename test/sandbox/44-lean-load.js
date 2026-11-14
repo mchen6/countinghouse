@@ -18,7 +18,11 @@ function start() {
   const worker = new Worker(path.join(ROOT, 'lib', 'lean-worker.js'));
   const pending = new Map();
   let id = 0;
-  worker.on('message', (m) => {
+  // the worker's messages are envelopes (#170, lib/message-envelope.js)
+  const {unwrap} = require('../../lib/message-envelope');
+  worker.on('message', (raw) => {
+    const r = unwrap(raw, Infinity);
+    const m = (r.violation == null) ? r.message : null;
     if (m != null && m.category === 'reply' && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
   });
   const send = (command, fields) => new Promise((resolve) => {
