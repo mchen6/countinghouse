@@ -26,6 +26,14 @@
       "output": {
         "type": "object"
       }
+    },
+    "callThenUsage": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

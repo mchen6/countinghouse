@@ -51,6 +51,23 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `--store redis` node_redis's multi runs any command name queued in it.
   Single-thread mode's `ctx.redis` is namespaced the same way.
 
+### Added — `ctx.usage()`: the current call's counts so far
+
+- `ctx.usage()` resolves with the current tools/call's counts so far,
+  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  (and `standIn` when a stand-in answered). `sentence` is the first half of
+  the receipt's sentence, word for word. Every remote server call made under
+  the call is counted, its parts' included. The call's own output is not
+  counted, since it is measured when the call returns. A scenario writes its
+  receipt sentence from these counts, so the sentence reaches the model in
+  its summary. It is `null` outside a counted call, and never carries a key,
+  an id or a caller.
+- A worker's query is checked on the main thread. The call's token is
+  checked first, always: it must be one issued to that worker (else
+  `CALL_TOKEN_INVALID`). Then anything but an open call that worker was
+  given answers `null` alike, so a module cannot tell another worker's
+  open call from a finished one.
+
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
 - `runsModules` (and sqlite's `module_identities`) names the module the
