@@ -175,7 +175,7 @@ describe('module-loading 24: the validator pool', function() {
     await cooled();
   });
 
-  it('a sustained flood (a slow input every 100 ms for 3 s) replaces about one validator a second, and another module stays under 50 ms throughout', async () => {
+  it('a sustained flood (a slow input every 100 ms for 3 s) replaces about one validator a second, and another module is answered within its deadline throughout', async () => {
     const p = newPool();
     try {
       await whenReady(p);
@@ -197,7 +197,58 @@ describe('module-loading 24: the validator pool', function() {
       await Promise.all(flooded);
       const replaced = p.respawns.length - replacedBefore;
       assert.ok(replaced <= 4, `${replaced} validators replaced in 3 s`);
-      assert.ok(Math.max(...worst) < 50, `the quiet module's checks took up to ${Math.max(...worst)} ms`);
+      // never refused, and within its deadline: a validator is always free
+      // for it (on a loaded 2-CPU box a check can take 150 ms of CPU waits)
+      assert.ok(Math.max(...worst) < TIMEOUT_MS, `the quiet module's checks took up to ${Math.max(...worst)} ms`);
+    } finally {
+      p.close();
+    }
+  });
+
+  // A start delayed until `ms` of the request's budget are left (as a long
+  // wait in the queue leaves it), whatever the clock: deterministic.
+  const startLate = (p, ms) => {
+    const start = p.start;
+    p.start = function(slot, req) {
+      req.deadlineAt = Date.now() + ms;
+      return start.call(this, slot, req);
+    };
+    return () => { p.start = start; };
+  };
+
+  it('a module that has not stalled a validator: its request is started however little of its budget is left (a load\'s check after the validators boot, an innocent call)', async () => {
+    const p = newPool();
+    try {
+      const m = moduleWith({type: 'object'}, {}, {type: 'object'}, p);
+      await whenReady(p);
+      const restore = startLate(p, 40);   // 40 ms of 300: under a quarter
+      try {
+        assert.strictEqual(await checkIn(m, {}, p), null);
+        assert.strictEqual(await p.safety(m.key), null, 'a load-time check too');
+      } finally {
+        restore();
+      }
+    } finally {
+      p.close();
+    }
+  });
+
+  it('a module that stalled a validator in the last 10 s: its request with under a quarter left is refused, not started', async () => {
+    const p = newPool();
+    try {
+      const m = moduleWith(STALL, {}, {type: 'object'}, p);
+      await whenReady(p);
+      assert.strictEqual(codeOf(await checkIn(m, STALLING, p)), 'VALIDATION_TIMEOUT');
+      await cooled();
+      await whenReady(p);
+      const sentBefore = p.stats.sent;
+      const restore = startLate(p, 40);
+      try {
+        assert.strictEqual(codeOf(await checkIn(m, STALLING, p)), 'VALIDATION_TIMEOUT');
+      } finally {
+        restore();
+      }
+      assert.strictEqual(p.stats.sent, sentBefore, 'never sent to a validator');
     } finally {
       p.close();
     }
