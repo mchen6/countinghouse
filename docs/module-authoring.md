@@ -149,6 +149,9 @@ a module is listed as it always was.
   (`PART_MISSING`) or when a bare name is already a listed tool's, a runtime
   built-in's or an earlier scenario's (`TOOL_NAME_TAKEN`). The log says which. Other modules load
   normally.
+- **A part two scenarios share is loaded once.** A runtime holds one version
+  of a module, so if they need it at different versions, the later scenario
+  is not loaded (`PART_VERSION_CONFLICT`).
 - **The single-identity profile** (`--store local` without
   `--authConfigPath`) lists only the scenarios' tools. The balance check and
   the authoring tools are not listed, and a call to them by name answers

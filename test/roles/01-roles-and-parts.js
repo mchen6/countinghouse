@@ -217,4 +217,43 @@ describe('--loadModule expands a scenario in the module manager', () => {
       roles.expandLoadList = original;
     }
   });
+
+  // Packs in place (part 2, plan Task A1): each pack version has a tree of its
+  // own (<home>/packs/<name>/<version>/node_modules), so two packs that share
+  // a part each bring a copy. A runtime holds one version of a module.
+  describe('a part two scenarios share, from trees of their own', () => {
+    function packTree(packName, scenarioName, tool, partVersion) {
+      const nm = path.join(root, 'packs', packName, '1.0.0', 'node_modules');
+      const scenario = moduleAt(path.join(nm, '@countinghouse', scenarioName), {name: `@countinghouse/${scenarioName}`, role: 'scenario', actions: [tool],
+        calls: ['ch-step-shared/svc.run']});
+      const part = moduleAt(path.join(nm, '@countinghouse', 'ch-step-shared'), {name: '@countinghouse/ch-step-shared', role: 'part'});
+      if (partVersion != null) {
+        const pkgFile = path.join(part, 'package.json');
+        fs.writeFileSync(pkgFile, JSON.stringify({...JSON.parse(fs.readFileSync(pkgFile, 'utf8')), version: partVersion}));
+      }
+      return scenario;
+    }
+
+    it('the same name at the same version loads once, and both scenarios load; owners name both', () => {
+      const one = packTree('one', 'ch-pack-one', 'tool_one');
+      const two = packTree('two', 'ch-pack-two', 'tool_two');
+      const {load, refused, owners} = roles.expandLoadList([one, two]);
+      assert.deepStrictEqual(refused, []);
+      assert.deepStrictEqual(load.map((m) => m.name).sort(), ['@countinghouse/ch-pack-one', '@countinghouse/ch-pack-two', '@countinghouse/ch-step-shared']);
+      const shared = load.find((m) => m.name === '@countinghouse/ch-step-shared');
+      assert.strictEqual(shared.listed, false);
+      assert.deepStrictEqual([...owners.get('@countinghouse/ch-step-shared')].sort(), ['@countinghouse/ch-pack-one', '@countinghouse/ch-pack-two']);
+      assert.deepStrictEqual([...owners.get('@countinghouse/ch-pack-one')], ['@countinghouse/ch-pack-one']);
+    });
+
+    it('the same name at another version: the later scenario is refused PART_VERSION_CONFLICT, and nothing of it loads', () => {
+      const one = packTree('one', 'ch-pack-one', 'tool_one');
+      const two = packTree('two', 'ch-pack-two', 'tool_two', '2.0.0');
+      const {load, refused} = roles.expandLoadList([one, two]);
+      assert.deepStrictEqual(load.map((m) => m.name).sort(), ['@countinghouse/ch-pack-one', '@countinghouse/ch-step-shared']);
+      assert.strictEqual(load.find((m) => m.name === '@countinghouse/ch-step-shared').version, '1.0.0');
+      assert.deepStrictEqual(refused.map((r) => ({code: r.code, name: r.name, part: r.part, versions: r.versions})),
+        [{code: 'PART_VERSION_CONFLICT', name: '@countinghouse/ch-pack-two', part: '@countinghouse/ch-step-shared', versions: ['1.0.0', '2.0.0']}]);
+    });
+  });
 });

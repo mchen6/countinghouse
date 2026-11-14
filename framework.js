@@ -67,6 +67,20 @@ if (options.remoteLimitInvalid != null) {
     JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// Packs in place (part 2): the control channel exists only between ch-local
+// start and the runtime it spawned, in the single-identity profile, over an
+// IPC fd. --hardened relaunches this process as a child, which the channel
+// would not reach: refused together, for now.
+if (options.controlChannel != null) {
+  var controlRefusal = options.controlChannel !== 'ipc' ? 'takes ipc'
+    : options.singleIdentity !== true ? 'is only for the single-identity profile (ch-local start)'
+      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one'
+        : options.hardened === true ? 'cannot be used with --hardened yet' : null;
+  if (controlRefusal != null) {
+    console.error('--controlChannel ' + controlRefusal + ' (got ' + JSON.stringify(String(options.controlChannel)) + ')');
+    process.exit(2);
+  }
+}
 // Lean worker step 1(b): the validator pool's size and deadline.
 if (options.validatorLimitInvalid != null) {
   console.error('--' + options.validatorLimitInvalid.name + ' must be ' + options.validatorLimitInvalid.what + ' (got ' +
