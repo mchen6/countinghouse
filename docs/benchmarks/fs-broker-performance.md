@@ -144,3 +144,13 @@ broker serves). Under `enforce`:
   recommended unless a module needs it.
 
 So proposal 3 adds no op: there is nothing in the workloads to fold.
+
+## Where the five proposals ended (2026-11-14)
+
+| Proposal | Result |
+|---|---|
+| 2: no readlink for an existing file in `/data`/`/tmp` | **Dropped.** One pool job fewer per `enforce` round (26 → 25); no wall-clock gain beyond the sessions' spread, and it would add a residual against the host. Code and tests on `b-fsb-p2`. |
+| 4: profile the main thread, fix what it shows | **Waiting on the user.** The profile: fs bindings about 15% of the main thread, GC 7%, the broker's own JavaScript under 4%. Its one candidate (one deadline sweep instead of a timer per request, `b-fsb-p4-sweep`) saves no main-thread CPU and gave mixed wall-clock results; recommended not kept. |
+| 3: compound ops | **Nothing to fold.** The trace shows the loader's reads bypass the broker, the common calls are already single ops, and the rest are the module's own call sequences. No op added; a compound `cp` only if a module needs one. |
+| 1: direct I/O on verified descriptors, with write leases | **Deferred until after the first release.** With the broker's own JavaScript under 4% of the main thread, the remaining cost is the hand-offs themselves; proposal 1 is the one change aimed there, but it is large and opens a security boundary (the worker holding real descriptors). |
+| 5: file threads | Not started: it follows proposal 1 in the landing order. |
