@@ -43,7 +43,7 @@ const hostFs = {
     return FILES[hit];
   }
 };
-hostFs.lstat = hostFs.stat;
+hostFs.lstat = async(p, o) => Object.assign({isSymbolicLink: () => false}, await hostFs.stat(p, o));
 
 const DENIED = ['C:\\ch\\auth.json', 'C:\\ch\\auth.json-journal', 'C:\\ch\\moddata\\.identity-secret', 'D:\\ch\\auth.json-journal', 'D:\\ch\\.identity-secret'];
 
