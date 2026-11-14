@@ -1,0 +1,1 @@
+{"name": "fs-bench", "version": "1.0.0", "description": "file workloads for perf/fs-broker-workloads.js: small writes, a tree walk, a dependency-heavy load"}

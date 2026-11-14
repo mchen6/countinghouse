@@ -813,7 +813,15 @@ these checks still takes too long to compile or to validate a value.
 A handler file threw while being required — a syntax error, a missing
 `require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
 
-### 6. No error at all, and the module is listed as loaded
+### 6. The log says `MODULE_LOAD_TIMEOUT`
+
+Your module did not finish loading within the operator's
+`--moduleLoadTimeout` (120 s by default), and its worker was ended. Something
+your module runs while it is required never returns: a busy loop, an
+`Atomics.wait`, a synchronous read that never ends. Do that work in an action,
+or start it asynchronously after load.
+
+### 7. No error at all, and the module is listed as loaded
 
 Then the device did come online, and the problem is downstream:
 
