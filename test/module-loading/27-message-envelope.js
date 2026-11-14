@@ -66,6 +66,28 @@ describe('module-loading 27: messages to the main thread cross as bounded bytes 
     }
   });
 
+  it('a view whose stated length runs past the bytes is refused before anything that size is allocated', () => {
+    const {Serializer} = require('v8');
+    const s = new Serializer();
+    s._setTreatArrayBufferViewsAsHostObjects(true);
+    s._writeHostObject = function() { this.writeUint32(1); this.writeUint32(0xfffffff0); };
+    s.writeHeader();
+    s.writeValue({a: new Uint8Array(4)});
+    const buf = s.releaseBuffer();
+    const r = unwrap({b: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)}, CAP);
+    assert.match(r.violation, /could not be read/);
+  });
+
+  it('module workers get a young generation and a stack limit beside the heap, under audit and enforce; none under off', () => {
+    const build = require('../../lib/module-sandbox-config').build;
+    const dir = require('path').join(__dirname, '..', 'fixtures', 'message-bound');
+    for (const mode of ['audit', 'enforce']) {
+      const c = build(dir, 'message-bound', {mode, modulePolicy: null, serverEnv: {}, redisUrl: null});
+      assert.deepStrictEqual(c.workerOptions.resourceLimits, {maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 64, stackSizeMb: 4});
+    }
+    assert.strictEqual(build(dir, 'message-bound', {mode: 'off', modulePolicy: null, serverEnv: {}, redisUrl: null}), null);
+  });
+
   it('a reply over the cap is answered MESSAGE_TOO_LARGE, not as a crash', () => {
     const posted = [];
     CountinghouseError.postReply((m) => {

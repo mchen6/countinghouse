@@ -98,8 +98,10 @@ describe('fs-broker 06: the bridge', function() {
   });
 
   // #170: every call is an envelope of bounded bytes
-  it('a call that is not an envelope, or is over the cap, is not served: it is reported and answered EINVAL at once', async () => {
+  it('a call that is not an envelope, or is over the cap, is not served: it is reported, answered EINVAL at once, and ends the worker', async () => {
     const h = await harness({});
+    const ended = [];
+    h.bridge.setOnViolation((why) => ended.push(why));
     try {
       const port = h.bridge.transfer.syncPort;
       port.postMessage({id: 1, op: 'stat', args: ['/data']});
@@ -111,6 +113,7 @@ describe('fs-broker 06: the bridge', function() {
       while ((msg = receiveMessageOnPort(port)) !== undefined) got.push(msg.message);
       assert.deepStrictEqual(got.map((m) => [m.id, m.ok, m.error.code]), [[null, false, 'EINVAL'], [null, false, 'EINVAL']], JSON.stringify(got));
       assert.ok(h.reports.filter((r) => r.startsWith('message ')).length >= 2, JSON.stringify(h.reports));
+      assert.strictEqual(ended.length, 2, JSON.stringify(ended));
     } finally { await h.done(); }
   });
 
