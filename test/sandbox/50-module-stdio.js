@@ -11,7 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {ROOT, startServer, stopServer, mcpCall, post} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY = 'k';
@@ -76,7 +76,22 @@ for (const mode of ['enforce', 'audit']) {
       await settle(1000);
       const drops = lines().filter((l) => /^stdout-flood: \d+ bytes of stdout dropped$/.test(l));
       assert.strictEqual(drops.length, 1, drops.join('\n'));
-      assert.ok(Number(drops[0].match(/(\d+) bytes/)[1]) > 9 * 1024 * 1024, drops[0]);
+      // counted as written: each dropped line at its 8 KiB cut, prefix and newline
+      assert.ok(Number(drops[0].match(/(\d+) bytes/)[1]) > 1000000, drops[0]);
+    });
+
+    it('a million empty lines write at most 256 KiB, prefix and newline counted (the review of #190)', async () => {
+      // a module of its own again: the flood's budget is spent
+      assert.strictEqual((await post(PORT, KEY, '/load-module', {path: FIXTURE})).status, 200);
+      await waitFor(async () => {
+        try { return (await mcpCall(PORT, KEY, 'stdout_flood_outservice_say', {})).structuredContent != null; } catch (e) { return false; }
+      }, 60000, 'stdout-flood back');
+      const mark = server.output.length;
+      await call('emptyFlood', {n: 1000000});
+      await settle(1500);
+      const written = server.output.slice(mark).split('\n').filter((l) => l === 'stdout-flood: ').length;
+      assert.ok(written * Buffer.byteLength('stdout-flood: \n') <= 256 * 1024, `${written} empty lines written`);
+      assert.ok(written > 1000, `${written} empty lines written`);
     });
   });
 }

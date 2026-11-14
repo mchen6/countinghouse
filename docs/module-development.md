@@ -241,9 +241,12 @@ validator workers, which all modules share:
   for you, so it has no such limit.
 - what you write to stdout and stderr (and `console`) reaches the
   operator's log line by line, prefixed with your module's name: each line
-  cut at 8 KiB, control characters other than tab removed, and at most
-  256 KiB a minute per stream under audit and enforce; past that it is
-  dropped and counted. Use the log for diagnostics, not for data.
+  cut at 8 KiB, control characters other than tab removed (and the line
+  separators and bidi controls), and under audit and enforce at most
+  256 KiB a minute per stream of what is written, each line counted with
+  its prefix and newline; past that it is dropped and counted. The streams
+  are the runtime's: assigning `process.stdout` throws (`TypeError`) in
+  strict mode. Use the log for diagnostics, not for data.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load

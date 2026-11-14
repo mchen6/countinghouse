@@ -1,132 +1,203 @@
-// The main thread's side of a module worker's output and log (the review of
-// #186, lib/worker-output.js): lines cut at 8 KiB and stripped of control
-// characters, a per-minute byte budget that counts what it drops (and what
-// the worker says it dropped) and says it once, and log records named by the
-// main thread with their fields cut. Server-free.
+// A module worker's output and log, bounded (the review of #186 and of #190):
+// lines cut at 8 KiB and stripped of control characters, line separators and
+// bidi controls; each line charged what writing it costs, in the worker and
+// again on the main thread, so a flood of empty lines writes at most the
+// budget; output and records that could not be sent are counted, never lost
+// silently; log records named by the main thread and charged a minimum each.
+// Server-free.
 const assert = require('assert');
-const out = require('../../lib/worker-output');
-const LOG = require('../../lib/logger');
 const path = require('path');
 const {Worker} = require('worker_threads');
+const out = require('../../lib/worker-output');
+const lines = require('../../lib/output-lines');
+const limits = require('../../lib/output-limits');
+const envelope = require('../../lib/message-envelope');
+const LOG = require('../../lib/logger');
 
-describe('module-loading 29: a module worker\'s output and log, bounded on the main thread', () => {
-  it('lines: split on \\n across pushes, control characters but \\t removed, a long line cut once with "…"', () => {
-    const s = new out.LineSplitter();
+const LIB = path.join(__dirname, '..', '..', 'lib');
+
+describe('module-loading 29: a module worker\'s output and log, bounded', () => {
+  it('lines: split on \\n across pushes; control characters, line separators and bidi controls removed, \\t kept; a long line cut once', () => {
+    const s = new lines.LineSplitter();
     assert.deepStrictEqual(s.push('a\x1b[31mb\tc\x07\nhal'), ['a[31mb\tc']);
-    assert.deepStrictEqual(s.push('f\r\x9b2J\n\n'), ['half2J', '']);
+    assert.deepStrictEqual(s.push('f\r\x9b2J\u2028x\u2029y\u202ez\u2066w\n\n'), ['half2Jxyzw', '']);
     const long = s.push(`${'é'.repeat(5000)}${'z'.repeat(100)}\nnext\n`);
     assert.strictEqual(long.length, 2);
-    assert.ok(long[0].endsWith('…') && Buffer.byteLength(long[0]) <= out.LINE_MAX, `${Buffer.byteLength(long[0])}`);
-    assert.ok(!long[0].includes('�'), 'no character split');
+    assert.ok(long[0].endsWith('…') && Buffer.byteLength(long[0]) <= limits.LINE_MAX, `${Buffer.byteLength(long[0])}`);
+    assert.ok(!long[0].includes('\uFFFD'), 'no character split');
     assert.strictEqual(long[1], 'next');
     assert.deepStrictEqual(s.push('tail'), []);
     assert.deepStrictEqual(s.end(), ['tail']);
+    assert.strictEqual(lines.cleanField('a\nb\u202ec\x1b'), 'a\nbc', 'a log field keeps \\n');
   });
 
-  it('a budget: past its limit dropped and counted, with the worker\'s own count, said once when the window ends', () => {
+  it('a budget: past its limit dropped and counted, said once when the window ends', () => {
     let t = 0;
-    const b = new out.Budget(100, () => t);
+    const b = new lines.Budget(100, () => t);
     const said = [];
     b.onDropped = (d) => said.push(d);
     assert.strictEqual(b.take(60), true);
     assert.strictEqual(b.take(60), false);
-    b.drop(1000);
-    t = out.WINDOW_MS - 1;
+    b.drop(1000, 0);
+    t = limits.WINDOW_MS - 1;
     b.roll();
     assert.deepStrictEqual(said, []);
-    t = out.WINDOW_MS;
+    t = limits.WINDOW_MS;
     assert.strictEqual(b.take(60), true, 'a new window');
-    assert.deepStrictEqual(said, [{bytes: 1060, items: 2}]);
+    assert.deepStrictEqual(said, [{bytes: 1060, items: 1}]);
     b.roll(true);
     assert.strictEqual(said.length, 1, 'nothing dropped, nothing said');
   });
 
-  it('output: each line named by the main thread; under --stdio both streams go to stderr', () => {
+  it('main thread: each line named and charged prefix + bytes + newline; a flood of empty lines writes at most the backstop', () => {
     const written = [];
     out.setSink((stream, line) => written.push([stream, line]));
     const wm = {hostModuleName: 'mod-a'};
-    out.onOutput(wm, 'stdout', {text: 'one\ntw'});
-    out.onOutput(wm, 'stdout', {text: 'o\n'});
-    out.onOutput(wm, 'stderr', {text: 'err\n'});
+    out.onOutput(wm, 'stdout', {lines: ['one', 'two\x1b[0m']});
+    out.onOutput(wm, 'stderr', {lines: ['err']});
+    assert.deepStrictEqual(written, [['stdout', 'mod-a: one'], ['stdout', 'mod-a: two[0m'], ['stderr', 'mod-a: err']]);
+    written.length = 0;
+    for (let i = 0; i < 200; i++) out.onOutput(wm, 'stdout', {lines: new Array(1000).fill('')});
+    const bytes = written.reduce((n, [, l]) => n + Buffer.byteLength(l) + 1, 0);
+    // a worker that ignores its own budget (an honest one stays within STREAM_BUDGET)
+    assert.ok(bytes <= limits.STREAM_BACKSTOP, `${bytes} bytes written`);
+    assert.ok(bytes > limits.STREAM_BACKSTOP - 64, `${bytes} bytes written`);
+    written.length = 0;
     out.onOutput(wm, 'stdout', {dropped: 5000});
     out.end(wm);
-    assert.deepStrictEqual(written, [['stdout', 'mod-a: one'], ['stdout', 'mod-a: two'], ['stderr', 'mod-a: err'], ['stdout', 'mod-a: 5000 bytes of stdout dropped']]);
+    assert.strictEqual(written.length, 1);
+    assert.match(written[0][1], /^mod-a: \d+ bytes of stdout dropped$/);
+    assert.ok(Number(written[0][1].match(/(\d+) bytes/)[1]) > 5000);
   });
 
-  it('log: the main thread\'s name for the module, never the record\'s; fields cut; past 1 MiB dropped and summed up once', () => {
+  it('main thread: anything but a list of strings is not output, and is counted', () => {
+    const written = [];
+    out.setSink((stream, line) => written.push(line));
+    const wm = {hostModuleName: 'mod-x'};
+    for (const data of [{text: 'old shape\n'}, {lines: 'x'}, {lines: ['ok', 1]}, {lines: new Array(limits.BATCH_UNITS + 1).fill('a')}]) out.onOutput(wm, 'stdout', data);
+    out.end(wm);
+    assert.deepStrictEqual(written, ['mod-x: 3 bytes of stdout dropped']);
+  });
+
+  it('main thread: a message past --moduleMessageRate is counted at its lines\' cost, without writing them', () => {
+    const written = [];
+    out.setSink((stream, line) => written.push(line));
+    const wm = {hostModuleName: 'mod-r'};
+    out.onRateDropped(wm, 'stdout', {lines: ['abc', '']});
+    out.end(wm);
+    assert.deepStrictEqual(written, [`mod-r: ${2 * Buffer.byteLength('mod-r: ') + 3 + 2} bytes of stdout dropped`]);
+  });
+
+  it('log: named by the main thread, fields cut and cleaned; each record costs at least 256 bytes; lost records counted', () => {
     const saved = {logger: LOG.logger, W: LOG.W};
     const records = [];
     const warned = [];
-    LOG.logger = {info: (rec, msg) => records.push({rec, msg}), warn: (rec, msg) => records.push({rec, msg}), error: (rec, msg) => records.push({rec, msg})};
+    const keep = (level) => (rec, msg) => records.push({level, rec, msg});
+    LOG.logger = {info: keep('info'), warn: keep('warn'), error: keep('error'), fatal: keep('fatal')};
     LOG.W = (line) => warned.push(line);
     try {
       const wm = {hostModuleName: 'mod-a'};
-      out.onLog(wm, {level: 30, msg: 'hello', module: 'someone-else', name: 'forged'});
-      out.onLog(wm, {level: 50, msg: 'x'.repeat(20000), e: 'boom'});
-      assert.deepStrictEqual(records[0], {rec: {module: 'mod-a'}, msg: 'hello'});
-      assert.ok(records[1].msg.endsWith('…') && Buffer.byteLength(records[1].msg) <= out.FIELD_MAX);
-      assert.strictEqual(records[1].rec.e, 'boom');
-      for (let i = 0; i < 300; i++) out.onLog(wm, {level: 30, msg: 'y'.repeat(4096)});
-      assert.ok(records.length < 300, `${records.length} written`);
+      out.onLog(wm, {level: 30, msg: 'hello\u202e', module: 'someone-else'});
+      out.onLog(wm, {level: 50, msg: 'x'.repeat(20000), e: 'boom\nat line 2'});
+      out.onLog(wm, {level: 'constructor', msg: 'odd level'});
+      out.onLog(wm, {level: 60, msg: 'y', de: 'dev: broke'});
+      assert.deepStrictEqual(records[0], {level: 'info', rec: {module: 'mod-a'}, msg: 'hello'});
+      assert.ok(records[1].msg.endsWith('…') && Buffer.byteLength(records[1].msg) <= limits.FIELD_MAX);
+      assert.strictEqual(records[1].rec.e, 'boom\nat line 2');
+      assert.deepStrictEqual([records[2].level, records[3].level, records[3].rec.de], ['info', 'fatal', 'dev: broke']);
+      assert.strictEqual(LOG.deviceErrorSerializer('dev: broke'), 'dev: broke');
+      records.length = 0;
+      for (let i = 0; i < 10000; i++) out.onLog(wm, {level: 30});
+      assert.ok(records.length <= limits.LOG_BUDGET / limits.RECORD_MIN, `${records.length} empty records written`);
+      out.onLog(wm, {level: 30, msg: 'z', lost: 7});
+      const before = records.length;
+      out.onLog(wm, {level: 30, lost: 5});
+      out.onLog(wm, {level: 30, lost: 2 ** 52});
+      assert.strictEqual(records.length, before, 'a count alone writes nothing');
       out.end(wm);
       assert.strictEqual(warned.length, 1);
-      assert.match(warned[0], /^mod-a: \d+ log records \(\d+ bytes\) dropped$/);
+      const m = warned[0].match(/^mod-a: (\d+) log records \((\d+) bytes\) dropped$/);
+      assert.ok(m != null && Number(m[1]) > 12 && Number.isSafeInteger(Number(m[2])), warned[0]);
     } finally {
       Object.assign(LOG, saved);
     }
   });
 
-  it('worker side: process.stdout, stderr and console write to the module streams; a write Node acknowledges after the swap does not crash the worker', async () => {
-    const lib = path.join(__dirname, '..', '..', 'lib');
+  it('the largest batch the worker sends fits the envelope at the smallest --maxOutputBytes', () => {
+    const cap = envelope.capFor(1);
+    // two-byte characters: the serializer's widest form
+    const line = 'é\u4e00'.repeat(2048).slice(0, 4095);
+    const batch = [];
+    let units = 0;
+    while (units + line.length + 1 <= limits.BATCH_UNITS) { batch.push(line); units += line.length + 1; }
+    assert.doesNotThrow(() => envelope.wrap({id: 'stdout', category: 'child', command: 'stdout', errMsg: null, data: {lines: batch}}, cap));
+    const empties = new Array(limits.BATCH_UNITS).fill('');
+    assert.doesNotThrow(() => envelope.wrap({id: 'stdout', category: 'child', command: 'stdout', errMsg: null, data: {lines: empties}}, cap));
+    const record = {level: 50, msg: '\u4e00'.repeat(limits.FIELD_MAX), e: '\u4e00'.repeat(limits.FIELD_MAX), de: '\u4e00'.repeat(limits.FIELD_MAX), lost: 3};
+    assert.doesNotThrow(() => envelope.wrap({id: 'log', category: 'child', command: 'log', errMsg: null, data: record}, cap));
+  });
+
+  it('worker side: getters, console and _rawDebug write lines; empty lines are charged as written; a batch that cannot be sent is counted', async () => {
     const w = new Worker(`
       const {parentPort} = require('worker_threads');
       console.log('before the swap, on Node\\'s own stdout');
       const sent = [];
-      const {installModuleStdio} = require(${JSON.stringify(path.join(lib, 'worker-stdio'))});
-      const streams = installModuleStdio({send: (stream, data) => sent.push([stream, data])});
+      let failNext = false;
+      const {installModuleStdio} = require(${JSON.stringify(path.join(LIB, 'worker-stdio'))});
+      const streams = installModuleStdio('mod-w', {send: (stream, data) => {
+        if (failNext && data.lines) { failNext = false; return false; }
+        sent.push([stream, data]);
+        return true;
+      }});
       console.log('via console');
       process.stderr.write('via stderr\\n');
       process._rawDebug('via rawDebug');
       process.stdout.write('é', 'latin1');
       process.stdout.write('6869', 'hex');
-      process.stdout.write('a'.repeat(65535) + '\\u{1F600}' + 'b');
-      setTimeout(() => parentPort.postMessage({sent, same: process.stdout === streams.stdout && console._stdout === streams.stdout,
-        configurable: Object.getOwnPropertyDescriptor(process, 'stdout').configurable}), 200);`, {eval: true, stdout: true});
+      process.stdout.write('\\n');
+      process.stdout.write('unfinished');
+      setTimeout(() => {
+        const before = sent.length;
+        failNext = true;
+        process.stdout.write('lost line\\n');
+        setTimeout(() => {
+          process.stdout.write('\\n'.repeat(300000));
+          setTimeout(() => parentPort.postMessage({sent, before, same: process.stdout === streams.stdout && console._stdout === streams.stdout,
+            configurable: Object.getOwnPropertyDescriptor(process, 'stdout').configurable}), 1300);
+        }, 50);
+      }, 50);`, {eval: true, stdout: true});
     const got = await new Promise((resolve, reject) => { w.once('message', resolve); w.once('error', reject); });
     await w.terminate();
     assert.strictEqual(got.same, true);
     assert.strictEqual(got.configurable, false);
-    assert.deepStrictEqual(got.sent.filter((x) => x[0] === 'stderr'), [['stderr', {text: 'via stderr\nvia rawDebug\n'}]]);
-    const pieces = got.sent.filter((x) => x[0] === 'stdout').map((x) => x[1].text);
-    assert.ok(pieces.every((p) => !/[\uD800-\uDBFF]$/.test(p)), 'no piece ends inside a surrogate pair');
-    assert.strictEqual(pieces.join(''), `via console\néhi${'a'.repeat(65535)}\u{1F600}b`);
+    const first = got.sent.slice(0, got.before);
+    assert.deepStrictEqual(first.filter((x) => x[0] === 'stderr').flatMap((x) => x[1].lines), ['via stderr', 'via rawDebug']);
+    assert.deepStrictEqual(first.filter((x) => x[0] === 'stdout').flatMap((x) => x[1].lines), ['via console', 'éhi']);
+    // the unfinished line was ended by the next write's newline ('lost line' failed to send with it)
+    const later = got.sent.slice(got.before);
+    const prefix = Buffer.byteLength('mod-w: ');
+    const charged = later.filter((x) => x[1].lines).flatMap((x) => x[1].lines).reduce((n, l) => n + prefix + Buffer.byteLength(l) + 1, 0);
+    assert.ok(charged <= limits.STREAM_BUDGET, `${charged} bytes sent`);
+    const dropped = later.filter((x) => x[1].dropped != null).reduce((n, x) => n + x[1].dropped, 0);
+    // the lost line, and the empty lines past the budget, each at what writing it costs
+    assert.ok(dropped >= (prefix + 'lost line'.length + 1) + (300000 * (prefix + 1) - limits.STREAM_BUDGET), `${dropped} dropped`);
   });
 
-  it('a device error\'s field arrives serialized and stays as it is; an unknown level is info, 60 is fatal', () => {
-    assert.strictEqual(LOG.deviceErrorSerializer('dev: broke'), 'dev: broke');
-    const saved = LOG.logger;
-    const calls = [];
-    LOG.logger = {info: (r) => calls.push(['info', r]), fatal: (r) => calls.push(['fatal', r]), error: () => {}, warn: () => {}};
-    try {
-      const wm = {hostModuleName: 'mod-b'};
-      out.onLog(wm, {level: 'constructor', msg: 'x'});
-      out.onLog(wm, {level: 60, msg: 'y', de: 'dev: broke'});
-      assert.deepStrictEqual(calls.map((c) => c[0]), ['info', 'fatal']);
-      assert.strictEqual(calls[1][1].de, 'dev: broke');
-      out.end(wm);
-    } finally {
-      LOG.logger = saved;
-    }
-  });
-
-  it('output dropped mid-line ends the line there: nothing after the gap is glued to it', () => {
-    const written = [];
-    out.setSink((stream, line) => written.push(line));
-    const wm = {hostModuleName: 'mod-c'};
-    out.onOutput(wm, 'stdout', {text: 'progress 10%'});
-    out.onOutput(wm, 'stdout', {text: `\n${'z'.repeat(out.STREAM_BUDGET)}\n`});
-    out.onOutput(wm, 'stdout', {text: 'later\n'});
-    assert.deepStrictEqual(written, ['mod-c: progress 10%', 'mod-c: later']);
-    out.end(wm);
+  it('worker side: an unfinished line goes as a line before the runtime\'s reply, never held back', async () => {
+    const w = new Worker(`
+      const {parentPort} = require('worker_threads');
+      const sent = [];
+      const WorkerMessage = require(${JSON.stringify(path.join(LIB, 'worker-message'))});
+      const {installModuleStdio} = require(${JSON.stringify(path.join(LIB, 'worker-stdio'))});
+      installModuleStdio('mod-p', {send: (stream, data) => { sent.push([stream, data]); return true; }});
+      process.stdout.write('result: 42');
+      new WorkerMessage(null).sendMessageToParent(1, null, {done: true});
+      parentPort.postMessage({sent});`, {eval: true});
+    const got = await new Promise((resolve, reject) => {
+      w.on('message', (m) => { if (m != null && Array.isArray(m.sent)) resolve(m); });
+      w.once('error', reject);
+    });
+    await w.terminate();
+    assert.deepStrictEqual(got.sent, [['stdout', {lines: ['result: 42']}]]);
   });
 });

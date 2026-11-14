@@ -75,6 +75,28 @@
           }
         }
       }
+    },
+    "emptyFlood": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "n"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
     }
   }
 }

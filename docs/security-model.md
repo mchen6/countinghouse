@@ -270,12 +270,12 @@ failing module is refused with `MODULE_SANDBOX_REFUSED`; in `audit` the
 failures are logged and the module loads. This is a structural check of
 what is on disk at load time, not a review of what the code does.
 
-**6. Resource limits, restart and suspend.** `heapMb` (V8
-`resourceLimits`, with a 64 MB young generation and a 4 MB stack beside it), `externalMb` (the main thread polls the worker's
-external memory and terminates it over the limit) and `maxBlockMs` (the main
-thread pings the worker and terminates it if a ping goes unanswered for that
-long), checked every second or twice per `maxBlockMs` if that is shorter,
-each with a 256 / 256 / 10000 default
+**6. Resource limits, restart and suspend.** `heapMb` (V8 `resourceLimits`,
+with a 64 MB young generation and a 4 MB stack beside it), `externalMb` (the
+main thread polls the worker's external memory and terminates it over the
+limit) and `maxBlockMs` (the main thread pings the worker and terminates it
+if a ping goes unanswered for that long), checked every second or twice per
+`maxBlockMs` if that is shorter, each with a 256 / 256 / 10000 default
 ceiling. Time a worker spends waiting on a brokered file call does not count
 as blocked. A worker-to-main message rate limit (`--moduleMessageRate`,
 default 2000/s) answers excess messages with `RATE_LIMITED` instead of
@@ -290,8 +290,8 @@ handed one. A message that is not an envelope, or one over the cap, is a
 tampered worker's: the main thread ends the worker (a bridge call is
 answered `EINVAL` and reported, and the worker is ended too). Module code
 gets no port by any other route either: the runtime's port callbacks run in
-a scope of their own (`lib/port-scope.js`), and the lockdown leaves ports out
-of `process._getActiveHandles()` and `_getActiveRequests()`,
+a scope of their own (`lib/port-scope.js`), and the lockdown leaves ports
+out of `process._getActiveHandles()` and `_getActiveRequests()`,
 `async_hooks.executionAsyncResource()` and an async hook's `init`, and pins
 Node's own stdio port as well. What remains rests on those: Node decodes a
 posted message on receipt and, when a worker ends, every message it had
@@ -300,35 +300,41 @@ decoded (20 of 5 MB each, all decoded after `terminate()`, measured on Node
 24.21; removing the listeners or closing the main side's port does not stop
 it), and that serialized data lies outside the worker's heap limits. Under
 `off` there is no lockdown and the bound is cooperative only; a direct peer
-channel between two workers is not enveloped.
+channel between two workers is not enveloped. A worker that ends
+unexpectedly is restarted after 1 s, then 2 s, and suspended on the 3rd exit
+within 10 minutes (the code caps the delay at 60 s, which the current
+threshold never reaches); calls get `MODULE_RESTARTING` or
+`MODULE_SUSPENDED` while the tools stay listed. A deliberate reload or
+unload fails its calls in flight with `MODULE_RELOADING` or
+`MODULE_UNLOADED`. Why a device is missing is told only to a caller that
+passes the access check for it, so a key without access cannot learn whether
+a device was ever hosted. When a worker ends, its file operations in flight
+answer `EIO` and its descriptors close; a per-name lifecycle lock makes the
+next start (and an uninstall) wait for them. This bounds memory, blocking,
+disk use and crash loops. It does not bound CPU use that yields to the event
+loop, or network traffic.
 
 A module's stdout and stderr are bounded the same way. Under audit and
 enforce the lockdown gives module code runtime-owned streams for
 `process.stdout`, `process.stderr` and `process.stdin` (fixed getters),
 points `console` and `process._rawDebug` at them, and Node's own stdio
-streams, which hold its port to the main thread, are never handed out.
-What a module writes crosses as messages: each stream has 256 KiB a minute
-(counted in the worker and again on the main thread), past which output is
-dropped and one line a minute says how much (`<module>: N bytes of stdout
-dropped`); each line is cut at 8 KiB, stripped of control characters
-other than tab, and written prefixed with the module's name, to stderr
-under `--stdio` (stdout is the MCP channel there). The worker's own log
+streams, which hold its port to the main thread, are never handed out
+(assigning `process.stdout` is refused: a `TypeError` in strict mode, a
+no-op otherwise). What a module writes crosses as messages, as lines: each
+stream has 256 KiB a minute of what is written, each line charged its
+`<module>: ` prefix, its bytes and its newline (counted in the worker; the
+main thread counts again, with twice that as a backstop, since the two
+sides' windows do not line up), past which lines are dropped, output that
+could not be sent is counted with them, and one line a minute says how much
+(`<module>: N bytes of stdout dropped`); each line is cut at 8 KiB, stripped
+of control characters other than tab, the line separators and the bidi
+controls, and written prefixed with the module's name, to stderr under
+`--stdio` (stdout is the MCP channel there). The worker's own log
 (countinghouse's code in the worker) crosses as records under a budget of
-its own, 1 MiB a minute, each field cut at 8 KiB and the module named by
-the main thread, in every mode. Under `off` a module's output goes to the
-process's streams as before, unbounded. A worker that
-ends unexpectedly is restarted after 1 s, then 2 s, and
-suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
-which the current threshold never reaches); calls get
-`MODULE_RESTARTING` or `MODULE_SUSPENDED` while the tools stay listed. A
-deliberate reload or unload fails its calls in flight with `MODULE_RELOADING`
-or `MODULE_UNLOADED`. Why a device is missing is told only to a caller that
-passes the access check for it, so a key without access cannot learn whether a
-device was ever hosted. When a
-worker ends, its file operations in flight answer `EIO` and its descriptors
-close; a per-name lifecycle lock makes the next start (and an uninstall) wait
-for them. This bounds memory, blocking, disk use and crash loops. It does
-not bound CPU use that yields to the event loop, or network traffic.
+its own, 1 MiB a minute, each record charged 256 bytes plus its fields, each
+field cut at 8 KiB and cleaned the same way and the module named by the main
+thread, in every mode. Under `off` a module's output goes to the process's
+streams as before, unbounded.
 
 **Uninstall.** `POST /uninstall-module {name, keepData}` (admin key) removes
 the registry entry and deletes `<moduleDataPath>/<name>` unless `keepData`,
