@@ -353,3 +353,100 @@ describe('store 04: the review of B2', function() {
     assert.strictEqual(a.data.k, 'from b');
   });
 });
+
+// #150: a process that takes the lock again the moment it releases it
+// starved one waiting with a 10 ms retry past LOCK_WAIT_MS (seen on Windows
+// CI). A waiter announces itself, and the others yield to it, so both
+// finish, every wait inside LOCK_WAIT_MS.
+describe('store 04: a waiter is not starved (#150)', function() {
+  this.timeout(60000);
+
+  // The mechanism, deterministically: an announced waiter is yielded to.
+  it('a fresh announcement by another live waiter is yielded to; a dead or old one is not', () => {
+    const dir = tmpStore();
+    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {stdio: 'ignore'});
+    try {
+      const announce = (pid, ageMs) => fs.writeFileSync(path.join(dir, '.lock.waiting'),
+        JSON.stringify({pid: pid, startMs: 1, at: Date.now() - ageMs}));
+      // a live waiter that announced 1700 ms ago: yielded to until it is 2 s old
+      announce(sleeper.pid, 1700);
+      const t = Date.now();
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, true, 'did not yield');
+      assert.ok(Date.now() - t >= 200, `yielded only ${Date.now() - t} ms`);
+      // a dead one, and an old one, are not
+      announce(999999, 0);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to a dead waiter');
+      announce(sleeper.pid, 5000);
+      withStoreLock(dir, () => {});
+      assert.strictEqual(withStoreLock.waited, false, 'yielded to an old announcement');
+    } finally {
+      sleeper.kill();
+    }
+  });
+
+  it('a waiter announces itself while the lock is busy, and withdraws once it has the lock', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const holder = spawn(process.execPath, ['-e', `
+      const {withStoreLock} = require(${JSON.stringify(MOD)});
+      withStoreLock(${JSON.stringify(dir)}, () => { process.stdout.write('held'); const t = Date.now() + 400; while (Date.now() < t) { /* hold */ } });
+    `], {stdio: ['ignore', 'pipe', 'ignore']});
+    await new Promise((resolve) => holder.stdout.once('data', resolve));
+    const f = openJsonFile(file);
+    let seen = null;
+    const probe = setInterval(() => {
+      try { seen = seen || JSON.parse(fs.readFileSync(path.join(dir, '.lock.waiting'), 'utf8')); } catch (e) { /* not yet */ }
+    }, 20);
+    await new Promise((resolve, reject) => f.update('k', () => 1, (err) => (err ? reject(err) : resolve())));
+    clearInterval(probe);
+    f.close();
+    assert.ok(seen != null && seen.pid === process.pid, `no announcement seen: ${JSON.stringify(seen)}`);
+    assert.ok(!fs.existsSync(path.join(dir, '.lock.waiting')), 'the announcement was left behind');
+  });
+
+  it('two processes hammering one key both finish, every operation within LOCK_WAIT_MS', async () => {
+    const dir = tmpStore();
+    const file = path.join(dir, 'm.json');
+    const run = (script) => new Promise((resolve, reject) => {
+      const p = spawn(process.execPath, ['-e', `const {openJsonFile, withStoreLock} = require(${JSON.stringify(MOD)});\n${script}`],
+        {stdio: ['ignore', 'pipe', 'pipe']});
+      let out = '';
+      let err = '';
+      p.stdout.on('data', (c) => { out += c; });
+      p.stderr.on('data', (c) => { err += c; });
+      p.on('exit', (code) => (code === 0 ? resolve(out) : reject(new Error(err || `exit ${code}`))));
+    });
+    // takes the lock again at once, each time holding it about 2 ms
+    const hammer = run(`
+      const f = openJsonFile(${JSON.stringify(file)});
+      const end = Date.now() + 3000;
+      let n = 0;
+      while (Date.now() < end) {
+        withStoreLock(${JSON.stringify(dir)}, () => { const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } n++; });
+      }
+      process.stdout.write(String(n));
+    `);
+    // counts one key with update(), timing each
+    const waiter = run(`
+      const f = openJsonFile(${JSON.stringify(file)});
+      let n = 0, worst = 0;
+      const next = () => {
+        const t = Date.now();
+        f.update('n', (v) => (v || 0) + 1, (err) => {
+          if (err) { process.stderr.write(err.message); process.exit(1); }
+          worst = Math.max(worst, Date.now() - t);
+          if (++n < 40) return next();
+          f.close();
+          process.stdout.write(String(worst));
+        });
+      };
+      setTimeout(next, 100);
+    `);
+    const [hammered, worst] = await Promise.all([hammer, waiter]);
+    assert.ok(Number(hammered) > 0, 'the hammer never took the lock');
+    assert.ok(Number(worst) < 2000, `an update waited ${worst} ms`);
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 40);
+  });
+});
