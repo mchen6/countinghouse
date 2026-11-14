@@ -43,6 +43,14 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
     assert.match(privateProblem('s', null), /could not be read/);
   });
 
+  it('the PowerShell it runs names no cmdlet (a lookup rebuilds the module cache, and would load module code)', () => {
+    const {FILE_ACL_SCRIPT, RESTRICT_SCRIPT} = require('../../lib/win-acl');
+    for (const script of [FILE_ACL_SCRIPT, RESTRICT_SCRIPT]) {
+      const code = script.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+      assert.doesNotMatch(code, /\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/, code);
+    }
+  });
+
   // A start's identity, in a process of its own: exit 0, or 2 with the refusal.
   const start = (dir) => spawnSync(process.execPath, ['-e', `
     try { require(${JSON.stringify(path.join(__dirname, '..', '..', 'lib', 'identity.js'))}).initSync({singleIdentity: true, storePath: process.argv[1]}); }
