@@ -285,6 +285,26 @@ describe('module-loading 24: the validator pool', function() {
       }
     });
 
+    it('the stall window slides across a block: once a block ends, the next stall within 5 minutes blocks the caller again', async () => {
+      const p = newPool({callerCooldownMs: 500});
+      try {
+        const m = moduleWith(STALL, {}, {type: 'object'}, p);
+        await warmed(p);
+        for (let i = 0; i < 3; i++) {
+          assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+          await warmed(p);
+        }
+        assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED');
+        await new Promise((r) => setTimeout(r, 600));
+        assert.strictEqual(await checkFrom(p, m, [1], 'u_flood'), null, 'the block has ended');
+        assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+        await warmed(p);
+        assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED', 'its fourth stall in the window blocks it again');
+      } finally {
+        p.close();
+      }
+    });
+
     it('one caller has one validation in flight across the pool: five slow inputs at once are sent one at a time', async () => {
       const p = newPool({size: 3});
       try {
@@ -320,6 +340,7 @@ describe('module-loading 24: the validator pool', function() {
         }
         flooding = false;
         await flood;
+        if (process.env.CH_POOL_NUMBERS === '1') console.log(`one flooded: B ${codes.filter((c) => c != null).length}/${codes.length} refused, p90 ${p90(times)} ms`);
         assert.deepStrictEqual(codes.filter((c) => c != null), []);
         assert.ok(p90(times) < 50, `p90 ${p90(times)} ms`);
       } finally {
@@ -347,6 +368,7 @@ describe('module-loading 24: the validator pool', function() {
         }
         flooding = false;
         await Promise.all(floods);
+        if (process.env.CH_POOL_NUMBERS === '1') console.log(`two flooded: B ${refused}/${calls} refused`);
         assert.ok(refused / calls < 0.01, `${refused} of ${calls} refused`);
       } finally {
         p.close();

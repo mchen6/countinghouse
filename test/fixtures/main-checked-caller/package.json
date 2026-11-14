@@ -5,7 +5,8 @@
   "countinghouse": {
     "calls": [
       "main-checked/checkService.take",
-      "main-checked/checkService.give"
+      "main-checked/checkService.give",
+      "main-checked/checkService.slow"
     ]
   }
 }
