@@ -123,12 +123,15 @@ describe('composition 22: declarations pinned before the module runs, and every 
     const p = pins();
     p.pin('m', mod, true);
     const file = path.join(base, 'store', '.pins', 'm.json');
-    const old = new Date(Date.now() - 60000);
-    fs.utimesSync(file, old, old);
+    // A record is written to a temporary name and renamed over the old one,
+    // so a rewrite is a new inode. Compared as bigints: mtimeMs is a float
+    // whose rounding differs between reads on Node 22 (CI, #151).
+    const stamp = () => { const st = fs.statSync(file, {bigint: true}); return [st.ino, st.mtimeNs]; };
+    const before = stamp();
     p.pin('m', mod, false);
     p.pin('m', mod, true);
     pins().pin('m', mod, true);
-    assert.strictEqual(fs.statSync(file).mtimeMs, old.getTime());
+    assert.deepStrictEqual(stamp(), before, 'the record was rewritten');
   });
 
   // Task 4's last re-review, MED-1: the copy read before validation is not
