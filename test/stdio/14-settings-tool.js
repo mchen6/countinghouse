@@ -26,7 +26,7 @@ describe('stdio 14: countinghouse_settings', () => {
     return err;
   };
 
-  before(() => { saved = {locale: options.locale, requestTimeout: options.requestTimeout, requestTimeoutMs: options.requestTimeoutMs, maxOutputBytes: options.maxOutputBytes}; });
+  before(() => { saved = {locale: options.locale, requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes}; });
   after(() => Object.assign(options, saved));
   beforeEach(() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-settings-'));
@@ -127,7 +127,6 @@ describe('stdio 14: countinghouse_settings', () => {
     const running = new Timer();
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 20}), {ok: true});
     assert.strictEqual(options.requestTimeout, 20000);
-    assert.strictEqual(options.requestTimeoutMs, 20000);
     assert.strictEqual(running.timeout._idleTimeout, 30000, 'the running call\'s timer is unchanged');
     clearTimeout(running.timeout);
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 4 * MiB}), {ok: true});
@@ -199,21 +198,32 @@ describe('stdio 14: countinghouse_settings', () => {
 
   it('a live set reaches every running module worker, only its fields; a worker takes only those, each of its own type', () => {
     options.requestTimeout = 30000;
-    options.requestTimeoutMs = 30000;
     options.maxOutputBytes = 8 * MiB;
     options.locale = 'en-US';
     settingsTool.resetForTests();
     settingsTool.applyControlSet({name: 'requestTimeout', value: 20});
     const sent = [];
     settingsTool.broadcastLiveOptions({a: {sendMessageToWorker: (m) => sent.push(m)}, b: {sendMessageToWorker: (m) => sent.push(m)}, gone: null});
-    assert.deepStrictEqual(sent, [0, 1].map(() => ({command: 'live-options', options: {maxOutputBytes: 8 * MiB, requestTimeout: 20000, requestTimeoutMs: 20000, locale: 'en-US'}})));
+    assert.deepStrictEqual(sent, [0, 1].map(() => ({command: 'live-options', options: {maxOutputBytes: 8 * MiB, requestTimeout: 20000, locale: 'en-US'}})));
     // a worker started after the tighten holds 20 s; a loosening back to 30 s reaches it
-    const worker = {requestTimeout: 20000, requestTimeoutMs: 20000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'};
+    const worker = {requestTimeout: 20000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'};
     settingsTool.applyControlSet({name: 'requestTimeout', value: 30});
     settingsTool.applyLiveOptions(worker, settingsTool.liveOptions());
     assert.strictEqual(worker.requestTimeout, 30000);
     settingsTool.applyLiveOptions(worker, {moduleSandbox: 'audit', requestTimeout: 'soon', locale: 'fr', maxOutputBytes: -1});
-    assert.deepStrictEqual(worker, {requestTimeout: 30000, requestTimeoutMs: 30000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'});
+    assert.deepStrictEqual(worker, {requestTimeout: 30000, maxOutputBytes: 8 * MiB, locale: 'en-US', moduleSandbox: 'enforce'});
+  });
+
+  it('a live set reaches a worker in the same unit as the main thread\'s, from a worker started with setResolvedOptions (#112 with #183)', () => {
+    // the main thread from the CLI (seconds), a worker's options from it
+    options.setOptions({requestTimeout: 30, maxOutputBytes: 8 * MiB});
+    const worker = options.getOptionsForWorker();
+    assert.strictEqual(worker.requestTimeout, options.requestTimeout, 'started in the same unit');
+    settingsTool.resetForTests();
+    // ch-local sends seconds (its runtimeValue); the main thread holds ms
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 20}), {ok: true});
+    settingsTool.applyLiveOptions(worker, settingsTool.liveOptions());
+    assert.deepStrictEqual([options.requestTimeout, worker.requestTimeout], [20000, 20000]);
   });
 
   it('listed only in the single-identity profile with --settingsFile; never addressable by ctx.call', () => {

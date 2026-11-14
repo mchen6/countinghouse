@@ -62,14 +62,14 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
     // timer makes that 1 s here.
     this.timeout(10000);
     const options = require('../../lib/cli-options');
-    const before = options.requestTimeoutMs;
-    options.requestTimeoutMs = 3000;
+    const before = options.requestTimeout;
+    options.requestTimeout = 3000;
     const started = Date.now();
     let err;
     try {
       err = await refusalOf(buildCtx(fakeDevice()), 'compose-callee/calleeService.double');
     } finally {
-      options.requestTimeoutMs = before;
+      options.requestTimeout = before;
     }
     assert.ok(Date.now() - started >= 900, 'it waited for a verdict first');
 
@@ -118,14 +118,14 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
   // it is all that reaches the client (see the header).
   it('bounds the wait for a verdict under the request timer: min(25 s, timer - 2 s), and 0 for a timer of 0 or less', () => {
     const options = require('../../lib/cli-options');
-    const before = options.requestTimeoutMs;
+    const before = options.requestTimeout;
     try {
       for (const [timer, bound] of [[30000, 25000], [60000, 25000], [10000, 8000], [1500, 0], [0, 0], [-5, 0]]) {
-        options.requestTimeoutMs = timer;
+        options.requestTimeout = timer;
         assert.strictEqual(handlerCtx.verdictWaitMs(), bound, String(timer));
       }
     } finally {
-      options.requestTimeoutMs = before;
+      options.requestTimeout = before;
     }
   });
 
