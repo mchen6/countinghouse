@@ -35,6 +35,16 @@
             "output": {
               "schema": "/probeService/callArgs/output"
             }
+          },
+          {
+            "name": "callThenUsage",
+            "description": "ctx.call('remote:probe/echo_text', input.args) input.times times, then ctx.usage(): {usage} or {code, message}",
+            "input": {
+              "schema": "/probeService/callThenUsage/input"
+            },
+            "output": {
+              "schema": "/probeService/callThenUsage/output"
+            }
           }
         ]
       }
