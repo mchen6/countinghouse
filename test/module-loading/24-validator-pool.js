@@ -63,6 +63,16 @@ describe('module-loading 24: the validator pool', function() {
   }
   // Ready, and done compiling in the background: every new validator warms
   // every known module before it takes a call (the review of #165).
+  // Until `count()` reaches n, with a bound. A stall counts when its
+  // validator is replaced (fail), which for a call that started late comes
+  // after its answer; until then that validator is busy, and a recently
+  // stalling caller takes no last free validator, so its next request would
+  // be refused as a wait, never counted (CI at 623831c, r24 here).
+  async function counted(count, n) {
+    for (let w = 0; count() < n && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
+    assert.strictEqual(count(), n);
+  }
+
   async function warmed(p) {
     await whenReady(p);
     for (let w = 0; (p.slots.some((x) => x.background.size > 0) || !(p.spare && p.spare.ready)) && w < 60000; w += 20) await new Promise((r) => setTimeout(r, 20));
@@ -144,6 +154,7 @@ describe('module-loading 24: the validator pool', function() {
     for (let i = 0; i < 3; i++) {
       await warmed(pool);
       assert.strictEqual(codeOf(await checkOut(m, STALLING)), 'VALIDATION_TIMEOUT');
+      await counted(() => (pool.strikes.get(m.name) || []).length, i + 1);
       await cooled();
     }
     // the third strike counts when its validator is replaced: waited for
@@ -298,6 +309,7 @@ describe('module-loading 24: the validator pool', function() {
         await warmed(p);
         for (let i = 0; i < 3; i++) {
           assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+          await counted(() => (p.callerStalls.get(`u_flood\n${m.name}`) || []).length, i + 1);
           await warmed(p);
         }
         await blocked(p, 'u_flood', m);
@@ -322,6 +334,7 @@ describe('module-loading 24: the validator pool', function() {
         await warmed(p);
         for (let i = 0; i < 3; i++) {
           assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+          await counted(() => (p.callerStalls.get(`u_flood\n${m.name}`) || []).length, i + 1);
           await warmed(p);
         }
         await blocked(p, 'u_flood', m);
