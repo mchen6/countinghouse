@@ -28,7 +28,18 @@ module.exports = async (input, ctx) => {
     const {port1} = new MessageChannel();
     port1.close();
     hook.disable();
-    return {output: {atLoad, inHandler, inReply, handles, hookSaw, hookThisIsHook: hookThis === hook, handedOver}};
+    // AsyncResource's runInAsyncScope replaced: a port's callback must not
+    // run through it, nor give it the port as this (the review of #177)
+    let scopeSawPort = false;
+    const savedRun = ah.AsyncResource.prototype.runInAsyncScope;
+    ah.AsyncResource.prototype.runInAsyncScope = function(fn, thisArg, ...a) { if (isPort(thisArg) || isPort(this)) scopeSawPort = true; return savedRun.call(this, fn, thisArg, ...a); };
+    try {
+      await new Promise((resolve) => ctx.redis.set('scope', '2', () => resolve()));
+      await require('fs').promises.writeFile('/data/scope', 'y');
+    } finally {
+      ah.AsyncResource.prototype.runInAsyncScope = savedRun;
+    }
+    return {output: {atLoad, inHandler, inReply, handles, hookSaw, hookThisIsHook: hookThis === hook, handedOver, scopeSawPort}};
   } finally {
     Object.assign(Array.prototype, {filter: saved.filter});
     for (const k of ['get', 'has', 'set']) WeakMap.prototype[k] = saved[k];
