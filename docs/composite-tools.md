@@ -121,7 +121,7 @@ see [In-composition metering](#in-composition-metering).
 1. Takes `{text: string}`.
 2. Calls `transform-demo`'s `uppercase` action on `text`, via a
    `ServiceClient` created at module-init time
-   (`pre-installed-packages/composite-demo/device.js`).
+   (`pre-installed-packages/composite-demo/handlers/compositeService/run.js`).
 3. Feeds the uppercased result into `echo-device-module`'s `echo` action,
    via a second `ServiceClient`, to demonstrate a second independent hop.
 4. Returns `{finalText, bill}`, where `bill` is an array with one entry per
@@ -141,7 +141,7 @@ the module calling it.
 
 Target modules are addressed by their deterministic `deviceID`
 (`UUID.v5` of a fixed namespace and the target module's `api.json`
-`friendlyName`), computed offline and hardcoded in `device.js`, the same
+`friendlyName`), computed offline and hardcoded in its handler file, the same
 pattern used by `echo-device-client-module`. No runtime discovery is
 needed to call a known module.
 
@@ -271,6 +271,25 @@ inner action has already succeeded by the time the platform's metering
 runs, so a gap is recorded in the bill (`charged`/`balance` set to `null`)
 rather than returning an error for what the caller experiences as a
 successful request.
+
+**A hop's result the caller cannot read is still billed** (lean worker
+step 2; the reviewer, 2026-11-14). On the main-thread-routed path a hop's
+result crosses as bytes: the callee's worker serializes it, a validator
+checks it against the callee's output schema, and only then does the
+calling worker decode it. The hop is metered once the callee has answered
+and its result has passed that check, before the bytes reach the caller.
+So if the caller's own worker cannot decode bytes that passed (its heap is
+exhausted, for example), the hop is still billed: the callee served the
+call, and the failure is on the caller's side.
+
+The caller gets a clear error, never a crash. `ctx.call` (or
+`ServiceClient.invoke`) rejects with `DEVICE_INVOKE_EXCEPTION`, "a module's
+result could not be read". If the decode instead runs the caller's worker
+out of memory, that worker ends, as any out-of-memory worker does: its
+pending calls are answered with the code that says why, and the supervisor
+restarts it. A hop refused before it reaches the caller is not billed, as
+before. That covers a result over `--maxOutputBytes`, one that fails the
+callee's output schema, and one whose check timed out.
 
 ### Example
 

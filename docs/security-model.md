@@ -588,11 +588,10 @@ these are the checks that predate them and still apply:
   names, resolvable schema pointers, handlers that actually exist for every
   declared action — and every problem found is reported, not just the
   first. **Doing this requires actually running the module's own code.**
-  `loadExported` (`lib/module-validator.js:61`) calls `require()` on the
-  module's main entry, and `resolveHandlerMap`
-  (`lib/module-validator.js:180`) calls `require()` on every handler file —
-  there is no way to resolve the handler map without loading the JS that
-  defines it. Under `--moduleSandbox audit` and `enforce` that `require()`
+  `resolveHandlerMap` (in `lib/module-validator.js`) calls `require()` on
+  every handler file — there is no way to resolve the handler map without
+  loading the JS that defines it. A module's main entry, if it has one, is
+  never run (`lib/module-layout.js`, the one module format). Under `--moduleSandbox audit` and `enforce` that `require()`
   runs in a module worker set up exactly as a load of that module would be
   (its policy, declared environment, limits, `--hardened` root, file
   namespace and lockdown), which is then discarded: it gets no main-thread
@@ -628,6 +627,52 @@ these are the checks that predate them and still apply:
   the caller. This bounds the *shape* of data reaching a module's code and
   the *shape* of what a module can claim to return — it does not sandbox
   what the module's handler does internally with valid input.
+  In worker mode, both checks run in a validator worker
+  (`lib/validator-pool.js`) for every call the main thread sends to a
+  module's worker (a client's call, a job's run, a hop routed through the
+  main thread). That is neither the main thread nor the module's own worker,
+  and no module code runs there. A module's code can reach its own worker's
+  copy: under `audit` and `off` the runtime's files are in that worker's
+  `require.cache`. So the in-worker check is used only for a call over a
+  direct peer channel, where a module that interferes with it harms its own
+  input check; moving that check out of reach is lean worker step 4
+  (`docs/superpowers/specs/2026-11-13-lean-worker-design.md`).
+
+  The main thread never compiles or walks a module's schema, because no
+  check made beforehand bounds JSON Schema validation: some patterns
+  backtrack for seconds, some small schemas compile for seconds. The
+  validators are bounded instead:
+  - their resource limits;
+  - a deadline per request from when it is queued (`--validationTimeoutMs`),
+    past which the call is refused `VALIDATION_TIMEOUT`, a queued request
+    dropped unsent and a running one's validator replaced;
+  - one queue per module, round-robin, with a module holding at most all but
+    one ready validator, and one validation in flight per caller across the
+    pool, so no tenant's flood delays another's checks;
+  - a slow input held against its caller (by the R2-1 caller id, never a
+    key): it replaces its validator and nothing else, and a caller whose
+    inputs keep stalling is refused `VALIDATION_CALLER_THROTTLED` for a
+    while on that module, alone. A flood from many keys is for the per-key
+    rate limits;
+  - a compile budget (`--validationCompileMs`), checked at load;
+  - a quarantine (`VALIDATION_QUARANTINED`) for a module whose own outputs or
+    compiles keep missing the deadline (a slow input does not count: any
+    caller could send one to quarantine a module for every tenant);
+  - an output cap (`--maxOutputBytes`, at most 256 MiB), checked on the main
+    thread from the reply's own bytes (every call whose spec it holds
+    answers in bytes, a failed call's error and payload included); the
+    module's worker checks first only to answer early;
+  - a hop's result crosses the main thread as `v8.serialize` bytes,
+    transferred, never deserialised there. It is checked in a validator
+    against the callee's output schema and decoded only by the calling
+    worker, so the caller decodes only bytes a validator passed (a module
+    can forge bytes through its own worker's send path; they are refused or
+    checked like any others).
+
+  A `schema.json` that is plainly unsafe is also refused at load as a
+  courtesy, checked in a validator (`lib/schema-safety.js`): over 1 MB, a
+  pattern over 1000 characters or of star height above 1, or over 100,000
+  nodes with its `$ref`s expanded.
 - **Redis command allowlist** (`lib/supported-redis-commands.json`,
   enforced in `lib/redis-api.js` via `_.intersection(redisCommands.list,
   supportedCommands)`). Modules access Redis only through a wrapper that

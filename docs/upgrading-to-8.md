@@ -106,6 +106,16 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: one module format.** A module is `api.json`, `schema.json` and
+  `handlers/<service>/<action>.js`. A module with a main entry
+  (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
+  refused before any of its code runs, with `MODULE_LAYOUT_UNSUPPORTED`: a
+  `device.js` exporting a handler map, or an `index.js` doing its own
+  discovery. Move each action into its own handler file (shared code into a
+  plain file the handlers require); for a 5.x module (a `CHDevice` with
+  `setAction`), `npx countinghouse-migrate-module ./my-module` does that. A
+  module that had several devices becomes several modules. With `handlers/`, a main entry is never
+  run.
 - **Breaking: `ctx.redis` is per module (#164).** Each key a module names
   is stored under `m:<module name, URI-encoded>:`, the name the runtime loaded it under,
   so modules no longer share keys: one module cannot read, overwrite or

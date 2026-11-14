@@ -148,42 +148,106 @@ methods, so it applies on the first call too.
 `ctx` is built by handler-ctx exactly as today: `ctx.call`, `ctx.remote...`,
 `ctx.redis` (a message to the main thread), job progress, `recordUsage`.
 
-### 4. The module's spec and its validators live on the main thread
+### 4. The module's spec on the main thread; its validation in validator workers
+
+Revised on #152 (the reviewer, 2026-11-13). The first version validated on
+the main thread. The high review showed that JSON Schema validation of a
+module-authored schema cannot be bounded by checks made beforehand:
+- patterns that pass any static check still take seconds (`^(\w|a)+$`, 62 s;
+  `^\d*\d*\d*\d*$`, 14 s; `\s+$` on 50 KB, 4 s);
+- a 1.2 KB `anyOf` schema compiles for 5.9 s;
+- `uniqueItems` over 20000 items takes 24 s.
+
+On the shared main thread, each of these stalls every module and session. So
+validation runs in neither the main thread nor the module's own worker, but in
+a validator worker.
 
 Today the worker reads api.json and schema.json, builds the device and its
 services, compiles one validator per action, and sends the spec to the main
 thread when the device comes online.
 
-In the lean design the main thread does that work once per module load,
-before it starts the worker:
+In the lean design, per module load and before the worker starts:
 
-- it reads api.json and schema.json from the module's directory (the main
-  thread is not sandboxed; the module validator already reads these files
-  there), resolves the schema, and builds the spec and one compiled validator
-  per action input and output with the runtime's own ajv instance, which the
-  main thread already has loaded;
-- it registers the device from that spec, so tools/list, the gateway and
-  routing see exactly what they see today;
-- the worker is told only which handler file serves which action (possible
-  because a lean module's handlers are one file per action under `handlers/`).
+- **The main thread** reads api.json and schema.json from the module's
+  directory. It keeps only what is cheap and structural: the device ID, the
+  spec as text, its services' and actions' own names, and a hash of
+  schema.json. It never compiles or walks a schema.
+- **The validator pool** (`lib/validator-pool.js`) gets the two files as
+  text. That is a few workers, `--validatorWorkers` (default 2), each with
+  resource limits. A validator builds the module's services with the
+  runtime's own Service code and compiles them under an ajv instance of the
+  module's own, lazily, on the module's first check. No module code ever runs
+  there, so a module cannot switch its validation off (the finding of
+  `test/sandbox/41`: in its own worker, under the default sandbox, it can).
+- **The device** is registered from the main thread's spec, so tools/list,
+  the gateway and routing see exactly what they see today. A worker's
+  announcement must match that spec (and the schema.json hash).
+- **The worker** is told only which handler file serves which action
+  (possible because a lean module's handlers are one file per action under
+  `handlers/`).
 
-Step 1 of the sequence applies main-side validation first, while modules
-still run on today's workers; those workers then skip their own validation.
+Step 1 of the sequence does this while modules still run on today's workers.
+Those workers skip their own validation for a call the main thread sends.
 
 On every call routed through the main thread (an MCP tools/call, an HTTP
 invoke-action, a job's run, a hop routed through the main thread):
 
-1. the main thread validates the input before sending the invoke to the
-   worker; a failure answers exactly as today's in-worker failure does (same
-   code, same text, same shape), and the worker never sees the call;
-2. the worker runs the handler and returns its output;
-3. the main thread checks the output's size (section 5), then validates it,
-   then answers as today.
+1. **Structural checks on the main thread:** the service, the action, an
+   input at all.
+2. **The input is validated in a validator.** A failure answers exactly as
+   today's in-worker failure does (same code, same text, same shape), and the
+   module's worker never sees the call.
+3. **The worker** runs the handler and returns its output.
+4. **The output** has its size checked on the main thread (section 5), is
+   validated in a validator, and is answered as today.
+
+The value validated is the structured clone posted to the validator: exactly
+what the module's worker receives.
+
+**Bounds** (as the reviewer corrected them on #152, 2026-11-13):
+- **The deadline:** each validator request has one, `--validationTimeoutMs`
+  (default 1000), counted from when it is queued: queue wait plus run. Past
+  it the call is refused `VALIDATION_TIMEOUT` (naming the module, the action
+  and the side, never a key or a value), and it is logged. A request still
+  queued is dropped, never validated nor sent on to the module. A running one
+  has its validator replaced (a crash or its memory limit too), with a
+  growing backoff when replacements keep coming.
+- **Fairness between tenants:** one queue per module, served round-robin
+  across modules. A module holds at most all but one of the validators, even
+  when no other module is waiting, so another module always finds one free.
+- **Compiling:** per action, from one dereference of the module's document,
+  under its own budget, `--validationCompileMs` (default 10000). Every action
+  is compiled at load (warm), and past the budget the load is refused
+  (`MODULE_ASSEMBLY_FAIL`, stage `schemaCompile`), so an operator sees it at
+  load and not as call timeouts. A validator that replaced one compiles an
+  action again before its check, under the same budget; the check's deadline
+  resumes after.
+- **The circuit breaker:** only a module's own output's timeout or its
+  compile's counts against it. An input's does not, since any caller can
+  send a slow input, and neither does a wait in the queue. 3 strikes in 5
+  minutes quarantine the module by name: `VALIDATION_QUARANTINED` until an
+  operator loads it again (a supervisor's restart does not clear it).
+- **The output's size:** `--maxOutputBytes` (default 8 MiB), measured in the
+  module's own worker before it posts its reply; past it the call is refused
+  `OUTPUT_TOO_LARGE` (naming the module and the action). Step 2's buffers
+  make that the main thread's guarantee too.
+- **The load-time courtesy check:** `lib/schema-safety.js` refuses at load,
+  `MODULE_ASSEMBLY_FAIL` stage `schemaSafety`, a schema.json over 1 MB, a
+  pattern over 1000 characters or of star height above 1, and a document
+  over 100000 nodes with its `$ref`s and `$dynamicRef`s expanded. It runs in
+  a validator, and one that fails to run refuses the module. It is a
+  courtesy; the validator's deadline is the boundary.
+
+**Measured** on the maintainer's 2-CPU VM, through the real pool: one
+call's input and output checks (two round trips) cost 0.17 ms p50 and
+0.47 ms p90 with a small output, and 0.53 ms p50 with a 100 KB output. These
+replace the in-worker validation the module's worker no longer does.
 
 This is the change that matters for security as well as speed: today the
 output check that makes a closed output schema a guarantee runs in the
-module's own worker, where code in the module can interfere with it. On the
-main thread the module cannot reach it.
+module's own worker, where code in the module can interfere with it. In a
+validator the module cannot reach it, and the main thread never runs a
+module's schema.
 
 ### 5. Results: what the main thread unpacks, and the cap on it
 
@@ -206,8 +270,9 @@ result (the reviewer's call, refining the first draft):
   the size. Its only limit is memory: `--maxHopResultBytes`, default
   256 MiB, configurable.
 - **A final result, leaving the runtime** (an MCP tools/call result, an HTTP
-  invoke-action answer, a job's stored result), is deserialised and
-  validated on the main thread, which needs the object to answer the client.
+  invoke-action answer, a job's stored result), is deserialised on the main
+  thread, which needs the object to answer the client, and validated in a
+  validator worker (section 4).
   Its cap is `--maxResultBytes`, default 16 MiB, configurable by the
   operator. A result for a model is far smaller in practice: 16 MiB is
   millions of tokens, well past any model's context, so the default never
@@ -221,6 +286,23 @@ has no cross-thread copy and is not capped. A module that needs to hand a
 client something larger than any sensible cap (a file, a dataset) returns a
 reference to it (a path in its data namespace, a URL), which is the right
 shape for large data anyway.
+
+**As built (lean worker step 2; the reviewer's rulings of 2026-11-13,
+superseding the two caps above).** The rulings:
+
+- **(a) Where a hop's result is checked.** Its bytes go to a validator
+  worker, which checks them against the callee's output schema and gives
+  them back, then to the calling worker. The main thread never deserialises
+  them, and no module's worker validates them. The deadline, the per-module
+  queues and the strike rule are those of section 4: a timeout on a hop's
+  result is a strike against the callee.
+- **(b) One cap.** `--maxOutputBytes` (default 8 MiB, at most 256 MiB, the
+  ceiling above) applies to every module output, a hop's result included.
+  It is checked in the callee's worker before posting, and, for a hop's
+  bytes, on the main thread from their length; the main thread's check is
+  the guarantee.
+- **(c) No new code.** Over the cap the answer is `OUTPUT_TOO_LARGE`;
+  RESULT_TOO_LARGE is not added.
 
 ### 6. Direct peer channels
 
@@ -244,8 +326,8 @@ No ajv library is loaded in any worker; the generated code is a few small
 functions. The trust reasoning: a module that interferes with the code in its
 own worker can only harm itself here (its own input check, or its own check
 of what it received). What reaches an MCP client or an HTTP caller is always
-validated on the main thread, because a scenario's result always returns
-through the main thread.
+validated in a validator worker, out of every module's reach, because a
+scenario's result always returns through the main thread.
 
 ### 7. The worker side of hops, after R2-1
 
@@ -288,9 +370,12 @@ handler-map module has no device class.
 - Crash isolation unchanged: a module that throws at load, throws in a
   handler, exhausts its heap, loops forever, or calls `process.exit` ends only
   its own lean worker; the others keep answering; the supervisor restarts it.
-- Validation on the main thread: a bad input never reaches the worker; a bad
-  output is refused with today's code and text; a module that tampers with
-  globals in its worker cannot make an invalid output pass.
+- Validation in validator workers: a bad input never reaches the worker; a
+  bad output is refused with today's code and text; a module that tampers
+  with globals in its worker cannot make an invalid output pass; a
+  validation that takes too long is refused within the deadline while the
+  main thread keeps answering, and a module that keeps causing it is
+  quarantined.
 - Result size caps: a final result over --maxResultBytes and a hop result
   over --maxHopResultBytes are refused with RESULT_TOO_LARGE without the main
   thread deserialising them; one just under each cap passes; a hop result
@@ -316,10 +401,11 @@ merges (B's Windows work comes first); A answers questions about the sandbox
 prelude and the hop path. Each step a separate PR with the
 reviewer's high review:
 
-1. Main-side spec and validators, and validation on the main thread for
-   routed calls, with today's workers otherwise unchanged (they skip their
-   own validation). This step alone moves the guarantee to the main thread.
-   CDIF-style modules are refused from this step on.
+1. The main-side spec, and validation of routed calls in validator workers
+   (section 4, as revised on #152), with today's workers otherwise unchanged
+   (they skip their own validation). This step alone moves the guarantee out
+   of the module's reach, and off the main thread. CDIF-style modules are
+   refused from this step on.
 2. Results as transferred buffers: hop results routed undeserialised and
    validated in the calling worker, final results capped on the main thread.
 3. The lean worker entry and the CHUtil facade for every module, with the

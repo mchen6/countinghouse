@@ -1,0 +1,53 @@
+{
+  "main-checked-key": {
+    "userName": "main-checked-test",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-caller-internal": {
+    "userName": "main-checked-caller-internal",
+    "devices": [
+      "*"
+    ],
+    "runsModules": [
+      "main-checked-caller"
+    ]
+  },
+  "main-checked-other-key": {
+    "userName": "main-checked-other",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-1": {
+    "userName": "main-checked-rotating-1",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-2": {
+    "userName": "main-checked-rotating-2",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-3": {
+    "userName": "main-checked-rotating-3",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-4": {
+    "userName": "main-checked-rotating-4",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-flood-key": {
+    "userName": "main-checked-flood",
+    "devices": [
+      "*"
+    ]
+  }
+}

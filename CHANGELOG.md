@@ -100,6 +100,145 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   closing, Ctrl-C) writes them.
 
 
+### Removed — CDIF-style modules: one module format (breaking)
+
+- **A module is `api.json`, `schema.json` and `handlers/<service>/<action>.js`**
+  (lean worker, step 1; Matt, 2026-11-13). A module with a main entry
+  (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
+  refused before any of its code runs, at every way in (start, load, reload,
+  restart) and by `countinghouse-validate` (stage `layout`), with the new code
+  `MODULE_LAYOUT_UNSUPPORTED`, whose text names the file. That retires a
+  `device.js` exporting a handler map and an `index.js` class or EventEmitter
+  doing its own discovery (`discover`, `deviceonline`, `deviceoffline`). With
+  a `handlers/` directory, a main entry is never run, by the runtime or the
+  validator (whose `loadModuleEntry` stage is gone).
+- **`MODULE_NOT_DISCOVERABLE` is gone**: only the retired shape could raise it.
+- `npx countinghouse-migrate-module ./my-module` converts a 5.x module (a
+  `CHDevice` with `setAction`); a `device.js` handler map is converted by
+  moving each entry into its own handler file.
+- `CountinghouseError.withFields(code, fields, ...args)`: a catalogue text's
+  `{placeholders}` filled in for the locale.
+
+### Security — a module's input and output are checked in validator workers, out of its reach
+
+- **Every call the main thread sends to a module's worker** (an MCP
+  `tools/call`, an HTTP `invoke-action`, a job's run, a hop routed through
+  the main thread) is validated (lean worker, step 1(b)). The input is
+  checked before the call is sent, so a bad input never reaches the worker,
+  and the output on the reply.
+- **Where:** in a validator worker (`lib/validator-pool.js`), neither on the
+  main thread nor in the module's own worker. No module code runs there.
+- **How:** the main thread reads the module's `api.json` and `schema.json`
+  before its worker starts (`lib/module-spec.js`) and keeps only structural
+  facts: names, the spec text, a hash. The validator compiles the schemas
+  lazily with the same `Service` code a worker uses, so every refusal keeps
+  its code, text and fault. The module's worker skips its own validation for
+  those calls.
+- **Why:** the checks ran in the module's own worker, where its code could
+  reach them. Under the default sandbox (`audit`) and with none, the
+  runtime's `Service` and validator are in the worker's `require.cache`, and
+  a module could replace them and return an output its schema refuses
+  (`test/sandbox/41`). They could not move to the shared main thread: no
+  check made beforehand bounds JSON Schema validation of a module's schema.
+  Some patterns take seconds (`^(\w|a)+$`), a 700-byte `anyOf` schema takes
+  seconds to compile, and so does `uniqueItems` over 20000 items.
+- **`--validatorWorkers <n>`** (default one per spare CPU, 2 to 4) sets the pool's size, each worker
+  with resource limits.
+- **`--validationTimeoutMs <n>`** (default 1000) is one validation's
+  deadline, counted from when it is queued (queue wait plus run). Past it the
+  call is refused `VALIDATION_TIMEOUT` (naming the module, the action and the
+  side, never a value). A request still queued is dropped, never validated
+  nor sent on, and a running one has its validator replaced (at once; only
+  workers that keep ending before they are ready back off).
+- **Fair between tenants:** one queue per module, served round-robin, and a
+  module holds at most all but one READY validator, so another module's
+  check takes milliseconds during one module's flood. One caller has one
+  validation in flight across the pool, so one key's flood cannot hold it.
+- **A slow input is held against its caller, not the module:** it replaces
+  its validator and nothing else. A caller whose inputs to a module miss the
+  deadline 3 times in 5 minutes has its own calls to that module refused
+  `VALIDATION_CALLER_THROTTLED` for a minute; no one else's are, and it
+  never takes the last free validator meanwhile. A flood from many keys (a
+  distributed one) is for the per-key rate limits, not the pool.
+- **`--validationCompileMs <n>`** (default 10000): a module's schemas are
+  compiled per action, from one dereference of its document, at load. Past
+  the budget the load is refused (`MODULE_ASSEMBLY_FAIL`, stage
+  `schemaCompile`). Every new validator compiles every known module, and
+  runs each compiled check once, before it takes a call. A call never waits
+  past its own deadline: if its action is still compiling it is refused
+  `VALIDATION_TIMEOUT` with no strike, and the compile goes on in the
+  background.
+- **A quarantine:** a module whose own outputs or compiles miss their
+  deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
+  name, until an operator loads it again. A slow input is not held against
+  the module: any caller can send one.
+- **`--maxOutputBytes <n>`** (default 8 MiB, at most 256 MiB): a module's
+  output, a hop's result to another module included, is measured in its own
+  worker before it is posted, and refused `OUTPUT_TOO_LARGE` (naming the
+  module and the action) past it.
+- **A hop's result crosses the main thread as bytes it never unpacks**
+  (lean worker step 2). The callee's worker posts its result as
+  `v8.serialize` bytes, transferred, not copied. The main thread refuses
+  them `OUTPUT_TOO_LARGE` from their length alone over `--maxOutputBytes`.
+  It then has them checked against the callee's output schema in a
+  validator worker, and transfers them on to the calling worker, which
+  decodes them. A large result between modules no longer stalls the main
+  thread for every tenant. Bytes a module forges through its worker are
+  refused or checked like any others: a caller only ever decodes bytes a
+  validator passed, within the cap. Bytes reach only a request that asked
+  for them, and a hop's reply that is not bytes is refused.
+- **Every module output is capped by its bytes on the main thread** (the
+  review of #165). Every call whose spec the main thread holds answers in
+  bytes: a client's, a job's and a hop's, and a failed call's error and
+  payload too. The main thread refuses them `OUTPUT_TOO_LARGE` from their
+  own length, so a getter, a patched `byteLength`, a huge fault or message
+  cannot get a result or an error past the cap. Not yet bounded: a module
+  that patches its worker's `MessagePort` can attach extra fields to a
+  reply, which the main thread deserialises on receipt, before any length
+  check. That is the general module-to-main channel, with no byte bound yet
+  (#170). A client's or a
+  job's result is unpacked on the main thread once a validator passed it; a
+  plain reply where bytes were asked for is refused. A Buffer crosses
+  as a Uint8Array, as structured clone gives it, using V8's own serializer.
+  A validator's heap follows the cap: four times it plus 64 MB, never under
+  256 MB. Final results (an MCP tools/call, an HTTP invoke-action answer, a
+  job's result) are unpacked on the main thread as before.
+- **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
+  a 100 KB output.
+- **A worker's device is registered only if it announces exactly that spec,**
+  with schema.json unchanged by hash, and it is listed as the main thread's
+  copy. Any other is neither registered nor listed, and the mismatch is
+  logged.
+- **A service or action named like an `Object.prototype` member**
+  (`constructor`, `__proto__`, `toString`...) is the module's own or not
+  found, in every mode: an undeclared one is answered `SERVICE_NOT_FOUND` or
+  `ACTION_NOT_FOUND`, and a declared one works. A device's services and
+  actions were plain objects, so such a name found the prototype's member.
+  An undeclared one answered `ACTION_NOT_IMPLEMENTED` or crashed, and a
+  declared one's handler was set on `Object.prototype`'s function.
+- **Unchanged:** a call over a direct peer channel is still validated in the
+  called worker (until step 4), and single-thread mode validates in-process
+  as before.
+- **A courtesy refusal at load** (`MODULE_ASSEMBLY_FAIL`, stage
+  `schemaSafety`, naming the module and the schema path, never the pattern),
+  run in a validator in worker mode (`lib/schema-safety.js`); a check that
+  fails to run refuses the module too. It refuses:
+  - a schema.json over 1 MB;
+  - a regular expression (`pattern`, a `patternProperties` key, a
+    `propertyNames` pattern) over 1000 characters, or with a repetition
+    inside a repeated group (`^(a+)+$`) or alternatives that start alike in
+    one (`(a|aa)+`);
+  - a document over 100,000 nodes with its `$ref`s and `$dynamicRef`s
+    expanded (measured without expanding it), a `$ref` cycle, and a `$ref`
+    that names no place in schema.json.
+
+  A refused reload leaves the loaded version serving.
+- **One answer changes:** a result that cannot cross between threads (a
+  function or a Symbol inside a module's output) is answered
+  `DEVICE_INVOKE_EXCEPTION` ("the result could not be sent between
+  threads"), where the worker's own check used to refuse it first with
+  `OUTPUT_DATA_VALIDATION_FAIL`.
+
 ### Fixed — on Windows, a module worker never started (#40)
 
 - On Windows every module's start stopped after "file broker: <module>
