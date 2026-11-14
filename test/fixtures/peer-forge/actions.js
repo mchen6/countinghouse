@@ -10,29 +10,20 @@ const outcome = (e, d) => (e != null ? `error: ${e.code || e.message}` : `ok: ${
 // as a module sharing the worker's realm can: the token of the last
 // announced peer invoke.
 const state = globalThis.__peerForge || (globalThis.__peerForge = {token: null, hooked: false});
-// The runtime posts its messages to the main thread as envelopes of v8
-// bytes (#170): a hook opens one to read or rewrite it, and closes it again.
-// v8 is asked for only when an envelope passes, which happens under
-// --moduleSandbox off alone (under audit and enforce the lockdown pins the
-// runtime's ports, so the hook never sees what they send).
-function openEnvelope(message) {
-  if (message == null || !(message.b instanceof ArrayBuffer)) return null;
-  try {
-    const d = new (require('v8').Deserializer)(Buffer.from(message.b));
-    d.readHeader();
-    return d.readValue();
-  } catch (e) {
-    return null;
-  }
+// The runtime posts to the main thread as envelopes (#170): a module that
+// shares its worker's realm (--moduleSandbox off) opens one with the
+// runtime's own lib/message-envelope.js, found in require.cache (keyed by
+// host path), buffers carried beside it (t) included. Under audit and
+// enforce the runtime's ports are pinned, so a hook never sees them.
+function runtimeEnvelope() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/message-envelope.js') && !k.startsWith('/app/'));
+  return key != null ? require.cache[key].exports : null;
 }
-function closeEnvelope(envelope, inner, rest) {
-  const s = new (require('v8').Serializer)();
-  s.writeHeader();
-  s.writeValue(inner);
-  const buf = s.releaseBuffer();
-  const b = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  const transfer = Array.isArray(rest[0]) ? rest[0].map((t) => (t === envelope.b ? b : t)) : [b];
-  return {message: Object.assign({}, envelope, {b}), rest: [transfer].concat(rest.slice(1))};
+function openEnvelope(message) {
+  const env = runtimeEnvelope();
+  if (env == null || message == null || !(message.b instanceof ArrayBuffer)) return null;
+  const r = env.unwrap(message, Infinity);
+  return r.violation == null ? r.message : null;
 }
 
 if (!state.hooked && typeof(globalThis.MessagePort) === 'function') {

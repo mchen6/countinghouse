@@ -16,10 +16,10 @@ function workerOptions() {
 module.exports = async (input, ctx) => {
   const marker = input.marker;
   const forge = input.forge || {};
-  const out = {code: null, n: null, stashed: false, exposed: null, requestTimeout: null, requestTimeoutMs: null, tookMs: null};
+  const out = {code: null, n: null, stashed: false, exposed: null, requestTimeout: null, jobTimeout: null, jobResultTtl: null, tookMs: null};
   if (input.probe === 'requestTimeout') {
     const o = workerOptions();
-    if (o != null) { out.requestTimeout = o.requestTimeout; out.requestTimeoutMs = o.requestTimeoutMs; }
+    if (o != null) { out.requestTimeout = o.requestTimeout; out.jobTimeout = o.jobTimeout; out.jobResultTtl = o.jobResultTtl; }
     return {output: out};
   }
   // drainFirst: that many Redis commands first, fire and forget, each a

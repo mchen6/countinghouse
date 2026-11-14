@@ -112,6 +112,7 @@ one) as well as the ports it binds.
 | `test/module-loading/14-lifecycle.js` | 9634 |
 | `test/module-loading/15-reload-scenarios.js` | 9606 |
 | `test/module-loading/16-failed-reload-ends-worker.js` | 9632 |
+| `test/module-loading/28-lean-perf-harness.js` (perf/lean-worker-perf.js) | 9752 |
 | `test/remote/01-declaration.js` | 9688 |
 | `test/remote/02-credentials.js` | 9688–9689 |
 | `test/remote/03-client.js` | 9686–9687 |
@@ -147,6 +148,7 @@ one) as well as the ports it binds.
 | `test/sandbox/30-deviceonline-while-unloading.js` | 9640 |
 | `test/sandbox/45-load-bound.js` | 9734–9735 |
 | `test/sandbox/46-redis-namespace.js` | 9736–9737 |
+| `test/sandbox/47-redis-purge.js` | 9738 |
 | `test/sandbox/49-message-bound.js` | 9739 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
@@ -155,6 +157,7 @@ one) as well as the ports it binds.
 | `test/sandbox/39-resolve-shim.js` | 9724–9725 |
 | `test/sandbox/41-main-thread-validation.js` | 9749 |
 | `test/sandbox/42-hop-results-transferred.js` | 9749 (after 41's server has stopped: one mocha process runs the folder's files one after another) |
+| `test/sandbox/48-hop-inputs-transferred.js` | 9749 (after 41's and 42's servers have stopped, as 42) |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |

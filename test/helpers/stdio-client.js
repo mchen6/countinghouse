@@ -34,9 +34,24 @@ function withoutRedisNoise(err, max = 4000) {
 // timeoutMs), stop(lingerMs)}. `args` follow the entry; `env` is added to the
 // test's own. `lines` holds stdout's lines as written, a last one without
 // its newline included once stdout has closed.
-function startStdio(args, {env = {}} = {}) {
-  const child = spawn(process.execPath, [ENTRY, ...args], {env: {...process.env, ...env}, stdio: ['pipe', 'pipe', 'pipe']});
+// ipc: true opens the control channel's fd (packs in place, part 2):
+// io.control(msg) sends a request and resolves with the reply of its id.
+function startStdio(args, {env = {}, ipc = false} = {}) {
+  const child = spawn(process.execPath, [ENTRY, ...args], {env: {...process.env, ...env}, stdio: ipc ? ['pipe', 'pipe', 'pipe', 'ipc'] : ['pipe', 'pipe', 'pipe']});
   const io = {child, err: '', lines: []};
+  if (ipc) {
+    const replies = new Map();
+    let nextControl = 1;
+    child.on('message', (m) => {
+      const r = (m != null) ? replies.get(m.id) : null;
+      if (r != null) { replies.delete(m.id); r(m); }
+    });
+    io.control = (msg) => new Promise((resolve) => {
+      const id = nextControl++;
+      replies.set(id, resolve);
+      child.send({...msg, id});
+    });
+  }
   const waiting = new Map();   // id -> {resolve, reject}
   let partial = '';
   let ended = null;

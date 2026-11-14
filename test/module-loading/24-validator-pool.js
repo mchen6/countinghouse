@@ -63,6 +63,16 @@ describe('module-loading 24: the validator pool', function() {
   }
   // Ready, and done compiling in the background: every new validator warms
   // every known module before it takes a call (the review of #165).
+  // Until `count()` reaches n, with a bound. A stall counts when its
+  // validator is replaced (fail), which for a call that started late comes
+  // after its answer; until then that validator is busy, and a recently
+  // stalling caller takes no last free validator, so its next request would
+  // be refused as a wait, never counted (CI at 623831c, r24 here).
+  async function counted(count, n) {
+    for (let w = 0; count() < n && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
+    assert.strictEqual(count(), n);
+  }
+
   async function warmed(p) {
     await whenReady(p);
     for (let w = 0; (p.slots.some((x) => x.background.size > 0) || !(p.spare && p.spare.ready)) && w < 60000; w += 20) await new Promise((r) => setTimeout(r, 20));
@@ -144,8 +154,11 @@ describe('module-loading 24: the validator pool', function() {
     for (let i = 0; i < 3; i++) {
       await warmed(pool);
       assert.strictEqual(codeOf(await checkOut(m, STALLING)), 'VALIDATION_TIMEOUT');
+      await counted(() => (pool.strikes.get(m.name) || []).length, i + 1);
       await cooled();
     }
+    // the third strike counts when its validator is replaced: waited for
+    for (let w = 0; !pool.isQuarantined(m.name) && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
     assert.ok(pool.isQuarantined(m.name));
     assert.ok(errors.some((l) => l.includes(`${m.name}: quarantined after 3`)), errors.join('\n'));
     const started = Date.now();
@@ -275,6 +288,9 @@ describe('module-loading 24: the validator pool', function() {
         const m = moduleWith(STALL, {}, {type: 'object'}, p);
         await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_a')), 'VALIDATION_TIMEOUT');
+        // judged once the stall has been dealt with (the validator replaced,
+        // which may come after the answer), not before it could have been
+        await warmed(p);
         assert.strictEqual(p.cooldown.has(m.key), false);
         assert.strictEqual(p.stalledAt.has(m.key), false);
         const t = Date.now();
@@ -293,6 +309,7 @@ describe('module-loading 24: the validator pool', function() {
         await warmed(p);
         for (let i = 0; i < 3; i++) {
           assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+          await counted(() => (p.callerStalls.get(`u_flood\n${m.name}`) || []).length, i + 1);
           await warmed(p);
         }
         await blocked(p, 'u_flood', m);
@@ -317,6 +334,7 @@ describe('module-loading 24: the validator pool', function() {
         await warmed(p);
         for (let i = 0; i < 3; i++) {
           assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+          await counted(() => (p.callerStalls.get(`u_flood\n${m.name}`) || []).length, i + 1);
           await warmed(p);
         }
         await blocked(p, 'u_flood', m);
@@ -419,6 +437,12 @@ describe('module-loading 24: the validator pool', function() {
         // compiles the action on the call path, so one passing call first
         assert.strictEqual(await checkOut(m, [1], p), null);
         assert.strictEqual(codeOf(await checkOut(m, STALLING, p)), 'VALIDATION_TIMEOUT');
+        // A call that started late is answered at its own deadline, as a wait;
+        // its validator is given a full budget before it counts as stalled,
+        // and only then is the module cooled down (lib/validator-pool.js
+        // onDeadline, fail). So the cool-down is waited for, with a bound:
+        // CI's test (24) and (24.15.0) at 623831c.
+        for (let w = 0; !(p.cooldown.has(m.key) && p.stalledAt.has(m.key)) && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
         assert.ok(p.cooldown.has(m.key) && p.stalledAt.has(m.key));
         await cooled();
         await warmed(p);
@@ -542,7 +566,12 @@ describe('module-loading 24: the validator pool', function() {
       const answer = await checkBytes(m, bytesOf({output: STALLING}));
       assert.strictEqual(answer.buffer, null);
       assert.strictEqual(codeOf(answer.refused), 'VALIDATION_TIMEOUT');
-      assert.strictEqual((pool.strikes.get(m.name) || []).length, before + 1);
+      // the strike counts when the stalled validator is replaced, which may
+      // come after the answer (a call refused first as a late start): waited
+      // for, with a bound, not assumed (CI's test (24) at 39d6606)
+      const struck = () => (pool.strikes.get(m.name) || []).length;
+      for (let w = 0; struck() < before + 1 && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
+      assert.strictEqual(struck(), before + 1);
       await cooled();
       await warmed(pool);
       assert.strictEqual((await checkBytes(m, bytesOf({output: [1, 2]}))).refused, null);
