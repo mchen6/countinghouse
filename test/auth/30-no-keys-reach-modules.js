@@ -5,8 +5,9 @@
 // HTTP invoke-action (with X-CH-Key), a task, and a peer hop from a composite
 // bound to an internal identity, whose own view is checked too.
 //
-// Skipped until R2-1's last task removes the old fields (Task 5); on the base
-// it fails, listing where each value was found.
+// On since R2-1's last task removed the old fields (Task 5); before it, it
+// failed, listing where each value was found. A walk that ran out of budget
+// would prove nothing, so a view must not have.
 const assert  = require('assert');
 const crypto  = require('crypto');
 const fs      = require('fs');
@@ -44,13 +45,15 @@ function assertClean(view, label) {
   const names = Array.from(new Set((view.accessors || []).map((p) => p.slice(p.lastIndexOf('.') + 1)))).sort();
   console.log(`    [${label}] visited ${view.visited}, budget exhausted: ${view.budgetExhausted}, depth-capped: ${view.depthCapped}, ` +
     `accessors skipped: ${view.accessorCount} (names: ${names.join(', ')})`);
+  assert.strictEqual(view.budgetExhausted, false, `${label}: the walk ran out of budget, so it proves nothing`);
   assert.strictEqual(view.hitCount, 0, `${label}: ${view.hitCount} found:\n  ${describeHits(view).join('\n  ')}`);
   assert.deepStrictEqual(Object.keys(view.caller || {}).sort(), ['id', 'isAdmin'], `${label}: ctx.caller is ${JSON.stringify(Object.keys(view.caller || {}))}`);
   assert.match(view.caller.id, ID_SHAPE);
   assert.strictEqual(view.caller.isAdmin, false);
 }
 
-describe.skip('auth 30: no API key, user name or Redis URL reaches a module', function() {
+[['direct peer channels', []], ['routed through the main thread', ['--no-directPeerChannels']]].forEach(([label, flags]) => {
+describe(`auth 30: no API key, user name or Redis URL reaches a module (${label})`, function() {
   this.timeout(120000);
   let base = null;
   let server = null;
@@ -66,7 +69,7 @@ describe.skip('auth 30: no API key, user name or Redis URL reaches a module', fu
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump'),
-      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump-caller')]);
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump-caller')].concat(flags));
   });
   after(() => {
     stopServer(server);
@@ -90,13 +93,26 @@ describe.skip('auth 30: no API key, user name or Redis URL reaches a module', fu
     const created = await mcp(ALICE, 'tools/call', {name: DUMP, arguments: {reversed}, task: {}});
     const taskId = created.result.task.taskId;
     let status = null;
-    for (let i = 0; i < 100 && status !== 'completed' && status !== 'failed'; i++) {
+    for (let i = 0; i < 300 && status !== 'completed' && status !== 'failed'; i++) {
       await new Promise((ok) => setTimeout(ok, 100));
       status = (await mcp(ALICE, 'tasks/get', {taskId})).result.status;
     }
     assert.strictEqual(status, 'completed');
     const res = await mcp(ALICE, 'tasks/result', {taskId});
     assertClean(res.result.structuredContent || JSON.parse(res.result.content[0].text), 'task');
+  });
+
+  // #153's review (1): a part listening on its own peer channel's port sees
+  // every invoke that crosses it; none carries a key. The first call opens
+  // the channel and starts the listener; the second crosses it.
+  // a routed hop crosses no peer port
+  (flags.length === 0 ? it : it.skip)('on the peer channel\'s port, as a part listening on it sees each invoke', async () => {
+    await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
+    const r = await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
+    assert.strictEqual(r.result && r.result.isError, false, JSON.stringify(r).slice(0, 500));
+    const out = r.result.structuredContent || JSON.parse(r.result.content[0].text);
+    assert.ok(out.callee.portMessages > 0, `the listener saw no message: ${JSON.stringify(out.callee).slice(0, 300)}`);
+    assertClean(out.callee, 'peer port');
   });
 
   it('through a peer hop from a composite bound to an internal identity, and in the composite itself', async () => {
@@ -109,4 +125,5 @@ describe.skip('auth 30: no API key, user name or Redis URL reaches a module', fu
     });
     assert.deepStrictEqual(failures, []);
   });
+});
 });

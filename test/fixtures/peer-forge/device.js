@@ -1,7 +1,14 @@
-// Module code reaches its worker's peer channels (CHUtil.ci.deviceManager, a
+// Module code reaches its worker's peer channels (runtime().ci.deviceManager, a
 // documented gap), so once a channel to a worker is open for one granted
 // device it can post an invoke for any other device that worker hosts. The
 // callee must serve only the devices granted on that channel (review R2-2).
+// The runtime's own CHUtil, through require.cache: since R2-1 Task 5 the
+// global CHUtil a module sees has no ci or dm, so a module that goes around
+// it does so this way (still reachable: tidying, not a boundary).
+function runtime() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
+  return (key != null) ? require.cache[key].exports : {};
+}
 const SERVICE = 'urn:countinghouse-test:serviceID:dynService';
 const outcome = (e, d) => (e != null ? `error: ${e.code || e.message}` : `ok: ${JSON.stringify(d)}`);
 
@@ -22,15 +29,15 @@ if (!state.hooked && typeof(globalThis.MessagePort) === 'function') {
 module.exports = {
   forgeService: {
     forge: async (input, ctx) => {
-      const dm = CHUtil.ci.deviceManager;
+      const dm = runtime().ci.deviceManager;
       // the channel is opened by a hop made the proper way (its request
       // carries the call's token; one forged without it is denied)
-      const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE, as: input.appKey},
+      const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE},
         (ce, client) => (ce != null ? resolve(outcome(ce)) : client.invoke({actionName: 'hello', input: {}}, (e, d) => resolve(outcome(e, d))))));
       const channel = dm.peerChannels[dm.peerDeviceWorkerMap[input.granted]];
       if (channel == null) return {output: {granted: granted, other: 'no channel'}};
       const other = await new Promise((resolve) => channel.invoke(input.other, SERVICE, 'hello', {}, 5000,
-        (e, d) => resolve(outcome(e, d)), input.appKey, state.token));
+        (e, d) => resolve(outcome(e, d)), state.token));
       return {output: {granted: granted, other: other}};
     }
   }

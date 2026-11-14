@@ -3,11 +3,9 @@
 const ECHO_DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
 const ERR_SERVICE    = 'urn:countinghouse-com:serviceID:errorInfoTestService';
 
-const AS_IDENTITY = 'aabbcc';
-
 module.exports = async (input, ctx) => {
   const client = await new Promise((resolve, reject) => {
-    ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: ERR_SERVICE, as: AS_IDENTITY},
+    ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: ERR_SERVICE},
       (err, c) => (err != null) ? reject(err) : resolve(c));
   });
 

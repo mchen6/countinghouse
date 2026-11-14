@@ -5,8 +5,8 @@
 // reveals nothing about devices the caller may not use), grants the callee's
 // worker just before the send and releases it when the hop answers; a direct
 // peer hop gives the callee only {input}. On both routes the callee gets
-// its own token and no ctx: no key, no caller identity (R2-1 Task 5, #130's
-// interim args.ctx removed); a part's own remote calls are billed by the
+// its own token and, as its ctx, the hop identity's {id, isAdmin}, never a
+// key (R2-1 Task 5, #130's interim args.ctx removed); a part's own remote calls are billed by the
 // token (test/remote/11). Driven directly: fake workers and a user-auth
 // stub, restored after.
 const assert = require('assert');
@@ -63,6 +63,9 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   // (it has no appKey) and the hop's billing key.
   // the call's token, as the main thread issued one to the caller worker
   // (R2-1 Task 3); the forwarded args carry the callee's own
+  // the callee's ctx.caller: the hop identity's {id, isAdmin}, built on the
+  // main thread (R2-1 Task 5); no identity service runs here, so no id
+  const CALLER = {id: null, isAdmin: false};
   const tokenFor = (workerId) => require(path.join(LIB, 'call-tokens')).issue({billingKey: 'k', workerId: workerId, deviceID: 'd1'});
   const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', args, 'm1', w.caller, tokenFor(w.caller.workerId));
   const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return rest; };
@@ -111,7 +114,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {v: 1}, usageCall: call});
     assert.strictEqual(w.sent.length, 1);
-    assert.deepStrictEqual(forwarded(w), {input: {v: 1}, usageCall: call});
+    assert.deepStrictEqual(forwarded(w), {input: {v: 1}, usageCall: call, ctx: CALLER});
     assert.strictEqual(usage().ownsCall(call, 2), true, 'the part may call on under it');
     w.sent[0].cb(null, {output: {}});
     assert.strictEqual(usage().ownsCall(call, 2), false, 'released when the hop answers');
@@ -158,7 +161,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const w = workers();
     forward(w, {input: {}, usageCall: call});
     assert.deepStrictEqual([w.sent.length, w.replies.length], [1, 0]);
-    assert.deepStrictEqual(forwarded(w), {input: {}});
+    assert.deepStrictEqual(forwarded(w), {input: {}, ctx: CALLER});
   });
 
   it('a hop whose args are null is forwarded without a throw on the main thread', () => {

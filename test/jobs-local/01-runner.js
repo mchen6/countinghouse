@@ -282,13 +282,16 @@ describe('jobs-local 01: the review of B5', function() {
     runner.close();
   });
 
-  it('the job history names its owner by fingerprint, never the key, and still finds the owner\'s runs', async () => {
+  it('the job history names its owner by its caller id, never the key, and still finds the owner\'s runs', async () => {
     const fs = require('fs');
     const os = require('os');
     const path = require('path');
     const LocalKv = require('../../lib/local-kv');
     const redisAPI = require('../../lib/redis-api');
     const storePath = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-jobs-local-01-'));
+    // the identity service a server starts with (R2-1: owners are caller ids)
+    const identity = require('../../lib/identity');
+    if (!identity.ready()) identity.initSync({moduleDataPath: storePath});
     const kv = new LocalKv({storePath});
     const saved = redisAPI.client;
     redisAPI.client = kv;

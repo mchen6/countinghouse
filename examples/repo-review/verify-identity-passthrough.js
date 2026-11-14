@@ -155,7 +155,9 @@ startServer((startErr) => {
 
           assert.strictEqual(out.bill.length, 3, 'expected exactly 3 inner hops');
           out.bill.forEach((b) => {
-            assert.strictEqual(b.billedTo, 'caller', `hop ${b.hop} must be billed to the real outer caller (its user name)`);
+            // the outer caller's opaque id (R2-1), the same on every hop
+            assert.match(String(b.billedTo), /^u_[A-Za-z0-9_-]{22}$/, `hop ${b.hop} must be billed to the real outer caller, by its id`);
+            assert.strictEqual(b.billedTo, out.bill[0].billedTo, `hop ${b.hop} billed to another caller`);
             assert.strictEqual(b.authorizedAs, AS_IDENTITY, `hop ${b.hop} must be authorized as the module`);
             assert.strictEqual(b.charged, 1, `hop ${b.hop} must be charged exactly once`);
           });

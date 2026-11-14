@@ -96,7 +96,7 @@ describe('--stdio, spawned', function() {
       assert.ok(m.id !== null && m.id !== undefined, `an answer to a notification: ${l.slice(0, 200)}`);
     }
     assert.ok(io.err.length > 0, 'the logs went to stderr');
-    // The fixture echoes ctx.caller.apiKey in its own result (id 2); nothing else may hold the key.
+    // The fixture echoes ctx.caller.id in its own result (id 2), never the key (R2-1); nothing may hold the key.
     assert.ok(!io.err.includes(KEY), 'the key is never logged');
     for (const l of io.lines) if (JSON.parse(l).id !== 2) assert.ok(!l.includes(KEY), `the key in a stdout line: ${l.slice(0, 200)}`);
   });

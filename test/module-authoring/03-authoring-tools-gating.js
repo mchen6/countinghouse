@@ -169,7 +169,7 @@ function writeTempModule(indexContent) {
   }));
   fs.mkdirSync(path.join(dir, 'handlers', 'greetService'), {recursive: true});
   fs.writeFileSync(path.join(dir, 'handlers', 'greetService', 'hello.js'),
-    'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}});\n');
+    'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.id}});\n');
   fs.writeFileSync(path.join(dir, 'index.js'), indexContent);
   return dir;
 }

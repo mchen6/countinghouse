@@ -15,10 +15,10 @@ const TRANSFORM_DEVICE_ID = 'a53ef5c7-cc2f-5264-9811-44f1611685ee'; // transform
 const ECHO_SERVICE      = 'urn:countinghouse-com:serviceID:echoService';
 const TRANSFORM_SERVICE = 'urn:countinghouse-com:serviceID:transformService';
 
-// The identity the inner hops are AUTHORIZED as. Billing does not use it:
-// ctx.serviceClient bills ctx.caller. This key still needs a grant to the two
-// target devices -- see docs/composite-tools.md's table of module identities.
-const AS_IDENTITY = 'composite-demo-internal';
+// The identity the inner hops are AUTHORIZED as is the operator's
+// runsModules binding for this module, never named here (R2-1); billing goes
+// to ctx.caller. That identity still needs a grant to the two target devices
+// -- see docs/composite-tools.md's table of module identities.
 
 // Demo-fixed per-hop cost, used only for this module's own app-layer audit
 // trail (ctx.recordUsage below). The real per-hop charge/balance in `bill`
@@ -27,7 +27,7 @@ const HOP_COST = 1;
 
 function clientFor(ctx, deviceID, serviceID) {
   return new Promise((resolve, reject) => {
-    ctx.serviceClient({deviceID: deviceID, serviceID: serviceID, as: AS_IDENTITY}, (err, client) => {
+    ctx.serviceClient({deviceID: deviceID, serviceID: serviceID}, (err, client) => {
       if (err != null) return reject(err);
       return resolve(client);
     });

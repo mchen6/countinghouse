@@ -9,7 +9,7 @@ const answer = (e, data) => ({output: {code: (e != null) ? String(e.code || 'NO_
 const invoke = (client, actionName, input) => new Promise((resolve) => client.invoke({actionName, input}, (e, d) => resolve(answer(e, d))));
 const inputFor = (actionName) => (actionName === 'double' ? {n: 1} : {});
 const viaClient = (ctx, deviceID, serviceID, actionName, as) => new Promise((resolve) =>
-  ctx.serviceClient({deviceID, serviceID, as}, (e, client) => (e != null ? resolve(answer(e)) : invoke(client, actionName, inputFor(actionName)).then(resolve))));
+  ctx.serviceClient({deviceID, serviceID}, (e, client) => (e != null ? resolve(answer(e)) : invoke(client, actionName, inputFor(actionName)).then(resolve))));
 
 // A hop built by hand with the call's own token (read off the worker's
 // send path), sent as the runtime's own functions send it: the routed
@@ -24,9 +24,9 @@ function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
     const cb = (e, d) => resolve((keep === true && e == null) ? {output: {code: null, message: null, n: null, holds: (d != null && d.output != null) ? d.output : null}} : answer(e, d));
     const dm = CHUtil.dm;
     if (typeof(dm.invokeActionViaPeerChannel) === 'function' && dm.peerChannels != null && Object.keys(dm.peerChannels).length > 0) {
-      return dm.invokeActionViaPeerChannel(as, as, deviceID, serviceID, actionName, args, cb);
+      return dm.invokeActionViaPeerChannel(deviceID, serviceID, actionName, args, cb);
     }
-    return dm.sendActionInvokeMessageToParent(as, as, deviceID, serviceID, actionName, args, cb);
+    return dm.sendActionInvokeMessageToParent(deviceID, serviceID, actionName, args, cb);
   });
 }
 
@@ -51,6 +51,10 @@ module.exports = async (input, ctx) => {
       await ctx.call('token-callee/tokenCallee.bump', {});
       return rawHop(ctx, CALLEE, CALLEE_SVC, 'holds', as, {ctx: {appKey: 'forged-key', username: 'forged-user', isAdmin: true, billingKey: 'forged-key'}}, true);
     }
+    // R2-1 Task 5: what ctx.caller is, and `as` refused, in either mode
+    case 'seeCaller': return {output: {code: null, message: null, n: null, holds: {callerKeys: Object.keys(ctx.caller || {}).sort(), id: ctx.caller ? ctx.caller.id : null}}};
+    case 'asRefused': return new Promise((resolve) => ctx.serviceClient({deviceID: CALLEE, serviceID: CALLEE_SVC, as: 'someone'},
+      (e) => resolve({output: {code: (e != null) ? String(e.code || 'NO_CODE') : null, message: (e != null) ? String(e.message).slice(0, 200) : null, n: null}})));
     case 'clientOtherDevice': return viaClient(ctx, OTHER, OTHER_SVC, 'double', as);
     case 'clientOtherAction': return viaClient(ctx, CALLEE, CALLEE_SVC, 'tick', as);
     case 'rawHopOtherDevice': {

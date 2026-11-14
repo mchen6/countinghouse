@@ -190,7 +190,9 @@ async function verifyPath(p, dirs) {
       assert.deepStrictEqual(m.out.bill.map((b) => b.hop), Array.from({length: hops}, (_, i) => i + 1));
       m.out.bill.forEach((b) => {
         assert.strictEqual(b.charged, 1, `hop ${b.hop} must be charged exactly once`);
-        assert.strictEqual(b.billedTo, 'caller', `hop ${b.hop} must be billed to the outer caller (its user name)`);
+        // the outer caller's opaque id (R2-1), the same on every hop
+        assert.match(String(b.billedTo), /^u_[A-Za-z0-9_-]{22}$/, `hop ${b.hop} must be billed to the outer caller, by its id`);
+        assert.strictEqual(b.billedTo, m.out.bill[0].billedTo, `hop ${b.hop} billed to another caller`);
         assert.strictEqual(b.authorizedAs, AS_IDENTITY);
       });
 
