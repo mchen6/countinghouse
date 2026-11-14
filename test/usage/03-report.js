@@ -58,7 +58,10 @@ describe('countinghouse_usage_report', () => {
 
   it('since takes a day, an ISO time or a duration, and the window says what it was', () => {
     const who = {caller: 'u_alice', isAdmin: false};
-    assert.deepStrictEqual(run({since: '2h'}, who).window, {since: '2026-11-11T11:00:00.000Z', until: '2026-11-11T13:00:00.000Z'});
+    const w = run({since: '2h'}, who).window;
+    // Part A: the window also names its first and last record
+    assert.deepStrictEqual([w.since, w.until], ['2026-11-11T11:00:00.000Z', '2026-11-11T13:00:00.000Z']);
+    assert.ok(w.first >= w.since && w.last <= w.until, JSON.stringify(w));
     assert.strictEqual(run({since: '2026-11-10T00:00:00Z'}, who).window.since, '2026-11-10T00:00:00.000Z');
     assert.strictEqual(run({}, who).window.since, null, 'no since: everything recorded');
     for (const bad of [{since: 'soon'}, {since: '2026-02-30'}, {groupBy: 'colour'}, {util: '2026-11-11'}]) {
