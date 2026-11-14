@@ -18,6 +18,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — a bound on a module's load, in every sandbox mode (#144)
+
+- **`--moduleLoadTimeout <seconds>`** (default 120): a module's worker that
+  has not answered its load in time is ended, and the load fails
+  `MODULE_LOAD_TIMEOUT`. Requiring a module's files is synchronous, so one
+  that blocks while it is required never answers; under `audit` and
+  `enforce` the block watchdog already ended it, but under
+  `--moduleSandbox off` nothing did and the worker stayed.
+
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
 - `runsModules` (and sqlite's `module_identities`) names the module the
