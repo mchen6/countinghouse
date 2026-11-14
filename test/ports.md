@@ -150,7 +150,7 @@ one) as well as the ports it binds.
 | `test/sandbox/39-resolve-shim.js` | 9724–9725 |
 | `test/sandbox/41-main-thread-validation.js` | 9749 |
 | `test/sandbox/43-lean-worker-files.js` | 9750 |
-| `test/sandbox/46-lean-lockdown.js` | 9751 |
+| `test/sandbox/48-lean-lockdown.js` | 9751 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |

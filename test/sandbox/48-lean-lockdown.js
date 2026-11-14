@@ -18,7 +18,7 @@ const PROBE = 'lean-lockdown-probe';
 const SERVICE = 'urn:countinghouse-test:serviceID:probeService';
 const TAG = /\(countinghouse module sandbox\)/;
 
-describe('sandbox 46: a lean worker\'s handlers are under the lockdown (enforce)', function() {
+describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)', function() {
   this.timeout(120000);
   let server = null;
   let base = null;
