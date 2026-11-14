@@ -117,12 +117,23 @@ describe('module-loading 28: messages to the main thread cross as bounded bytes 
     for (const field of ['dataBuffer', 'errorBuffer']) {
       const inner = new ArrayBuffer(4 * 1024 * 1024);   // larger than the cap: only b is capped here
       const {envelope, transfer} = wrap({id: 1, category: 'reply', [field]: inner}, CAP);
-      assert.strictEqual(envelope.x, inner);
-      assert.strictEqual(envelope.f, field);
+      assert.deepStrictEqual(envelope.t, [inner]);
       assert.ok(envelope.b.byteLength < 1024, `${envelope.b.byteLength}`);
       assert.deepStrictEqual(transfer, [envelope.b, inner]);
       assert.strictEqual(unwrap(envelope, CAP).message[field], inner);
     }
+  });
+
+  it('a hop\'s input bytes, deep in the message and named in the transfer list (#185), cross beside b, never serialized into it', () => {
+    const inputBytes = new ArrayBuffer(4 * 1024 * 1024);
+    const m = {id: 2, category: 'child', command: 'invokeforeignaction', data: {deviceID: 'd', args: {inputBytes, token: 't'}}};
+    const {envelope, transfer} = wrap(m, CAP, [inputBytes]);
+    assert.deepStrictEqual(envelope.t, [inputBytes]);
+    assert.ok(envelope.b.byteLength < 1024, `${envelope.b.byteLength}`);
+    assert.deepStrictEqual(transfer, [envelope.b, inputBytes]);
+    assert.strictEqual(unwrap(envelope, CAP).message.data.args.inputBytes, inputBytes);
+    // its bytes missing: the message cannot be read
+    assert.match(unwrap({b: envelope.b}, CAP).violation, /could not be read/);
   });
 
   it('the main thread decodes nothing that is not an envelope, malformed, or over the cap', () => {
@@ -131,9 +142,11 @@ describe('module-loading 28: messages to the main thread cross as bounded bytes 
       [{id: 1, category: 'child', command: 'devicelog', data: 'plain'}, /not an envelope/],
       [null, /not an envelope/],
       [{b: new ArrayBuffer(8), extra: 1}, /malformed/],
-      [{b: new ArrayBuffer(8), x: 'nope', f: 'dataBuffer'}, /malformed/],
-      [{b: new ArrayBuffer(8), x: new ArrayBuffer(8), f: 'data'}, /malformed/],
-      [{b: new ArrayBuffer(8), f: 'dataBuffer'}, /malformed/],
+      [{b: new ArrayBuffer(8), t: 'nope'}, /malformed/],
+      [{b: new ArrayBuffer(8), t: []}, /malformed/],
+      [{b: new ArrayBuffer(8), t: [new ArrayBuffer(8), 'x']}, /malformed/],
+      [{b: new ArrayBuffer(8), t: Array.from({length: 5}, () => new ArrayBuffer(1))}, /malformed/],
+      [{b: new ArrayBuffer(8), x: new ArrayBuffer(8), f: 'dataBuffer'}, /malformed/],
       [big, /over 1000/],
       [{b: new Uint8Array([1, 2, 3]).buffer}, /could not be read/]
     ]) {

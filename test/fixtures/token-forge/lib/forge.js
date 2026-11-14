@@ -34,9 +34,22 @@ const state = globalThis.__tokenForge || (globalThis.__tokenForge = {rules: {}, 
 const hops = new Map();   // a peer invoke's id -> its marker
 const deferred = new Map();   // a peer invoke's id -> its announcement, held until the invoke is posted
 
+// A routed hop's input crosses as v8.serialize bytes (lib/hop-input.js); a
+// module reading its own worker's messages reads them too. The marker is a
+// one-byte string: '"', its length, then its characters, after the key.
+function markerInBytes(bytes) {
+  const text = Buffer.from(bytes).toString('latin1');
+  const at = text.indexOf('"\x06marker"');
+  if (at < 0) return null;
+  const len = text.charCodeAt(at + 9);
+  return {marker: text.slice(at + 10, at + 10 + len)};
+}
+
 function hopInput(m) {
   if (m == null || typeof(m) !== 'object') return null;
-  if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) return m.data.args.input;
+  if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) {
+    return (m.data.args.inputBytes instanceof ArrayBuffer) ? markerInBytes(m.data.args.inputBytes) : m.data.args.input;
+  }
   if (m.command === 'peer-invoke') return m.input;
   return null;
 }
@@ -79,21 +92,24 @@ function rewrite(m) {
   }
 }
 
-// The runtime posts to the main thread as envelopes of v8 bytes (#170): the
-// hook opens one, rewrites the message inside, and closes it again. A peer
-// channel's messages (peer-invoke) are not enveloped. This runs under
-// --moduleSandbox off alone: under audit and enforce the lockdown pins the
-// runtime's ports, so the hook never sees what they send.
-function openEnvelope(message) {
-  if (message == null || !(message.b instanceof ArrayBuffer)) return null;
-  try {
-    const d = new (require('v8').Deserializer)(Buffer.from(message.b));
-    d.readHeader();
-    return d.readValue();
-  } catch (e) {
-    return null;
-  }
+// The runtime posts to the main thread as envelopes (#170): a module that
+// shares its worker's realm (--moduleSandbox off) opens one with the
+// runtime's own lib/message-envelope.js, found in require.cache (keyed by
+// host path), buffers carried beside it (t) included. Under audit and
+// enforce the runtime's ports are pinned, so a hook never sees them.
+function runtimeEnvelope() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/message-envelope.js') && !k.startsWith('/app/'));
+  return key != null ? require.cache[key].exports : null;
 }
+function openEnvelope(message) {
+  const env = runtimeEnvelope();
+  if (env == null || message == null || !(message.b instanceof ArrayBuffer)) return null;
+  const r = env.unwrap(message, Infinity);
+  return r.violation == null ? r.message : null;
+}
+// {inner, envelope, rest} -> [message, ...rest] to post: the inner message
+// as it now stands, closed again if it came in an envelope, with the buffers
+// it carried beside it.
 // {inner, envelope, rest} -> [message, ...rest] to post: the inner message
 // as it now stands, closed again if it came in an envelope.
 function closeFor(p) {
