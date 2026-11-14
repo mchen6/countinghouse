@@ -72,6 +72,33 @@ describe('sandbox 51: the handle prototypes\' connect checks the destination its
           cb(null, '127.0.0.1', 4);
         }});
         out.ownProto = await outcome(s1);
+        // 4. Function.prototype.apply replaced: a guard that called
+        // original.apply(...) at call time would hand it the native connect
+        // and the real request, to send to the denied port (the review of #206)
+        const savedApply = Function.prototype.apply;
+        const fnToString = Function.prototype.toString;
+        Function.prototype.apply = function(thisArg, args) {
+          // only when it is handed the native connect and a handle: what the
+          // guard's own call would be
+          const native = Reflect.apply(fnToString, this, []).includes('[native code]');
+          if (native && thisArg != null && Object.getPrototypeOf(thisArg) === tcp && args != null && args[2] === ALLOWED) {
+            args = [args[0], args[1], DENIED].concat(Array.prototype.slice.call(args, 3));
+          }
+          return Reflect.apply(this, thisArg, args == null ? [] : args);
+        };
+        try { out.viaApply = await attempt(() => net.connect(ALLOWED, '127.0.0.1')); } finally { Function.prototype.apply = savedApply; }
+        // 5. a port that reads as an allowed one for the check and the denied
+        // one when the native side coerces it, through a handle's own prototype
+        let reads = 0;
+        const shifty = {valueOf: () => (reads++ === 0 ? ALLOWED : DENIED)};
+        const s2 = new net.Socket();
+        s2.connect({port: ALLOWED, host: 'localhost', family: 4, lookup: (h, o, cb) => {
+          const mine = Object.create(tcp);
+          Object.defineProperty(mine, 'connect', {value: function(req, addr) { return tcp.connect.call(this, req, addr, shifty); }});
+          Object.setPrototypeOf(s2._handle, mine);
+          cb(null, '127.0.0.1', 4);
+        }});
+        out.coerced = await outcome(s2);
         // 3. the Pipe prototype's connect rewritten toward the denied socket path
         const p0 = net.connect(${sockPath('ch-51-none')});
         const pipe = p0._handle != null ? Object.getPrototypeOf(p0._handle) : null;
@@ -97,6 +124,10 @@ describe('sandbox 51: the handle prototypes\' connect checks the destination its
       // the rewrite did not take: the connect went where it was asked to
       assert.strictEqual(r.rewrite, 'connected', all);
       // a handle's own prototype calling the original toward the denied port: refused there, and said
+      // Function.prototype.apply replaced: the guard never calls it
+      assert.strictEqual(r.viaApply, 'connected', all);
+      // a port object is no port: refused before any check, never coerced twice
+      assert.strictEqual(r.coerced, 'error EINVAL', all);
       assert.strictEqual(r.ownProtoSet, true, all);
       assert.strictEqual(r.ownProto, 'error EACCES', all);
       assert.ok(r.redisReports.length > 0, all);
