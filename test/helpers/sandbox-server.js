@@ -50,10 +50,21 @@ function startServer(port, args, opts) {
   });
 }
 
-// try/catch: the server may already be gone if an earlier step failed.
+// The server and what it started: by its process group on POSIX; on Windows
+// (no groups, and a negative pid does nothing) taskkill's tree kill, so a
+// stopped server never keeps answering on its port for the next case.
+function killTree(pid) {
+  if (process.platform === 'win32') {
+    try { require('child_process').execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {stdio: 'ignore', windowsHide: true}); } catch (e) { /* already gone */ }
+    return;
+  }
+  try { process.kill(-pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+}
+
+// The server may already be gone if an earlier step failed.
 function stopServer(server) {
   if (server == null || server.pid == null) return;
-  try { process.kill(-server.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+  killTree(server.pid);
 }
 
 // An "unknown tool" answer throws, so a mistyped (or wrongly cased: tool
