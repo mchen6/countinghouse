@@ -12,11 +12,6 @@ on:
         description: 'Test files or globs, space-separated (e.g. test/stdio/11-*.js)'
         required: true
         type: string
-      sandbox:
-        description: 'Optional --moduleSandbox for tests that read COUNTINGHOUSE_TEST_SANDBOX'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   subset:
@@ -38,7 +33,6 @@ jobs:
         shell: bash
         env:
           TESTS: ${{ inputs.tests }}
-          COUNTINGHOUSE_TEST_SANDBOX: ${{ inputs.sandbox }}
         run: |
           # word-split the list on purpose; globs expand in bash
           set -f; files=($TESTS); set +f
