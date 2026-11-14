@@ -35,5 +35,15 @@ module.exports = async () => {
   await check('write own file (refused)', () => { fs.writeFileSync(path.join(lib, 'data.txt'), 'x'); return 'written'; });
   await check('read outside (refused)', () => fs.readFileSync(process.platform === 'win32' ? 'C:\\Windows\\win.ini' : '/etc/hostname', 'utf8').slice(0, 10));
   await check('stack frame path', () => (new Error('x').stack.split('\n')[1] || '').trim());
+  // the review of #197: the lockdown knows the module's files in every form;
+  // /data and /tmp resolved against the cwd; URLs; glob; "type": "module"
+  await check('require module is the reduced one', () => Object.isFrozen(require('module')));
+  await check('CHUtil.loadFile own file', () => CHUtil.loadFile(path.join(lib, 'sub.js')).sub);
+  await check('write path.resolve(/data) then read', () => { const p = path.resolve('/data/r.txt'); fs.writeFileSync(p, 'r'); return fs.readFileSync(p, 'utf8'); });
+  await check('write path.resolve(tmpdir) then read', () => { const p = path.resolve(os.tmpdir(), 't2.txt'); fs.writeFileSync(p, 't2'); return fs.readFileSync(p, 'utf8'); });
+  await check('readFileSync a file URL of its own', () => fs.readFileSync(new URL('../../lib/data.txt', require('url').pathToFileURL(__filename)), 'utf8'));
+  await check('globSync with the default cwd', () => fs.globSync('lib/*.txt'));
+  await check('import a "type": "module" package file', async () => (await import('../../lib/esm-pkg/x.js')).typeModule);
+  await check('require.resolve.paths are its own', () => require.resolve.paths('anything'));
   return {output: {checks}};
 };

@@ -203,6 +203,12 @@ if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
   process.exit(2);
 }
+// enforce on Windows needs a drive letter for a module's files (#195,
+// lib/fs-broker/virtual-drive.js): with none free it refuses to start.
+if (options.moduleSandbox === 'enforce' && process.platform === 'win32' && require('./lib/fs-broker/virtual-drive').pick() == null) {
+  console.error('--moduleSandbox enforce needs a free drive letter on Windows for the modules\' files (none of D: to Z: is free); free one, or use --moduleSandbox audit');
+  process.exit(2);
+}
 if (options.moduleSandbox !== 'off' && options.workerThread !== true) {
   console.error('--moduleSandbox ' + options.moduleSandbox + ' needs --workerThread: the sandbox applies to module workers');
   process.exit(2);

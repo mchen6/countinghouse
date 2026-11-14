@@ -40,7 +40,16 @@ const EXPECT = {
   'write tmpdir then read': (c) => c.value === 't',
   'write own file (refused)': (c) => !c.ok && ['EROFS', 'EACCES', 'EPERM'].includes(c.code),
   'read outside (refused)': (c) => !c.ok && ['ENOENT', 'EACCES', 'EPERM'].includes(c.code),
-  'stack frame path': (c) => c.ok && (WIN ? /[A-Z]:\\app\\handlers/ : /\/app\/handlers/).test(c.value)
+  'stack frame path': (c) => c.ok && (WIN ? /[A-Z]:\\app\\handlers/ : /\/app\/handlers/).test(c.value),
+  'require module is the reduced one': (c) => c.value === true,
+  'CHUtil.loadFile own file': (c) => c.value === true,
+  'write path.resolve(/data) then read': (c) => c.value === 'r',
+  'write path.resolve(tmpdir) then read': (c) => c.value === 't2',
+  'readFileSync a file URL of its own': (c) => /^hello from the module\r?\n$/.test(c.value),
+  'globSync with the default cwd': (c) => c.ok && c.value.map((p) => p.replace(/\\/g, '/')).includes('lib/data.txt'),
+  'import a "type": "module" package file': (c) => c.value === true,
+  // only its own lookup paths: none of the host's (the install, the home directory)
+  'require.resolve.paths are its own': (c) => c.ok && c.value.length > 0 && c.value.every((p) => (WIN ? /^[A-Z]:\\(app\\|node_modules$)/ : /^\/(app\/|node_modules$)/).test(p))
 };
 
 describe('stdio 16: a module\'s own files under enforce, as it sees them (#195)', function() {

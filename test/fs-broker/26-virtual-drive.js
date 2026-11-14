@@ -10,11 +10,12 @@ const {virtualFormFor} = require('../../lib/fs-broker/roots');
 describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
   afterEach(() => virtualDrive.reset());
 
-  it('the picker: the highest letter the host does not have, once per process; none off Windows', () => {
+  it('the picker: from the middle of the alphabet outward, a letter the host does not have, once per process; none off Windows', () => {
+    assert.deepStrictEqual(virtualDrive.ORDER.slice(0, 5), ['M', 'L', 'N', 'K', 'O']);
     const asked = [];
-    assert.strictEqual(virtualDrive.pick('win32', (l) => { asked.push(l); return ['Z', 'Y'].includes(l); }), 'X');
-    assert.deepStrictEqual(asked, ['Z', 'Y', 'X']);
-    assert.strictEqual(virtualDrive.pick('win32', () => false), 'X', 'picked once');
+    assert.strictEqual(virtualDrive.pick('win32', (l) => { asked.push(l); return ['M', 'L'].includes(l); }), 'N');
+    assert.deepStrictEqual(asked, ['M', 'L', 'N']);
+    assert.strictEqual(virtualDrive.pick('win32', () => false), 'N', 'picked once');
     virtualDrive.reset();
     assert.strictEqual(virtualDrive.pick('win32', () => true), null, 'every letter taken: none');
     virtualDrive.reset();
@@ -37,6 +38,11 @@ describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
     assert.strictEqual(form('D:\\app\\x'), 'D:\\app\\x');
     assert.strictEqual(form('Z:\\apps\\x'), 'Z:\\apps\\x');
     assert.strictEqual(form('\\data\\x'), '/data/x', 'the namespace\'s other paths as before');
+    // the module's /data and /tmp resolved against its cwd <V>:\app
+    assert.strictEqual(form('Z:\\data\\w.txt'), '/data/w.txt');
+    assert.strictEqual(form('z:/tmp/t'), '/tmp/t');
+    assert.strictEqual(String(form(Buffer.from('Z:\\tmp\\b'))), '/tmp/b');
+    assert.strictEqual(form('Z:\\database\\x'), 'Z:\\database\\x');
     assert.strictEqual(virtualFormFor('win32', null)('Z:\\app\\x'), 'Z:\\app\\x', 'no drive: a host path, as before');
     assert.strictEqual(virtualFormFor('linux', 'Z')('Z:\\app\\x'), 'Z:\\app\\x', 'POSIX: unchanged');
   });
