@@ -43,5 +43,11 @@
     "devices": [
       "*"
     ]
+  },
+  "main-checked-flood-key": {
+    "userName": "main-checked-flood",
+    "devices": [
+      "*"
+    ]
   }
 }

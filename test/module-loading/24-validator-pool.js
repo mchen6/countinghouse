@@ -296,7 +296,10 @@ describe('module-loading 24: the validator pool', function() {
         }
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED');
         await new Promise((r) => setTimeout(r, 600));
+        await warmed(p);
         assert.strictEqual(await checkFrom(p, m, [1], 'u_flood'), null, 'the block has ended');
+        // a recently stalling caller takes no last free validator: both free
+        await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
         await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED', 'its fourth stall in the window blocks it again');
