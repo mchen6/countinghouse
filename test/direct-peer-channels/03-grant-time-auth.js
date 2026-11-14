@@ -27,7 +27,7 @@ describe('direct-peer-channels 03: grant-time authorization (D3)', function() {
 
   before(function(done) {
     this.timeout(0);
-    console.log('starting countinghouse with a debugKey that does NOT match echo-device-client-module\'s baked-in appKey...');
+    console.log('starting countinghouse with a debugKey other than the key echo-device-client-module once hardcoded...');
     const server = exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey not-aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); });
     waitForReady(server, done);
   });
@@ -41,32 +41,25 @@ describe('direct-peer-channels 03: grant-time authorization (D3)', function() {
 
   const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
 
-  it('denies brokering for a module whose ServiceClient appKey the running server does not recognize', (done) => {
+  // R2-1 Task 5: a module names no identity, so the key it once hardcoded
+  // ('aabbcc') no longer decides anything: its hops authorize as its binding
+  // (here the debug key, --debug with no auth file), and brokering is not
+  // refused, mismatched --debugKey or not. The denial path itself (an
+  // identity without the grant) is test/sandbox/15's and test/auth/19's.
+  it('brokers a module\'s hop as its binding, whatever key the module once hardcoded', (done) => {
     const t0 = Date.now();
-
-    // the outer HTTP call itself must use the server's real debugKey
-    // (not-aabbcc) to get past the ordinary invoke-action userAuth gate at
-    // all -- what's being tested is the *inner* brokering check, which
-    // uses echo-device-client-module's own hardcoded 'aabbcc' regardless
-    // of what X-CH-Key this outer request carries.
     request(url).post(`/devices/${ECHO_DEVICE_CLIENT_ID}/invoke-action`)
     .set('X-CH-Key', 'not-aabbcc')
     .send({serviceID: 'urn:example-com:serviceID:errTestService', actionName: 'testErrorInfo', input: {foo: 'test'}})
     .end((err, res) => {
       if (err) return done(err);
-
       const ms = Date.now() - t0;
       const code = res.body != null ? res.body.code : null;
-
-      // must fail fast (denied at brokering, not hung waiting on a port
-      // that was never granted) and with a real, recognizable auth-failure
-      // code -- doUserAuth's debug-mode key mismatch (lib/user-auth.js)
-      // reports SYSTEM_ERROR_UNKNOWN_USER.
-      if (ms > 5000) {
-        return done(new Error(`direct-peer-channels 03 fail: took ${ms}ms -- expected a fast denial, not a hang`));
-      }
-      if (code !== 'SYSTEM_ERROR_UNKNOWN_USER') {
-        return done(new Error(`direct-peer-channels 03 fail: expected SYSTEM_ERROR_UNKNOWN_USER, got: ${JSON.stringify(res.body)}`));
+      if (ms > 5000) return done(new Error(`direct-peer-channels 03 fail: took ${ms}ms -- the hop hung`));
+      // testErrorInfo's target action fails on purpose; what matters is that
+      // it was reached, not refused at brokering
+      if (code === 'SYSTEM_ERROR_UNKNOWN_USER' || code === 'PEER_CHANNEL_DENIED' || code === 'USER_HAS_NO_DEVICE') {
+        return done(new Error(`direct-peer-channels 03 fail: the hop was refused at brokering: ${JSON.stringify(res.body)}`));
       }
       return done();
     });

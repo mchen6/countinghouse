@@ -31,6 +31,80 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   longer ended by the old discovery bound (as with any blocking handler,
   `off` bounds nothing; `audit` and `enforce` have the block watchdog).
 
+### Changed — a routed hop's input crosses the main thread as bytes (#185)
+
+- A `ctx.call` routed through the main thread (`--no-directPeerChannels`)
+  sends its input as `v8.serialize` bytes, transferred: the main thread
+  checks it in a validator and hands the checked bytes to the called module,
+  never deserialising or cloning it. On 1 MB hops the main thread's CPU per
+  hop fell from 5.3–6.0 ms to 2.6–3.9 ms (the PR has the table).
+- **`INPUT_TOO_LARGE`** (new): a hop's input over `--maxOutputBytes`, the
+  one cap, is refused on the main thread before any check or handler runs.
+- A hop's input that structured clone cannot carry, or a
+  `SharedArrayBuffer` (which a hop used to share between two modules'
+  workers), now fails the `ctx.call` in the calling worker.
+
+### Added — a bound on a module's load, in every sandbox mode (#144)
+
+- **`--moduleLoadTimeout <seconds>`** (default 120): a module's worker that
+  has not answered its load in time is ended, and the load fails
+  `MODULE_LOAD_TIMEOUT`. Requiring a module's files is synchronous, so one
+  that blocks while it is required never answers; under `audit` and
+  `enforce` the block watchdog already ended it, but under
+  `--moduleSandbox off` nothing did and the worker stayed.
+
+### Changed — `ctx.redis` is per module (#164, breaking)
+
+- **Each key a module names is stored under `m:<module name, URI-encoded>:`**, the name
+  the main thread loaded the module under (never one its worker states), so
+  one module cannot read, overwrite or delete another's keys, nor the
+  runtime's own. Every allowed command has its key positions in a table
+  (`lib/redis-namespace.js`); a command whose keys cannot be placed is
+  refused. `multi` and `exec` are gone from `ctx.redis`: under
+  `--store redis` node_redis's multi runs any command name queued in it.
+  Single-thread mode's `ctx.redis` is namespaced the same way.
+- **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
+  data (unless `keepData`), so a later module of the same name inherits none;
+  the answer gains `keysDeleted`. A reload or an upgrade keeps them.
+
+### Added — `ctx.usage()`: the current call's counts so far
+
+- `ctx.usage()` resolves with the current tools/call's counts so far,
+  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  (and `standIn` when a stand-in answered). `sentence` is the first half of
+  the receipt's sentence, word for word. Every remote server call made under
+  the call is counted, its parts' included. The call's own output is not
+  counted, since it is measured when the call returns. A scenario writes its
+  receipt sentence from these counts, so the sentence reaches the model in
+  its summary. It is `null` outside a counted call, and never carries a key,
+  an id or a caller.
+- A worker's query is checked on the main thread. The call's token is
+  checked first, always: it must be one issued to that worker (else
+  `CALL_TOKEN_INVALID`). Then anything but an open call that worker was
+  given answers `null` alike, so a module cannot tell another worker's
+  open call from a finished one.
+
+### Changed — modules receive no API key and no user name (R2-1, breaking)
+
+- `ctx.caller` is `{id, isAdmin}` (an opaque id, `u_` and 22 characters);
+  `ctx.recordUsage` answers `{id, tool, cost, ts}`; `ctx.httpHeaders` drop
+  `X-CH-Key`, `X-App-Key` and `Authorization`.
+- `ctx.serviceClient` refuses `as` and authorizes as the module's binding,
+  like `ctx.call`; `CHUtil.createServiceClient` refuses an `appKey` in a
+  worker. The CDIF-era `--debug --verifyModule` portal branch, which sent a
+  key over HTTP, is gone.
+- No hop message, peer invoke or device query carries a key: the main thread
+  authorizes and bills each by the call's token. The worker's composition
+  says only that the module is bound. A hop callee's `ctx.caller` is the
+  hop identity's `{id, isAdmin}`.
+- The global `CHUtil` has no `dm` or `ci` (undocumented, breaking for any
+  use); a worker's options carry no `redisUrl`.
+- Another module announcing a reloading or restarting module's device ID is
+  refused (`DEVICE_OBJECT_CONFLICT`); the device query runs the access check
+  for a present device too.
+- `MODULE_INSTALL_FAIL` is gone with the unreachable install path that
+  raised it (with a stack in its message).
+
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
 - `runsModules` (and sqlite's `module_identities`) names the module the
@@ -165,9 +239,37 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
   name, until an operator loads it again. A slow input is not held against
   the module: any caller can send one.
-- **`--maxOutputBytes <n>`** (default 8 MiB): a module's output is measured
-  in its own worker before it is posted, and refused `OUTPUT_TOO_LARGE`
-  (naming the module and the action) past it.
+- **`--maxOutputBytes <n>`** (default 8 MiB, at most 256 MiB): a module's
+  output, a hop's result to another module included, is measured in its own
+  worker before it is posted, and refused `OUTPUT_TOO_LARGE` (naming the
+  module and the action) past it.
+- **A hop's result crosses the main thread as bytes it never unpacks**
+  (lean worker step 2). The callee's worker posts its result as
+  `v8.serialize` bytes, transferred, not copied. The main thread refuses
+  them `OUTPUT_TOO_LARGE` from their length alone over `--maxOutputBytes`.
+  It then has them checked against the callee's output schema in a
+  validator worker, and transfers them on to the calling worker, which
+  decodes them. A large result between modules no longer stalls the main
+  thread for every tenant. Bytes a module forges through its worker are
+  refused or checked like any others: a caller only ever decodes bytes a
+  validator passed, within the cap. Bytes reach only a request that asked
+  for them, and a hop's reply that is not bytes is refused.
+- **Every module output is capped by its bytes on the main thread** (the
+  review of #165). Every call whose spec the main thread holds answers in
+  bytes: a client's, a job's and a hop's, and a failed call's error and
+  payload too. The main thread refuses them `OUTPUT_TOO_LARGE` from their
+  own length, so a getter, a patched `byteLength`, a huge fault or message
+  cannot get a result or an error past the cap. Not yet bounded: a module
+  that patches its worker's `MessagePort` can attach extra fields to a
+  reply, which the main thread deserialises on receipt, before any length
+  check. That is the general module-to-main channel, with no byte bound yet
+  (#170). A client's or a
+  job's result is unpacked on the main thread once a validator passed it; a
+  plain reply where bytes were asked for is refused. A Buffer crosses
+  as a Uint8Array, as structured clone gives it, using V8's own serializer.
+  A validator's heap follows the cap: four times it plus 64 MB, never under
+  256 MB. Final results (an MCP tools/call, an HTTP invoke-action answer, a
+  job's result) are unpacked on the main thread as before.
 - **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
   a 100 KB output.
 - **A worker's device is registered only if it announces exactly that spec,**

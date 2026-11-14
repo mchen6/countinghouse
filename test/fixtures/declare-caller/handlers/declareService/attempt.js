@@ -1,4 +1,4 @@
-const {state, forgeToWorker, reachable, forgedPost} = require('../../lib/reach');
+const {state, forgeToWorker, reachable, forgedPost, runtimeFile} = require('../../lib/reach');
 
 // the device ids come with the call (the test derives them as the runtime does)
 const CALLEE_SVC = 'urn:countinghouse-test:serviceID:tokenCallee';
@@ -9,7 +9,7 @@ const answer = (e, data) => ({output: {code: (e != null) ? String(e.code || 'NO_
 const invoke = (client, actionName, input) => new Promise((resolve) => client.invoke({actionName, input}, (e, d) => resolve(answer(e, d))));
 const inputFor = (actionName) => (actionName === 'double' ? {n: 1} : {});
 const viaClient = (ctx, deviceID, serviceID, actionName, as) => new Promise((resolve) =>
-  ctx.serviceClient({deviceID, serviceID, as}, (e, client) => (e != null ? resolve(answer(e)) : invoke(client, actionName, inputFor(actionName)).then(resolve))));
+  ctx.serviceClient({deviceID, serviceID}, (e, client) => (e != null ? resolve(answer(e)) : invoke(client, actionName, inputFor(actionName)).then(resolve))));
 
 // A hop built by hand with the call's own token (read off the worker's
 // send path), sent as the runtime's own messages are: the peer invoke on the
@@ -41,7 +41,7 @@ function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
         };
         state.parent.on('message', onMsg);
         forgedPost(state.parent, {id: state.nextId++, category: 'child', command: 'peer-channel-request', errMsg: null,
-          data: {targetDeviceID: deviceID, appKey: as, token: state.lastToken}});
+          data: {targetDeviceID: deviceID, token: state.lastToken}});
       });
     }
     return new Promise((resolve) => {
@@ -56,7 +56,7 @@ function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
       state.port.on('message', onReply);
       forgedPost(state.parent, {id: state.nextId++, category: 'child', command: 'peer-announce', errMsg: null,
         data: {channel: state.announce.channel, invokeId: id, token: state.lastToken}});
-      forgedPost(state.port, Object.assign({id: id, command: 'peer-invoke', deviceID, serviceID, actionName, input: args.input, billingKey: as}, (extra != null) ? {ctx: extra.ctx} : {}));
+      forgedPost(state.port, Object.assign({id: id, command: 'peer-invoke', deviceID, serviceID, actionName, input: args.input}, (extra != null) ? {ctx: extra.ctx} : {}));
     });
   }
   if (state.parent == null) return Promise.resolve({output: {code: 'NO_RUNTIME', message: null, n: null}});
@@ -70,8 +70,12 @@ function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
       done(resolve)(m);
     };
     state.parent.on('message', onReply);
+    // as a worker sends a hop: no key, the input as bytes (lib/hop-input.js,
+    // taken from require.cache as module code can)
+    const hopInput = runtimeFile('hop-input.js');
+    const encoded = (hopInput != null) ? hopInput.encode(args) : {args: args, transfer: []};
     forgedPost(state.parent, {id: id, category: 'child', command: 'invokeforeignaction', errMsg: null,
-      data: {appKey: as, billingKey: as, deviceID, serviceID, actionName, args, token: state.lastToken}});
+      data: {deviceID, serviceID, actionName, args: encoded.args, token: state.lastToken}}, encoded.transfer);
   });
 }
 
@@ -106,6 +110,10 @@ module.exports = async (input, ctx) => {
       await ctx.call('token-callee/tokenCallee.bump', {});
       return rawHop(ctx, CALLEE, CALLEE_SVC, 'holds', as, {ctx: {appKey: 'forged-key', username: 'forged-user', isAdmin: true, billingKey: 'forged-key'}}, true);
     }
+    // R2-1 Task 5: what ctx.caller is, and `as` refused, in either mode
+    case 'seeCaller': return {output: {code: null, message: null, n: null, holds: {callerKeys: Object.keys(ctx.caller || {}).sort(), id: ctx.caller ? ctx.caller.id : null}}};
+    case 'asRefused': return new Promise((resolve) => ctx.serviceClient({deviceID: CALLEE, serviceID: CALLEE_SVC, as: 'someone'},
+      (e) => resolve({output: {code: (e != null) ? String(e.code || 'NO_CODE') : null, message: (e != null) ? String(e.message).slice(0, 200) : null, n: null}})));
     case 'clientOtherDevice': return viaClient(ctx, OTHER, OTHER_SVC, 'double', as);
     case 'clientOtherAction': return viaClient(ctx, CALLEE, CALLEE_SVC, 'tick', as);
     case 'rawHopOtherDevice': {

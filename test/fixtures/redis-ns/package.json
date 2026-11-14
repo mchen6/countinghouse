@@ -1,0 +1,1 @@
+{"name": "redis-ns", "version": "1.0.0", "description": "runs ctx.redis commands, for the per-module namespace test (#164)"}

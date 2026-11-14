@@ -120,7 +120,14 @@ describe('remote 07: usage records for remote calls, and the call id across ever
 
   describe('the call id across every hop', () => {
     const device = {moduleName: 'count-probe', deviceID: 'd-count', spec: {device: {friendlyName: 'count-probe'}}};
-    const outerArgs = (usageCall) => ({input: {}, ctx: {appKey: KEY}, usageCall: usageCall});
+    // a call on the main thread: its billing key rides on its args under
+    // the runtime's private Symbol (R2-1 Task 5), as countinghouse-interface
+    // attaches it
+    const outerArgs = (usageCall) => {
+      const args = {input: {}, ctx: {id: null, isAdmin: false}, usageCall: usageCall};
+      handlerCtx.attachBilling(args, {appKey: KEY});
+      return args;
+    };
 
     it('the call id is carried unchanged from the composite through the part to the remote', async () => {
       const id = u.beginCall({tool: 'outer'});
@@ -135,9 +142,10 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       // where the hop must be among the module's declarations (R2-1 Task 4,
       // spec section 8): the composition declares it.
       device._composition = {identity: 'internal', allowed: {}, targets: ['d-part|svc|act']};
+      device._compositionSettled = true;
       let sent = null;
       device._ctxServiceClients = {'d-part|svc|internal': {invoke: (opts, cb) => { sent = opts; cb(null, {}); }, deviceID: 'd-part', serviceID: 'svc'}};
-      await new Promise((resolve, reject) => ctx.serviceClient({deviceID: 'd-part', serviceID: 'svc', as: 'internal'}, (err, client) =>
+      await new Promise((resolve, reject) => ctx.serviceClient({deviceID: 'd-part', serviceID: 'svc'}, (err, client) =>
         (err != null ? reject(err) : client.invoke({actionName: 'act', input: {}, usageCall: 999}, resolve))));
       assert.strictEqual(sent.usageCall, id);
       assert.strictEqual(sent.billingKey, KEY);
@@ -147,8 +155,8 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       const ServiceClient = require('../../lib/service-client');
       const seen = {};
       const dm = {
-        sendActionInvokeMessageToParent: (appKey, billingKey, deviceID, serviceID, actionName, args) => { seen.routed = args; },
-        invokeActionViaPeerChannel: (appKey, billingKey, deviceID, serviceID, actionName, args) => { seen.peer = args; }
+        sendActionInvokeMessageToParent: (deviceID, serviceID, actionName, args) => { seen.routed = args; },
+        invokeActionViaPeerChannel: (deviceID, serviceID, actionName, args) => { seen.peer = args; }
       };
       const client = new ServiceClient({deviceManager: dm}, false, true, 'internal', 'd-part', 'svc', KEY);
       cli.setOptions({workerThread: false, debug: true, directPeerChannels: false});

@@ -75,6 +75,36 @@
             "output": {
               "schema": "/checkService/big/output"
             }
+          },
+          {
+            "name": "odd",
+            "description": "Answers values structured clone carries and JSON does not; a function inside when kind is 'function' (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/odd/input"
+            },
+            "output": {
+              "schema": "/checkService/odd/output"
+            }
+          },
+          {
+            "name": "forge",
+            "description": "Answers {ok: true} but posts hand-made bytes through its worker's send path (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/forge/input"
+            },
+            "output": {
+              "schema": "/checkService/forge/output"
+            }
+          },
+          {
+            "name": "cheat",
+            "description": "Tries to get an output or an error past --maxOutputBytes in its own worker (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/cheat/input"
+            },
+            "output": {
+              "schema": "/checkService/cheat/output"
+            }
           }
         ]
       }

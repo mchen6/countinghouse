@@ -17,7 +17,7 @@ simulation).
 | `--bindAddr` | `127.0.0.1` | Address to bind the HTTP server to. Remote clients need it set (e.g. `0.0.0.0`); it was the first non-internal IPv4 address before 8.0.0. |
 | `--port` | `9527` | HTTP port. |
 | `--stdio` | off | Serve MCP over stdin and stdout instead of HTTP: newline-delimited JSON-RPC, one response line per request, batches and notifications as over HTTP. The log goes to stderr, and nothing but JSON-RPC is written to stdout. No port is opened, and `--port` with `--stdio` is refused (exit 2). The key is the process's own, from the single-identity profile, or `COUNTINGHOUSE_API_KEY`, and is never printed. When stdin closes, the calls in flight drain (up to `--requestTimeout`) and the process exits 0, or 1 if the drain ran out. Clients start it through `countinghouse-stdio` (`bin/countinghouse-stdio.js`), a pure JavaScript entry. `bin/countinghouse` is a shell script that pipes the log through bunyan, so it is not for stdio. |
-| `--usageDir` | `<storePath>/usage` under `--store local`; unset under `--store redis` | Where usage records are appended: `<dir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl`, one JSON object per line, one file per process per day. Each record holds counts, tool, server and pack names, the credential variable's name and the opaque caller id, never a credential value or any content. Under `--store local` every launcher that shares a `--storePath` writes to one usage directory, so the report covers every agent on the machine. Under `--store redis` it is explicit-only, and unset nothing is written. The counters, the receipt and `countinghouse_usage_report`'s memory source work either way. `countinghouse-usage --usageDir <dir> [--since <day|ISO time|30m|24h|7d>] [--groupBy tool|server|pack|module] [--json|--csv]` prints the report of the files for the operator's shell. |
+| `--usageDir` | `<storePath>/usage` under `--store local`; unset under `--store redis` | Where usage records are appended: `<dir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl`, one JSON object per line, one file per process per day. Each record holds counts, tool, server and pack names, the credential variable's name and the opaque caller id, never a credential value or any content. Under `--store local` every launcher that shares a `--storePath` writes to one usage directory, so the report covers every agent on the machine. Under `--store redis` it is explicit-only, and unset nothing is written. The counters, the receipt and `countinghouse_usage_report`'s memory source work either way. `countinghouse-usage --usageDir <dir> [--since <day|ISO time|30m|24h|7d|all>] [--until <day|ISO time|duration>] [--groupBy tool|server|pack|module] [--json|--csv]` prints the report of the files for the operator's shell: first the days the records cover, then the period's totals with the tokens kept out of the model's context (an upper-bound estimate), the rows, one row per day and a profile. An error result's record also holds its error code (`countinghouse/code`), never its message. |
 | `--loadModule <path>` | — | Load a local device module at startup; repeat for multiple modules. |
 | `--redisUrl` | `redis://127.0.0.1:6379` | Redis instance for metering, rate limiting, and session state. |
 | `--store redis\|local` | `redis` | Where the runtime keeps metering, a module's `ctx.redis` data and jobs. `local` uses no Redis: plain files under `--storePath` and memory, for a client machine. `--store local` with `--redisUrl` exits with status 2 ("choose one"). |
@@ -38,7 +38,7 @@ simulation).
 | `--validatorWorkers <n>` | one per spare CPU, 2 to 4 | Validator workers that check every module call's input and output (worker mode), off the main thread and out of the module's reach. A positive integer; anything else exits with status 2. |
 | `--validationTimeoutMs <n>` | `1000` | How long one validation may take, from when it is queued (queue wait plus run); past it the call is refused `VALIDATION_TIMEOUT`, a queued one is dropped unsent, and a running one's validator is replaced. A module whose own outputs or compiles miss it 3 times in 5 minutes is refused `VALIDATION_QUARANTINED` until an operator loads it again (a slow input is not held against it). A positive number; anything else exits with status 2. |
 | `--validationCompileMs <n>` | `10000` | How long compiling a module's schemas may take: every action at load (past it the load is refused, `MODULE_ASSEMBLY_FAIL` stage `schemaCompile`), and an action again in a validator that replaced one. A positive number; anything else exits with status 2. |
-| `--maxOutputBytes <n>` | `8388608` | The largest output a module's call may return, measured in its own worker before it is posted; past it the call is refused `OUTPUT_TOO_LARGE`. A positive integer; anything else exits with status 2. |
+| `--maxOutputBytes <n>` | `8388608` | The largest output a module's call may return, a hop's result to another module included, measured in its own worker before it is posted; past it the call is refused `OUTPUT_TOO_LARGE`. The same cap bounds a hop's input on the main-thread-routed path, measured from its bytes on the main thread: past it the hop is refused `INPUT_TOO_LARGE` before any check or handler runs (a hop over a direct peer channel takes this cap with lean worker step 4). A positive integer, at most `268435456` (256 MiB); anything else exits with status 2. A validator worker's heap is four times this cap plus 64 MB, never under 256 MB. Over about 48 MiB, raise `--validationTimeoutMs` too: a result is unpacked and checked within it. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |
@@ -50,6 +50,7 @@ simulation).
 | `--allowedOrigins <list>` | none | Comma-separated browser origins (e.g. `https://app.example`) allowed cross-origin access (CORS). Every route refuses (403) a request whose `Origin` is not listed; MCP clients and other clients outside a browser send no `Origin` and are unaffected. |
 | `--maxRequestBody <MB>` | `8` | Largest JSON, XML or form request body, on every route; larger ones are answered 413. Bodies are read before the caller's key is checked, so keep this small. |
 | `--maxBsonRequestBody <MB>` | `64` | Largest BSON body, read only on `POST /devices/:deviceID/invoke-action` (`add-job` takes JSON only); larger ones are answered 413. |
+| `--moduleLoadTimeout <seconds>` | `120` | How long a module's worker may take to answer its load, in every sandbox mode; past it the worker is ended and the load fails `MODULE_LOAD_TIMEOUT`. Generous on purpose: a slow load that does not block (a large `node_modules` through the file broker) must not trip it. A number of seconds above 0 (at most 2147483); anything else, `0` included, stops the start (exit 2). |
 | `--moduleMessageRate <n>` | `2000` | Messages per second a module's worker may send to the main thread (Redis commands included); beyond it, calls fail with `RATE_LIMITED`. |
 | `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread`). Not supported for pnpm installs until [nodejs/node#66812](https://github.com/nodejs/node/issues/66812) is fixed (see [Security model](security-model.md)). Exits with status 2 before relaunching if Node would refuse one of its granted directories (paths whose names extend each other), naming them. Every module must live under `--modulePath`, symlinks resolved, on load, reload and restart alike (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. `--authoringTools` adds `--allow-child-process`, which lets the whole process start children outside the permission model. On Node 26 and later it passes `--allow-net` (experimental in Node 26), so the network is unrestricted under `--hardened` on every supported Node, until the network broker. |
 | `--locale <locale>` | `en-US` | Error message locale (`zh-CN` also available). |
@@ -123,7 +124,8 @@ authoring tool `countinghouse_reload_auth`.
 - A changed `runsModules` binding applies to modules loaded or reloaded
   after the reload. A module already running keeps the binding it was
   verified with at its load, so reload that module (`POST /reload-module`)
-  to pick up a new one.
+  to pick up a new one. The same holds for the sqlite CLI's `bind-module` and
+  `unbind-module`: they take effect at the module's next load or reload.
 
 **`POST /restart-module`** takes `{name, path, version}`; `path` and `version`
 may be left out to restart the module from where it was last loaded, which
@@ -131,10 +133,14 @@ is how a suspended module is brought back. A `path` that does not exist is
 refused with `INVALID_MODULE_PATH` before anything is unloaded.
 
 **`POST /uninstall-module`** takes `{name, keepData}` and answers
-`{uninstalled: true, name, dataDeleted, registryEntryRemoved}`. It removes
-the module's registry entry (when the server uses the registry, that is when
-no `--loadModule` is given), then deletes `<moduleDataPath>/<name>` unless
-`keepData` is `true`, never following links. It never removes the module's
+`{uninstalled: true, name, dataDeleted, keysDeleted, registryEntryRemoved}`.
+It removes the module's registry entry (when the server uses the registry,
+that is when no `--loadModule` is given), then, unless `keepData` is `true`,
+deletes the module's `ctx.redis` keys (every key under its
+`m:<name, URI-encoded>:` namespace; `keysDeleted` says how many, `null`
+with `keepData`) and
+`<moduleDataPath>/<name>`, never following links. A reload or an upgrade
+keeps both. It never removes the module's
 code under `--modulePath`. Errors:
 
 | Code | When |
@@ -142,6 +148,7 @@ code under `--modulePath`. Errors:
 | `MODULE_NAME_INVALID` | `name` is not a valid npm package name |
 | `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; nothing was deleted |
+| `MODULE_KEYS_NOT_PURGED` | the module's keys could not be deleted (the store did not answer within 30 s); its data directory was kept, its registry entry already removed |
 | `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)

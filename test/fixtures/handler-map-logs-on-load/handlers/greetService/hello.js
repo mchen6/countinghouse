@@ -12,5 +12,5 @@
 console.log('hello from module load time, before the validator\'s own JSON line');
 
 module.exports = async (input, ctx) => ({
-  output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}
+  output: {text: `hello ${input.name}`, caller: ctx.caller.id}
 });

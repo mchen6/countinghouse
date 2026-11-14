@@ -44,7 +44,7 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
   it('is built from the module\'s files: its device ID, its spec, its names and a hash of schema.json, and nothing compiled', () => {
     assert.strictEqual(own.error, undefined);
     assert.strictEqual(own.deviceID, require('../../lib/call-address').deviceIDForName('main-checked'));
-    assert.deepStrictEqual([...own.names[SERVICE]].sort(), ['big', 'count', 'give', 'slow', 'stall', 'take', 'tamper']);
+    assert.deepStrictEqual([...own.names[SERVICE]].sort(), ['big', 'cheat', 'count', 'forge', 'give', 'odd', 'slow', 'stall', 'take', 'tamper']);
     assert.strictEqual(own.specText, JSON.stringify(own.spec));
     assert.strictEqual(own.schemaHash, moduleSpec.hashOf(fs.readFileSync(path.join(FIXTURE, 'schema.json')).toString()));
     assert.strictEqual(own.services, undefined, 'no Service, no validator, on the main thread');
@@ -74,6 +74,9 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
         fs.writeFileSync(path.join(m, 'schema.json'), JSON.stringify({$id: '#/', s: {a: {input: {$id: 'https://example.invalid/same', type: 'object', required: ['k']}}}}));
       }
       for (const b of [await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-two'))]) {
+        // compiled first, as a load does (a call never waits on a compile
+        // past its own deadline: the review of #165)
+        assert.strictEqual(await moduleSpec.warm(b), null);
         assert.strictEqual(await full(b, 'urn:countinghouse-test:serviceID:s', 'a', {input: {k: 1}}), null, JSON.stringify(b.error));
         assert.strictEqual((await full(b, 'urn:countinghouse-test:serviceID:s', 'a', {input: {}}))[0].code, 'INPUT_DATA_VALIDATION_FAIL');
       }

@@ -72,9 +72,15 @@ function reachable(needle) {
 }
 
 // Posts a message the module made up, on `port`, past the capture above.
-function forgedPost(port, message) {
+function forgedPost(port, message, transfer) {
   state.forging = true;
-  try { port.postMessage(message); } finally { state.forging = false; }
+  try { port.postMessage(message, transfer || []); } finally { state.forging = false; }
 }
 
-module.exports = {state, runtime, forgeToWorker, reachable, forgedPost};
+// A runtime file's exports, as module code finds them in require.cache.
+function runtimeFile(tail) {
+  const key = Object.keys(require.cache).find((k) => k.endsWith(`/lib/${tail}`) && !k.startsWith('/app/'));
+  return (key != null) ? require.cache[key].exports : null;
+}
+
+module.exports = {state, runtime, runtimeFile, forgeToWorker, reachable, forgedPost};

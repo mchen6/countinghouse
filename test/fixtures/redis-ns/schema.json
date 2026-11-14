@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "nsService": {
+    "run": {
+      "input": {"type": "object", "properties": {"op": {"type": "string"}, "args": {"type": "array"}}, "required": ["op", "args"]},
+      "output": {"type": "object", "properties": {"result": {}, "error": {"type": ["string", "null"]}}}
+    },
+    "forge": {
+      "input": {"type": "object", "properties": {"op": {"type": "string"}, "args": {"type": "array"}, "as": {"type": "string"}}, "required": ["op", "args", "as"]},
+      "output": {"type": "object", "properties": {"result": {}, "error": {"type": ["string", "null"]}}}
+    }
+  }
+}

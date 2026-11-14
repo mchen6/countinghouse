@@ -62,14 +62,14 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
 
   describe('the option', () => {
     const targets = (spec) => { const p = om.parse(spec); assert.strictEqual(p.problem, undefined, p.problem); return Object.fromEntries(Object.entries(p.map).map(([k, v]) => [k, v.target])); };
-    it('takes <https origin>=<http loopback origin>, one per declared origin', () => {
+    it('takes <https origin>=<http loopback origin>, one per declared origin', async () => {
       assert.deepStrictEqual(targets(`${GITHUB}=http://127.0.0.1:9`), {[GITHUB]: 'http://127.0.0.1:9'});
       assert.deepStrictEqual(Object.keys(targets([`${GITHUB}=http://[::1]:9`, 'https://linear-08.invalid=http://127.0.0.1:10'])), [GITHUB, 'https://linear-08.invalid']);
       assert.deepStrictEqual(targets('https://API.Example.invalid:443=http://127.0.0.1:9'), {'https://api.example.invalid': 'http://127.0.0.1:9'}, 'the origin as the runtime reads a declaration: normalised');
       assert.deepStrictEqual(targets(`${GITHUB}=http://127.0.0.1:80`), {[GITHUB]: 'http://127.0.0.1:80'}, 'port 80, as written');
       assert.strictEqual(om.parse(null).map, null);
     });
-    it('refuses any other target, port 0 or above 65535, a key that is not an https origin, a repeated key, or no =', () => {
+    it('refuses any other target, port 0 or above 65535, a key that is not an https origin, a repeated key, or no =', async () => {
       for (const bad of [`${GITHUB}=https://127.0.0.1:9`, `${GITHUB}=http://10.0.0.1:9`, `${GITHUB}=http://localhost:9`, `${GITHUB}=http://127.0.0.1:9/mcp`, `${GITHUB}=http://127.0.0.1`,
         `${GITHUB}=http://127.0.0.1:0`, `${GITHUB}=http://127.0.0.1:65536`,
         `${GITHUB}/mcp=http://127.0.0.1:9`, 'http://github-08.invalid=http://127.0.0.1:9', GITHUB, [`${GITHUB}=http://127.0.0.1:9`, `${GITHUB}=http://127.0.0.1:10`]]) {
@@ -77,7 +77,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
         assert.ok(typeof p.problem === 'string' && /--remoteOriginMap/.test(p.problem), JSON.stringify(bad));
       }
     });
-    it('the option is a string, not a boolean: --no-remoteOriginMap is none, a bare one is refused', () => {
+    it('the option is a string, not a boolean: --no-remoteOriginMap is none, a bare one is refused', async () => {
       try {
         cli.setOptions({workerThread: false, remoteOriginMap: false});
         assert.strictEqual(cli.remoteOriginMapArg, null);
@@ -90,12 +90,12 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       }
     });
 
-    it('a target on the Redis endpoint is a problem of the option; with no Redis configured there is none', () => {
+    it('a target on the Redis endpoint is a problem of the option; with no Redis configured there is none', async () => {
       const {map} = om.parse(`${GITHUB}=http://127.0.0.1:${UNMAPPED}`);
       assert.match(om.problems(map, {host: '127.0.0.1', port: UNMAPPED}).join('\n'), /--remoteOriginMap .* the target is refused: it is the Redis endpoint/);
       assert.deepStrictEqual(om.problems(map, null), []);
     });
-    it('the map is fixed at start: a write to cli-options or setOptions() changes nothing, and a second activation throws', () => {
+    it('the map is fixed at start: a write to cli-options or setOptions() changes nothing, and a second activation throws', async () => {
       useMap(MAP());
       const fixed = om.current();
       assert.ok(Object.isFrozen(fixed) && Object.values(fixed).every(Object.isFrozen));
@@ -109,7 +109,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       delete cli.remoteOriginMap; delete cli.remoteOriginMapActive;
       om.deactivateForTests();
     });
-    it('the tests\' reset works only under the test flag, as the other test-only hooks do', () => {
+    it('the tests\' reset works only under the test flag, as the other test-only hooks do', async () => {
       useMap(MAP());
       const fixed = om.current();
       const saved = process.env.COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG;
@@ -283,7 +283,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
   };
   const STAND_IN_SECTION = {serverCalls: 2, bytesIn: 20, linesIn: 2, tokensInEst: 5, servers: {github: 2}};
 
-  it('the aggregate counts stand-in calls in no total or grouping, only in its standIn section', () => {
+  it('the aggregate counts stand-in calls in no total or grouping, only in its standIn section', async () => {
     const r = aggregate(usageRecords().map((x) => ({...x, process: 'p-1'})));
     assert.deepStrictEqual(r.byServer.map((s) => [s.server, s.serverCalls]), [['github', 1]]);
     assert.strictEqual(r.totals.serverCalls, 1);
@@ -295,22 +295,22 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     assert.strictEqual(aggregate([usageRecords()[0]].map((x) => ({...x, process: 'p-1'}))).standIn, undefined, 'none: no section');
   });
 
-  it('the usage report counts them in no group or total either, in every grouping, and its schema takes the section', () => {
+  it('the usage report counts them in no group or total either, in every grouping, and its schema takes the section', async () => {
     const {usageReport, OUTPUT_SCHEMA, reportText} = require('../../lib/usage/report');
     const Ajv2020 = require('ajv/dist/2020');
     const ajv = new Ajv2020({strict: false});
     const usage = {process: 'p-1', records: usageRecords};
     for (const groupBy of ['tool', 'pack', 'server', 'module']) {
-      const r = usageReport({groupBy}, {isAdmin: true}, {usage});
+      const r = (await usageReport({groupBy}, {isAdmin: true}, {usage}));
       assert.strictEqual(r.totals.serverCalls, 1, groupBy);
       assert.strictEqual(r.groups.reduce((s, g) => s + g.serverCalls, 0), 1, groupBy);
       assert.deepStrictEqual(r.standIn, STAND_IN_SECTION, groupBy);
       assert.ok(ajv.validate(OUTPUT_SCHEMA, r), JSON.stringify(ajv.errors));
     }
-    assert.match(reportText(usageReport({groupBy: 'server'}, {isAdmin: true}, {usage})), /acceptance stand-in \(in no row or total above\): 2 server calls \(2 to github\)/);
+    assert.match(reportText((await usageReport({groupBy: 'server'}, {isAdmin: true}, {usage}))), /acceptance stand-in \(in no row or total above\): 2 server calls \(2 to github\)/);
   });
 
-  it('receiptSentence marks each mapped server', () => {
+  it('receiptSentence marks each mapped server', async () => {
     const r = {calls: 3, linesIn: 10, bytesIn: 100, linesOut: 1, bytesOut: 10, servers: ['github', 'linear']};
     assert.strictEqual(receiptSentence(r, {github: 2, linear: 1}, new Set(['github'])),
       'read 10 lines (100 B) in 2 calls to github (acceptance stand-in) and 1 to linear; 1 line (10 B) reached the model.');
@@ -327,17 +327,17 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       return r;
     };
     const ENV_OFF = {COUNTINGHOUSE_ACCEPTANCE: ''};
-    it('with the flag but without COUNTINGHOUSE_ACCEPTANCE=1, it refuses, naming both', () => {
+    it('with the flag but without COUNTINGHOUSE_ACCEPTANCE=1, it refuses, naming both', async () => {
       const r = start(['--remoteOriginMap', `${GITHUB}=http://127.0.0.1:9`], ENV_OFF);
       assert.strictEqual(r.status, 2, r.stderr);
       assert.match(r.stderr, /--remoteOriginMap needs COUNTINGHOUSE_ACCEPTANCE=1/);
     });
-    it('a bad map refuses the start too', () => {
+    it('a bad map refuses the start too', async () => {
       const r = start(['--remoteOriginMap', `${GITHUB}=http://10.0.0.1:9`], {COUNTINGHOUSE_ACCEPTANCE: '1'});
       assert.strictEqual(r.status, 2, r.stderr);
       assert.match(r.stderr, /--remoteOriginMap/);
     });
-    it('a target on the configured Redis endpoint refuses the start, blamed on the option, not a module', () => {
+    it('a target on the configured Redis endpoint refuses the start, blamed on the option, not a module', async () => {
       // The Redis store (no --store local); the start stops at the option, before any connection.
       const store = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08r-'));
       const r = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-stdio.js'), '--workerThread', '--redisUrl', `redis://127.0.0.1:${UNMAPPED}`, // run-local: not the shared Redis
@@ -348,7 +348,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       assert.match(r.stderr, /--remoteOriginMap .*the target is refused: it is the Redis endpoint/);
       assert.ok(!/REMOTE_DECLARATION_INVALID/.test(r.stderr));
     });
-    it('under --store local there is no Redis endpoint: a target on 6379 is honoured', () => {
+    it('under --store local there is no Redis endpoint: a target on 6379 is honoured', async () => {
       const r = start(['--remoteOriginMap', `${GITHUB}=http://127.0.0.1:6379`], {COUNTINGHOUSE_ACCEPTANCE: '1'});
       assert.match(r.stderr, /remote origin mapped: https:\/\/github-08\.invalid -> http:\/\/127\.0\.0\.1:6379 \(acceptance only\)/);
       assert.strictEqual(r.status, 0, r.stderr.slice(-1500));
@@ -374,7 +374,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
         fs.rmSync(root, {recursive: true, force: true});
       }
     });
-    it('honoured, it says so loudly at start', () => {
+    it('honoured, it says so loudly at start', async () => {
       const r = start(['--remoteOriginMap', `${GITHUB}=http://127.0.0.1:9`], {COUNTINGHOUSE_ACCEPTANCE: '1'});
       assert.match(r.stdout + r.stderr, /remote origin mapped: https:\/\/github-08\.invalid -> http:\/\/127\.0\.0\.1:9 \(acceptance only\)/);
       assert.strictEqual(r.error, undefined, 'not killed at the timeout');

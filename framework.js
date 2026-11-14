@@ -60,6 +60,14 @@ if (options.mcpToolCallCostInvalid != null) {
     (typeof(badCost) === 'boolean' || badCost === '' ? 'no value' : JSON.stringify(String(badCost))) + ')');
   process.exit(2);
 }
+// #144: a load bound that is not a number of seconds > 0 (or one setTimeout
+// cannot hold) would end every load at once or never.
+if (options.moduleLoadTimeoutInvalid != null) {
+  var badLoad = options.moduleLoadTimeoutInvalid.value;
+  console.error('--moduleLoadTimeout must be a number of seconds > 0, at most 2147483 (got ' +
+    (typeof(badLoad) === 'boolean' || badLoad === '' ? 'no value' : JSON.stringify(String(badLoad))) + ')');
+  process.exit(2);
+}
 // RC1-min: a module cannot choose where a credential goes; the operator's
 // file does. One that cannot be read as {origin: [variable]} stops the start.
 if (options.remoteLimitInvalid != null) {
@@ -72,6 +80,20 @@ if (options.validatorLimitInvalid != null) {
   console.error('--' + options.validatorLimitInvalid.name + ' must be ' + options.validatorLimitInvalid.what + ' (got ' +
     JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
   process.exit(2);
+}
+// Packs in place (part 2): the control channel exists only between ch-local
+// start and the runtime it spawned, in the single-identity profile, over an
+// IPC fd. --hardened relaunches this process as a child, which the channel
+// would not reach: refused together, for now.
+if (options.controlChannel != null) {
+  var controlRefusal = options.controlChannel !== 'ipc' ? 'takes ipc'
+    : options.singleIdentity !== true ? 'is only for the single-identity profile (ch-local start)'
+      : typeof(process.send) !== 'function' ? 'needs an IPC channel from the process that started this one'
+        : options.hardened === true ? 'cannot be used with --hardened yet' : null;
+  if (controlRefusal != null) {
+    console.error('--controlChannel ' + controlRefusal + ' (got ' + JSON.stringify(String(options.controlChannel)) + ')');
+    process.exit(2);
+  }
 }
 // --remoteOriginMap moves where a credential goes, so it is honoured only
 // with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a

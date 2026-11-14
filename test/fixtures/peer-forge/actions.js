@@ -47,7 +47,7 @@ module.exports = {
     forge: async (input, ctx) => {
       // the channel is opened by a hop made the proper way (its request
       // carries the call's token; one forged without it is denied)
-      const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE, as: input.appKey},
+      const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE},
         (ce, client) => (ce != null ? resolve(outcome(ce)) : client.invoke({actionName: 'hello', input: {}}, (e, d) => resolve(outcome(e, d))))));
       const other = await forge(input.other, input.appKey);
       return {output: {granted: granted, other: other}};

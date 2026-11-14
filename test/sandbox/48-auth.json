@@ -1,0 +1,11 @@
+{
+  "hop-input-key": {
+    "userName": "hop-input",
+    "devices": ["*"]
+  },
+  "hop-input-caller-internal": {
+    "userName": "hop-input-caller-internal",
+    "devices": ["*"],
+    "runsModules": ["hop-input-caller"]
+  }
+}

@@ -25,6 +25,26 @@
             "output": {
               "schema": "/callerService/ping/output"
             }
+          },
+          {
+            "name": "hopDigest",
+            "description": "main-checked's big over a hop, as its length and sha256 (test/sandbox/42).",
+            "input": {
+              "schema": "/callerService/hopDigest/input"
+            },
+            "output": {
+              "schema": "/callerService/hopDigest/output"
+            }
+          },
+          {
+            "name": "hopOdd",
+            "description": "main-checked's odd or forge over a hop: what arrived, or the rejection's code (test/sandbox/42).",
+            "input": {
+              "schema": "/callerService/hopOdd/input"
+            },
+            "output": {
+              "schema": "/callerService/hopOdd/output"
+            }
           }
         ]
       }

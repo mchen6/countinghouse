@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "benchService": {
+    "smallWrites": {
+      "input": {"type": "object", "properties": {"writes": {"type": "integer", "minimum": 1, "maximum": 1000000}, "size": {"type": "integer", "minimum": 1, "maximum": 65536}}, "required": ["writes", "size"]},
+      "output": {"type": "object", "properties": {"ms": {"type": "number"}, "bytes": {"type": "integer"}}}
+    },
+    "seedTree": {
+      "input": {"type": "object", "properties": {"dirs": {"type": "integer", "minimum": 1, "maximum": 1000}, "files": {"type": "integer", "minimum": 1, "maximum": 1000}}, "required": ["dirs", "files"]},
+      "output": {"type": "object", "properties": {"ms": {"type": "number"}, "entries": {"type": "integer"}}}
+    },
+    "walk": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"ms": {"type": "number"}, "entries": {"type": "integer"}}}
+    },
+    "loaded": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"deps": {"type": "integer"}}}
+    }
+  }
+}
