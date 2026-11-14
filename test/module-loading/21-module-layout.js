@@ -216,18 +216,37 @@ describe('module-loading 21: one module format, decided statically', function() 
 
       if (flags[0] === '--workerThread') {
         it('a schema too slow to compile is refused at load (stage schemaCompile), within --validationCompileMs, and the server goes on answering', async () => {
-          // 700 bytes of anyOf: under every load-time check, and about 2.5 s to compile
-          const defs = {l0: {type: 'object', properties: {a: {type: 'string'}, b: {type: 'integer'}}}};
-          for (let i = 1; i <= 7; i++) defs[`l${i}`] = {anyOf: Array.from({length: 3}, () => ({$ref: `#/defs/l${i - 1}`}))};
-          const slowCompile = withInput(path.join(home, `load-compile-${id}`), 'load-compile', {$ref: '#/defs/l7'}, {defs});
-          const started = Date.now();
-          const r = await load(slowCompile, 'load-compile');
-          assert.strictEqual(r.isError, true, JSON.stringify(r));
-          assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_ASSEMBLY_FAIL', JSON.stringify(r));
-          assert.match(JSON.stringify(r.content), /stage=schemaCompile/);
-          assert.ok(Date.now() - started < 10000, `${Date.now() - started} ms`);
-          const listed = await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list'}, 30000);
-          assert.ok(Array.isArray(listed.result.tools) && !listed.result.tools.some((t) => /load_compile/.test(t.name)));
+          // Its own server, with a compile budget of 200 ms, and the slowest
+          // schema the load-time safety check lets through: seven levels of
+          // anyOf over a leaf of four properties (six are over its 100,000
+          // expanded nodes). The safety check, a few ms, runs within the same
+          // budget (at 1 ms it was refused there instead); the compile is
+          // several times past it. The old schema (a two-property leaf) at a
+          // 1 s budget compiled in time on a fast CI runner (#166's test (24)
+          // at de9cf6f).
+          const run = path.join(home, `run-compile-${id}`);
+          fs.mkdirSync(run, {recursive: true});
+          const auth = path.join(run, 'auth.json');
+          fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'module-loading-21', devices: ['*'], admin: true}}));
+          const own = startStdio(['--workerThread', '--validationCompileMs', '200', '--authoringTools', '--authConfigPath', auth, '--store', 'local',
+            '--storePath', path.join(run, 'store'), '--moduleDataPath', path.join(run, 'module_data'), '--modulePath', path.join(run, 'modules')],
+          {env: {COUNTINGHOUSE_API_KEY: KEY}});
+          try {
+            await own.request({...INITIALIZE, id: id++}, 60000);
+            const defs = {l0: {type: 'object', properties: {a: {type: 'string'}, b: {type: 'integer'}, c: {type: 'string'}, d: {type: 'integer'}}}};
+            for (let i = 1; i <= 7; i++) defs[`l${i}`] = {anyOf: Array.from({length: 3}, () => ({$ref: `#/defs/l${i - 1}`}))};
+            const slowCompile = withInput(path.join(home, `load-compile-${id}`), 'load-compile', {$ref: '#/defs/l7'}, {defs});
+            const started = Date.now();
+            const r = (await own.request({jsonrpc: '2.0', id: id++, method: 'tools/call', params: {name: 'countinghouse_load_module', arguments: {path: slowCompile, name: 'load-compile'}}}, 60000)).result;
+            assert.strictEqual(r.isError, true, JSON.stringify(r));
+            assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_ASSEMBLY_FAIL', JSON.stringify(r));
+            assert.match(JSON.stringify(r.content), /stage=schemaCompile/);
+            assert.ok(Date.now() - started < 10000, `${Date.now() - started} ms`);
+            const listed = await own.request({jsonrpc: '2.0', id: id++, method: 'tools/list'}, 30000);
+            assert.ok(Array.isArray(listed.result.tools) && !listed.result.tools.some((t) => /load_compile/.test(t.name)));
+          } finally {
+            await own.stop();
+          }
         });
       }
 
