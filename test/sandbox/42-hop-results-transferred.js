@@ -41,7 +41,7 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
   let server = null;
   before(async () => {
     server = await startServer(PORT, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
-      '--no-directPeerChannels', '--moduleSandbox', 'audit', '--maxOutputBytes', String(CAP), '--validationTimeoutMs', '5000', '--requestTimeout', '60000']);
+      '--no-directPeerChannels', '--moduleSandbox', 'audit', '--maxOutputBytes', String(CAP), '--validationTimeoutMs', '5000', '--requestTimeout', '60']);
   });
   after(() => stopServer(server));
 
@@ -132,7 +132,7 @@ describe('sandbox 42: a hop\'s result that arrives after the caller\'s timeout',
   let server = null;
   before(async () => {
     server = await startServer(PORT, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
-      '--no-directPeerChannels', '--maxOutputBytes', String(CAP), '--requestTimeout', '2000']);
+      '--no-directPeerChannels', '--maxOutputBytes', String(CAP), '--requestTimeout', '2']);   // seconds
   });
   after(() => stopServer(server));
 

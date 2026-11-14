@@ -301,6 +301,9 @@ describe('module-loading 24: the validator pool', function() {
         // a recently stalling caller takes no last free validator: both free
         await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
+        // the stall counts when its validator is replaced (a call refused
+        // first as a late start runs on to its full budget)
+        for (let w = 0; !p.callerBlocked.has(`u_flood\n${m.name}`) && w < 5000; w += 20) await new Promise((res) => setTimeout(res, 20));
         await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED', 'its fourth stall in the window blocks it again');
       } finally {
