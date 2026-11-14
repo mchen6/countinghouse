@@ -111,3 +111,46 @@ R with 10 modules ran faster beyond its spread while S under `off` ran slower
 in the median (with a wide spread after). That is a mixed result: by the
 spec's rule it goes to the user with both numbers, and the recommendation is
 **not to keep it** (no work saved, one workload possibly slower).
+
+## Proposal 3: compound ops -- the trace finds nothing to fold
+
+The spec takes the candidates from a trace of the bridge calls
+(`perf/fs-broker-trace.js`: a preload in the server records each call the
+broker serves). Under `enforce`:
+
+| Workload | Bridge calls | By op | Same-path sequences |
+|---|---|---|---|
+| L: a reload of the module that requires 300 packages | 11 | `readFile` 4, `exists` 3, `stat` 2, `readdir` 2 | `stat` → `readdir` 2 |
+| W: one walk of 3 000 files | 3 061 | `stat` 3 030, `readdir` 31 | `stat` → `readdir` 30 |
+| seeding the tree (`mkdir -p`, 50 small files) | 56 | `writeFile` 50, `mkdir` 5, `rm` 1 | none |
+| S: 100 writes to one descriptor | 102 | `write` 100, `open` 1, `close` 1 | `write` → `write` 99 |
+
+- The dependency loader's reads do not go through the broker: the patch
+  serves them from the loader's grants. L's time is the worker's start and
+  the loader's own work, not bridge calls.
+- `mkdir -p`, `writeFile`, `readFile`, `exists` and `rm` are already one
+  brokered call each.
+- W's and S's sequences are the module's own calls, one after another (a
+  `stat` per entry, a `write` per write). Folding them would mean the worker
+  answering a later call from an earlier one (prefetched stats, batched
+  writes): a change of what the module sees, not a compound op, which the
+  spec does not allow. S is proposal 1's.
+- The one multi-call sequence the patch issues itself is `fs.cp`/`cpSync`:
+  per file `lstat`, `exists`, `unlink` when the target exists, and
+  `copyFile` (3-4 calls); per directory `lstat`, `mkdir` and `readdir`. A
+  compound `cp` would have to carry every per-entry check (the namespace,
+  read-only roots, the quota, the link rules, the always-denied set) into
+  one broker op. Module code rarely copies trees, so this is not
+  recommended unless a module needs it.
+
+So proposal 3 adds no op: there is nothing in the workloads to fold.
+
+## Where the five proposals ended (2026-11-14)
+
+| Proposal | Result |
+|---|---|
+| 2: no readlink for an existing file in `/data`/`/tmp` | **Dropped.** One pool job fewer per `enforce` round (26 → 25); no wall-clock gain beyond the sessions' spread, and it would add a residual against the host. Code and tests on `b-fsb-p2`. |
+| 4: profile the main thread, fix what it shows | **Waiting on the user.** The profile: fs bindings about 15% of the main thread, GC 7%, the broker's own JavaScript under 4%. Its one candidate (one deadline sweep instead of a timer per request, `b-fsb-p4-sweep`) saves no main-thread CPU and gave mixed wall-clock results; recommended not kept. |
+| 3: compound ops | **Nothing to fold.** The trace shows the loader's reads bypass the broker, the common calls are already single ops, and the rest are the module's own call sequences. No op added; a compound `cp` only if a module needs one. |
+| 1: direct I/O on verified descriptors, with write leases | **Deferred until after the first release.** With the broker's own JavaScript under 4% of the main thread, the remaining cost is the hand-offs themselves; proposal 1 is the one change aimed there, but it is large and opens a security boundary (the worker holding real descriptors). |
+| 5: file threads | Not started: it follows proposal 1 in the landing order. |
