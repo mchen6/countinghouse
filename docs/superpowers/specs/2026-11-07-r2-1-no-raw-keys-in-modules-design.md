@@ -105,7 +105,11 @@ environment. So the guarantee depends on the mode:
     thread, to db 5 only, with an allowlist of 23 commands that includes no
     `keys`, `scan` or `select` (lib/redis-api.js,
     lib/supported-redis-commands.json), so it can't reach those databases.
-    It's unchanged.
+    *Amended (the review of #163):* db 5 is not a module's alone: the
+    runtime keeps job history there (`jobinfo:<name>`, other tenants'
+    inputs, results and owners), so a module's command naming a runtime key
+    is refused on the main thread, read or write, and a history record
+    names its owner by the caller id, never the key or a hash of it.
   - Its own connection: `net.connect`, `tls.connect`, a raw
     `net.Socket().connect`, or `http.request({socketPath})`. R2-1 adds the
     Redis endpoint to the always-denied set: the host and port from

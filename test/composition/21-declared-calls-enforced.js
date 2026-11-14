@@ -191,6 +191,38 @@ describe('composition 21: a device that claims another module\'s friendlyName', 
   });
 });
 
+// The review of #163 (5): a running module that announces another module's
+// device, before that module is loaded, takes nothing: the main thread
+// registers only the devices a module's own api.json declares, and the
+// rightful module registers its own when it loads.
+describe('composition 21: a running module announcing another module\'s device', function() {
+  this.timeout(120000);
+  let base = null;
+  let server = null;
+  before(async () => {
+    base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21q-'));
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--authoringTools', '--moduleSandbox', 'off',
+      '--moduleDataPath', path.join(base, 'store'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'id-squatter')]);
+  });
+  after(() => {
+    stopServer(server);
+    if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  it('is refused, and the rightful module, loaded after, registers and answers', async () => {
+    await mcpCall(PORT, 'k', 'id_squatter_squatservice_noop', {});
+    await waitFor(() => /id-squatter announced device/.test(server.output), 10000, 'the refusal in the log', async () => server.output.slice(-2000));
+    const loaded = await mcpCall(PORT, 'k', 'countinghouse_load_module', {path: path.join(ROOT, 'test', 'fixtures', 'token-callee'), name: 'token-callee'});
+    assert.ok(loaded != null && loaded.isError !== true, JSON.stringify(loaded).slice(0, 400));
+    const r = await waitFor(async () => {
+      const x = await mcpCall(PORT, 'k', COUNT, {}, {allowUnknownTool: true});
+      return (x != null && x.isError !== true) ? x : null;
+    }, 20000, 'token-callee to answer');
+    assert.ok(r != null);
+  });
+});
+
 // Under --debug with no auth file a declaring module no identity claims
 // binds to the debug key, visibly; under --debug with an auth file an
 // unbound declaration is the error it is everywhere else, and the module

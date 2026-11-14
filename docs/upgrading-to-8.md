@@ -349,6 +349,12 @@ examples show the shape.
   `<moduleDataPath>/.identity-secret` (0600), or given in
   `COUNTINGHOUSE_IDENTITY_SECRET`. Back it up with the auth config: a new
   secret changes every id.
+- Purge the job history 7.x kept in Redis db 5: its `jobinfo:*` lists
+  hold callers' raw keys. In 8.0 a module's `ctx.redis` can no longer reach
+  them, and new records name their owner by the caller id, but the old
+  lists stay until removed:
+  `redis-cli -n 5 --scan --pattern 'jobinfo:*' | xargs -r redis-cli -n 5 del`
+  (a job's history then starts afresh).
 - A module still reads files and environment outside its namespace under
   `--moduleSandbox audit` and `off` (the always-denied set aside), so keys
   in such files are within its reach there: run `enforce` for tenants you do

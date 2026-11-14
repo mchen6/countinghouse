@@ -52,7 +52,8 @@ function assertClean(view, label) {
   assert.strictEqual(view.caller.isAdmin, false);
 }
 
-describe('auth 30: no API key, user name or Redis URL reaches a module', function() {
+[['direct peer channels', []], ['routed through the main thread', ['--no-directPeerChannels']]].forEach(([label, flags]) => {
+describe(`auth 30: no API key, user name or Redis URL reaches a module (${label})`, function() {
   this.timeout(120000);
   let base = null;
   let server = null;
@@ -68,7 +69,7 @@ describe('auth 30: no API key, user name or Redis URL reaches a module', functio
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump'),
-      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump-caller')]);
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'key-dump-caller')].concat(flags));
   });
   after(() => {
     stopServer(server);
@@ -92,7 +93,7 @@ describe('auth 30: no API key, user name or Redis URL reaches a module', functio
     const created = await mcp(ALICE, 'tools/call', {name: DUMP, arguments: {reversed}, task: {}});
     const taskId = created.result.task.taskId;
     let status = null;
-    for (let i = 0; i < 100 && status !== 'completed' && status !== 'failed'; i++) {
+    for (let i = 0; i < 300 && status !== 'completed' && status !== 'failed'; i++) {
       await new Promise((ok) => setTimeout(ok, 100));
       status = (await mcp(ALICE, 'tasks/get', {taskId})).result.status;
     }
@@ -104,7 +105,8 @@ describe('auth 30: no API key, user name or Redis URL reaches a module', functio
   // #153's review (1): a part listening on its own peer channel's port sees
   // every invoke that crosses it; none carries a key. The first call opens
   // the channel and starts the listener; the second crosses it.
-  it('on the peer channel\'s port, as a part listening on it sees each invoke', async () => {
+  // a routed hop crosses no peer port
+  (flags.length === 0 ? it : it.skip)('on the peer channel\'s port, as a part listening on it sees each invoke', async () => {
     await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
     const r = await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
     assert.strictEqual(r.result && r.result.isError, false, JSON.stringify(r).slice(0, 500));
@@ -123,4 +125,5 @@ describe('auth 30: no API key, user name or Redis URL reaches a module', functio
     });
     assert.deepStrictEqual(failures, []);
   });
+});
 });

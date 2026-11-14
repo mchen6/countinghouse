@@ -245,8 +245,9 @@ the same `.code` regardless of which path is in effect.
 
 Each inner hop is still metered independently, but the metering now
 originates from the platform, not from composite-demo's own handler. The
-real `{apiKey, tool, charged, balance}` result is threaded back to the
-calling module as a 3rd, additive argument on `ServiceClient.invoke()`'s
+real `{tool, charged, balance}` result (with `remainingFreeCalls` when the
+caller has free calls; never the key a hop billed, R2-1) is threaded back
+to the calling module as a 3rd, additive argument on `ServiceClient.invoke()`'s
 callback — `function(err, data, platformMetering) {...}` — deliberately
 *never* merged into `data` itself: `data` is the hop's own action output,
 and some modules (e.g. `echo-device-client-module`) pass it straight
@@ -259,8 +260,9 @@ the `bill` array that becomes part of the tool's own MCP-visible output,
 so a caller can see exactly which inner modules were invoked and what each
 hop cost, without needing separate observability tooling.
 
-Separately, composite-demo also calls `CHUtil.recordUsage(apiKey, tool,
-cost, callback)` per hop — purely as its own app-layer audit trail. This
+Separately, composite-demo also calls `ctx.recordUsage(tool, cost,
+callback)` per hop (it answers `{id, tool, cost, ts}`, the caller's opaque
+id) — purely as its own app-layer audit trail. This
 is *not* what produces `bill`'s numbers and has no effect on balance (see
 `lib/countinghouse-util.js`'s own comment on `recordUsage`); a module that
 doesn't want its own bookkeeping trail can skip calling it entirely and
@@ -374,18 +376,14 @@ to read. A production composition feature would need to address these:
   one key regardless of who actually called the tool.
 
   What changed: authorization and billing became two identities instead of
-  one. `ctx.serviceClient({deviceID, serviceID, as})` authorizes the hop as
-  `as` — the composing module's own identity — and bills it to
-  `ctx.caller`, the authenticated outer caller. `ServiceClient`,
-  `CHUtil.createServiceClient` and both hop paths (main-thread-routed and
-  `--directPeerChannels`) carry a `billingKey` alongside `appKey`; when it is
-  absent it falls back to `appKey`, which is exactly the old one-key
-  behaviour, so nothing existing changed shape. The `billingKey` comes from
-  the composing module's worker and the main thread does not check it
-  against the outer caller, so code in that module can name another key
-  (see [Security model](security-model.md)).
+  one. A hop authorizes as the composing module's own identity and bills
+  the authenticated outer caller. Since R2-1 (8.0) neither is named by the
+  module: the identity is the operator's `runsModules` binding (`as` is
+  refused), and the main thread authorizes and bills every hop, on both
+  paths, by the per-call token it issued with the call, whatever the
+  module's worker states (see [Security model](security-model.md)).
 
-  Keeping `as` explicit and required is deliberate. Threading the caller
+  Keeping authorization with the module is deliberate. Threading the caller
   through *both* questions would have been the obvious reading of "pass the
   caller's apiKey down", and it would have broken encapsulation: every end
   user would suddenly need their own grant to every module a composing tool

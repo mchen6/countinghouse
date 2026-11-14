@@ -62,3 +62,44 @@ describe('composition 20: a hop\'s billing key reaches the callee\'s work, never
     assert.deepStrictEqual(seen.remote, ['bob-key']);
   });
 });
+
+// The review of #163 (4): a worker states no billing key and no identity on
+// any path; a client asked to is refused, as `as` is.
+describe('composition 20: a worker states no billing key', () => {
+  const wt = require('worker_threads');
+  const inWorker = (fn) => {
+    Object.defineProperty(wt, 'isMainThread', {value: false, configurable: true, writable: true});
+    try { return fn(); } finally { Object.defineProperty(wt, 'isMainThread', {value: true, configurable: true, writable: true}); }
+  };
+
+  it('CHUtil.createServiceClient refuses a billingKey in a worker', () => {
+    const CHUtil = require('../../lib/countinghouse-util');
+    let err = null;
+    inWorker(() => CHUtil.createServiceClient({deviceID: 'd', serviceID: 's', billingKey: 'someone-else'}, (e) => { err = e; }));
+    assert.match(String(err && err.message), /billingKey/);
+  });
+
+  it('a client\'s invoke refuses a billingKey in a worker', () => {
+    const ServiceClient = require('../../lib/service-client');
+    const sent = [];
+    const dm = {sendActionInvokeMessageToParent: (...a) => sent.push(a), invokeActionViaPeerChannel: (...a) => sent.push(a)};
+    const client = new ServiceClient({deviceManager: dm}, false, true, null, 'd', 's', null);
+    let err = null;
+    client.invoke({actionName: 'a', input: {}, billingKey: 'someone-else'}, (e) => { err = e; });
+    assert.match(String(err && err.message), /billingKey/);
+    assert.deepStrictEqual(sent, [], 'the hop was sent');
+  });
+
+  it('a worker\'s device query reaches the main thread without an appKey', () => {
+    const EventEmitter = require('events');
+    const WorkerMessage = require('../../lib/worker-message');
+    const worker = new EventEmitter();
+    worker.postMessage = () => {};
+    const wm = new WorkerMessage(worker);
+    let seen = null;
+    wm.on('querydevice', (m) => { seen = m; });
+    worker.emit('message', {id: 1, category: 'child', command: 'querydevice', errMsg: null, data: {deviceID: 'd', token: 't', appKey: 'stated-key'}});
+    assert.ok(seen != null, 'the query was not emitted');
+    assert.ok(!('appKey' in seen), JSON.stringify(seen));
+  });
+});
