@@ -184,8 +184,30 @@ describe('composition 22: declarations pinned before the module runs, and every 
     p.forValidation(staging);
     write([A]);
     lines = [];
-    p.pin('m', mod, true);
+    // only what the loaded file also declares is pinned (#151's final check, LOW-2)
+    assert.deepStrictEqual(callsOf(p.pin('m', mod, true)), [A]);
     assert.ok(lines.some((l) => l.includes(JSON.stringify(B)) && /another path/.test(l)), lines.join('\n'));
+  });
+
+  it('a validation of a module not pinned here records its copy, after logging what it adds (#151\'s final check, LOW-1)', () => {
+    const p = pins();
+    write([A, B]);
+    p.forValidation(mod);   // a wider version, validated and never loaded
+    write([A]);
+    p.forValidation(mod);   // the version that is then loaded
+    write([A, B]);          // widened again
+    lines = [];
+    pins().pin('m', mod, true);   // a restart, then the load
+    assert.strictEqual(lines.filter((l) => l.includes(JSON.stringify(B))).length, 1, lines.join('\n'));
+  });
+
+  it('a validation of a module pinned here leaves its record to the pin', () => {
+    const p = pins();
+    write([A]);
+    p.pin('m', mod, true);
+    write([A, B]);
+    p.forValidation(mod);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(base, 'store', '.pins', 'm.json'), 'utf8')), {calls: [A]});
   });
 
   // MED-2: the record cannot be steered by a planted link.

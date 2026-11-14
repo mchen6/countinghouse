@@ -320,9 +320,10 @@ that the invoked device is in the channel's grants is enough.
   outside its namespace, so the declaration holds. Under `audit` the pin
   raises the bar and records the change: the broker refuses a write to the
   file by any name it sees (its `/app` path, its host path, a symlink, a
-  hard link, a rename onto it), but routes it doesn't see remain (a rename
-  of an ancestor directory, a child process, both report-only under
-  audit). So every re-pin (an operator's load, reload or restart, a
+  hard link, a rename onto it), and to every directory above it, above the
+  pin records and above the identity secret, so none can be renamed away
+  and back; routes it doesn't see remain (a child process or a worker
+  thread, report-only under audit). So every re-pin (an operator's load, reload or restart, a
   supervised restart, a server restart) is compared with the module's
   previous pin, and each call added since is logged as an error, in full,
   saying whether it was adopted, with no key, user name or secret in the

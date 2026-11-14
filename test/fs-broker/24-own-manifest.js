@@ -16,7 +16,8 @@ const MANIFEST = JSON.stringify({name: 'm', countinghouse: {calls: ['a/b.c']}});
 
 async function setup(mode) {
   const base = mkdtemp('broker-manifest-');
-  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), store: path.join(base, 'store')};
+  const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp'), store: path.join(base, 'store'),
+    keys: path.join(base, 'keys')};
   Object.values(dirs).forEach((d) => fs.mkdirSync(d));
   const host = path.join(dirs.app, 'package.json');
   fs.writeFileSync(host, MANIFEST);
@@ -24,7 +25,8 @@ async function setup(mode) {
   await namespace.prepare();
   const reports = [];
   const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/app',
-    report: (rule, target) => reports.push(`${rule} ${target}`), ownManifest: new DeniedSet([host]), pinsDir: path.join(dirs.store, '.pins')});
+    report: (rule, target) => reports.push(`${rule} ${target}`), ownManifest: new DeniedSet([host]), pinsDir: path.join(dirs.store, '.pins'),
+    denied: new DeniedSet([path.join(dirs.keys, '.identity-secret')])});
   return {base, dirs, host, broker, reports,
     unchanged: () => assert.strictEqual(fs.readFileSync(host, 'utf8'), MANIFEST, 'the manifest was written'),
     done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
@@ -101,6 +103,34 @@ const eacces = (e) => e.code === 'EACCES';
       assert.ok(!fs.existsSync(outside), 'the link was made');
       assert.strictEqual(fs.statSync(path.join(pins, 'm2.json')).nlink, 1);
     });
+
+    // #151's final check: renaming <moduleDataPath> away, making a new one
+    // and moving the data back passes as outside, and a restart then finds
+    // no records (and a new identity secret). No write reaches a directory
+    // above the records, the identity secret or the manifest; what is in
+    // them is unaffected.
+    it('a directory above the pin records, the identity secret or the manifest takes no write', async () => {
+      fs.mkdirSync(path.join(t.dirs.store, '.pins'), {recursive: true});
+      await assert.rejects(t.broker.handle('rename', [t.dirs.store, `${t.dirs.store}.old`]), eacces);
+      await assert.rejects(t.broker.handle('rename', [t.dirs.keys, `${t.dirs.keys}.old`]), eacces);
+      await assert.rejects(t.broker.handle('rename', [t.dirs.app, `${t.dirs.app}.old`]), eacces);
+      await assert.rejects(t.broker.handle('rename', [t.base, `${t.base}.old`]), eacces);
+      await assert.rejects(t.broker.handle('chmod', [t.dirs.store, 0o777]), eacces);
+      await assert.rejects(t.broker.handle('rmdir', [t.dirs.keys]), eacces);
+      // through a link in /tmp to the directory
+      fs.symlinkSync(t.dirs.store, path.join(t.dirs.tmp, 's'));
+      await assert.rejects(t.broker.handle('chmod', ['/tmp/s', 0o777]), eacces);
+      assert.ok(fs.existsSync(path.join(t.dirs.store, '.pins')) && fs.existsSync(t.dirs.keys) && fs.existsSync(t.host));
+      assert.ok(t.reports.includes(`denied ${t.dirs.store}`), t.reports.join(', '));
+    });
+
+    if (mode === 'audit') {
+      it('what is in those directories is unaffected: a new file beside the records, under audit', async () => {
+        await t.broker.handle('writeFile', [path.join(t.dirs.store, 'beside'), 'x']);
+        await t.broker.handle('writeFile', [path.join(t.dirs.keys, 'beside'), 'x']);
+        assert.strictEqual(fs.readFileSync(path.join(t.dirs.store, 'beside'), 'utf8'), 'x');
+      });
+    }
 
     it('a write to any other file is untouched', async () => {
       await t.broker.handle('writeFile', ['/data/ok', 'x']);

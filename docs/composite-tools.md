@@ -83,8 +83,10 @@ restart reads the file again; a supervised restart keeps the last copy.
 Under `--moduleSandbox enforce` the module can't write the file, so the
 declaration holds. Under `audit` this raises the bar and records the
 change: the file broker refuses writes to the file by any name it sees,
-but routes it doesn't see remain (renaming a directory above the module, a
-child process), so each time the file is read again, every call added
+and to every directory above it, above `<moduleDataPath>/.pins` and above
+the identity secret, so none can be renamed away and back; routes it
+doesn't see remain (a child process, a worker thread), so each time the
+file is read again, every call added
 since the last read is logged as an error (`module sandbox: <module>
 declared call added since its last pin: "<address>" (adopted)`, or `(not
 adopted: ...)` when the previous copy stays). The last copy's calls are
