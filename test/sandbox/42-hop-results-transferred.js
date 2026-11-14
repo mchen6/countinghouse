@@ -58,7 +58,18 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
     assert.match(over.body.output.message, /^main-checked\/big: its output is \d+ bytes, over the 67108864-byte limit/);
   });
 
-  it('while a 60 MB hop crosses, the main thread keeps answering: tools/list\'s median under 100 ms, none over 1.5 s (unpacking on main would block every one for the unpack)', async () => {
+  it('while a 60 MB hop crosses, the main thread keeps answering: tools/list\'s median within max(100 ms, 3x its own unflooded median), none over max(1.5 s, 15x) (unpacking on main would block every one for the unpack)', async () => {
+    // Relative to this machine, in this run (the reviewer's rule for latency
+    // bounds): the unflooded median first, warmed. On CI's floor runner two
+    // samples under the hop gave a 'median' of 177 ms (train-1).
+    const median = (xs) => { const s = [...xs].sort((x, y) => x - y); return s[Math.floor((s.length - 1) / 2)]; };
+    const quiet = [];
+    for (let i = 0; i < 8; i++) {
+      const t = Date.now();
+      assert.strictEqual((await mainList()).status, 200);
+      if (i >= 3) quiet.push(Date.now() - t);
+    }
+    const base = median(quiet);
     const big = digest(60 * 1024 * 1024);
     await new Promise((r) => setTimeout(r, 50));
     let worst = 0;
@@ -73,9 +84,9 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
       await new Promise((r) => setTimeout(r, 10));
     }
     assert.deepStrictEqual((await big).body.output, expected(60 * 1024 * 1024));
-    const median = times.sort((a, b) => a - b)[Math.floor(times.length / 2)];
-    assert.ok(median < 100, `tools/list's median was ${median} ms over ${times.length} calls`);
-    assert.ok(worst < 1500, `a tools/list took ${worst} ms`);
+    const under = median(times);
+    assert.ok(under <= Math.max(100, 3 * base), `tools/list's median was ${under} ms over ${times.length} calls (unflooded ${base} ms)`);
+    assert.ok(worst <= Math.max(1500, 15 * base), `a tools/list took ${worst} ms (unflooded median ${base} ms)`);
   });
 
   it('two hops in flight from one caller, 30 MB and 10 MB, each get their own bytes', async () => {
