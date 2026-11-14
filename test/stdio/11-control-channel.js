@@ -7,7 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {spawnSync} = require('child_process');
+const {spawn, spawnSync} = require('child_process');
 const {startStdio, INITIALIZE} = require('../helpers/stdio-client');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -38,11 +38,22 @@ describe('stdio 11: the control channel', function() {
     assert.ok(!io.lines.some((l) => /CONTROL_/.test(l)), 'nothing of the channel on stdout');
   });
 
-  it('is refused outside the single-identity profile, and without an IPC fd, naming the flag', () => {
-    for (const [extra, opts] of [[['--authConfigPath', path.join(home, 'auth.json')], {stdio: ['pipe', 'pipe', 'pipe', 'ipc']}],
-      [[], {stdio: ['pipe', 'pipe', 'pipe']}]]) {
+  // An IPC fd needs an asynchronous spawn (spawnSync refuses one).
+  const run = (args, stdio) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [ENTRY, ...args], {stdio});
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdin.end();
+    const timer = setTimeout(() => child.kill(), 30000);
+    child.on('exit', (status) => { clearTimeout(timer); resolve({status, stderr}); });
+  });
+
+  it('is refused outside the single-identity profile, and without an IPC fd, naming the flag', async () => {
+    for (const [extra, stdio] of [[['--authConfigPath', path.join(home, 'auth.json')], ['pipe', 'pipe', 'pipe', 'ipc']],
+      [[], ['pipe', 'pipe', 'pipe']]]) {
       fs.writeFileSync(path.join(home, 'auth.json'), '{}');
-      const r = spawnSync(process.execPath, [ENTRY, ...base(), '--controlChannel', 'ipc', ...extra], {...opts, encoding: 'utf8', timeout: 30000, input: ''});
+      const r = await run([...base(), '--controlChannel', 'ipc', ...extra], stdio);
       assert.strictEqual(r.status, 2, `${extra.join(' ')}: ${r.stderr}`);
       assert.match(r.stderr, /--controlChannel/);
     }

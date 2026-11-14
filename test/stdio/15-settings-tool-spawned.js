@@ -5,15 +5,14 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
+const {startStdio, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 const tmp = require('../helpers/test-tmp');
 
-const ROOT = path.join(__dirname, '..', '..');
-const MODULE = path.join(ROOT, 'test', 'fixtures', 'handler-map-module');
-
+// No module: the single-identity profile lists only a pack's scenario tools,
+// and the built-ins are what is tested here.
 function start(home, extra = []) {
-  return startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--loadModule', MODULE,
-    '--moduleDataPath', path.join(home, 'module_data'), ...extra]);
+  return startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
+    '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), ...extra]);
 }
 
 describe('stdio 15: countinghouse_settings, spawned', function() {
@@ -24,15 +23,15 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
   afterEach(async () => { if (io != null) await io.stop(); io = null; tmp.remove(home); });
 
   const listed = async () => {
-    await waitForTool(io, /hello/);
-    const list = await io.request({jsonrpc: '2.0', id: 10, method: 'tools/list', params: {}});
+    const list = await io.request({jsonrpc: '2.0', id: 10, method: 'tools/list', params: {}}, 30000);
+    assert.ok(list.result != null, `${JSON.stringify(list)}; ${withoutRedisNoise(io.err)}`);
     return list.result.tools.map((t) => t.name);
   };
   const call = (id, args) => io.request({jsonrpc: '2.0', id, method: 'tools/call', params: {name: 'countinghouse_settings', arguments: args}});
 
   it('without --settingsFile: not listed, and refused by name', async () => {
     io = start(home);
-    await io.request({...INITIALIZE, id: 1});
+    await io.request({...INITIALIZE, id: 1}, 30000);
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     assert.ok(!(await listed()).includes('countinghouse_settings'), withoutRedisNoise(io.err));
     const r = await call(2, {action: 'get'});
@@ -43,7 +42,7 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
   it('with --settingsFile: listed; get answers; a tightening set is written; a loosening is refused and changes nothing', async () => {
     const file = path.join(home, 'settings.json');
     io = start(home, ['--settingsFile', file]);
-    await io.request({...INITIALIZE, id: 1});
+    await io.request({...INITIALIZE, id: 1}, 30000);
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     assert.ok((await listed()).includes('countinghouse_settings'), withoutRedisNoise(io.err));
     const got = await call(2, {action: 'get'});
