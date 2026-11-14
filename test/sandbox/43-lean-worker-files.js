@@ -54,7 +54,66 @@ const ALLOWED = [
   'node_modules/uuid-1345/'
 ];
 
-const allowed = (rel) => ALLOWED.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
+// What one routed ctx.call may add to the above: the hop's own path, and
+// nothing of the device model, the validator or its schema tooling (ajv,
+// json-schema-ref-parser, js-yaml), which the main thread holds. Loaded on a
+// worker's first hop, they cost it most of a second under that request's
+// timer (composition 18's #138-8).
+const ALLOWED_AFTER_CALL = ALLOWED.concat([
+  // countinghouse-util, attached to the worker on its first use (chutil-facade
+  // runtime()), and the routed hop's device query and client
+  'lib/countinghouse-util.js',
+  'lib/lazy-require.js',
+  'node_modules/json-stringify-safe/',
+  'lib/query-device.js',
+  'lib/service-client.js',
+  'lib/session.js',
+  'lib/timer.js',
+  'lib/store.js',
+  // made at the attach today (lib/lean-worker.js): the worker's logger, and
+  // the Redis bridge
+  'lib/logger.js',
+  'lib/worker-logger.js',
+  'node_modules/bunyan/',
+  'node_modules/source-map-support/',
+  'node_modules/buffer-from/',
+  'node_modules/safe-json-stringify/',
+  'node_modules/dtrace-provider/',
+  'node_modules/mv/',
+  'node_modules/mkdirp/',
+  'node_modules/ncp/',
+  'node_modules/minimatch/',
+  'node_modules/brace-expansion/',
+  'node_modules/balanced-match/',
+  'node_modules/concat-map/',
+  'node_modules/inflight/',
+  'node_modules/once/',
+  'node_modules/wrappy/',
+  'node_modules/inherits/',
+  'node_modules/path-is-absolute/',
+  'lib/redis-api.js',
+  'lib/supported-redis-commands.json',
+  'node_modules/lodash/',
+  'node_modules/string-hash/',
+  'node_modules/redis-commands/'
+]);
+
+const allowedIn = (list) => (rel) => list.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
+const allowed = allowedIn(ALLOWED);
+const allowedAfterCall = allowedIn(ALLOWED_AFTER_CALL);
+
+// The runtime's own files among a worker's require cache keys: under its
+// root, not the module's (/app).
+// node_modules is read through its real path too: a worktree's may be a
+// link to another checkout's, which would otherwise read as outside the root.
+function runtimeFiles(files) {
+  const root = fs.realpathSync(ROOT);
+  const modules = fs.realpathSync(path.join(ROOT, 'node_modules'));
+  return files.filter((f) => !f.startsWith('/app/'))
+    .map((f) => (f.startsWith(modules + path.sep) ? path.join('node_modules', path.relative(modules, f))
+      : path.relative(f.startsWith(root) ? root : ROOT, f)))
+    .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel));
+}
 
 describe('sandbox 43: a lean worker loads only what it needs (lean worker step 3)', function() {
   this.timeout(120000);
@@ -63,7 +122,8 @@ describe('sandbox 43: a lean worker loads only what it needs (lean worker step 3
   before(async () => {
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-lean-43-'));
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit',
-      '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe')]);
+      '--no-directPeerChannels', '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'lean-probe-caller')]);
   });
   after(() => {
     stopServer(server);
@@ -72,13 +132,17 @@ describe('sandbox 43: a lean worker loads only what it needs (lean worker step 3
 
   it('after its first invoke, has required nothing of the runtime outside the allowed list', async () => {
     const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_probeservice_files', {}));
-    const root = fs.realpathSync(ROOT);
-    // the runtime's own files: under its root, not the module's (/app)
-    const runtime = out.files.filter((f) => !f.startsWith('/app/'))
-      .map((f) => path.relative(f.startsWith(root) ? root : ROOT, f))
-      .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel));
+    const runtime = runtimeFiles(out.files);
     assert.ok(runtime.length > 0, `no runtime file seen: ${JSON.stringify(out.files).slice(0, 300)}`);
     const extra = runtime.filter((rel) => !allowed(rel)).sort();
     assert.deepStrictEqual(extra, [], `required outside the allowed list (${extra.length}):\n  ${extra.join('\n  ')}`);
+  });
+
+  it('after one routed ctx.call, has required nothing outside the hop\'s list (no validator, no device model)', async () => {
+    const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_caller_probecallerservice_filesaftercall', {}));
+    assert.match(out.called, /^ok \d+$/, `the hop did not answer: ${out.called}`);
+    const runtime = runtimeFiles(out.files);
+    const extra = runtime.filter((rel) => !allowedAfterCall(rel)).sort();
+    assert.deepStrictEqual(extra, [], `required outside the hop's list (${extra.length}):\n  ${extra.join('\n  ')}`);
   });
 });
