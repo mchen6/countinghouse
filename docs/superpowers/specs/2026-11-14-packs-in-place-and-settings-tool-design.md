@@ -160,7 +160,8 @@ values, and who made it: `cli`, `settings tool` or `auto-upgrade`.
 |---|---|
 | `SETTING_UNKNOWN` | The name is not in the allowlist. |
 | `SETTING_OUT_OF_BOUNDS` | The value is outside the setting's bounds; the answer carries the bounds. |
-| `SETTING_LOOSENS_A_GUARD` | The change would loosen a guarding setting. The text tells the agent the user can make the change with the `ch-local` command (for an agent with a shell), or through part 3's confirmation. The value is never changed. |
+| `SETTING_LOOSENS_A_GUARD` | The change would loosen the sandbox or automatic upgrades, which only the `ch-local` command in a terminal can do (part 3, section 1). The text names the command. The value is never changed. |
+| `SETTING_NEEDS_CONFIRMATION` | Part 3: a raised cap or timeout, or a pack turned on, needs the user's own confirmation. The text, addressed to the user, names the `ch-local` command; the request is recorded as not confirmed. The value is never changed. |
 
 The error texts, with fields `{name}`, `{value}` and `{bounds}` (the zh
 texts are the reviewer's, 2026-11-14):
@@ -169,7 +170,8 @@ texts are the reviewer's, 2026-11-14):
 |---|---|---|
 | `SETTING_UNKNOWN` | There is no setting named {name}; the settings that can be changed are in get's answer. | 没有名为 {name} 的设置；可以修改的设置见 get 的结果。 |
 | `SETTING_OUT_OF_BOUNDS` | The value {value} for {name} is outside the allowed range ({bounds}); nothing was changed. | {name} 的值 {value} 超出了允许的范围（{bounds}），未作修改。 |
-| `SETTING_LOOSENS_A_GUARD` | Changing {name} to {value} would loosen a guarding setting, which this tool cannot do; nothing was changed. The user can change it with the ch-local command in a terminal, or through a request the user confirms in person. | 把 {name} 改为 {value} 会放宽一项防护设置，这个工具不能这样改，设置未作修改。用户可以在终端里用 ch-local 命令自己修改，或通过需要用户亲自确认的方式修改。 |
+| `SETTING_LOOSENS_A_GUARD` | Changing {name} to {value} would loosen a guarding setting, which can only be done from a terminal; nothing was changed. To change it, run `{command}` in a terminal yourself. | 把 {name} 改为 {value} 会放宽一项防护设置，这只能在终端里修改，设置未作修改。如需修改，请自己在终端里运行 `{command}`。 |
+| `SETTING_NEEDS_CONFIRMATION` | Changing {name} to {value} loosens a guarding setting, so it needs your own confirmation; nothing was changed. To allow this, run `{command}` in a terminal yourself. | 把 {name} 改为 {value} 会放宽一项防护设置，需要你亲自确认，设置未作修改。如需允许，请自己在终端里运行 `{command}`。 |
 
 **The allowlist for the first release.** Bounds are fixed in code.
 
@@ -230,8 +232,9 @@ written to stderr and to the history.
 - The settings tool:
   - each allowlisted setting is set within its bounds;
   - out-of-bounds values and unknown names are refused;
-  - every loosening is refused `SETTING_LOOSENS_A_GUARD` and changes
-    nothing, turning a pack on included;
+  - every loosening is refused and changes nothing, turning a pack on
+    included: `SETTING_LOOSENS_A_GUARD` for the sandbox and automatic
+    upgrades, `SETTING_NEEDS_CONFIRMATION` for the rest (part 3);
   - turning a pack off unloads it in place and announces it;
   - it is not listed over HTTP;
   - it cannot be reached by `ctx.call` or a hop;
