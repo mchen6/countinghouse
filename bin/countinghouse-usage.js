@@ -14,7 +14,7 @@ const USAGE = 'usage: countinghouse-usage --usageDir <dir> [--since <day|ISO tim
 const VALUES = ['--usageDir', '--since', '--until', '--groupBy'];
 const FLAGS = ['--json', '--csv'];
 
-function main(argv) {
+async function main(argv) {
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -35,7 +35,7 @@ function main(argv) {
   let report;
   try {
     // every group: the 500-row bound is the tool's output schema's
-    report = usageReport(args, {caller: null, isAdmin: true}, {usage: null, usageDir: opts['--usageDir'], maxGroups: Infinity});
+    report = await usageReport(args, {caller: null, isAdmin: true}, {usage: null, usageDir: opts['--usageDir'], maxGroups: Infinity});
   } catch (e) {
     return fail(e.message);
   }
@@ -48,4 +48,4 @@ function fail(message) {
   return 2;
 }
 
-process.exitCode = main(process.argv.slice(2));
+main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (e) => { process.exitCode = fail(e.message); });

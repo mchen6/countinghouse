@@ -83,7 +83,7 @@
       "properties": {
         "since": {
           "type": "string",
-          "description": "a day (YYYY-MM-DD), an ISO time, a duration back from now (30m, 24h, 7d), or \"all\" (from the first record); absent: everything recorded"
+          "description": "a day (YYYY-MM-DD), an ISO time, a duration back from now (30m, 24h, 7d), or \"all\" (from the first record); absent: the last 31 days for a plain key, everything recorded for an admin"
         },
         "until": {
           "type": "string",
@@ -297,7 +297,7 @@
                 },
                 "method": {
                   "type": "string",
-                  "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), per tool call"
+                  "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call"
                 },
                 "bound": {
                   "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
@@ -374,7 +374,7 @@
                   },
                   "method": {
                     "type": "string",
-                    "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), per tool call"
+                    "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call"
                   },
                   "bound": {
                     "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
