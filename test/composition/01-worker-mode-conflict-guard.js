@@ -50,7 +50,9 @@ const moduleSpec = require('../../lib/module-spec');
 // name, host path and pinned package.json are what registerFromSpec reads.
 async function workerWithSpec(friendlyName, moduleName, modulePath) {
   const wm = new WorkerMessage(null);
-  wm.moduleSpec = await moduleSpec.fromParts({device: {friendlyName: friendlyName}}, null);
+  // a spec the device-spec check accepts, as registration checks it
+  wm.moduleSpec = await moduleSpec.fromParts({device: {friendlyName: friendlyName, manufacturer: 'countinghouse-test',
+    modelDescription: 'composition 01', serviceList: {}}}, null);
   wm.hostModuleName = moduleName;
   wm.hostModulePath = modulePath;
   wm.hostPackageInfo = {name: moduleName};

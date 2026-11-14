@@ -357,6 +357,14 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
       }
     });
 
+    it('a spec that fails the device-spec check: logged DEVICE_SPEC_VALIDATION_FAIL with the stage, and not registered', async () => {
+      const bad = await moduleSpec.fromParts({device: {friendlyName: 'main-checked', serviceList: {}}}, null);
+      const {dm, wm} = worker(bad);
+      assert.strictEqual(DeviceManager.prototype.registerFromSpec.call(dm, wm), false);
+      assert.deepStrictEqual(dm.deviceMap, {});
+      assert.ok(logged.some((l) => /stage=validateDeviceSpec/.test(l) && /manufacturer/.test(l)), logged.join('\n'));
+    });
+
     it('a worker that is going (being unloaded, ended, or replaced): not registered', () => {
       for (const going of [{unloading: true}, {ended: {code: 'MODULE_UNLOADED'}}]) {
         const {dm, wm} = worker(own, going);

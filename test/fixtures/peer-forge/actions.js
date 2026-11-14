@@ -1,5 +1,7 @@
-// Module code reaches its worker's peer channels (CHUtil.ci.deviceManager, a
-// documented gap), so once a channel to a worker is open for one granted
+// Module code reaches its worker's peer channels (the runtime's own CHUtil,
+// through require.cache: the global CHUtil a module sees has no ci or dm
+// since lean worker step 3; a documented gap), so once a channel to a
+// worker is open for one granted
 // device it can post an invoke for any other device that worker hosts. The
 // callee must serve only the devices granted on that channel (review R2-2).
 const SERVICE = 'urn:countinghouse-test:serviceID:dynService';
@@ -19,14 +21,20 @@ if (!state.hooked && typeof(globalThis.MessagePort) === 'function') {
   };
 }
 
+// The runtime's countinghouse-util, once a ctx helper has loaded it.
+function runtime() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
+  return (key != null) ? require.cache[key].exports : {};
+}
+
 module.exports = {
   forgeService: {
     forge: async (input, ctx) => {
-      const dm = CHUtil.ci.deviceManager;
       // the channel is opened by a hop made the proper way (its request
       // carries the call's token; one forged without it is denied)
       const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE, as: input.appKey},
         (ce, client) => (ce != null ? resolve(outcome(ce)) : client.invoke({actionName: 'hello', input: {}}, (e, d) => resolve(outcome(e, d))))));
+      const dm = runtime().ci.deviceManager;
       const channel = dm.peerChannels[dm.peerDeviceWorkerMap[input.granted]];
       if (channel == null) return {output: {granted: granted, other: 'no channel'}};
       const other = await new Promise((resolve) => channel.invoke(input.other, SERVICE, 'hello', {}, 5000,

@@ -27,7 +27,7 @@ describe('module-loading 22: nothing is registered for a worker that is going', 
   before(async () => {
     require('../../lib/cli-options').setOptions({workerThread: true});
     DeviceManager = require('../../lib/device-manager');
-    own = await require('../../lib/module-spec').fromParts({device: {friendlyName: MODULE}}, null);
+    own = await require('../../lib/module-spec').fromParts({device: {friendlyName: MODULE, manufacturer: 'countinghouse-test', modelDescription: 'module-loading 22', serviceList: {}}}, null);
     DEVICE = own.deviceID;
     info = LOG.I;
     LOG.I = (line) => { logged.push(String(line)); return line; };
