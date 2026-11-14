@@ -48,7 +48,7 @@ describe('fs-broker 02: namespace', () => {
 
   // A declared root is a host path, which on Windows carries a drive and is
   // outside the namespace there: declared roots do not work on Windows yet
-  // (they fail closed; reported with #197).
+  // (they fail closed; #204, out of scope for the first release).
   (WIN ? it.skip : it)('a declared root that is a file is listed as a file', async () => {
     // Not under os.tmpdir() (test/helpers/test-tmp.js): /tmp is itself a virtual root, and the validator
     // forbids declaring paths there.

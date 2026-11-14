@@ -479,3 +479,7 @@ in 8.0.0 will not find that data after a downgrade. Copy what you need out of
   an ES module show its host path.
 - `--hardened` does not support pnpm installs
   ([nodejs/node#66812](https://github.com/nodejs/node/issues/66812)).
+- On Windows, a module's declared host paths (`countinghouse.permissions.fs`)
+  are not available yet; it gets its own `/data` and `/tmp`
+  ([#204](https://github.com/mchen6/countinghouse/issues/204)). Under
+  `enforce` a declared path is refused, as any path outside the namespace.

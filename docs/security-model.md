@@ -74,8 +74,17 @@ it.
 its current directory and its stack frames as `<V>:\app\...`, V a drive
 letter the host does not have, picked once per process, because Node there
 loads a file only by a URL with a drive (`file:///<V>:/app/...`). The
-runtime names them `/app/...`, and the file broker maps `<V>:\app` to
-`/app`, so every rule above applies on Windows as it does elsewhere.
+runtime names them `/app/...`, and the file broker maps `<V>:\app`,
+`<V>:\data` and `<V>:\tmp` to `/app`, `/data` and `/tmp`, so every rule
+above applies on Windows as it does elsewhere. With no free drive letter,
+`--moduleSandbox enforce` refuses to start on Windows, saying so.
+
+**On Windows, a module's declared host paths are not available yet**
+([#204](https://github.com/mchen6/countinghouse/issues/204)): a declared
+root is a host path, which there carries a drive, and the broker takes every
+drive-qualified path as outside the namespace. Under `enforce` such a path is
+refused (ENOENT): it fails closed. The module gets its own `/data` and
+`/tmp`.
 
 **Only `enforce` protects files.** Under `audit` and `off` access outside a
 module's namespace passes through to the host, so `auth.json` and other
