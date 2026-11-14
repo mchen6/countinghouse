@@ -187,6 +187,17 @@ if (options.hardened === true && process.permission == null) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
   }
+  // On Windows the child cannot run the PowerShell the identity secret's
+  // ACL check needs: it is created and checked here (lib/identity.js
+  // prepareForHardened)
+  if (process.platform === 'win32') {
+    try {
+      require('./lib/identity').prepareForHardened(options);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
 }
