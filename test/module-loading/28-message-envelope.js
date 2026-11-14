@@ -16,7 +16,7 @@ const WorkerMessage = require('../../lib/worker-message');
 
 const CAP = capFor(1024 * 1024);
 
-describe('module-loading 27: messages to the main thread cross as bounded bytes (#170)', () => {
+describe('module-loading 28: messages to the main thread cross as bounded bytes (#170)', () => {
   it('a message round-trips; the cap is --maxOutputBytes plus the headroom', () => {
     const m = {id: 3, category: 'child', command: 'devicelog', errMsg: null, data: {text: 'hi', n: [1, 2]}};
     const {envelope, transfer} = wrap(m, CAP);

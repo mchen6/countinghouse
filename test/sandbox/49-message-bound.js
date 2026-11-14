@@ -15,7 +15,7 @@ const {toolOutput} = require('../helpers/tool-result');
 const KEY = 'k';
 const PORT = 9739;
 
-describe('sandbox 48: messages to the main thread are bounded (#170)', function() {
+describe('sandbox 49: messages to the main thread are bounded (#170)', function() {
   this.timeout(120000);
   let server = null;
   let base = null;
