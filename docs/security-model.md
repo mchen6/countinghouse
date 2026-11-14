@@ -429,7 +429,11 @@ Administrators:F SYSTEM:F Users:RX`). Both must stay readable by every user
 check, or holds anything else, **fails closed**: every loosening is refused
 (`SETTING_CEILING_UNTRUSTED`), naming the file and why; so does a
 `countinghouse` directory an ordinary user could have made, even with no
-file in it. No directory and no file: the hard bounds apply.
+file in it. No directory and no file: the hard bounds apply. On Windows the
+ACL is read by the PowerShell in the Windows directory, started by its full
+path with a minimal environment. Not checked, because each needs root or an
+administrator to set: macOS extended ACLs (`chmod +a`) and Windows
+conditional access rules.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 

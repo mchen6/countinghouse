@@ -100,6 +100,21 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
       /its directory is owned by S-1-5-21-1-2-3-1001, not Administrators, SYSTEM or TrustedInstaller/);
   });
 
+  it('Windows: PowerShell is started from the Windows directory, which must be a drive path', () => {
+    const {windowsDir} = require('../../lib/settings-ceiling');
+    const saved = {SystemRoot: process.env.SystemRoot, windir: process.env.windir};
+    try {
+      process.env.SystemRoot = 'C:\\Windows\\';
+      assert.strictEqual(windowsDir(), 'C:\\Windows');
+      process.env.SystemRoot = '.\\here';
+      assert.throws(() => windowsDir(), /SystemRoot is not a drive path/);
+      delete process.env.SystemRoot; delete process.env.windir;
+      assert.strictEqual(windowsDir(), 'C:\\Windows');
+    } finally {
+      for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+  });
+
   it('the real reader, on this OS: a file this test wrote is not trusted, and says why', function() {
     this.timeout(30000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ceiling-'));
