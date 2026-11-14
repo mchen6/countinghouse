@@ -102,7 +102,7 @@ the machine's other load moves far less than wall-clock:
 | R, `enforce`: main-thread CPU (sessions' medians) | 820, 690, 750 ms | 750, 780, 730 ms |
 | S, `enforce`: main-thread CPU | 1 520, 1 460, 1 700 ms | 1 430, 1 600, 1 620 ms |
 | W, `enforce`: main-thread CPU | 580, 540, 560 ms | 590, 630, 560 ms |
-| R, `enforce` (wall) | 1 289, 1 316, 2 543 ms | 1 313, 1 426, 2 286 ms |
+| R, `enforce` (wall, `perf/fs-broker-io-perf.js`) | 1 779, 1 289, 2 543 ms | 2 286, 1 426, 1 313 ms |
 | R, 10 modules, `enforce` (all 10) | 1 250, 1 280, 1 373 ms | 895, 1 076, 1 082 ms |
 | S, `off` (wall) | 1 802, 1 877, 1 939 ms | 1 420, 2 323, 2 487 ms |
 
