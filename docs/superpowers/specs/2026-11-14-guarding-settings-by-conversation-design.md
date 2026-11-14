@@ -1,7 +1,8 @@
 # Guarding settings by conversation (first release, part 3)
 
-Status: draft for the maintainer's review, rev 2 (2026-11-14), after a
-security review against the MCP 2026-07-28 specification. Reviewer session.
+Status: APPROVED by the maintainer 2026-11-14 (rev 3; DECISIONS.md, ch-biz-plan
+ebc1e7b), after a security review against the MCP 2026-07-28 specification.
+Reviewer session.
 Builds on part 2 (#168): the `countinghouse_settings` tool, its allowlist and
 bounds, the control channel, the change history.
 
@@ -175,22 +176,15 @@ section 1:
   next start.
 - **Modules:** a module can reach no path.
 
-## Open questions for the maintainer
+## Decisions (the maintainer, 2026-11-14)
 
-1. **Which clients may confirm by elicitation?**
-   - A tested allowlist, as proposed: safer, and we keep a list, starting
-     with the clients we've tested.
-   - Or any client that declares the capability: simpler, but an
-     auto-answering host turns an injected request into a yes.
-
-   Recommendation: the allowlist.
-2. **How long does a conversational loosening last?** "This start only", as
-   proposed, or kept as the CLI's are? Recommendation: this start only.
+1. **Which clients may confirm by elicitation:** only those on the tested-client
+   allowlist. Every other client gets the terminal command.
+2. **How long a conversational loosening lasts:** this start only. The CLI's
+   loosenings are persistent.
 3. **Clients with neither a shell nor a trusted elicitation:** the user runs
-   the command in a terminal, as proposed. The alternative is a one-time
-   local confirmation page that `start` opens in the browser. Other local
-   software could reach that page too. Recommendation: the command only, for
-   the first release.
+   the terminal command. There is no local confirmation page in the first
+   release.
 
 New codes, with en and zh texts:
 - `SETTING_NEEDS_CONFIRMATION`;
