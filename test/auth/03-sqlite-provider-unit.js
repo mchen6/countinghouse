@@ -201,7 +201,9 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   // #147 (R2-1 Task 5): the CLI binds a module to an identity and removes the
   // binding; list shows it; the provider's identityForModule reads it; a
   // database from before the module_identities table gets it.
-  describe('bind-module / unbind-module', () => {
+  describe('bind-module / unbind-module', function() {
+    // each case runs the CLI several times, a process each
+    this.timeout(30000);
     const path = require('path');
     const CLI = path.join(__dirname, '..', '..', 'bin', 'countinghouse-auth-sqlite.js');
     const cli = (args) => spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(args), {encoding: 'utf8', timeout: 20000});
@@ -231,6 +233,57 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
       // and adding the key again does not bring the binding back
       assert.strictEqual(cli(['add-user', KEY, 'bound-identity']).status, 0);
       assert.strictEqual(await lookup('composite-demo'), null);
+    });
+
+    // R2-1 Task 5's review of #153 (item 7)
+    it('refuses an empty module name', () => {
+      assert.strictEqual(cli(['add-user', KEY, 'bound-identity']).status, 0);
+      assert.notStrictEqual(cli(['bind-module', KEY, '']).status, 0);
+      assert.notStrictEqual(cli(['unbind-module', '']).status, 0);
+    });
+
+    it('a rebind says what moved: the module, and from which identity to which, by user name', () => {
+      const OTHER = `bind-other-${process.pid}`;
+      assert.strictEqual(cli(['add-user', KEY, 'first-identity']).status, 0);
+      assert.strictEqual(cli(['add-user', OTHER, 'second-identity']).status, 0);
+      assert.strictEqual(cli(['bind-module', KEY, 'm1']).status, 0);
+      const moved = cli(['bind-module', OTHER, 'm1']);
+      assert.strictEqual(moved.status, 0, moved.stderr);
+      assert.match(moved.stdout, /m1/);
+      assert.match(moved.stdout, /first-identity/);
+      assert.match(moved.stdout, /second-identity/);
+    });
+
+    it('no ok line prints a key; every one names the user', () => {
+      const lines = [];
+      const run = (args) => { const r = cli(args); assert.strictEqual(r.status, 0, `${args[0]}: ${r.stderr}`); lines.push(`${args[0]}: ${r.stdout}`); };
+      run(['add-user', KEY, 'named-user']);
+      run(['grant', KEY, 'dev-1']);
+      run(['revoke', KEY, 'dev-1']);
+      run(['set-admin', KEY, 'true']);
+      run(['set-id', KEY, 'stable-id']);
+      run(['bind-module', KEY, 'm2']);
+      run(['unbind-module', 'm2']);
+      run(['remove-user', KEY]);
+      assert.ok(!lines.some((l) => l.includes(KEY)), lines.join(''));
+      assert.ok(lines.filter((l) => /named-user/.test(l)).length >= 6, lines.join(''));
+    });
+
+    it('an in-memory database leaves no file named after it', () => {
+      const os = require('os');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sqlite-mem-'));
+      try {
+        const r = spawnSync(process.execPath, [CLI, '--dbPath', ':memory:', 'add-user', KEY, 'mem-user'], {encoding: 'utf8', timeout: 20000, cwd: dir});
+        assert.strictEqual(r.status, 0, r.stderr);
+        assert.deepStrictEqual(fs.readdirSync(dir), []);
+      } finally {
+        fs.rmSync(dir, {recursive: true, force: true});
+      }
+    });
+
+    it('creates the database with mode 0600', () => {
+      assert.strictEqual(cli(['add-user', KEY, 'mode-user']).status, 0);
+      assert.strictEqual(fs.statSync(dbPath).mode & 0o077, 0, (fs.statSync(dbPath).mode & 0o777).toString(8));
     });
 
     it('refuses to bind to a user that does not exist, and to unbind a module that is not bound', () => {

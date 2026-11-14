@@ -153,6 +153,16 @@ describe('validation 07: the review of #45', () => {
     assert.strictEqual(CountinghouseError.answerable(handed).origin, 'runtime');
   });
 
+  // the review of 5b: `as` is refused whatever its value, so a 7.x module
+  // passing `as: ctx.caller.apiKey` (undefined in 8.0) fails loudly instead
+  // of running as its binding
+  it('ctx.serviceClient refuses `as` even when it is undefined', async () => {
+    const {buildCtx} = require('../../lib/handler-ctx');
+    const device = {_compositionSettled: true, _composition: {identity: '(bound)', allowed: {}, targets: []}};
+    const err = await new Promise((resolve) => buildCtx(device, {}, {}).serviceClient({deviceID: 'd', serviceID: 's', as: undefined}, (e) => resolve(e)));
+    assert.match(String(err && err.message), /remove `as`/);
+  });
+
   it('ctx.serviceClient issues the runtime refusals it hands the module', async () => {
     const path = require('path');
     const utilFile = path.resolve(__dirname, '../../lib/countinghouse-util.js');
@@ -161,8 +171,11 @@ describe('validation 07: the review of #45', () => {
       exports: {createServiceClient: (o, cb) => cb(new CountinghouseError('SERVICE_NOT_FOUND', o.serviceID))}};
     try {
       const {buildCtx} = require('../../lib/handler-ctx');
-      const ctx = buildCtx(null, {}, {});
-      const refusal = await new Promise((resolve) => ctx.serviceClient({deviceID: 'd', serviceID: 'bad', as: 'someone'}, (err) => resolve(err)));
+      // a bound module with its verdict in (R2-1 Task 5: no `as`; the hop
+      // authorizes as the binding)
+      const device = {_compositionSettled: true, _composition: {identity: '(bound)', allowed: {}, targets: []}};
+      const ctx = buildCtx(device, {}, {});
+      const refusal = await new Promise((resolve) => ctx.serviceClient({deviceID: 'd', serviceID: 'bad'}, (err) => resolve(err)));
       const a = await answer(() => refusal);
       assert.strictEqual(a.err.code, 'SERVICE_NOT_FOUND');
       assert.strictEqual(a.err.origin, 'runtime');

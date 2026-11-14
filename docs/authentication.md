@@ -144,6 +144,12 @@ node bin/countinghouse-auth-sqlite.js list
 node bin/countinghouse-auth-sqlite.js unbind-module composite-demo
 ```
 
+A binding, a rebind (which says which identity the module moved from) and an
+unbinding take effect at the module's next load or reload: a running module
+keeps the binding it was verified with. `remove-user` removes the key's
+bindings too. The CLI's ok lines name users by user name, never by key, and
+a database it creates is owner-only (mode 0600).
+
 Pass `--dbPath <path>` before the subcommand if not using the default
 location. `grant`/`revoke` take a deviceID or the literal `'*'` for
 wildcard access, matching `file`'s convention.

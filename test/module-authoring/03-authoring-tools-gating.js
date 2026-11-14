@@ -140,7 +140,7 @@ function toolsCall(port, apiKey, id, name, toolArgs, cb) {
 // needs to edit a module's code BETWEEN two validate calls -- that can't be
 // done against a fixture checked into the repo without leaving the working
 // tree dirty.
-const HELLO = 'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}});\n';
+const HELLO = 'module.exports = async (input, ctx) => ({output: {text: `hello ${input.name}`, caller: ctx.caller.id}});\n';
 function writeTempModule(prelude) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-cache-'));
   fs.writeFileSync(path.join(dir, 'package.json'),
