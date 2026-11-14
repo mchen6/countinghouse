@@ -4,13 +4,17 @@
 //   S: many small writes to one descriptor (10 000 x 100 bytes), a logger's
 //      or a stream's shape;
 //   W: a repo walk -- readdir and stat over 3 000 files in 30 directories;
+//   R: the 4-op round (fs-probe's ioBench, 250 rounds), as in
+//      perf/fs-broker-io-perf.js;
 //   L: a dependency-heavy require at load -- a POST /reload-module round
 //      trip until a module that requires 300 packages (3 files each) answers
 //      (a new worker under --workerThread, a purged require cache without).
 // Under --no-workerThread (no broker), --moduleSandbox off and enforce, with
 // perf/fixtures/fs-bench (copied, with a generated node_modules for L).
 // RUNS timed runs after a warm-up; median, min and max, each printed as it is
-// measured. --count instead prints the machine-independent counts for S and
+// measured. Beside each workload's time, the CPU time of the server's main
+// thread over the call (Linux, /proc/<pid>/task/<pid>/stat): what the broker
+// costs the main thread, and steadier than wall-clock on a shared machine. --count instead prints the machine-independent counts for S and
 // W: bridge calls and libuv pool jobs (async fs calls on the main thread) per
 // operation, with the broker as the runtime makes it (createForWorker: the
 // always-denied set, the quota, the write guards).
@@ -29,7 +33,8 @@ const S = {writes: 10000, size: 100};
 const W = {dirs: 30, files: 100};
 const L = {deps: 300, filesPerDep: 3};
 const arg = (name) => { const i = process.argv.indexOf(name); return i < 0 ? null : process.argv[i + 1]; };
-const ONLY = (arg('--only') || 'S,W,L').split(',');
+const ONLY = (arg('--only') || 'R,S,W,L').split(',');
+const R = {rounds: 250};
 
 const median = (xs) => { const s = xs.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 const stats = (xs) => ({median: +median(xs).toFixed(1), min: +Math.min(...xs).toFixed(1), max: +Math.max(...xs).toFixed(1)});
@@ -62,26 +67,48 @@ const call = async (tool, args) => {
   if (r.structuredContent == null) throw new Error(`${tool}: ${JSON.stringify(r)}`);
   return r.structuredContent;
 };
-async function timed(fn) {
+// The main thread's CPU time so far, in ms (utime + stime at USER_HZ 100), or
+// null where /proc is not.
+function mainCpuMs(pid) {
+  try {
+    const st = fs.readFileSync(`/proc/${pid}/task/${pid}/stat`, 'utf8');
+    const f = st.slice(st.lastIndexOf(')') + 2).split(' ');
+    return (Number(f[11]) + Number(f[12])) * 10;
+  } catch (e) {
+    return null;
+  }
+}
+
+// -> {ms: stats of what fn returns, mainCpuMs: stats of the main thread's CPU over fn}.
+async function timed(fn, pid) {
   await fn();   // warm-up
   const out = [];
-  for (let i = 0; i < RUNS; i++) out.push(await fn());
-  return stats(out);
+  const cpu = [];
+  for (let i = 0; i < RUNS; i++) {
+    const before = mainCpuMs(pid);
+    out.push(await fn());
+    const after = mainCpuMs(pid);
+    if (before != null && after != null) cpu.push(after - before);
+  }
+  return {ms: stats(out), mainCpuMs: cpu.length > 0 ? stats(cpu) : null};
 }
 
 async function wallClock(label, flags, base, mod) {
   const server = await startServer(PORT, flags.concat(['--debug', '--debugKey', KEY, '--requestTimeout', '300000',
-    '--moduleDataPath', path.join(base, label.replace(/\W+/g, '-')), '--loadModule', mod]));
+    '--moduleDataPath', path.join(base, label.replace(/\W+/g, '-')), '--loadModule', mod,
+    '--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')]));
+  const pid = server.pid;
   try {
     const out = {mode: label};
     if ((await call('fs_bench_benchservice_loaded', {})).deps !== L.deps) throw new Error('the dependencies were not loaded');
-    if (ONLY.includes('S')) out.S_handler_ms = await timed(async () => (await call('fs_bench_benchservice_smallwrites', S)).ms);
+    if (ONLY.includes('R')) out.R = await timed(async () => (await call('fs_probe_probeservice_iobench', R)).ms, pid);
+    if (ONLY.includes('S')) out.S = await timed(async () => (await call('fs_bench_benchservice_smallwrites', S)).ms, pid);
     if (ONLY.includes('W')) {
       await call('fs_bench_benchservice_seedtree', W);
-      out.W_handler_ms = await timed(async () => (await call('fs_bench_benchservice_walk', {})).ms);
+      out.W = await timed(async () => (await call('fs_bench_benchservice_walk', {})).ms, pid);
     }
     if (ONLY.includes('L')) {
-      out.L_reload_ms = await timed(async () => {
+      out.L_reload = await timed(async () => {
         const t = process.hrtime.bigint();
         const r = await post(PORT, KEY, '/reload-module', {path: mod});
         if (r.status !== 200) throw new Error(JSON.stringify(r.body));
@@ -89,7 +116,7 @@ async function wallClock(label, flags, base, mod) {
           try { return (await mcpCall(PORT, KEY, 'fs_bench_benchservice_loaded', {})).structuredContent != null; } catch (e) { return false; }
         }, 120000, 'fs-bench back');
         return ms(t);
-      });
+      }, pid);
     }
     return out;
   } finally {
@@ -169,7 +196,7 @@ async function counts(base, mod) {
       return;
     }
     console.log(JSON.stringify({node: process.version, cpus: os.cpus().length, uvThreadpoolSize: process.env.UV_THREADPOOL_SIZE || '16 (countinghouse default)',
-      runs: RUNS, S, W, L, only: ONLY}));
+      runs: RUNS, R, S, W, L, only: ONLY}));
     console.log(JSON.stringify(await wallClock('single-thread (no broker)', ['--no-workerThread'], base, mod)));
     console.log(JSON.stringify(await wallClock('worker, off', ['--workerThread', '--moduleSandbox', 'off'], base, mod)));
     console.log(JSON.stringify(await wallClock('worker, enforce', ['--workerThread', '--moduleSandbox', 'enforce'], base, mod)));
