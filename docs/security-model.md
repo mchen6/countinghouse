@@ -69,14 +69,13 @@ it.
 | Outside the namespace, writes to `/app` and to `r` paths | pass through | pass through, logged | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
-| Available on Windows | yes | yes | not yet ([#195](https://github.com/mchen6/countinghouse/issues/195)): refused at start, exit 2 |
 
-**`enforce` is not available on Windows yet.** A module's identity (its files
-as `/app/...`) is not designed for Windows file URLs, so `enforce` could not
-keep a module to its own files there; `--moduleSandbox enforce` on Windows
-refuses to start (exit 2, naming #195) rather than half-work, and `audit` is
-the Windows mode for now, with the protection gap that mode has. The
-settings tool offers only `audit` there.
+**On Windows** a module's files carry a drive (#195): the module sees them,
+its current directory and its stack frames as `<V>:\app\...`, V a drive
+letter the host does not have, picked once per process, because Node there
+loads a file only by a URL with a drive (`file:///<V>:/app/...`). The
+runtime names them `/app/...`, and the file broker maps `<V>:\app` to
+`/app`, so every rule above applies on Windows as it does elsewhere.
 
 **Only `enforce` protects files.** Under `audit` and `off` access outside a
 module's namespace passes through to the host, so `auth.json` and other

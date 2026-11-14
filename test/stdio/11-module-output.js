@@ -14,8 +14,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const MODULE = path.join(ROOT, 'test', 'fixtures', 'stdout-flood');
 const KEY = 'stdio-output-key';
 
-// enforce on every OS (#195: on Windows, until it lands, enforce starts only
-// with CH_ENFORCE_WIN32_PREVIEW=1, a test switch removed with the refusal).
+// enforce on every OS (on Windows a module's files carry a drive, #195).
 const MODE = 'enforce';
 
 describe(`--stdio: a module's output goes to stderr, bounded (--moduleSandbox ${MODE})`, function() {
@@ -32,7 +31,7 @@ describe(`--stdio: a module's output goes to stderr, bounded (--moduleSandbox ${
     const auth = path.join(home, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
     io = startStdio(['--workerThread', '--moduleSandbox', MODE, '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
-      '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'], {env: {COUNTINGHOUSE_API_KEY: KEY, CH_ENFORCE_WIN32_PREVIEW: '1'}});
+      '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     await io.request({...INITIALIZE, id: 1});
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     // the module's tools, or the server's own account of why there are none

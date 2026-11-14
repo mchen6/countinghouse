@@ -3,9 +3,7 @@
 // a drive the host does not have, <V>:\app\... (lib/fs-broker/virtual-drive.js),
 // because Node there takes a file URL only with one, and the file broker maps
 // <V>:\app back to /app. One module (test/fixtures/win-probe) runs every
-// check and reports each, so a run says all that is wrong at once; Windows
-// CI is where this is built (enforce starts there only with
-// CH_ENFORCE_WIN32_PREVIEW=1 until #195 lands).
+// check and reports each, so a run says all that is wrong at once.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -60,7 +58,7 @@ describe('stdio 16: a module\'s own files under enforce, as it sees them (#195)'
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
     io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'],
-    {env: {COUNTINGHOUSE_API_KEY: KEY, CH_ENFORCE_WIN32_PREVIEW: '1'}});
+    {env: {COUNTINGHOUSE_API_KEY: KEY}});
     await io.request({...INITIALIZE, id: 1});
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     const tool = await waitForTool(io, /win_probe_probeservice_probe$/, {deadlineMs: 30000});
