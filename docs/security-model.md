@@ -401,6 +401,58 @@ source `local`, so it survives a restart while the key changes per
 process. A multi-tenant `--store local` server keeps its secret under
 `<moduleDataPath>`, so moving to the local store changes no user's id.
 
+### The operator's ceiling (guarding settings)
+
+An operator can bound what anyone on the machine may loosen, through a
+conversation or the `ch-local` command, with an optional, machine-wide file:
+`/etc/countinghouse/ceiling.json` on Linux and macOS,
+`%ProgramData%\countinghouse\ceiling.json` on Windows.
+
+```json
+{"version": 1, "maxOutputBytes": 16777216, "requestTimeout": 60000,
+ "forbid": ["moduleSandbox", "autoUpgrade"], "packs": ["ci-failure-triage"],
+ "conversation": false}
+```
+
+Every key but `version` is optional: `maxOutputBytes` and `requestTimeout`
+lower the hard bounds (`requestTimeout` in whole seconds, as milliseconds:
+the runtime takes seconds, so any other value fails closed); `forbid`
+refuses loosening the sandbox or turning automatic upgrades on; `packs` is
+the operator's allowlist of packs: when present, only those packs ever
+load, at start, in place and on install, whatever `settings.json` or the
+history say, and installing another is refused; `"conversation": false` refuses every
+loosening asked for in conversation (it takes effect once a client can
+confirm one in conversation, part 3's elicitation; until then every such
+loosening already ends at the terminal command). A value above it is
+`SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
+Tightening is never refused by it. It is read once per process, and again
+when the file changes.
+
+It is trusted only when an ordinary user cannot have written it: on Linux and
+macOS the file is not a symbolic link, and it and every directory up to `/`
+(by real path) are owned by root and not writable by group or others; on
+Windows the directory and the file are owned by, and writable only by,
+Administrators, SYSTEM or TrustedInstaller (by SID), and ProgramData is
+the system's known folder, not the caller's `%ProgramData%`. A directory
+made under ProgramData inherits a write right for Users, so the operator
+removes it (`icacls "%ProgramData%\countinghouse" /inheritance:r /grant
+Administrators:F SYSTEM:F Users:RX`). Both must stay readable by every user
+(`0755` and `0644` on Linux and macOS). A file that exists and fails any
+check, or holds anything else, **fails closed**: every loosening is refused
+(`SETTING_CEILING_UNTRUSTED`), naming the file and why; so does a
+`countinghouse` directory an ordinary user could have made, even with no
+file in it. No directory and no file: the hard bounds apply. On Windows the
+ACL is read by the PowerShell in the Windows directory, started by its full
+path with a minimal environment. Not checked, because each needs root or an
+administrator to set: macOS extended ACLs (`chmod +a`). A Windows
+conditional access rule, which the ACL's rules do not list, fails closed.
+
+Two limits. `<home>/history.jsonl` is a record for the user, not a security
+boundary: the user can write it, so nothing the ceiling enforces rests on
+it. And ch-local reads the ceiling with the runtime installed under its
+home (`app/node_modules/countinghouse`): whoever can replace that code is
+beyond any ceiling, as they are beyond the runtime itself.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
