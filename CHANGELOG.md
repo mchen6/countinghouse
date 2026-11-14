@@ -18,6 +18,26 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
+
+- `runsModules` (and sqlite's `module_identities`) names the module the
+  server loaded, by its package.json `name`, not a device's `friendlyName`,
+  which a module states for itself: a module could claim another module's
+  identity by naming that module's device. One identity runs a module, all
+  its devices. The bundled `echo-device-client-module` is bound as
+  `echo-device-client-module` now.
+- A module's device query answers only for a device it declared calls on;
+  any other device, present or not, is `CTX_CALL_UNDECLARED`, and before its
+  composition verdict `CTX_CALL_NOT_READY`.
+- In worker mode a hop's callee gets no key and no caller identity in its
+  `ctx` (the interim `args.ctx` of #130 is gone): its work bills by the
+  hop's token. A hop carries only its input, usage call and token to the
+  callee, whatever else the calling module put in it. (Single-thread mode,
+  which isolates nothing, changes with the rest of `ctx` in R2-1's
+  module-facing release.)
+- `countinghouse-auth-sqlite bind-module <apiKey> <moduleName>` and
+  `unbind-module <moduleName>`; `list` shows each identity's modules (#147).
+
 ### Removed — SOAP support: `CHUtil.createSOAPClient` (breaking)
 
 - **`CHUtil.createSOAPClient` is gone**, with the `soap` dependency and its

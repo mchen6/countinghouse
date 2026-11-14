@@ -81,6 +81,36 @@
           "n"
         ]
       }
+    },
+    "holds": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "callerKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usageKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "admin": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "callerKey",
+          "usageKey"
+        ]
+      }
     }
   }
 }

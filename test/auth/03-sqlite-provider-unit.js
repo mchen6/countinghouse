@@ -1,3 +1,4 @@
+const assert    = require('assert');
 const fs        = require('fs');
 const spawnSync = require('child_process').spawnSync;
 
@@ -195,6 +196,48 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
         return done(new Error(`expected [device-a, device-b], got: ${JSON.stringify(devices)}`));
       }
       done();
+    });
+  });
+  // #147 (R2-1 Task 5): the CLI binds a module to an identity and removes the
+  // binding; list shows it; the provider's identityForModule reads it; a
+  // database from before the module_identities table gets it.
+  describe('bind-module / unbind-module', () => {
+    const path = require('path');
+    const CLI = path.join(__dirname, '..', '..', 'bin', 'countinghouse-auth-sqlite.js');
+    const cli = (args) => spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(args), {encoding: 'utf8', timeout: 20000});
+    const lookup = (name) => new Promise((resolve, reject) => {
+      const provider = new SqliteAuthProvider({dbPath: dbPath});
+      provider.identityForModule(name, (err, r) => (err ? reject(err) : resolve(r.apiKey)));
+    });
+    const KEY = `bind-key-${process.pid}`;
+
+    it('binds, lists and unbinds a module, and the provider reads the binding', async () => {
+      assert.strictEqual(cli(['add-user', KEY, 'bound-identity']).status, 0);
+      const bound = cli(['bind-module', KEY, 'echo-device-client-module']);
+      assert.strictEqual(bound.status, 0, bound.stderr);
+      assert.strictEqual(await lookup('echo-device-client-module'), KEY);
+      const listed = cli(['list']);
+      assert.match(listed.stdout, /runs modules: echo-device-client-module/, listed.stdout);
+      const unbound = cli(['unbind-module', 'echo-device-client-module']);
+      assert.strictEqual(unbound.status, 0, unbound.stderr);
+      assert.strictEqual(await lookup('echo-device-client-module'), null);
+    });
+
+    it('remove-user removes the user\'s module bindings too', async () => {
+      assert.strictEqual(cli(['add-user', KEY, 'bound-identity']).status, 0);
+      assert.strictEqual(cli(['bind-module', KEY, 'composite-demo']).status, 0);
+      assert.strictEqual(cli(['remove-user', KEY]).status, 0);
+      assert.strictEqual(await lookup('composite-demo'), null, 'a removed key still runs the module');
+      // and adding the key again does not bring the binding back
+      assert.strictEqual(cli(['add-user', KEY, 'bound-identity']).status, 0);
+      assert.strictEqual(await lookup('composite-demo'), null);
+    });
+
+    it('refuses to bind to a user that does not exist, and to unbind a module that is not bound', () => {
+      const r = cli(['bind-module', 'no-such-key', 'm']);
+      assert.notStrictEqual(r.status, 0);
+      assert.ok(!r.stderr.includes('no-such-key'), `the key in the error: ${r.stderr}`);
+      assert.notStrictEqual(cli(['unbind-module', 'never-bound']).status, 0);
     });
   });
 });

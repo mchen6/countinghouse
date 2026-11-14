@@ -85,6 +85,9 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
     const err = await refusalOf(buildCtx(device), 'compose-callee/calleeService.double');
 
     assert.strictEqual(err.code, 'CTX_CALL_UNBOUND', err.message);
+    // runsModules names the module by its package.json name (R2-1 Task 5, #148)
+    assert.match(err.message, /package\.json name/, err.message);
+    assert.doesNotMatch(err.message, /friendlyName/, err.message);
     assert.ok(/runsModules/.test(err.message), `expected "runsModules" in: ${err.message}`);
   });
 

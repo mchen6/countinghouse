@@ -116,6 +116,21 @@ const IDS = {callee: deviceIDForName('token-callee'), other: deviceIDForName('co
       assert.deepStrictEqual([paid, ran], [2, 1]);
     });
 
+    // R2-1 Task 5 (#130's interim key): the callee's ctx holds no key, on
+    // either path: not as ctx.caller, not as the key its own work bills.
+    // The main thread bills the callee's work by the hop's token.
+    it('the callee of a declared hop holds no key: ctx.caller has none, ctx.recordUsage reports none', async () => {
+      const {out} = await tried('calleeHolds');
+      assert.strictEqual(out.code, null, JSON.stringify(out));
+      assert.deepStrictEqual(out.holds, {callerKey: null, usageKey: null, admin: false}, JSON.stringify(out));
+    });
+
+    it('a hand-built hop carrying a ctx of its own making: the callee sees none of it', async () => {
+      const {out} = await tried('forgedCtxHop');
+      assert.strictEqual(out.code, null, JSON.stringify(out));
+      assert.deepStrictEqual(out.holds, {callerKey: null, usageKey: null, admin: false}, JSON.stringify(out));
+    });
+
     it('a module cannot load a second module into its worker', async () => {
       const {out} = await tried('loadSecond');
       assert.strictEqual(out.code, 'LOAD_MODULE_FAIL', JSON.stringify(out));
@@ -124,6 +139,48 @@ const IDS = {callee: deviceIDForName('token-callee'), other: deviceIDForName('co
       const {out: code} = await tried('loadSecondCode');
       assert.match(String(code.message), /one module/, JSON.stringify(code));
     });
+  });
+});
+
+// R2-1 Task 5 (#148, 1): a module's identity binding is looked up by the
+// module name the main thread loaded, never by a friendlyName its worker
+// states. A module whose device claims another module's friendlyName gets
+// that module's binding no more: it is unbound, and purged as unbound.
+describe('composition 21: a device that claims another module\'s friendlyName', function() {
+  this.timeout(120000);
+  const KEY = `nc-key-${hex()}`;
+  const INTERNAL = `nc-internal-${hex()}`;
+  let base = null;
+  let server = null;
+  before(async () => {
+    base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21n-'));
+    // declare-caller's code and api.json (friendlyName "declare-caller") as
+    // another module, "name-claimer"
+    const copy = path.join(base, 'name-claimer');
+    fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'declare-caller'), copy, {recursive: true});
+    const pkg = JSON.parse(fs.readFileSync(path.join(copy, 'package.json'), 'utf8'));
+    pkg.name = 'name-claimer';
+    fs.writeFileSync(path.join(copy, 'package.json'), JSON.stringify(pkg, null, 2));
+    fs.writeFileSync(path.join(base, 'auth.json'), JSON.stringify({
+      [KEY]: {userName: `nc-${hex()}`, devices: ['*']},
+      [INTERNAL]: {userName: `nc-internal-${hex()}`, devices: ['*'], runsModules: ['declare-caller']}
+    }));
+    server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', path.join(base, 'auth.json'),
+      '--mcpToolCallCost', '1', '--moduleSandbox', 'off', '--moduleDataPath', path.join(base, 'store'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee'),
+      '--loadModule', copy]);
+  });
+  after(() => {
+    stopServer(server);
+    if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  it('gets no binding: the module is unbound, named by its module name, and its device purged', async () => {
+    await waitFor(() => /composition declaration is invalid: name-claimer[^\n]*runsModules/.test(server.output), 10000, 'the unbound module in the log',
+      async () => server.output.slice(-3000));
+    // purged: its tool is gone, not merely failing
+    const r = await mcpCall(PORT, KEY, ATTEMPT, {route: 'declared', as: INTERNAL}, {allowUnknownTool: true});
+    assert.match(JSON.stringify(r), /unknown tool/, `the claimed binding was taken: ${JSON.stringify(r).slice(0, 400)}`);
   });
 });
 

@@ -14,12 +14,14 @@ const viaClient = (ctx, deviceID, serviceID, actionName, as) => new Promise((res
 // A hop built by hand with the call's own token (read off the worker's
 // send path), sent as the runtime's own functions send it: the routed
 // message, or the peer invoke on the channel.
-function rawHop(ctx, deviceID, serviceID, actionName, as) {
+// extra: more fields on the hop's args (a forged ctx); keep: the callee's
+// output is passed on as `holds`
+function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
   const CHUtil = runtime();
   if (CHUtil == null || CHUtil.dm == null) return Promise.resolve({output: {code: 'NO_RUNTIME', message: null, n: null}});
   return new Promise((resolve) => {
-    const args = {input: inputFor(actionName), token: state.lastToken};
-    const cb = (e, d) => resolve(answer(e, d));
+    const args = Object.assign({input: inputFor(actionName), token: state.lastToken}, extra || {});
+    const cb = (e, d) => resolve((keep === true && e == null) ? {output: {code: null, message: null, n: null, holds: (d != null && d.output != null) ? d.output : null}} : answer(e, d));
     const dm = CHUtil.dm;
     if (typeof(dm.invokeActionViaPeerChannel) === 'function' && dm.peerChannels != null && Object.keys(dm.peerChannels).length > 0) {
       return dm.invokeActionViaPeerChannel(as, as, deviceID, serviceID, actionName, args, cb);
@@ -35,6 +37,19 @@ module.exports = async (input, ctx) => {
   switch (input.route) {
     case 'declared': {
       try { return answer(null, await ctx.call('token-callee/tokenCallee.bump', {})); } catch (e) { return answer(e); }
+    }
+    case 'calleeHolds': {
+      // what the callee's ctx holds of a key, on whichever path this hop takes
+      try {
+        const d = await ctx.call('token-callee/tokenCallee.holds', {});
+        return {output: {code: null, message: null, n: null, holds: (d != null && d.output != null) ? d.output : null}};
+      } catch (e) { return answer(e); }
+    }
+    case 'forgedCtxHop': {
+      // a hand-built hop to the declared action, carrying a ctx of its own
+      // making: the callee must not see it (R2-1 Task 5)
+      await ctx.call('token-callee/tokenCallee.bump', {});
+      return rawHop(ctx, CALLEE, CALLEE_SVC, 'holds', as, {ctx: {appKey: 'forged-key', username: 'forged-user', isAdmin: true, billingKey: 'forged-key'}}, true);
     }
     case 'clientOtherDevice': return viaClient(ctx, OTHER, OTHER_SVC, 'double', as);
     case 'clientOtherAction': return viaClient(ctx, CALLEE, CALLEE_SVC, 'tick', as);
