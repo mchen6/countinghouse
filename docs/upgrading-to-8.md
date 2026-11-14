@@ -484,8 +484,11 @@ in 8.0.0 will not find that data after a downgrade. Copy what you need out of
   Node 24.22's permission model refuses grants whose names extend each
   other's there (`ajv` beside `ajv-formats`;
   [nodejs/node#66812](https://github.com/nodejs/node/issues/66812)), and
-  countinghouse names them and exits 2. Run without `--hardened`, or from an
-  install whose dependencies are inside it.
+  countinghouse names them and exits 2. This is a limitation of Node, not of
+  countinghouse: until Node fixes it, on Windows run `--moduleSandbox enforce`
+  without `--hardened` (enforce protects files on Windows without it;
+  `--hardened` is the opt-in extra layer), or from an install whose
+  dependencies are inside it.
 - On Windows, a module's declared host paths (`countinghouse.permissions.fs`)
   are not available yet; it gets its own `/data` and `/tmp`
   ([#204](https://github.com/mchen6/countinghouse/issues/204)). Under
