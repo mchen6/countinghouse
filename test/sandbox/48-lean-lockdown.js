@@ -59,6 +59,21 @@ describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)
     assert.ok(TAG.test(out.message) || out.message.startsWith(`Cannot find module '${outside}'`), JSON.stringify(out));
   });
 
+  // The high review of #177: the implementation's own requests go through
+  // the module's CHUtil.request as the lockdown wrapped it.
+  it('CHUtil.invokeAction to a host with no grant: refused ERR_ACCESS_DENIED, and recorded', async () => {
+    const mark = server.output.length;
+    const out = await call('invokeaction', {url: 'http://127.0.0.1:9'});
+    assert.strictEqual(out.outcome, 'error', JSON.stringify(out));
+    assert.strictEqual(out.code, 'ERR_ACCESS_DENIED', JSON.stringify(out));
+    assert.match(server.output.slice(mark), /lean-lockdown-probe violation net 127\.0\.0\.1:9/);
+  });
+
+  it('CHUtil.recordUsage, its implementation loaded on first use under the lockdown: answers', async () => {
+    const out = await call('recordusage', {});
+    assert.deepStrictEqual(out, {outcome: 'ok', tool: 'tool'});
+  });
+
   it('a handler file that requires a refused built-in while it loads: the load fails, naming the file', async () => {
     const r = await post(PORT, KEY, '/load-module', {path: path.join(ROOT, 'test', 'fixtures', 'lean-lockdown-load'), name: 'lean-lockdown-load'});
     assert.notStrictEqual(r.status, 200, JSON.stringify(r.body));

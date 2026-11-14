@@ -25,6 +25,26 @@
             "output": {
               "schema": "/probeService/outside/output"
             }
+          },
+          {
+            "name": "invokeaction",
+            "description": "CHUtil.invokeAction to a host the module has no grant for.",
+            "input": {
+              "schema": "/probeService/invokeaction/input"
+            },
+            "output": {
+              "schema": "/probeService/invokeaction/output"
+            }
+          },
+          {
+            "name": "recordusage",
+            "description": "CHUtil.recordUsage.",
+            "input": {
+              "schema": "/probeService/recordusage/input"
+            },
+            "output": {
+              "schema": "/probeService/recordusage/output"
+            }
           }
         ]
       }

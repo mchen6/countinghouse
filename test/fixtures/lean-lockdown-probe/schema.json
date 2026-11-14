@@ -27,6 +27,31 @@
       "output": {
         "type": "object"
       }
+    },
+    "invokeaction": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "recordusage": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

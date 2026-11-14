@@ -1,4 +1,4 @@
-const {state, runtime} = require('../../lib/reach');
+const {state, forgeToWorker, reachable, forgedPost} = require('../../lib/reach');
 
 // the device ids come with the call (the test derives them as the runtime does)
 const CALLEE_SVC = 'urn:countinghouse-test:serviceID:tokenCallee';
@@ -12,22 +12,77 @@ const viaClient = (ctx, deviceID, serviceID, actionName, as) => new Promise((res
   ctx.serviceClient({deviceID, serviceID, as}, (e, client) => (e != null ? resolve(answer(e)) : invoke(client, actionName, inputFor(actionName)).then(resolve))));
 
 // A hop built by hand with the call's own token (read off the worker's
-// send path), sent as the runtime's own functions send it: the routed
-// message, or the peer invoke on the channel.
+// send path), sent as the runtime's own messages are: the peer invoke on the
+// open channel, a channel request for a device with none, or the routed
+// message to the main thread.
 // extra: more fields on the hop's args (a forged ctx); keep: the callee's
 // output is passed on as `holds`
+const codeOf = (m) => ({code: (m.errCode != null) ? m.errCode : (m.errMsg != null ? 'NO_CODE' : null), message: m.errMsg});
 function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
-  const CHUtil = runtime();
-  if (CHUtil == null || CHUtil.dm == null) return Promise.resolve({output: {code: 'NO_RUNTIME', message: null, n: null}});
-  return new Promise((resolve) => {
-    const args = Object.assign({input: inputFor(actionName), token: state.lastToken}, extra || {});
-    const cb = (e, d) => resolve((keep === true && e == null) ? {output: {code: null, message: null, n: null, holds: (d != null && d.output != null) ? d.output : null}} : answer(e, d));
-    const dm = CHUtil.dm;
-    if (typeof(dm.invokeActionViaPeerChannel) === 'function' && dm.peerChannels != null && Object.keys(dm.peerChannels).length > 0) {
-      return dm.invokeActionViaPeerChannel(as, as, deviceID, serviceID, actionName, args, cb);
+  const args = Object.assign({input: inputFor(actionName), token: state.lastToken}, extra || {});
+  const done = (resolve) => (m) => {
+    if (m == null) return resolve({output: {code: 'NO_REPLY', message: null, n: null}});
+    const {code, message} = codeOf(m);
+    if (code != null) return resolve({output: {code: String(code), message: (message != null) ? String(message).slice(0, 200) : null, n: null}});
+    if (keep === true) return resolve({output: {code: null, message: null, n: null, holds: (m.data != null && m.data.output != null) ? m.data.output : null}});
+    return resolve(answer(null, m.data));
+  };
+  if (state.port != null && state.announce != null) {
+    const channelOpen = state.channelRequest == null || state.channelRequest.targetDeviceID === deviceID;
+    if (!channelOpen) {
+      // no channel to that device's worker: ask for one, as the runtime does
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({output: {code: 'NO_REPLY', message: null, n: null}}), 5000);
+        const onMsg = (m) => {
+          if (m == null || m.targetDeviceID !== deviceID || (m.command !== 'peer-channel-deny' && m.command !== 'peer-channel-grant')) return;
+          clearTimeout(timer);
+          state.parent.off('message', onMsg);
+          resolve({output: {code: (m.command === 'peer-channel-grant') ? 'GRANTED' : String(m.errCode || 'PEER_CHANNEL_DENIED'), message: m.errMsg || null, n: null}});
+        };
+        state.parent.on('message', onMsg);
+        forgedPost(state.parent, {id: state.nextId++, category: 'child', command: 'peer-channel-request', errMsg: null,
+          data: {targetDeviceID: deviceID, appKey: as, token: state.lastToken}});
+      });
     }
-    return dm.sendActionInvokeMessageToParent(as, as, deviceID, serviceID, actionName, args, cb);
+    return new Promise((resolve) => {
+      const id = Number(state.announce.invokeId) + 100000 + (state.nextId++ % 1000);
+      const timer = setTimeout(() => resolve({output: {code: 'NO_REPLY', message: null, n: null}}), 5000);
+      const onReply = (m) => {
+        if (m == null || m.category !== 'peer-reply' || m.id !== id) return;
+        clearTimeout(timer);
+        state.port.off('message', onReply);
+        done(resolve)(m);
+      };
+      state.port.on('message', onReply);
+      forgedPost(state.parent, {id: state.nextId++, category: 'child', command: 'peer-announce', errMsg: null,
+        data: {channel: state.announce.channel, invokeId: id, token: state.lastToken}});
+      forgedPost(state.port, Object.assign({id: id, command: 'peer-invoke', deviceID, serviceID, actionName, input: args.input, billingKey: as}, (extra != null) ? {ctx: extra.ctx} : {}));
+    });
+  }
+  if (state.parent == null) return Promise.resolve({output: {code: 'NO_RUNTIME', message: null, n: null}});
+  return new Promise((resolve) => {
+    const id = state.nextId++;
+    const timer = setTimeout(() => resolve({output: {code: 'NO_REPLY', message: null, n: null}}), 5000);
+    const onReply = (m) => {
+      if (m == null || m.command !== 'invoke-action-reply' || m.msgID !== id) return;
+      clearTimeout(timer);
+      state.parent.off('message', onReply);
+      done(resolve)(m);
+    };
+    state.parent.on('message', onReply);
+    forgedPost(state.parent, {id: id, category: 'child', command: 'invokeforeignaction', errMsg: null,
+      data: {appKey: as, billingKey: as, deviceID, serviceID, actionName, args, token: state.lastToken}});
   });
+}
+
+// What module code would try to load a second module into its worker: the
+// main thread's own load message, made up and delivered to the worker's
+// listener. The lean worker runs one module, and refuses.
+async function loadSecond() {
+  const m = await forgeToWorker({command: 'load-module', path: '/app', name: 'declare-caller-twin', version: '1.0.0', deviceConfig: null});
+  if (m == null) return {output: {code: 'NO_REPLY', message: null, n: null}};
+  const {code, message} = codeOf(m);
+  return {output: {code: (code != null) ? String(code) : null, message: (message != null) ? String(message).slice(0, 200) : null, n: null}};
 }
 
 module.exports = async (input, ctx) => {
@@ -61,31 +116,14 @@ module.exports = async (input, ctx) => {
       await ctx.call('token-callee/tokenCallee.bump', {});
       return rawHop(ctx, CALLEE, CALLEE_SVC, 'tick', as);
     }
-    case 'loadSecondCode': {
-      // the lower-level entry, which skips loadModuleFromPath
-      const CHUtil = runtime();
-      const mm = (CHUtil != null && CHUtil.dm != null) ? CHUtil.dm.moduleManager : null;
-      if (mm == null) return {output: {code: 'NO_RUNTIME', message: null, n: null}};
-      return new Promise((resolve) => mm.loadModuleCode('/app', 'declare-caller-twin', '1.0.0', (e) => resolve(answer(e, null))));
-    }
-    case 'loadSecond': {
-      const CHUtil = runtime();
-      const mm = (CHUtil != null && CHUtil.dm != null) ? CHUtil.dm.moduleManager : null;
-      if (mm == null) return {output: {code: 'NO_RUNTIME', message: null, n: null}};
-      // what module code that reaches the manager would try first: clear
-      // whatever the manager holds about the module it runs
-      for (const k of Object.keys(mm)) if (/module/i.test(k) && typeof(mm[k]) === 'string') mm[k] = null;
-      return new Promise((resolve) => mm.loadModuleFromPath('/app', 'declare-caller-twin', '1.0.0', (e) => resolve(answer(e, null))));
-    }
-    // whether the key named in input.as appears in this worker's own record
-    // of its composition (it must not: a debug-bound module gets a placeholder)
-    case 'seeComposition': {
-      const CHUtil = runtime();
-      const dm = (CHUtil != null) ? CHUtil.dm : null;
-      if (dm == null || dm.deviceMap == null) return {output: {code: 'NO_RUNTIME', message: null, n: null}};
-      const comps = Object.values(dm.deviceMap).map((dev) => (dev != null ? dev._composition : null));
-      return {output: {code: JSON.stringify(comps).includes(as) ? 'KEY_SEEN' : null, message: null, n: comps.length}};
-    }
+    // the lower-level entries a full worker had (loadModuleCode,
+    // loadModuleFromPath) are gone with it: one load message, one answer
+    case 'loadSecondCode': return loadSecond();
+    case 'loadSecond': return loadSecond();
+        // whether the key named in input.as appears in anything this module
+    // reaches (it must not: a debug-bound module gets a placeholder, and the
+    // lean worker's own record of its composition is out of its reach)
+    case 'seeComposition': return {output: {code: reachable(as) ? 'KEY_SEEN' : null, message: null, n: null}};
     default: return {output: {code: 'BAD_ROUTE', message: null, n: null}};
   }
 };

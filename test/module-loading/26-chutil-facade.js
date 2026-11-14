@@ -30,13 +30,13 @@ function inWorker(body) {
 describe('module-loading 26: the CHUtil facade (lean worker step 3)', function() {
   this.timeout(30000);
 
-  it('a fresh facade has loaded no implementation, and has no dm or ci', async () => {
+  it('a fresh facade has loaded no implementation, has no dm or ci, and its file exports no way to wire it', async () => {
     const r = await inWorker(`async (facadeLib) => {
-      const CHUtil = facadeLib.createFacade();
+      const CHUtil = facadeLib.createFacade(() => ({dm: null, ci: null, redis: null}));
       const loaded = Object.keys(require.cache).map((k) => path.basename(k));
       return {util: loaded.includes('countinghouse-util.js'), request: Object.keys(require.cache).some((k) => k.includes('postman-request')),
         logger: loaded.includes('logger.js'), keys: Object.keys(CHUtil).sort(), dm: 'dm' in CHUtil, ci: 'ci' in CHUtil,
-        internal: '__deviceLogWithID' in CHUtil};
+        internal: '__deviceLogWithID' in CHUtil, exported: Object.keys(facadeLib).sort()};
     }`);
     assert.strictEqual(r.util, false, 'countinghouse-util loaded');
     assert.strictEqual(r.request, false, 'postman-request loaded');
@@ -45,36 +45,64 @@ describe('module-loading 26: the CHUtil facade (lean worker step 3)', function()
     assert.strictEqual(r.ci, false);
     assert.strictEqual(r.internal, false);
     assert.ok(r.keys.includes('request') && r.keys.includes('createServiceClient') && r.keys.includes('redis'), r.keys.join(','));
+    assert.deepStrictEqual(r.exported, ['METHODS', 'createFacade', 'runtime']);
   });
 
-  it('the first helper call loads the implementation, wired once by the worker\'s hook, whatever loads it first', async () => {
+  it('the first helper call attaches the implementation once; in a worker its dm and ci read as undefined and it cannot be attached again', async () => {
     const r = await inWorker(`async (facadeLib, LIB) => {
       let wired = 0;
-      let seen = null;
-      facadeLib.setWiring((impl) => { wired += 1; seen = impl; impl.redis = 'the-bridge'; });
-      const CHUtil = facadeLib.createFacade();
+      const dm = {workerMessage: null};
+      const CHUtil = facadeLib.createFacade(() => { wired += 1; return {dm: dm, ci: {marker: true}, redis: 'the-bridge'}; });
       function A() {}
       function B() {}
       CHUtil.inherits(A, B);
       const impl = require(path.join(LIB, 'countinghouse-util'));
-      return {wired, same: seen === impl, inherited: Object.getPrototypeOf(A.prototype) === B.prototype, redis: CHUtil.redis,
-        notImpl: CHUtil !== impl};
+      facadeLib.runtime();
+      let again = null;
+      try { impl.__attach({dm: {}, ci: {}}); } catch (e) { again = e.message; }
+      impl.dm = {forged: true};
+      let second = null;
+      try { facadeLib.createFacade(() => ({})); } catch (e) { second = e.message; }
+      return {wired, inherited: Object.getPrototypeOf(A.prototype) === B.prototype, redis: CHUtil.redis,
+        dm: impl.dm === undefined, ci: impl.ci === undefined, again, second};
     }`);
     assert.strictEqual(r.wired, 1);
-    assert.strictEqual(r.same, true);
     assert.strictEqual(r.inherited, true);
-    assert.strictEqual(r.redis, 'the-bridge', 'redis is read from the wired implementation');
-    assert.strictEqual(r.notImpl, true);
+    assert.strictEqual(r.redis, 'the-bridge', 'redis is read from the attached implementation');
+    assert.strictEqual(r.dm, true, 'dm is readable (or settable) in a worker');
+    assert.strictEqual(r.ci, true, 'ci is readable in a worker');
+    assert.match(String(r.again), /already attached/);
+    assert.match(String(r.second), /one CHUtil/);
   });
 
-  it('a path other than the facade (handler-ctx, the peer side) loading it first gets it wired too', async () => {
+  it('the implementation\'s own requests (CHUtil.invokeAction) go through the facade\'s request as the lockdown wraps it', async () => {
     const r = await inWorker(`async (facadeLib, LIB) => {
-      let wired = 0;
-      facadeLib.setWiring((impl) => { wired += 1; impl.ci = {marker: true}; });
+      const CHUtil = facadeLib.createFacade(() => ({dm: null, ci: null, redis: null}));
+      const seen = [];
+      // what the lockdown does at set-options: a wrapper locked in place
+      Object.defineProperty(CHUtil, 'request', {value: (opts, cb) => { seen.push(opts.url); cb(Object.assign(new Error('denied'), {code: 'ERR_ACCESS_DENIED'})); },
+        writable: false, configurable: false, enumerable: false});
+      const err = await new Promise((resolve) => CHUtil.invokeAction('k', 'http://127.0.0.1:9', 'urn:x:serviceID:s', 'a', {input: {}}, (e) => resolve(e)));
       const impl = require(path.join(LIB, 'countinghouse-util'));
-      return {wired, ci: impl.ci != null && impl.ci.marker === true};
+      const direct = await new Promise((resolve) => impl.request({url: 'http://127.0.0.1:9/direct'}, (e) => resolve(e)));
+      return {seen, code: err && err.code, direct: direct && direct.code};
     }`);
-    assert.strictEqual(r.wired, 1);
-    assert.strictEqual(r.ci, true);
+    assert.deepStrictEqual(r.seen, ['http://127.0.0.1:9/invoke-action', 'http://127.0.0.1:9/direct']);
+    assert.strictEqual(r.code, 'ERR_ACCESS_DENIED');
+    assert.strictEqual(r.direct, 'ERR_ACCESS_DENIED');
+  });
+
+  it('a service client from CHUtil.createServiceClient holds no reference to the runtime', async () => {
+    const r = await inWorker(`async (facadeLib, LIB) => {
+      const CHUtil = facadeLib.createFacade(() => ({dm: null, ci: null, redis: null}));
+      const impl = facadeLib.runtime();
+      impl.createServiceClient = (opts, cb) => cb(null, {deviceID: 'd', serviceID: 's', cdifInterface: {deviceManager: {}}, invoke: (o, c) => c(null, 'invoked'), subscribe: () => {}});
+      const client = await new Promise((resolve) => CHUtil.createServiceClient({deviceID: 'd', serviceID: 's'}, (e, c) => resolve(c)));
+      const out = await new Promise((resolve) => client.invoke({actionName: 'a'}, (e, d) => resolve(d)));
+      return {keys: Object.keys(client).sort(), out, frozen: Object.isFrozen(client)};
+    }`);
+    assert.deepStrictEqual(r.keys, ['deviceID', 'invoke', 'serviceID', 'subscribe']);
+    assert.strictEqual(r.out, 'invoked');
+    assert.strictEqual(r.frozen, true);
   });
 });

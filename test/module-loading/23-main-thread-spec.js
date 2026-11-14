@@ -300,6 +300,65 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
     });
   });
 
+  // The high review of #177: api.json's own format is checked in a validator
+  // (lib/module-spec.js deviceSpec), at the spawn, never on the main thread;
+  // its size is capped before it is read, and deviceList's length too.
+  describe('api.json\'s own format, checked off the main thread', () => {
+    const minimal = (extra) => ({device: Object.assign({friendlyName: 'spec-check', manufacturer: 'countinghouse-test', modelDescription: 'module-loading 23',
+      serviceList: {}}, extra)});
+    const check = async (spec) => {
+      const own = await moduleSpec.fromParts(spec, null);
+      moduleSpec.register(own);
+      try { return await moduleSpec.deviceSpec(own); } finally { moduleSpec.release(own); }
+    };
+
+    it('a valid spec passes; one missing a required field answers its error, with the field', async () => {
+      assert.strictEqual(await check(minimal({})), null);
+      const bad = await check({device: {friendlyName: 'spec-check', serviceList: {}}});
+      assert.ok(bad != null && bad.specError != null, JSON.stringify(bad));
+      assert.match(moduleSpec.specFailureDetail(bad.specError), /stage=validateDeviceSpec .*manufacturer/);
+    });
+
+    it('a deviceList of more than 64 entries is refused', async () => {
+      const entry = (i) => ({friendlyName: `d${i}`, manufacturer: 'm', modelDescription: 'd', serviceList: {}});
+      const bad = await check(minimal({deviceList: Array.from({length: 65}, (v, i) => entry(i))}));
+      assert.ok(bad != null && bad.specError != null, JSON.stringify(bad));
+      assert.match(moduleSpec.specFailureDetail(bad.specError), /deviceList .*64/);
+    });
+
+    it('an api.json over 256 KB is refused before it is read', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ml-23-big-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify(minimal({modelDescription: 'x'.repeat(300 * 1024)})));
+        const own = await moduleSpec.build(dir, 'too-big');
+        assert.strictEqual(own.refused, true, JSON.stringify(own).slice(0, 200));
+        assert.match(own.error, /over the 256 KB/);
+      } finally {
+        fs.rmSync(dir, {recursive: true, force: true});
+      }
+    });
+  });
+
+  describe('a load acknowledgement checked against the main thread\'s spec', () => {
+    let loadAckMismatch = null;
+    before(() => { loadAckMismatch = require('../../lib/module-manager').loadAckMismatch; });
+
+    it('the same device and every declared action: no mismatch', () => {
+      const names = [];
+      for (const serviceID of Object.keys(own.names)) for (const action of own.names[serviceID]) names.push(`${serviceID}|${action}`);
+      assert.strictEqual(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names}), null);
+    });
+
+    it('another device, a missing handler, an undeclared action, or no acknowledgement: a mismatch', () => {
+      const names = [];
+      for (const serviceID of Object.keys(own.names)) for (const action of own.names[serviceID]) names.push(`${serviceID}|${action}`);
+      assert.match(loadAckMismatch(own, {loaded: true, deviceID: 'another', names}), /device another/);
+      assert.match(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names: names.slice(1)}), /no handler loaded/);
+      assert.match(loadAckMismatch(own, {loaded: true, deviceID: own.deviceID, names: names.concat(['urn:x:serviceID:s|extra'])}), /does not declare/);
+      assert.match(loadAckMismatch(own, null), /no load acknowledgement/);
+    });
+  });
+
   // Lean worker step 3, Task 4: a worker's device is registered from the
   // main thread's own copy of its spec once the worker has loaded
   // (DeviceManager's registerFromSpec); the worker announces nothing.
@@ -355,14 +414,6 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
         assert.deepStrictEqual(dm.deviceMap, {});
         assert.deepStrictEqual(DeviceManager.prototype.getAllDeviceSpecs.call(dm), {}, 'not listed either');
       }
-    });
-
-    it('a spec that fails the device-spec check: logged DEVICE_SPEC_VALIDATION_FAIL with the stage, and not registered', async () => {
-      const bad = await moduleSpec.fromParts({device: {friendlyName: 'main-checked', serviceList: {}}}, null);
-      const {dm, wm} = worker(bad);
-      assert.strictEqual(DeviceManager.prototype.registerFromSpec.call(dm, wm), false);
-      assert.deepStrictEqual(dm.deviceMap, {});
-      assert.ok(logged.some((l) => /stage=validateDeviceSpec/.test(l) && /manufacturer/.test(l)), logged.join('\n'));
     });
 
     it('a worker that is going (being unloaded, ended, or replaced): not registered', () => {
