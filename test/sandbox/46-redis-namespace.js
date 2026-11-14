@@ -49,21 +49,25 @@ for (const [label, thread, port] of [['worker', '--workerThread', 9736], ['singl
       assert.strictEqual((await run('a', 'get', ['shared'])).result, 'from-a', 'B\'s set and del touched only its own');
     });
 
-    it('a multi-key command and a transaction stay inside the module\'s namespace', async () => {
+    it('a multi-key command stays inside the module\'s namespace', async () => {
       await run('a', 'set', ['x', '1']);
       await run('b', 'set', ['y', '2']);
       assert.deepStrictEqual((await run('a', 'mget', ['x', 'y'])).result, ['1', null], 'A\'s mget does not reach B\'s y');
       assert.strictEqual((await run('a', 'del', ['x', 'y'])).result, 1, 'A\'s del removes only its own x');
       assert.strictEqual((await run('b', 'get', ['y'])).result, '2');
-      const tx = await run('a', 'multi', [[['set', 't', 'in-a'], ['get', 't']]]);
-      assert.strictEqual(tx.error, null, JSON.stringify(tx));
-      assert.deepStrictEqual(tx.result, ['OK', 'in-a']);
-      assert.strictEqual((await run('b', 'get', ['t'])).result, null);
     });
 
-    it('a command whose keys cannot be placed is refused, and so is a transaction holding one', async () => {
-      assert.match((await run('a', 'exec', [])).error, /not available to a module/);
-      assert.match((await run('a', 'multi', [[['set', 't', '1'], ['exec']]])).error, /cannot be queued in multi/);
+    it('hmset with a {field: value} object works, in the module\'s namespace', async () => {
+      assert.strictEqual((await run('a', 'hmset', ['h', {f: 'v', g: 'w'}])).error, null);
+      assert.strictEqual((await run('a', 'hget', ['h', 'g'])).result, 'w');
+      assert.strictEqual((await run('b', 'hget', ['h', 'g'])).result, null);
+    });
+
+    it('multi, exec and a command whose keys cannot be placed are refused', async () => {
+      for (const [op, args] of [['multi', [[['set', 't', '1'], ['get', 't']]]], ['multi', [[['select', 0], ['exec']]]], ['exec', []]]) {
+        const r = await run('a', op, args);
+        assert.ok(r.error != null, `${op}: ${JSON.stringify(r)}`);
+      }
       assert.match((await run('a', 'get', [])).error, /needs a key/);
     });
 
@@ -81,6 +85,13 @@ for (const [label, thread, port] of [['worker', '--workerThread', 9736], ['singl
         assert.strictEqual(forged.error, null, JSON.stringify(forged));
         assert.strictEqual((await run('b', 'get', ['target'])).result, 'b-own', 'B\'s key is untouched');
         assert.strictEqual((await run('a', 'get', ['target'])).result, 'forged', 'the forged write landed in A\'s own namespace');
+      });
+
+      it('a forged multi or exec is refused on the main thread', async () => {
+        for (const op of ['multi', 'exec']) {
+          const r = toolOutput(await mcpCall(port, KEY, 'redis_ns_a_nsservice_forge', {op, args: [[['select', 0], ['exec']]], as: 'redis-ns-a'}));
+          assert.match(String(r.error), /not a supported redis command/, op);
+        }
       });
 
       it('a key spelled with another module\'s prefix stays in the sender\'s namespace', async () => {

@@ -34,8 +34,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   one module cannot read, overwrite or delete another's keys, nor the
   runtime's own. Every allowed command has its key positions in a table
   (`lib/redis-namespace.js`); a command whose keys cannot be placed is
-  refused. `multi` takes the commands to queue and runs them as one
-  transaction, each in the module's namespace; `exec` on its own is refused.
+  refused. `multi` and `exec` are gone from `ctx.redis`: under
+  `--store redis` node_redis's multi runs any command name queued in it.
   Single-thread mode's `ctx.redis` is namespaced the same way.
 
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
