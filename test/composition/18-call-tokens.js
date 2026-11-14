@@ -278,10 +278,10 @@ describe('composition 18: the caller\'s timeout, the worker\'s timer, and the me
     assert.strictEqual(before - await balance(), 1, 'more than the run was billed');
   });
 
-  it('(#138-2b) a worker reads the request timer in milliseconds, as the main thread gave it', async () => {
-    server = await start(['--requestTimeout', '2', '--directPeerChannels']);
+  it('(#138-2b, #112) a worker reads the request timer and the job durations in milliseconds, as the main thread gave them', async () => {
+    server = await start(['--requestTimeout', '2', '--jobTimeout', '120', '--jobResultTtl', '60', '--directPeerChannels']);
     const out = await via({marker: 'probe', probe: 'requestTimeout'});
-    assert.deepStrictEqual([out.requestTimeout, out.requestTimeoutMs], [2000, 2000], JSON.stringify(out));
+    assert.deepStrictEqual([out.requestTimeout, out.jobTimeout, out.jobResultTtl], [2000, 120000, 60000], JSON.stringify(out));
   });
 
   // The caller worker spends its message budget first, so the hop's own
