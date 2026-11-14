@@ -18,7 +18,12 @@
 //                 with no such line reports none)
 //   RSS           VmRSS of the server process (/proc/<pid>/status) 1.5 s after
 //                 ready; "added per worker" is the least-squares slope over the
-//                 configurations' worker counts                (target: <= 20 MB)
+//                 configurations with 1..N workers             (target: <= 20 MB);
+//                 "fixed" is what the first worker brings once beyond its
+//                 share (the validator pool, main's): the fit's intercept
+//                 above the 0-module row. Before 2026-11-14 the slope ran
+//                 through the 0-module row, which counted that one-time cost
+//                 per worker; it is still printed, for comparison.
 // The files a worker requires are not counted here: test/sandbox/43 pins them.
 //
 // --pack <dir>: an installed scenario (a package whose countinghouse.role is
@@ -154,6 +159,26 @@ function slope(points) {
 }
 const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
 
+// The RSS ladder [[workers, MB], ...] -> {perWorkerMb, fixedMb, throughZeroMb}.
+// The per-worker cost is the least-squares slope over the rows with 1..N
+// workers; what the first worker brings once, beyond its own share (the
+// validator pool's threads, main's share), is fixedMb: that fit's intercept
+// above the 0-module RSS. Until 2026-11-14 the slope ran through the
+// 0-module row too (throughZeroMb, kept for comparison), which counted that
+// one-time cost as a per-worker one.
+function rssFit(ladder) {
+  const zero = ladder.find((p) => p[0] === 0);
+  const past = ladder.filter((p) => p[0] > 0);
+  const perWorker = slope(past);
+  let fixed = null;
+  if (perWorker != null && zero != null) {
+    const mx = past.reduce((s, p) => s + p[0], 0) / past.length;
+    const my = past.reduce((s, p) => s + p[1], 0) / past.length;
+    fixed = (my - perWorker * mx) - zero[1];
+  }
+  return {perWorkerMb: perWorker, fixedMb: fixed, throughZeroMb: slope(ladder)};
+}
+
 async function main(argv) {
   const o = parseArgs(argv);
   if (!fs.existsSync('/proc/self/status')) throw new Error('lean-worker-perf reads /proc: Linux only');
@@ -170,6 +195,7 @@ async function main(argv) {
       bootMs: median(boots), walkMs: median(walks), runs});
   }
   const ladder = rows.filter((r) => r.thread).map((r) => [r.workers, r.rssMb]);
+  const fit = rssFit(ladder);
   const full = rows.filter((r) => r.thread).slice(-1)[0];
   const result = {
     runtime: o.runtime, pack: o.pack, runs: o.runs, node: process.version, cpus: os.cpus().length,
@@ -178,7 +204,9 @@ async function main(argv) {
       packReadyMs: full.readyMs,
       workerBootMedianMs: full.bootMs,
       spawnWalkMedianMs: full.walkMs,
-      addedRssPerWorkerMb: r1(slope(ladder))
+      fixedRssMb: r1(fit.fixedMb),
+      addedRssPerWorkerMb: r1(fit.perWorkerMb),
+      addedRssPerWorkerThroughZeroMb: r1(fit.throughZeroMb)
     }
   };
   for (const r of result.rows) {
@@ -186,7 +214,9 @@ async function main(argv) {
       `RSS ${String(r.rssMb).padStart(6)} MB  boot ${String(r.bootMs).padStart(5)} ms  walk ${String(r.walkMs).padStart(5)} ms\n`);
   }
   process.stdout.write(`targets: pack ready ${result.targets.packReadyMs} ms (<= 5000), worker boot median ${result.targets.workerBootMedianMs} ms (<= 200; ` +
-    `of it the spawn walk ${result.targets.spawnWalkMedianMs} ms), added RSS per worker ${result.targets.addedRssPerWorkerMb} MB (<= 20)\n`);
+    `of it the spawn walk ${result.targets.spawnWalkMedianMs} ms), added RSS per worker ${result.targets.addedRssPerWorkerMb} MB over 1..N workers (<= 20)\n`);
+  process.stdout.write(`fixed: RSS the first worker brings once, beyond its share ${result.targets.fixedRssMb} MB; ` +
+    `the slope through the 0-module row (the method before 2026-11-14) ${result.targets.addedRssPerWorkerThroughZeroMb} MB\n`);
   process.stdout.write(`LEAN-PERF-JSON ${JSON.stringify(result)}\n`);
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
   if (o.selfCheck) {
@@ -197,6 +227,7 @@ async function main(argv) {
       if (r.workers > 0 && r.bootMs == null) missing.push(`${r.label}: worker boot`);
     }
     if (result.targets.addedRssPerWorkerMb == null) missing.push('the RSS slope');
+    if (result.targets.fixedRssMb == null) missing.push('the fixed RSS');
     if (missing.length > 0) throw new Error(`self-check: not measured: ${missing.join(', ')}`);
     process.stdout.write('self-check: every metric was read\n');
   }
@@ -219,4 +250,4 @@ if (typeof(describe) === 'function' && typeof(it) === 'function' && loadedByMoch
   main(process.argv.slice(2)).catch((e) => { process.stderr.write(`${e.message}\n`); process.exit(1); });
 }
 
-module.exports = {main, parseArgs, slope, median};
+module.exports = {main, parseArgs, slope, rssFit, median};
