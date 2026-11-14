@@ -4,12 +4,9 @@
 const ECHO_DEVICE_ID = 'c5284c70-ae5f-591c-b2f1-cf0b4ebd0767';
 const ECHO_SERVICE   = 'urn:countinghouse-com:serviceID:echoService';
 
-// authorization identity for the inner hop; needs a grant to echo-device
-const AS_IDENTITY = 'aabbcc';
-
 function clientFor(ctx, serviceID) {
   return new Promise((resolve, reject) => {
-    ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: serviceID, as: AS_IDENTITY},
+    ctx.serviceClient({deviceID: ECHO_DEVICE_ID, serviceID: serviceID},
       (err, client) => (err != null) ? reject(err) : resolve(client));
   });
 }

@@ -119,7 +119,8 @@ authoring tool `countinghouse_reload_auth`.
 - A changed `runsModules` binding applies to modules loaded or reloaded
   after the reload. A module already running keeps the binding it was
   verified with at its load, so reload that module (`POST /reload-module`)
-  to pick up a new one.
+  to pick up a new one. The same holds for the sqlite CLI's `bind-module` and
+  `unbind-module`: they take effect at the module's next load or reload.
 
 **`POST /restart-module`** takes `{name, path, version}`; `path` and `version`
 may be left out to restart the module from where it was last loaded, which

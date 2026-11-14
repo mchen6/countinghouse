@@ -352,17 +352,20 @@ unprivileged user in a container with limits and the default seccomp
 profile: [deployment.md](deployment.md) gives the posture, a reference setup,
 and the short list of what the in-process sandbox cannot give.
 
-- **Modules receive their callers' API keys.** `ctx.caller.apiKey` is the
-  raw key of whoever called the module, `ctx.caller.isAdmin` says whether it
-  is an admin key, and `invoke-action` passes the request's headers to
-  module code (`httpHeaders`), the key header included. A malicious or
-  compromised module can collect tenants' keys and, since outbound network
-  is open until part 3, send them out or use them: call other tenants'
-  devices and bill them, and with an admin key unload, restart or
-  uninstall other modules or shut the server down. Planned fix: modules get
-  an opaque caller id instead of the key, and inner calls and billing use a
-  token only the main thread holds (a breaking change for modules that
-  read `ctx.caller.apiKey`).
+- **A module is handed no API key and no user name (R2-1).** `ctx.caller` is
+  `{id, isAdmin}`, an opaque id (an HMAC of the key, or of the entry's `id`
+  field, under a server secret) and the admin flag; `httpHeaders` lose
+  `X-CH-Key`, `X-App-Key` and `Authorization`; a module's hops, device
+  queries, peer invokes and remote calls carry a per-call token the main
+  thread issued for the call, bound to the worker, never a key; the
+  composition binding stays on the main thread. What remains is what the
+  module sandbox modes already say: under `audit` and `off` a module can
+  read files and environment outside its namespace (the always-denied set
+  is refused under `audit`), and module code can reach the runtime's
+  objects in its own worker (next item) -- which since R2-1 hold no key.
+  The residual: a module holding two calls at once can bill one call's hop
+  to the other call's caller (both are its callers); it cannot name a third
+  party.
 - **Module code can reach countinghouse's objects.** Part 2 closes the file
   routes through countinghouse's loader (layer 3), not the objects
   themselves: through `require.cache`, `CHUtil` and the like, module code can
@@ -377,8 +380,9 @@ and the short list of what the in-process sandbox cannot give.
   nothing planted after its first use is read.
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
-  (`CHUtil.ci.deviceManager.workerMessage`, `CHUtil.redis.clientInstance`,
-  `require.cache`), so a module can send any worker message itself. (A
+  (through `require.cache`, `CHUtil.redis.clientInstance`; the global
+  `CHUtil` no longer carries `ci` or `dm`, which is tidying, not a
+  boundary), so a module can send any worker message itself. (A
   worker holds no metering provider, so these objects give no handle on the
   balance ledger.) The main
   thread therefore bounds those messages on its own side:
@@ -387,13 +391,12 @@ and the short list of what the in-process sandbox cannot give.
   `peer-self-invalidate` is acted on at most once per event-loop turn. A
   refused `peer-channel-request` is answered with a `RATE_LIMITED` deny.
   The file broker gives every request the module's rights, whoever sends it,
-  so this does not reach files. What the main thread does not check (true
-  before the sandbox too) is the identity a worker states. A cross-module
-  call routed through the main thread (`invokeforeignaction`) carries the
-  caller's `appKey`, `billingKey` and target, and the main thread trusts
-  them. So module code can call a device its `countinghouse.calls` does not
-  declare (the `CTX_CALL_UNDECLARED` check runs only in the worker) and can
-  choose which key a hop is billed to.
+  so this does not reach files. Nor does it reach identity or billing
+  (R2-1): the main thread authorizes and bills every hop, device query,
+  peer invoke and remote call by the call's token, which names who pays
+  and which binding authorizes, never by anything the message states, and
+  refuses a target outside the module's declared calls
+  (`CTX_CALL_UNDECLARED`) whatever route the module took.
 - **No network permission is enforced yet.** A module can open outbound
   connections with `net`/`http`/`https`/`fetch` until parts 3 and 4,
   including to Unix-socket paths (`net.connect(path)`,
@@ -566,10 +569,8 @@ the main thread's, not the module's (spec:
     `standIn` and says so in its sentence, so acceptance data is never
     taken for a real measurement.
 - **Not provided.** A remote's answer is the remote's data: the module
-  treats it as untrusted input, as it would any answer. The billing
-  identity of a remote hop is the one the worker states, as on every
-  existing `ctx.call` path, until R2-1's per-call token (Tasks 3–5) closes
-  that for all of them together.
+  treats it as untrusted input, as it would any answer. (A remote call is
+  billed by the call's token, as every hop is since R2-1.)
 
 ## Current mitigations inventory
 

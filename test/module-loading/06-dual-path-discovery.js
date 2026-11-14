@@ -108,8 +108,9 @@ describe('module-loading 06: both module shapes, in one server', function() {
       call('handler_map_module_greetservice_hello', {name: 'x'}, (err2, hm) => {
         if (err2) return done(err2);
         assert.strictEqual(hm.isError, false, JSON.stringify(hm));
-        assert.deepStrictEqual(toolOutput(hm),
-          {text: 'hello x', caller: 'aabbcc'});
+        // ctx.caller is the caller's opaque id (R2-1 Task 5), never the key
+        assert.strictEqual(toolOutput(hm).text, 'hello x');
+        assert.match(String(toolOutput(hm).caller), /^u_[A-Za-z0-9_-]{22}$/, JSON.stringify(toolOutput(hm)));
         return done();
       });
     });

@@ -35,10 +35,10 @@ module.exports = async (input, ctx) => {
   // long; answerAfterMs: this call answers after that long whether or not
   // the hop has (a module that does not await its hop), so the hop's answer
   // can arrive after the caller's timeout (the review of #138, 8).
-  // viaClient: the hop through ctx.serviceClient's cached client (input.callee,
-  // input.as), which sends no device query first: under a drained message
+  // viaClient: the hop through ctx.serviceClient's cached client
+  // (input.callee), which sends no device query first: under a drained message
   // budget the announcement is then the message the main thread refuses.
-  const viaClient = () => new Promise((resolve, reject) => ctx.serviceClient({deviceID: input.callee, serviceID: 'urn:countinghouse-test:serviceID:tokenCallee', as: input.as},
+  const viaClient = () => new Promise((resolve, reject) => ctx.serviceClient({deviceID: input.callee, serviceID: 'urn:countinghouse-test:serviceID:tokenCallee'},
     (e, client) => (e != null ? reject(e) : client.invoke({actionName: 'bump', input: {marker: marker}}, (ie, data) => (ie != null ? reject(ie) : resolve(data))))));
   const hop = (input.viaClient === true) ? viaClient()
     : (input.slowMs != null) ? ctx.call('token-callee/tokenCallee.slow', {ms: input.slowMs, marker: marker})

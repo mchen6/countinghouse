@@ -5,8 +5,8 @@
 // -- composition by name (docs/composite-tools.md). Each address is declared
 // in this module's package.json under "countinghouse.calls" and resolved once
 // at load time; the identity the hops run AS is bound in auth.json's
-// "runsModules" for this module's friendlyName ("repo-review"), not chosen by
-// this handler. {detail: true} is required: it is what makes ctx.call resolve
+// "runsModules" for this module's name ("repo-review", its package.json
+// name), not chosen by this handler. {detail: true} is required: it is what makes ctx.call resolve
 // to {data, platformMetering} instead of just data, and the `bill` array
 // below is built entirely from platformMetering. What this module adds over
 // the two-hop composite-demo is a third hop (so the identity and billing
@@ -86,9 +86,9 @@ module.exports = async (input, ctx) => {
       // shows which identity this module *intended* each hop to land on. The
       // stop-condition check for this demo is that billedTo stays the outer
       // caller on all three hops, not just the first.
-      // The caller's user name, never its API key: tool output reaches MCP
-      // client transcripts and model context (review R2-3).
-      billedTo:     (ctx.caller != null) ? ctx.caller.userName : null,
+      // The caller's opaque id (R2-1), never its key or user name: tool
+      // output reaches MCP client transcripts and model context.
+      billedTo:     (ctx.caller != null) ? ctx.caller.id : null,
       authorizedAs: AUTHORIZED_AS_LABEL,
       wallMs:       wallMs
     });
@@ -218,7 +218,7 @@ module.exports = async (input, ctx) => {
   const returnedBytes = jsonBytes({findings: findings, bill: bill});
 
   ctx.log(`repo-review: ${inProcessBytes} bytes in-process, ${returnedBytes} bytes returned, ` +
-          `${bill.length} hops billed to ${(ctx.caller != null) ? ctx.caller.userName : 'unknown'}`);
+          `${bill.length} hops billed to ${(ctx.caller != null) ? ctx.caller.id : 'unknown'}`);
 
   return {
     output: {

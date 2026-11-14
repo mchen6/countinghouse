@@ -18,6 +18,27 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — modules receive no API key and no user name (R2-1, breaking)
+
+- `ctx.caller` is `{id, isAdmin}` (an opaque id, `u_` and 22 characters);
+  `ctx.recordUsage` answers `{id, tool, cost, ts}`; `ctx.httpHeaders` drop
+  `X-CH-Key`, `X-App-Key` and `Authorization`.
+- `ctx.serviceClient` refuses `as` and authorizes as the module's binding,
+  like `ctx.call`; `CHUtil.createServiceClient` refuses an `appKey` in a
+  worker. The CDIF-era `--debug --verifyModule` portal branch, which sent a
+  key over HTTP, is gone.
+- No hop message, peer invoke or device query carries a key: the main thread
+  authorizes and bills each by the call's token. The worker's composition
+  says only that the module is bound. A hop callee's `ctx.caller` is the
+  hop identity's `{id, isAdmin}`.
+- The global `CHUtil` has no `dm` or `ci` (undocumented, breaking for any
+  use); a worker's options carry no `redisUrl`.
+- Another module announcing a reloading or restarting module's device ID is
+  refused (`DEVICE_OBJECT_CONFLICT`); the device query runs the access check
+  for a present device too.
+- `MODULE_INSTALL_FAIL` is gone with the unreachable install path that
+  raised it (with a stack in its message).
+
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
 - `runsModules` (and sqlite's `module_identities`) names the module the

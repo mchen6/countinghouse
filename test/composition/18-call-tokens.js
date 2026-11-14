@@ -148,14 +148,15 @@ PATHS.forEach((hopPath) => {
     // gets the access error (composition 16's oracle rule). Composition 16's
     // "a client built now sees the same for an unloaded device as for one
     // never hosted" changes with this, for the granted identity.
+    // The prober's hops authorize as its binding (R2-1 Task 5: no `as`),
+    // which is granted worker-end; an identity without the grant is
+    // composition 16's, with the prober bound to it.
     it('(g) a client built after the unload: the identity granted the device gets MODULE_UNLOADED through the device query', async () => {
-      const observe = async (as) => JSON.parse((await mcpCall(hopPath.port, KEYS.admin, 'hop_prober_probeservice_observe', {as: as, deviceID: WORKER_END})).content[0].text);
-      await waitFor(async () => (await observe(KEYS.admin)).code == null, 20000, 'the prober to reach worker-end');
+      const observe = async () => JSON.parse((await mcpCall(hopPath.port, KEYS.admin, 'hop_prober_probeservice_observe', {deviceID: WORKER_END})).content[0].text);
+      await waitFor(async () => (await observe()).code == null, 20000, 'the prober to reach worker-end');
       assert.strictEqual((await post(hopPath.port, KEYS.admin, '/unload-module', {name: 'worker-end'})).status, 200);
-      const granted = await observe(KEYS.granted);
-      const ungranted = await observe(KEYS.ungranted);
+      const granted = await observe();
       assert.strictEqual(granted.code, 'MODULE_UNLOADED', JSON.stringify(granted));
-      assert.strictEqual(ungranted.code, 'USER_HAS_NO_DEVICE', JSON.stringify(ungranted));
     });
   });
 });
@@ -959,15 +960,48 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
   });
 
+  // #153's review (2): a device ID is a worker's statement. While module T
+  // reloads, its device's ended entry names T; another module announcing
+  // T's device ID then must not take it (and so T's hops and tools).
+  describe('registration of an announced device', () => {
+    it('(#153-2) a device whose ended entry names another module is not registered to this one; its own module re-registers it', () => {
+      const EventEmitter = require('events');
+      const DeviceManager = require('../../lib/device-manager');
+      const ended = {'dev-T': {code: 'MODULE_RELOADING', name: 'T'}};
+      const wm = (name) => Object.assign(new EventEmitter(), {hostModuleName: name, hostModulePath: `/mods/${name}`, deviceList: {}, workerId: name === 'T' ? 71 : 72});
+      const wmT = wm('T');
+      const wmM = wm('M');
+      const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true,
+        moduleManager: {modules: {T: wmT, M: wmM}, endedStateForDevice: (id) => ended[id] || null, clearEndedDevice: (id) => { delete ended[id]; }}});
+      DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
+      DeviceManager.prototype.onWorkerLoaded.call(self, wmT);
+      const announce = (w, stated) => w.emit('deviceonline', {data: {deviceID: 'dev-T', spec: {device: {friendlyName: 'T'}}, moduleName: stated, modulePath: '/app'}}, w);
+      announce(wmM, 'M');
+      assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device while T reloads');
+      announce(wmM, 'T');   // stating T's module name changes nothing
+      assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device by stating T\'s name');
+      announce(wmT, 'T');
+      assert.strictEqual(self.deviceMap['dev-T'], wmT);
+    });
+  });
+
   // The binding a worker's proxy keeps for its calling device (ENTRY's
   // 'd-callee'), declaring calls on these devices.
   const DECLARING = (...devices) => ({'d-callee': {identity: 'i', module: 'token-forge', targets: new Set(devices.map((d) => `${d}|svc|act`))}});
+  // user-auth answering yes to every identity, for the query cases that
+  // are about something else than the access check
+  const allowAll = (fn) => async () => {
+    const authPath = require.resolve('../../lib/user-auth');
+    const saved = require.cache[authPath];
+    require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(null, {})};
+    try { return await fn(); } finally { if (saved != null) require.cache[authPath] = saved; else delete require.cache[authPath]; }
+  };
 
   describe('the device query', () => {
     // R2-1 Task 5 (#148, 2): the query answers a spec only for a device the
     // calling module declared calls on; any other device, present or not, is
     // refused as its hop would be, and before the verdict it is not ready.
-    it('(#148) answers a spec only for a declared device: anything else CTX_CALL_UNDECLARED, present or not; before the verdict CTX_CALL_NOT_READY', async () => {
+    it('(#148) answers a spec only for a declared device: anything else CTX_CALL_UNDECLARED, present or not; before the verdict CTX_CALL_NOT_READY', allowAll(async () => {
       const DeviceManager = require('../../lib/device-manager');
       cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
       try {
@@ -985,6 +1019,66 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
           [['q1', true, undefined], ['q2', false, 'CTX_CALL_UNDECLARED'], ['q3', false, 'CTX_CALL_UNDECLARED'], ['q4', false, 'CTX_CALL_NOT_READY']], JSON.stringify(replies));
       } finally {
+        cli.setOptions({workerThread: false});
+      }
+    }));
+
+    // #153's review (5): a present declared device gets the access check at
+    // query time too: an identity without a grant gets the access error,
+    // never the spec.
+    it('(#153-5) a present declared device: the spec only to an identity granted it, the access error otherwise', async () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const authPath = require.resolve('../../lib/user-auth');
+      const savedAuth = require.cache[authPath];
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
+        exports: (a, b, deviceID, key, c, d, e, cb) => cb(key === 'denied-identity' ? new CountinghouseError('USER_HAS_NO_DEVICE') : null, {})};
+      try {
+        cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
+        const replies = [];
+        const wm = {workerId: 37, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-declared')};
+        const present = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(null, {deviceList: {[d]: {device: {friendlyName: d}}}}),
+          missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-declared', 'q1', wm, {token: tokens().issue(Object.assign(ENTRY(37), {identityKey: 'granted-identity'}))});
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-declared', 'q2', wm, {token: tokens().issue(Object.assign(ENTRY(37), {identityKey: 'denied-identity'}))});
+        await sleep(100);
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
+          [['q1', true, undefined], ['q2', false, 'USER_HAS_NO_DEVICE']], JSON.stringify(replies));
+      } finally {
+        if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+        cli.setOptions({workerThread: false});
+      }
+    });
+
+    // the review of 5b: a query held while discovery runs gets the same
+    // access check when its device comes online
+    it('(5b-review) a query held during discovery: the spec only to an identity granted the device once it is online', async () => {
+      const EventEmitter = require('events');
+      const DeviceManager = require('../../lib/device-manager');
+      const authPath = require.resolve('../../lib/user-auth');
+      const savedAuth = require.cache[authPath];
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
+        exports: (a, b, deviceID, key, c, d, e, cb) => cb(key === 'denied-identity' ? new CountinghouseError('USER_HAS_NO_DEVICE') : null, {})};
+      try {
+        cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
+        const replies = [];
+        const asker = {workerId: 38, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-late')};
+        const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: false,
+          ensureDeviceState: (d, cb) => cb(new Error('missing'), null), missingDeviceErrorForHop: () => new Error('not reached'),
+          moduleManager: {modules: {late: null}, endedStateForDevice: () => null, clearEndedDevice: () => {}}});
+        DeviceManager.prototype.queryDeviceForChild.call(self, 'd-late', 'q1', asker, {token: tokens().issue(Object.assign(ENTRY(38), {identityKey: 'granted-identity'}))});
+        DeviceManager.prototype.queryDeviceForChild.call(self, 'd-late', 'q2', asker, {token: tokens().issue(Object.assign(ENTRY(38), {identityKey: 'denied-identity'}))});
+        assert.deepStrictEqual(replies, [], 'answered before the device came online');
+        const host = Object.assign(new EventEmitter(), {hostModuleName: 'late', hostModulePath: '/mods/late', deviceList: {}, workerId: 39});
+        self.moduleManager.modules.late = host;
+        DeviceManager.prototype.onWorkerLoaded.call(self, host);
+        host.emit('deviceonline', {data: {deviceID: 'd-late', spec: {device: {friendlyName: 'late'}}, moduleName: 'late', modulePath: '/app'}}, host);
+        await sleep(100);
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
+          [['q1', true, undefined], ['q2', false, 'USER_HAS_NO_DEVICE']], JSON.stringify(replies));
+      } finally {
+        if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
         cli.setOptions({workerThread: false});
       }
     });
@@ -1018,7 +1112,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   // and fails closed without it: a worker message with no token, or
   // another worker's, is answered with nothing, device present or not.
   describe('the device query without a token', () => {
-    it('(#138-5b) is refused CALL_TOKEN_INVALID, the device present or not', async () => {
+    it('(#138-5b) is refused CALL_TOKEN_INVALID, the device present or not', allowAll(async () => {
       const DeviceManager = require('../../lib/device-manager');
       cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
       try {
@@ -1039,7 +1133,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       } finally {
         cli.setOptions({workerThread: false});
       }
-    });
+    }));
   });
 
   // #141 N1: a bill refused as late (PEER_CHANNEL_TIMEOUT) or unmatched
@@ -1066,7 +1160,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const failed = [];
       const dm = {pendingPeerInvokes: {}, peerChannels: {}, peerDeviceWorkerMap: {}, workerMessage: {sendPeerChannelRequestToParent: (m) => sent.push(m)},
         flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes};
-      const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'k', 'k', 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
+      const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
       invoke('t-dead');
       invoke('t-live');
       invoke('t-live-2');

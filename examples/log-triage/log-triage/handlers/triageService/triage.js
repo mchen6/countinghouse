@@ -53,7 +53,7 @@ module.exports = async (input, ctx) => {
         balance:      (pm != null && pm.balance != null) ? pm.balance : null,
         // The caller's user name, never its API key: tool output reaches MCP
         // client transcripts and model context (review R2-3).
-        billedTo:     (ctx.caller != null) ? ctx.caller.userName : null,
+        billedTo:     (ctx.caller != null) ? ctx.caller.id : null,
         authorizedAs: AUTHORIZED_AS_LABEL
       }
     };
