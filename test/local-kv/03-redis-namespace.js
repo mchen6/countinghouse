@@ -5,7 +5,8 @@
 // statically is refused. Server-free: lib/redis-namespace.js alone.
 const assert = require('assert');
 const {ALLOWED_COMMANDS} = require('../../lib/redis-api');
-const {KEY_POSITIONS, prefixFor, namespaceCommand, unprefixError, unprefixReplies} = require('../../lib/redis-namespace');
+const {KEY_POSITIONS, prefixFor, namespaceCommand, unprefixError} = require('../../lib/redis-namespace');
+const {safeName} = require('../../lib/module-data');
 
 const P = 'm:mod-a:';
 
@@ -21,14 +22,21 @@ describe('local-kv 03: the per-module Redis namespace (#164)', () => {
     // not victim's key x:...
     assert.strictEqual(prefixFor('victim:x'), 'm:victim%3Ax:');
     assert.ok(!`${prefixFor('victim:x')}k`.startsWith(prefixFor('victim')));
-    for (const bad of [null, undefined, '', 7, {}]) assert.strictEqual(prefixFor(bad), null, String(bad));
+    for (const bad of [null, undefined, '', 7, {}, 'a\uD800']) assert.strictEqual(prefixFor(bad), null, String(bad));
+  });
+
+  it('a module name that is not well-formed Unicode is refused at load', () => {
+    assert.strictEqual(safeName('a\uD800'), false);
+    assert.strictEqual(safeName('mod-a'), true);
   });
 
   it('a one-key command: its key is prefixed, its other arguments are not', () => {
     assert.deepStrictEqual(namespaceCommand('get', ['k'], P), {args: [`${P}k`]});
     assert.deepStrictEqual(namespaceCommand('set', ['k', 'v', 'PX', 100], P), {args: [`${P}k`, 'v', 'PX', 100]});
     assert.deepStrictEqual(namespaceCommand('hset', ['h', 'f', 'v'], P), {args: [`${P}h`, 'f', 'v']});
-    assert.deepStrictEqual(namespaceCommand('hmset', ['h', {f: 'v'}], P), {args: [`${P}h`, {f: 'v'}]});
+    // hmset(key, {field: value}): the fields as pairs
+    assert.deepStrictEqual(namespaceCommand('hmset', ['h', {f: 'v', g: 2}], P), {args: [`${P}h`, 'f', 'v', 'g', 2]});
+    assert.deepStrictEqual(namespaceCommand('hmset', ['h', 'f', 'v'], P), {args: [`${P}h`, 'f', 'v']});
     assert.deepStrictEqual(namespaceCommand('zrange', ['z', 0, -1, 'WITHSCORES'], P), {args: [`${P}z`, 0, -1, 'WITHSCORES']});
     // node_redis's array form: one array holding every argument
     assert.deepStrictEqual(namespaceCommand('lpush', [['l', 'a', 'b']], P), {args: [`${P}l`, 'a', 'b']});
@@ -39,16 +47,14 @@ describe('local-kv 03: the per-module Redis namespace (#164)', () => {
     assert.deepStrictEqual(namespaceCommand('mget', [['a', 'b', 'c']], P), {args: [`${P}a`, `${P}b`, `${P}c`]});
   });
 
-  it('multi: every queued command is put in the namespace; one that cannot be is refused, and so is the whole transaction', () => {
-    assert.deepStrictEqual(namespaceCommand('multi', [[['set', 'k', '1'], ['del', 'a', 'b'], ['get', 'k']]], P),
-      {commands: [['set', `${P}k`, '1'], ['del', `${P}a`, `${P}b`], ['get', `${P}k`]]});
-    for (const bad of [[[['keys', '*']]], [[['exec']]], [[['multi', []]]], [[['flushall']]], [['set', 'k']], [[]], [], [[['get']]]]) {
-      assert.ok(namespaceCommand('multi', bad, P).refused, JSON.stringify(bad));
+  it('multi and exec are not available, nor any command a transaction could carry', () => {
+    for (const [op, data] of [['multi', [[['set', 'k', '1'], ['get', 'k']]]], ['multi', [[['select', 0], ['exec']]]], ['exec', []],
+      ['eval', ['return 1', 0]], ['multi', [[['eval', 'return 1', 0]]]]]) {
+      assert.ok(namespaceCommand(op, data, P).refused, `${op} ${JSON.stringify(data)}`);
     }
   });
 
-  it('refused: exec on its own, an unknown command, a command with no key, a key that is not a string or a number', () => {
-    assert.ok(namespaceCommand('exec', [], P).refused);
+  it('refused: an unknown command, a command with no key, a key that is not a string or a number', () => {
     for (const op of ['keys', 'scan', 'eval', 'flushall', 'constructor', '__proto__']) assert.ok(namespaceCommand(op, ['x'], P).refused, op);
     assert.ok(namespaceCommand('get', [], P).refused);
     assert.ok(namespaceCommand('del', [], P).refused);
@@ -60,17 +66,14 @@ describe('local-kv 03: the per-module Redis namespace (#164)', () => {
   it('a trailing undefined (an absent callback) is not an argument', () => {
     assert.deepStrictEqual(namespaceCommand('del', ['a', 'b', undefined], P), {args: [`${P}a`, `${P}b`]});
     assert.deepStrictEqual(namespaceCommand('get', ['k', undefined, undefined], P), {args: [`${P}k`]});
-    assert.deepStrictEqual(namespaceCommand('multi', [[['get', 'k']], undefined], P), {commands: [['get', `${P}k`]]});
   });
 
   it('a key that already looks prefixed stays inside: m:mod-b:k from mod-a is m:mod-a:m:mod-b:k', () => {
     assert.deepStrictEqual(namespaceCommand('get', ['m:mod-b:k'], P), {args: [`${P}m:mod-b:k`]});
   });
 
-  it('an error\'s text loses the prefix, and so does an error among a transaction\'s replies', () => {
+  it('an error\'s text loses the prefix', () => {
     assert.strictEqual(unprefixError(`WRONGTYPE at ${P}k and ${P}j`, P), 'WRONGTYPE at k and j');
     assert.strictEqual(unprefixError('plain', P), 'plain');
-    const replies = unprefixReplies(['OK', new Error(`bad ${P}k`), 'v'], P);
-    assert.deepStrictEqual([replies[0], replies[1].message, replies[2]], ['OK', 'bad k', 'v']);
   });
 });
