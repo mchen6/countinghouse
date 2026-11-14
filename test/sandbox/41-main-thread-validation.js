@@ -26,6 +26,7 @@ const {deviceIDForName} = require('../../lib/call-address');
 
 const PORT    = 9749;
 const KEY     = 'main-checked-key';
+const OTHER_KEY = 'main-checked-other-key';
 const AUTH    = path.join(__dirname, '41-auth.json');
 const CALLEE  = path.join(ROOT, 'test', 'fixtures', 'main-checked');
 const CALLER  = path.join(ROOT, 'test', 'fixtures', 'main-checked-caller');
@@ -123,7 +124,9 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
     });
 
-    const ping = () => post(PORT, KEY, `/devices/${deviceIDForName('main-checked-caller')}/invoke-action`,
+    // another caller: one caller has one validation in flight across the pool
+    // (the review of #165), so a flood's own key would wait behind it
+    const ping = () => post(PORT, OTHER_KEY, `/devices/${deviceIDForName('main-checked-caller')}/invoke-action`,
       {serviceID: 'urn:countinghouse-test:serviceID:callerService', actionName: 'ping', input: {}});
 
     it('a value its validation takes seconds over is refused at the deadline, and another module answers meanwhile', async () => {
@@ -135,8 +138,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.ok(Date.now() - started < 250, `another module's call answered in ${Date.now() - started} ms`);
       const r = await slow;
       assert.ok(['VALIDATION_TIMEOUT', 'INPUT_DATA_VALIDATION_FAIL'].includes(r.body.code), JSON.stringify(r.body));
-      // the module waits a one-second cool-down after a stalled validator
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      // an input's stall cools nothing down: the module is served at once
       assert.strictEqual((await invoke('slow', {s: 'abc'})).status, 200, 'a plain value is validated');
     });
 
@@ -153,7 +155,6 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
         assert.ok(Date.now() - started < 250, `${Date.now() - started} ms`);
       }
       for (const r of await Promise.all(flood)) assert.strictEqual(r.body.code, 'VALIDATION_TIMEOUT', JSON.stringify(r.body));
-      await new Promise((resolve) => setTimeout(resolve, 1100));   // the module's cool-down
     });
 
     it('an output over --maxOutputBytes is refused in the module\'s worker, naming the module and the action', async () => {

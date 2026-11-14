@@ -647,7 +647,13 @@ these are the checks that predate them and still apply:
     past which the call is refused `VALIDATION_TIMEOUT`, a queued request
     dropped unsent and a running one's validator replaced;
   - one queue per module, round-robin, with a module holding at most all but
-    one validator, so no tenant's flood delays another's checks;
+    one ready validator, and one validation in flight per caller across the
+    pool, so no tenant's flood delays another's checks;
+  - a slow input held against its caller (by the R2-1 caller id, never a
+    key): it replaces its validator and nothing else, and a caller whose
+    inputs keep stalling is refused `VALIDATION_CALLER_THROTTLED` for a
+    while on that module, alone. A flood from many keys is for the per-key
+    rate limits;
   - a compile budget (`--validationCompileMs`), checked at load;
   - a quarantine (`VALIDATION_QUARANTINED`) for a module whose own outputs or
     compiles keep missing the deadline (a slow input does not count: any

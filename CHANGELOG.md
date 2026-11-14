@@ -122,22 +122,32 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   check made beforehand bounds JSON Schema validation of a module's schema.
   Some patterns take seconds (`^(\w|a)+$`), a 700-byte `anyOf` schema takes
   seconds to compile, and so does `uniqueItems` over 20000 items.
-- **`--validatorWorkers <n>`** (default 2) sets the pool's size, each worker
+- **`--validatorWorkers <n>`** (default one per spare CPU, 2 to 4) sets the pool's size, each worker
   with resource limits.
 - **`--validationTimeoutMs <n>`** (default 1000) is one validation's
   deadline, counted from when it is queued (queue wait plus run). Past it the
   call is refused `VALIDATION_TIMEOUT` (naming the module, the action and the
   side, never a value). A request still queued is dropped, never validated
-  nor sent on, and a running one has its validator replaced (with a backoff
-  when that keeps happening).
+  nor sent on, and a running one has its validator replaced (at once; only
+  workers that keep ending before they are ready back off).
 - **Fair between tenants:** one queue per module, served round-robin, and a
-  module holds at most all but one validator, so another module's check
-  takes milliseconds during one module's flood.
+  module holds at most all but one READY validator, so another module's
+  check takes milliseconds during one module's flood. One caller has one
+  validation in flight across the pool, so one key's flood cannot hold it.
+- **A slow input is held against its caller, not the module:** it replaces
+  its validator and nothing else. A caller whose inputs to a module miss the
+  deadline 3 times in 5 minutes has its own calls to that module refused
+  `VALIDATION_CALLER_THROTTLED` for a minute; no one else's are, and it
+  never takes the last free validator meanwhile. A flood from many keys (a
+  distributed one) is for the per-key rate limits, not the pool.
 - **`--validationCompileMs <n>`** (default 10000): a module's schemas are
   compiled per action, from one dereference of its document, at load. Past
   the budget the load is refused (`MODULE_ASSEMBLY_FAIL`, stage
-  `schemaCompile`). A validator that replaced one compiles an action again
-  before its check.
+  `schemaCompile`). Every new validator compiles every known module, and
+  runs each compiled check once, before it takes a call. A call never waits
+  past its own deadline: if its action is still compiling it is refused
+  `VALIDATION_TIMEOUT` with no strike, and the compile goes on in the
+  background.
 - **A quarantine:** a module whose own outputs or compiles miss their
   deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
   name, until an operator loads it again. A slow input is not held against
