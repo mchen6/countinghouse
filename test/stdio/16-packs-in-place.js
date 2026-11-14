@@ -5,9 +5,10 @@
 // ends with one notifications/tools/list_changed.
 // - Two packs share a part (one version, so it loads once). Unloading one
 //   keeps the part for the other (Review Focus 2).
-// - A reload runs side by side: a call already running answers from the old
-//   version, a call after the switch from the new one. An old version that
-//   never drains is ended at --requestTimeout (Review Focus 1).
+// - A reload drains, then switches (the reviewer's ruling A): a call already
+//   running answers from the old version, a call after the reload from the
+//   new one. An old version that never drains is ended at --requestTimeout
+//   (Review Focus 1).
 // - A pack whose credential variable is allowed by its own credentials file
 //   but not set is refused REMOTE_CREDENTIAL_MISSING, and nothing of it is
 //   listed or contacted (the remote is .invalid).

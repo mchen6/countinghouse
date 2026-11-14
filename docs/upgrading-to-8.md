@@ -374,9 +374,12 @@ says how to write a module for this.
     the runtime serves. It works only in the single-identity profile, over
     an IPC descriptor the spawning process holds, and is refused with
     `--hardened`. It serves `notice` (a pack change to announce) and `set`
-    (a setting that applies now). Loading, unloading and reloading packs
-    over it follow with the rest of packs in place; until then they answer
-    `CONTROL_NOT_READY`, and a pack change takes a restart.
+    (a setting that applies now), and `load`, `unload` and `reload` of a
+    pack, named by its scenario's package name. A reload drains, then
+    switches: calls already running finish on the old version, and new calls
+    to the pack wait until the new version is up. That wait is at most
+    `--requestTimeout` plus the new worker's start, the cost of upgrading
+    without a restart.
   - Neither is for a hosted server.
 - **Disk limits in the policy:** `diskMb` and `diskEntries` take the same
   ceilings and per-module entries as the other limits.

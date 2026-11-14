@@ -7,7 +7,7 @@
 **Architecture:** Two PRs.
 - **countinghouse (PR A)** gains:
   - an IPC control channel that only `ch-local start` holds;
-  - in-place module load, unload and side-by-side reload, under the same checks as at start;
+  - in-place module load, unload and reload (drain, then switch), under the same checks as at start;
   - the change notices;
   - `countinghouse_settings`.
 - **ch-local (PR B)** gains:
@@ -97,7 +97,7 @@ PR B depends on PR A's channel. Each PR is its own branch, reviewed separately.
 ### Task A3: Load, unload and reload in place
 
 **Files:**
-- Modify: `lib/module-manager.js`: a new `loadPackInPlace`, `unloadPackInPlace` and `reloadPackInPlace`, each `(msg) -> Promise<{tools}>`. Reload runs side by side: spawn the new workers, switch `deviceMap` when they are ready, and end the old workers when their pending calls answer or at `options.requestTimeout`.
+- Modify: `lib/module-manager.js`: a new `loadPackInPlace`, `unloadPackInPlace` and `reloadPackInPlace`, each `(msg) -> Promise<{tools}>`. Reload drains, then switches (the reviewer's ruling A, 2026-11-14): new calls to the module wait; the old worker finishes its pending calls, up to `options.requestTimeout`; then the runtime's own reload (unload, then spawn) brings up the new version, which serves the waiting calls. The code lives in `lib/packs-in-place.js`.
 - Modify: `lib/remote/index.js` (register a pack's remotes from its own credentials file).
 - Modify: `lib/control-channel.js` (wire `load`, `unload` and `reload`).
 - Test: `test/stdio/06-packs-in-place.js` (Docker; fixture packs: a scenario with two parts, and a second scenario sharing one part)

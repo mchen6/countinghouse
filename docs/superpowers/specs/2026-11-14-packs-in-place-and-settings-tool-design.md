@@ -76,7 +76,7 @@ single-identity profile passes, and accepts exactly three messages:
 |---|---|
 | `load {name, path, deviceConfig, remotes}` | Loads the module with the same checks as at start, and registers its remotes from the credentials file `start` wrote for it in its run directory. |
 | `unload {name}` | `unloadModuleExternal`. Calls in flight are answered with the code that says why (`WORKER_ENDED`-style), as a supervised restart answers them today. |
-| `reload {name, path}` | The new version is loaded beside the old one. New calls go to the new version once it is ready, and the old one is unloaded when its calls in flight finish, bounded by `--requestTimeout` (decided). |
+| `reload {name, path}` | Drain, then switch (the reviewer's ruling A, 2026-11-14, replacing "beside the old one": one worker and one file broker per module, as the lifecycle lock keeps). Calls in flight finish on the old version, bounded by `--requestTimeout`; what it still owes then is answered `MODULE_RELOADING`. New calls wait meanwhile and are served by the new version once it is up. The wait, at most `--requestTimeout` plus the spawn, is the latency cost of a reload in place. |
 
 Module code must never reach this channel: modules run in workers, and the
 channel exists only on the runtime's main process. A test pins that.
