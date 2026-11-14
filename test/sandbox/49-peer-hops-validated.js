@@ -45,6 +45,18 @@ describe('sandbox 49: a peer channel\'s caller, server-free', () => {
     assert.deepStrictEqual(require('../../lib/serialized-result').decode(announced[0].bytes), {input: {v: 1}});
   });
 
+  it('a queued invoke is announced when it is sent, not while it waits, with the time its timer has left', async () => {
+    const announced = [];
+    const {channel} = caller({maxConcurrentInvokes: 1, announce: (id, token, target, bytes, left) => announced.push({id, left})});
+    channel.invoke('d', 's', 'a', {}, 5000, () => {});
+    channel.invoke('d', 's', 'a', {}, 300, () => {});
+    assert.deepStrictEqual(announced.map((a) => a.id), [0], 'the queued one was announced');
+    await new Promise((r) => setTimeout(r, 100));
+    channel.deliver(0, null, {output: 1});
+    assert.deepStrictEqual(announced.map((a) => a.id), [0, 1]);
+    assert.ok(announced[1].left <= 210 && announced[1].left > 0, `left ${announced[1].left}`);
+  });
+
   it('each grant of a channel has its own epoch, and a result or refusal for another epoch is not taken', async () => {
     const {channel} = caller({});
     const second = new MessageChannel();

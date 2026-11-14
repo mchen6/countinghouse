@@ -897,15 +897,66 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.deepStrictEqual(caller.results.map((m) => [m.invokeId, m.epoch, decode(m.dataBuffer)]), [[47, EPOCH, {output: {ok: true}}]]);
     });
 
-    // (4): a bill refused answers the caller too, so its slot is freed.
-    it('(#202-4) a bill the broker cannot match is refused to the callee and answered to the caller, for this grant', async () => {
+    // (4), as round 3 has it: a bill the broker cannot match names no grant
+    // of the caller's it can trust, so only the callee is answered; the
+    // caller's own timer frees the slot (sandbox 49).
+    it('(#202-4) a bill the broker cannot match is refused to the callee; the caller is not told (it could be another grant\'s id)', async () => {
       announce(48, tokens().issue(ENTRY(caller.workerId)));
       broker.handleBillRequest({token: `made-up-${hex()}`, channel: pair(), invokeId: 48, outputBytes: bytes({output: 1})}, 'b48', callee);
       assert.ok(refused(replyTo('b48')), JSON.stringify(replyTo('b48')));
-      assert.deepStrictEqual(caller.results.map((m) => [m.invokeId, m.epoch, m.errCode]), [[48, EPOCH, 'CALL_TOKEN_INVALID']]);
-      // from a worker that is not the channel's callee: the caller is not told
-      broker.handleBillRequest({token: `made-up-${hex()}`, channel: pair(), invokeId: 48}, 'b48-other', wm(16));
-      assert.strictEqual(caller.results.length, 1);
+      assert.deepStrictEqual(caller.results, []);
+    });
+
+    // Round 3 (1): the held input bytes are bounded per caller worker, so one
+    // caller's unmatched announcements never refuse another's; a caller's
+    // announcements whose call has ended are released before it is refused.
+    it('(#202-r3-1) one caller over its share of held bytes is refused RATE_LIMITED; another caller is not; an ended call\'s bytes are released', () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, maxOutputBytes: 4 * 1024 * 1024});
+      const big = () => bytes({input: {s: 'x'.repeat(4 * 1024 * 1024 - 64)}});
+      const t = [];
+      for (let i = 0; i < 5; i++) {
+        t.push(tokens().issue(ENTRY(caller.workerId)));
+        broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 60 + i, token: t[i], epoch: EPOCH, inputBytes: big()}, TARGET), caller);
+      }
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[64, 'RATE_LIMITED']], 'the share is 16 MiB: four held, the fifth refused');
+      // another caller worker, on its own channel to the same callee
+      const other = wm(17);
+      other.bindings = caller.bindings;
+      broker.channelRegistry[`${other.workerId}:${callee.workerId}`] = {callerWM: other, calleeWM: callee, grants: {}};
+      broker.handleAnnouncement(Object.assign({channel: `${other.workerId}:${callee.workerId}`, invokeId: 1, token: tokens().issue(ENTRY(other.workerId)),
+        epoch: EPOCH, inputBytes: big()}, TARGET), other);
+      assert.deepStrictEqual(other.refusals, [], 'another caller was refused by the first one\'s bytes');
+      // the first caller's calls end: their bytes go when it next announces
+      t.forEach((x) => tokens().drop(x));
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 70, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: big()}, TARGET), caller);
+      assert.strictEqual(caller.refusals.length, 1, 'an ended call\'s bytes were still held');
+    });
+
+    // Round 3 (3, 4): an invoke's id is an integer in range, on the
+    // announcement and on the match; the id delivered is the announced one.
+    it('(#202-r3-3/4) an id that is not an integer in range is not held, and a match by one is refused; the announced id is delivered', async () => {
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: '71', token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: bytes({input: {}})}, TARGET), caller);
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 2 ** 31, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH, inputBytes: bytes({input: {}})}, TARGET), caller);
+      assert.strictEqual(broker.announced.size, 0);
+      announce(72, tokens().issue(ENTRY(caller.workerId)));
+      broker.handleMeteringRequest({channel: pair(), invokeId: '72'}, 'm72s', callee);
+      assert.ok(refused(replyTo('m72s')), 'a string id matched');
+      meter(72, 'm72');
+      await sleep(50);
+      bill(replyTo('m72').token, 'b72');
+      await sleep(50);
+      assert.deepStrictEqual(caller.results.map((m) => m.invokeId), [72]);
+    });
+
+    // The nit: main's deadline is the caller's, from the time its timer had left when it sent.
+    it('(#202-r3) main\'s deadline is no later than the caller\'s timer, as it said at send (timeLeftMs)', async () => {
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 73, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH,
+        inputBytes: bytes({input: {}}), timeLeftMs: 40}, TARGET), caller);
+      await sleep(80);
+      meter(73, 'm73');
+      await sleep(50);
+      const r = replyTo('m73');
+      assert.ok(r != null && r.errCode === 'PEER_CHANNEL_TIMEOUT' && typeof(r.token) !== 'string', JSON.stringify(r));
     });
 
     // #141 N1: the announcement's time is the deadline's start, and a module
