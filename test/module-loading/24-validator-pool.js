@@ -164,6 +164,10 @@ describe('module-loading 24: the validator pool', function() {
     const flood = moduleWith(STALL);
     const quiet = moduleWith({type: 'object', properties: {n: {type: 'integer'}}});
     assert.strictEqual(await checkIn(quiet, {n: 1}), null);   // compiled in one validator
+    // and in the others, in the background: what is measured is the flood's
+    // effect, not a validator's first compile of the quiet module (52 ms in
+    // r15 at 5231143)
+    await warmed(pool);
     const sentBefore = pool.stats.sent;
     const flooded = Array.from({length: 20}, () => checkIn(flood, STALLING));
     await new Promise((r) => setTimeout(r, 30));
