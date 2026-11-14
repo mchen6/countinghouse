@@ -13,7 +13,7 @@ const KEY  = 'aabbcc';
 const PORT = 9734;
 const TRAP = path.join(ROOT, 'test', 'fixtures', 'sandbox-load-trap');
 
-describe('sandbox 41: a load that never answers is bounded in every mode (#144)', function() {
+describe('sandbox 45: a load that never answers is bounded in every mode (#144)', function() {
   this.timeout(60000);
   let server = null;
   afterEach(() => { stopServer(server); server = null; });
