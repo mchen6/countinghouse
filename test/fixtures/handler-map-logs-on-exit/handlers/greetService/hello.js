@@ -19,5 +19,5 @@ process.on('exit', () => {
 });
 
 module.exports = async (input, ctx) => ({
-  output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}
+  output: {text: `hello ${input.name}`, caller: ctx.caller.id}
 });

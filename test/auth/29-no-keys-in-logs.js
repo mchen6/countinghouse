@@ -1,6 +1,6 @@
 // A log line never carries an API key. Where only the key is in hand -- a
-// peer channel's grant record, a module's ctx.recordUsage in its worker --
-// the line names it by a short fingerprint instead (`key sha256:<8 hex>`),
+// peer channel's grant record -- the line names it by a short fingerprint
+// instead (`key sha256:<8 hex>`),
 // enough to tell two tenants apart in a log, not to recover the key.
 //
 // Each case runs in a child process: requiring the peer channel broker or
@@ -52,7 +52,56 @@ describe('auth 29: no API key in a log line', function() {
       broker.closeRevoked('1:2', entry, {appKey: KEY, deviceID: 'dev-1'}, {code: 'DEVICE_ACCESS_DENIED'});`));
   });
 
-  it('CHUtil.recordUsage names the caller by fingerprint', () => {
-    assertFingerprinted(loggedBy(`lib('countinghouse-util').recordUsage(KEY, 'some-tool', 1, () => {});`));
+  // R2-1 Task 5: a module's recordUsage has the caller's opaque id in hand,
+  // never a key, and its line names that id.
+  it('CHUtil.recordUsage names the caller by its id', () => {
+    const ID = `u_${'A'.repeat(22)}`;
+    const lines = loggedBy(`lib('countinghouse-util').recordUsage(${JSON.stringify(ID)}, 'some-tool', 1, () => {});`);
+    assert.strictEqual(lines.length, 1, JSON.stringify(lines));
+    assert.ok(lines[0].includes(ID), lines[0]);
+  });
+
+  // R2-1 Task 5 (plan step 3b): an unknown key one character off a real one
+  // is refused SYSTEM_ERROR_UNKNOWN_USER with no piece of either key, by the
+  // file and sqlite providers and by user-auth, in the answer or the log.
+  it('a near-miss key leaves no 6-character piece of either key in the answer or the log', () => {
+    const NEAR = `${KEY.slice(0, -1)}${KEY.endsWith('f') ? 'e' : 'f'}`;
+    const run = spawnSync(process.execPath, ['-e', `
+      const fs = require('fs'), os = require('os'), path = require('path');
+      const lib = (m) => require(${JSON.stringify(LIB)} + '/' + m);
+      lib('cli-options').setOptions({workerThread: false});
+      const LOG = lib('logger');
+      LOG.createLogger(false);
+      const seen = [];
+      for (const level of ['I', 'W', 'E', 'D']) LOG[level] = (m) => { seen.push(String(m && m.stack ? m.stack : m)); return m; };
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-near-miss-'));
+      const configPath = path.join(dir, 'auth.json');
+      fs.writeFileSync(configPath, JSON.stringify({${JSON.stringify(KEY)}: {userName: 'tenant', devices: ['*']}}));
+      const FileAuthProvider = lib('auth/file-provider');
+      const file = new FileAuthProvider({configPath});
+      const answers = [];
+      const done = () => { fs.rmSync(dir, {recursive: true, force: true}); process.stdout.write('OUT ' + JSON.stringify({answers, seen}) + '\\n'); process.exit(0); };
+      file.authenticate(${JSON.stringify(NEAR)}, 'dev-1', null, null, (err, r) => {
+        answers.push(JSON.stringify([err && err.message, r && r.err && r.err.message, r && r.err && r.err.code]));
+        let sqlite = null;
+        try { require.resolve('sqlite3'); sqlite = lib('auth/sqlite-provider'); } catch (e) { sqlite = null; }
+        if (sqlite == null) return done();
+        const p = new sqlite({dbPath: path.join(dir, 'auth.db')});
+        p.db.serialize(() => p.db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', [${JSON.stringify(KEY)}, 'tenant']));
+        p.authenticate(${JSON.stringify(NEAR)}, 'dev-1', null, null, (e2, r2) => {
+          answers.push(JSON.stringify([e2 && e2.message, r2 && r2.err && r2.err.message, r2 && r2.err && r2.err.code]));
+          done();
+        });
+      });`], {encoding: 'utf8', timeout: 20000});
+    const line = (run.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+    assert.ok(line != null, `no output: ${run.stdout} ${run.stderr}`);
+    const {answers, seen} = JSON.parse(line.slice(4));
+    assert.ok(answers.length >= 1 && answers.every((a) => a.includes('SYSTEM_ERROR_UNKNOWN_USER')), answers.join('\n'));
+    const text = answers.concat(seen).join('\n');
+    for (const k of [KEY, NEAR]) {
+      for (let i = 0; i + 6 <= k.length; i++) {
+        assert.ok(!text.includes(k.slice(i, i + 6)), `a piece of a key ("${k.slice(i, i + 6)}") in:\n${text}`);
+      }
+    }
   });
 });

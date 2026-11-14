@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "id-squatter",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "The review of #163 (5): at load, announces token-callee's device as its own, through its worker's channel to the main thread.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:squatService": {
+        "actionList": [
+          {
+            "name": "noop",
+            "description": "Does nothing.",
+            "input": {"schema": "/squatService/noop/input"},
+            "output": {"schema": "/squatService/noop/output"}
+          }
+        ]
+      }
+    }
+  }
+}

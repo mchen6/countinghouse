@@ -18,7 +18,7 @@ const fs      = require('fs');
 const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
-const {ROOT, startServer, stopServer, waitFor, mcpCall} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, waitFor, mcpCall, post} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
 const {testPort} = require('../helpers/test-env');
@@ -125,6 +125,13 @@ const IDS = {callee: deviceIDForName('token-callee'), other: deviceIDForName('co
       assert.deepStrictEqual(out.holds, {callerKey: null, usageKey: null, admin: false}, JSON.stringify(out));
     });
 
+    it('ctx.caller is {id, isAdmin}; `as` is refused (R2-1 Task 5)', async () => {
+      const seen = await attempt('seeCaller');
+      assert.deepStrictEqual(seen.holds.callerKeys, ['id', 'isAdmin'], JSON.stringify(seen));
+      assert.match(String(seen.holds.id), /^u_[A-Za-z0-9_-]{22}$/);
+      assert.match(String((await attempt('asRefused')).message), /remove `as`/);
+    });
+
     it('a hand-built hop carrying a ctx of its own making: the callee sees none of it', async () => {
       const {out} = await tried('forgedCtxHop');
       assert.strictEqual(out.code, null, JSON.stringify(out));
@@ -181,6 +188,41 @@ describe('composition 21: a device that claims another module\'s friendlyName', 
     // purged: its tool is gone, not merely failing
     const r = await mcpCall(PORT, KEY, ATTEMPT, {route: 'declared', as: INTERNAL}, {allowUnknownTool: true});
     assert.match(JSON.stringify(r), /unknown tool/, `the claimed binding was taken: ${JSON.stringify(r).slice(0, 400)}`);
+  });
+});
+
+// The review of #163 (5): a running module that announces another module's
+// device while that module is unloaded takes nothing: the ID is the other
+// module's (its api.json declares it, and it owned it), and it registers
+// its own again when it is loaded back.
+describe('composition 21: a running module announcing another module\'s device', function() {
+  this.timeout(120000);
+  let base = null;
+  let server = null;
+  before(async () => {
+    base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21q-'));
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--authoringTools', '--moduleSandbox', 'off',
+      '--moduleDataPath', path.join(base, 'store'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'id-squatter'),
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee')]);
+  });
+  after(() => {
+    stopServer(server);
+    if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  it('is refused while that module is unloaded, and the module registers its own when loaded back', async () => {
+    const callee = path.join(ROOT, 'test', 'fixtures', 'token-callee');
+    assert.strictEqual((await post(PORT, 'k', '/unload-module', {name: 'token-callee'})).status, 200);
+    await mcpCall(PORT, 'k', 'id_squatter_squatservice_noop', {});
+    await waitFor(() => /id-squatter announced device/.test(server.output), 10000, 'the refusal in the log', async () => server.output.slice(-2000));
+    const loaded = await mcpCall(PORT, 'k', 'countinghouse_load_module', {path: callee, name: 'token-callee'});
+    assert.ok(loaded != null && loaded.isError !== true, JSON.stringify(loaded).slice(0, 400));
+    const r = await waitFor(async () => {
+      const x = await mcpCall(PORT, 'k', COUNT, {}, {allowUnknownTool: true});
+      return (x != null && x.isError !== true && !/unknown tool/.test(JSON.stringify(x))) ? x : null;
+    }, 20000, 'token-callee to answer');
+    assert.ok(r != null);
   });
 });
 
@@ -357,6 +399,15 @@ describe('composition 21: declared calls in single-thread mode', function() {
   after(() => {
     stopServer(server);
     if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  // R2-1 Task 5 (plan step 5): the same ctx as in worker mode
+  it('ctx.caller is {id, isAdmin}; `as` is refused', async () => {
+    const seen = await attempt('seeCaller');
+    assert.deepStrictEqual(seen.holds.callerKeys, ['id', 'isAdmin'], JSON.stringify(seen));
+    assert.match(String(seen.holds.id), /^u_[A-Za-z0-9_-]{22}$/);
+    const refused = await attempt('asRefused');
+    assert.match(String(refused.message), /remove `as`/, JSON.stringify(refused));
   });
 
   it('the declared call works; ctx.serviceClient to an undeclared device or action is CTX_CALL_UNDECLARED', async () => {

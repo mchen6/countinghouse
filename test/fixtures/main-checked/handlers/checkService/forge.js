@@ -23,10 +23,19 @@ function forged(kind, n) {
   return Buffer.concat([HEAD, len, Buffer.alloc(n, 0x78), TAIL]);
 }
 
+// The worker's WorkerMessage, through the runtime's own countinghouse-util
+// in require.cache: since R2-1 Task 5 the global CHUtil a module sees has no
+// dm, and a module that goes around it reaches what require.cache holds.
+function workerMessage() {
+  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
+  const util = (key != null) ? require.cache[key].exports : null;
+  return (util != null && util.dm != null) ? util.dm.workerMessage : null;
+}
+
 module.exports = async (input) => {
   const bytes = forged(input.kind, input.n || 0);
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const wm = CHUtil.dm.workerMessage;
+  const wm = workerMessage();
   const real = wm.sendSerializedReplyToParent;
   wm.sendSerializedReplyToParent = function(id) {
     wm.sendSerializedReplyToParent = real;
