@@ -976,7 +976,14 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         pinnedDeviceIDs: {T: new Set(['dev-T']), M: new Set(['dev-M']), N: null}}});
     DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
     DeviceManager.prototype.onWorkerLoaded.call(self, wmN);
-    const announce = (w, name, id) => w.emit('deviceonline', {data: {deviceID: id, spec: {device: {friendlyName: id}}, moduleName: name, modulePath: '/app'}}, w);
+    // since #165 a device registers only as the main thread's own copy of the
+    // spec (moduleSpec.matches): each announcement here has one, so the
+    // ownership rule alone decides
+    const announce = (w, name, id) => {
+      const spec = {device: {friendlyName: id}};
+      w.moduleSpec = {deviceID: id, spec: spec, specText: JSON.stringify(spec), modulePath: null};
+      w.emit('deviceonline', {data: {deviceID: id, spec: spec, moduleName: name, modulePath: '/app'}}, w);
+    };
     announce(wmM, 'M', 'dev-T');
     assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took a device T declares');
     announce(wmM, 'M', 'dev-dyn');
@@ -1005,7 +1012,13 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         moduleManager: {modules: {T: wmT, M: wmM}, endedStateForDevice: (id) => ended[id] || null, clearEndedDevice: (id) => { delete ended[id]; }}});
       DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
       DeviceManager.prototype.onWorkerLoaded.call(self, wmT);
-      const announce = (w, stated) => w.emit('deviceonline', {data: {deviceID: 'dev-T', spec: {device: {friendlyName: 'T'}}, moduleName: stated, modulePath: '/app'}}, w);
+      // each with the main thread's own copy of the spec (#165), so the ended
+      // entry alone decides
+      const announce = (w, stated) => {
+        const spec = {device: {friendlyName: 'T'}};
+        w.moduleSpec = {deviceID: 'dev-T', spec: spec, specText: JSON.stringify(spec), modulePath: null};
+        w.emit('deviceonline', {data: {deviceID: 'dev-T', spec: spec, moduleName: stated, modulePath: '/app'}}, w);
+      };
       announce(wmM, 'M');
       assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device while T reloads');
       announce(wmM, 'T');   // stating T's module name changes nothing
@@ -1182,7 +1195,9 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         const host = Object.assign(new EventEmitter(), {hostModuleName: 'late', hostModulePath: '/mods/late', deviceList: {}, workerId: 39});
         self.moduleManager.modules.late = host;
         DeviceManager.prototype.onWorkerLoaded.call(self, host);
-        host.emit('deviceonline', {data: {deviceID: 'd-late', spec: {device: {friendlyName: 'late'}}, moduleName: 'late', modulePath: '/app'}}, host);
+        const lateSpec = {device: {friendlyName: 'late'}};
+        host.moduleSpec = {deviceID: 'd-late', spec: lateSpec, specText: JSON.stringify(lateSpec), modulePath: null};
+        host.emit('deviceonline', {data: {deviceID: 'd-late', spec: lateSpec, moduleName: 'late', modulePath: '/app'}}, host);
         await sleep(100);
         assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
           [['q1', true, undefined], ['q2', false, 'USER_HAS_NO_DEVICE']], JSON.stringify(replies));
