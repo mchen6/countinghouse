@@ -108,6 +108,16 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - **Unchanged:** a call over a direct peer channel is still validated in the
   called worker (until step 4), and single-thread mode validates in-process
   as before.
+- **A schema.json that could stall or exhaust the main thread is refused at
+  load** (`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the module and
+  the schema path, never the pattern), at every way in and in single-thread
+  mode too (`lib/schema-safety.js`): one over 1 MB; a regular expression
+  (`pattern`, a `patternProperties` key, a `propertyNames` pattern) over 1000
+  characters or with a repetition inside a repeated group (`^(a+)+$`); and
+  actions whose schemas come to more than 100,000 nodes with their `$ref`s
+  expanded (an expansion bomb, measured without expanding it) or whose
+  `$ref` refers to itself. The main thread dereferences a module's schema
+  once, not once per action.
 - **One answer changes:** a result that cannot cross between threads (a
   function or a Symbol inside a module's output) is answered
   `DEVICE_INVOKE_EXCEPTION` ("the result could not be sent between

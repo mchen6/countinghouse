@@ -637,6 +637,13 @@ these are the checks that predate them and still apply:
   a direct peer channel, where a module that interferes with it harms its
   own input check; moving that check out of reach is lean worker step 4
   (`docs/superpowers/specs/2026-11-13-lean-worker-design.md`).
+  Since the module's schema now runs on the main thread, outside its
+  worker's limits, a `schema.json` that could stall or exhaust that thread
+  is refused at load (`lib/schema-safety.js`): over 1 MB, a regular
+  expression that can backtrack catastrophically (a repetition inside a
+  repeated group, the safe-regex check) or over 1000 characters, and
+  schemas over 100,000 nodes with their `$ref`s expanded, or with a `$ref`
+  cycle.
 - **Redis command allowlist** (`lib/supported-redis-commands.json`,
   enforced in `lib/redis-api.js` via `_.intersection(redisCommands.list,
   supportedCommands)`). Modules access Redis only through a wrapper that

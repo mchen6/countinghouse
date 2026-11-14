@@ -146,6 +146,132 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
     assert.strictEqual(notDeclared.code, 'ACTION_NOT_FOUND');
   });
 
+  describe('the schema is checked before anything of it runs on the main thread (lib/schema-safety.js)', () => {
+    const safety = () => require('../../lib/schema-safety');
+    const SCHEMA_ROOT = (ping) => ({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', s: {ping: ping}});
+    // A module whose one action's input is `input`, and whose schema.json has `extra` beside it.
+    function moduleWith(name, input, extra = {}) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), `ch-safety-${name}-`));
+      fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, serviceList: {'urn:countinghouse-test:serviceID:s': {
+        actionList: [{name: 'ping', input: {schema: '/s/ping/input'}, output: {schema: '/s/ping/output'}}]}}}}));
+      fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({...SCHEMA_ROOT({input: input, output: {type: 'object'}}), ...extra}));
+      return dir;
+    }
+    const refusalOf = (dir, name) => safety().schemaRefusal(dir, name);
+    const dirs = [];
+    const made = (dir) => { dirs.push(dir); return dir; };
+    after(() => { for (const d of dirs) fs.rmSync(d, {recursive: true, force: true}); });
+
+    it('a pattern that can backtrack catastrophically is refused, naming the module and the schema path but not the pattern', () => {
+      const e = refusalOf(made(moduleWith('redos', {type: 'object', properties: {s: {type: 'string', pattern: '^(a+)+$'}}})), 'redos');
+      assert.strictEqual(e.code, 'MODULE_ASSEMBLY_FAIL');
+      assert.match(e.message, /redos/);
+      assert.match(e.message, /\/s\/ping\/input\/properties\/s\/pattern/);
+      assert.ok(!e.message.includes('(a+)+'), e.message);
+    });
+
+    it('a plain pattern is accepted, and so is a pattern-looking value under enum, const, default or examples', () => {
+      assert.strictEqual(refusalOf(made(moduleWith('plain', {type: 'object', properties: {s: {type: 'string', pattern: '^[a-z]+$'}}})), 'plain'), null);
+      const data = {type: 'object', default: {pattern: '^(a+)+$'}, examples: [{pattern: '(a*)*'}], properties: {k: {enum: [{pattern: '(a+)+'}], const: {pattern: '(x+)+'}}}};
+      assert.strictEqual(refusalOf(made(moduleWith('data', data)), 'data'), null);
+    });
+
+    it('a property or definition named default, enum, const or examples is a schema: its pattern is checked (/code-review of 5ae7454)', () => {
+      const asProperty = refusalOf(made(moduleWith('prop-default', {type: 'object', properties: {default: {type: 'string', pattern: '(a+)+$'}}})), 'prop-default');
+      assert.match(asProperty.message, /\/s\/ping\/input\/properties\/default\/pattern/);
+      const asDef = refusalOf(made(moduleWith('def-enum', {$ref: '#/$defs/enum'}, {$defs: {enum: {type: 'string', pattern: '(b*)*'}}})), 'def-enum');
+      assert.match(asDef.message, /\/\$defs\/enum\/pattern/);
+    });
+
+    it('a bomb reached through a $ref partway along a pointer, or left unreferenced in $defs, is counted; a $ref to no place is refused', () => {
+      const definitions = {hop: {$ref: '#/definitions'}, a0: {type: 'string'}};
+      for (let i = 1; i <= 30; i++) definitions[`a${i}`] = {allOf: [{$ref: `#/definitions/hop/a${i - 1}`}, {$ref: `#/definitions/hop/a${i - 1}`}]};
+      assert.match(refusalOf(made(moduleWith('hop', {$ref: '#/definitions/a30'}, {definitions})), 'hop').message, /more than 100000 schema nodes/);
+      const defs = {l0: {type: 'string'}};
+      for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+      assert.match(refusalOf(made(moduleWith('unreferenced', {type: 'object'}, {defs})), 'unreferenced').message, /more than 100000 schema nodes/);
+      assert.match(refusalOf(made(moduleWith('anchor', {$ref: '#thing'})), 'anchor').message, /names no place in schema\.json/);
+      assert.match(refusalOf(made(moduleWith('external', {$ref: 'other.json#/x'})), 'external').message, /names no place in schema\.json/);
+    });
+
+    it('the main thread\'s spec build checks the schema.json it reads, not only the load\'s earlier read', async () => {
+      const dir = made(moduleWith('late-bomb', {type: 'object'}));
+      const defs = {l0: {type: 'string'}};
+      for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+      // replaced after a check passed, before the build reads it
+      assert.strictEqual(refusalOf(dir, 'late-bomb'), null);
+      fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$id: '#/', s: {ping: {input: {$ref: '#/defs/l12'}, output: {type: 'object'}}}, defs}));
+      const built = await moduleSpec.build(dir);
+      assert.match(String(built.error), /stage=schemaSafety/);
+    });
+
+    it('a percent-encoded action pointer resolves as before ("#" + pointer, decoded)', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-safety-pct-'));
+      dirs.push(dir);
+      fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'pct', serviceList: {'urn:countinghouse-test:serviceID:s': {
+        actionList: [{name: 'ping', input: {schema: '/s/a%20b'}}]}}}}));
+      fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$id: '#/', s: {'a b': {type: 'object', properties: {n: {type: 'integer'}}}}}));
+      const built = await moduleSpec.build(dir);
+      const at = (input) => moduleSpec.checkInput(built, built.deviceID, 'urn:countinghouse-test:serviceID:s', 'ping', {input});
+      assert.strictEqual(at({n: 1}).refused, undefined);
+      assert.strictEqual(at({n: 'x'}).refused[0].code, 'INPUT_DATA_VALIDATION_FAIL');
+    });
+
+    it('patternProperties keys and propertyNames patterns are checked; the key is not named', () => {
+      const pp = refusalOf(made(moduleWith('pp', {type: 'object', patternProperties: {'^(?:x|y+)*$': {type: 'string'}}})), 'pp');
+      assert.strictEqual(pp.code, 'MODULE_ASSEMBLY_FAIL');
+      assert.ok(!pp.message.includes('y+'), pp.message);
+      const pn = refusalOf(made(moduleWith('pn', {type: 'object', propertyNames: {pattern: '([a-z]*)*'}})), 'pn');
+      assert.match(pn.message, /\/s\/ping\/input\/propertyNames\/pattern/);
+    });
+
+    it('a pattern over 1000 characters is refused', () => {
+      const e = refusalOf(made(moduleWith('long', {type: 'string', pattern: `^${'a'.repeat(1001)}$`})), 'long');
+      assert.match(e.message, /longer than 1000 characters/);
+    });
+
+    it('the star-height check: nested repetition is refused, single repetition is not', () => {
+      const unsafe = ['^(a+)+$', '(a*)*', '(?:a|b+)*', '((ab)+c)+', '(x+){2,}', '(\\d+)+', '(a{1,5})*',
+        // JavaScript's [] and [^] are whole classes: what follows them is read (/code-review of 5ae7454)
+        '[^](a+)+$', '[](a+)+$',
+        // alternatives that start alike in a repeated group
+        '^(a|aa)+$', '^(\\d|\\d\\d)+$'];
+      const safe = ['^[a-z]+$', '(a|b)+', 'a+b+', '[(a+)]+', '\\(a+\\)+', '(a+)?', '(ab)+', '^\\d{1,3}(?:,\\d{3})?$', '^[0-9a-f]{64}$', '(a){2}',
+        '(foo|bar)+', '^([a-z]|-)+$', '[]](a)+'];
+      for (const re of unsafe) assert.strictEqual(safety().unsafePattern(re) != null, true, re);
+      for (const re of safe) assert.strictEqual(safety().unsafePattern(re), null, re);
+    });
+
+    it('a schema.json over 1 MB is refused', () => {
+      const big = made(moduleWith('big', {type: 'object'}, {padding: 'x'.repeat(1024 * 1024)}));
+      assert.match(refusalOf(big, 'big').message, /schema\.json is larger than 1 MB/);
+    });
+
+    it('a $ref expansion bomb is refused before it is expanded, the main heap untouched; a $ref cycle too', () => {
+      const defs = {l0: {type: 'string'}};
+      for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+      const dir = made(moduleWith('bomb', {$ref: '#/defs/l12'}, {defs}));
+      const heap = process.memoryUsage().heapUsed;
+      const started = Date.now();
+      const e = refusalOf(dir, 'bomb');
+      assert.match(e.message, /more than 100000 schema nodes/);
+      assert.ok(Date.now() - started < 2000, `${Date.now() - started} ms`);
+      assert.ok(process.memoryUsage().heapUsed - heap < 50 * 1024 * 1024, 'no expansion');
+      const loop = made(moduleWith('loop', {$ref: '#/defs/a'}, {defs: {a: {anyOf: [{$ref: '#/defs/b'}]}, b: {anyOf: [{$ref: '#/defs/a'}]}}}));
+      assert.match(refusalOf(loop, 'loop').message, /refers to itself/);
+      const shared = made(moduleWith('shared', {$ref: '#/defs/l2'}, {defs: {l0: defs.l0, l1: {anyOf: [{$ref: '#/defs/l0'}, {$ref: '#/defs/l0'}]}, l2: {anyOf: [{$ref: '#/defs/l1'}, {$ref: '#/defs/l1'}]}}}));
+      assert.strictEqual(refusalOf(shared, 'shared'), null, 'a modest shared $ref is fine');
+    });
+
+    it('the main thread\'s spec build dereferences the document once, and its validators still work', async () => {
+      const dir = made(moduleWith('deref', {$ref: '#/defs/n'}, {defs: {n: {type: 'object', properties: {n: {type: 'integer'}}, required: ['n']}}}));
+      const built = await moduleSpec.build(dir);
+      const checked = (input) => moduleSpec.checkInput(built, built.deviceID, 'urn:countinghouse-test:serviceID:s', 'ping', {input});
+      assert.strictEqual(checked({n: 1}).refused, undefined);
+      assert.strictEqual(checked({n: 'x'}).refused[0].code, 'INPUT_DATA_VALIDATION_FAIL');
+    });
+  });
+
   describe('the device a worker announces', () => {
     let DeviceManager = null;
     const LOG = require('../../lib/logger');
