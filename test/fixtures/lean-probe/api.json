@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "lean-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: lists every file its worker has required, so the allowed-files test can hold the worker lean.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "files",
+            "description": "Returns every file in its worker's require cache.",
+            "input": {
+              "schema": "/probeService/files/input"
+            },
+            "output": {
+              "schema": "/probeService/files/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

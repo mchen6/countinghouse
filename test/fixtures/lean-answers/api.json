@@ -1,0 +1,53 @@
+{
+  "device": {
+    "friendlyName": "lean-answers",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: one handler per way of answering, for the dispatcher's tests.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:answerService": {
+        "actionList": [
+          {
+            "name": "ok",
+            "description": "Answers its input.",
+            "input": {
+              "schema": "/answerService/ok/input"
+            },
+            "output": {
+              "schema": "/answerService/ok/output"
+            }
+          },
+          {
+            "name": "throws",
+            "description": "Throws.",
+            "input": {
+              "schema": "/answerService/throws/input"
+            },
+            "output": {
+              "schema": "/answerService/throws/output"
+            }
+          },
+          {
+            "name": "fails",
+            "description": "Fails through its callback.",
+            "input": {
+              "schema": "/answerService/fails/input"
+            },
+            "output": {
+              "schema": "/answerService/fails/output"
+            }
+          },
+          {
+            "name": "fn",
+            "description": "Returns a function as its output.",
+            "input": {
+              "schema": "/answerService/fn/input"
+            },
+            "output": {
+              "schema": "/answerService/fn/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

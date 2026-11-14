@@ -1,0 +1,53 @@
+{
+  "device": {
+    "friendlyName": "lean-lockdown-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: what a handler may require under the lockdown.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "builtin",
+            "description": "Requires a built-in the sandbox refuses.",
+            "input": {
+              "schema": "/probeService/builtin/input"
+            },
+            "output": {
+              "schema": "/probeService/builtin/output"
+            }
+          },
+          {
+            "name": "outside",
+            "description": "Requires a file outside the module.",
+            "input": {
+              "schema": "/probeService/outside/input"
+            },
+            "output": {
+              "schema": "/probeService/outside/output"
+            }
+          },
+          {
+            "name": "invokeaction",
+            "description": "CHUtil.invokeAction to a host the module has no grant for.",
+            "input": {
+              "schema": "/probeService/invokeaction/input"
+            },
+            "output": {
+              "schema": "/probeService/invokeaction/output"
+            }
+          },
+          {
+            "name": "recordusage",
+            "description": "CHUtil.recordUsage.",
+            "input": {
+              "schema": "/probeService/recordusage/input"
+            },
+            "output": {
+              "schema": "/probeService/recordusage/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

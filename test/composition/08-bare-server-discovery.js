@@ -121,11 +121,10 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
         path: path.join(ROOT, 'test', 'fixtures', 'compose-callee'), name: 'compose-callee'}}, () => {
         mcp('tools/call', {name: 'countinghouse_load_module', arguments: {
           path: path.join(ROOT, 'test', 'fixtures', 'compose-caller'), name: 'compose-caller'}}, () => {
-          // The composition verdict cannot arrive until the worker's
-          // discovery window closes: lib/sandbox.js holds 'discover-device'
-          // open for a hardcoded 5000ms per load before replying to the
-          // parent, and only that reply lets the main thread emit
-          // 'allmodulediscovered' -> verifyComposition -> setComposition.
+          // The composition verdict arrives once the worker has loaded and
+          // the main thread has registered its device from its own spec
+          // (lean worker step 3): that lets it emit 'allmodulediscovered'
+          // -> verifyComposition -> setComposition.
           //
           // So wait for the server to say that has happened, rather than
           // guessing a duration: one ready line at startup plus one per

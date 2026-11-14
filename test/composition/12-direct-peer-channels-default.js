@@ -2,7 +2,7 @@
 // is the one place that decides it: lib/service-client.js's isRemoteThread
 // branch reads options.directPeerChannels, and the main thread hands its
 // resolved options to every worker (getOptions() -> the worker's own
-// setOptions(), lib/sandbox.js), so the handoff is tested here too -- an
+// setOptions(), lib/lean-worker.js), so the handoff is tested here too -- an
 // opt-out that the main thread honours and a worker forgets would split one
 // server across both hop paths.
 //

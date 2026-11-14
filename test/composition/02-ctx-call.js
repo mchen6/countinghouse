@@ -7,7 +7,7 @@
 // completes, binds compose-caller's identity from fixtures-auth.json's
 // "runsModules", and calls handlerCtx.setComposition -- under --workerThread
 // that binding is relayed into compose-caller's own worker thread
-// (WorkerMessage.prototype.sendSetCompositionMessage / lib/sandbox.js's
+// (WorkerMessage.prototype.sendSetCompositionMessage / lib/lean-worker.js's
 // 'set-composition' case), since the real CHDevice buildCtx reads
 // _composition off of lives there, not on the main thread's WorkerMessage
 // proxy. That is also why the OLD "viaCall fails: no identity is bound"
@@ -244,7 +244,7 @@ describe('ctx.call: guard clause messages (in-process, same production code)', f
 // onAllModulesDiscovered. Under --workerThread, this.deviceMap[deviceID] on
 // the main thread is a WorkerMessage proxy, so the resolved {identity,
 // allowed} has to be relayed into the composing module's own worker thread
-// (WorkerMessage.prototype.sendSetCompositionMessage / lib/sandbox.js's
+// (WorkerMessage.prototype.sendSetCompositionMessage / lib/lean-worker.js's
 // 'set-composition' case) before ctx.call can see it -- that is what the
 // describe block above exercises. Without --workerThread,
 // this.deviceMap[deviceID] IS the real CHDevice directly, so verifyComposition

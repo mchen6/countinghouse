@@ -65,7 +65,7 @@
 // sites never forwarding `errCode` on the main-thread-routed reply
 // envelope, unlike lib/peer-channel.js's _dispatchInvoke, which already
 // did. Fixed in lib/device-manager.js (added errCode alongside errMsg) and
-// lib/sandbox.js's 'invoke-action-reply' case (reattaches it, mirroring
+// lib/lean-worker.js's 'invoke-action-reply' case (reattaches it, mirroring
 // lib/peer-channel.js:202's `if (msg.errCode != null) err.code =
 // msg.errCode`). The assertion below now checks for the CONVERGED value on
 // both flag states rather than documenting the difference.
@@ -228,7 +228,7 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
 
         // Was a genuine divergence (null off / 'DEVICE_INVOKE_EXCEPTION' on)
         // before lib/device-manager.js's sendInvokeActionMessageToWorker and
-        // lib/sandbox.js's 'invoke-action-reply' case were fixed (Task 6b)
+        // lib/lean-worker.js's 'invoke-action-reply' case were fixed (Task 6b)
         // to carry `errCode` as a sibling of `errMsg` on the main-thread-
         // routed reply envelope, mirroring what lib/peer-channel.js already
         // did. Now converges on both flag states -- asserted here rather

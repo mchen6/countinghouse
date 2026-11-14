@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "lean-lockdown-load",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: a handler file that requires a refused built-in while it loads.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:loadService": {
+        "actionList": [
+          {
+            "name": "ping",
+            "description": "Never answers: its file requires a refused built-in while it loads.",
+            "input": {
+              "schema": "/loadService/ping/input"
+            },
+            "output": {
+              "schema": "/loadService/ping/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

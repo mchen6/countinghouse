@@ -453,7 +453,7 @@ to read. A production composition feature would need to address these:
   no balance effect; replaces the removed `CHUtil.recordCall`).
 - `lib/device-manager.js`, `lib/peer-channel-broker.js`,
   `lib/peer-channel.js`, `lib/session.js`, `lib/worker-message.js`,
-  `lib/sandbox.js` — automatic platform metering on both cross-worker call
+  `lib/lean-worker.js` — automatic platform metering on both cross-worker call
   paths (the "billing authority" principle above) and the `platformMetering`
   3rd callback argument that carries it back to a calling module without
   touching `data`.

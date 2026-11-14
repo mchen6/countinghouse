@@ -148,6 +148,25 @@ methods, so it applies on the first call too.
 `ctx` is built by handler-ctx exactly as today: `ctx.call`, `ctx.remote...`,
 `ctx.redis` (a message to the main thread), job progress, `recordUsage`.
 
+*Amended (the high review of #177):* every outbound request the
+implementation makes, `CHUtil.invokeAction`'s included, goes through the
+facade's `request` as the lockdown wrapped it. The facade has no `dm` or `ci`,
+and a service client it hands out holds no reference to the runtime. The
+implementation keeps the worker's state internal: its `dm` and `ci` read as
+undefined in a worker, and it is attached to the worker once, by the facade's
+closure.
+
+What remains, stated as a residual: module code shares its worker's realm.
+Through `require.cache` it reaches the exports of every runtime file the
+worker has loaded: postman-request, `countinghouse-util`'s helpers, and the
+peer channel and handler code. Through the global `MessagePort` prototype it
+sees the messages the runtime sends and can send its own. None of these hand
+it a key, a user name or another module's state, and the main thread checks
+every message it receives (tokens, declarations, grants, the sending worker's
+own devices) as if the worker were hostile. A boundary against a module that
+goes around the facade is the main thread's checks and, under `enforce`, the
+lockdown, not the facade.
+
 ### 4. The module's spec on the main thread; its validation in validator workers
 
 Revised on #152 (the reviewer, 2026-11-13). The first version validated on
