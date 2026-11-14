@@ -394,6 +394,33 @@ source `local`, so it survives a restart while the key changes per
 process. A multi-tenant `--store local` server keeps its secret under
 `<moduleDataPath>`, so moving to the local store changes no user's id.
 
+### The operator's ceiling (guarding settings)
+
+An operator can bound what anyone on the machine may loosen, through a
+conversation or the `ch-local` command, with an optional, machine-wide file:
+`/etc/countinghouse/ceiling.json` on Linux and macOS,
+`%ProgramData%\countinghouse\ceiling.json` on Windows.
+
+```json
+{"version": 1, "maxOutputBytes": 16777216, "requestTimeout": 60000,
+ "forbid": ["moduleSandbox", "autoUpgrade", "packs"], "conversation": false}
+```
+
+Every key but `version` is optional: `maxOutputBytes` and `requestTimeout`
+lower the hard bounds; `forbid` refuses loosening the sandbox, automatic
+upgrades or turning a pack on; `"conversation": false` refuses every
+loosening asked for in conversation. A value above it, or a loosening it
+forbids, is `SETTING_ABOVE_CEILING`. Tightening is never refused by it.
+
+It is trusted only when an ordinary user cannot have written it: on Linux and
+macOS the file is not a symbolic link, and it and every directory up to `/`
+(by real path) are owned by root and not writable by group or others; on
+Windows the directory and the file are owned by, and writable only by,
+Administrators, SYSTEM or TrustedInstaller (by SID). A file that exists and
+fails any check, or holds anything else, **fails closed**: every loosening is
+refused (`SETTING_CEILING_UNTRUSTED`), naming the file and why. No file:
+the hard bounds apply.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.

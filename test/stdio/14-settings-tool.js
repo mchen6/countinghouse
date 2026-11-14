@@ -142,6 +142,34 @@ describe('stdio 14: countinghouse_settings', () => {
       ['maxOutputBytes', 'not confirmed, asked again', 3], ['pack', 'not confirmed, asked again', 2], ['locale', undefined, undefined]]);
   });
 
+  // Part 3, section 4: the operator's ceiling binds conversation too
+  describe('the operator\'s ceiling', () => {
+    const withCeiling = (c) => require('../../lib/settings-tool').create({file, ceiling: () => c});
+    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({forbid: [], conversation: true}, ceiling)});
+
+    it('a ceiling that cannot be trusted refuses every loosening, naming the file and why; tightening still works', async () => {
+      const t = withCeiling({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'the file is not owned by root'});
+      for (const [name, value] of [['maxOutputBytes', '64MiB'], ['autoUpgrade', 'on'], ['moduleSandbox', 'audit']]) {
+        const err = await refused(t.set(name, value), 'SETTING_CEILING_UNTRUSTED');
+        assert.match(err.message, /ceiling file \/etc\/countinghouse\/ceiling\.json cannot be trusted \(the file is not owned by root\)/);
+      }
+      assert.deepStrictEqual(await t.set('requestTimeout', '10s'), {name: 'requestTimeout', old: 30000, new: 10000, applies: 'now'});
+    });
+
+    it('a loosening it forbids, or a value above it: SETTING_ABOVE_CEILING; get shows the lowered bound', async () => {
+      const t = withCeiling(trusted({maxOutputBytes: 16 * MiB, forbid: ['packs', 'autoUpgrade']}));
+      await t.set('maxOutputBytes', '4MiB');
+      assert.match((await refused(t.set('maxOutputBytes', '32MiB'), 'SETTING_ABOVE_CEILING')).message, /maxOutputBytes 32MiB is above the ceiling this machine's operator set \(at most 16MiB\)/);
+      await refused(t.set('maxOutputBytes', '8MiB'), 'SETTING_NEEDS_CONFIRMATION');
+      await t.set('pack.ci-failure-triage', 'off');
+      assert.match((await refused(t.set('pack.ci-failure-triage', 'on'), 'SETTING_ABOVE_CEILING')).message, /not allowed on this machine/);
+      await refused(t.set('autoUpgrade', 'on'), 'SETTING_ABOVE_CEILING');
+      const got = await t.get();
+      assert.strictEqual(got.settings.find((x) => x.name === 'maxOutputBytes').bounds.max, 16 * MiB);
+      assert.ok(history().some((h) => h.change === 'refused, above the ceiling'));
+    });
+  });
+
   it('a change the history cannot record is not made: SETTING_NOT_RECORDED', async () => {
     fs.mkdirSync(path.join(home, 'history.jsonl'));
     await refused(tool.set('locale', 'zh'), 'SETTING_NOT_RECORDED');
