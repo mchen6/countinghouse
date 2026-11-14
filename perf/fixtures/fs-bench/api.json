@@ -1,0 +1,17 @@
+{
+  "device": {
+    "friendlyName": "fs-bench",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "file workloads for perf/fs-broker-workloads.js",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:benchService": {
+        "actionList": [
+          {"name": "smallWrites", "description": "Append many small writes to one descriptor in /data.", "input": {"schema": "/benchService/smallWrites/input"}, "output": {"schema": "/benchService/smallWrites/output"}},
+          {"name": "seedTree", "description": "Make a tree of small files under /data/tree.", "input": {"schema": "/benchService/seedTree/input"}, "output": {"schema": "/benchService/seedTree/output"}},
+          {"name": "walk", "description": "readdir and stat every entry under /data/tree.", "input": {"schema": "/benchService/walk/input"}, "output": {"schema": "/benchService/walk/output"}},
+          {"name": "loaded", "description": "How many dependencies the module required at load.", "input": {"schema": "/benchService/loaded/input"}, "output": {"schema": "/benchService/loaded/output"}}
+        ]
+      }
+    }
+  }
+}
