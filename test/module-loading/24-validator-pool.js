@@ -358,8 +358,8 @@ describe('module-loading 24: the validator pool', function() {
       try {
         const m = moduleWith({type: 'object'}, {}, STALL, p);
         await warmed(p);
-        // a module loaded after the validators warmed: its first call compiles
-        // the action on the call path, so one passing call first
+        // a module loaded after the validators started: its first call
+        // compiles the action on the call path, so one passing call first
         assert.strictEqual(await checkOut(m, [1], p), null);
         assert.strictEqual(codeOf(await checkOut(m, STALLING, p)), 'VALIDATION_TIMEOUT');
         assert.ok(p.cooldown.has(m.key) && p.stalledAt.has(m.key));
