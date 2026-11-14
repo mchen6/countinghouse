@@ -5,7 +5,10 @@
 // module format, the other device was a sibling in the same worker (a
 // dynamic-discovery module with two devices); a module is now one device in
 // its own worker, so the other device is one the channel was never granted:
-// a device of another worker, granted to the key or not.
+// a device of another worker, granted to the key or not. Since lean worker
+// step 4 (the review of #202) a port invoke names no target at all: the
+// caller's announcement to the main thread does, so one posted on the port
+// alone is refused at the callee's match (CALL_TOKEN_INVALID).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -39,7 +42,7 @@ describe('direct peer channels 07: the callee serves only granted devices', func
     const r = await mcpCall(9668, 'forger', 'peer_forge_forgeservice_forge', {appKey: 'forger', granted: dev1, other: dev2});
     const out = toolOutput(r);
     assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r) + server.output.slice(-1500));
-    assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));
+    assert.strictEqual(out.other, 'error: CALL_TOKEN_INVALID', JSON.stringify(out));
   });
 
   // The same channel, now with a key granted both devices: the broker's
@@ -50,6 +53,6 @@ describe('direct peer channels 07: the callee serves only granted devices', func
     const r = await mcpCall(9668, 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev1, other: dev2});
     const out = toolOutput(r);
     assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r));
-    assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));
+    assert.strictEqual(out.other, 'error: CALL_TOKEN_INVALID', JSON.stringify(out));
   });
 });

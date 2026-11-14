@@ -412,16 +412,23 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
 // unit (lib/peer-channel-broker.js; the reviewer's additions of 2026-11-09,
 // and the ruling of 2026-11-13: authorize before serve, bill on success):
 //   - handleAnnouncement(data, fromWM): the caller worker's {channel,
-//     invokeId, token} for one peer invoke, where `channel` is the broker's
-//     pair key `${callerWorkerId}:${calleeWorkerId}`;
+//     invokeId, token, deviceID, serviceID, actionName, epoch, inputBytes}
+//     for one peer invoke, where `channel` is the broker's pair key
+//     `${callerWorkerId}:${calleeWorkerId}`; the target and the bytes are the
+//     caller's, held by the main thread (lean worker step 4, the review of
+//     #202); a refusal goes to fromWM.sendPeerAnnounceRefusedToChild;
 //   - handleMeteringRequest(data, msgID, calleeWM), before the handler, with
-//     data {channel, invokeId, deviceID, serviceID, actionName}: answered
-//     through calleeWM.sendPeerMeteringReplyToChild({msgID, errMsg, errCode,
-//     token}); a refusal has errCode CALL_TOKEN_INVALID and means "do not
-//     serve"; a match carries the callee's own token and bills nothing yet;
-//   - handleBillRequest({token}, msgID, calleeWM), after the handler
-//     succeeded: bills the announced call's caller, once; a token it does
-//     not know is refused;
+//     data {channel, invokeId} (any target the callee adds is ignored):
+//     answered through calleeWM.sendPeerMeteringReplyToChild({msgID, errMsg,
+//     errCode, token, target, inputBytes}); a refusal has errCode
+//     CALL_TOKEN_INVALID and means "do not serve"; a match carries the
+//     callee's own token and the announced target, and bills nothing yet;
+//   - handleBillRequest({token, outputBytes}, msgID, calleeWM), after the
+//     handler succeeded: bills the announced call's caller, once, and
+//     delivers the result to the caller (callerWM.sendPeerResultToChild); a
+//     token it does not know is refused, to the callee and to the caller;
+//   - the module-spec checks are stubbed here (a spec that passes); sandbox
+//     49 runs them for real;
 //   - PEER_ANNOUNCE_WAIT_MS = 1000; 64 held requests per channel at most;
 //   - options.peerChannelAuthLookupTimeoutMs bounds one re-check lookup;
 //   - the balance deduction's deadline is about 500 ms.
@@ -517,12 +524,21 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   });
 
   describe('the broker: announce and match', () => {
-    let broker = null, caller = null, callee = null, billed = null, savedCi = null;
-    const wm = (workerId) => ({workerId: workerId, ended: null, replies: [], sendPeerMeteringReplyToChild(m) { this.replies.push(m); }});
+    let broker = null, caller = null, callee = null, billed = null, savedCi = null, savedSpec = null;
+    const moduleSpec = require('../../lib/module-spec');
+    const {serialize, toArrayBuffer, decode} = require('../../lib/serialized-result');
+    const bytes = (v) => toArrayBuffer(serialize(v));
+    const wm = (workerId) => ({workerId: workerId, ended: null, replies: [], refusals: [], results: [], moduleSpec: {},
+      sendPeerMeteringReplyToChild(m) { this.replies.push(m); },
+      sendPeerAnnounceRefusedToChild(m) { this.refusals.push(m); },
+      sendPeerResultToChild(m) { this.results.push(m); }});
     const pair = () => `${caller.workerId}:${callee.workerId}`;
-    const meter = (invokeId, msgID) => broker.handleMeteringRequest({channel: pair(), invokeId: invokeId, deviceID: 'd-callee', serviceID: 'svc', actionName: 'bump'}, msgID, callee);
-    const announce = (invokeId, token, from) => broker.handleAnnouncement({channel: pair(), invokeId: invokeId, token: token}, from || caller);
-    const bill = (token, msgID) => broker.handleBillRequest({token: token}, msgID, callee);
+    const EPOCH = 'e1';
+    const TARGET = {deviceID: 'd-callee', serviceID: 'svc', actionName: 'bump'};
+    const meter = (invokeId, msgID) => broker.handleMeteringRequest({channel: pair(), invokeId: invokeId}, msgID, callee);
+    const announce = (invokeId, token, from, target) => broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: invokeId, token: token, epoch: EPOCH,
+      inputBytes: bytes({input: {}})}, target || TARGET), from || caller);
+    const bill = (token, msgID) => broker.handleBillRequest({token: token, outputBytes: bytes({output: {ok: true}})}, msgID, callee);
     const replyTo = (msgID) => callee.replies.find((r) => r.msgID === msgID);
     const refused = (r) => r != null && r.errCode === 'CALL_TOKEN_INVALID';
     const served = (msgID) => { const r = replyTo(msgID); return r != null && !refused(r) && typeof(r.token) === 'string'; };
@@ -538,10 +554,15 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       // the calling module (its token's device, d-callee in ENTRY) declared
       // bump on the devices these cases invoke (R2-1 Task 4)
       caller.bindings = {'d-callee': {identity: null, module: 'token-forge', targets: new Set(['d-callee|svc|bump', 'd-other|svc|bump'])}};
-      broker = new PeerChannelBroker({deviceMap: {}});
+      broker = new PeerChannelBroker({deviceMap: {'d-callee': callee}});
       broker.channelRegistry[pair()] = {callerWM: caller, calleeWM: callee, grants: {}};
+      // a spec held for every worker here, which passes what it is given
+      // (the stalls, refusals and caps of the real checks: sandbox 49)
+      savedSpec = {checkInput: moduleSpec.checkInput, validateSerialized: moduleSpec.validateSerialized};
+      moduleSpec.checkInput = (own, deviceID, serviceID, actionName) => (own == null ? null : {key: 'k', serviceID: serviceID, actionName: actionName});
+      moduleSpec.validateSerialized = (checked, which, buffer) => Promise.resolve({refused: null, buffer: buffer});
     });
-    afterEach(() => { CHUtil.ci = savedCi; });
+    afterEach(() => { CHUtil.ci = savedCi; Object.assign(moduleSpec, savedSpec); });
 
     it('a metering request matched by its announcement is served with the callee\'s own token; the bill request then bills the token\'s caller, once', async () => {
       const e = ENTRY(caller.workerId);
@@ -791,13 +812,100 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
 
     // Task 4's review: the main thread checks the invoke's action against the
     // caller's declarations at the match too, not only the callee worker.
-    it('(T4-review) a metering request for an action the caller did not declare is refused CTX_CALL_UNDECLARED', async () => {
-      announce(30, tokens().issue(ENTRY(caller.workerId)));
-      broker.handleMeteringRequest({channel: pair(), invokeId: 30, deviceID: 'd-callee', serviceID: 'svc', actionName: 'tick'}, 'm30', callee);
-      await sleep(50);
-      const r = replyTo('m30');
-      assert.ok(r != null && r.errCode === 'CTX_CALL_UNDECLARED' && typeof(r.token) !== 'string', JSON.stringify(r));
+    it('(T4-review) an announcement for an action the caller did not declare is refused CTX_CALL_UNDECLARED, and nothing matches it', async () => {
+      announce(30, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-callee', serviceID: 'svc', actionName: 'tick'});
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode, r.epoch]), [[30, 'CTX_CALL_UNDECLARED', EPOCH]]);
+      meter(30, 'm30');
+      await sleep(1100);
+      assert.ok(refused(replyTo('m30')), JSON.stringify(replyTo('m30')));
       assert.strictEqual(broker.unbilled.size, 0);
+    });
+
+    // The review of #202 (1): the target is the caller's statement, checked
+    // when it is announced; the callee's spec must be held, or nothing runs.
+    it('(#202-1) an announcement naming its target in other than strings, or a device the channel\'s callee does not host, is refused; nothing is held', () => {
+      announce(40, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: ['d-callee'], serviceID: 'svc', actionName: 'bump'});
+      // declared, but hosted by no worker, then by a worker not this channel's callee
+      announce(41, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'});
+      broker.dm.deviceMap['d-other'] = wm(15);
+      announce(42, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'});
+      // undeclared: refused by the declarations first, as on the routed path
+      announce(43, tokens().issue(ENTRY(caller.workerId)), caller, {deviceID: 'd-elsewhere', serviceID: 'svc', actionName: 'bump'});
+      assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]),
+        [[40, 'DEVICE_INVOKE_EXCEPTION'], [41, 'PEER_NOT_GRANTED'], [42, 'PEER_NOT_GRANTED'], [43, 'CTX_CALL_UNDECLARED']]);
+      assert.strictEqual(broker.announced.size, 0);
+      assert.strictEqual(broker.announcedBytes, 0);
+    });
+
+    it('(#202-1) a callee whose spec the main thread does not hold is refused: no token, nothing run, nothing billed', async () => {
+      callee.moduleSpec = null;
+      announce(49, tokens().issue(ENTRY(caller.workerId)));
+      meter(49, 'm49');
+      await sleep(50);
+      const r = replyTo('m49');
+      assert.ok(r != null && r.errCode === 'DEVICE_INVOKE_EXCEPTION' && typeof(r.token) !== 'string', JSON.stringify(r));
+      assert.strictEqual(broker.unbilled.size, 0);
+      assert.deepStrictEqual(billed, []);
+    });
+
+    // (2): the callee cannot restate the action, nor swap the input bytes.
+    it('(#202-2) the match hands the callee the caller\'s target and bytes; a target or bytes in its request are ignored', async () => {
+      const seen = [];
+      moduleSpec.checkInput = (own, deviceID, serviceID, actionName) => { seen.push(`${deviceID}|${serviceID}|${actionName}`); return {key: 'k', serviceID, actionName}; };
+      const e = ENTRY(caller.workerId);
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 44, token: tokens().issue(e), epoch: EPOCH, inputBytes: bytes({input: {v: 'caller'}})}, TARGET), caller);
+      broker.handleMeteringRequest({channel: pair(), invokeId: 44, deviceID: 'd-callee', serviceID: 'svc', actionName: 'loose', inputBytes: bytes({input: {v: 'callee'}})}, 'm44', callee);
+      await sleep(50);
+      const r = replyTo('m44');
+      assert.ok(served('m44'), JSON.stringify(r));
+      assert.deepStrictEqual(r.target, TARGET);
+      assert.deepStrictEqual(decode(r.inputBytes), {input: {v: 'caller'}});
+      assert.deepStrictEqual(seen, ['d-callee|svc|bump'], 'checked against the callee\'s target');
+      bill(r.token, 'b44');
+      await sleep(50);
+      assert.deepStrictEqual(billed, [e.billingKey]);
+    });
+
+    // (3): what the match's awaits may have changed is checked again.
+    it('(#202-3) a channel revoked, or the deadline passed, while the input is checked: no token, nothing billed', async () => {
+      moduleSpec.validateSerialized = (checked, which, buffer) => new Promise((resolve) => setTimeout(() => resolve({refused: null, buffer: buffer}), 80));
+      announce(45, tokens().issue(ENTRY(caller.workerId)));
+      meter(45, 'm45');
+      await sleep(20);
+      const entry = broker.channelRegistry[pair()];
+      delete broker.channelRegistry[pair()];
+      await sleep(120);
+      assert.ok(refused(replyTo('m45')), `served after its channel went: ${JSON.stringify(replyTo('m45'))}`);
+      broker.channelRegistry[pair()] = entry;
+
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, requestTimeout: 0.06});
+      announce(46, tokens().issue(ENTRY(caller.workerId)));
+      meter(46, 'm46');
+      await sleep(150);
+      const r = replyTo('m46');
+      assert.ok(r != null && r.errCode === 'PEER_CHANNEL_TIMEOUT' && typeof(r.token) !== 'string', JSON.stringify(r));
+      assert.strictEqual(broker.unbilled.size, 0);
+      assert.deepStrictEqual(billed, []);
+    });
+
+    it('(#202-3) the result is delivered to the caller with the grant\'s epoch', async () => {
+      announce(47, tokens().issue(ENTRY(caller.workerId)));
+      meter(47, 'm47');
+      await sleep(50);
+      bill(replyTo('m47').token, 'b47');
+      await sleep(50);
+      assert.deepStrictEqual(caller.results.map((m) => [m.invokeId, m.epoch, decode(m.dataBuffer)]), [[47, EPOCH, {output: {ok: true}}]]);
+    });
+
+    // (4): a bill refused answers the caller too, so its slot is freed.
+    it('(#202-4) a bill the broker cannot match is refused to the callee and answered to the caller, for this grant', async () => {
+      announce(48, tokens().issue(ENTRY(caller.workerId)));
+      broker.handleBillRequest({token: `made-up-${hex()}`, channel: pair(), invokeId: 48, outputBytes: bytes({output: 1})}, 'b48', callee);
+      assert.ok(refused(replyTo('b48')), JSON.stringify(replyTo('b48')));
+      assert.deepStrictEqual(caller.results.map((m) => [m.invokeId, m.epoch, m.errCode]), [[48, EPOCH, 'CALL_TOKEN_INVALID']]);
+      // from a worker that is not the channel's callee: the caller is not told
+      broker.handleBillRequest({token: `made-up-${hex()}`, channel: pair(), invokeId: 48}, 'b48-other', wm(16));
+      assert.strictEqual(caller.results.length, 1);
     });
 
     // #141 N1: the announcement's time is the deadline's start, and a module
@@ -883,6 +991,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       announce(1000, first);
       meter(1000, 'm1000');
       for (let i = 1; i < cap; i++) { announce(1000 + i, tokens().issue(e)); meter(1000 + i, `m${1000 + i}`); }
+      await sleep(100);
       assert.ok(served('m1000') && served(`m${1000 + cap - 1}`), 'the matches under the cap were not served');
       announce(1000 + cap, tokens().issue(e));
       meter(1000 + cap, 'm-over');
@@ -905,8 +1014,10 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       // a second channel is not bounded by the first's
       const other = wm(14);
       broker.channelRegistry[`${caller.workerId}:${other.workerId}`] = {callerWM: caller, calleeWM: other, grants: {}};
-      broker.handleAnnouncement({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, token: tokens().issue(e)}, caller);
-      broker.handleMeteringRequest({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, deviceID: 'd-other', serviceID: 'svc', actionName: 'bump'}, 'm-other', other);
+      broker.dm.deviceMap['d-other'] = other;
+      broker.handleAnnouncement({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1, token: tokens().issue(e), epoch: EPOCH,
+        deviceID: 'd-other', serviceID: 'svc', actionName: 'bump', inputBytes: bytes({input: {}})}, caller);
+      broker.handleMeteringRequest({channel: `${caller.workerId}:${other.workerId}`, invokeId: 1}, 'm-other', other);
       await sleep(50);
       const r = other.replies.find((x) => x.msgID === 'm-other');
       assert.ok(r != null && !refused(r) && typeof(r.token) === 'string', `the other channel was refused: ${JSON.stringify(r)}`);
