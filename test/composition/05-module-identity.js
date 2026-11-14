@@ -15,7 +15,7 @@ require('../../lib/cli-options').setOptions({workerThread: false});
 // The file provider warns at load about a key that doubles as its user name
 // (LOG.W), and every LOG call needs the logger framework.js creates at
 // startup. Run alone, nothing else in this process has created it; created
-// here the way composition/01 and lib/sandbox.js do.
+// here the way composition/01 and lib/lean-worker.js do.
 require('../../lib/logger').createLogger(false);
 const FileAuthProvider = require('../../lib/auth/file-provider');
 

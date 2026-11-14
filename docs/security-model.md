@@ -17,7 +17,7 @@ below). There is no attempt to run modules from parties the platform
 operator hasn't reviewed.
 
 Since 8.0.0 each module runs inside its own `worker_threads.Worker` by
-default (`lib/sandbox.js`, spawned from `lib/module-manager.js`'s
+default (`lib/lean-worker.js`, spawned from `lib/module-manager.js`'s
 `loadModuleByWorker`). `--no-workerThread` runs modules in the main thread
 instead; that mode is for debugging modules and has no sandbox at all
 ([single-thread mode](#single-thread-mode-has-no-sandbox)). A worker gives:
@@ -163,7 +163,7 @@ like stay usable until parts 3 and 4; the first `require` of each is logged
 
 **2. The file broker and the virtual namespace** (`lib/fs-broker/`). Before
 any countinghouse or dependency code loads, the first statements of
-`lib/sandbox.js` replace every method of the worker's `fs`, `fs/promises`
+`lib/lean-worker.js` replace every method of the worker's `fs`, `fs/promises`
 and `FileHandle.prototype` with locked versions that send each call to the
 main thread. There one broker per module checks it and runs it with Node's
 async `fs`. Synchronous calls wait on shared memory; the main thread never
@@ -479,7 +479,7 @@ and the short list of what the in-process sandbox cannot give.
   stalling, with a backlog of messages ahead of the reply, can still make a
   healthy worker look blocked under a small `maxBlockMs`, and it is then
   terminated and restarted.
-- **Uncaught exceptions in a worker do not end it.** `lib/sandbox.js` catches
+- **Uncaught exceptions in a worker do not end it.** `lib/lean-worker.js` catches
   and logs them, as it always has. The restart policy applies to workers
   that actually end: `process.exit`, the heap limit, kills by the external
   memory or blocked-loop limits, and worker errors.

@@ -141,7 +141,6 @@ one) as well as the ports it binds.
 | `test/sandbox/24-codes-after-worker-end.js` | 9613–9615 |
 | `test/sandbox/25-jobs-wait-through-reload.js` | 9621–9623 |
 | `test/sandbox/26-job-timeout.js` | 9624–9625, 9627 |
-| `test/sandbox/27-reload-during-discovery-bound.js` | 9637 |
 | `test/sandbox/28-crash-during-restart-discovery.js` | 9638 |
 | `test/sandbox/29-link-to-module-parent.js` | 9650 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |

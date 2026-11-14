@@ -1,4 +1,4 @@
-// A worker's options are the main thread's (lib/sandbox.js, set-options), and
+// A worker's options are the main thread's (lib/lean-worker.js, set-options), and
 // getOptions() hands them over with its durations already in milliseconds,
 // which setOptions then reads as seconds again. ctx.call's composition wait is
 // bounded under the request timer (test/composition/19), so a worker needs the

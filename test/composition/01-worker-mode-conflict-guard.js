@@ -1,4 +1,6 @@
-// Exercises DeviceManager.prototype.onWorkerLoaded's 'deviceonline' handler
+// Exercises DeviceManager.prototype.registerFromSpec (what a worker's load
+// acknowledgement registers, from the main thread's own spec; it was the
+// worker's 'deviceonline' handler until lean worker step 3, Task 4)
 // directly, in-process, with no real worker thread.
 //
 // This is a separate file from 00-duplicate-device-id.js on purpose: that
@@ -11,17 +13,11 @@
 // conflictingModulePath() in isolation. A prior round deleted both of that
 // function's call sites from device-manager.js entirely and the whole test
 // suite still passed, because nothing exercised the call sites themselves.
-// This file closes that hole for the worker-mode call site by driving the
-// real handler wired in onWorkerLoaded.
-//
-// lib/worker-message.js's WorkerMessage is a plain EventEmitter
-// (util.inherits) and the real deviceonline event is emitted internally as
-// `this.emit('deviceonline', msg, this)`. So the handler can be triggered
-// the same way here with `wm.emit('deviceonline', {data: {...}}, wm)` on a
-// `new WorkerMessage(null)` -- no worker_threads Worker required. The
-// conflict branch returns before any redis code runs, and the non-conflict
-// branch doesn't touch redis (the per-device rate limiter it once set up
-// from a spec's rateLimit is retired) -- so no network is needed either way.
+// This file closes that hole for the worker-mode call site by driving
+// registerFromSpec on a `new WorkerMessage(null)` -- no worker_threads Worker
+// required. The conflict branch returns before any redis code runs, and the
+// non-conflict branch doesn't touch redis -- so no network is needed either
+// way.
 const assert = require('assert');
 
 // lib/device-manager.js (transitively, via lib/oauth/oauth.js and
@@ -36,7 +32,7 @@ require('../../lib/cli-options').setOptions({workerThread: false});
 
 // Likewise, the conflict branch under test logs via LOG.E(), which calls
 // into a bunyan logger that only exists after LOG.createLogger() runs --
-// normally done once by framework.js at startup. lib/sandbox.js hits this
+// normally done once by framework.js at startup. lib/lean-worker.js hits this
 // same gap and fixes it the same way (LOG.createLogger(false) at require
 // time), so this mirrors an existing pattern rather than inventing one.
 const LOG = require('../../lib/logger');
@@ -50,9 +46,14 @@ const moduleSpec = require('../../lib/module-spec');
 // device is registered only when it matches, and then as that copy. Each
 // worker here announces exactly its own spec, so the handler reaches the
 // branches under test.
-async function workerWithSpec(friendlyName) {
+// A worker whose load was acknowledged: the main thread's own spec, module
+// name, host path and pinned package.json are what registerFromSpec reads.
+async function workerWithSpec(friendlyName, moduleName, modulePath) {
   const wm = new WorkerMessage(null);
   wm.moduleSpec = await moduleSpec.fromParts({device: {friendlyName: friendlyName}}, null);
+  wm.hostModuleName = moduleName;
+  wm.hostModulePath = modulePath;
+  wm.hostPackageInfo = {name: moduleName};
   return wm;
 }
 
@@ -62,28 +63,16 @@ function stubModuleManager() {
   return {on: () => {}};
 }
 
-function emitDeviceOnline(wm, data) {
-  wm.emit('deviceonline', {data: data}, wm);
-}
-
-describe('worker-mode deviceonline handler: conflict guard', () => {
+describe('worker-mode registration from the main thread\'s spec: conflict guard', () => {
   it('a refused (conflicting) registration mutates nothing on the WorkerMessage or deviceMap', async () => {
     const deviceManager = new DeviceManager(stubModuleManager());
-    const wm = await workerWithSpec('colliding-name');
+    const wm = await workerWithSpec('colliding-name', 'incoming-module', '/modules/incoming');
 
     const deviceID = wm.moduleSpec.deviceID;
     const existingEntry = {modulePath: '/modules/holder'};
     deviceManager.deviceMap[deviceID] = existingEntry;
 
-    deviceManager.onWorkerLoaded(wm);
-
-    emitDeviceOnline(wm, {
-      deviceID: deviceID,
-      spec: JSON.parse(wm.moduleSpec.specText),
-      moduleName: 'incoming-module',
-      packageInfo: {name: 'incoming-module'},
-      modulePath: '/modules/incoming'
-    });
+    assert.strictEqual(deviceManager.registerFromSpec(wm), false);
 
     // Nothing on wm was touched -- these are all still constructor defaults.
     assert.strictEqual(wm.moduleName, null);
@@ -98,19 +87,11 @@ describe('worker-mode deviceonline handler: conflict guard', () => {
 
   it('a non-conflicting registration completes normally', async () => {
     const deviceManager = new DeviceManager(stubModuleManager());
-    const wm = await workerWithSpec('unique-name');
+    const wm = await workerWithSpec('unique-name', 'a-module', '/modules/a');
 
     const deviceID = wm.moduleSpec.deviceID;
 
-    deviceManager.onWorkerLoaded(wm);
-
-    emitDeviceOnline(wm, {
-      deviceID: deviceID,
-      spec: JSON.parse(wm.moduleSpec.specText),
-      moduleName: 'a-module',
-      packageInfo: {name: 'a-module'},
-      modulePath: '/modules/a'
-    });
+    assert.strictEqual(deviceManager.registerFromSpec(wm), true);
 
     assert.strictEqual(wm.moduleName, 'a-module');
     assert.deepStrictEqual(wm.packageInfo, {name: 'a-module'});

@@ -300,60 +300,73 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
     });
   });
 
-  describe('the device a worker announces', () => {
+  // Lean worker step 3, Task 4: a worker's device is registered from the
+  // main thread's own copy of its spec once the worker has loaded
+  // (DeviceManager's registerFromSpec); the worker announces nothing.
+  describe('the device registered from the main thread\'s spec', () => {
     let DeviceManager = null;
     const LOG = require('../../lib/logger');
     let logE = null;
+    let logI = null;
     const logged = [];
     before(() => {
       DeviceManager = require('../../lib/device-manager');
       logE = LOG.E;
+      logI = LOG.I;
       LOG.E = (e) => { logged.push(String(e && e.message)); return e; };
+      LOG.I = () => {};
     });
-    after(() => { LOG.E = logE; });
+    after(() => { LOG.E = logE; LOG.I = logI; });
     beforeEach(() => { logged.length = 0; });
 
-    function announce(wmSpec, deviceID, spec) {
+    function worker(wmSpec, extra) {
       const wm = new EventEmitter();
       wm.deviceList = {};
       wm.moduleSpec = wmSpec;
+      wm.hostModuleName = 'main-checked';
+      Object.assign(wm, extra || {});
       const dm = {deviceMap: {}, allDevicesLoaded: true, notifyDeviceLoad: {}, toolsetChanged: () => {},
         moduleManager: {modules: {'main-checked': wm}, clearEndedDevice: () => {}}};
-      DeviceManager.prototype.onWorkerLoaded.call(dm, wm);
-      wm.emit('deviceonline', {data: {deviceID: deviceID, moduleName: 'main-checked', packageInfo: {name: 'main-checked'},
-        spec: spec, modulePath: '/app'}}, wm);
       return {dm, wm};
     }
-    const notRegistered = 'module: main-checked: its worker announced a device that does not match its api.json as the main thread read it; not registered';
 
-    it('exactly its spec: registered, as the main thread\'s own copy', () => {
-      const announced = JSON.parse(own.specText);
-      const {dm, wm} = announce(own, own.deviceID, announced);
+    it('registered as the main thread\'s own copy, under its own device ID', () => {
+      const {dm, wm} = worker(own);
+      assert.strictEqual(DeviceManager.prototype.registerFromSpec.call(dm, wm), true);
       assert.strictEqual(dm.deviceMap[own.deviceID], wm);
       assert.strictEqual(wm.deviceList[own.deviceID], own.spec);
+      assert.strictEqual(wm.moduleName, 'main-checked');
       assert.deepStrictEqual(logged, []);
     });
 
-    it('a spec changed in the worker: not registered', () => {
-      const announced = JSON.parse(own.specText);
-      delete announced.device.serviceList[SERVICE].actionList[0].output;
-      const {dm, wm} = announce(own, own.deviceID, announced);
+    it('nothing a worker states is taken: a deviceonline it sends registers nothing', () => {
+      const {dm, wm} = worker(own);
+      DeviceManager.prototype.onWorkerLoaded.call(dm, wm);
+      wm.emit('deviceonline', {data: {deviceID: own.deviceID, moduleName: 'main-checked', packageInfo: {name: 'main-checked'},
+        spec: JSON.parse(own.specText), modulePath: '/app'}}, wm);
       assert.deepStrictEqual(dm.deviceMap, {});
       assert.deepStrictEqual(wm.deviceList, {});
-      assert.deepStrictEqual(DeviceManager.prototype.getAllDeviceSpecs.call(dm), {}, 'not listed either');
-      assert.deepStrictEqual(logged, [notRegistered]);
     });
 
-    it('another device ID: not registered', () => {
-      const {dm} = announce(own, 'another-device', JSON.parse(own.specText));
-      assert.deepStrictEqual(dm.deviceMap, {});
-      assert.deepStrictEqual(logged, [notRegistered]);
+    it('a worker with no main-thread spec, or one that could not be read: not registered', () => {
+      for (const missing of [undefined, {error: 'api.json: unreadable'}]) {
+        const {dm, wm} = worker(missing);
+        assert.strictEqual(DeviceManager.prototype.registerFromSpec.call(dm, wm), false);
+        assert.deepStrictEqual(dm.deviceMap, {});
+        assert.deepStrictEqual(DeviceManager.prototype.getAllDeviceSpecs.call(dm), {}, 'not listed either');
+      }
     });
 
-    it('a worker with no main-thread spec: not registered', () => {
-      const {dm} = announce(undefined, own.deviceID, JSON.parse(own.specText));
+    it('a worker that is going (being unloaded, ended, or replaced): not registered', () => {
+      for (const going of [{unloading: true}, {ended: {code: 'MODULE_UNLOADED'}}]) {
+        const {dm, wm} = worker(own, going);
+        assert.strictEqual(DeviceManager.prototype.registerFromSpec.call(dm, wm), false);
+        assert.deepStrictEqual(dm.deviceMap, {});
+      }
+      const {dm, wm} = worker(own);
+      dm.moduleManager.modules['main-checked'] = new EventEmitter();
+      assert.strictEqual(DeviceManager.prototype.registerFromSpec.call(dm, wm), false);
       assert.deepStrictEqual(dm.deviceMap, {});
-      assert.deepStrictEqual(logged, [notRegistered]);
     });
   });
 });
