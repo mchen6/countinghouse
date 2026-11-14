@@ -214,6 +214,19 @@ describe('module-loading 24: the validator pool', function() {
   // against its caller only; a module's share counts ready validators; one
   // caller has one validation in flight; a replacement starts at once and
   // warms off the call path; a call never waits past its own deadline.
+  it('a load\'s safety check and warm compile wait for the validators to boot: their budget runs from when one starts them', async () => {
+    // a fresh pool, asked at once (its workers still booting), with a
+    // budget shorter than a boot
+    const p = newPool({compileMs: 50});
+    try {
+      const m = moduleWith({type: 'object'}, {}, {type: 'object'}, p);
+      assert.strictEqual(await p.safety(m.key), null);
+      assert.strictEqual(await p.warm(m.key), null);
+    } finally {
+      p.close();
+    }
+  });
+
   describe('callers, floods and replacements', () => {
     const checkFrom = (p, m, input, caller) => p.check(m.key, SERVICE, 'a', 'input', {input: input}, caller);
     const p90 = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length * 0.9)]; };
