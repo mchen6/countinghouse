@@ -204,7 +204,11 @@ async function main(argv) {
 }
 
 const argsFile = path.join(__dirname, 'lean-worker-perf.args.json');
-if (typeof(describe) === 'function' && typeof(it) === 'function') {
+// Its own suite only when mocha loads this file directly
+// (scripts/run-in-docker.js); a test that requires it
+// (test/module-loading/28) calls main itself.
+const loadedByMocha = module.parent != null && /[\\/]mocha[\\/]/.test(String(module.parent.filename));
+if (typeof(describe) === 'function' && typeof(it) === 'function' && loadedByMocha) {
   describe('perf: lean-worker-perf', function() {
     this.timeout(0);
     it('measures', async () => {
@@ -215,4 +219,4 @@ if (typeof(describe) === 'function' && typeof(it) === 'function') {
   main(process.argv.slice(2)).catch((e) => { process.stderr.write(`${e.message}\n`); process.exit(1); });
 }
 
-module.exports = {parseArgs, slope, median};
+module.exports = {main, parseArgs, slope, median};

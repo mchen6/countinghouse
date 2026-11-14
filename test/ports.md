@@ -111,6 +111,7 @@ one) as well as the ports it binds.
 | `test/module-loading/14-lifecycle.js` | 9634 |
 | `test/module-loading/15-reload-scenarios.js` | 9606 |
 | `test/module-loading/16-failed-reload-ends-worker.js` | 9632 |
+| `test/module-loading/28-lean-perf-harness.js` (perf/lean-worker-perf.js) | 9752 |
 | `test/remote/01-declaration.js` | 9688 |
 | `test/remote/02-credentials.js` | 9688–9689 |
 | `test/remote/03-client.js` | 9686–9687 |
