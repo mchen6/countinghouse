@@ -81,6 +81,8 @@ describe('store 05: --store local with no Redis (LM1 B5)', function() {
     });
     server.output.includes('NO-REDIS-TRAP') && assert.fail(server.output.slice(-2000));
     const kv = JSON.parse(fs.readFileSync(path.join(storePath, 'kv.json'), 'utf8'));
-    assert.strictEqual(kv.k.v, 'kept');
+    // stored in the module's namespace (#164): m:<module name>:<key>
+    assert.strictEqual(kv['m:local-store-probe:k'].v, 'kept');
+    assert.strictEqual(kv.k, undefined);
   });
 });
