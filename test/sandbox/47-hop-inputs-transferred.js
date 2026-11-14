@@ -45,8 +45,49 @@ describe('sandbox 47: lib/hop-input.js, server-free', () => {
     assert.strictEqual(err.message, `m/a: its input is ${n} bytes, over the ${n - 1}-byte limit (--maxOutputBytes), so the call was refused`);
   });
 
+  it('a post to the callee that throws leaves no reply waiting, so the worker\'s end never answers the hop again', () => {
+    const WorkerMessage = require('../../lib/worker-message');
+    const fake = {postMessage: () => { throw new Error('DataCloneError'); }, on: () => {}, once: () => {}, threadId: 99};
+    const wm = new WorkerMessage(fake);
+    const {args} = hopInput.encode({input: {s: 'x'}});
+    assert.throws(() => wm.sendInvokeActionMessage({deviceID: 'd', serviceID: 's', actionName: 'a', args: args, serializedReply: true}, () => assert.fail('never answered')), /DataCloneError/);
+    assert.deepStrictEqual(Object.keys(wm.msgQueue), []);
+    assert.strictEqual(wm.bytesExpected.size, 0);
+  });
+
   it('bytes that cannot be read are DEVICE_INVOKE_EXCEPTION naming the input, never a crash', () => {
     assert.throws(() => hopInput.decodeArgs({inputBytes: new Uint8Array([1, 2, 3]).buffer}), (e) => e.code === 'DEVICE_INVOKE_EXCEPTION' && /a hop's input could not be read/.test(e.message));
+  });
+});
+
+describe('sandbox 47: a validator\'s answer to input bytes it cannot read, server-free', function() {
+  this.timeout(60000);
+  const SERVICE = 'urn:countinghouse-test:serviceID:s';
+  let pool = null;
+  let wasWorkerThread;
+  before(async () => {
+    const options = require('../../lib/cli-options');
+    wasWorkerThread = options.workerThread;
+    options.setOptions({workerThread: true});
+    const {ValidatorPool} = require('../../lib/validator-pool');
+    pool = new ValidatorPool({size: 1, timeoutMs: 5000, compileMs: 5000, workerOptions: options.getOptionsForWorker()});
+    const api = {device: {friendlyName: 'bytes-module', serviceList: {[SERVICE]: {actionList: [{name: 'a', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}};
+    pool.register('bytes-module#1', 'bytes-module', JSON.stringify(api), JSON.stringify({$id: '#/', s: {a: {input: {type: 'object'}, output: {type: 'object'}}}}));
+    for (let w = 0; !pool.slots.every((x) => x.ready) && w < 30000; w += 20) await new Promise((r) => setTimeout(r, 20));
+  });
+  after(() => {
+    if (pool != null) pool.close();
+    require('../../lib/cli-options').setOptions({workerThread: wasWorkerThread});
+  });
+
+  it('an input says the input (the review of #185); an output keeps the result\'s wording', async () => {
+    const garbage = () => new Uint8Array([1, 2, 3]).buffer;
+    const input = await pool.checkSerialized('bytes-module#1', SERVICE, 'a', 'input', garbage());
+    assert.strictEqual(input.refused[0].code, 'DEVICE_INVOKE_EXCEPTION');
+    assert.match(input.refused[0].message, /a hop's input could not be read/);
+    const output = await pool.checkSerialized('bytes-module#1', SERVICE, 'a', 'output', garbage());
+    assert.strictEqual(output.refused[0].code, 'DEVICE_INVOKE_EXCEPTION');
+    assert.doesNotMatch(output.refused[0].message, /input/);
   });
 });
 
