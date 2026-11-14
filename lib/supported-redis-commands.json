@@ -19,7 +19,5 @@
   "zrange",
   "zrem",
   "zlen",
-  "zrange",
-  "multi",
-  "exec"
+  "zrange"
 ]
