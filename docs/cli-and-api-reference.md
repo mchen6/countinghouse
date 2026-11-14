@@ -128,10 +128,14 @@ is how a suspended module is brought back. A `path` that does not exist is
 refused with `INVALID_MODULE_PATH` before anything is unloaded.
 
 **`POST /uninstall-module`** takes `{name, keepData}` and answers
-`{uninstalled: true, name, dataDeleted, registryEntryRemoved}`. It removes
-the module's registry entry (when the server uses the registry, that is when
-no `--loadModule` is given), then deletes `<moduleDataPath>/<name>` unless
-`keepData` is `true`, never following links. It never removes the module's
+`{uninstalled: true, name, dataDeleted, keysDeleted, registryEntryRemoved}`.
+It removes the module's registry entry (when the server uses the registry,
+that is when no `--loadModule` is given), then, unless `keepData` is `true`,
+deletes the module's `ctx.redis` keys (every key under its
+`m:<name, URI-encoded>:` namespace; `keysDeleted` says how many, `null`
+with `keepData`) and
+`<moduleDataPath>/<name>`, never following links. A reload or an upgrade
+keeps both. It never removes the module's
 code under `--modulePath`. Errors:
 
 | Code | When |
@@ -139,6 +143,7 @@ code under `--modulePath`. Errors:
 | `MODULE_NAME_INVALID` | `name` is not a valid npm package name |
 | `MODULE_LOADED` | the module is loaded, restarting or suspended: unload it first |
 | `REMOVE_MODULE_INFO_FAIL` | the registry entry could not be removed; nothing was deleted |
+| `MODULE_KEYS_NOT_PURGED` | the module's keys could not be deleted (the store did not answer within 30 s); its data directory was kept, its registry entry already removed |
 | `MODULE_DATA_NOT_DIRECTORY` | the data directory is a link or a file; it is left alone, remove it by hand |
 
 Every device-scoped route above (everything under `/devices/:deviceID/...`)
