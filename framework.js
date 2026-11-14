@@ -67,6 +67,12 @@ if (options.remoteLimitInvalid != null) {
     JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// Lean worker step 1(b): the validator pool's size and deadline.
+if (options.validatorLimitInvalid != null) {
+  console.error('--' + options.validatorLimitInvalid.name + ' must be ' + options.validatorLimitInvalid.what + ' (got ' +
+    JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
+  process.exit(2);
+}
 // --remoteOriginMap moves where a credential goes, so it is honoured only
 // with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a
 // module never sees: every COUNTINGHOUSE_* is withheld), checked whole here,

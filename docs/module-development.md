@@ -220,10 +220,14 @@ Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
 pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
 
-Every call's input and output is validated on the server's main thread,
-which all modules share, so a module whose `schema.json` could stall or
-exhaust it is refused at load (`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`,
-naming the schema path):
+Every call's input and output is validated in one of the server's
+validator workers, which all modules share. Validation has a deadline
+(`--validationTimeoutMs`, 1000 ms by default, your module's first compile
+included): past it the call is refused `VALIDATION_TIMEOUT`, and after three
+such refusals in five minutes your module's calls are refused
+`VALIDATION_QUARANTINED` until it is reloaded. Keep patterns simple and
+schemas small. A `schema.json` that is plainly unsafe is refused at load
+(`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the schema path):
 
 - `schema.json` larger than 1 MB;
 - a regular expression (`pattern`, a `patternProperties` key, a
@@ -790,10 +794,12 @@ earlier error on the device was recorded, and the message quotes it.
 
 ### 4. The log says `MODULE_ASSEMBLY_FAIL` with `stage=schemaSafety`
 
-Your `schema.json` is one the main thread will not validate with: too
-large, a pattern that can backtrack catastrophically, or `$ref`s that expand
-too far or refer to themselves. The message names the schema path; see
-[`schema.json`](#schemajson) for the limits.
+Your `schema.json` is one the validators will not compile: too large, a
+pattern that can backtrack catastrophically, or `$ref`s that expand too far,
+refer to themselves or name no place in the file. The message names the
+schema path; see [`schema.json`](#schemajson) for the limits. A call refused
+`VALIDATION_TIMEOUT` or `VALIDATION_QUARANTINED` means a schema that passed
+these checks still takes too long to compile or to validate a value.
 
 ### 5. The log says `LOAD_MODULE_FAIL`
 

@@ -1,6 +1,8 @@
-// A module's input and output are checked on the main thread, in code the
-// module cannot reach (lean worker, step 1: docs/superpowers/specs/
-// 2026-11-13-lean-worker-design.md section 4). The fixture
+// A module's input and output are checked in a validator worker, in code the
+// module cannot reach, off the main thread (lean worker, step 1(b):
+// docs/superpowers/specs/2026-11-13-lean-worker-design.md section 4, as
+// revised on #152). A value its validation takes seconds over is refused
+// at the deadline (--validationTimeoutMs 300 here) while the server answers. The fixture
 // (test/fixtures/main-checked) turns off its own worker's validation on
 // request: under the default module sandbox (audit) and with none, the
 // runtime's Service and validator are in its worker's require.cache, and its
@@ -88,7 +90,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
   MAIN_ROUTED.forEach((mode) => describe(`worker mode, ${mode.label}, hops through the main thread`, () => {
     let server = null;
     before(async () => {
-      server = await startServer(PORT, SERVER_ARGS.concat(['--workerThread', '--no-directPeerChannels'], mode.args));
+      server = await startServer(PORT, SERVER_ARGS.concat(['--workerThread', '--no-directPeerChannels', '--validationTimeoutMs', '300'], mode.args));
     });
     after(() => stopServer(server));
 
@@ -119,6 +121,19 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
         assert.deepStrictEqual([service.status, service.body.code], [500, 'SERVICE_NOT_FOUND'], `service ${name}: ${JSON.stringify(service.body)}`);
       }
       assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+    });
+
+    it('a value its validation takes seconds over is refused at the deadline, and the server answers meanwhile', async () => {
+      const slow = invoke('slow', {s: `${'a'.repeat(40)}!`});
+      await new Promise((r) => setTimeout(r, 50));
+      const started = Date.now();
+      const other = await count();
+      assert.ok(Date.now() - started < 250, `another call answered in ${Date.now() - started} ms`);
+      assert.strictEqual(other.takes, 0);
+      const r = await slow;
+      assert.strictEqual(r.body.code, 'VALIDATION_TIMEOUT', JSON.stringify(r.body));
+      assert.match(r.body.message, /^main-checked\/slow: its input was not validated within 300 ms/);
+      assert.strictEqual((await invoke('slow', {s: 'abc'})).status, 200, 'a plain value is validated by the replaced validator');
     });
 
     it('a valid call runs, once', async () => {

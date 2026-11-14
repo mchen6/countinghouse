@@ -96,6 +96,23 @@
           "tampered"
         ]
       }
+    },
+    "slow": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string",
+            "pattern": "^(\\w|a)+$"
+          }
+        },
+        "required": [
+          "s"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

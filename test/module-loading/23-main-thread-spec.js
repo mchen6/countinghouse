@@ -14,7 +14,7 @@ const {EventEmitter} = require('events');
 const FIXTURE = path.join(__dirname, '..', 'fixtures', 'main-checked');
 const SERVICE = 'urn:countinghouse-test:serviceID:checkService';
 
-describe('module-loading 23: a module\'s spec and its checks on the main thread', function() {
+describe('module-loading 23: a module\'s spec on the main thread, and its checks in a validator', function() {
   // Requiring the device manager loads much of the runtime: 30 s, as 22 has.
   this.timeout(30000);
   let moduleSpec = null;
@@ -22,23 +22,32 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
   before(async () => {
     require('../../lib/cli-options').setOptions({workerThread: true});
     moduleSpec = require('../../lib/module-spec');
-    own = await moduleSpec.build(FIXTURE);
+    own = await moduleSpec.build(FIXTURE, 'main-checked');
   });
   after(() => {
+    require('../../lib/validator-pool').pool().close();
     require('../../lib/cli-options').setOptions({workerThread: false});
   });
 
-  const check = (serviceID, actionName, args) => moduleSpec.checkInput(own, own.deviceID, serviceID, actionName, args);
+  // The structural check here, then the input in a validator: the call's
+  // answer, [error, data], or null when it may be sent.
+  async function full(spec, serviceID, actionName, args) {
+    const checked = moduleSpec.checkInput(spec, spec.deviceID, serviceID, actionName, args);
+    if (checked == null) return 'unchecked';
+    if (checked.refused != null) return checked.refused;
+    return moduleSpec.validate(checked, 'input', args);
+  }
+  const check = (serviceID, actionName, args) => full(own, serviceID, actionName, args);
   // [code, message, data] of a refusal
-  const answer = (checked) => [checked.refused[0].code, checked.refused[0].message, checked.refused[1]];
+  const answer = (refused) => [refused[0].code, refused[0].message, refused[1]];
 
-  it('is built from the module\'s files: its device ID, spec and one compiled validator per schema', () => {
+  it('is built from the module\'s files: its device ID, its spec, its names and a hash of schema.json, and nothing compiled', () => {
     assert.strictEqual(own.error, undefined);
     assert.strictEqual(own.deviceID, require('../../lib/call-address').deviceIDForName('main-checked'));
-    const take = own.services[SERVICE].actions.take;
-    assert.strictEqual(typeof(take.input.validator), 'function');
-    assert.strictEqual(typeof(take.output.validator), 'function');
+    assert.deepStrictEqual([...own.names[SERVICE]].sort(), ['count', 'give', 'slow', 'take', 'tamper']);
     assert.strictEqual(own.specText, JSON.stringify(own.spec));
+    assert.strictEqual(own.schemaHash, moduleSpec.hashOf(fs.readFileSync(path.join(FIXTURE, 'schema.json')).toString()));
+    assert.strictEqual(own.services, undefined, 'no Service, no validator, on the main thread');
   });
 
   it('a module whose api.json cannot be read builds no spec, and nothing is checked against it', async () => {
@@ -54,7 +63,7 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
     }
   });
 
-  it('each build has its own validators: an absolute $id builds again at the next start, and in another module', async () => {
+  it('each module\'s validators are its own: an absolute $id compiles again at the next start, and in another module', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-main-spec-id-'));
     try {
       for (const name of ['id-one', 'id-two']) {
@@ -62,48 +71,49 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
         fs.mkdirSync(m);
         fs.writeFileSync(path.join(m, 'api.json'), JSON.stringify({device: {friendlyName: name, serviceList: {'urn:countinghouse-test:serviceID:s': {
           actionList: [{name: 'a', input: {schema: '/s/a/input'}}]}}}}));
-        fs.writeFileSync(path.join(m, 'schema.json'), JSON.stringify({$id: '#/', s: {a: {input: {$id: 'https://example.invalid/same', type: 'object'}}}}));
+        fs.writeFileSync(path.join(m, 'schema.json'), JSON.stringify({$id: '#/', s: {a: {input: {$id: 'https://example.invalid/same', type: 'object', required: ['k']}}}}));
       }
-      const builds = [await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-two'))];
-      for (const b of builds) {
-        assert.strictEqual(typeof(b.services['urn:countinghouse-test:serviceID:s'].actions.a.input.validator), 'function', JSON.stringify(b.error));
+      for (const b of [await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-one')), await moduleSpec.build(path.join(dir, 'id-two'))]) {
+        assert.strictEqual(await full(b, 'urn:countinghouse-test:serviceID:s', 'a', {input: {k: 1}}), null, JSON.stringify(b.error));
+        assert.strictEqual((await full(b, 'urn:countinghouse-test:serviceID:s', 'a', {input: {}}))[0].code, 'INPUT_DATA_VALIDATION_FAIL');
       }
     } finally {
       fs.rmSync(dir, {recursive: true, force: true});
     }
   });
 
-  it('checks in a worker\'s order: the service, the action, an input at all, then the input', () => {
+  it('checks in a worker\'s order: the service, the action, an input at all (here), then the input (in a validator)', async () => {
     const bad = {input: {n: 'x'}};
-    assert.deepStrictEqual(answer(check('urn:countinghouse-test:serviceID:nowhere', 'take', bad)).slice(0, 1), ['SERVICE_NOT_FOUND']);
-    assert.deepStrictEqual(answer(check(SERVICE, 'nowhere', bad)).slice(0, 1), ['ACTION_NOT_FOUND']);
-    const none = answer(check(SERVICE, 'take', null));
+    assert.deepStrictEqual(answer(await check('urn:countinghouse-test:serviceID:nowhere', 'take', bad)).slice(0, 1), ['SERVICE_NOT_FOUND']);
+    assert.deepStrictEqual(answer(await check(SERVICE, 'nowhere', bad)).slice(0, 1), ['ACTION_NOT_FOUND']);
+    const none = answer(await check(SERVICE, 'take', null));
     assert.deepStrictEqual([none[0], none[2]], ['INPUT_NOT_FOUND', null]);
-    const refused = answer(check(SERVICE, 'take', bad));
+    const refused = answer(await check(SERVICE, 'take', bad));
     assert.strictEqual(refused[0], 'INPUT_DATA_VALIDATION_FAIL');
     assert.deepStrictEqual(refused[2], {reason: 'data validation failed',
       info: {dataPath: '/n', schemaPath: '#/properties/n/type', validatorMessage: 'must be integer'}});
-    assert.deepStrictEqual(answer(check(SERVICE, 'take', {input: {n: 1}, more: 1}))[2],
+    assert.deepStrictEqual(answer(await check(SERVICE, 'take', {input: {n: 1}, more: 1}))[2],
       {reason: 'unexpected input argument: more', info: ''});
   });
 
-  it('a refusal is the error a worker\'s reply carries: a plain Error with its code', () => {
-    const err = check(SERVICE, 'take', {input: {n: 'x'}}).refused[0];
+  it('a refusal is the error a worker\'s reply carries: a plain Error with its code', async () => {
+    const err = (await check(SERVICE, 'take', {input: {n: 'x'}}))[0];
     const {CountinghouseError} = require('../../lib/countinghouse-error');
     const viaReply = CountinghouseError.fromReplyFields(CountinghouseError.replyFields(new CountinghouseError('INPUT_DATA_VALIDATION_FAIL')));
     assert.strictEqual(Object.getPrototypeOf(err), Object.getPrototypeOf(viaReply));
     assert.deepStrictEqual([err.code, err.message], [viaReply.code, viaReply.message]);
   });
 
-  it('a valid input passes, and its output is checked on the reply', () => {
-    const checked = check(SERVICE, 'give', {input: {kind: 'good'}, ctx: {}, usageCall: 3});
-    assert.strictEqual(checked.refused, undefined);
-    assert.strictEqual(moduleSpec.checkOutput(checked, {output: {v: 'a'}}), null);
-    const refused = moduleSpec.checkOutput(checked, {output: {v: 1}});
+  it('a valid input passes, and its output is checked in a validator', async () => {
+    const args = {input: {kind: 'good'}, ctx: {}, usageCall: 3};
+    const checked = moduleSpec.checkInput(own, own.deviceID, SERVICE, 'give', args);
+    assert.strictEqual(await moduleSpec.validate(checked, 'input', args), null);
+    assert.strictEqual(await moduleSpec.validate(checked, 'output', {output: {v: 'a'}}), null);
+    const refused = await moduleSpec.validate(checked, 'output', {output: {v: 1}});
     assert.strictEqual(refused[0].code, 'OUTPUT_DATA_VALIDATION_FAIL');
     assert.strictEqual(refused[1].reason, 'data validation failed');
-    assert.deepStrictEqual(moduleSpec.checkOutput(checked, {output: {v: 'a'}, extra: 1})[1], {reason: 'unexpected output argument: extra', info: ''});
-    assert.strictEqual(moduleSpec.checkOutput(checked, undefined)[0].code, 'MISSING_OUTPUT_ARGUMENT');
+    assert.deepStrictEqual((await moduleSpec.validate(checked, 'output', {output: {v: 'a'}, extra: 1}))[1], {reason: 'unexpected output argument: extra', info: ''});
+    assert.strictEqual((await moduleSpec.validate(checked, 'output', undefined))[0].code, 'MISSING_OUTPUT_ARGUMENT');
   });
 
   it('leaves to the worker only a device it has no spec for', () => {
@@ -111,26 +121,27 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
     assert.strictEqual(moduleSpec.checkInput(own, 'another-device', SERVICE, 'take', {input: {n: 'x'}}), null);
   });
 
-  it('a name only Object.prototype has is not found: the service, or the action', () => {
+  it('a name only Object.prototype has is not found: the service, or the action', async () => {
     const bad = {input: {n: 'x'}};
     for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
-      assert.deepStrictEqual(answer(check(name, 'take', bad)).slice(0, 1), ['SERVICE_NOT_FOUND'], `service ${name}`);
-      assert.deepStrictEqual(answer(check(SERVICE, name, bad)).slice(0, 1), ['ACTION_NOT_FOUND'], `action ${name}`);
-      assert.deepStrictEqual(answer(check(SERVICE, name, null)).slice(0, 1), ['ACTION_NOT_FOUND'], `action ${name}, no input`);
+      assert.deepStrictEqual(answer(await check(name, 'take', bad)).slice(0, 1), ['SERVICE_NOT_FOUND'], `service ${name}`);
+      assert.deepStrictEqual(answer(await check(SERVICE, name, bad)).slice(0, 1), ['ACTION_NOT_FOUND'], `action ${name}`);
+      assert.deepStrictEqual(answer(await check(SERVICE, name, null)).slice(0, 1), ['ACTION_NOT_FOUND'], `action ${name}, no input`);
     }
   });
 
-  it('an action the module declares under an Object.prototype name is its own: on the main thread and in the device a worker builds', async () => {
+  it('an action the module declares under an Object.prototype name is its own: here, in a validator, and in the device a worker builds', async () => {
     const NAMES = ['toString', 'constructor', '__proto__', 'valueOf'];
     const spec = {device: {friendlyName: 'proto-named', serviceList: {'urn:countinghouse-test:serviceID:toString': {actionList: NAMES.map((name) => ({name: name,
       input: {schema: '/s/in'}}))}}}};
     const ownSpec = await moduleSpec.fromParts(JSON.parse(JSON.stringify(spec)), {$id: '#/', s: {in: {type: 'object', properties: {n: {type: 'integer'}}}}});
-    const at = (actionName, args) => moduleSpec.checkInput(ownSpec, ownSpec.deviceID, 'urn:countinghouse-test:serviceID:toString', actionName, args);
+    moduleSpec.register(ownSpec);
+    const at = (actionName, args) => full(ownSpec, 'urn:countinghouse-test:serviceID:toString', actionName, args);
     for (const name of NAMES) {
-      assert.strictEqual(at(name, {input: {n: 1}}).refused, undefined, `${name} is declared`);
-      assert.strictEqual(at(name, {input: {n: 'x'}}).refused[0].code, 'INPUT_DATA_VALIDATION_FAIL', `${name}'s input is checked`);
+      assert.strictEqual(await at(name, {input: {n: 1}}), null, `${name} is declared`);
+      assert.strictEqual((await at(name, {input: {n: 'x'}}))[0].code, 'INPUT_DATA_VALIDATION_FAIL', `${name}'s input is checked`);
     }
-    assert.strictEqual(at('hasOwnProperty', {input: {}}).refused[0].code, 'ACTION_NOT_FOUND');
+    assert.strictEqual((await at('hasOwnProperty', {input: {}}))[0].code, 'ACTION_NOT_FOUND');
     // The worker's device: setAction sets the module's own entry and leaves Object.prototype alone.
     const CHDevice = require('../../lib/countinghouse-device');
     const device = new CHDevice(JSON.parse(JSON.stringify(spec)));
@@ -194,27 +205,45 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
       assert.match(refusalOf(made(moduleWith('external', {$ref: 'other.json#/x'})), 'external').message, /names no place in schema\.json/);
     });
 
-    it('the main thread\'s spec build checks the schema.json it reads, not only the load\'s earlier read', async () => {
+    it('the load\'s check runs on the schema.json the spec was built from, in a validator', async () => {
       const dir = made(moduleWith('late-bomb', {type: 'object'}));
       const defs = {l0: {type: 'string'}};
       for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
-      // replaced after a check passed, before the build reads it
+      // replaced after an earlier check passed, before the spec is read
       assert.strictEqual(refusalOf(dir, 'late-bomb'), null);
       fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$id: '#/', s: {ping: {input: {$ref: '#/defs/l12'}, output: {type: 'object'}}}, defs}));
-      const built = await moduleSpec.build(dir);
-      assert.match(String(built.error), /stage=schemaSafety/);
+      const built = await moduleSpec.build(dir, 'late-bomb');
+      const problem = await moduleSpec.safety(built);
+      assert.match(problem.reason, /more than 100000 schema nodes/);
     });
 
-    it('a percent-encoded action pointer resolves as before ("#" + pointer, decoded)', async () => {
+    it('a percent-encoded action pointer resolves as before ("#" + pointer, decoded per token), in the validator', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-safety-pct-'));
       dirs.push(dir);
       fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'pct', serviceList: {'urn:countinghouse-test:serviceID:s': {
         actionList: [{name: 'ping', input: {schema: '/s/a%20b'}}]}}}}));
       fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$id: '#/', s: {'a b': {type: 'object', properties: {n: {type: 'integer'}}}}}));
-      const built = await moduleSpec.build(dir);
-      const at = (input) => moduleSpec.checkInput(built, built.deviceID, 'urn:countinghouse-test:serviceID:s', 'ping', {input});
-      assert.strictEqual(at({n: 1}).refused, undefined);
-      assert.strictEqual(at({n: 'x'}).refused[0].code, 'INPUT_DATA_VALIDATION_FAIL');
+      const built = await moduleSpec.build(dir, 'pct');
+      assert.strictEqual(await full(built, 'urn:countinghouse-test:serviceID:s', 'ping', {input: {n: 1}}), null);
+      assert.strictEqual((await full(built, 'urn:countinghouse-test:serviceID:s', 'ping', {input: {n: 'x'}}))[0].code, 'INPUT_DATA_VALIDATION_FAIL');
+    });
+
+    it('%2F in a $ref is decoded as the resolution decodes it (left as it is): a bomb behind it is counted (the reviewer, #152)', () => {
+      const defs = {a: {b: {type: 'string'}}, l0: {type: 'string'}};
+      for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+      defs['a%2Fb'] = {$ref: '#/defs/l12'};
+      assert.match(refusalOf(made(moduleWith('pct2f', {$ref: '#/defs/a%2Fb'}, {defs})), 'pct2f').message, /more than 100000 schema nodes/);
+    });
+
+    it('$dynamicRef is followed through its $dynamicAnchor: recursion refused; one naming no anchor refused (the reviewer, #152)', () => {
+      const tree = {$dynamicAnchor: 'node', type: 'object', properties: {kids: {type: 'array', items: {$dynamicRef: '#node'}}}};
+      assert.match(refusalOf(made(moduleWith('dyn', {$ref: '#/$defs/tree'}, {$defs: {tree}})), 'dyn').message, /refers to itself/);
+      assert.match(refusalOf(made(moduleWith('dyn-none', {type: 'object', properties: {k: {$dynamicRef: '#nowhere'}}})), 'dyn-none').message, /names no place/);
+    });
+
+    it('a $ref into enum or default makes what is there a schema: its pattern is checked (the reviewer, #152)', () => {
+      const e = refusalOf(made(moduleWith('into-default', {$ref: '#/$defs/x/default'}, {$defs: {x: {type: 'object', default: {type: 'string', pattern: '(a+)+$'}}}})), 'into-default');
+      assert.match(e.message, /\/\$defs\/x\/default\/pattern/);
     });
 
     it('patternProperties keys and propertyNames patterns are checked; the key is not named', () => {
@@ -263,12 +292,11 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
       assert.strictEqual(refusalOf(shared, 'shared'), null, 'a modest shared $ref is fine');
     });
 
-    it('the main thread\'s spec build dereferences the document once, and its validators still work', async () => {
+    it('a $ref\'d schema validates, in a validator', async () => {
       const dir = made(moduleWith('deref', {$ref: '#/defs/n'}, {defs: {n: {type: 'object', properties: {n: {type: 'integer'}}, required: ['n']}}}));
-      const built = await moduleSpec.build(dir);
-      const checked = (input) => moduleSpec.checkInput(built, built.deviceID, 'urn:countinghouse-test:serviceID:s', 'ping', {input});
-      assert.strictEqual(checked({n: 1}).refused, undefined);
-      assert.strictEqual(checked({n: 'x'}).refused[0].code, 'INPUT_DATA_VALIDATION_FAIL');
+      const built = await moduleSpec.build(dir, 'deref');
+      assert.strictEqual(await full(built, 'urn:countinghouse-test:serviceID:s', 'ping', {input: {n: 1}}), null);
+      assert.strictEqual((await full(built, 'urn:countinghouse-test:serviceID:s', 'ping', {input: {n: 'x'}}))[0].code, 'INPUT_DATA_VALIDATION_FAIL');
     });
   });
 
