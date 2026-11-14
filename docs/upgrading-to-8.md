@@ -53,7 +53,12 @@ you have to do. What the sandbox does and does not protect is in
   (the bundled `echo-device-client-module`, whose device is
   `echo-device-client`), list the module name; one identity runs a module,
   all its devices. Under `--authProvider sqlite`, bind with
-  `countinghouse-auth-sqlite bind-module <apiKey> <moduleName>`.
+  `countinghouse-auth-sqlite bind-module <apiKey> <moduleName>`. Remove the
+  old friendlyName entries too (from `runsModules`, or with
+  `unbind-module <friendlyName>`): a stale entry still binds whatever module
+  is loaded under that name. A module left unbound is unloaded at startup
+  with `MODULE_COMPOSITION_INVALID`, and its tools are gone from
+  `tools/list`.
 - **Worker mode is the default.** `--no-workerThread` keeps single-thread
   mode, which is now for debugging modules only and has no sandbox. In
   worker mode the sandbox runs in `audit` by default, which changes some
@@ -311,11 +316,44 @@ says how to write a module for this.
 
 ## Modules no longer receive API keys (R2-1)
 
-> **Placeholder, written with R2-1's last task (Task 5).** What changes for
-> modules (no key, user name or `as` key in `ctx`, hops or jobs), for
-> composites (declared calls only), and what an operator checks before
-> upgrading. The opaque user id this builds on is already in
-> [Before you upgrade](#before-you-upgrade).
+The runtime no longer hands a module an API key or a user name. Before and
+after:
+
+| A module reads | 7.x | 8.0 |
+|---|---|---|
+| `ctx.caller` | `{apiKey, userName, isAdmin}` | `{id, isAdmin}`: `id` is `u_` and 22 characters, the same for a user everywhere on this server |
+| `ctx.recordUsage(...)`'s answer | `{apiKey, tool, cost, ts}` | `{id, tool, cost, ts}` |
+| `ctx.httpHeaders` | every request header | minus `X-CH-Key`, `X-App-Key` and `Authorization` |
+| `ctx.serviceClient({..., as})` | authorizes as `as` | `as` is refused ("identities come from the operator's runsModules binding; remove `as`"); it authorizes as the module's binding, like `ctx.call` |
+| `CHUtil.createServiceClient({appKey})` in a worker | authorizes as `appKey` | refused; use `ctx.serviceClient` |
+| `CHUtil.dm`, `CHUtil.ci` | reachable | gone from the global `CHUtil` (undocumented; breaking for any use) |
+| a hop callee's `ctx.caller` | the hop identity's key | the hop identity's `{id, isAdmin}` |
+
+**For module authors.** Replace `ctx.caller.apiKey` and `.userName` with
+`ctx.caller.id` (a bill or a per-user record keys on it), drop `as` from
+`ctx.serviceClient`, and declare every call in `countinghouse.calls`: in 8.0
+a third-party module's undeclared inner calls are refused
+(`CTX_CALL_UNDECLARED`), whatever API it uses. The bundled demos and
+examples show the shape.
+
+**For operators.**
+
+- Bind each composing module to its internal identity (`runsModules`, by the
+  module's package.json name, or sqlite's `bind-module`), as
+  [Before you upgrade](#before-you-upgrade) says, and grant that identity
+  the targets.
+- Add an `id` to an auth entry **before** you rotate its key: without one,
+  the user's id is derived from the key, so a new key is a new id, which
+  orphans the user's per-user module data and schedulers.
+- The secret behind every id is generated at first start in
+  `<moduleDataPath>/.identity-secret` (0600), or given in
+  `COUNTINGHOUSE_IDENTITY_SECRET`. Back it up with the auth config: a new
+  secret changes every id.
+- A module still reads files and environment outside its namespace under
+  `--moduleSandbox audit` and `off` (the always-denied set aside), so keys
+  in such files are within its reach there: run `enforce` for tenants you do
+  not trust, and keep Redis behind a password or ACL
+  ([security-model.md](security-model.md)).
 
 ## Measured cost
 

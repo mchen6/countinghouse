@@ -100,8 +100,9 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
       // caller is asserted here too: the handler read it off ctx, so this
       // doubles as proof that ctx reaches a device.js-exported handler.
-      assert.deepStrictEqual(toolOutput(res.result),
-        {text: 'hello world', caller: 'aabbcc'});
+      // ctx.caller is the caller's opaque id (R2-1 Task 5), never the key
+      assert.strictEqual(toolOutput(res.result).text, 'hello world');
+      assert.match(String(toolOutput(res.result).caller), /^u_[A-Za-z0-9_-]{22}$/, JSON.stringify(toolOutput(res.result)));
       return done();
     });
   });
@@ -111,8 +112,9 @@ describe('module-loading 05: handler-map assembly, end to end', function() {
       name: 'handler_map_convention_greetservice_hello', arguments: {name: 'convention'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(toolOutput(res.result),
-        {text: 'hello convention', caller: 'aabbcc'});
+      // ctx.caller is the caller's opaque id (R2-1 Task 5), never the key
+      assert.strictEqual(toolOutput(res.result).text, 'hello convention');
+      assert.match(String(toolOutput(res.result).caller), /^u_[A-Za-z0-9_-]{22}$/, JSON.stringify(toolOutput(res.result)));
       return done();
     });
   });

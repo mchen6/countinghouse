@@ -22,6 +22,6 @@ if (state.write === 'not tried') {
 module.exports = async (input, ctx) => new Promise((resolve) => {
   const answer = (e, d) => resolve({output: {code: (e != null) ? String(e.code || 'NO_CODE') : null,
     n: (e == null && d != null && d.output != null) ? d.output.n : null, write: state.write}});
-  ctx.serviceClient({deviceID: input.other, serviceID: 'urn:countinghouse-test:serviceID:calleeService', as: input.as},
+  ctx.serviceClient({deviceID: input.other, serviceID: 'urn:countinghouse-test:serviceID:calleeService'},
     (e, client) => (e != null ? answer(e) : client.invoke({actionName: 'double', input: {n: 1}}, answer)));
 });

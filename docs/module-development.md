@@ -59,16 +59,23 @@ name and the fix. A module never half-loads.
 
 | field | what it is |
 | --- | --- |
-| `ctx.caller` | `{apiKey, userName, isAdmin}` — the authenticated caller |
+| `ctx.caller` | `{id, isAdmin}` — the caller: `id` is an opaque id (`u_` and 22 characters), the same for that user everywhere on this server, never a key or a user name. For a hop's callee, the identity the hop authorized as (the calling module's binding) |
 | `ctx.device` | `{deviceID, friendlyName}` — this device |
 | `ctx.serviceID`, `ctx.actionName` | the action being served |
 | `ctx.log(entry)` | device log, already bound to this device |
-| `ctx.serviceClient(opts, cb)` | call another module by deviceID — see below |
+| `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
 | `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
-| `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance |
-| `ctx.httpHeaders` | request headers, when the call arrived over HTTP |
+| `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
+| `ctx.httpHeaders` | request headers, when the call arrived over HTTP, minus `X-CH-Key`, `X-App-Key` and `Authorization` |
+
+A module is never handed an API key or a user name (R2-1): not in `ctx`,
+not in its hops, its job info or its environment. Its hops are authorized as
+the identity the operator binds to it (`runsModules`) and billed to the
+caller, by a per-call token the runtime keeps out of the module's reach. The
+global `CHUtil` a module sees has no `dm` or `ci`; `CHUtil.createServiceClient`
+takes no `appKey` in a worker.
 
 `ctx` replaces the device instance that used to be bound as `this`. That is a
 narrowing on purpose: handlers used to be able to reach `setAction`,
@@ -643,32 +650,26 @@ auth config. `test/composition/08-bare-server-discovery.js` guards both
 halves — that a bare instance reaches discovery completion, and that a
 composing module loaded into one at runtime can actually call through.
 
-### `ctx.serviceClient` — the escape hatch
+### `ctx.serviceClient` — addressing a device by ID
 
-`ctx.call` intentionally does not cover every case. Use `ctx.serviceClient`
-directly when you need:
-
-- **A per-call identity override** — `ctx.call` always authorizes as the one
-  identity bound to this module via `runsModules`; `ctx.serviceClient` lets
-  you pick `as` per call.
-- **A module needing two identities** — `ctx.call`'s load-time verification
-  binds exactly one identity per module (a second `runsModules` claim on the
-  same `friendlyName` is refused as a conflict); a module that legitimately
-  needs to act as two different identities for different targets still
-  needs `ctx.serviceClient`.
+`ctx.call` resolves a declared address by name. `ctx.serviceClient` reaches a
+target by `deviceID` (computed offline or looked up yourself, with no name
+resolution), for the same declared targets:
 
 ```js
-ctx.serviceClient({deviceID, serviceID, as: 'my-module-internal'}, (err, client) => {
+ctx.serviceClient({deviceID, serviceID}, (err, client) => {
   client.invoke({actionName: 'echo', input: {...}}, (err, data, platformMetering) => { ... });
 });
 ```
 
-`as` is the identity the inner hop is **authorized** as — your module's own,
-which must be granted access to the target device or every inner call fails.
-The hop is **billed** to `ctx.caller`, same as `ctx.call`, so per-hop cost
-lands on whoever called your tool rather than on your module. Unlike
-`ctx.call`, the target here is addressed by `deviceID`, computed offline or
-looked up yourself — there is no name resolution.
+It authorizes exactly as `ctx.call` does: as the one identity the operator
+bound to your module (`runsModules`, by its package.json name), which must be
+granted the target device, and only to targets your module declared in
+`countinghouse.calls`. The hop is **billed** to `ctx.caller`, so per-hop cost
+lands on whoever called your tool rather than on your module. A module never
+names the identity: `as` is refused since R2-1 with "identities come from the
+operator's runsModules binding; remove `as`", and a module with no binding
+gets `CTX_CALL_UNBOUND`. A module that needs two identities is two modules.
 
 `pre-installed-packages/composite-demo` stays on `ctx.serviceClient`
 deliberately, so both paths keep a live example and test coverage; see

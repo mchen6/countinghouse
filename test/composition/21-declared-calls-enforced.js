@@ -125,6 +125,13 @@ const IDS = {callee: deviceIDForName('token-callee'), other: deviceIDForName('co
       assert.deepStrictEqual(out.holds, {callerKey: null, usageKey: null, admin: false}, JSON.stringify(out));
     });
 
+    it('ctx.caller is {id, isAdmin}; `as` is refused (R2-1 Task 5)', async () => {
+      const seen = await attempt('seeCaller');
+      assert.deepStrictEqual(seen.holds.callerKeys, ['id', 'isAdmin'], JSON.stringify(seen));
+      assert.match(String(seen.holds.id), /^u_[A-Za-z0-9_-]{22}$/);
+      assert.match(String((await attempt('asRefused')).message), /remove `as`/);
+    });
+
     it('a hand-built hop carrying a ctx of its own making: the callee sees none of it', async () => {
       const {out} = await tried('forgedCtxHop');
       assert.strictEqual(out.code, null, JSON.stringify(out));
@@ -357,6 +364,15 @@ describe('composition 21: declared calls in single-thread mode', function() {
   after(() => {
     stopServer(server);
     if (base != null) fs.rmSync(base, {recursive: true, force: true});
+  });
+
+  // R2-1 Task 5 (plan step 5): the same ctx as in worker mode
+  it('ctx.caller is {id, isAdmin}; `as` is refused', async () => {
+    const seen = await attempt('seeCaller');
+    assert.deepStrictEqual(seen.holds.callerKeys, ['id', 'isAdmin'], JSON.stringify(seen));
+    assert.match(String(seen.holds.id), /^u_[A-Za-z0-9_-]{22}$/);
+    const refused = await attempt('asRefused');
+    assert.match(String(refused.message), /remove `as`/, JSON.stringify(refused));
   });
 
   it('the declared call works; ctx.serviceClient to an undeclared device or action is CTX_CALL_UNDECLARED', async () => {

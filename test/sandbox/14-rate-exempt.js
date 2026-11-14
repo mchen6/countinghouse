@@ -76,7 +76,7 @@ describe('sandbox 14: main-thread message bounds', () => {
     Object.assign(dm, {peerDeviceWorkerMap: {}, peerChannels: {}, pendingPeerInvokes: {},
       workerMessage: {sendPeerChannelRequestToParent: (d) => requests.push(d)}});
     const results = [];
-    const call = () => dm.invokeActionViaPeerChannel('k', 'k', 'dev-b', 'svc', 'act', {input: {}}, (err) => results.push(err));
+    const call = () => dm.invokeActionViaPeerChannel('dev-b', 'svc', 'act', {input: {}}, (err) => results.push(err));
     call();
     call();
     assert.strictEqual(requests.length, 1);

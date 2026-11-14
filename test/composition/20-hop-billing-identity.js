@@ -1,9 +1,10 @@
 // Who pays for a hop's work, and what a module may see of it (reviewer and
 // the review of 5723adf, 2026-11-12). A part reached by a hop bills whoever
 // the hop bills, never the composing module's internal identity: its remote
-// calls, its further hops and its recordUsage. The billing key is kept in the
-// ctx closure, like the usage call id, and never put on ctx.caller, which every
-// handler sees (test/auth/30: no keys reach modules).
+// calls and its further hops. The billing key is kept in the ctx closure,
+// like the usage call id, and never put on ctx.caller, which every handler
+// sees (test/auth/30: no keys reach modules); in a worker there is no key at
+// all, the main thread bills by the call's token (R2-1 Task 5).
 // Server-free: buildCtx on the main thread, with lib/remote's callRemote and
 // CHUtil.recordUsage stood in for.
 const assert = require('assert');
@@ -25,31 +26,39 @@ describe('composition 20: a hop\'s billing key reaches the callee\'s work, never
 
   const device = {deviceID: 'd', moduleName: 'part', spec: {device: {friendlyName: 'part'}}, _compositionSettled: true};
 
-  it('the caller identity is unchanged: no billingKey on it', () => {
-    assert.deepStrictEqual(handlerCtx.callerIdentityOf({appKey: 'k1', username: 'alice', isAdmin: true}), {apiKey: 'k1', userName: 'alice', isAdmin: true});
-    assert.deepStrictEqual(handlerCtx.callerIdentityOf({appKey: 'k1', billingKey: 'alice-key'}), {apiKey: 'k1', userName: null, isAdmin: false});
+  // R2-1 Task 5: a call that stays on the main thread (single-thread mode)
+  // carries its billing key on its args under a private Symbol, set where
+  // the call is sent (handlerCtx.attachBilling): never on ctx.caller, never
+  // in a structured clone or JSON, so never in a worker or a task's data.
+  const argsFor = (session) => {
+    const args = {input: {}, ctx: handlerCtx.wireIdentityOf(session)};
+    handlerCtx.attachBilling(args, session);
+    return args;
+  };
+
+  it('the caller is {id, isAdmin}: no key and no user name on it', () => {
+    assert.deepStrictEqual(handlerCtx.callerIdentityOf({id: 'u_a', isAdmin: true, appKey: 'k1', billingKey: 'alice-key'}), {id: 'u_a', isAdmin: true});
   });
 
-  it('a session\'s billing key travels in its wire identity, and only when it has one', () => {
-    assert.deepStrictEqual(handlerCtx.wireIdentityOf({appKey: 'internal', username: 'u', isAdmin: false, billingKey: 'alice-key'}), {appKey: 'internal', username: 'u', isAdmin: false, billingKey: 'alice-key'});
-    assert.deepStrictEqual(handlerCtx.wireIdentityOf({appKey: 'k'}), {appKey: 'k', username: null, isAdmin: false});
+  it('the billing key rides beside the wire, and no clone or JSON carries it', () => {
+    const args = argsFor({appKey: 'internal', username: 'u', isAdmin: false, billingKey: 'alice-key'});
+    assert.strictEqual(handlerCtx.billingKeyOf(args), 'alice-key');
+    assert.ok(!JSON.stringify(args).includes('alice-key') && !JSON.stringify(args).includes('internal'), JSON.stringify(args));
+    assert.strictEqual(handlerCtx.billingKeyOf(structuredClone(args)), null);
   });
 
-  it('a hop\'s callee bills the hop\'s key for its remote calls and recordUsage; ctx.caller has no key of it', async () => {
-    const ctx = handlerCtx.buildCtx(device, {input: {}, ctx: {appKey: 'internal', username: null, isAdmin: false, billingKey: 'alice-key'}});
-    assert.ok(!Object.values(ctx.caller).includes('alice-key'), `ctx.caller is ${JSON.stringify(ctx.caller)}`);
-    assert.ok(!('billingKey' in ctx.caller));
+  it('a hop\'s callee bills the hop\'s key for its remote calls; ctx.caller has no key; recordUsage names the caller by id', async () => {
+    const ctx = handlerCtx.buildCtx(device, argsFor({appKey: 'internal', username: null, isAdmin: false, billingKey: 'alice-key'}));
+    assert.ok(!JSON.stringify(ctx.caller).includes('alice-key') && !JSON.stringify(ctx.caller).includes('internal'), `ctx.caller is ${JSON.stringify(ctx.caller)}`);
     await ctx.call('remote:probe/echo_text', {});
     ctx.recordUsage('t', 1, () => {});
     assert.deepStrictEqual(seen.remote, ['alice-key']);
-    assert.deepStrictEqual(seen.usage, ['alice-key']);
+    assert.deepStrictEqual(seen.usage, [ctx.caller.id]);
   });
 
   it('a call that is not a hop bills its caller\'s own key, as before', async () => {
-    const ctx = handlerCtx.buildCtx(device, {input: {}, ctx: {appKey: 'bob-key', username: 'bob', isAdmin: false}});
+    const ctx = handlerCtx.buildCtx(device, argsFor({appKey: 'bob-key', username: 'bob', isAdmin: false}));
     await ctx.call('remote:probe/echo_text', {});
-    ctx.recordUsage('t', 1, () => {});
     assert.deepStrictEqual(seen.remote, ['bob-key']);
-    assert.deepStrictEqual(seen.usage, ['bob-key']);
   });
 });

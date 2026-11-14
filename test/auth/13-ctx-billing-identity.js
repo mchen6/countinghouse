@@ -126,8 +126,10 @@ describe(`auth 13: inner hops are authorized as the module, billed to the caller
       assert.strictEqual(result.isError, false,
         `authorization must use the module identity, not the caller: ${JSON.stringify(result)}`);
       assert.strictEqual(toolOutput(result).echoed, 'hi');
-      assert.strictEqual(toolOutput(result).billedTo, CALLER,
-        'ctx.caller must be the real outer caller');
+      // the caller as the module sees it: an opaque id, never its key
+      // (R2-1 Task 5); the next case shows it is the caller who pays
+      assert.match(String(toolOutput(result).billedTo), /^u_[A-Za-z0-9_-]{22}$/, 'ctx.caller must be the caller, by its id');
+      assert.notStrictEqual(toolOutput(result).billedTo, CALLER);
       return done();
     });
   });

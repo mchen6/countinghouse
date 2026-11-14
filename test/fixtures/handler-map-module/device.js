@@ -4,7 +4,7 @@
 module.exports = {
   greetService: {
     hello: (input, ctx, callback) => callback(null, {
-      output: {text: `hello ${input.name}`, caller: ctx.caller.apiKey}
+      output: {text: `hello ${input.name}`, caller: ctx.caller.id}
     })
   }
 };

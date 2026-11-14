@@ -1,5 +1,6 @@
 // Step B-3: the ctx a 6.0.0 handler receives, and specifically that
-// ctx.caller carries the *authenticated* caller's identity.
+// ctx.caller carries the *authenticated* caller's identity -- since R2-1
+// Task 5 as {id, isAdmin}, never the key.
 //
 // The end-to-end half runs in --workerThread, which is the default mode and
 // the one where this was previously impossible: lib/device-manager.js deleted
@@ -19,36 +20,28 @@ const {toolOutput} = require('../helpers/tool-result');
 const PORT = testPort(9590);
 
 describe('handler-ctx: identity extraction', () => {
-  it('reads a Session (main thread) and a forwarded identity the same way', () => {
-    const fromSession = handlerCtx.callerIdentityOf(
-      {appKey: 'k1', username: 'alice', isAdmin: true});
-    assert.deepStrictEqual(fromSession, {apiKey: 'k1', userName: 'alice', isAdmin: true});
-
-    const fromWire = handlerCtx.callerIdentityOf(
-      handlerCtx.wireIdentityOf({appKey: 'k1', username: 'alice', isAdmin: true}));
-    assert.deepStrictEqual(fromWire, fromSession, 'both sides of the boundary agree');
+  // R2-1 Task 5: a handler's caller is {id, isAdmin}, built on the main
+  // thread; no key or user name crosses, whatever a wire states.
+  it('reads the caller as {id, isAdmin}, and nothing else a wire carries', () => {
+    assert.deepStrictEqual(handlerCtx.callerIdentityOf({id: 'u_x', isAdmin: true}), {id: 'u_x', isAdmin: true});
+    assert.deepStrictEqual(handlerCtx.callerIdentityOf({id: 'u_x', isAdmin: false, appKey: 'k1', username: 'alice', apiKey: 'k1'}),
+      {id: 'u_x', isAdmin: false});
   });
 
   it('reports an unresolved caller as null rather than inventing one', () => {
-    assert.deepStrictEqual(handlerCtx.callerIdentityOf(null),
-      {apiKey: null, userName: null, isAdmin: false});
+    assert.deepStrictEqual(handlerCtx.callerIdentityOf(null), {id: null, isAdmin: false});
     // a bare callback is what the worker re-entry passes as `session`
-    assert.deepStrictEqual(handlerCtx.callerIdentityOf(() => {}),
-      {apiKey: null, userName: null, isAdmin: false});
+    assert.deepStrictEqual(handlerCtx.callerIdentityOf(() => {}), {id: null, isAdmin: false});
   });
 
-  it('the wire form is structured-cloneable, which the Session was not', () => {
+  it('the wire form carries no key and no user name, and is structured-cloneable, which the Session was not', () => {
     const wire = handlerCtx.wireIdentityOf({appKey: 'k', username: 'u', isAdmin: false,
                                             req: {}, res: {}, timer: setTimeout(() => {}, 0),
                                             callback: () => {}});
-    assert.deepStrictEqual(wire, {appKey: 'k', username: 'u', isAdmin: false});
+    assert.deepStrictEqual(Object.keys(wire).sort(), ['id', 'isAdmin']);
+    assert.ok(!JSON.stringify(wire).includes('"k"') && !JSON.stringify(wire).includes('"u"'), JSON.stringify(wire));
     // the real check: this is what crossing the boundary actually does
     assert.deepStrictEqual(structuredClone(wire), wire);
-  });
-
-  it('keeps appKey naming on the wire so createServiceClient({ctx}) still works', () => {
-    // CHUtil.createServiceClient reads opts.ctx.appKey
-    assert.strictEqual(handlerCtx.wireIdentityOf({appKey: 'k'}).appKey, 'k');
   });
 });
 
@@ -91,8 +84,9 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
       name: 'handler_map_module_greetservice_hello', arguments: {name: 'w'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(toolOutput(res.result),
-        {text: 'hello w', caller: 'aabbcc'});
+      // ctx.caller is the caller's opaque id (R2-1 Task 5), never the key
+      assert.strictEqual(toolOutput(res.result).text, 'hello w');
+      assert.match(String(toolOutput(res.result).caller), /^u_[A-Za-z0-9_-]{22}$/, JSON.stringify(toolOutput(res.result)));
       return done();
     });
   });
@@ -102,8 +96,9 @@ describe('handler-ctx: ctx.caller reaches a handler running in a worker', functi
       name: 'handler_map_convention_greetservice_hello', arguments: {name: 'c'}}}, (err, res) => {
       if (err) return done(err);
       assert.strictEqual(res.result.isError, false, JSON.stringify(res.result));
-      assert.deepStrictEqual(toolOutput(res.result),
-        {text: 'hello c', caller: 'aabbcc'});
+      // ctx.caller is the caller's opaque id (R2-1 Task 5), never the key
+      assert.strictEqual(toolOutput(res.result).text, 'hello c');
+      assert.match(String(toolOutput(res.result).caller), /^u_[A-Za-z0-9_-]{22}$/, JSON.stringify(toolOutput(res.result)));
       return done();
     });
   });

@@ -42,7 +42,9 @@ function callerWM() {
   const sent = [];
   return {sent, workerId: WORKER, bindings: DECLARES, sendActionInvokeReplyToChild: (m) => sent.push(m), sendPeerChannelDenyToChild: (m) => sent.push(m)};
 }
-const tokenFor = (key) => require(path.join(LIB, 'call-tokens')).issue({billingKey: key, workerId: WORKER, deviceID: 'dev-a'});
+// the call's token, carrying the identity its hops authorize as: the main
+// thread reads it there, never from a key the message states (R2-1 Task 5)
+const tokenFor = (key) => require(path.join(LIB, 'call-tokens')).issue({billingKey: key, identityKey: key, workerId: WORKER, deviceID: 'dev-a'});
 
 describe('sandbox 15: calls to a restarting module', () => {
   before(() => {
