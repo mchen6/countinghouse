@@ -29,6 +29,12 @@ describe('module-loading 25: a serialized reply crosses with its buffer transfer
       parentPort.on('message', (m) => {
         if (m.command !== 'probe') return;
         if (m.plain === true) return wm.sendMessageToParent(m.id, null, {output: {n: 7}});
+        if (m.plainError === true) return wm.sendMessageToParent(m.id, new Error('x'.repeat(1000)), {fault: 'y'.repeat(1000)});
+        if (m.errorBytes === true) {
+          const {CountinghouseError} = require(${JSON.stringify(path.join(LIB, 'countinghouse-error'))});
+          const eb = toArrayBuffer(serialize({fields: CountinghouseError.replyFields(new CountinghouseError('DEVICE_INVOKE_EXCEPTION', 'boom')), data: {fault: 'f'}}));
+          return wm.sendSerializedErrorToParent(m.id, eb);
+        }
         const buffer = toArrayBuffer(serialize({output: {n: 7}}));
         wm.sendSerializedReplyToParent(m.id, buffer);
         parentPort.postMessage({id: 'left', left: buffer.byteLength});
@@ -62,6 +68,17 @@ describe('module-loading 25: a serialized reply crosses with its buffer transfer
       assert.strictEqual(plain.err.code, 'DEVICE_INVOKE_EXCEPTION');
       assert.match(plain.err.message, /did not cross as bytes/);
       assert.strictEqual((await ask({command: 'probe', plain: true})).err, null, 'a plain request\'s plain reply, as ever');
+      // a failed call's error crosses as bytes too (the review of #165): held,
+      // never read here; a plain error where bytes were asked for is refused
+      const errorBytes = await ask({command: 'probe', serializedReply: true, errorBytes: true});
+      assert.strictEqual(errorBytes.err, null);
+      assert.ok(errorBytes.data instanceof SerializedResult && errorBytes.data.isError === true);
+      assert.deepStrictEqual(decode(errorBytes.data.buffer).data, {fault: 'f'});
+      const plainError = await ask({command: 'probe', serializedReply: true, plainError: true});
+      assert.strictEqual(plainError.err.code, 'DEVICE_INVOKE_EXCEPTION');
+      assert.match(plainError.err.message, /did not cross as bytes/);
+      const unaskedError = await ask({command: 'probe', errorBytes: true});
+      assert.match(unaskedError.err.message, /bytes it was not asked for/);
       assert.strictEqual(main.bytesExpected.size, 0);
     } finally {
       await worker.terminate();

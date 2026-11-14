@@ -201,6 +201,32 @@
         ],
         "additionalProperties": false
       }
+    },
+    "cheat": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "getter",
+              "message",
+              "details",
+              "byteLength",
+              "plain"
+            ]
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

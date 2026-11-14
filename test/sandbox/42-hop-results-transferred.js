@@ -90,6 +90,33 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
     assert.strictEqual((await ping()).status, 200);
   });
 
+  // The review of #165 (MED 3): every call whose spec the main thread holds
+  // answers in bytes, its error included, and the main thread caps them by
+  // their own length. Nothing the module does in its worker gets past it.
+  const invoke = (actionName, input) => post(PORT, KEY, `/devices/${deviceIDForName('main-checked')}/invoke-action`,
+    {serviceID: 'urn:countinghouse-test:serviceID:checkService', actionName: actionName, input: input});
+  describe('a client call over the cap, however the module counts it', () => {
+    it('an enumerable getter that makes the output: refused OUTPUT_TOO_LARGE', async () => {
+      const r = await invoke('cheat', {kind: 'getter', n: CAP + 1});
+      assert.strictEqual(r.body.code, 'OUTPUT_TOO_LARGE', JSON.stringify(r.body).slice(0, 300));
+    });
+
+    it('an error whose message or details are over the cap: refused OUTPUT_TOO_LARGE; a small one crosses as before', async () => {
+      for (const kind of ['message', 'details']) {
+        const r = await invoke('cheat', {kind: kind, n: CAP + 1});
+        assert.strictEqual(r.body.code, 'OUTPUT_TOO_LARGE', `${kind}: ${JSON.stringify(r.body).slice(0, 300)}`);
+      }
+      const small = await invoke('cheat', {kind: 'details', n: 10});
+      assert.strictEqual(small.body.code, 'CHEAT_DETAILS', JSON.stringify(small.body).slice(0, 300));
+    });
+
+    it('a client call\'s output within the cap is answered, unpacked on the main thread after its check', async () => {
+      const r = await invoke('cheat', {kind: 'plain'});
+      assert.deepStrictEqual([r.status, r.body.output], [200, {s: 'ok'}], JSON.stringify(r.body));
+    });
+
+  });
+
   // the reviewer, 2026-11-13: the callee's worker made the bytes, and under
   // audit a module there can post its own. The caller only ever decodes
   // bytes a validator passed, within the cap.
@@ -118,6 +145,13 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
       assert.match(r.body.output.message, /^main-checked\/forge: its output is \d+ bytes, over the 67108864-byte limit/);
       assert.ok(Date.now() - t < 5000, `${Date.now() - t} ms`);
     });
+  });
+
+  // last: it leaves main-checked's worker with TypedArray byteLength patched
+  it('the worker\'s own size check fooled (byteLength patched): never answered with the output', async () => {
+    const r = await invoke('cheat', {kind: 'byteLength', n: CAP + 1});
+    assert.notStrictEqual(r.status, 200, JSON.stringify(r.body).slice(0, 300));
+    assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
   });
 });
 

@@ -95,6 +95,16 @@
             "output": {
               "schema": "/checkService/forge/output"
             }
+          },
+          {
+            "name": "cheat",
+            "description": "Tries to get an output or an error past --maxOutputBytes in its own worker (test/sandbox/42).",
+            "input": {
+              "schema": "/checkService/cheat/input"
+            },
+            "output": {
+              "schema": "/checkService/cheat/output"
+            }
           }
         ]
       }

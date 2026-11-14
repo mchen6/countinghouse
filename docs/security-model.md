@@ -658,9 +658,10 @@ these are the checks that predate them and still apply:
   - a quarantine (`VALIDATION_QUARANTINED`) for a module whose own outputs or
     compiles keep missing the deadline (a slow input does not count: any
     caller could send one to quarantine a module for every tenant);
-  - an output cap (`--maxOutputBytes`, at most 256 MiB), checked in the
-    module's worker before its reply is posted and, for a hop's result, on
-    the main thread from its length;
+  - an output cap (`--maxOutputBytes`, at most 256 MiB), checked on the main
+    thread from the reply's own bytes (every call whose spec it holds
+    answers in bytes, a failed call's error and payload included); the
+    module's worker checks first only to answer early;
   - a hop's result crosses the main thread as `v8.serialize` bytes,
     transferred, never deserialised there. It is checked in a validator
     against the callee's output schema and decoded only by the calling

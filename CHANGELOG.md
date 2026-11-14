@@ -166,7 +166,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   thread for every tenant. Bytes a module forges through its worker are
   refused or checked like any others: a caller only ever decodes bytes a
   validator passed, within the cap. Bytes reach only a request that asked
-  for them, and a hop's reply that is not bytes is refused. A Buffer crosses
+  for them, and a hop's reply that is not bytes is refused.
+- **Every module output is capped by its bytes on the main thread** (the
+  review of #165). Every call whose spec the main thread holds answers in
+  bytes: a client's, a job's and a hop's, and a failed call's error and
+  payload too. The main thread refuses them `OUTPUT_TOO_LARGE` from their
+  own length, so nothing a module does in its worker gets past the cap: a
+  getter, a patched `byteLength`, a huge fault or message. A client's or a
+  job's result is unpacked on the main thread once a validator passed it; a
+  plain reply where bytes were asked for is refused. A Buffer crosses
   as a Uint8Array, as structured clone gives it, using V8's own serializer.
   A validator's heap follows the cap: four times it plus 64 MB, never under
   256 MB. Final results (an MCP tools/call, an HTTP invoke-action answer, a
