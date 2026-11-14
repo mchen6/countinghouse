@@ -271,7 +271,7 @@ failures are logged and the module loads. This is a structural check of
 what is on disk at load time, not a review of what the code does.
 
 **6. Resource limits, restart and suspend.** `heapMb` (V8
-`resourceLimits`), `externalMb` (the main thread polls the worker's
+`resourceLimits`, with a 64 MB young generation and a 4 MB stack beside it), `externalMb` (the main thread polls the worker's
 external memory and terminates it over the limit) and `maxBlockMs` (the main
 thread pings the worker and terminates it if a ping goes unanswered for that
 long), checked every second or twice per `maxBlockMs` if that is shorter,
@@ -279,7 +279,29 @@ each with a 256 / 256 / 10000 default
 ceiling. Time a worker spends waiting on a brokered file call does not count
 as blocked. A worker-to-main message rate limit (`--moduleMessageRate`,
 default 2000/s) answers excess messages with `RATE_LIMITED` instead of
-killing the worker; file traffic has its own budget (layer 2). A worker that
+killing the worker; file traffic has its own budget (layer 2). Every message
+a worker sends the main thread, the file bridge's included, crosses as an
+envelope of serialized bytes whose length the main thread reads before it
+decodes anything: over `--maxOutputBytes` plus 64 KiB (16 MiB plus 64 KiB on
+the file bridge) it is refused in the worker (`MESSAGE_TOO_LARGE`, or
+`EINVAL` for a file call), and under audit and enforce the lockdown pins the
+worker's ports, so module code that patches `MessagePort.prototype` is never
+handed one. A message that is not an envelope, or one over the cap, is a
+tampered worker's: the main thread ends the worker (a bridge call is
+answered `EINVAL` and reported, and the worker is ended too). Module code
+gets no port by any other route either: the runtime's port callbacks run in
+a scope of their own (`lib/port-scope.js`), and the lockdown leaves ports out
+of `process._getActiveHandles()` and `_getActiveRequests()`,
+`async_hooks.executionAsyncResource()` and an async hook's `init`, and pins
+Node's own stdio port as well. What remains rests on those: Node decodes a
+posted message on receipt and, when a worker ends, every message it had
+queued, so a worker that did hold a port could have any number of messages
+decoded (20 of 5 MB each, all decoded after `terminate()`, measured on Node
+24.21; removing the listeners or closing the main side's port does not stop
+it), and that serialized data lies outside the worker's heap limits. Under
+`off` there is no lockdown and the bound is cooperative only; a worker's
+stdout and stderr, and a direct peer channel between two workers, are not
+enveloped. A worker that
 ends unexpectedly is restarted after 1 s, then 2 s, and
 suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
 which the current threshold never reaches); calls get

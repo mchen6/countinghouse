@@ -17,6 +17,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9720–9729 | A: RC1-min, step 3 onward |
 | 9730–9739 | B |
 | 9740–9749 | C |
+| 9790–9799 | B (2026-11-14) |
 
 ## By file
 
@@ -146,6 +147,7 @@ one) as well as the ports it binds.
 | `test/sandbox/30-deviceonline-while-unloading.js` | 9640 |
 | `test/sandbox/45-load-bound.js` | 9734–9735 |
 | `test/sandbox/46-redis-namespace.js` | 9736–9737 |
+| `test/sandbox/49-message-bound.js` | 9739 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |

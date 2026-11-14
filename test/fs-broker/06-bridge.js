@@ -1,4 +1,5 @@
 const assert = require('assert');
+const envelope = require('../../lib/message-envelope');
 const fs = require('fs');
 const path = require('path');
 const {Worker, receiveMessageOnPort} = require('worker_threads');
@@ -19,10 +20,11 @@ async function harness(opts) {
   await ns.prepare();
   const scheduler = opts.scheduler || new FsScheduler({globalCap: 3});
   const key = opts.key || 'w1';
-  const broker = new FsBroker({name: 'm', mode: 'audit', namespace: ns, cwd: '/', report: () => {},
+  const reports = [];
+  const broker = new FsBroker({name: 'm', mode: 'audit', namespace: ns, cwd: '/', report: (rule, target) => reports.push(`${rule} ${target}`),
     schedule: (fn) => scheduler.submit(key, fn), hooks: opts.hooks});
   const bridge = createBridge({broker, scheduler, key, deadlineMs: opts.deadlineMs, maxStuck: opts.maxStuck});
-  return {base, dirs, broker, scheduler, bridge,
+  return {base, dirs, broker, scheduler, bridge, reports,
     run(body) {
       if (this.worker) throw new Error('one run() per harness: a bridge\'s ports can be transferred once');
       const code = `const {workerData, parentPort} = require('worker_threads');
@@ -82,8 +84,10 @@ describe('fs-broker 06: the bridge', function() {
     const h = await harness({hooks: {afterCheck: (syscall, host) => (host.endsWith('/wait') ? new Promise((r) => setTimeout(r, 300)) : null)}});
     try {
       const port = h.bridge.transfer.syncPort;
-      port.postMessage({id: 1, op: 'stat', args: ['/data/wait']});
-      port.postMessage({id: 2, op: 'stat', args: ['/data']});
+      // the wire's envelope (#170), as the client sends it
+      const send = (m) => { const w = envelope.wrap(m, envelope.BRIDGE_CAP); port.postMessage(w.envelope, w.transfer); };
+      send({id: 1, op: 'stat', args: ['/data/wait']});
+      send({id: 2, op: 'stat', args: ['/data']});
       await new Promise((r) => setTimeout(r, 700));
       const got = [];
       let msg;
@@ -91,6 +95,45 @@ describe('fs-broker 06: the bridge', function() {
       assert.deepStrictEqual(got.find((x) => x.id === 2).error.code, 'EIO', JSON.stringify(got));
       assert.strictEqual(got.find((x) => x.id === 1).error.code, 'ENOENT');
     } finally { await h.done(); }
+  });
+
+  // #170: every call is an envelope of bounded bytes
+  it('a call that is not an envelope, or is over the cap, is not served: it is reported, answered EINVAL at once, and ends the worker', async () => {
+    const h = await harness({});
+    const ended = [];
+    h.bridge.setOnViolation((why) => ended.push(why));
+    try {
+      const port = h.bridge.transfer.syncPort;
+      port.postMessage({id: 1, op: 'stat', args: ['/data']});
+      const big = envelope.wrap({id: 2, op: 'stat', args: ['/data', 'x'.repeat(64)]}, 1e6).envelope;
+      port.postMessage({b: big.b.slice(0), f: 'nope'});
+      await new Promise((r) => setTimeout(r, 300));
+      const got = [];
+      let msg;
+      while ((msg = receiveMessageOnPort(port)) !== undefined) got.push(msg.message);
+      assert.deepStrictEqual(got.map((m) => [m.id, m.ok, m.error.code]), [[null, false, 'EINVAL'], [null, false, 'EINVAL']], JSON.stringify(got));
+      assert.ok(h.reports.filter((r) => r.startsWith('message ')).length >= 2, JSON.stringify(h.reports));
+      assert.strictEqual(ended.length, 2, JSON.stringify(ended));
+    } finally { await h.done(); }
+  });
+
+  it('the client refuses a call over the cap EINVAL, before posting it', () => {
+    const {createClient} = require('../../lib/fs-broker/client');
+    const posted = [];
+    const port = {on: () => {}, unref: () => {}, ref: () => {}, postMessage: (m) => posted.push(m)};
+    const client = createClient({syncPort: port, asyncPort: port, flag: new SharedArrayBuffer(4)});
+    assert.throws(() => client.sync('writeFile', ['/data/x', Buffer.alloc(envelope.BRIDGE_CAP + 1), 'w', 0o644]), (e) => e.code === 'EINVAL');
+    assert.deepStrictEqual(posted, []);
+  });
+
+  it('a reply with id null (a call the server could not read) fails every async call waiting', async () => {
+    const {createClient} = require('../../lib/fs-broker/client');
+    let onMessage = null;
+    const port = {on: (ev, fn) => { onMessage = fn; }, unref: () => {}, ref: () => {}, postMessage: () => {}};
+    const client = createClient({syncPort: {postMessage: () => {}}, asyncPort: port, flag: new SharedArrayBuffer(4)});
+    const calls = [client.async('stat', ['/data/a']), client.async('stat', ['/data/b'])];
+    onMessage({id: null, ok: false, error: {code: 'EINVAL', message: 'EINVAL: invalid argument, bridge'}});
+    for (const r of await Promise.allSettled(calls)) assert.strictEqual(r.reason && r.reason.code, 'EINVAL');
   });
 
   it('two stuck operations put the worker on EIO, and do not stop another worker', async () => {

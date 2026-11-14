@@ -27,6 +27,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `enforce` the block watchdog already ended it, but under
   `--moduleSandbox off` nothing did and the worker stayed.
 
+### Added — a bound on what a module's worker sends the main thread (#170)
+
+- **Every message from a module's worker to the main thread is an envelope of
+  serialized bytes**, its length read before anything is decoded. Over
+  `--maxOutputBytes` plus 64 KiB it is refused in the worker,
+  `MESSAGE_TOO_LARGE` (the file bridge: 16 MiB plus 64 KiB, `EINVAL`; a
+  file write is split as before). Under `audit` and `enforce` the lockdown
+  pins the worker's ports, so module code that patches
+  `MessagePort.prototype` is never handed one; a worker whose message is not
+  an envelope, or is over the cap, is ended. Cost: about 20 µs of main-thread
+  CPU per message (a `ctx.redis` command is one).
+
 ### Changed — `ctx.redis` is per module (#164, breaking)
 
 - **Each key a module names is stored under `m:<module name, URI-encoded>:`**, the name
