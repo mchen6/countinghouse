@@ -15,7 +15,7 @@ const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server
 const {deviceIDForName} = require('../../lib/call-address');
 const hopInput = require('../../lib/hop-input');
 
-describe('sandbox 47: lib/hop-input.js, server-free', () => {
+describe('sandbox 48: lib/hop-input.js, server-free', () => {
   it('encode replaces the input with its bytes, keeps the rest, and lists the bytes to transfer', () => {
     const {args, transfer} = hopInput.encode({input: {s: 'abc', n: [1, 2]}, token: 't', usageCall: 3});
     assert.ok(args.inputBytes instanceof ArrayBuffer);
@@ -60,7 +60,7 @@ describe('sandbox 47: lib/hop-input.js, server-free', () => {
   });
 });
 
-describe('sandbox 47: a validator\'s answer to input bytes it cannot read, server-free', function() {
+describe('sandbox 48: a validator\'s answer to input bytes it cannot read, server-free', function() {
   this.timeout(60000);
   const SERVICE = 'urn:countinghouse-test:serviceID:s';
   let pool = null;
@@ -93,7 +93,7 @@ describe('sandbox 47: a validator\'s answer to input bytes it cannot read, serve
 
 const PORT   = 9749;
 const KEY    = 'hop-input-key';
-const AUTH   = path.join(__dirname, '47-auth.json');
+const AUTH   = path.join(__dirname, '48-auth.json');
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');
 const CALLER = path.join(ROOT, 'test', 'fixtures', 'hop-input-caller');
 const CAP    = 4 * 1024 * 1024;
@@ -103,7 +103,7 @@ const callerDo = (actionName, input) => post(PORT, KEY, `/devices/${deviceIDForN
 const runs = async () => (await callerDo('runs', {})).body.output.output.runs;
 const expected = (n) => ({output: {length: n, sha256: crypto.createHash('sha256').update('x'.repeat(n)).digest('hex')}});
 
-describe('sandbox 47: a routed hop\'s input crosses as a transferred buffer', function() {
+describe('sandbox 48: a routed hop\'s input crosses as a transferred buffer', function() {
   this.timeout(180000);
   let server = null;
   before(async () => {

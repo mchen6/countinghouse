@@ -2,7 +2,7 @@
   "device": {
     "friendlyName": "hop-input-caller",
     "manufacturer": "countinghouse",
-    "modelDescription": "Caller of the hop-input fixture: sends a large or a wrong input over a hop (test/sandbox/47).",
+    "modelDescription": "Caller of the hop-input fixture: sends a large or a wrong input over a hop (test/sandbox/48).",
     "serviceList": {
       "urn:countinghouse-test:serviceID:sendService": {
         "actionList": [

@@ -1,4 +1,4 @@
-// A module tampering with its own worker's messages (test/sandbox/47): its
+// A module tampering with its own worker's messages (test/sandbox/48): its
 // next hop's input bytes are swapped for a value, as an older worker sent
 // it. The main thread must refuse it, not clone it on past the cap.
 const MessagePort = globalThis.MessagePort;
