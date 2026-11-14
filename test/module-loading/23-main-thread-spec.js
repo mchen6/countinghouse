@@ -120,6 +120,32 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
     }
   });
 
+  it('an action the module declares under an Object.prototype name is its own: on the main thread and in the device a worker builds', async () => {
+    const NAMES = ['toString', 'constructor', '__proto__', 'valueOf'];
+    const spec = {device: {friendlyName: 'proto-named', serviceList: {'urn:countinghouse-test:serviceID:toString': {actionList: NAMES.map((name) => ({name: name,
+      input: {schema: '/s/in'}}))}}}};
+    const ownSpec = await moduleSpec.fromParts(JSON.parse(JSON.stringify(spec)), {$id: '#/', s: {in: {type: 'object', properties: {n: {type: 'integer'}}}}});
+    const at = (actionName, args) => moduleSpec.checkInput(ownSpec, ownSpec.deviceID, 'urn:countinghouse-test:serviceID:toString', actionName, args);
+    for (const name of NAMES) {
+      assert.strictEqual(at(name, {input: {n: 1}}).refused, undefined, `${name} is declared`);
+      assert.strictEqual(at(name, {input: {n: 'x'}}).refused[0].code, 'INPUT_DATA_VALIDATION_FAIL', `${name}'s input is checked`);
+    }
+    assert.strictEqual(at('hasOwnProperty', {input: {}}).refused[0].code, 'ACTION_NOT_FOUND');
+    // The worker's device: setAction sets the module's own entry and leaves Object.prototype alone.
+    const CHDevice = require('../../lib/countinghouse-device');
+    const device = new CHDevice(JSON.parse(JSON.stringify(spec)));
+    const handler = (args, cb) => cb(null, {output: {}});
+    for (const name of NAMES) device.setAction('urn:countinghouse-test:serviceID:toString', name, handler);
+    const service = device.services['urn:countinghouse-test:serviceID:toString'];
+    for (const name of NAMES) assert.strictEqual(typeof(Object.getOwnPropertyDescriptor(service.actions, name).value.invoke), 'function', name);
+    assert.strictEqual(Object.prototype.toString.invoke, undefined, 'Object.prototype.toString untouched');
+    assert.strictEqual(Object.invoke, undefined, 'Object untouched');
+    const refused = await new Promise((resolve) => device.deviceControl('urn:countinghouse-test:serviceID:s', 'toString', {input: {}}, (err) => resolve(err)));
+    assert.strictEqual(refused.code, 'SERVICE_NOT_FOUND');
+    const notDeclared = await new Promise((resolve) => service.invokeAction('hasOwnProperty', {input: {}}, (err) => resolve(err)));
+    assert.strictEqual(notDeclared.code, 'ACTION_NOT_FOUND');
+  });
+
   describe('the device a worker announces', () => {
     let DeviceManager = null;
     const LOG = require('../../lib/logger');
