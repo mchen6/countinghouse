@@ -208,6 +208,7 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     try {
       await listed(s);
       const {r, waited} = await timedCall(s, 40000);
+      assert.ok(r.result != null, `no tool result: ${JSON.stringify(r)}; stderr: ${s.stderr().slice(-1500)}`);
       assert.strictEqual(r.result.isError, true, JSON.stringify(r));
       assert.strictEqual(r.result._meta['countinghouse/code'], 'CTX_CALL_NOT_READY', JSON.stringify(r));
       assert.ok(waited < 15000, `released when it was purged (${waited} ms), not at the bound`);
