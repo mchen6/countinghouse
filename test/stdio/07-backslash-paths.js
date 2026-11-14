@@ -92,6 +92,10 @@ describe('stdio 07: "\\" paths on Windows (issue #40, round 4)', () => {
     const namespace = async (platform) => {
       const n = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: [], platform});
       await n.prepare();
+      // The win32 rules for the module's paths, over this machine's own
+      // disk: its host paths split with its own path functions (path.win32
+      // on Windows, as the namespace would choose).
+      n.hostPath = path;
       return n;
     };
     const insideRoot = (r) => r.kind !== 'root' || (r.host === r.root.host || r.host.startsWith(`${r.root.host}/`)) && !r.host.includes('\\');
@@ -162,6 +166,22 @@ describe('stdio 07: "\\" paths on Windows (issue #40, round 4)', () => {
           await assert.rejects(broker.handle('symlink', [form(t), '/data/l']), {code: 'EPERM'}, t);
         }
         assert.deepStrictEqual(fs.readdirSync(dirs.data), []);
+      } finally {
+        await broker.closeAll();
+      }
+    });
+
+    // Round 6 review: the link walk follows a link the host made; on
+    // Windows one whose target has a "\\", a ":" or a leading "/" is the
+    // OS's to resolve, so a target through it is refused.
+    it('win32: a target through a host link to C:\\outside, \\\\srv\\x or /x is refused (EPERM)', async function() {
+      const broker = new FsBroker({name: 'm', mode: 'enforce', namespace: await namespace('win32'), cwd: '/app'});
+      try {
+        for (const [name, to] of [['hl', 'C:\\outside'], ['hu', '\\\\srv\\x'], ['hr', '/x']]) {
+          try { fs.symlinkSync(to, path.join(dirs.data, name)); } catch (e) { if (e.code === 'EPERM') this.skip(); throw e; }
+          await assert.rejects(broker.handle('symlink', [`${name}/x`, '/data/l']), {code: 'EPERM'}, to);
+        }
+        assert.ok(!fs.readdirSync(dirs.data).includes('l'));
       } finally {
         await broker.closeAll();
       }

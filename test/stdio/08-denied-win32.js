@@ -81,7 +81,7 @@ describe('stdio 08: the always-denied set on Windows, and sticky identities (iss
       fake.lstat = fake.stat;
       const d = new DeniedSet(Object.keys(files), {platform: 'win32', hostFs: fake});
       assert.strictEqual(await d.matches('C:\\other', {dev: 9, ino: 0}), true, 'current');
-      assert.deepStrictEqual(Array.from(d.sticky), []);
+      assert.deepStrictEqual(Array.from(d.sticky.values()).flat(), []);
     });
 
     it('not a denied file: a neighbour, another drive\'s', async () => {
@@ -138,7 +138,7 @@ describe('stdio 08: the always-denied set on Windows, and sticky identities (iss
         const moved = path.join(base, 'moved');
         fs.writeFileSync(secret, 'x');
         const d = new DeniedSet([secret]);
-        const ident = (p) => { const st = fs.lstatSync(p); return {dev: st.dev, ino: st.ino}; };
+        const ident = (p) => { const st = fs.lstatSync(p); return {dev: st.dev, ino: st.ino, birthtimeMs: st.birthtimeMs}; };
         assert.strictEqual(await d.matches(secret, ident(secret)), true);
         fs.renameSync(secret, moved);
         d.at = 0;   // the next refresh, now
@@ -149,6 +149,140 @@ describe('stdio 08: the always-denied set on Windows, and sticky identities (iss
       } finally {
         tmp.remove(base);
       }
+    });
+
+    // Round 6: sticky only for the main files, at most the last 2 per path,
+    // each keyed by dev, ino and a non-zero birthtime.
+    const ident = (p) => { const st = fs.lstatSync(p); return {dev: st.dev, ino: st.ino, birthtimeMs: st.birthtimeMs}; };
+    const stickyCount = (d) => Array.from(d.sticky.values()).reduce((n, ring) => n + ring.length, 0);
+
+    it('at most the last 2 identities per path: a secret rewritten 5 times keeps 2', async () => {
+      const base = tmp.mkdtemp('ch-den-');
+      try {
+        const secret = path.join(base, '.identity-secret');
+        const d = new DeniedSet([secret]);
+        const kept = [];
+        for (let i = 0; i < 5; i++) {
+          fs.writeFileSync(`${secret}.new`, String(i));
+          fs.renameSync(`${secret}.new`, secret);   // a new inode at the path, as a provider rewrites
+          kept.push(`${base}/keep-${i}`);
+          fs.linkSync(secret, kept[i]);             // holds the inode, so it is not reused
+          d.at = 0;
+          assert.strictEqual(await d.matches(secret, ident(secret)), true);
+        }
+        assert.ok(stickyCount(d) <= 2, `${stickyCount(d)} sticky`);
+        fs.rmSync(secret);
+        d.at = 0;
+        assert.strictEqual(await d.matches(kept[4], ident(kept[4])), true, 'the last one');
+        assert.strictEqual(await d.matches(kept[0], ident(kept[0])), false, 'the first one, rotated out');
+      } finally {
+        tmp.remove(base);
+      }
+    });
+
+    it('a side file (-wal, -shm, -journal) is matched while current, never sticky', async () => {
+      const base = tmp.mkdtemp('ch-den-');
+      try {
+        const db = path.join(base, 'auth.db');
+        const journal = `${db}-journal`;
+        fs.writeFileSync(db, 'db');
+        fs.writeFileSync(journal, 'j');
+        const d = new DeniedSet([db, `${db}-wal`, `${db}-shm`, journal]);
+        const moved = path.join(base, 'moved');
+        assert.strictEqual(await d.matches(journal, ident(journal)), true);
+        assert.strictEqual(d.sticky.has(journal), false);
+        assert.strictEqual(d.sticky.has(db), true);
+        fs.renameSync(journal, moved);
+        d.at = 0;
+        assert.strictEqual(await d.matches(moved, ident(moved)), false, 'a side file moved away is not kept');
+      } finally {
+        tmp.remove(base);
+      }
+    });
+
+    it('an identity with a birthtime matches only a file with that birthtime', async () => {
+      const base = tmp.mkdtemp('ch-den-');
+      try {
+        const secret = path.join(base, '.identity-secret');
+        fs.writeFileSync(secret, 'x');
+        const d = new DeniedSet([secret]);
+        const id = ident(secret);
+        assert.strictEqual(await d.matches(null, id), true);
+        fs.rmSync(secret);
+        d.at = 0;
+        await d.matches(null, null);
+        if (id.birthtimeMs > 0) {
+          assert.strictEqual(await d.matches(null, Object.assign({}, id, {birthtimeMs: id.birthtimeMs + 1000})), false, 'a reused inode');
+        }
+        assert.strictEqual(await d.matches(null, id), true, 'the file itself, moved away');
+      } finally {
+        tmp.remove(base);
+      }
+    });
+  });
+
+  // Round 6: default APFS is case-insensitive, so darwin folds case too.
+  describe('darwin: case folded', () => {
+    it('Auth.json-journal is refused under audit (a missing auth.json-journal)', async () => {
+      const base = tmp.mkdtemp('ch-den-');
+      try {
+        const dirs = {app: path.join(base, 'app'), data: path.join(base, 'data'), tmp: path.join(base, 'tmp')};
+        Object.values(dirs).forEach((x) => fs.mkdirSync(x));
+        const denied = new DeniedSet([path.join(base, 'auth.json-journal')], {platform: 'darwin'});
+        assert.strictEqual(await denied.matchesOutside(path.join(base, 'Auth.json-journal'), false), true);
+        const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: [], platform: 'darwin'});
+        await ns.prepare();
+        const broker = new FsBroker({name: 'm', mode: 'audit', namespace: ns, cwd: '/app', denied});
+        try {
+          await assert.rejects(broker.handle('open', [path.join(base, 'Auth.json-journal'), 'w', 0o644]), {code: 'EACCES'});
+          assert.ok(!fs.readdirSync(base).some((n) => /journal/i.test(n)));
+        } finally {
+          await broker.closeAll();
+        }
+      } finally {
+        tmp.remove(base);
+      }
+    });
+  });
+
+  // Round 6: on win32 the broker splits a root's host path with Windows'
+  // rules, and a real path is in a root by either separator.
+  describe('win32: host paths in "\\" form', () => {
+    it('a "\\"-form declared root: its parent and children split, and real paths under it are in it', async () => {
+      const n = createNamespace({moduleRoot: 'D:\\m\\mod', dataDir: 'D:\\m\\data', tmpDir: 'D:\\m\\tmp',
+        declared: [{path: 'C:\\decl', access: 'rw'}], protectedPaths: [], platform: 'win32'});
+      await n.prepare();
+      assert.strictEqual(n.hostPath.dirname('C:\\decl'), 'C:\\');
+      assert.strictEqual(n.hostPath.join(n.hostPath.dirname('C:\\decl'), n.hostPath.basename('C:\\decl')), 'C:\\decl');
+      assert.strictEqual(n.rootForReal('C:\\decl').name, 'declared');
+      assert.strictEqual(n.rootForReal('C:\\decl\\a\\b').name, 'declared');
+      assert.strictEqual(n.rootForReal('D:\\m\\data\\a\\b').name, 'data');
+      assert.strictEqual(n.rootForReal('D:\\m\\data/a').name, 'data');
+      assert.strictEqual(n.rootForReal('D:\\m\\database\\x'), null);
+      assert.strictEqual(n.rootForReal('C:\\declx'), null);
+      assert.strictEqual(n.toVirtual('D:\\m\\data\\a\\b'), '/data/a/b');
+      // the drive letter's case only: d: is D:, any other letter's case counts
+      assert.strictEqual(n.rootForReal('d:\\m\\data\\a').name, 'data');
+      assert.strictEqual(n.rootForReal('D:\\M\\data\\a'), null);
+    });
+
+    it('a "\\"-form declared path inside, or holding, a protected path is refused', async () => {
+      const n = createNamespace({moduleRoot: 'D:\\m\\mod', dataDir: 'D:\\m\\data', tmpDir: 'D:\\m\\tmp',
+        declared: [{path: 'C:\\ch\\store\\sub', access: 'rw'}, {path: 'C:\\ch', access: 'r'}, {path: 'C:\\other', access: 'r'}],
+        protectedPaths: ['C:\\ch\\store'], platform: 'win32'});
+      await n.prepare();
+      assert.deepStrictEqual(n.refused.map((r) => r.path), ['C:\\ch\\store\\sub', 'C:\\ch']);
+      assert.ok(n.roots.some((r) => r.vroot === 'C:\\other'));
+    });
+
+    it('POSIX: "\\" is part of a name, and the host path functions are POSIX', async () => {
+      const n = createNamespace({moduleRoot: '/m/mod', dataDir: '/m/data', tmpDir: '/m/tmp', declared: [], protectedPaths: [], platform: 'linux'});
+      await n.prepare();
+      assert.strictEqual(n.hostPath, path.posix);
+      // a sibling named data\x, not a child of /m/data
+      assert.strictEqual(n.rootForReal('/m/data\\x'), null);
+      assert.strictEqual(n.rootForReal('/m/data/x').name, 'data');
+      assert.strictEqual(n.toVirtual('/m/data/a\\b'), '/data/a\\b');
     });
   });
 });
