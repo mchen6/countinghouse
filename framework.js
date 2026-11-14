@@ -194,6 +194,17 @@ if (options.hardened === true && process.permission == null) {
     var drive = require('./lib/fs-broker/virtual-drive').pick();
     if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
   }
+  // On Windows the child cannot run the PowerShell the identity secret's
+  // ACL check needs: it is created and checked here (lib/identity.js
+  // prepareForHardened)
+  if (process.platform === 'win32') {
+    try {
+      require('./lib/identity').prepareForHardened(options);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
 }
