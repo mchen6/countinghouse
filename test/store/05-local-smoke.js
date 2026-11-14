@@ -14,6 +14,11 @@ const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {withoutRedisNoise} = require('../helpers/stdio-client');
+
+// The server's log for a failure message (issue #40, Windows): what it
+// printed, the Redis connection noise left out.
+const serverLog = (srv) => `; server log without the Redis noise:\n${withoutRedisNoise((srv && srv.output) || '', 3000)}`;
 const {toolOutput} = require('../helpers/tool-result');
 
 const PORT = 9732;
@@ -45,13 +50,14 @@ describe('store 05: --store local with no Redis (LM1 B5)', function() {
 
   it('lists and calls the tool, and a module\'s ctx.redis keeps its value', async () => {
     const listed = await rpc('tools/list', {});
-    assert.ok(listed.result.tools.some((t) => t.name === TOOL), JSON.stringify(listed).slice(0, 500));
+    assert.ok(listed.result.tools.some((t) => t.name === TOOL), `${JSON.stringify(listed).slice(0, 300)}${serverLog(server)}`);
     const r = await mcpCall(PORT, KEY, TOOL, {key: 'k', value: 'kept'});
     assert.deepStrictEqual(toolOutput(r), {value: 'kept'});
   });
 
   it('runs a task to its result', async () => {
     const created = await rpc('tools/call', {name: TOOL, arguments: {key: 't', value: 'task'}, task: {}});
+    assert.ok(created.result != null && created.result.task != null, `${JSON.stringify(created).slice(0, 300)}${serverLog(server)}`);
     const taskId = created.result.task.taskId;
     let status = null;
     for (let i = 0; i < 100 && status !== 'completed'; i++) {
