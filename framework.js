@@ -75,6 +75,12 @@ if (options.remoteLimitInvalid != null) {
     JSON.stringify(String(options.remoteLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// Lean worker step 1(b): the validator pool's size and deadline.
+if (options.validatorLimitInvalid != null) {
+  console.error('--' + options.validatorLimitInvalid.name + ' must be ' + options.validatorLimitInvalid.what + ' (got ' +
+    JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
 // IPC fd. --hardened relaunches this process as a child, which the channel
