@@ -85,24 +85,24 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
   it('Windows: owner and every write grant by well-known SID; anything else fails closed', () => {
     const win = (acl, entries = {}) => readCeiling({platform: 'win32', programData: 'C:\\ProgramData',
       fs: fakeFs(Object.assign({'C:\\ProgramData\\countinghouse': {dir: true}, 'C:\\ProgramData\\countinghouse\\ceiling.json': {text: GOOD}}, entries)), acl: () => acl});
-    const ok = {owner: ADMINS, conditional: false, rules: [{sid: ADMINS, rights: 2032127, type: 'Allow', inheritOnly: false}, {sid: SYSTEM, rights: 2032127, type: 'Allow', inheritOnly: false},
+    const ok = {owner: ADMINS, otherAces: false, rules: [{sid: ADMINS, rights: 2032127, type: 'Allow', inheritOnly: false}, {sid: SYSTEM, rights: 2032127, type: 'Allow', inheritOnly: false},
       {sid: USERS, rights: 1179817, type: 'Allow', inheritOnly: false}]};   // Users: ReadAndExecute
     assert.strictEqual(win({dir: ok, file: ok}).state, 'trusted');
-    const usersWrite = {owner: ADMINS, conditional: false, rules: ok.rules.concat([{sid: USERS, rights: 2, type: 'Allow', inheritOnly: false}])};
+    const usersWrite = {owner: ADMINS, otherAces: false, rules: ok.rules.concat([{sid: USERS, rights: 2, type: 'Allow', inheritOnly: false}])};
     assert.match(win({dir: usersWrite, file: ok}).problem, /its directory is writable by S-1-5-32-545/);
-    assert.match(win({dir: ok, file: {owner: 'S-1-5-21-1-2-3-1001', conditional: false, rules: ok.rules}}).problem, /the file is owned by S-1-5-21/);
-    // a conditional access rule (not among the listed rules), or no word on one, fails closed
-    assert.match(win({dir: ok, file: Object.assign({}, ok, {conditional: true})}).problem, /the file has a conditional access rule/);
-    assert.match(win({dir: {owner: ADMINS, rules: ok.rules}, file: ok}).problem, /its directory has a conditional access rule, or its rules could not all be read/);
+    assert.match(win({dir: ok, file: {owner: 'S-1-5-21-1-2-3-1001', otherAces: false, rules: ok.rules}}).problem, /the file is owned by S-1-5-21/);
+    // an access rule other than a plain allow or deny (not wholly among the listed rules), or no word on one, fails closed
+    assert.match(win({dir: ok, file: Object.assign({}, ok, {otherAces: true})}).problem, /the file has an access rule other than a plain allow or deny/);
+    assert.match(win({dir: {owner: ADMINS, rules: ok.rules}, file: ok}).problem, /its directory has an access rule other than a plain allow or deny, or its rules could not all be read/);
     // an inherit-only grant does not apply to the object; a deny only restricts
-    assert.strictEqual(win({dir: {owner: ADMINS, conditional: false, rules: ok.rules.concat([{sid: USERS, rights: 2, type: 'Allow', inheritOnly: true}, {sid: USERS, rights: 2, type: 'Deny', inheritOnly: false}])}, file: ok}).state, 'trusted');
+    assert.strictEqual(win({dir: {owner: ADMINS, otherAces: false, rules: ok.rules.concat([{sid: USERS, rights: 2, type: 'Allow', inheritOnly: true}, {sid: USERS, rights: 2, type: 'Deny', inheritOnly: false}])}, file: ok}).state, 'trusted');
     assert.match(win(null).problem, /ACL could not be read/);
     assert.match(readCeiling({platform: 'win32', programData: 'C:\\ProgramData', fs: fakeFs({'C:\\ProgramData\\countinghouse': {dir: true}, 'C:\\ProgramData\\countinghouse\\ceiling.json': {text: GOOD}}),
       acl: () => { const e = new Error('spawn powershell.exe ENOENT'); e.code = 'ENOENT'; throw e; }}).problem, /ACL could not be read \(ENOENT\)/);
     assert.match(win({dir: ok, file: ok}, {'C:\\ProgramData\\countinghouse\\ceiling.json': {link: true}}).problem, /symbolic link/);
-    assert.match(aclProblem('x', {owner: ADMINS, conditional: false, rules: [{sid: USERS, rights: 'many', type: 'Allow'}]}), /could not be read/);
+    assert.match(aclProblem('x', {owner: ADMINS, otherAces: false, rules: [{sid: USERS, rights: 'many', type: 'Allow'}]}), /could not be read/);
     // no file, in a directory a user owns: fails closed
-    const userDir = {owner: 'S-1-5-21-1-2-3-1001', conditional: false, rules: ok.rules};
+    const userDir = {owner: 'S-1-5-21-1-2-3-1001', otherAces: false, rules: ok.rules};
     assert.match(readCeiling({platform: 'win32', programData: 'C:\\ProgramData', fs: fakeFs({'C:\\ProgramData\\countinghouse': {dir: true}}), acl: () => ({dir: userDir, file: userDir})}).problem,
       /its directory is owned by S-1-5-21-1-2-3-1001, not Administrators, SYSTEM or TrustedInstaller/);
   });
