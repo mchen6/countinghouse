@@ -60,6 +60,8 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
     const bad = await call(5, {action: 'unset'});
     assert.strictEqual(bad.result._meta['countinghouse/code'], 'ARGUMENTS_INVALID');
     const history = fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    assert.deepStrictEqual(history.map((h) => [h.by, h.setting, h.new]), [['settings tool', 'requestTimeout', 20000]]);
+    // the change made, then the refused loosening as asked (part 3, section 5), never as a change
+    assert.deepStrictEqual(history.map((h) => [h.by, h.setting, h.new, h.asked, h.change]), [
+      ['settings tool', 'requestTimeout', 20000, undefined, undefined], ['settings tool', 'autoUpgrade', undefined, true, 'refused, terminal only']]);
   });
 });
