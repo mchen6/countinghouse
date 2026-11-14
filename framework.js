@@ -60,6 +60,14 @@ if (options.mcpToolCallCostInvalid != null) {
     (typeof(badCost) === 'boolean' || badCost === '' ? 'no value' : JSON.stringify(String(badCost))) + ')');
   process.exit(2);
 }
+// #144: a load bound that is not a number of seconds > 0 (or one setTimeout
+// cannot hold) would end every load at once or never.
+if (options.moduleLoadTimeoutInvalid != null) {
+  var badLoad = options.moduleLoadTimeoutInvalid.value;
+  console.error('--moduleLoadTimeout must be a number of seconds > 0, at most 2147483 (got ' +
+    (typeof(badLoad) === 'boolean' || badLoad === '' ? 'no value' : JSON.stringify(String(badLoad))) + ')');
+  process.exit(2);
+}
 // RC1-min: a module cannot choose where a credential goes; the operator's
 // file does. One that cannot be read as {origin: [variable]} stops the start.
 if (options.remoteLimitInvalid != null) {
