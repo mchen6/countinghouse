@@ -11,13 +11,18 @@ you have to do. What the sandbox does and does not protect is in
 
 - **Most likely surprise: module outputs are capped, and checked out of a
   module's reach.**
-  - `--maxOutputBytes` (default 8 MiB, at most 256 MiB) caps every module
-    output, measured by its bytes on the main thread. That includes a hop's
-    result to another module and a routed hop's input. Past it the call is
-    refused with `OUTPUT_TOO_LARGE` or `INPUT_TOO_LARGE`, naming the module
-    and the action. A module that returns more than 8 MiB stops working on
-    upgrade: raise the cap, or have it return a reference (a path in its
-    data) instead.
+  - `--maxOutputBytes` (default 8 MiB, at most 256 MiB) caps a module's
+    output on every call the main thread carries, measured by its bytes
+    there: a client's call, a job's run, and a hop routed through the main
+    thread (its result and its input). Past it the call is refused with
+    `OUTPUT_TOO_LARGE` or `INPUT_TOO_LARGE`, naming the module and the
+    action. A module that returns more than 8 MiB stops working on upgrade:
+    raise the cap, or have it return a reference (a path in its data)
+    instead.
+  - A hop over a direct peer channel (the default; `--no-directPeerChannels`
+    routes hops through the main thread) is not capped yet: its result goes
+    from one module's worker to the other's unmeasured. Lean worker step 4
+    brings peer calls under the same checks.
   - Every call the main thread sends a module (an MCP `tools/call`, an HTTP
     `invoke-action`, a job's run, a hop routed through the main thread) has
     its input and output validated in a validator worker, under a deadline.
@@ -353,7 +358,8 @@ says how to write a module for this.
 - **`POST /uninstall-module {name, keepData}`** (admin key): removes a
   module's registry entry. Unless `keepData` is true, it deletes the
   module's data under `--moduleDataPath` and its `ctx.redis` keys (its
-  `m:<name>:` namespace), so a later module of the same name inherits
+  namespace, `m:` plus the URI-encoded module name plus `:`, so `@acme/tool`'s
+  keys are under `m:%40acme%2Ftool:`), so a later module of the same name inherits
   neither; the answer gives `keysDeleted`. A purge that fails answers
   `MODULE_KEYS_NOT_PURGED`. It never removes the module's code. Unload the
   module first ([reference](cli-and-api-reference.md)). A reload or an
@@ -364,10 +370,13 @@ says how to write a module for this.
     tightens them within bounds, and never loosens a guarding one: that's
     `SETTING_LOOSENS_A_GUARD`, and the user loosens with the `ch-local`
     command instead.
-  - **`--controlChannel ipc`** is the channel `ch-local start` uses to load,
-    unload and reload packs and to apply settings while the runtime serves.
-    It works only in the single-identity profile, over an IPC descriptor
-    the spawning process holds, and is refused with `--hardened`.
+  - **`--controlChannel ipc`** is the channel `ch-local start` uses while
+    the runtime serves. It works only in the single-identity profile, over
+    an IPC descriptor the spawning process holds, and is refused with
+    `--hardened`. It serves `notice` (a pack change to announce) and `set`
+    (a setting that applies now). Loading, unloading and reloading packs
+    over it follow with the rest of packs in place; until then they answer
+    `CONTROL_NOT_READY`, and a pack change takes a restart.
   - Neither is for a hosted server.
 - **Disk limits in the policy:** `diskMb` and `diskEntries` take the same
   ceilings and per-module entries as the other limits.
@@ -429,7 +438,8 @@ examples show the shape.
   secret changes every id.
 - Purge the job history 7.x kept in Redis db 5: its `jobinfo:*` lists
   hold callers' raw keys. In 8.0 a module's `ctx.redis` can no longer reach
-  them, since every module's keys live in its own `m:<name>:` namespace, and new records name their owner by the caller id, but the old
+  them, since every module's keys live in its own namespace (`m:` plus the
+  URI-encoded module name), and new records name their owner by the caller id, but the old
   lists stay until removed:
   `redis-cli -n 5 --scan --pattern 'jobinfo:*' | xargs -r redis-cli -n 5 del`
   (a job's history then starts afresh).

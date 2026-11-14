@@ -58,6 +58,14 @@ configuration). None of it is available to a hosted server.
   applies at the next start, since the validators' heap is sized at start.
   A running call keeps its timer.
 
+### Fixed — `countinghouse-auth-sqlite` and `countinghouse-meter` are installed as commands
+
+- They were in `bin/` but missing from `package.json` `"bin"`, so a package
+  install put no such command on the PATH, though the docs name them as
+  commands (`countinghouse-auth-sqlite bind-module`,
+  `countinghouse-meter set`). Before this, run them as
+  `node <install>/bin/<name>.js`.
+
 ### Fixed — a worker's durations equal the main thread's (#188, #112)
 
 - A module worker's `jobTimeout` and `jobResultTtl` were 1000 times the main
