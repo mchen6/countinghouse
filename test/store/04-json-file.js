@@ -436,24 +436,23 @@ describe('store 04: a waiter is not starved (#150)', function() {
     await new Promise((resolve) => holder.on('exit', resolve));
   });
 
-  it('a wait that ends yielding to a waiter names the waiter, not a holder', async () => {
+  // The message a wait ends with, decided where the wait ends (busyError),
+  // with no wait and no renewing: a fresh announcement by a live process
+  // and no lock held is a yield, named by the waiter's pid. (A wait of
+  // LOCK_WAIT_MS against an announcement a child kept renewing depended on
+  // the renewal's timing, and on Windows a rename over the file while it
+  // is read can fail: flaky on #165's CI.)
+  it('a wait that ends yielding to a waiter names the waiter, not a holder', () => {
+    const {busyError} = require(MOD);
     const dir = tmpStore();
-    // a live waiter that keeps its announcement fresh for longer than the wait
-    const waiter = spawn(process.execPath, ['-e', `
-      const fs = require('fs');
-      const file = ${JSON.stringify(path.join(dir, '.lock.waiting'))};
-      // renamed over, as the runtime writes it, so no read sees it half written
-      const renew = () => { fs.writeFileSync(file + '.tmp', JSON.stringify({pid: process.pid, startMs: 1, at: Date.now()})); fs.renameSync(file + '.tmp', file); };
-      renew();
-      process.stdout.write('on');
-      setInterval(renew, 100);
-      setTimeout(() => process.exit(0), 6000);
-    `], {stdio: ['ignore', 'pipe', 'ignore']});
-    await new Promise((resolve) => waiter.stdout.once('data', resolve));
+    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)'], {stdio: 'ignore'});
     try {
-      assert.throws(() => withStoreLock(dir, () => {}), (e) => e.message.includes(String(waiter.pid)) && !/held by pid unknown/.test(e.message));
+      fs.writeFileSync(path.join(dir, '.lock.waiting'), JSON.stringify({pid: sleeper.pid, startMs: 1, at: Date.now()}));
+      const err = busyError({busy: true, refused: null}, dir);
+      assert.ok(err.message.includes(String(sleeper.pid)), err.message);
+      assert.doesNotMatch(err.message, /held by pid unknown/);
     } finally {
-      waiter.kill();
+      sleeper.kill();
     }
   });
 
