@@ -135,6 +135,8 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.ok(Date.now() - started < 250, `another module's call answered in ${Date.now() - started} ms`);
       const r = await slow;
       assert.ok(['VALIDATION_TIMEOUT', 'INPUT_DATA_VALIDATION_FAIL'].includes(r.body.code), JSON.stringify(r.body));
+      // the module waits a one-second cool-down after a stalled validator
+      await new Promise((resolve) => setTimeout(resolve, 1100));
       assert.strictEqual((await invoke('slow', {s: 'abc'})).status, 200, 'a plain value is validated');
     });
 
@@ -151,6 +153,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
         assert.ok(Date.now() - started < 250, `${Date.now() - started} ms`);
       }
       for (const r of await Promise.all(flood)) assert.strictEqual(r.body.code, 'VALIDATION_TIMEOUT', JSON.stringify(r.body));
+      await new Promise((resolve) => setTimeout(resolve, 1100));   // the module's cool-down
     });
 
     it('an output over --maxOutputBytes is refused in the module\'s worker, naming the module and the action', async () => {

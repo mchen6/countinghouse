@@ -73,6 +73,9 @@ describe('module-loading 24: the validator pool', function() {
   const checkIn = (m, input, p = pool) => p.check(m.key, SERVICE, 'a', 'input', {input: input});
   const checkOut = (m, output, p = pool) => p.check(m.key, SERVICE, 'a', 'output', {output: output});
   const codeOf = (answer) => (answer == null ? null : answer[0].code);
+  // A module whose request stalled a validator waits a one-second cool-down
+  // before it gets another (lib/validator-pool.js COOLDOWN_MS).
+  const cooled = () => new Promise((r) => setTimeout(r, 1100));
 
   // Runs `work` while a 10 ms timer on this thread records its worst lateness.
   async function whileTimed(work) {
@@ -122,6 +125,7 @@ describe('module-loading 24: the validator pool', function() {
     for (let i = 0; i < 4; i++) {
       await whenReady(pool);
       assert.strictEqual(codeOf(await checkIn(m, STALLING)), 'VALIDATION_TIMEOUT');
+      await cooled();
     }
     assert.strictEqual(pool.isQuarantined(m.name), false);
     await whenReady(pool);
@@ -133,6 +137,7 @@ describe('module-loading 24: the validator pool', function() {
     for (let i = 0; i < 3; i++) {
       await whenReady(pool);
       assert.strictEqual(codeOf(await checkOut(m, STALLING)), 'VALIDATION_TIMEOUT');
+      await cooled();
     }
     assert.ok(pool.isQuarantined(m.name));
     assert.ok(errors.some((l) => l.includes(`${m.name}: quarantined after 3`)), errors.join('\n'));
@@ -167,6 +172,49 @@ describe('module-loading 24: the validator pool', function() {
     assert.ok(answers.every((a) => codeOf(a) === 'VALIDATION_TIMEOUT'));
     const floodSent = pool.stats.sent - sentBefore - 5;
     assert.ok(floodSent <= 2, `only the flood's running requests were sent to a validator (${floodSent} of 20)`);
+    await cooled();
+  });
+
+  it('a sustained flood (a slow input every 100 ms for 3 s) replaces about one validator a second, and another module stays under 50 ms throughout', async () => {
+    const p = newPool();
+    try {
+      await whenReady(p);
+      for (let w = 0; !(p.spare && p.spare.ready) && w < 30000; w += 20) await new Promise((r) => setTimeout(r, 20));
+      const flood = moduleWith(STALL, {}, {type: 'object'}, p);
+      const quiet = moduleWith({type: 'object', properties: {n: {type: 'integer'}}}, {}, {type: 'object'}, p);
+      assert.strictEqual(await checkIn(quiet, {n: 0}, p), null);
+      const replacedBefore = p.respawns.length;
+      const flooded = [];
+      const worst = [];
+      const started = Date.now();
+      while (Date.now() - started < 3000) {
+        flooded.push(checkIn(flood, STALLING, p));
+        const t = Date.now();
+        assert.strictEqual(await checkIn(quiet, {n: 1}, p), null);
+        worst.push(Date.now() - t);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      await Promise.all(flooded);
+      const replaced = p.respawns.length - replacedBefore;
+      assert.ok(replaced <= 4, `${replaced} validators replaced in 3 s`);
+      assert.ok(Math.max(...worst) < 50, `the quiet module's checks took up to ${Math.max(...worst)} ms`);
+    } finally {
+      p.close();
+    }
+  });
+
+  it('a request with under a quarter of its budget left is not started: refused, no validator stalled', async () => {
+    const m = moduleWith(STALL);
+    await whenReady(pool);
+    // the module's one validator held for the whole budget by the first
+    const first = checkIn(m, STALLING);
+    await new Promise((r) => setTimeout(r, 260));
+    const replacedBefore = pool.respawns.length;
+    const late = checkIn(m, STALLING);   // queued behind it; when the first ends, 40 ms are left
+    assert.strictEqual(codeOf(await first), 'VALIDATION_TIMEOUT');
+    assert.strictEqual(codeOf(await late), 'VALIDATION_TIMEOUT');
+    assert.strictEqual(pool.respawns.length - replacedBefore, 1, 'only the first stalled a validator');
+    await cooled();
   });
 
   it('a module of 50 actions of 30 properties each (135 KB) compiles at load, per action, and every call answers', async () => {
@@ -175,15 +223,21 @@ describe('module-loading 24: the validator pool', function() {
       input: {schema: `/s/a${i}/input`}, output: {schema: `/s/a${i}/output`}}))}}}};
     const schema = {$id: '#/', s: Object.fromEntries(Array.from({length: 50}, (_, i) => [`a${i}`, {input: {type: 'object', properties: props}, output: {type: 'object', properties: props}}]))};
     assert.ok(JSON.stringify(schema).length > 130000, String(JSON.stringify(schema).length));
-    const key = 'big-module#1';
-    pool.register(key, 'big-module', JSON.stringify(api), JSON.stringify(schema));
-    await whenReady(pool);
-    const started = Date.now();
-    assert.strictEqual(await pool.warm(key), null);
-    const warmMs = Date.now() - started;
-    assert.ok(warmMs < COMPILE_MS, `warm ${warmMs} ms`);
-    for (let i = 0; i < 50; i += 7) {
-      assert.strictEqual(await pool.check(key, SERVICE, `a${i}`, 'input', {input: {p0: 'x'}}), null, `a${i}`);
+    // the runtime's default compile budget (--validationCompileMs 10000)
+    const p = newPool({compileMs: 10000});
+    try {
+      const key = 'big-module#1';
+      p.register(key, 'big-module', JSON.stringify(api), JSON.stringify(schema));
+      await whenReady(p);
+      const started = Date.now();
+      assert.strictEqual(await p.warm(key), null);
+      const warmMs = Date.now() - started;
+      assert.ok(warmMs < 5000, `warm ${warmMs} ms`);
+      for (let i = 0; i < 50; i += 7) {
+        assert.strictEqual(await p.check(key, SERVICE, `a${i}`, 'input', {input: {p0: 'x'}}), null, `a${i}`);
+      }
+    } finally {
+      p.close();
     }
   });
 
@@ -228,6 +282,7 @@ describe('module-loading 24: the validator pool', function() {
     const started = Date.now();
     assert.strictEqual(codeOf(await pending), 'VALIDATION_TIMEOUT');
     assert.ok(Date.now() - started < TIMEOUT_MS, 'refused when it ended, not at the deadline');
+    await cooled();
     await whenReady(pool);
     assert.strictEqual(await checkIn(moduleWith({type: 'object'}), {}), null);
   });
@@ -239,7 +294,8 @@ describe('module-loading 24: the validator pool', function() {
       for (let w = 0; !(p.spare && p.spare.ready) && w < 30000; w += 20) await new Promise((r) => setTimeout(r, 20));
       const flood = moduleWith(STALL, {}, {type: 'object'}, p);
       const quiet = moduleWith({type: 'object', properties: {n: {type: 'integer'}}}, {}, {type: 'object'}, p);
-      // one validator replaced (a slow input), then a flood at once
+      // one validator replaced (a slow input), then a flood at once (its
+      // module cooled down: the flood itself is refused in the queue)
       assert.strictEqual(codeOf(await checkIn(flood, STALLING, p)), 'VALIDATION_TIMEOUT');
       const flooded = Array.from({length: 5}, () => checkIn(flood, STALLING, p));
       await new Promise((r) => setTimeout(r, 30));
