@@ -96,7 +96,7 @@ const BUNDLED_IDENTITIES = ['composite-demo-internal', 'aabbcc', 'perf-caller-de
 function writeAuth(dir) {
   const auth = {[KEY]: {userName: 'mcp-conformance', devices: ['*']}};
   // each bound to its demo (R2-1 Task 4: the demos declare their calls)
-  const RUNS = {'composite-demo-internal': 'composite-demo', 'aabbcc': 'echo-device-client', 'perf-caller-demo-internal': 'perf-caller-demo'};
+  const RUNS = {'composite-demo-internal': 'composite-demo', 'aabbcc': 'echo-device-client-module', 'perf-caller-demo-internal': 'perf-caller-demo'};
   BUNDLED_IDENTITIES.forEach((k, i) => { auth[k] = {userName: `bundled-demo-identity-${i + 1}`, devices: ['*'], runsModules: [RUNS[k]]}; });
   for (const f of ['examples/log-triage/auth.json', 'examples/repo-review/auth.json']) {
     const entries = JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8'));

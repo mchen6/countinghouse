@@ -45,6 +45,16 @@
             "output": {
               "schema": "/tokenCallee/tick/output"
             }
+          },
+          {
+            "name": "holds",
+            "description": "Reports what this callee's ctx can see of a key: ctx.caller.apiKey and the key ctx.recordUsage reports (R2-1 Task 5: none).",
+            "input": {
+              "schema": "/tokenCallee/holds/input"
+            },
+            "output": {
+              "schema": "/tokenCallee/holds/output"
+            }
           }
         ]
       }

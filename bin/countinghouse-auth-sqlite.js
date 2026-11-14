@@ -8,11 +8,15 @@
 //
 // Commands:
 //   add-user <apiKey> <userName>              create or rename a user
-//   remove-user <apiKey>                       delete a user and all its device grants
+//   remove-user <apiKey>                       delete a user, all its device grants and its module bindings
 //   grant <apiKey> <deviceID>                  authorize apiKey for deviceID (or "*" for every device)
 //   revoke <apiKey> <deviceID>                 remove one device grant
 //   set-admin <apiKey> <true|false>            grant/revoke admin rights (module-lifecycle routes; independent of device grants)
-//   list                                       print every user, their admin status, and their granted devices
+//   set-id <apiKey> <id>                       the stable id behind the user's opaque id
+//   bind-module <apiKey> <moduleName>          the identity a module's inner hops authorize as (its package name; the
+//                                              sqlite form of runsModules); one identity per module
+//   unbind-module <moduleName>                 remove a module's binding
+//   list                                       print every user, their admin status, granted devices and bound modules
 //
 // --dbPath defaults to ./auth.sqlite3 (same default SqliteAuthProvider itself uses).
 // sqlite3 is an optionalDependency, required lazily -- see
@@ -44,7 +48,7 @@ function parseArgs(argv) {
 }
 
 function usageAndExit(code) {
-  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|set-id|list> [args...]');
+  console.error('Usage: node bin/countinghouse-auth-sqlite.js [--dbPath <path>] <add-user|remove-user|grant|revoke|set-admin|set-id|bind-module|unbind-module|list> [args...]');
   process.exit(code);
 }
 
@@ -68,6 +72,9 @@ function main() {
         console.error(`failed to migrate admin column: ${err.message}`);
       }
     });
+    // The module bindings (lib/auth/sqlite-provider.js creates the same
+    // table on open), for a database from before it.
+    db.run('CREATE TABLE IF NOT EXISTS module_identities (moduleName TEXT PRIMARY KEY, apiKey TEXT NOT NULL)');
 
     switch (command) {
       case 'add-user': {
@@ -85,6 +92,10 @@ function main() {
         if (apiKey == null) usageAndExit(1);
         db.run('DELETE FROM user_devices WHERE apiKey = ?', [apiKey], (err) => {
           if (err) { console.error(err.message); process.exit(1); }
+          // its module bindings go with it: a removed key runs no module
+          db.run('DELETE FROM module_identities WHERE apiKey = ?', [apiKey], (errM) => {
+            if (errM) { console.error(errM.message); process.exit(1); }
+          });
           db.run('DELETE FROM users WHERE apiKey = ?', [apiKey], (err) => {
             if (err) { console.error(err.message); process.exit(1); }
             console.log(`ok: removed ${apiKey}`);
@@ -150,6 +161,36 @@ function main() {
         });
         break;
       }
+      // R2-1 Task 5 (#147): a module's binding, by the module name the
+      // server loads it under (its package.json name). One identity per
+      // module: binding again moves it. The user must exist; the error does
+      // not echo the key.
+      case 'bind-module': {
+        const apiKey = parsed.args[1], moduleName = parsed.args[2];
+        if (apiKey == null || moduleName == null) usageAndExit(1);
+        db.get('SELECT 1 AS found FROM users WHERE apiKey = ?', [apiKey], (err, row) => {
+          if (err) { console.error(err.message); process.exit(1); }
+          if (row == null) { console.error('no such user (add-user first)'); process.exit(1); }
+          db.run('INSERT INTO module_identities (moduleName, apiKey) VALUES (?, ?) ON CONFLICT(moduleName) DO UPDATE SET apiKey = excluded.apiKey',
+            [moduleName, apiKey], (err2) => {
+              if (err2) { console.error(err2.message); process.exit(1); }
+              console.log(`ok: ${moduleName} runs as ${apiKey}`);
+              db.close();
+            });
+        });
+        break;
+      }
+      case 'unbind-module': {
+        const moduleName = parsed.args[1];
+        if (moduleName == null) usageAndExit(1);
+        db.run('DELETE FROM module_identities WHERE moduleName = ?', [moduleName], function(err) {
+          if (err) { console.error(err.message); process.exit(1); }
+          if (this.changes === 0) { console.error(`no binding for module ${moduleName}`); process.exit(1); }
+          console.log(`ok: ${moduleName} unbound`);
+          db.close();
+        });
+        break;
+      }
       case 'list': {
         db.all('SELECT apiKey, userName, admin FROM users', [], (err, users) => {
           if (err) { console.error(err.message); process.exit(1); }
@@ -159,10 +200,14 @@ function main() {
           users.forEach((u) => {
             db.all('SELECT deviceID FROM user_devices WHERE apiKey = ?', [u.apiKey], (err, rows) => {
               if (err) { console.error(err.message); process.exit(1); }
-              const adminLabel = (u.admin === 1) ? ', admin' : '';
-              console.log(`${u.apiKey} (${u.userName}${adminLabel}): ${rows.map((r) => r.deviceID).join(', ')}`);
-              remaining--;
-              if (remaining === 0) db.close();
+              db.all('SELECT moduleName FROM module_identities WHERE apiKey = ? ORDER BY moduleName', [u.apiKey], (err2, mods) => {
+                if (err2) { console.error(err2.message); process.exit(1); }
+                const adminLabel = (u.admin === 1) ? ', admin' : '';
+                const runs = (mods.length > 0) ? `; runs modules: ${mods.map((m) => m.moduleName).join(', ')}` : '';
+                console.log(`${u.apiKey} (${u.userName}${adminLabel}): ${rows.map((r) => r.deviceID).join(', ')}${runs}`);
+                remaining--;
+                if (remaining === 0) db.close();
+              });
             });
           });
         });

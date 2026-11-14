@@ -135,6 +135,13 @@ node bin/countinghouse-auth-sqlite.js set-admin my-api-key true
 node bin/countinghouse-auth-sqlite.js list
 # my-api-key (alice, admin): some-specific-device-id
 node bin/countinghouse-auth-sqlite.js set-admin my-api-key false
+
+# a composing module's identity (the sqlite form of auth.json's runsModules,
+# docs/composite-tools.md): by the module's package.json name
+node bin/countinghouse-auth-sqlite.js bind-module my-internal-key composite-demo
+node bin/countinghouse-auth-sqlite.js list
+# my-internal-key (composite-demo-identity): *; runs modules: composite-demo
+node bin/countinghouse-auth-sqlite.js unbind-module composite-demo
 ```
 
 Pass `--dbPath <path>` before the subcommand if not using the default

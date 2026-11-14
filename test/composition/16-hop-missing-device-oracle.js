@@ -8,8 +8,11 @@
 // A hop's client is built by asking main for the device's spec. That query
 // carries the call's token and the identity named (R2-1 Task 3), so main
 // can run the access check: an identity granted the device is told why it
-// is missing, any other gets the access error, and so sees the same for a
-// device that was unloaded as for one never hosted.
+// is missing, any other gets the access error. And the query answers only
+// for a device the module declared calls on (R2-1 Task 5, #148): a device
+// never hosted cannot be among its declarations (verification would have
+// failed), so it is refused CTX_CALL_UNDECLARED, the same answer a present
+// device it did not declare gets.
 const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
@@ -77,18 +80,23 @@ const normalised = (seen) => ({code: seen.code, message: String(seen.message).re
       assert.strictEqual(toolErrorCode(r), 'USER_HAS_NO_DEVICE', JSON.stringify(r));
     });
 
-    it('a client built now: the identity granted the device is told why it is missing (R2-1 Task 3)', async () => {
+    it('a client built now: the identity granted the declared device is told why it is missing (R2-1 Task 3)', async () => {
       const unloaded = await observe(GRANTED_FRESH, DEVICE);
-      const never = await observe(GRANTED_FRESH, NEVER);
       assert.strictEqual(unloaded.code, 'MODULE_UNLOADED', JSON.stringify(unloaded));
-      assert.strictEqual(never.code, 'DEVICE_NOT_FOUND', JSON.stringify(never));
     });
 
-    it('a client built now: an identity without a grant sees the same for an unloaded device as for one never hosted', async () => {
+    it('a client built now: an identity without a grant gets the access error for the declared device', async () => {
       const unloaded = await observe(UNGRANTED_FRESH, DEVICE);
-      const never = await observe(UNGRANTED_FRESH, NEVER);
-      assert.deepStrictEqual(normalised(unloaded), normalised(never), `${JSON.stringify(unloaded)} vs ${JSON.stringify(never)}`);
       assert.strictEqual(unloaded.code, 'USER_HAS_NO_DEVICE', JSON.stringify(unloaded));
+    });
+
+    it('a client built now, for a device never hosted: refused as undeclared, the same as a present device not declared (#148)', async () => {
+      const present = deviceIDForName('hop-prober');   // loaded, and not among its own declarations
+      for (const as of [GRANTED_FRESH, UNGRANTED_FRESH]) {
+        const never = await observe(as, NEVER);
+        assert.strictEqual(never.code, 'CTX_CALL_UNDECLARED', JSON.stringify(never));
+        assert.deepStrictEqual(normalised(never), normalised(await observe(as, present)), JSON.stringify(never));
+      }
     });
   });
 });

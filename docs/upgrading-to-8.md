@@ -47,6 +47,13 @@ you have to do. What the sandbox does and does not protect is in
   every mode. Check registry entries, `load_module` calls and composite
   `runsModules` bindings before upgrading. `POST /load-module` may leave
   `name` out.
+- **`runsModules` names the module.** A composing module's identity is
+  bound by its module name (its package.json `name`, which the server loads
+  it under), no longer by a device's `friendlyName`. Where the two differ
+  (the bundled `echo-device-client-module`, whose device is
+  `echo-device-client`), list the module name; one identity runs a module,
+  all its devices. Under `--authProvider sqlite`, bind with
+  `countinghouse-auth-sqlite bind-module <apiKey> <moduleName>`.
 - **Worker mode is the default.** `--no-workerThread` keeps single-thread
   mode, which is now for debugging modules only and has no sandbox. In
   worker mode the sandbox runs in `audit` by default, which changes some

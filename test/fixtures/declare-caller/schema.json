@@ -17,7 +17,9 @@
               "clientOtherAction",
               "loadSecond",
               "seeComposition",
-              "loadSecondCode"
+              "loadSecondCode",
+              "calleeHolds",
+              "forgedCtxHop"
             ]
           },
           "as": {
@@ -52,6 +54,12 @@
           "n": {
             "type": [
               "number",
+              "null"
+            ]
+          },
+          "holds": {
+            "type": [
+              "object",
               "null"
             ]
           }
