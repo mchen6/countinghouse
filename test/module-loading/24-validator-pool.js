@@ -328,6 +328,18 @@ describe('module-loading 24: the validator pool', function() {
       assert.strictEqual(answer.buffer, null);
     });
 
+    it('a validator\'s heap follows --maxOutputBytes: 256 MB up to a 48 MiB cap, then four times the cap and 64 MB more', () => {
+      const MiB = 1024 * 1024;
+      for (const [cap, mb] of [[undefined, 256], [8 * MiB, 256], [48 * MiB, 256], [64 * MiB, 320], [256 * MiB, 1088]]) {
+        const p = new ValidatorPool({size: 1, maxOutputBytes: cap});
+        try {
+          assert.strictEqual(p.resourceLimits.maxOldGenerationSizeMb, mb, String(cap));
+        } finally {
+          p.close();
+        }
+      }
+    });
+
     it('a module not loaded, or quarantined, is refused before anything is sent', async () => {
       const answer = await pool.checkSerialized('no-such#1', SERVICE, 'a', 'output', bytesOf({output: {}}));
       assert.strictEqual(codeOf(answer.refused), 'DEVICE_INVOKE_EXCEPTION');

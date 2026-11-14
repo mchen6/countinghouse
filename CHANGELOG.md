@@ -155,9 +155,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   decodes them. A large result between modules no longer stalls the main
   thread for every tenant. Bytes a module forges through its worker are
   refused or checked like any others: a caller only ever decodes bytes a
-  validator passed, within the cap. Final results (an MCP tools/call, an
-  HTTP invoke-action answer, a job's result) are unpacked on the main thread
-  as before.
+  validator passed, within the cap. Bytes reach only a request that asked
+  for them, and a hop's reply that is not bytes is refused. A Buffer crosses
+  as a Uint8Array, as structured clone gives it, using V8's own serializer.
+  A validator's heap follows the cap: four times it plus 64 MB, never under
+  256 MB. Final results (an MCP tools/call, an HTTP invoke-action answer, a
+  job's result) are unpacked on the main thread as before.
 - **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
   a 100 KB output.
 - **A worker's device is registered only if it announces exactly that spec,**
