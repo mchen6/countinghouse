@@ -10,17 +10,17 @@ const {virtualFormFor} = require('../../lib/fs-broker/roots');
 describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
   afterEach(() => virtualDrive.reset());
 
-  it('the picker under the permission model takes the letter its parent picked (CH_VIRTUAL_DRIVE); outside it, never', () => {
+  it('the picker under the permission model takes the letter its parent picked (COUNTINGHOUSE_VIRTUAL_DRIVE); outside it, never', () => {
     const had = Object.getOwnPropertyDescriptor(process, 'permission');
     try {
       virtualDrive.reset();
-      assert.strictEqual(virtualDrive.pick('win32', () => false, {CH_VIRTUAL_DRIVE: 'Q'}), process.permission != null ? 'Q' : 'M',
+      assert.strictEqual(virtualDrive.pick('win32', () => false, {COUNTINGHOUSE_VIRTUAL_DRIVE: 'Q'}), process.permission != null ? 'Q' : 'M',
         'without --permission the variable is not taken');
       virtualDrive.reset();
       Object.defineProperty(process, 'permission', {value: {has: () => false}, configurable: true});
-      assert.strictEqual(virtualDrive.pick('win32', () => { throw new Error('refused'); }, {CH_VIRTUAL_DRIVE: 'Q'}), 'Q');
+      assert.strictEqual(virtualDrive.pick('win32', () => { throw new Error('refused'); }, {COUNTINGHOUSE_VIRTUAL_DRIVE: 'Q'}), 'Q');
       virtualDrive.reset();
-      assert.strictEqual(virtualDrive.pick('win32', () => true, {CH_VIRTUAL_DRIVE: 'C'}), null, 'C is never one: not in D..Z');
+      assert.strictEqual(virtualDrive.pick('win32', () => true, {COUNTINGHOUSE_VIRTUAL_DRIVE: 'C'}), null, 'C is never one: not in D..Z');
     } finally {
       if (had) Object.defineProperty(process, 'permission', had); else delete process.permission;
       virtualDrive.reset();

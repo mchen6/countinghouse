@@ -192,7 +192,7 @@ if (options.hardened === true && process.permission == null) {
   // lib/fs-broker/virtual-drive.js)
   if (options.moduleSandbox === 'enforce' && process.platform === 'win32') {
     var drive = require('./lib/fs-broker/virtual-drive').pick();
-    if (drive != null) process.env.CH_VIRTUAL_DRIVE = drive;
+    if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
   }
   hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
