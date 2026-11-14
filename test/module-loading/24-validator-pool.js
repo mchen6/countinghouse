@@ -268,6 +268,73 @@ describe('module-loading 24: the validator pool', function() {
     await cooled();
   });
 
+  // Lean worker step 2 (the reviewer's ruling (a) of 2026-11-13): a hop's
+  // result is a v8.serialize buffer, transferred to a validator, checked
+  // against the callee's output schema, and transferred back; never
+  // deserialised on the main thread. A stall is a strike against the callee.
+  describe('a serialized output (a hop\'s result)', () => {
+    const v8 = require('v8');
+    const bytesOf = (value) => { const b = v8.serialize(value); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+    const OUT = {type: 'object', properties: {n: {type: 'integer'}}, required: ['n']};
+    const checkBytes = (m, buffer, p = pool) => p.checkSerialized(m.key, SERVICE, 'a', 'output', buffer);
+
+    it('one that passes comes back as the same bytes, transferred both ways, and is never deserialised here', async () => {
+      const m = moduleWith({type: 'object'}, {}, OUT);
+      await whenReady(pool);
+      const sent = bytesOf({output: {n: 7}});
+      const copy = Buffer.from(sent.slice(0));
+      const real = v8.deserialize;
+      let calls = 0;
+      v8.deserialize = (...a) => { calls += 1; return real(...a); };
+      let answer;
+      try {
+        answer = await checkBytes(m, sent);
+      } finally {
+        v8.deserialize = real;
+      }
+      assert.strictEqual(answer.refused, null);
+      assert.strictEqual(sent.byteLength, 0, 'transferred, not copied');
+      assert.ok(answer.buffer instanceof ArrayBuffer);
+      assert.ok(Buffer.from(answer.buffer).equals(copy));
+      assert.strictEqual(calls, 0);
+    });
+
+    it('one that fails is refused as the same value cloned is, with no bytes back', async () => {
+      const m = moduleWith({type: 'object'}, {}, OUT);
+      const answer = await checkBytes(m, bytesOf({output: {n: 'seven'}}));
+      assert.strictEqual(answer.buffer, null);
+      assert.strictEqual(codeOf(answer.refused), 'OUTPUT_DATA_VALIDATION_FAIL');
+      const cloned = await checkOut(m, {n: 'seven'});
+      assert.deepStrictEqual([answer.refused[0].message, answer.refused[1]], [cloned[0].message, cloned[1]]);
+    });
+
+    it('one that stalls its validator is refused VALIDATION_TIMEOUT, a strike against that module; the pool serves on', async () => {
+      const m = moduleWith({type: 'object'}, {}, STALL);
+      await whenReady(pool);
+      const before = (pool.strikes.get(m.name) || []).length;
+      const answer = await checkBytes(m, bytesOf({output: STALLING}));
+      assert.strictEqual(answer.buffer, null);
+      assert.strictEqual(codeOf(answer.refused), 'VALIDATION_TIMEOUT');
+      assert.strictEqual((pool.strikes.get(m.name) || []).length, before + 1);
+      await cooled();
+      await whenReady(pool);
+      assert.strictEqual((await checkBytes(m, bytesOf({output: [1, 2]}))).refused, null);
+    });
+
+    it('bytes that are not a serialized value are refused DEVICE_INVOKE_EXCEPTION (the check failed to run), fail closed', async () => {
+      const m = moduleWith({type: 'object'});
+      const answer = await checkBytes(m, new Uint8Array([0xff, 0x0f, 0x01, 0x02]).buffer);
+      assert.strictEqual(codeOf(answer.refused), 'DEVICE_INVOKE_EXCEPTION');
+      assert.strictEqual(answer.buffer, null);
+    });
+
+    it('a module not loaded, or quarantined, is refused before anything is sent', async () => {
+      const answer = await pool.checkSerialized('no-such#1', SERVICE, 'a', 'output', bytesOf({output: {}}));
+      assert.strictEqual(codeOf(answer.refused), 'DEVICE_INVOKE_EXCEPTION');
+      assert.strictEqual(answer.buffer, null);
+    });
+  });
+
   it('a module of 50 actions of 30 properties each (135 KB) compiles at load, per action, and every call answers', async () => {
     const props = Object.fromEntries(Array.from({length: 30}, (_, i) => [`p${i}`, {type: 'string', description: 'd'.repeat(60), maxLength: 100}]));
     const api = {device: {friendlyName: 'big-module', serviceList: {[SERVICE]: {actionList: Array.from({length: 50}, (_, i) => ({name: `a${i}`,
