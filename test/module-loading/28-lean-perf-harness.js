@@ -20,6 +20,7 @@ const linux = fs.existsSync('/proc/self/status');
     assert.ok(result.targets.addedRssPerWorkerMb != null, JSON.stringify(result.targets));
     assert.ok(result.targets.fixedRssMb != null, JSON.stringify(result.targets));
     assert.ok(result.targets.addedRssPerWorkerThroughZeroMb != null, JSON.stringify(result.targets));
+    assert.match(result.rssMethod, /1\.\.N workers/);
   });
 
   // The per-worker slope is fitted over 1..N workers; what the first worker
@@ -27,14 +28,18 @@ const linux = fs.existsSync('/proc/self/status');
   // fit's intercept above the 0-module RSS. The old slope, through the
   // 0-module row, is kept for comparison with earlier tables.
   it('the RSS fit: a per-worker slope over 1..N workers, the fixed cost beside it, and the old slope through 0', () => {
-    const {rssFit} = require('../../perf/lean-worker-perf');
+    const {rssFit, fit: fitOf} = require('../../perf/lean-worker-perf');
     // 100 MB with no module; 40 MB once with the first worker; 20 MB per worker
-    const f = rssFit([[0, 100], [1, 160], [3, 200], [5, 240]]);
+    const f = rssFit([0, 100], [[1, 160], [3, 200], [5, 240]]);
     assert.ok(Math.abs(f.perWorkerMb - 20) < 1e-9, JSON.stringify(f));
     assert.ok(Math.abs(f.fixedMb - 40) < 1e-9, JSON.stringify(f));
     assert.ok(Math.abs(f.throughZeroMb - 385 / 14.75) < 1e-9, JSON.stringify(f));
-    // one point past 0 fits no slope, and so no fixed cost
-    assert.deepStrictEqual(rssFit([[0, 100], [1, 160]]), {perWorkerMb: null, fixedMb: null, throughZeroMb: 60});
+    // one configuration with modules fits no slope, and so no fixed cost
+    assert.deepStrictEqual(rssFit([0, 100], [[1, 160]]), {perWorkerMb: null, fixedMb: null, throughZeroMb: 60});
+    // the baseline is the no-module configuration, whatever a modules row measured:
+    // a row whose module failed to load (0 workers) stays a modules row
+    const g = rssFit([0, 100], [[0, 101], [1, 160], [3, 200]]);
+    assert.ok(Math.abs(g.fixedMb - (fitOf([[0, 101], [1, 160], [3, 200]]).intercept - 100)) < 1e-9, JSON.stringify(g));
   });
 
   it('the least-squares slope and the median', () => {
