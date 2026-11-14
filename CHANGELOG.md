@@ -171,8 +171,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   review of #165). Every call whose spec the main thread holds answers in
   bytes: a client's, a job's and a hop's, and a failed call's error and
   payload too. The main thread refuses them `OUTPUT_TOO_LARGE` from their
-  own length, so nothing a module does in its worker gets past the cap: a
-  getter, a patched `byteLength`, a huge fault or message. A client's or a
+  own length, so a getter, a patched `byteLength`, a huge fault or message
+  cannot get a result or an error past the cap. Not yet bounded: a module
+  that patches its worker's `MessagePort` can attach extra fields to a
+  reply, which the main thread deserialises on receipt, before any length
+  check. That is the general module-to-main channel, with no byte bound yet
+  (#170). A client's or a
   job's result is unpacked on the main thread once a validator passed it; a
   plain reply where bytes were asked for is refused. A Buffer crosses
   as a Uint8Array, as structured clone gives it, using V8's own serializer.
