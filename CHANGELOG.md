@@ -27,6 +27,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `enforce` the block watchdog already ended it, but under
   `--moduleSandbox off` nothing did and the worker stayed.
 
+### Changed — a module's output and its worker's log, bounded
+
+- **Under audit and enforce a module's stdout and stderr are runtime-owned
+  streams**: Node's own, which hold its port to the main thread, are never
+  handed to module code. Output reaches the log line by line, prefixed with
+  the module's name, each line cut at 8 KiB and stripped of control
+  characters but tab, at most 256 KiB a minute per stream (then dropped,
+  with one line a minute saying how much); to stderr under `--stdio`.
+- **A worker's own log crosses as records** (1 MiB a minute, fields cut at
+  8 KiB, the module named by the main thread), so a module flooding its
+  output cannot crowd them out. Each record now carries `module`.
+
 ### Added — a bound on what a module's worker sends the main thread (#170)
 
 - **Every message from a module's worker to the main thread is an envelope of

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "outService": {
+    "say": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "flood": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "mb": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "mb"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ms": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "logFlood": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "n"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "reached": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "routes": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

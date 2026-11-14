@@ -299,9 +299,24 @@ queued, so a worker that did hold a port could have any number of messages
 decoded (20 of 5 MB each, all decoded after `terminate()`, measured on Node
 24.21; removing the listeners or closing the main side's port does not stop
 it), and that serialized data lies outside the worker's heap limits. Under
-`off` there is no lockdown and the bound is cooperative only; a worker's
-stdout and stderr, and a direct peer channel between two workers, are not
-enveloped. A worker that
+`off` there is no lockdown and the bound is cooperative only; a direct peer
+channel between two workers is not enveloped.
+
+A module's stdout and stderr are bounded the same way. Under audit and
+enforce the lockdown gives module code runtime-owned streams for
+`process.stdout`, `process.stderr` and `process.stdin` (fixed getters),
+points `console` and `process._rawDebug` at them, and Node's own stdio
+streams, which hold its port to the main thread, are never handed out.
+What a module writes crosses as messages: each stream has 256 KiB a minute
+(counted in the worker and again on the main thread), past which output is
+dropped and one line a minute says how much (`<module>: N bytes of stdout
+dropped`); each line is cut at 8 KiB, stripped of control characters
+other than tab, and written prefixed with the module's name, to stderr
+under `--stdio` (stdout is the MCP channel there). The worker's own log
+(countinghouse's code in the worker) crosses as records under a budget of
+its own, 1 MiB a minute, each field cut at 8 KiB and the module named by
+the main thread, in every mode. Under `off` a module's output goes to the
+process's streams as before, unbounded. A worker that
 ends unexpectedly is restarted after 1 s, then 2 s, and
 suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
 which the current threshold never reaches); calls get
