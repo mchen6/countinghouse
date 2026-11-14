@@ -18,6 +18,17 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — `ctx.redis` is per module (#164, breaking)
+
+- **Each key a module names is stored under `m:<module name, URI-encoded>:`**, the name
+  the main thread loaded the module under (never one its worker states), so
+  one module cannot read, overwrite or delete another's keys, nor the
+  runtime's own. Every allowed command has its key positions in a table
+  (`lib/redis-namespace.js`); a command whose keys cannot be placed is
+  refused. `multi` takes the commands to queue and runs them as one
+  transaction, each in the module's namespace; `exec` on its own is refused.
+  Single-thread mode's `ctx.redis` is namespaced the same way.
+
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
 - `runsModules` (and sqlite's `module_identities`) names the module the
