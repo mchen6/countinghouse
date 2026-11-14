@@ -24,6 +24,13 @@ const ALLOWED = [
   // a hop's input as bytes (#185), a result as bytes (lean worker step 2)
   'lib/hop-input.js',
   'lib/serialized-result.js',
+  // every message to the main thread as an envelope, each dispatch in its own
+  // scope (#186); module stdout and stderr bounded, at the lockdown (#190)
+  'lib/message-envelope.js',
+  'lib/port-scope.js',
+  'lib/worker-stdio.js',
+  'lib/output-lines.js',
+  'lib/output-limits.js',
   'lib/thread-info.js',
   'lib/peer-worker.js',
   'lib/peer-channel.js',
