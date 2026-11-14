@@ -171,7 +171,7 @@ texts are the reviewer's, 2026-11-14):
 | `SETTING_UNKNOWN` | There is no setting named {name}; the settings that can be changed are in get's answer. | 没有名为 {name} 的设置；可以修改的设置见 get 的结果。 |
 | `SETTING_OUT_OF_BOUNDS` | The value {value} for {name} is outside the allowed range ({bounds}); nothing was changed. | {name} 的值 {value} 超出了允许的范围（{bounds}），未作修改。 |
 | `SETTING_LOOSENS_A_GUARD` | Changing {name} to {value} would loosen a guarding setting, which can only be done from a terminal; nothing was changed. To change it, run `{command}` in a terminal yourself. | 把 {name} 改为 {value} 会放宽一项防护设置，这只能在终端里修改，设置未作修改。如需修改，请自己在终端里运行 `{command}`。 |
-| `SETTING_NEEDS_CONFIRMATION` | Changing {name} to {value} loosens a guarding setting, so it needs your own confirmation; nothing was changed. To allow this, run `{command}` in a terminal yourself. | 把 {name} 改为 {value} 会放宽一项防护设置，需要你亲自确认，设置未作修改。如需允许，请自己在终端里运行 `{command}`。 |
+| `SETTING_NEEDS_CONFIRMATION` | Changing {name} to {value} loosens a guarding setting, so it needs your own confirmation; nothing was changed. To allow this, run `{command}` in a terminal yourself. That change is kept, not just for this session, and a value above what this runtime started with takes effect when it next starts. | 把 {name} 改为 {value} 会放宽一项防护设置，需要你亲自确认，设置未作修改。如需允许，请自己在终端里运行 `{command}`。这一修改会一直保留，不只限于本次会话；高于本次运行启动时的值，要到下次启动时才生效。 |
 
 **The allowlist for the first release.** Bounds are fixed in code.
 

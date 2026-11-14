@@ -57,16 +57,17 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(await tool.set('requestTimeout', '20s'), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'now'});
     await tool.set('locale', 'zh');
     await tool.set('locale', 'en');
+    // the current value again: a no-op, neither written nor recorded
     await tool.set('moduleSandbox', SANDBOX);
     await tool.set('autoUpgrade', 'off');
     await tool.set('upgradeCheck', 'weekly');
     assert.deepStrictEqual(await tool.set('pack.ci-failure-triage', 'off'), {name: 'pack.ci-failure-triage', old: 'on', new: 'off', applies: 'now'});
-    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', moduleSandbox: SANDBOX, autoUpgrade: false, upgradeCheck: 'weekly', 'pack.ci-failure-triage': false});
+    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', upgradeCheck: 'weekly', 'pack.ci-failure-triage': false});
     const h = history();
-    assert.strictEqual(h.length, 8);
+    assert.strictEqual(h.length, 6);
     assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(h[0]), {by: 'settings tool', setting: 'maxOutputBytes', old: 8 * MiB, new: 4 * MiB});
     assert.ok(h.every((e) => e.loosened === undefined));
-    assert.strictEqual((await tool.get()).history.length, 8);
+    assert.strictEqual((await tool.get()).history.length, 6);
   });
 
   it('a value out of bounds: SETTING_OUT_OF_BOUNDS, with the bounds, in en and zh; nothing changed', async () => {
@@ -108,9 +109,22 @@ describe('stdio 14: countinghouse_settings', () => {
       assert.match(err.message, new RegExp(`Changing ${name} to ${value} would loosen a guarding setting, which can only be done from a terminal.*run \`ch-local settings set ${name} ${value}\``));
     }
     assert.ok(!fs.existsSync(file));
-    assert.ok(!fs.existsSync(path.join(home, 'history.jsonl')), 'not a request conversation may make: nothing recorded');
+    // recorded (spec section 5: the strongest sign of an injected prompt), as asked, never as a change
+    assert.deepStrictEqual(history().map((h) => [h.setting, h.change, h.old, h.new]), loosenings.map(([name]) => [name, 'refused, terminal only', undefined, undefined]));
+    // asked again: one entry per kind, the count written before the next change
+    for (let i = 0; i < 3; i++) await refused(tool.set('autoUpgrade', 'on'), 'SETTING_LOOSENS_A_GUARD');
+    await tool.set('locale', 'zh');
+    assert.deepStrictEqual(history().filter((h) => h.setting === 'autoUpgrade').map((h) => [h.change, h.count]), [['refused, terminal only', undefined], ['refused, terminal only, asked again', 3]]);
     // off is never a value
     await refused(tool.set('moduleSandbox', 'off'), 'SETTING_OUT_OF_BOUNDS');
+  });
+
+  it('a value equal to the current one changes nothing and records nothing', async () => {
+    await tool.set('requestTimeout', '20s');
+    const before = history().length;
+    for (let i = 0; i < 5; i++) assert.deepStrictEqual(await tool.set('requestTimeout', '20s'), {name: 'requestTimeout', old: 20000, new: 20000, applies: 'now'});
+    await tool.set('locale', 'en');
+    assert.strictEqual(history().length, before);
   });
 
   it('requests not confirmed: one entry per kind this start (any value, any pack), a fresh tool per call as the gateway makes, the count written before the next change', async () => {
