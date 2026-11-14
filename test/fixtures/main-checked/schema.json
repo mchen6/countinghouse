@@ -138,6 +138,10 @@
           "n": {
             "type": "integer",
             "minimum": 0
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -154,6 +158,48 @@
         "required": [
           "s"
         ]
+      }
+    },
+    "odd": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "forge": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "garbage",
+              "invalid",
+              "deep",
+              "huge"
+            ]
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
       }
     }
   }
