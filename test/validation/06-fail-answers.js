@@ -250,13 +250,15 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     `, {eval: true});
     const msg = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('no reply')), 5000);
-      worker.once('message', (m) => { clearTimeout(timer); resolve(m); });
+      // a worker's messages to the main thread are envelopes (#170): opened as WorkerMessage does
+      worker.once('message', (raw) => { clearTimeout(timer); resolve(require('../../lib/message-envelope').unwrap(raw, Infinity).message); });
       worker.once('error', (e) => { clearTimeout(timer); reject(e); });
     });
     await worker.terminate();
     assert.strictEqual(msg.id, 7);
     assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
     assert.ok(msg.errMsg != null);
+    assert.strictEqual(msg.data, null, 'no module data');
   });
 
   it('logs no file outside the runtime\'s root for a runtime bug', async () => {
