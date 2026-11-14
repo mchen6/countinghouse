@@ -196,7 +196,9 @@ mode and logged at spawn.
 For each call the broker translates the virtual path, decides by mode, then
 checks the host: the real location must lie inside its root, compared with
 roots resolved at spawn. Under `enforce` every opened descriptor is then
-verified (its device and inode, and on Linux `/proc/self/fd`) against that location,
+verified (its device and inode, and on Linux `/proc/self/fd`, except for an
+existing file in `/data` or `/tmp`, which its device and inode verify alone)
+against that location,
 so a path swapped for a symlink between the check and the open is closed and
 answered `ENOENT`. Mutating calls take a per-module lock exclusively and
 every other call shares it, so a module cannot race its own checks. The
@@ -417,7 +419,12 @@ and the short list of what the in-process sandbox cannot give.
   open; a `stat` or other non-opening call can see the swapped target. The
   broker caches directory real paths for up to 1 s, so a host process's
   change, or another module's change in a shared `rw` directory, can go
-  unseen for that long; under `enforce` every open is still verified. The
+  unseen for that long. Under `enforce` every open is still verified, and on
+  a declared path by `/proc/self/fd` as well. In `/data` and `/tmp` an open
+  of a file that existed when checked is verified by its device and inode
+  alone, so within that second a host process's change there can steer such
+  an open outside unverified; only this module and the host can change those
+  trees, and the sandbox does not defend against the host. The
   other module cannot make a link that leads outside the root (the link
   rules: no `..`, so a link leads only into its own directory, however that
   directory is later renamed), so a stale entry cannot either. A link a host
