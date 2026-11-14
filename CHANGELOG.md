@@ -18,6 +18,62 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — packs in place, runtime side: a control channel, change notices and `countinghouse_settings` (#183)
+
+For ch-local's single-identity runtime (`--store local --stdio`, no auth
+configuration). None of it is available to a hosted server.
+
+- **`--controlChannel ipc`:** a channel that only `ch-local start` holds,
+  over the IPC descriptor of the process that spawned the runtime.
+  - Requests are applied one at a time, in order, each answered by its id.
+    `notice {module, text}` and `set {name, value}` are served. `load`,
+    `unload` and `reload` follow with the rest of part 2.
+  - Refused at start (exit 2) for any other value, outside the
+    single-identity profile, without an IPC descriptor, or with
+    `--hardened`.
+- **Change notices:** a pack change ch-local applies is said once as an MCP
+  `notifications/message` (level `notice`), and once as a one-line text
+  block on the pack's next result, tasks included.
+  - Over stdio the server declares the `logging` capability and answers
+    `logging/setLevel`; a level above `notice` stops the notifications, not
+    the result line.
+  - A notice and its pack name are cleaned of control characters and line
+    separators, and bounded. Past 20 pending, the newest are kept and the
+    rest counted in one line.
+- **`--settingsFile <path>`** (ch-local's `<home>/settings.json`) lists
+  **`countinghouse_settings`**, to the one local user only, never through
+  `ctx.call`. `get` returns each setting's value, default, bounds, whether
+  it guards, when it applies, and the last 50 changes, without ch-local's
+  host or pid. `set` changes one setting within its bounds and never
+  loosens a guarding one:
+  - `SETTING_UNKNOWN`, `SETTING_OUT_OF_BOUNDS` and `SETTING_LOOSENS_A_GUARD`
+    (the user loosens with the `ch-local` command).
+  - It follows ch-local's protocol: a lock file created whole
+    (`settings.lock`), the change appended to `history.jsonl` before the
+    file is replaced, and every change logged on stderr. That adds
+    `SETTINGS_BUSY`, `SETTINGS_FILE_INVALID` and `SETTING_NOT_RECORDED`.
+- **A live `set`** over the control channel applies `locale`,
+  `maxOutputBytes` and `requestTimeout` from the next call, and reaches
+  every running module worker. A value above what the runtime started with
+  applies at the next start, since the validators' heap is sized at start.
+  A running call keeps its timer.
+
+### Fixed — a worker's durations equal the main thread's (#188, #112)
+
+- A module worker's `jobTimeout` and `jobResultTtl` were 1000 times the main
+  thread's: the worker read the main thread's milliseconds as seconds again.
+  Its `requestTimeout` was right only through a workaround,
+  `requestTimeoutMs`.
+- A worker now sets the main thread's options with
+  `options.setResolvedOptions(o)`, which keeps durations in milliseconds.
+  `setOptions` converts the CLI's seconds once. `requestTimeoutMs` is
+  retired: ctx.call's verdict wait and a direct peer channel hop's timeout
+  read `requestTimeout`.
+- `--requestTimeout`, `--jobTimeout` and `--jobResultTtl` with no number
+  (`--no-requestTimeout`, a bare flag, a repeated one) give the default,
+  as before. Every value is capped at setTimeout's largest delay
+  (2147483647 ms), past which Node fires at once.
+
 ### Changed — a routed hop's input crosses the main thread as bytes (#185)
 
 - A `ctx.call` routed through the main thread (`--no-directPeerChannels`)
@@ -138,7 +194,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `metering.json` under each key's fingerprint (never the key);
   `countinghouse-meter set` seeds one, the key read from
   `COUNTINGHOUSE_SEED_KEY` only.
-- **`ctx.redis`:** the same 21 commands with Redis's answers and errors.
+- **`ctx.redis`:** the same 19 commands (21 before #164 removed `multi`
+  and `exec`), with Redis's answers and errors.
 - **Jobs and MCP tasks:** an in-process runner with job-control's surface;
   not kept across restarts; `--jobResultTtl <seconds>` (default 3600).
 - **The single-identity profile** (`--store local --stdio` without

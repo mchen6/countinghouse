@@ -9,6 +9,34 @@ you have to do. What the sandbox does and does not protect is in
 
 ## Before you upgrade
 
+- **Most likely surprise: module outputs are capped, and checked out of a
+  module's reach.**
+  - `--maxOutputBytes` (default 8 MiB, at most 256 MiB) caps every module
+    output, measured by its bytes on the main thread. That includes a hop's
+    result to another module and a routed hop's input. Past it the call is
+    refused with `OUTPUT_TOO_LARGE` or `INPUT_TOO_LARGE`, naming the module
+    and the action. A module that returns more than 8 MiB stops working on
+    upgrade: raise the cap, or have it return a reference (a path in its
+    data) instead.
+  - Every call the main thread sends a module (an MCP `tools/call`, an HTTP
+    `invoke-action`, a job's run, a hop routed through the main thread) has
+    its input and output validated in a validator worker, under a deadline.
+    The pool is sized by `--validatorWorkers` (2 to 4 by default), and each
+    validation has `--validationTimeoutMs` (1000 ms by default) from when it
+    is queued. Past the deadline the call is refused `VALIDATION_TIMEOUT`.
+  - A caller whose inputs to a module keep missing the deadline is refused
+    `VALIDATION_CALLER_THROTTLED` on that module for a minute. A module whose
+    own outputs or compiles miss it 3 times in 5 minutes is quarantined
+    (`VALIDATION_QUARANTINED`) until you load it again.
+  - At load, a module's schemas must compile within `--validationCompileMs`
+    (10000 ms by default). A plainly unsafe `schema.json` is refused (over
+    1 MB, a backtracking pattern, a `$ref` cycle, over 100,000 nodes with
+    its `$ref`s expanded). Either refusal is `MODULE_ASSEMBLY_FAIL`, at stage
+    `schemaCompile` or `schemaSafety`. Load modules with heavy schemas in a
+    test run first.
+- **A module's load is bounded.** `--moduleLoadTimeout` (120 s by default,
+  every sandbox mode) ends a worker that hasn't answered its load in time,
+  and the load fails `MODULE_LOAD_TIMEOUT`.
 - **Node 22.16 or later.** Startup exits with status 2 on an older Node.
   Below 24.15 a compatibility shim routes `require.resolve` through the
   sandbox's hooks; multi-tenant hosting of third-party modules should run
@@ -150,6 +178,25 @@ you have to do. What the sandbox does and does not protect is in
   the main thread holds the connection and the credential
   ([module-development.md](module-development.md#calling-a-remote-mcp-server);
   what the operator allows is under [What operators get](#what-operators-get)).
+- **Your input and output are checked outside your worker.** For every call
+  the main thread sends you, the check runs in a validator worker your code
+  can't reach, under the deadlines and caps in
+  [Before you upgrade](#before-you-upgrade). Patching your own worker's
+  validation no longer changes what's accepted. A call over a direct peer
+  channel is still checked in the called module's worker, until lean worker
+  step 4.
+- **Every hop must be declared.** A composing module's `ctx.call`,
+  `ctx.serviceClient` and device queries reach only the devices and actions
+  it declares in `countinghouse.calls`; anything else is
+  `CTX_CALL_UNDECLARED`.
+- **A hop's input is sent as bytes.** A routed `ctx.call` serialises its
+  input once in your worker. A value that structured clone can't carry, or
+  a `SharedArrayBuffer`, now fails the `ctx.call` there. A
+  `SharedArrayBuffer` used to be shared between two modules' workers.
+- **New: `ctx.usage()`** resolves with the current `tools/call`'s counts so
+  far (`{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`). A
+  scenario can put its receipt sentence in its own summary. It's `null`
+  outside a counted call, and never carries a key or a caller.
 - **A scenario module may not have a top-level `receipt` output field**
   (`RECEIPT_RESERVED`): the runtime adds its receipt to a scenario's
   result, and there the name is its own. Any other module's `receipt` field
@@ -205,8 +252,9 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
 - **Resource limits and restarts** (under `audit` and `enforce`): over
   256 MB of heap or external memory, or an event loop blocked for 10 s, ends
   the worker; it restarts after 1 s, then 2 s, and is suspended on the 3rd
-  exit within 10 minutes. A module that sends the main thread more than 2000
-  messages a second gets `RATE_LIMITED`.
+  exit within 10 minutes. A module that sends the main thread more than
+  `--moduleMessageRate` messages a second (default 2000) gets
+  `RATE_LIMITED`.
 - **Files are slower.** Every `fs` call is a hop to the main thread (see
   [measured cost](#measured-cost)). Descriptors from `fs.open` are numbers
   from `0x10000000` up. `fs.watch` and friends are not available, and
@@ -243,6 +291,11 @@ says how to write a module for this.
 - **`tools/list` has one more built-in for every key:
   `countinghouse_usage_report`**, a key's own usage counts (an admin's covers
   every caller, by opaque id). A client that pins the tool list sees it.
+- **In ch-local's single-identity runtime,** `tools/list` also has
+  `countinghouse_settings` when the runtime is given `--settingsFile`.
+  Pack changes are announced as `notifications/message` (level `notice`;
+  the server declares `logging` and answers `logging/setLevel`) and once
+  as a text block on the pack's next result.
 - **A scenario's result carries a receipt**
   ([module-authoring.md](module-authoring.md#the-receipt-and-the-usage-report)):
   `_meta['countinghouse/receipt']` holds the counts, and a second text block
@@ -294,13 +347,28 @@ says how to write a module for this.
   memory, for a client machine. Jobs and MCP tasks run in-process, are not
   kept across restarts, and a finished one is readable for `--jobResultTtl`
   seconds (default 3600). `--meter` keeps balances and limits. With
-  `--stdio` and no `--authConfigPath` it is the single-identity profile: one
-  key made at start and written nowhere. `--store redis` stays the default
+  `--stdio` and neither `--authConfigPath` nor `--authProvider`, it is the
+  single-identity profile: one key made at start and written nowhere. `--store redis` stays the default
   ([reference](cli-and-api-reference.md)).
 - **`POST /uninstall-module {name, keepData}`** (admin key): removes a
-  module's registry entry and deletes its data under `--moduleDataPath`
-  unless `keepData` is true. It never removes the module's code. Unload the
-  module first ([reference](cli-and-api-reference.md)).
+  module's registry entry. Unless `keepData` is true, it deletes the
+  module's data under `--moduleDataPath` and its `ctx.redis` keys (its
+  `m:<name>:` namespace), so a later module of the same name inherits
+  neither; the answer gives `keysDeleted`. A purge that fails answers
+  `MODULE_KEYS_NOT_PURGED`. It never removes the module's code. Unload the
+  module first ([reference](cli-and-api-reference.md)). A reload or an
+  upgrade keeps the keys.
+- **For ch-local's single-identity runtime:**
+  - **`--settingsFile <path>`** (the user's `settings.json`) lists the
+    built-in **`countinghouse_settings`**. An agent reads the settings and
+    tightens them within bounds, and never loosens a guarding one: that's
+    `SETTING_LOOSENS_A_GUARD`, and the user loosens with the `ch-local`
+    command instead.
+  - **`--controlChannel ipc`** is the channel `ch-local start` uses to load,
+    unload and reload packs and to apply settings while the runtime serves.
+    It works only in the single-identity profile, over an IPC descriptor
+    the spawning process holds, and is refused with `--hardened`.
+  - Neither is for a hosted server.
 - **Disk limits in the policy:** `diskMb` and `diskEntries` take the same
   ceilings and per-module entries as the other limits.
 - **A link check at start:** under `enforce`, a module whose data holds a
@@ -361,7 +429,7 @@ examples show the shape.
   secret changes every id.
 - Purge the job history 7.x kept in Redis db 5: its `jobinfo:*` lists
   hold callers' raw keys. In 8.0 a module's `ctx.redis` can no longer reach
-  them, and new records name their owner by the caller id, but the old
+  them, since every module's keys live in its own `m:<name>:` namespace, and new records name their owner by the caller id, but the old
   lists stay until removed:
   `redis-cli -n 5 --scan --pattern 'jobinfo:*' | xargs -r redis-cli -n 5 del`
   (a job's history then starts afresh).
