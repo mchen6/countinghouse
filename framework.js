@@ -187,6 +187,13 @@ if (options.hardened === true && process.permission == null) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
   }
+  // enforce on Windows: the virtual drive is picked here, where looking at
+  // drive letters is allowed, and handed to the child (#195;
+  // lib/fs-broker/virtual-drive.js)
+  if (options.moduleSandbox === 'enforce' && process.platform === 'win32') {
+    var drive = require('./lib/fs-broker/virtual-drive').pick();
+    if (drive != null) process.env.CH_VIRTUAL_DRIVE = drive;
+  }
   hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
 }
