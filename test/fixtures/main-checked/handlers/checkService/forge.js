@@ -23,23 +23,28 @@ function forged(kind, n) {
   return Buffer.concat([HEAD, len, Buffer.alloc(n, 0x78), TAIL]);
 }
 
-// The worker's WorkerMessage, through the runtime's own countinghouse-util
-// in require.cache: since R2-1 Task 5 the global CHUtil a module sees has no
-// dm, and a module that goes around it reaches what require.cache holds.
-function workerMessage() {
-  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
-  const util = (key != null) ? require.cache[key].exports : null;
-  return (util != null && util.dm != null) ? util.dm.workerMessage : null;
+// The worker's next serialized reply (lean worker step 2: {category: 'reply',
+// dataBuffer}) is replaced as it is posted: the lean worker's WorkerMessage
+// is out of a module's reach (CHUtil has no dm, and countinghouse-util's
+// reads as undefined in a worker), so it does what code sharing the
+// worker's realm can, through MessagePort.prototype.postMessage.
+const hook = globalThis.__mainCheckedForge || (globalThis.__mainCheckedForge = {next: null, replaced: 0, hooked: false});
+if (!hook.hooked && typeof(globalThis.MessagePort) === 'function') {
+  hook.hooked = true;
+  const post = globalThis.MessagePort.prototype.postMessage;
+  globalThis.MessagePort.prototype.postMessage = function(m, transfer) {
+    if (hook.next != null && m != null && m.category === 'reply' && m.dataBuffer instanceof ArrayBuffer) {
+      const ab = hook.next;
+      hook.next = null;
+      hook.replaced += 1;
+      return post.call(this, Object.assign({}, m, {dataBuffer: ab}), [ab]);
+    }
+    return post.call(this, m, transfer);
+  };
 }
 
 module.exports = async (input) => {
   const bytes = forged(input.kind, input.n || 0);
-  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const wm = workerMessage();
-  const real = wm.sendSerializedReplyToParent;
-  wm.sendSerializedReplyToParent = function(id) {
-    wm.sendSerializedReplyToParent = real;
-    return real.call(this, id, ab);
-  };
+  hook.next = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   return {output: {ok: true}};
 };

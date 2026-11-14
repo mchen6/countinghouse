@@ -21,6 +21,9 @@ const ALLOWED = [
   'lib/lean-worker.js',
   'lib/lean-dispatcher.js',
   'lib/handler-answer.js',
+  // a hop's input as bytes (#185), a result as bytes (lean worker step 2)
+  'lib/hop-input.js',
+  'lib/serialized-result.js',
   'lib/thread-info.js',
   'lib/peer-worker.js',
   'lib/peer-channel.js',

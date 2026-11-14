@@ -24,8 +24,15 @@ function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
     if (m == null) return resolve({output: {code: 'NO_REPLY', message: null, n: null}});
     const {code, message} = codeOf(m);
     if (code != null) return resolve({output: {code: String(code), message: (message != null) ? String(message).slice(0, 200) : null, n: null}});
-    if (keep === true) return resolve({output: {code: null, message: null, n: null, holds: (m.data != null && m.data.output != null) ? m.data.output : null}});
-    return resolve(answer(null, m.data));
+    // a routed hop's result arrives as bytes (lean worker step 2), read with
+    // the runtime's own decoder, as module code can
+    let data = m.data;
+    if (m.dataBuffer instanceof ArrayBuffer) {
+      const sr = runtimeFile('serialized-result.js');
+      try { data = (sr != null) ? sr.decode(m.dataBuffer) : null; } catch (e) { data = null; }
+    }
+    if (keep === true) return resolve({output: {code: null, message: null, n: null, holds: (data != null && data.output != null) ? data.output : null}});
+    return resolve(answer(null, data));
   };
   if (state.port != null && state.announce != null) {
     const channelOpen = state.channelRequest == null || state.channelRequest.targetDeviceID === deviceID;
