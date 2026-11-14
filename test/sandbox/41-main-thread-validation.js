@@ -190,6 +190,25 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.strictEqual(good.status, 200, JSON.stringify(good.body));
       assert.strictEqual((await count()).takes, before + 1);
     });
+
+    // The review of #165: a hop's input stalls count against the CALLING
+    // module, whatever end user's key it hops for, so a module cannot spread
+    // them over its users' ids. Last in this server: it leaves
+    // main-checked-caller throttled on main-checked for a minute.
+    it('stalling hops under four end users\' keys throttle the calling module; another key\'s own calls keep passing', async () => {
+      const slowHop = (n) => post(PORT, `main-checked-rotating-${n}`, `/devices/${deviceIDForName('main-checked-caller')}/invoke-action`,
+        {serviceID: 'urn:countinghouse-test:serviceID:callerService', actionName: 'hop', input: {action: 'slow', args: {s: `${'a'.repeat(40)}!`}}});
+      const codes = [];
+      for (let n = 1; n <= 4; n++) {
+        codes.push((await slowHop(n)).body.output.code);
+        // the stalled validator is replaced before the next hop
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        const quiet = await ping();
+        assert.strictEqual(quiet.status, 200, `another key's call during the hops: ${JSON.stringify(quiet.body)}`);
+      }
+      assert.deepStrictEqual(codes.slice(0, 3).map((c) => ['VALIDATION_TIMEOUT', 'INPUT_DATA_VALIDATION_FAIL'].includes(c)), [true, true, true], JSON.stringify(codes));
+      assert.strictEqual(codes[3], 'VALIDATION_CALLER_THROTTLED', `a fourth key, the same calling module: ${JSON.stringify(codes)}`);
+    });
   }));
 
   describe('worker mode, the default sandbox and direct peer channels', () => {

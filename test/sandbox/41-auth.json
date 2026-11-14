@@ -19,5 +19,29 @@
     "devices": [
       "*"
     ]
+  },
+  "main-checked-rotating-1": {
+    "userName": "main-checked-rotating-1",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-2": {
+    "userName": "main-checked-rotating-2",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-3": {
+    "userName": "main-checked-rotating-3",
+    "devices": [
+      "*"
+    ]
+  },
+  "main-checked-rotating-4": {
+    "userName": "main-checked-rotating-4",
+    "devices": [
+      "*"
+    ]
   }
 }

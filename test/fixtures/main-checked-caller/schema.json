@@ -10,7 +10,8 @@
           "action": {
             "enum": [
               "take",
-              "give"
+              "give",
+              "slow"
             ]
           },
           "args": {

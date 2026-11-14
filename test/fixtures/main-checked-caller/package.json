@@ -8,7 +8,8 @@
       "main-checked/checkService.give",
       "main-checked/checkService.big",
       "main-checked/checkService.odd",
-      "main-checked/checkService.forge"
+      "main-checked/checkService.forge",
+      "main-checked/checkService.slow"
     ]
   }
 }
