@@ -210,7 +210,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('verify after open: a file swapped for a symlink between check and open is refused under enforce', async () => {
     const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
-      if (syscall === 'open' && host.endsWith('/swap')) {
+      if (syscall === 'open' && host.replace(/\\/g, '/').endsWith('/swap')) {
         fs.rmSync(host);
         fs.symlinkSync(path.join(path.dirname(path.dirname(host)), 'outside', 'secret'), host);
       }
@@ -223,7 +223,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('verify after open: a create whose parent is swapped toward a read-only root is refused under enforce', async () => {
     const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
-      if (syscall === 'open' && host.endsWith('/sub/new')) {
+      if (syscall === 'open' && host.replace(/\\/g, '/').endsWith('/sub/new')) {
         const sub = path.dirname(host);
         fs.rmSync(sub, {recursive: true});
         fs.symlinkSync(path.join(path.dirname(path.dirname(sub)), 'ro'), sub);
@@ -277,7 +277,7 @@ describe('fs-broker 03: broker operations', function() {
 
   it('a mutation waits for a read that holds the lock (deterministic)', async () => {
     const g = gate();
-    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => (syscall === 'stat' && host.endsWith('/f') ? g.wait() : null)}});
+    const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => (syscall === 'stat' && host.replace(/\\/g, '/').endsWith('/f') ? g.wait() : null)}});
     try {
       fs.writeFileSync(path.join(t.dirs.data, 'f'), 'x');
       const stat = t.broker.handle('stat', ['/data/f']);

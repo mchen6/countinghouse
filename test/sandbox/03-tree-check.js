@@ -101,6 +101,11 @@ describe('sandbox 03: tree checks', () => {
     const icacls = (...a) => require('child_process').execFileSync('icacls', [locked, ...a], {stdio: 'ignore'});
     if (WIN) icacls('/deny', '*S-1-1-0:(RX)'); else fs.chmodSync(locked, 0);
     try {
+      // premise: this process cannot read it now (an elevated Windows runner
+      // reads through a deny rule, with its backup privilege)
+      let readable = true;
+      try { fs.readdirSync(locked); } catch (e) { readable = false; }
+      if (readable) return this.skip();
       assert.match(checkTree(d).problems.join('\n'), WIN ? /cannot read locked: E(ACCES|PERM)/ : /cannot read locked: EACCES/);
     } finally {
       if (WIN) icacls('/remove:d', '*S-1-1-0'); else fs.chmodSync(locked, 0o755);

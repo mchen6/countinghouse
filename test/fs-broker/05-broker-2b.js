@@ -78,6 +78,22 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
+  // Under off and audit a path outside the namespace passes through to the
+  // host by design (audit logs it): there a pipe or device path is opened
+  // and copied as the host has it, and never blocks (CON, the console, is
+  // left out: it would wait for input like a terminal anywhere).
+  (WIN ? it : it.skip)('Windows, off and audit: a pipe or device path passes through without blocking', async () => {
+    for (const mode of ['off', 'audit']) {
+      const t = await setup(mode);
+      try {
+        for (const p of ['\\\\.\\pipe\\ch-probe-none', '\\\\.\\NUL', 'NUL']) {
+          const c = await quick(() => t.broker.handle('copyFile', [p, '/data/copy']));
+          assert.ok(c != null && (c.ok !== undefined || typeof(c.code) === 'string'), `${mode} copyFile ${p}: ${JSON.stringify(c)}`);
+        }
+      } finally { await t.done(); }
+    }
+  });
+
   (WIN ? it.skip : it)('enforce: a FIFO is EPERM, without blocking', async () => {
     const t = await setup('enforce');
     try {
@@ -122,7 +138,7 @@ describe('fs-broker 05: broker additions for the bridge', function() {
   it('a truncating open swapped toward another file is refused before anything is truncated', async () => {
     let victim = null;
     const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
-      if (syscall === 'open' && host.endsWith('/target')) {
+      if (syscall === 'open' && host.replace(/\\/g, '/').endsWith('/target')) {
         fs.rmSync(host);
         fs.symlinkSync(victim, host);
       }

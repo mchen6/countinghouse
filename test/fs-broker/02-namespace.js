@@ -18,10 +18,13 @@ async function prepared(cfg) {
 }
 
 function pick(r) {
-  return {kind: r.kind, host: r.host, name: r.root.name, writable: r.root.writable};
+  // a host path in "/" form (the test's roots are POSIX paths; on Windows
+  // the namespace joins under them with the host's "\\")
+  return {kind: r.kind, host: slash(r.host), name: r.root.name, writable: r.root.writable};
 }
 
 const WIN = process.platform === 'win32';
+const slash = (p) => (WIN && typeof(p) === 'string' ? p.replace(/\\/g, '/') : p);
 
 describe('fs-broker 02: namespace', () => {
   it('maps the three virtual roots and declared paths, longest match first', async () => {
@@ -69,13 +72,13 @@ describe('fs-broker 02: namespace', () => {
 
   it('resolves relative paths against the given cwd', async () => {
     const n = await prepared(CFG);
-    assert.strictEqual(n.resolve('handlers/x.js', '/app').host, '/srv/modules/weather/handlers/x.js');
+    assert.strictEqual(slash(n.resolve('handlers/x.js', '/app').host), '/srv/modules/weather/handlers/x.js');
     assert.strictEqual(n.resolve('x', '/home/u').kind, 'outside');
   });
 
   it('accepts Buffers and file: URLs', async () => {
     const n = await prepared(CFG);
-    assert.strictEqual(n.resolve(Buffer.from('/data/x'), '/').host, '/srv/data/weather/data/x');
+    assert.strictEqual(slash(n.resolve(Buffer.from('/data/x'), '/').host), '/srv/data/weather/data/x');
     // (on Windows the worker's patch reads a file URL as its path before the
     // broker sees it, and file:///tmp/y names no path: lib/fs-broker/patch.js)
     if (!WIN) assert.strictEqual(n.resolve(new URL('file:///tmp/y'), '/').host, '/srv/data/weather/tmp/y');

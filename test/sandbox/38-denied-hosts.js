@@ -86,7 +86,7 @@ describe('sandbox 38: the Redis denial reads the host as Node does', function() 
     const r = inWorker(`${install({mode: 'audit', denied: {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []}})}
       const net = require('net');
       // a unix socket; on Windows a named pipe (a socket file there is EACCES)
-      const pipe = process.platform === 'win32' ? '\\\\.\\pipe\\ch-38-live-' + process.pid
+      const pipe = process.platform === 'win32' ? '\\\\\\\\.\\\\pipe\\\\ch-38-live-' + process.pid
         : require('path').join(require('os').tmpdir(), 'ch-38-live-' + process.pid + '.sock');
       const out = {};
       for (const [label, at] of [['tcp', [0, '127.0.0.1']], ['pipe', [pipe]]]) {

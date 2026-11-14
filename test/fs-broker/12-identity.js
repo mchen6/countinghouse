@@ -36,7 +36,8 @@ describe('fs-broker 12: virtual identity', function() {
       seen(r.dirname, '/app/handlers/probeService', JSON.stringify(res));
       seen(r.filename, '/app/handlers/probeService/where.js');
       seen(r.cwd, '/app');
-      seen(r.tmpdir, '/tmp');
+      // os.tmpdir() is /tmp everywhere: on Windows it names \\tmp on the cwd's drive, <V>:
+      assert.strictEqual(r.tmpdir, '/tmp');
       seen(r.resolve, '/app/handlers/probeService/read.js');
       seen(r.dirResolve, '/app/handlers/probeService/read.js');
       assert.ok(WIN ? /[A-Z]:\\app\\handlers\\probeService\\where\.js/.test(r.frame) : r.frame.includes('/app/handlers/probeService/where.js'), r.frame);
@@ -88,9 +89,15 @@ describe('fs-broker 12: virtual identity', function() {
   (WIN ? it : it.skip)('Windows: the module scheme never leaves the module\'s root', () => {
     const m = identity().mapper('C:\\mods\\x');
     const mod = {host: 'C:\\mods\\x\\index.js', fromModule: true};
-    for (const spec of ['countinghouse-module:/../../etc/passwd', 'countinghouse-module:/..\\..\\Windows\\win.ini']) {
-      const host = m.specifier(spec, mod);
-      assert.ok(typeof host === 'string' && host.startsWith('C:\\mods\\x') && !/\.\./.test(host), `${spec} -> ${host}`);
+    // each either maps inside the module's root or is refused (MODULE_NOT_FOUND)
+    for (const spec of ['countinghouse-module:/../../etc/passwd', 'countinghouse-module:/..\\..\\Windows\\win.ini',
+      'countinghouse-module:/a/..\\..\\..\\Windows\\win.ini', 'countinghouse-module:\\..\\..\\x', 'countinghouse-module:/lib/..\\../..\\y',
+      'countinghouse-module:/%2e%2e%5c%2e%2e%5cWindows', 'countinghouse-module:/C:/Windows/win.ini', 'countinghouse-module:/x.js:stream',
+      'countinghouse-module://server/share/x', 'countinghouse-module:/\\\\server\\share\\x']) {
+      let host;
+      try { host = m.specifier(spec, mod); } catch (e) { assert.strictEqual(e.code, 'MODULE_NOT_FOUND', spec); continue; }
+      const real = path.win32.resolve(host);
+      assert.ok(real === 'C:\\mods\\x' || real.startsWith('C:\\mods\\x\\'), `${spec} -> ${host} (${real})`);
     }
   });
 
