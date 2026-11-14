@@ -171,10 +171,16 @@ describe('stdio 07: "\\" paths on Windows (issue #40, round 4)', () => {
   describe('a boot or resolving grant may not be a drive\'s root', () => {
     it('win32: D:\\ and d:\\ are refused; a directory on the drive is not', () => {
       const check = assertGrantRoots('win32');
-      assert.throws(() => check(['D:\\a\\lib', 'D:\\']), /drive's root/);
-      assert.throws(() => check(['d:\\']), /drive's root/);
-      assert.throws(() => check(['\\\\?\\D:\\']), /drive's root/);
-      assert.throws(() => check(['\\\\srv\\share']), /drive's root/);
+      assert.throws(() => check(['D:\\a\\lib', 'D:\\']), /below a drive's or a share's root/);
+      assert.throws(() => check(['d:\\']), /below a drive's or a share's root/);
+      assert.throws(() => check(['\\\\?\\D:\\']), /below a drive's or a share's root/);
+      assert.throws(() => check(['\\\\srv\\share']), /below a drive's or a share's root/);
+      assert.throws(() => check(['\\\\?\\UNC\\srv\\share\\']), /below a drive's or a share's root/);
+      assert.deepStrictEqual(check(['\\\\?\\UNC\\srv\\share\\ch']), ['\\\\?\\UNC\\srv\\share\\ch']);
+      for (const r of ['\\\\srv', '\\\\?\\UNC\\srv', '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume2', '\\\\.\\HarddiskVolume2\\', '\\\\?\\D:\\']) {
+        assert.throws(() => check([r]), /below a drive's or a share's root/, r);
+      }
+      assert.deepStrictEqual(check(['\\\\?\\D:\\a', '\\\\srv\\share\\a']), ['\\\\?\\D:\\a', '\\\\srv\\share\\a']);
       assert.deepStrictEqual(check(['\\\\srv\\share\\ch\\lib']), ['\\\\srv\\share\\ch\\lib']);
       assert.deepStrictEqual(check(['D:\\a\\lib', 'D:\\a\\package.json']), ['D:\\a\\lib', 'D:\\a\\package.json']);
     });
