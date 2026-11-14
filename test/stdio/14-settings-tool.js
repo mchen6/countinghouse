@@ -85,19 +85,47 @@ describe('stdio 14: countinghouse_settings', () => {
     await refused(tool.set('pack.../x', 'off'), 'SETTING_UNKNOWN');
   });
 
-  it('every loosening, turning a pack on included: SETTING_LOOSENS_A_GUARD, and the file is unchanged', async () => {
+  // Part 3, section 1: what conversation may ask for, and what it may not
+  it('a raised cap or timeout, or a pack turned on: SETTING_NEEDS_CONFIRMATION, naming the command; the file is unchanged', async () => {
     await tool.set('maxOutputBytes', '2MiB');
     await tool.set('requestTimeout', '10s');
     await tool.set('pack.ci-failure-triage', 'off');
     const before = fs.readFileSync(file, 'utf8');
-    // (on Windows audit is the only sandbox value, so it loosens nothing there)
-    const loosenings = [['maxOutputBytes', '4MiB'], ['requestTimeout', '15s'], ['autoUpgrade', 'on'], ['pack.ci-failure-triage', 'on']].concat(WIN ? [] : [['moduleSandbox', 'audit']]);
-    for (const [name, value] of loosenings) {
-      const err = await refused(tool.set(name, value), 'SETTING_LOOSENS_A_GUARD');
-      assert.match(err.message, new RegExp(`Changing ${name.replace(/\./g, '\\.')} to ${value} would loosen a guarding setting.*ch-local command`));
+    for (const [name, value, command] of [['maxOutputBytes', '4MiB', 'maxOutputBytes 4MiB'], ['requestTimeout', '15000', 'requestTimeout 15s'], ['pack.ci-failure-triage', 'on', 'pack.ci-failure-triage on']]) {
+      const err = await refused(tool.set(name, value), 'SETTING_NEEDS_CONFIRMATION');
+      assert.match(err.message, new RegExp(`needs your own confirmation; nothing was changed\\. To allow this, run \`ch-local settings set ${command.replace(/\./g, '\\.')}\` in a terminal yourself`));
     }
     assert.strictEqual(fs.readFileSync(file, 'utf8'), before);
-    assert.strictEqual(history().length, 3);
+    // each asked for and not confirmed: in the history (asked, never old/new), unchanged
+    const asked = history().filter((h) => h.change === 'not confirmed').map((h) => h.setting);
+    assert.deepStrictEqual(asked, ['maxOutputBytes', 'requestTimeout', 'pack.ci-failure-triage']);
+  });
+
+  it('the sandbox and automatic upgrades are loosened from a terminal only: SETTING_LOOSENS_A_GUARD, naming the command', async () => {
+    const loosenings = [['autoUpgrade', 'on']].concat(WIN ? [] : [['moduleSandbox', 'audit']]);
+    for (const [name, value] of loosenings) {
+      const err = await refused(tool.set(name, value), 'SETTING_LOOSENS_A_GUARD');
+      assert.match(err.message, new RegExp(`Changing ${name} to ${value} would loosen a guarding setting, which can only be done from a terminal.*run \`ch-local settings set ${name} ${value}\``));
+    }
+    assert.ok(!fs.existsSync(file));
+    assert.ok(!fs.existsSync(path.join(home, 'history.jsonl')), 'not a request conversation may make: nothing recorded');
+    // off is never a value
+    await refused(tool.set('moduleSandbox', 'off'), 'SETTING_OUT_OF_BOUNDS');
+  });
+
+  it('requests not confirmed: one entry per kind this start (any value, any pack), a fresh tool per call as the gateway makes, the count written before the next change', async () => {
+    const fresh = () => require('../../lib/settings-tool').create({file});
+    for (const p of ['a', 'b', 'made-up']) await fresh().set(`pack.${p}`, 'off');
+    const before = history().length;
+    const asked = () => history().slice(before);
+    for (const v of ['64MiB', '65MiB', '66MiB', '64MiB']) await refused(fresh().set('maxOutputBytes', v), 'SETTING_NEEDS_CONFIRMATION');
+    for (const p of ['a', 'b', 'made-up']) await refused(fresh().set(`pack.${p}`, 'on'), 'SETTING_NEEDS_CONFIRMATION');
+    assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.asked]), [['maxOutputBytes', 'not confirmed', 64 * MiB], ['pack.a', 'not confirmed', true]]);
+    assert.ok(asked().every((h) => h.old === undefined && h.new === undefined), 'a request is never written as a change made');
+    await fresh().set('locale', 'zh');
+    assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.count]), [
+      ['maxOutputBytes', 'not confirmed', undefined], ['pack.a', 'not confirmed', undefined],
+      ['maxOutputBytes', 'not confirmed, asked again', 3], ['pack', 'not confirmed, asked again', 2], ['locale', undefined, undefined]]);
   });
 
   it('a change the history cannot record is not made: SETTING_NOT_RECORDED', async () => {

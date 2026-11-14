@@ -51,10 +51,9 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
     const set = await call(3, {action: 'set', name: 'requestTimeout', value: '20s'});
     assert.deepStrictEqual(set.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'now'});
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values, {requestTimeout: 20000});
-    // a loosening: audit, except on Windows, where audit is the only sandbox
-    // value (#195) and a raised output cap loosens instead
-    const loosening = process.platform === 'win32' ? {name: 'maxOutputBytes', value: '16MiB'} : {name: 'moduleSandbox', value: 'audit'};
-    const loosen = await call(4, {action: 'set', ...loosening});
+    // a loosening conversation may never make (part 3): automatic upgrades on,
+    // on every OS (the sandbox has only audit on Windows, #195)
+    const loosen = await call(4, {action: 'set', name: 'autoUpgrade', value: 'on'});
     assert.strictEqual(loosen.result.isError, true);
     assert.strictEqual(loosen.result._meta['countinghouse/code'], 'SETTING_LOOSENS_A_GUARD');
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values, {requestTimeout: 20000});
