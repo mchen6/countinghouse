@@ -643,9 +643,17 @@ these are the checks that predate them and still apply:
   backtrack for seconds, some small schemas compile for seconds. The
   validators are bounded instead:
   - their resource limits;
-  - a deadline per request (`--validationTimeoutMs`), past which the
-    validator is replaced and the call refused `VALIDATION_TIMEOUT`;
-  - a quarantine for a module that keeps missing it (`VALIDATION_QUARANTINED`).
+  - a deadline per request from when it is queued (`--validationTimeoutMs`),
+    past which the call is refused `VALIDATION_TIMEOUT`, a queued request
+    dropped unsent and a running one's validator replaced;
+  - one queue per module, round-robin, with a module holding at most all but
+    one validator, so no tenant's flood delays another's checks;
+  - a compile budget (`--validationCompileMs`), checked at load;
+  - a quarantine (`VALIDATION_QUARANTINED`) for a module whose own outputs or
+    compiles keep missing the deadline (a slow input does not count: any
+    caller could send one to quarantine a module for every tenant);
+  - an output cap (`--maxOutputBytes`), checked in the module's worker
+    before its reply is posted.
 
   A `schema.json` that is plainly unsafe is also refused at load as a
   courtesy, checked in a validator (`lib/schema-safety.js`): over 1 MB, a

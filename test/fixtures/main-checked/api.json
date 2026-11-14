@@ -55,6 +55,26 @@
             "output": {
               "schema": "/checkService/slow/output"
             }
+          },
+          {
+            "name": "stall",
+            "description": "Its input's uniqueItems over many objects outlasts any validation deadline: queued calls behind it time out unsent.",
+            "input": {
+              "schema": "/checkService/stall/input"
+            },
+            "output": {
+              "schema": "/checkService/stall/output"
+            }
+          },
+          {
+            "name": "big",
+            "description": "Returns an output of n characters, for the output size cap.",
+            "input": {
+              "schema": "/checkService/big/input"
+            },
+            "output": {
+              "schema": "/checkService/big/output"
+            }
           }
         ]
       }

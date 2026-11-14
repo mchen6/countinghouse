@@ -221,12 +221,19 @@ pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
 
 Every call's input and output is validated in one of the server's
-validator workers, which all modules share. Validation has a deadline
-(`--validationTimeoutMs`, 1000 ms by default, your module's first compile
-included): past it the call is refused `VALIDATION_TIMEOUT`, and after three
-such refusals in five minutes your module's calls are refused
-`VALIDATION_QUARANTINED` until it is reloaded. Keep patterns simple and
-schemas small. A `schema.json` that is plainly unsafe is refused at load
+validator workers, which all modules share:
+- your schemas are compiled at load, every action, within
+  `--validationCompileMs` (10 s by default), or the load is refused
+  (`MODULE_ASSEMBLY_FAIL`, stage `schemaCompile`);
+- a validation has a deadline (`--validationTimeoutMs`, 1000 ms by default),
+  past which the call is refused `VALIDATION_TIMEOUT`;
+- three such refusals of your own outputs (or compiles) in five minutes
+  quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
+- an output over `--maxOutputBytes` (8 MiB by default) is refused
+  `OUTPUT_TOO_LARGE`.
+
+Keep patterns simple, schemas small, and outputs modest: return a reference
+(a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
 (`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the schema path):
 
 - `schema.json` larger than 1 MB;

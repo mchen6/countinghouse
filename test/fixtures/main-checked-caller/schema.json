@@ -4,8 +4,35 @@
   "type": "object",
   "callerService": {
     "hop": {
-      "input":  {"type": "object", "properties": {"action": {"enum": ["take", "give"]}, "args": {"type": "object"}}, "required": ["action", "args"]},
-      "output": {"type": "object"}
+      "input": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "enum": [
+              "take",
+              "give"
+            ]
+          },
+          "args": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action",
+          "args"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "ping": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

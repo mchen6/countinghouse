@@ -204,22 +204,39 @@ invoke-action, a job's run, a hop routed through the main thread):
 The value validated is the structured clone posted to the validator: exactly
 what the module's worker receives.
 
-**Bounds:**
-- **The deadline:** each validator request has one,
-  `--validationTimeoutMs` (default 1000), counted from when it is sent to a
-  ready validator. A module's first compile falls within its first request.
-  On a missed deadline, or a validator that ends (a crash, its memory limit),
-  the validator is replaced, the call is refused `VALIDATION_TIMEOUT` (naming
-  the module, the action and the side, never a key or a value), and it is
-  logged.
-- **The circuit breaker:** a module that misses the deadline 3 times in 5
-  minutes is quarantined. Its calls are refused `VALIDATION_QUARANTINED`
-  until it is loaded again.
+**Bounds** (as the reviewer corrected them on #152, 2026-11-13):
+- **The deadline:** each validator request has one, `--validationTimeoutMs`
+  (default 1000), counted from when it is queued: queue wait plus run. Past
+  it the call is refused `VALIDATION_TIMEOUT` (naming the module, the action
+  and the side, never a key or a value), and it is logged. A request still
+  queued is dropped, never validated nor sent on to the module. A running one
+  has its validator replaced (a crash or its memory limit too), with a
+  growing backoff when replacements keep coming.
+- **Fairness between tenants:** one queue per module, served round-robin
+  across modules. A module holds at most all but one of the validators, even
+  when no other module is waiting, so another module always finds one free.
+- **Compiling:** per action, from one dereference of the module's document,
+  under its own budget, `--validationCompileMs` (default 10000). Every action
+  is compiled at load (warm), and past the budget the load is refused
+  (`MODULE_ASSEMBLY_FAIL`, stage `schemaCompile`), so an operator sees it at
+  load and not as call timeouts. A validator that replaced one compiles an
+  action again before its check, under the same budget; the check's deadline
+  resumes after.
+- **The circuit breaker:** only a module's own output's timeout or its
+  compile's counts against it. An input's does not, since any caller can
+  send a slow input, and neither does a wait in the queue. 3 strikes in 5
+  minutes quarantine the module by name: `VALIDATION_QUARANTINED` until an
+  operator loads it again (a supervisor's restart does not clear it).
+- **The output's size:** `--maxOutputBytes` (default 8 MiB), measured in the
+  module's own worker before it posts its reply; past it the call is refused
+  `OUTPUT_TOO_LARGE` (naming the module and the action). Step 2's buffers
+  make that the main thread's guarantee too.
 - **The load-time courtesy check:** `lib/schema-safety.js` refuses at load,
   `MODULE_ASSEMBLY_FAIL` stage `schemaSafety`, a schema.json over 1 MB, a
   pattern over 1000 characters or of star height above 1, and a document
   over 100000 nodes with its `$ref`s and `$dynamicRef`s expanded. It runs in
-  a validator. It is a courtesy; the validator's deadline is the boundary.
+  a validator, and one that fails to run refuses the module. It is a
+  courtesy; the validator's deadline is the boundary.
 
 **Measured** on the maintainer's 2-CPU VM, through the real pool: one
 call's input and output checks (two round trips) cost 0.17 ms p50 and

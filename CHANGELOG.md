@@ -124,12 +124,27 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   seconds to compile, and so does `uniqueItems` over 20000 items.
 - **`--validatorWorkers <n>`** (default 2) sets the pool's size, each worker
   with resource limits.
-- **`--validationTimeoutMs <n>`** (default 1000) is one validation's deadline,
-  a module's first compile included. Past it, or when a validator ends, the
-  validator is replaced and the call refused `VALIDATION_TIMEOUT` (naming the
-  module, the action and the side, never a value).
-- **A module that misses the deadline 3 times in 5 minutes** is refused
-  `VALIDATION_QUARANTINED` until it is reloaded.
+- **`--validationTimeoutMs <n>`** (default 1000) is one validation's
+  deadline, counted from when it is queued (queue wait plus run). Past it the
+  call is refused `VALIDATION_TIMEOUT` (naming the module, the action and the
+  side, never a value). A request still queued is dropped, never validated
+  nor sent on, and a running one has its validator replaced (with a backoff
+  when that keeps happening).
+- **Fair between tenants:** one queue per module, served round-robin, and a
+  module holds at most all but one validator, so another module's check
+  takes milliseconds during one module's flood.
+- **`--validationCompileMs <n>`** (default 10000): a module's schemas are
+  compiled per action, from one dereference of its document, at load. Past
+  the budget the load is refused (`MODULE_ASSEMBLY_FAIL`, stage
+  `schemaCompile`). A validator that replaced one compiles an action again
+  before its check.
+- **A quarantine:** a module whose own outputs or compiles miss their
+  deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
+  name, until an operator loads it again. A slow input is not held against
+  the module: any caller can send one.
+- **`--maxOutputBytes <n>`** (default 8 MiB): a module's output is measured
+  in its own worker before it is posted, and refused `OUTPUT_TOO_LARGE`
+  (naming the module and the action) past it.
 - **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
   a 100 KB output.
 - **A worker's device is registered only if it announces exactly that spec,**
@@ -148,7 +163,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   as before.
 - **A courtesy refusal at load** (`MODULE_ASSEMBLY_FAIL`, stage
   `schemaSafety`, naming the module and the schema path, never the pattern),
-  run in a validator in worker mode (`lib/schema-safety.js`). It refuses:
+  run in a validator in worker mode (`lib/schema-safety.js`); a check that
+  fails to run refuses the module too. It refuses:
   - a schema.json over 1 MB;
   - a regular expression (`pattern`, a `patternProperties` key, a
     `propertyNames` pattern) over 1000 characters, or with a repetition

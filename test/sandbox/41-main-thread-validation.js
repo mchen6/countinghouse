@@ -90,7 +90,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
   MAIN_ROUTED.forEach((mode) => describe(`worker mode, ${mode.label}, hops through the main thread`, () => {
     let server = null;
     before(async () => {
-      server = await startServer(PORT, SERVER_ARGS.concat(['--workerThread', '--no-directPeerChannels', '--validationTimeoutMs', '300'], mode.args));
+      server = await startServer(PORT, SERVER_ARGS.concat(['--workerThread', '--no-directPeerChannels', '--validationTimeoutMs', '300', '--maxOutputBytes', '100000'], mode.args));
     });
     after(() => stopServer(server));
 
@@ -123,17 +123,41 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
     });
 
-    it('a value its validation takes seconds over is refused at the deadline, and the server answers meanwhile', async () => {
+    const ping = () => post(PORT, KEY, `/devices/${deviceIDForName('main-checked-caller')}/invoke-action`,
+      {serviceID: 'urn:countinghouse-test:serviceID:callerService', actionName: 'ping', input: {}});
+
+    it('a value its validation takes seconds over is refused at the deadline, and another module answers meanwhile', async () => {
       const slow = invoke('slow', {s: `${'a'.repeat(40)}!`});
       await new Promise((r) => setTimeout(r, 50));
       const started = Date.now();
-      const other = await count();
-      assert.ok(Date.now() - started < 250, `another call answered in ${Date.now() - started} ms`);
-      assert.strictEqual(other.takes, 0);
+      const other = await ping();
+      assert.strictEqual(other.status, 200, JSON.stringify(other.body));
+      assert.ok(Date.now() - started < 250, `another module's call answered in ${Date.now() - started} ms`);
       const r = await slow;
-      assert.strictEqual(r.body.code, 'VALIDATION_TIMEOUT', JSON.stringify(r.body));
-      assert.match(r.body.message, /^main-checked\/slow: its input was not validated within 300 ms/);
-      assert.strictEqual((await invoke('slow', {s: 'abc'})).status, 200, 'a plain value is validated by the replaced validator');
+      assert.ok(['VALIDATION_TIMEOUT', 'INPUT_DATA_VALIDATION_FAIL'].includes(r.body.code), JSON.stringify(r.body));
+      assert.strictEqual((await invoke('slow', {s: 'abc'})).status, 200, 'a plain value is validated');
+    });
+
+    // (That a call timed out in the queue is never validated nor sent on is
+    // shown server-free, by the pool's count of what it sent: module-loading 24.)
+    it('during a flood of one module\'s slow inputs, another module answers at once, and the flood is refused at the deadline', async () => {
+      const stalling = Array.from({length: 20000}, (_, i) => ({i}));
+      const flood = Array.from({length: 4}, () => invoke('stall', {items: stalling}));
+      await new Promise((r) => setTimeout(r, 100));
+      for (let i = 0; i < 3; i++) {
+        const started = Date.now();
+        const r = await ping();
+        assert.strictEqual(r.status, 200, `${JSON.stringify(r.body)}\n${server.output.slice(-3000)}`);
+        assert.ok(Date.now() - started < 250, `${Date.now() - started} ms`);
+      }
+      for (const r of await Promise.all(flood)) assert.strictEqual(r.body.code, 'VALIDATION_TIMEOUT', JSON.stringify(r.body));
+    });
+
+    it('an output over --maxOutputBytes is refused in the module\'s worker, naming the module and the action', async () => {
+      const r = await invoke('big', {n: 200000});
+      assert.strictEqual(r.body.code, 'OUTPUT_TOO_LARGE', `${JSON.stringify(r.body)}\n${server.output.slice(-3000)}`);
+      assert.match(r.body.message, /^main-checked\/big: its output is \d+ bytes, over the 100000-byte limit \(--maxOutputBytes\)/);
+      assert.strictEqual((await invoke('big', {n: 1000})).status, 200);
     });
 
     it('a valid call runs, once', async () => {

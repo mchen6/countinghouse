@@ -140,7 +140,7 @@ describe('module-loading 21: one module format, decided statically', function() 
   });
 
   [
-    ['in a worker', ['--workerThread']],
+    ['in a worker', ['--workerThread', '--validationCompileMs', '1000']],
     ['in single-thread mode', ['--no-workerThread']]
   ].forEach(([where, flags]) => {
     describe(`the load path, ${where}`, () => {
@@ -213,6 +213,23 @@ describe('module-loading 21: one module format, decided statically', function() 
         const listed = await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list'}, 30000);
         assert.ok(Array.isArray(listed.result.tools) && !listed.result.tools.some((t) => /load_bomb/.test(t.name)));
       });
+
+      if (flags[0] === '--workerThread') {
+        it('a schema too slow to compile is refused at load (stage schemaCompile), within --validationCompileMs, and the server goes on answering', async () => {
+          // 700 bytes of anyOf: under every load-time check, and about 2.5 s to compile
+          const defs = {l0: {type: 'object', properties: {a: {type: 'string'}, b: {type: 'integer'}}}};
+          for (let i = 1; i <= 7; i++) defs[`l${i}`] = {anyOf: Array.from({length: 3}, () => ({$ref: `#/defs/l${i - 1}`}))};
+          const slowCompile = withInput(path.join(home, `load-compile-${id}`), 'load-compile', {$ref: '#/defs/l7'}, {defs});
+          const started = Date.now();
+          const r = await load(slowCompile, 'load-compile');
+          assert.strictEqual(r.isError, true, JSON.stringify(r));
+          assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_ASSEMBLY_FAIL', JSON.stringify(r));
+          assert.match(JSON.stringify(r.content), /stage=schemaCompile/);
+          assert.ok(Date.now() - started < 10000, `${Date.now() - started} ms`);
+          const listed = await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list'}, 30000);
+          assert.ok(Array.isArray(listed.result.tools) && !listed.result.tools.some((t) => /load_compile/.test(t.name)));
+        });
+      }
 
       it('a module with handlers/ and a main entry loads, and its main entry is never run', async () => {
         const dir = writeModule(path.join(home, `load-both-${id}`), 'load-both', {handlers: true, main: 'device.js'});
