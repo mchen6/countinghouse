@@ -178,7 +178,8 @@ describe('stdio 07: "\\" paths on Windows (issue #40, round 4)', () => {
       const broker = new FsBroker({name: 'm', mode: 'enforce', namespace: await namespace('win32'), cwd: '/app'});
       try {
         for (const [name, to] of [['hl', 'C:\\outside'], ['hu', '\\\\srv\\x'], ['hr', '/x']]) {
-          try { fs.symlinkSync(to, path.join(dirs.data, name)); } catch (e) { if (e.code === 'EPERM') this.skip(); throw e; }
+          // 'file': Windows otherwise stats the target to choose the link's type
+          try { fs.symlinkSync(to, path.join(dirs.data, name), 'file'); } catch (e) { if (e.code === 'EPERM') this.skip(); throw e; }
           await assert.rejects(broker.handle('symlink', [`${name}/x`, '/data/l']), {code: 'EPERM'}, to);
         }
         assert.ok(!fs.readdirSync(dirs.data).includes('l'));

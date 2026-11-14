@@ -230,6 +230,9 @@ describe('stdio 08: the always-denied set on Windows, and sticky identities (iss
         Object.values(dirs).forEach((x) => fs.mkdirSync(x));
         const denied = new DeniedSet([path.join(base, 'auth.json-journal')], {platform: 'darwin'});
         assert.strictEqual(await denied.matchesOutside(path.join(base, 'Auth.json-journal'), false), true);
+        // Through the broker, a POSIX host path is a module's outside path;
+        // a Windows one (D:\\...) is not a darwin path at all.
+        if (process.platform === 'win32') return;
         const ns = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: [], platform: 'darwin'});
         await ns.prepare();
         const broker = new FsBroker({name: 'm', mode: 'audit', namespace: ns, cwd: '/app', denied});
