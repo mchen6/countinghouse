@@ -17,6 +17,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9720–9729 | A: RC1-min, step 3 onward |
 | 9730–9739 | B |
 | 9740–9749 | C |
+| 9750–9754 | A: lean worker step 3 |
 
 ## By file
 
@@ -148,6 +149,7 @@ one) as well as the ports it binds.
 | `test/sandbox/35-enforce-tls.js` | 9683–9685 |
 | `test/sandbox/39-resolve-shim.js` | 9724–9725 |
 | `test/sandbox/41-main-thread-validation.js` | 9749 |
+| `test/sandbox/43-lean-worker-files.js` | 9750 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
