@@ -99,10 +99,12 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   and it is listed as the main thread's copy; any other is neither
   registered nor listed, and the mismatch is logged.
 - **A service or action named like an `Object.prototype` member**
-  (`constructor`, `__proto__`, `toString`...) is answered
-  `SERVICE_NOT_FOUND` or `ACTION_NOT_FOUND` in worker mode; the worker's
-  plain-object lookup found the prototype's member and answered
-  `ACTION_NOT_IMPLEMENTED` or crashed.
+  (`constructor`, `__proto__`, `toString`...) is the module's own or not
+  found, in every mode: an undeclared one is answered `SERVICE_NOT_FOUND` or
+  `ACTION_NOT_FOUND`, and a declared one works. A device's services and
+  actions were plain objects, so such a name found the prototype's member:
+  an undeclared one answered `ACTION_NOT_IMPLEMENTED` or crashed, and a
+  declared one's handler was set on `Object.prototype`'s function.
 - **Unchanged:** a call over a direct peer channel is still validated in the
   called worker (until step 4), and single-thread mode validates in-process
   as before.
