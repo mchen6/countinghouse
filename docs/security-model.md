@@ -455,17 +455,15 @@ and the short list of what the in-process sandbox cannot give.
   and which binding authorizes, never by anything the message states, and
   refuses a target outside the module's declared calls
   (`CTX_CALL_UNDECLARED`) whatever route the module took.
-- **A module's messages to the main thread are not yet bounded in size
-  (#170).** A module that patches its worker's `MessagePort` can attach
-  extra fields to a message, or send messages of its own. The main thread
-  deserialises each on receipt, before any length check, so one module can
-  make the main thread allocate and parse whatever it sends, delaying every
-  tenant. The output cap doesn't cover this: it checks a reply's
-  serialized result, not the message around it. `--moduleMessageRate`
-  bounds the number of messages, not their size. #186 and #190, in review,
-  close most of it: they send every worker-to-main message as bounded,
-  transferred bytes, with the module's console output and its worker's log
-  capped.
+- **A module's messages to the main thread are bounded, with a residual
+  (#170, #186, #190).** Every worker-to-main message is sent as bounded,
+  transferred bytes, the main thread reads its length before decoding, and a
+  worker whose message is not an envelope or is over the cap is ended; the
+  module's console output and its worker's log are capped. Under audit and
+  enforce module code is never handed a port to the main thread. What
+  remains: Node decodes a posted message on receipt, so a worker that did
+  hold a port could have every message it queued decoded, even after it is
+  ended; under `off` the bound is cooperative only.
 - **No network permission is enforced yet.** A module can open outbound
   connections with `net`/`http`/`https`/`fetch` until parts 3 and 4,
   including to Unix-socket paths (`net.connect(path)`,
