@@ -277,6 +277,9 @@ describe('module-loading 24: the validator pool', function() {
         const m = moduleWith(STALL, {}, {type: 'object'}, p);
         await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_a')), 'VALIDATION_TIMEOUT');
+        // judged once the stall has been dealt with (the validator replaced,
+        // which may come after the answer), not before it could have been
+        await warmed(p);
         assert.strictEqual(p.cooldown.has(m.key), false);
         assert.strictEqual(p.stalledAt.has(m.key), false);
         const t = Date.now();
@@ -421,6 +424,12 @@ describe('module-loading 24: the validator pool', function() {
         // compiles the action on the call path, so one passing call first
         assert.strictEqual(await checkOut(m, [1], p), null);
         assert.strictEqual(codeOf(await checkOut(m, STALLING, p)), 'VALIDATION_TIMEOUT');
+        // A call that started late is answered at its own deadline, as a wait;
+        // its validator is given a full budget before it counts as stalled,
+        // and only then is the module cooled down (lib/validator-pool.js
+        // onDeadline, fail). So the cool-down is waited for, with a bound:
+        // CI's test (24) and (24.15.0) at 623831c.
+        for (let w = 0; !(p.cooldown.has(m.key) && p.stalledAt.has(m.key)) && w < 10000; w += 20) await new Promise((res) => setTimeout(res, 20));
         assert.ok(p.cooldown.has(m.key) && p.stalledAt.has(m.key));
         await cooled();
         await warmed(p);
