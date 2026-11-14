@@ -261,14 +261,12 @@ jobs:
   # --stdio, the client-pack transport (local-mode spec §2), on the three
   # systems a client runs on, with no Redis service at all: the route layer
   # over in-memory streams, then countinghouse-stdio spawned with one module.
-  # Windows does not gate yet: the runtime never brings a module online there
-  # (issue #40), which LM1 part C's last step catalogues and works on.
+  # Windows gates like the other systems since #154 and #155 (issue #40).
   stdio:
     runs-on: ${{ matrix.os }}
     # A hung run frees its runner after an hour (normal runs take about 20
     # minutes); without this, GitHub's default holds it for six.
     timeout-minutes: 60
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     strategy:
       fail-fast: false
@@ -292,9 +290,8 @@ jobs:
   # --store local with no Redis service (LM1, the local-mode spec's CI line):
   # the local store's own tests and a server smoke test (test/store/05: a
   # preloaded trap fails the run if anything makes a Redis client or loads a
-  # queue library) on each OS a client machine runs. Windows is reported
-  # but does not gate yet: the module sandbox's Windows gaps are being
-  # catalogued separately (issue #40), and the smoke test's flush-on-SIGTERM
+  # queue library) on each OS a client machine runs. Windows gates like the
+  # others since #154 and #155 (issue #40); the smoke test's flush-on-SIGTERM
   # check does not apply there (a Windows process cannot be sent one).
   local-store:
     name: local store (${{ matrix.os }})
@@ -302,7 +299,6 @@ jobs:
     # A hung run frees its runner after an hour (normal runs take about 20
     # minutes); without this, GitHub's default holds it for six.
     timeout-minutes: 60
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
