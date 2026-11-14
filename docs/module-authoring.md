@@ -194,7 +194,14 @@ Two limits, stated rather than enforced:
 
 `countinghouse_usage_report`, listed to every key, reports the same counts by
 tool, server, pack or module. A key sees its own calls; an admin sees every
-caller by opaque id.
+caller by opaque id. `since` and `until` set the window (`since: "all"`: from
+the first record). The headline is the period's totals, with the tokens kept
+out of the model's context: an upper-bound estimate, `{estimate, method,
+bound: "upper"}`, per tool call `max(0, bytes its server calls read - bytes
+its result returned) / 4`. It is an upper bound because it takes the model to
+have read, without the tool, every byte the tool read. Below it come one row
+per day with activity (at most 366) and a profile: call and server-call time,
+errors by code, and server calls per call.
 
 ## Why `tools/list` does not update by itself
 

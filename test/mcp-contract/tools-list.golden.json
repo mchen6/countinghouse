@@ -83,7 +83,11 @@
       "properties": {
         "since": {
           "type": "string",
-          "description": "a day (YYYY-MM-DD), an ISO time, or a duration back from now (30m, 24h, 7d); absent: everything recorded"
+          "description": "a day (YYYY-MM-DD), an ISO time, a duration back from now (30m, 24h, 7d), or \"all\" (from the first record); absent: everything recorded"
+        },
+        "until": {
+          "type": "string",
+          "description": "a day (YYYY-MM-DD, through its end), an ISO time, or a duration back from now; absent: now"
         },
         "groupBy": {
           "type": "string",
@@ -108,15 +112,35 @@
               "type": [
                 "string",
                 "null"
-              ]
+              ],
+              "maxLength": 32
             },
             "until": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 32
+            },
+            "first": {
+              "title": "the first record in the window",
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 32
+            },
+            "last": {
+              "title": "the last record in the window",
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 32
             }
           },
           "required": [
             "since",
-            "until"
+            "until",
+            "first",
+            "last"
           ],
           "additionalProperties": false
         },
@@ -142,28 +166,35 @@
               "files",
               "metering"
             ]
-          }
+          },
+          "maxItems": 3
         },
         "groups": {
           "type": "array",
+          "maxItems": 500,
           "items": {
             "type": "object",
             "properties": {
               "caller": {
                 "title": "the opaque caller id; admin reports only",
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "tool": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "server": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "pack": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "module": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "calls": {
                 "type": "integer",
@@ -213,7 +244,13 @@
             "additionalProperties": false
           }
         },
+        "groupsOmitted": {
+          "title": "groups past the 500 most active, in no row (still in totals)",
+          "type": "integer",
+          "minimum": 0
+        },
         "totals": {
+          "title": "the period's totals: the headline",
           "type": "object",
           "properties": {
             "calls": {
@@ -249,6 +286,31 @@
               "title": "an estimate: utf8 bytes / 4",
               "type": "integer",
               "minimum": 0
+            },
+            "keptOut": {
+              "title": "tokens kept out of the model's context: an upper-bound estimate, not a measurement",
+              "type": "object",
+              "properties": {
+                "estimate": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "method": {
+                  "type": "string",
+                  "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), per tool call"
+                },
+                "bound": {
+                  "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
+                  "type": "string",
+                  "const": "upper"
+                }
+              },
+              "required": [
+                "estimate",
+                "method",
+                "bound"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -259,7 +321,265 @@
             "bytesOut",
             "linesOut",
             "tokensInEst",
-            "tokensOutEst"
+            "tokensOutEst",
+            "keptOut"
+          ],
+          "additionalProperties": false
+        },
+        "days": {
+          "title": "one row per UTC day with activity, oldest first; at most the newest 366",
+          "type": "array",
+          "maxItems": 366,
+          "items": {
+            "type": "object",
+            "properties": {
+              "day": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\d$",
+                "maxLength": 10
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "serverCalls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytesIn": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bytesOut": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tokensInEst": {
+                "title": "an estimate: utf8 bytes / 4",
+                "type": "integer",
+                "minimum": 0
+              },
+              "tokensOutEst": {
+                "title": "an estimate: utf8 bytes / 4",
+                "type": "integer",
+                "minimum": 0
+              },
+              "keptOut": {
+                "title": "tokens kept out of the model's context: an upper-bound estimate, not a measurement",
+                "type": "object",
+                "properties": {
+                  "estimate": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "method": {
+                    "type": "string",
+                    "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), per tool call"
+                  },
+                  "bound": {
+                    "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
+                    "type": "string",
+                    "const": "upper"
+                  }
+                },
+                "required": [
+                  "estimate",
+                  "method",
+                  "bound"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "day",
+              "calls",
+              "serverCalls",
+              "bytesIn",
+              "bytesOut",
+              "tokensInEst",
+              "tokensOutEst",
+              "keptOut"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "daysOmitted": {
+          "title": "days with activity before the rows kept (still in totals)",
+          "type": "integer",
+          "minimum": 0
+        },
+        "profile": {
+          "type": "object",
+          "properties": {
+            "callMs": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "totalMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "p95": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "max": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "count",
+                "totalMs",
+                "p50",
+                "p95",
+                "max"
+              ],
+              "additionalProperties": false
+            },
+            "serverCallMs": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "totalMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "p95": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "max": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "count",
+                "totalMs",
+                "p50",
+                "p95",
+                "max"
+              ],
+              "additionalProperties": false
+            },
+            "errors": {
+              "type": "object",
+              "properties": {
+                "calls": {
+                  "title": "errors by code: the runtime's codes, TOOL_ERROR, a system error's, MODULE_ERROR (a module's own code), NO_CODE, UNRECORDED (an older record), OTHER (anything else, and past the 32 most frequent)",
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                    "maxLength": 64
+                  },
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxProperties": 33
+                },
+                "serverCalls": {
+                  "title": "errors by code: the runtime's codes, TOOL_ERROR, a system error's, MODULE_ERROR (a module's own code), NO_CODE, UNRECORDED (an older record), OTHER (anything else, and past the 32 most frequent)",
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                    "maxLength": 64
+                  },
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "maxProperties": 33
+                }
+              },
+              "required": [
+                "calls",
+                "serverCalls"
+              ],
+              "additionalProperties": false
+            },
+            "serverCallsPerCall": {
+              "type": "object",
+              "properties": {
+                "mean": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "max": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "distribution": {
+                  "type": "object",
+                  "properties": {
+                    "0": {
+                      "type": "integer"
+                    },
+                    "1": {
+                      "type": "integer"
+                    },
+                    "2-4": {
+                      "type": "integer"
+                    },
+                    "5+": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "0",
+                    "1",
+                    "2-4",
+                    "5+"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "mean",
+                "max",
+                "distribution"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "callMs",
+            "serverCallMs",
+            "errors",
+            "serverCallsPerCall"
           ],
           "additionalProperties": false
         },
@@ -281,9 +601,13 @@
             },
             "servers": {
               "type": "object",
+              "propertyNames": {
+                "maxLength": 256
+              },
               "additionalProperties": {
                 "type": "integer"
-              }
+              },
+              "maxProperties": 256
             }
           },
           "required": [
@@ -302,7 +626,11 @@
         "method",
         "source",
         "groups",
-        "totals"
+        "groupsOmitted",
+        "totals",
+        "days",
+        "daysOmitted",
+        "profile"
       ],
       "additionalProperties": false
     }
