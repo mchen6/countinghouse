@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "message-bound",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "posts large messages and patches MessagePort, for the message bound test (#170)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:boundService": {
+        "actionList": [
+          {"name": "big", "description": "Send the main thread a message of input.bytes bytes through the worker's channel.", "input": {"schema": "/boundService/big/input"}, "output": {"schema": "/boundService/big/output"}},
+          {"name": "patch", "description": "Patch MessagePort.prototype.postMessage, then use ctx.redis.", "input": {"schema": "/boundService/patch/input"}, "output": {"schema": "/boundService/patch/output"}},
+          {"name": "longPath", "description": "Load a file outside the module by a path of 2 000 000 characters.", "input": {"schema": "/boundService/longPath/input"}, "output": {"schema": "/boundService/longPath/output"}},
+          {"name": "scopes", "description": "Look for the runtime's ports through executionAsyncResource, the active handles and requests, and an async hook.", "input": {"schema": "/boundService/scopes/input"}, "output": {"schema": "/boundService/scopes/output"}},
+          {"name": "throwOdd", "description": "Throw, uncaught, an error whose stack throws when read.", "input": {"schema": "/boundService/throwOdd/input"}, "output": {"schema": "/boundService/throwOdd/output"}},
+          {"name": "writeBig", "description": "Write a 17 MiB file to /data.", "input": {"schema": "/boundService/writeBig/input"}, "output": {"schema": "/boundService/writeBig/output"}}
+        ]
+      }
+    }
+  }
+}

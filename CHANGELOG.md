@@ -104,6 +104,40 @@ configuration). None of it is available to a hosted server.
   `enforce` the block watchdog already ended it, but under
   `--moduleSandbox off` nothing did and the worker stayed.
 
+### Changed — `--moduleSandbox enforce` refuses to start on Windows (#195)
+
+- On Windows `--moduleSandbox enforce` exits 2 with a message naming #195:
+  a module's identity is not designed for Windows file URLs yet, so
+  enforce could not hold there. `audit` is the Windows mode for now; the
+  settings tool offers only `audit` on Windows. The identity loader's
+  checks of countinghouse's code roots now follow the host's path rules
+  (backslash on Windows), and taking module roots out of them folds case
+  there.
+
+### Changed — a module's output and its worker's log, bounded
+
+- **Under audit and enforce a module's stdout and stderr are runtime-owned
+  streams**: Node's own, which hold its port to the main thread, are never
+  handed to module code. Output reaches the log line by line, prefixed with
+  the module's name, each line cut at 8 KiB and stripped of control
+  characters but tab, at most 256 KiB a minute per stream (then dropped,
+  with one line a minute saying how much); to stderr under `--stdio`.
+- **A worker's own log crosses as records** (1 MiB a minute, fields cut at
+  8 KiB, the module named by the main thread), so a module flooding its
+  output cannot crowd them out. Each record now carries `module`.
+
+### Added — a bound on what a module's worker sends the main thread (#170)
+
+- **Every message from a module's worker to the main thread is an envelope of
+  serialized bytes**, its length read before anything is decoded. Over
+  `--maxOutputBytes` plus 64 KiB it is refused in the worker,
+  `MESSAGE_TOO_LARGE` (the file bridge: 16 MiB plus 64 KiB, `EINVAL`; a
+  file write is split as before). Under `audit` and `enforce` the lockdown
+  pins the worker's ports, so module code that patches
+  `MessagePort.prototype` is never handed one; a worker whose message is not
+  an envelope, or is over the cap, is ended. Cost: about 20 µs of main-thread
+  CPU per message (a `ctx.redis` command is one).
+
 ### Changed — `ctx.redis` is per module (#164, breaking)
 
 - **Each key a module names is stored under `m:<module name, URI-encoded>:`**, the name

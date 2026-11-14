@@ -11,6 +11,11 @@ const settingsTool = require('../../lib/settings-tool');
 
 const MiB = 1024 * 1024;
 
+// On Windows the sandbox setting offers only audit, until enforce holds
+// there (#195, lib/sandbox-platform.js).
+const WIN = process.platform === 'win32';
+const SANDBOX = WIN ? 'audit' : 'enforce';
+
 describe('stdio 14: countinghouse_settings', () => {
   let home;
   let file;
@@ -40,7 +45,8 @@ describe('stdio 14: countinghouse_settings', () => {
     const byName = Object.fromEntries(got.settings.map((s) => [s.name, s]));
     assert.deepStrictEqual(byName.maxOutputBytes, {name: 'maxOutputBytes', value: 8 * MiB, default: 8 * MiB, bounds: {min: MiB, max: 256 * MiB}, guarding: true, applies: 'now'});
     assert.deepStrictEqual(byName.requestTimeout, {name: 'requestTimeout', value: 30000, default: 30000, bounds: {min: 5000, max: 120000}, guarding: true, applies: 'now'});
-    assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: ['enforce', 'audit']});
+    assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: WIN ? ['audit'] : ['enforce', 'audit']});
+    assert.strictEqual(byName.moduleSandbox.default, SANDBOX);
     assert.strictEqual(byName.moduleSandbox.applies, 'next start');
     assert.strictEqual(byName.locale.guarding, false);
     assert.deepStrictEqual(got.history, []);
@@ -51,11 +57,11 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(await tool.set('requestTimeout', '20s'), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'now'});
     await tool.set('locale', 'zh');
     await tool.set('locale', 'en');
-    await tool.set('moduleSandbox', 'enforce');
+    await tool.set('moduleSandbox', SANDBOX);
     await tool.set('autoUpgrade', 'off');
     await tool.set('upgradeCheck', 'weekly');
     assert.deepStrictEqual(await tool.set('pack.ci-failure-triage', 'off'), {name: 'pack.ci-failure-triage', old: 'on', new: 'off', applies: 'now'});
-    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', moduleSandbox: 'enforce', autoUpgrade: false, upgradeCheck: 'weekly', 'pack.ci-failure-triage': false});
+    assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', moduleSandbox: SANDBOX, autoUpgrade: false, upgradeCheck: 'weekly', 'pack.ci-failure-triage': false});
     const h = history();
     assert.strictEqual(h.length, 8);
     assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(h[0]), {by: 'settings tool', setting: 'maxOutputBytes', old: 8 * MiB, new: 4 * MiB});
@@ -84,7 +90,9 @@ describe('stdio 14: countinghouse_settings', () => {
     await tool.set('requestTimeout', '10s');
     await tool.set('pack.ci-failure-triage', 'off');
     const before = fs.readFileSync(file, 'utf8');
-    for (const [name, value] of [['maxOutputBytes', '4MiB'], ['requestTimeout', '15s'], ['moduleSandbox', 'audit'], ['autoUpgrade', 'on'], ['pack.ci-failure-triage', 'on']]) {
+    // (on Windows audit is the only sandbox value, so it loosens nothing there)
+    const loosenings = [['maxOutputBytes', '4MiB'], ['requestTimeout', '15s'], ['autoUpgrade', 'on'], ['pack.ci-failure-triage', 'on']].concat(WIN ? [] : [['moduleSandbox', 'audit']]);
+    for (const [name, value] of loosenings) {
       const err = await refused(tool.set(name, value), 'SETTING_LOOSENS_A_GUARD');
       assert.match(err.message, new RegExp(`Changing ${name.replace(/\./g, '\\.')} to ${value} would loosen a guarding setting.*ch-local command`));
     }

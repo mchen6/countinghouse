@@ -242,6 +242,18 @@ validator workers, which all modules share:
   on the main-thread-routed path. A hop's input is sent as bytes: a value
   structured clone cannot carry, or a `SharedArrayBuffer`, fails the
   `ctx.call` in your own worker.
+  Any other message your worker sends the runtime (a log line, a
+  `ctx.redis` command) over the output cap plus 64 KiB is refused
+  `MESSAGE_TOO_LARGE` before it leaves the worker. A file write is split
+  for you, so it has no such limit.
+- what you write to stdout and stderr (and `console`) reaches the
+  operator's log line by line, prefixed with your module's name: each line
+  cut at 8 KiB, control characters other than tab removed (and the line
+  separators and bidi controls), and under audit and enforce at most
+  256 KiB a minute per stream of what is written, each line counted with
+  its prefix and newline; past that it is dropped and counted. The streams
+  are the runtime's: assigning `process.stdout` throws (`TypeError`) in
+  strict mode. Use the log for diagnostics, not for data.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load

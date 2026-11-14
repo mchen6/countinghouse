@@ -203,6 +203,12 @@ if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
   process.exit(2);
 }
+// enforce does not hold on Windows yet (#195): refused, never half-working.
+const sandboxRefusal = require('./lib/sandbox-platform').platformRefusal(options.moduleSandbox, process.platform);
+if (sandboxRefusal != null) {
+  console.error(sandboxRefusal);
+  process.exit(2);
+}
 if (options.moduleSandbox !== 'off' && options.workerThread !== true) {
   console.error('--moduleSandbox ' + options.moduleSandbox + ' needs --workerThread: the sandbox applies to module workers');
   process.exit(2);
