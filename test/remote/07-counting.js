@@ -131,7 +131,10 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       assert.deepStrictEqual(ins().map((r) => r.call), [id]);
 
       // the part hop: a cached client gets the id beside billingKey, whatever
-      // the module states
+      // the module states. This runs on the main thread with no workers,
+      // where the hop must be among the module's declarations (R2-1 Task 4,
+      // spec section 8): the composition declares it.
+      device._composition = {identity: 'internal', allowed: {}, targets: ['d-part|svc|act']};
       let sent = null;
       device._ctxServiceClients = {'d-part|svc|internal': {invoke: (opts, cb) => { sent = opts; cb(null, {}); }, deviceID: 'd-part', serviceID: 'svc'}};
       await new Promise((resolve, reject) => ctx.serviceClient({deviceID: 'd-part', serviceID: 'svc', as: 'internal'}, (err, client) =>
