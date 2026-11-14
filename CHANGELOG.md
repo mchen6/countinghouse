@@ -142,9 +142,22 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
   name, until an operator loads it again. A slow input is not held against
   the module: any caller can send one.
-- **`--maxOutputBytes <n>`** (default 8 MiB): a module's output is measured
-  in its own worker before it is posted, and refused `OUTPUT_TOO_LARGE`
-  (naming the module and the action) past it.
+- **`--maxOutputBytes <n>`** (default 8 MiB, at most 256 MiB): a module's
+  output, a hop's result to another module included, is measured in its own
+  worker before it is posted, and refused `OUTPUT_TOO_LARGE` (naming the
+  module and the action) past it.
+- **A hop's result crosses the main thread as bytes it never unpacks**
+  (lean worker step 2). The callee's worker posts its result as
+  `v8.serialize` bytes, transferred, not copied. The main thread refuses
+  them `OUTPUT_TOO_LARGE` from their length alone over `--maxOutputBytes`.
+  It then has them checked against the callee's output schema in a
+  validator worker, and transfers them on to the calling worker, which
+  decodes them. A large result between modules no longer stalls the main
+  thread for every tenant. Bytes a module forges through its worker are
+  refused or checked like any others: a caller only ever decodes bytes a
+  validator passed, within the cap. Final results (an MCP tools/call, an
+  HTTP invoke-action answer, a job's result) are unpacked on the main thread
+  as before.
 - **Measured** (2 CPUs): 0.17 ms p50 a call for its two checks, 0.53 ms with
   a 100 KB output.
 - **A worker's device is registered only if it announces exactly that spec,**

@@ -287,6 +287,23 @@ client something larger than any sensible cap (a file, a dataset) returns a
 reference to it (a path in its data namespace, a URL), which is the right
 shape for large data anyway.
 
+**As built (lean worker step 2; the reviewer's rulings of 2026-11-13,
+superseding the two caps above).** The rulings:
+
+- **(a) Where a hop's result is checked.** Its bytes go to a validator
+  worker, which checks them against the callee's output schema and gives
+  them back, then to the calling worker. The main thread never deserialises
+  them, and no module's worker validates them. The deadline, the per-module
+  queues and the strike rule are those of section 4: a timeout on a hop's
+  result is a strike against the callee.
+- **(b) One cap.** `--maxOutputBytes` (default 8 MiB, at most 256 MiB, the
+  ceiling above) applies to every module output, a hop's result included.
+  It is checked in the callee's worker before posting, and, for a hop's
+  bytes, on the main thread from their length; the main thread's check is
+  the guarantee.
+- **(c) No new code.** Over the cap the answer is `OUTPUT_TOO_LARGE`;
+  RESULT_TOO_LARGE is not added.
+
 ### 6. Direct peer channels
 
 A hop over a direct peer channel goes from the calling module's worker to the

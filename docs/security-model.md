@@ -652,8 +652,15 @@ these are the checks that predate them and still apply:
   - a quarantine (`VALIDATION_QUARANTINED`) for a module whose own outputs or
     compiles keep missing the deadline (a slow input does not count: any
     caller could send one to quarantine a module for every tenant);
-  - an output cap (`--maxOutputBytes`), checked in the module's worker
-    before its reply is posted.
+  - an output cap (`--maxOutputBytes`, at most 256 MiB), checked in the
+    module's worker before its reply is posted and, for a hop's result, on
+    the main thread from its length;
+  - a hop's result crosses the main thread as `v8.serialize` bytes,
+    transferred, never deserialised there. It is checked in a validator
+    against the callee's output schema and decoded only by the calling
+    worker, so the caller decodes only bytes a validator passed (a module
+    can forge bytes through its own worker's send path; they are refused or
+    checked like any others).
 
   A `schema.json` that is plainly unsafe is also refused at load as a
   courtesy, checked in a validator (`lib/schema-safety.js`): over 1 MB, a
