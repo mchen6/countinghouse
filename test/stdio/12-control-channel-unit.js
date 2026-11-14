@@ -7,12 +7,19 @@ const {start} = require('../../lib/control-channel');
 describe('stdio 12: the control channel, server-free', () => {
   function channel(handlers) {
     let listener = null;
+    // the replies, and apart from them the unasked ready, sent once it listens
     const sent = [];
-    const ch = start(handlers, {on: (fn) => { listener = fn; }, off: () => { listener = null; }, send: (m) => sent.push(m)});
+    const all = [];
+    const ch = start(handlers, {on: (fn) => { listener = fn; }, off: () => { listener = null; }, send: (m) => { all.push(m); if (m.type !== 'ready') sent.push(m); }});
     const ask = (msg) => listener(msg);
     const settled = () => new Promise((r) => setTimeout(r, 50));
-    return {ch, ask, sent, settled};
+    return {ch, ask, sent, settled, all};
   }
+
+  it('says ready, unasked and once, as soon as it listens', () => {
+    const {all} = channel({});
+    assert.deepStrictEqual(all, [{type: 'ready'}]);
+  });
 
   it('answers each request by its id; unknown, not served and failing requests answer ok: false with their codes', async () => {
     const {ask, sent, settled} = channel({load: async (m) => ({tools: [m.name]}), unload: async () => { throw Object.assign(new Error('no such pack'), {code: 'PACK_UNKNOWN'}); }});
