@@ -154,6 +154,7 @@ one) as well as the ports it binds.
 | `test/sandbox/39-resolve-shim.js` | 9724–9725 |
 | `test/sandbox/41-main-thread-validation.js` | 9749 |
 | `test/sandbox/42-hop-results-transferred.js` | 9749 (after 41's server has stopped: one mocha process runs the folder's files one after another) |
+| `test/sandbox/47-hop-inputs-transferred.js` | 9749 (after 41's and 42's servers have stopped, as 42) |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
