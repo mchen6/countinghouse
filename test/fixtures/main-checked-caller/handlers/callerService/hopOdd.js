@@ -8,6 +8,7 @@ module.exports = async (input, ctx) => {
     return {output: {code: e.code != null ? e.code : null, message: String(e.message)}};
   }
   if (input.action === 'forge') return {output: {result: r}};
+  r = r.output;   // ctx.call resolves with the callee's whole reply
   return {output: {types: {
     date: r.d instanceof Date && r.d.getTime() === 5,
     map: r.m instanceof Map && r.m.get(1) === 'a',

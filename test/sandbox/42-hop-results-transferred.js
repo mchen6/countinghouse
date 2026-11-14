@@ -33,7 +33,8 @@ const mainList = () => new Promise((resolve, reject) => request(`http://127.0.0.
 const digest = (n, wait) => callerDo('hopDigest', (wait == null) ? {n: n} : {n: n, wait: wait});
 const odd = (action, args) => callerDo('hopOdd', {action: action, args: args});
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
-const expected = (n) => { const text = JSON.stringify({s: 'x'.repeat(n)}); return {length: text.length, sha256: sha256(text)}; };
+// what ctx.call resolves with: the callee's whole reply, {output: ...}
+const expected = (n) => { const text = JSON.stringify({output: {s: 'x'.repeat(n)}}); return {length: text.length, sha256: sha256(text)}; };
 
 describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function() {
   this.timeout(180000);
@@ -147,11 +148,14 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
     });
   });
 
-  // last: it leaves main-checked's worker with TypedArray byteLength patched
-  it('the worker\'s own size check fooled (byteLength patched): never answered with the output', async () => {
-    const r = await invoke('cheat', {kind: 'byteLength', n: CAP + 1});
-    assert.notStrictEqual(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-    assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
+  // last (a describe of its own: mocha runs a describe's own tests before its
+  // nested ones): it leaves main-checked's worker with byteLength patched
+  describe('last', () => {
+    it('the worker\'s own size check fooled (byteLength patched): never answered with the output', async () => {
+      const r = await invoke('cheat', {kind: 'byteLength', n: CAP + 1});
+      assert.notStrictEqual(r.status, 200, JSON.stringify(r.body).slice(0, 300));
+      assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
+    });
   });
 });
 
