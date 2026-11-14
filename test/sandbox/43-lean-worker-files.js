@@ -20,6 +20,7 @@ const PORT = testPort(9750);
 const ALLOWED = [
   'lib/lean-worker.js',
   'lib/lean-dispatcher.js',
+  'lib/handler-answer.js',
   'lib/peer-worker.js',
   'lib/peer-channel.js',
   'lib/handler-map.js',
