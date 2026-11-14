@@ -79,28 +79,37 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
       release();
     });
 
-    it('a call it was not given is refused USAGE_CALL_FOREIGN', () => {
-      const call = u.beginCall({tool: 't'});
-      u.grantCall(call, W + 1);
-      assert.throws(() => answerUsageQuery({usageCall: call, token: tokenFor(W)}, W), {code: 'USAGE_CALL_FOREIGN'});
+    it('a call it was not given answers null, as a finished one does: the answer never tells another worker\'s open call from a finished one', () => {
+      const other = u.beginCall({tool: 't'});
+      u.grantCall(other, W + 1);
+      recordIn(other, 'github', 40, 2);
+      const done = u.beginCall({tool: 't'});
+      u.grantCall(done, W + 1);
+      u.recordOut(done, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+      const token = tokenFor(W);
+      assert.strictEqual(answerUsageQuery({usageCall: other, token}, W), null);
+      assert.strictEqual(answerUsageQuery({usageCall: done, token}, W), null);
+      assert.strictEqual(answerUsageQuery({usageCall: done + 1000, token}, W), null, 'nor one never begun');
     });
 
-    it('a token that is not this worker\'s is refused CALL_TOKEN_INVALID, before the call is looked at', () => {
-      const call = u.beginCall({tool: 't'});
-      u.grantCall(call, W);
-      assert.throws(() => answerUsageQuery({usageCall: call, token: tokenFor(W + 1)}, W), {code: 'CALL_TOKEN_INVALID'});
-      assert.throws(() => answerUsageQuery({usageCall: call + 1, token: 'f'.repeat(32)}, W), {code: 'CALL_TOKEN_INVALID'});
+    it('the token is checked first, always: without one issued to this worker, every query is refused CALL_TOKEN_INVALID, open, finished or no call', () => {
+      const open = u.beginCall({tool: 't'});
+      u.grantCall(open, W);
+      const done = u.beginCall({tool: 't'});
+      u.recordOut(done, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+      for (const token of [tokenFor(W + 1), 'f'.repeat(32), null, undefined]) {
+        for (const usageCall of [open, done, done + 1000, undefined]) {
+          assert.throws(() => answerUsageQuery({usageCall, token}, W), {code: 'CALL_TOKEN_INVALID'}, `${token} ${usageCall}`);
+        }
+      }
     });
 
-    it('no call, or a finished one: null, with a live token or none (a peer channel\'s call, a call that has answered)', () => {
+    it('no call, or a finished one, with this worker\'s token: null', () => {
       assert.strictEqual(answerUsageQuery({token: tokenFor(W)}, W), null);
-      assert.strictEqual(answerUsageQuery({token: null}, W), null);
-      assert.strictEqual(answerUsageQuery({}, W), null);
       const call = u.beginCall({tool: 't'});
       u.grantCall(call, W);
       u.recordOut(call, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
       assert.strictEqual(answerUsageQuery({usageCall: call, token: tokenFor(W)}, W), null);
-      assert.strictEqual(answerUsageQuery({usageCall: call, token: null}, W), null, 'its token dropped when it answered');
     });
   });
 
