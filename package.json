@@ -9,7 +9,9 @@
     "countinghouse-migrate-module": "./bin/countinghouse-migrate-module.js",
     "countinghouse-validate": "./bin/countinghouse-validate.js",
     "countinghouse-stdio": "./bin/countinghouse-stdio.js",
-    "countinghouse-usage": "./bin/countinghouse-usage.js"
+    "countinghouse-usage": "./bin/countinghouse-usage.js",
+    "countinghouse-auth-sqlite": "./bin/countinghouse-auth-sqlite.js",
+    "countinghouse-meter": "./bin/countinghouse-meter.js"
   },
   "main": "./framework.js",
   "files": [

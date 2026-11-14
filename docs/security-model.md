@@ -397,6 +397,17 @@ and the short list of what the in-process sandbox cannot give.
   and which binding authorizes, never by anything the message states, and
   refuses a target outside the module's declared calls
   (`CTX_CALL_UNDECLARED`) whatever route the module took.
+- **A module's messages to the main thread are not yet bounded in size
+  (#170).** A module that patches its worker's `MessagePort` can attach
+  extra fields to a message, or send messages of its own. The main thread
+  deserialises each on receipt, before any length check, so one module can
+  make the main thread allocate and parse whatever it sends, delaying every
+  tenant. The output cap doesn't cover this: it checks a reply's
+  serialized result, not the message around it. `--moduleMessageRate`
+  bounds the number of messages, not their size. #186 and #190, in review,
+  close most of it: they send every worker-to-main message as bounded,
+  transferred bytes, with the module's console output and its worker's log
+  capped.
 - **No network permission is enforced yet.** A module can open outbound
   connections with `net`/`http`/`https`/`fetch` until parts 3 and 4,
   including to Unix-socket paths (`net.connect(path)`,
@@ -632,12 +643,26 @@ these are the checks that predate them and still apply:
   (`lib/validator-pool.js`) for every call the main thread sends to a
   module's worker (a client's call, a job's run, a hop routed through the
   main thread). That is neither the main thread nor the module's own worker,
-  and no module code runs there. A module's code can reach its own worker's
-  copy: under `audit` and `off` the runtime's files are in that worker's
-  `require.cache`. So the in-worker check is used only for a call over a
-  direct peer channel, where a module that interferes with it harms its own
-  input check; moving that check out of reach is lean worker step 4
-  (`docs/superpowers/specs/2026-11-13-lean-worker-design.md`).
+  and no module code runs there.
+
+  **The gap: a call over a direct peer channel** (the hosting default;
+  `--no-directPeerChannels` routes every hop through the main thread
+  instead). That call is still validated in the called module's own worker,
+  both its input and its output.
+  - A module's code can reach its own worker's copy of the checks: under
+    `audit` and `off`, the runtime's files are in that worker's
+    `require.cache`. So a called module that tampers with its worker can
+    skip its own output check.
+  - The calling module does no check of its own. An unchecked output
+    therefore reaches the caller: the harm is to the caller, not only to the
+    tampering module.
+  - None of the pool's bounds below applies to a peer call: no deadline, no
+    caller throttle, no quarantine. A caller can tie up a called module's
+    worker with an input that makes that module's own pattern backtrack.
+
+  Lean worker step 4 moves peer calls' checks into the validator pool, with
+  the same rules as routed calls; until then, use `--no-directPeerChannels`
+  where the guarantee matters.
 
   The main thread never compiles or walks a module's schema, because no
   check made beforehand bounds JSON Schema validation: some patterns
@@ -671,22 +696,37 @@ these are the checks that predate them and still apply:
     checked like any others).
 
   A `schema.json` that is plainly unsafe is also refused at load as a
-  courtesy, checked in a validator (`lib/schema-safety.js`): over 1 MB, a
-  pattern over 1000 characters or of star height above 1, or over 100,000
-  nodes with its `$ref`s expanded.
-- **Redis command allowlist** (`lib/supported-redis-commands.json`,
-  enforced in `lib/redis-api.js` via `_.intersection(redisCommands.list,
-  supportedCommands)`). Modules access Redis only through a wrapper that
-  dynamically exposes exactly the commands on this list —
-  `get`/`set`/`hget`/`hset`/`lpush`/`zadd`/`multi`/`exec` and similar data
-  commands. Administrative and introspection commands that would let a
-  module affect the whole Redis instance or other tenants' keyspaces —
-  `flushall`, `flushdb`, `config`, `keys`, `client`, `monitor`, `shutdown`,
-  and Lua execution via `eval`/`evalscript` — are absent from the list and
-  therefore uncallable through this path. (A module could still reach Redis
-  directly if it required the `redis` package itself and supplied its own
-  connection details — this allowlist constrains the *platform-provided*
-  Redis handle, not arbitrary module code.)
+  courtesy, checked in a validator (`lib/schema-safety.js`). It refuses:
+  - a `schema.json` over 1 MB;
+  - a pattern over 1000 characters, with a repetition inside a repeated
+    group, or with alternatives that start alike inside one;
+  - over 100,000 nodes with its `$ref`s expanded;
+  - a `$ref` cycle, or a `$ref` that names no place.
+
+  It runs under the same `--validationCompileMs` budget as the compile.
+- **`ctx.redis`: a command allowlist and a namespace per module.**
+  - Modules use Redis only through a wrapper that exposes the 19 commands on
+    the allowlist (`lib/supported-redis-commands.json`, intersected in
+    `lib/redis-api.js` as `ALLOWED_COMMANDS`). These are data commands such
+    as `get`, `set`, `hget`, `hset`, `lpush` and `zadd`.
+  - `multi` and `exec` are not on it (#164): under `--store redis`,
+    node_redis's `multi` runs any command name queued in it. Nor are the
+    commands that affect the whole instance or read across keyspaces:
+    `flushall`, `flushdb`, `config`, `keys`, `client`, `monitor`,
+    `shutdown`, and Lua via `eval`/`evalscript`.
+  - Every key a module names is stored under `m:<module name>:` (#164,
+    `lib/redis-namespace.js`). That's the name the main thread loaded the
+    module under, never one its worker states. So a module can't read,
+    overwrite or delete another module's keys or the runtime's own
+    (`jobinfo:*`).
+  - Each allowed command's key positions are in a table; a command whose
+    keys can't be placed is refused. Single-thread mode and `--store local`
+    namespace the same way.
+  - What this doesn't stop: a module that opens its own Redis connection
+    with the `redis` package and connection details of its own. Under
+    `audit` and `enforce` the lockdown refuses the configured Redis
+    endpoint in every spelling (layer 1 above), except by the routes listed
+    there. Under `off` nothing does.
 - **Per-apiKey device authorization** (`AuthProvider`, `lib/auth/` — see
   [`design-decisions.md`](design-decisions.md#authprovider-three-pluggable-backends-one-narrow-interface)
   for why it's split into three backends, and
