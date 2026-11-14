@@ -220,6 +220,20 @@ Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
 pointers resolve to. This is what becomes each MCP tool's
 `inputSchema`/`outputSchema`.
 
+Every call's input and output is validated on the server's main thread,
+which all modules share, so a module whose `schema.json` could stall or
+exhaust it is refused at load (`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`,
+naming the schema path):
+
+- `schema.json` larger than 1 MB;
+- a regular expression (`pattern`, a `patternProperties` key, a
+  `propertyNames` pattern) longer than 1000 characters, or with a repetition
+  inside a repeated group, such as `^(a+)+$` or `(\d+)*`, which can
+  backtrack catastrophically. Write `^a+$`, or `^\d+(?:,\d+)?$` with a
+  bounded group, instead;
+- actions whose schemas come to more than 100,000 nodes once their `$ref`s
+  are expanded, or a `$ref` that refers to itself.
+
 ## Loading your module
 
 At startup:
@@ -774,12 +788,19 @@ missing `device.modelDescription`, an action without a `name`, an
 The device assembled from your `api.json` failed its interface check: an
 earlier error on the device was recorded, and the message quotes it.
 
-### 4. The log says `LOAD_MODULE_FAIL`
+### 4. The log says `MODULE_ASSEMBLY_FAIL` with `stage=schemaSafety`
+
+Your `schema.json` is one the main thread will not validate with: too
+large, a pattern that can backtrack catastrophically, or `$ref`s that expand
+too far or refer to themselves. The message names the schema path; see
+[`schema.json`](#schemajson) for the limits.
+
+### 5. The log says `LOAD_MODULE_FAIL`
 
 A handler file threw while being required — a syntax error, a missing
 `require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
 
-### 5. No error at all, and the module is listed as loaded
+### 6. No error at all, and the module is listed as loaded
 
 Then the device did come online, and the problem is downstream:
 

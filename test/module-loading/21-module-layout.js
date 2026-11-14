@@ -180,6 +180,40 @@ describe('module-loading 21: one module format, decided statically', function() 
         assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_LAYOUT_UNSUPPORTED', JSON.stringify(r));
       });
 
+      // The module format's schema, with `input` as ping's input and `extra`
+      // beside it in schema.json (lib/schema-safety.js).
+      const withInput = (dir, name, input, extra = {}) => {
+        writeModule(dir, name, {handlers: true});
+        const schema = JSON.parse(fs.readFileSync(path.join(dir, 'schema.json'), 'utf8'));
+        schema.layoutService.ping.input = input;
+        fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({...schema, ...extra}));
+        return dir;
+      };
+
+      it('a schema whose pattern can backtrack catastrophically is refused at load; a plain pattern loads', async () => {
+        const bad = withInput(path.join(home, `load-redos-${id}`), 'load-redos', {type: 'object', properties: {s: {type: 'string', pattern: '^(a+)+$'}}});
+        const r = await load(bad, 'load-redos');
+        assert.strictEqual(r.isError, true, JSON.stringify(r));
+        assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_ASSEMBLY_FAIL', JSON.stringify(r));
+        assert.match(JSON.stringify(r.content), /layoutService\/ping\/input\/properties\/s\/pattern/);
+        const ok = withInput(path.join(home, `load-plain-${id}`), 'load-plain', {type: 'object', properties: {s: {type: 'string', pattern: '^[a-z]+$'}}});
+        const loaded = await load(ok, 'load-plain');
+        assert.notStrictEqual(loaded.isError, true, `${JSON.stringify(loaded)}\n${io.err.slice(-2000)}`);
+        const called = await io.request({jsonrpc: '2.0', id: id++, method: 'tools/call', params: {name: 'load_plain_layoutservice_ping', arguments: {s: 'abc'}}}, 30000);
+        assert.deepStrictEqual(called.result.structuredContent, {text: 'pong'}, JSON.stringify(called));
+      });
+
+      it('a $ref expansion bomb is refused at load, and the server goes on answering', async () => {
+        const defs = {l0: {type: 'string'}};
+        for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+        const bomb = withInput(path.join(home, `load-bomb-${id}`), 'load-bomb', {$ref: '#/defs/l12'}, {defs});
+        const r = await load(bomb, 'load-bomb');
+        assert.strictEqual(r.isError, true, JSON.stringify(r));
+        assert.strictEqual(r._meta['countinghouse/code'], 'MODULE_ASSEMBLY_FAIL', JSON.stringify(r));
+        const listed = await io.request({jsonrpc: '2.0', id: id++, method: 'tools/list'}, 30000);
+        assert.ok(Array.isArray(listed.result.tools) && !listed.result.tools.some((t) => /load_bomb/.test(t.name)));
+      });
+
       it('a module with handlers/ and a main entry loads, and its main entry is never run', async () => {
         const dir = writeModule(path.join(home, `load-both-${id}`), 'load-both', {handlers: true, main: 'device.js'});
         const r = await load(dir, 'load-both');
