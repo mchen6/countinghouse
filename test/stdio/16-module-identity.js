@@ -31,10 +31,11 @@ const EXPECT = {
   'require.resolve ../../lib/sub': (c) => own('lib/sub.js').test(c.value),
   'require probe-dep': (c) => c.ok && c.value.dep === true && own('node_modules/probe-dep/index.js').test(c.value.file),
   'import esm': (c) => c.ok && c.value.esm === true,
-  'readFileSync own file via __dirname': (c) => c.value === 'hello from the module\n',
+  // (git may check the file out with CRLF on Windows)
+  'readFileSync own file via __dirname': (c) => /^hello from the module\r?\n$/.test(c.value),
   'readdirSync own dir': (c) => c.ok && c.value.includes('data.txt') && c.value.includes('sub.js'),
   'statSync own file isFile': (c) => c.value === true,
-  'promises.readFile own file': (c) => c.value === 'hello from the module\n',
+  'promises.readFile own file': (c) => /^hello from the module\r?\n$/.test(c.value),
   'existsSync own file': (c) => c.value === true,
   'write /data then read': (c) => c.value === 'w',
   'write path.join(/data) then read': (c) => c.value === 'j',
