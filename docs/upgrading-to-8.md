@@ -116,6 +116,13 @@ you have to do. What the sandbox does and does not protect is in
   `setAction`), `npx countinghouse-migrate-module ./my-module` does that. A
   module that had several devices becomes several modules. With `handlers/`, a main entry is never
   run.
+- **Breaking: `ctx.redis` is per module (#164).** Each key a module names
+  is stored under `m:<module name, URI-encoded>:`, the name the runtime loaded it under,
+  so modules no longer share keys: one module cannot read, overwrite or
+  delete another's, nor the runtime's own (`jobinfo:*`). A module reads and
+  writes its keys as it named them. Data a 7.x module wrote unprefixed is not
+  visible under its new namespace; there is no migration (no module authors
+  depend on it yet). `multi` and `exec` are gone from `ctx.redis`.
 - **Breaking: `DeviceError` and `CHError` are gone.** Neither the classes nor
   the module-facing globals exist; a module that names them fails at call
   time. Report a failure with your module's own code:

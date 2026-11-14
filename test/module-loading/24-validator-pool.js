@@ -164,6 +164,10 @@ describe('module-loading 24: the validator pool', function() {
     const flood = moduleWith(STALL);
     const quiet = moduleWith({type: 'object', properties: {n: {type: 'integer'}}});
     assert.strictEqual(await checkIn(quiet, {n: 1}), null);   // compiled in one validator
+    // and in the others, in the background: what is measured is the flood's
+    // effect, not a validator's first compile of the quiet module (52 ms in
+    // r15 at 5231143)
+    await warmed(pool);
     const sentBefore = pool.stats.sent;
     const flooded = Array.from({length: 20}, () => checkIn(flood, STALLING));
     await new Promise((r) => setTimeout(r, 30));
@@ -230,6 +234,11 @@ describe('module-loading 24: the validator pool', function() {
   describe('callers, floods and replacements', () => {
     const checkFrom = (p, m, input, caller) => p.check(m.key, SERVICE, 'a', 'input', {input: input}, caller);
     const p90 = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length * 0.9)]; };
+    // A stall counts when its validator is replaced: a call refused first as a
+    // late start runs on to its full budget. Waits for the caller's block.
+    const blocked = async (p, caller, m) => {
+      for (let w = 0; !p.callerBlocked.has(`${caller}\n${m.name}`) && w < 5000; w += 20) await new Promise((res) => setTimeout(res, 20));
+    };
 
     // The reviewer's repro: one slow input a second to module B from one
     // caller. Its stalls are held against that caller, and no one else is
@@ -286,6 +295,7 @@ describe('module-loading 24: the validator pool', function() {
           assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
           await warmed(p);
         }
+        await blocked(p, 'u_flood', m);
         const throttled = await checkFrom(p, m, [1], 'u_flood');
         assert.strictEqual(codeOf(throttled), 'VALIDATION_CALLER_THROTTLED');
         assert.match(throttled[0].message, new RegExp(`^${m.name}/a: this caller's inputs to the module kept missing the validation deadline \\(3 in 5 minutes\\), so its calls to the module are refused for \\d+ s`));
@@ -299,7 +309,9 @@ describe('module-loading 24: the validator pool', function() {
     });
 
     it('the stall window slides across a block: once a block ends, the next stall within 5 minutes blocks the caller again', async () => {
-      const p = newPool({callerCooldownMs: 500});
+      // a block of 2 s: long enough that a loaded machine reaches the check
+      // inside it, short enough to wait out
+      const p = newPool({callerCooldownMs: 2000});
       try {
         const m = moduleWith(STALL, {}, {type: 'object'}, p);
         await warmed(p);
@@ -307,8 +319,9 @@ describe('module-loading 24: the validator pool', function() {
           assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
           await warmed(p);
         }
+        await blocked(p, 'u_flood', m);
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED');
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 2100));
         await warmed(p);
         assert.strictEqual(await checkFrom(p, m, [1], 'u_flood'), null, 'the block has ended');
         // a recently stalling caller takes no last free validator: both free
@@ -316,7 +329,7 @@ describe('module-loading 24: the validator pool', function() {
         assert.strictEqual(codeOf(await checkFrom(p, m, STALLING, 'u_flood')), 'VALIDATION_TIMEOUT');
         // the stall counts when its validator is replaced (a call refused
         // first as a late start runs on to its full budget)
-        for (let w = 0; !p.callerBlocked.has(`u_flood\n${m.name}`) && w < 5000; w += 20) await new Promise((res) => setTimeout(res, 20));
+        await blocked(p, 'u_flood', m);
         await warmed(p);
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED', 'its fourth stall in the window blocks it again');
       } finally {
@@ -367,7 +380,10 @@ describe('module-loading 24: the validator pool', function() {
       }
     });
 
-    it('two modules flooded by two callers for 3 s (three validators): under 1% of B\'s calls refused', async () => {
+    // Two floods keep two validators busy flat out; B's needs a CPU of its
+    // own beside them (on 2 CPUs it is starved of CPU, not of a validator).
+    const enoughCpus = require('os').cpus().length >= 4;
+    (enoughCpus ? it : it.skip)('two modules flooded by two callers for 3 s (three validators, 4 CPUs or more): under 1% of B\'s calls refused', async () => {
       const p = newPool({size: 3});
       try {
         const f1 = moduleWith(STALL, {}, {type: 'object'}, p);
