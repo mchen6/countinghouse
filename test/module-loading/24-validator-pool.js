@@ -305,7 +305,9 @@ describe('module-loading 24: the validator pool', function() {
     });
 
     it('the stall window slides across a block: once a block ends, the next stall within 5 minutes blocks the caller again', async () => {
-      const p = newPool({callerCooldownMs: 500});
+      // a block of 2 s: long enough that a loaded machine reaches the check
+      // inside it, short enough to wait out
+      const p = newPool({callerCooldownMs: 2000});
       try {
         const m = moduleWith(STALL, {}, {type: 'object'}, p);
         await warmed(p);
@@ -315,7 +317,7 @@ describe('module-loading 24: the validator pool', function() {
         }
         await blocked(p, 'u_flood', m);
         assert.strictEqual(codeOf(await checkFrom(p, m, [1], 'u_flood')), 'VALIDATION_CALLER_THROTTLED');
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 2100));
         await warmed(p);
         assert.strictEqual(await checkFrom(p, m, [1], 'u_flood'), null, 'the block has ended');
         // a recently stalling caller takes no last free validator: both free
