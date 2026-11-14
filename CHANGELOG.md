@@ -37,6 +37,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   refused. `multi` and `exec` are gone from `ctx.redis`: under
   `--store redis` node_redis's multi runs any command name queued in it.
   Single-thread mode's `ctx.redis` is namespaced the same way.
+- **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
+  data (unless `keepData`), so a later module of the same name inherits none;
+  the answer gains `keysDeleted`. A reload or an upgrade keeps them.
 
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 
