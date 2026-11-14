@@ -18,6 +18,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — a routed hop's input crosses the main thread as bytes (#185)
+
+- A `ctx.call` routed through the main thread (`--no-directPeerChannels`)
+  sends its input as `v8.serialize` bytes, transferred: the main thread
+  checks it in a validator and hands the checked bytes to the called module,
+  never deserialising or cloning it. On 1 MB hops the main thread's CPU per
+  hop fell from 5.3–6.0 ms to 2.6–3.9 ms (the PR has the table).
+- **`INPUT_TOO_LARGE`** (new): a hop's input over `--maxOutputBytes`, the
+  one cap, is refused on the main thread before any check or handler runs.
+- A hop's input that structured clone cannot carry, or a
+  `SharedArrayBuffer` (which a hop used to share between two modules'
+  workers), now fails the `ctx.call` in the calling worker.
+
 ### Added — a bound on a module's load, in every sandbox mode (#144)
 
 - **`--moduleLoadTimeout <seconds>`** (default 120): a module's worker that
@@ -37,6 +50,26 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   refused. `multi` and `exec` are gone from `ctx.redis`: under
   `--store redis` node_redis's multi runs any command name queued in it.
   Single-thread mode's `ctx.redis` is namespaced the same way.
+- **`POST /uninstall-module` deletes the module's `ctx.redis` keys** with its
+  data (unless `keepData`), so a later module of the same name inherits none;
+  the answer gains `keysDeleted`. A reload or an upgrade keeps them.
+
+### Added — `ctx.usage()`: the current call's counts so far
+
+- `ctx.usage()` resolves with the current tools/call's counts so far,
+  read-only: `{calls, linesIn, bytesIn, tokensInEst, servers, sentence}`
+  (and `standIn` when a stand-in answered). `sentence` is the first half of
+  the receipt's sentence, word for word. Every remote server call made under
+  the call is counted, its parts' included. The call's own output is not
+  counted, since it is measured when the call returns. A scenario writes its
+  receipt sentence from these counts, so the sentence reaches the model in
+  its summary. It is `null` outside a counted call, and never carries a key,
+  an id or a caller.
+- A worker's query is checked on the main thread. The call's token is
+  checked first, always: it must be one issued to that worker (else
+  `CALL_TOKEN_INVALID`). Then anything but an open call that worker was
+  given answers `null` alike, so a module cannot tell another worker's
+  open call from a finished one.
 
 ### Changed — a composing module is bound by its module name; its hops and queries reach only what it declared (breaking)
 

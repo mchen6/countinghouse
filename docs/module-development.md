@@ -64,6 +64,7 @@ name and the fix. A module never half-loads.
 | `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance |
+| `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
 | `ctx.httpHeaders` | request headers, when the call arrived over HTTP |
 
 `ctx` replaces the device instance that used to be bound as `this`. That is a
@@ -230,7 +231,10 @@ validator workers, which all modules share:
 - three such refusals of your own outputs (or compiles) in five minutes
   quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
 - an output over `--maxOutputBytes` (8 MiB by default) is refused
-  `OUTPUT_TOO_LARGE`.
+  `OUTPUT_TOO_LARGE`, and so is a `ctx.call` input over it, `INPUT_TOO_LARGE`,
+  on the main-thread-routed path. A hop's input is sent as bytes: a value
+  structured clone cannot carry, or a `SharedArrayBuffer`, fails the
+  `ctx.call` in your own worker.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
