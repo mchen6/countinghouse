@@ -149,7 +149,8 @@ describe('stdio 14: countinghouse_settings', () => {
 
     it('a ceiling that cannot be trusted refuses every loosening, naming the file and why; tightening still works', async () => {
       const t = withCeiling({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'the file is not owned by root'});
-      for (const [name, value] of [['maxOutputBytes', '64MiB'], ['autoUpgrade', 'on'], ['moduleSandbox', 'audit']]) {
+      // (moduleSandbox audit is no loosening on Windows until #197 lands, where audit is the only value)
+      for (const [name, value] of [['maxOutputBytes', '64MiB'], ['autoUpgrade', 'on']].concat(process.platform === 'win32' ? [] : [['moduleSandbox', 'audit']])) {
         const err = await refused(t.set(name, value), 'SETTING_CEILING_UNTRUSTED');
         assert.match(err.message, /ceiling file \/etc\/countinghouse\/ceiling\.json cannot be trusted \(the file is not owned by root\)/);
       }
@@ -162,11 +163,29 @@ describe('stdio 14: countinghouse_settings', () => {
       assert.match((await refused(t.set('maxOutputBytes', '32MiB'), 'SETTING_ABOVE_CEILING')).message, /maxOutputBytes 32MiB is above the ceiling this machine's operator set \(at most 16MiB\)/);
       await refused(t.set('maxOutputBytes', '8MiB'), 'SETTING_NEEDS_CONFIRMATION');
       await t.set('pack.ci-failure-triage', 'off');
-      assert.match((await refused(t.set('pack.ci-failure-triage', 'on'), 'SETTING_ABOVE_CEILING')).message, /not allowed on this machine/);
-      await refused(t.set('autoUpgrade', 'on'), 'SETTING_ABOVE_CEILING');
+      assert.match((await refused(t.set('pack.ci-failure-triage', 'on'), 'SETTING_FORBIDDEN_BY_CEILING')).message, /pack\.ci-failure-triage cannot be changed to on on this machine: its operator's ceiling forbids it/);
+      await refused(t.set('autoUpgrade', 'on'), 'SETTING_FORBIDDEN_BY_CEILING');
       const got = await t.get();
       assert.strictEqual(got.settings.find((x) => x.name === 'maxOutputBytes').bounds.max, 16 * MiB);
-      assert.ok(history().some((h) => h.change === 'refused, above the ceiling'));
+      // grouped per kind and outcome: the 8MiB request is not filed under the ceiling's refusal
+      assert.deepStrictEqual(history().filter((h) => h.setting === 'maxOutputBytes' && h.asked != null).map((h) => [h.asked, h.change]),
+        [[32 * MiB, 'refused by the ceiling'], [8 * MiB, 'not confirmed']]);
+      // a ceiling below a setting's least value: get's bounds stay sane
+      const low = withCeiling(trusted({maxOutputBytes: 1000}));
+      assert.deepStrictEqual((await low.get()).settings.find((x) => x.name === 'maxOutputBytes').bounds, {min: MiB, max: MiB});
+    });
+
+    it('the control set from ch-local: a value above the ceiling is refused there too', () => {
+      settingsTool.resetForTests();
+      settingsTool.ceilingForControl(() => trusted({maxOutputBytes: 4 * MiB}));
+      try {
+        assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 6 * MiB}), {ok: false, code: 'SETTING_ABOVE_CEILING'});
+        settingsTool.ceilingForControl(() => ({state: 'untrusted', file: 'x', problem: 'y'}));
+        assert.deepStrictEqual(settingsTool.applyControlSet({name: 'requestTimeout', value: 100}), {ok: false, code: 'SETTING_ABOVE_CEILING'});
+      } finally {
+        settingsTool.ceilingForControl(() => ({state: 'none'}));
+        settingsTool.resetForTests();
+      }
     });
   });
 

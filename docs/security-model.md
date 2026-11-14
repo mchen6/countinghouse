@@ -409,17 +409,27 @@ conversation or the `ch-local` command, with an optional, machine-wide file:
 Every key but `version` is optional: `maxOutputBytes` and `requestTimeout`
 lower the hard bounds; `forbid` refuses loosening the sandbox, automatic
 upgrades or turning a pack on; `"conversation": false` refuses every
-loosening asked for in conversation. A value above it, or a loosening it
-forbids, is `SETTING_ABOVE_CEILING`. Tightening is never refused by it.
+loosening asked for in conversation (it takes effect once a client can
+confirm one in conversation, part 3's elicitation; until then every such
+loosening already ends at the terminal command). A value above it is
+`SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
+Tightening is never refused by it. It is read once per process, and again
+when the file changes.
 
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
 (by real path) are owned by root and not writable by group or others; on
 Windows the directory and the file are owned by, and writable only by,
-Administrators, SYSTEM or TrustedInstaller (by SID). A file that exists and
-fails any check, or holds anything else, **fails closed**: every loosening is
-refused (`SETTING_CEILING_UNTRUSTED`), naming the file and why. No file:
-the hard bounds apply.
+Administrators, SYSTEM or TrustedInstaller (by SID), and ProgramData is
+the system's known folder, not the caller's `%ProgramData%`. A directory
+made under ProgramData inherits a write right for Users, so the operator
+removes it (`icacls "%ProgramData%\countinghouse" /inheritance:r /grant
+Administrators:F SYSTEM:F Users:RX`). Both must stay readable by every user
+(`0755` and `0644` on Linux and macOS). A file that exists and fails any
+check, or holds anything else, **fails closed**: every loosening is refused
+(`SETTING_CEILING_UNTRUSTED`), naming the file and why; so does a
+`countinghouse` directory an ordinary user could have made, even with no
+file in it. No directory and no file: the hard bounds apply.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 

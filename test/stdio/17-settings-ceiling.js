@@ -38,11 +38,14 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
   it('the file: /etc/countinghouse/ceiling.json; %ProgramData%\\countinghouse\\ceiling.json on Windows', () => {
     assert.strictEqual(ceilingFile('linux'), '/etc/countinghouse/ceiling.json');
     assert.strictEqual(ceilingFile('darwin'), '/etc/countinghouse/ceiling.json');
-    assert.strictEqual(ceilingFile('win32', {ProgramData: 'D:\\PD'}), 'D:\\PD\\countinghouse\\ceiling.json');
+    assert.strictEqual(ceilingFile('win32', 'D:\\PD'), 'D:\\PD\\countinghouse\\ceiling.json');
   });
 
   it('POSIX: no file is none; a root-owned file under root-owned directories is trusted and read', () => {
     assert.deepStrictEqual(posix(null), {state: 'none'});
+    // no file, and its directory one an ordinary user made (who could remove the operator's file): fails closed
+    assert.match(posix(null, {'/etc/countinghouse': {uid: 1000, mode: 0o755, dir: true}}).problem, /\/etc\/countinghouse is not owned by root/);
+    assert.deepStrictEqual(readCeiling({platform: 'linux', fs: fakeFs({'/': ROOTDIRS['/'], '/etc': ROOTDIRS['/etc']})}), {state: 'none'}, 'no directory either');
     const r = posix({uid: 0, mode: 0o644, text: GOOD});
     assert.strictEqual(r.state, 'trusted');
     assert.deepStrictEqual(r.ceiling, {maxOutputBytes: 16 * 1024 * 1024, requestTimeout: undefined, forbid: ['autoUpgrade'], conversation: false});
@@ -76,7 +79,7 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
   });
 
   it('Windows: owner and every write grant by well-known SID; anything else fails closed', () => {
-    const win = (acl, entries = {}) => readCeiling({platform: 'win32', env: {ProgramData: 'C:\\ProgramData'},
+    const win = (acl, entries = {}) => readCeiling({platform: 'win32', programData: 'C:\\ProgramData',
       fs: fakeFs(Object.assign({'C:\\ProgramData\\countinghouse': {dir: true}, 'C:\\ProgramData\\countinghouse\\ceiling.json': {text: GOOD}}, entries)), acl: () => acl});
     const ok = {owner: ADMINS, rules: [{sid: ADMINS, rights: 2032127, type: 'Allow', inheritOnly: false}, {sid: SYSTEM, rights: 2032127, type: 'Allow', inheritOnly: false},
       {sid: USERS, rights: 1179817, type: 'Allow', inheritOnly: false}]};   // Users: ReadAndExecute
@@ -87,10 +90,14 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
     // an inherit-only grant does not apply to the object; a deny only restricts
     assert.strictEqual(win({dir: {owner: ADMINS, rules: ok.rules.concat([{sid: USERS, rights: 2, type: 'Allow', inheritOnly: true}, {sid: USERS, rights: 2, type: 'Deny', inheritOnly: false}])}, file: ok}).state, 'trusted');
     assert.match(win(null).problem, /ACL could not be read/);
-    assert.match(readCeiling({platform: 'win32', env: {ProgramData: 'C:\\ProgramData'}, fs: fakeFs({'C:\\ProgramData\\countinghouse': {dir: true}, 'C:\\ProgramData\\countinghouse\\ceiling.json': {text: GOOD}}),
+    assert.match(readCeiling({platform: 'win32', programData: 'C:\\ProgramData', fs: fakeFs({'C:\\ProgramData\\countinghouse': {dir: true}, 'C:\\ProgramData\\countinghouse\\ceiling.json': {text: GOOD}}),
       acl: () => { const e = new Error('spawn powershell.exe ENOENT'); e.code = 'ENOENT'; throw e; }}).problem, /ACL could not be read \(ENOENT\)/);
     assert.match(win({dir: ok, file: ok}, {'C:\\ProgramData\\countinghouse\\ceiling.json': {link: true}}).problem, /symbolic link/);
     assert.match(aclProblem('x', {owner: ADMINS, rules: [{sid: USERS, rights: 'many', type: 'Allow'}]}), /could not be read/);
+    // no file, in a directory a user owns: fails closed
+    const userDir = {owner: 'S-1-5-21-1-2-3-1001', rules: ok.rules};
+    assert.match(readCeiling({platform: 'win32', programData: 'C:\\ProgramData', fs: fakeFs({'C:\\ProgramData\\countinghouse': {dir: true}}), acl: () => ({dir: userDir, file: userDir})}).problem,
+      /its directory is owned by S-1-5-21-1-2-3-1001, not Administrators, SYSTEM or TrustedInstaller/);
   });
 
   it('the real reader, on this OS: a file this test wrote is not trusted, and says why', function() {
@@ -103,7 +110,9 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
       if (process.getuid != null && process.getuid() === 0) return;   // root writes a root-owned file
       assert.strictEqual(r.state, 'untrusted', JSON.stringify(r));
       assert.match(r.problem, process.platform === 'win32' ? /owned by|writable by|ACL could not be read/ : /not owned by root|writable/);
-      assert.deepStrictEqual(readCeiling({file: path.join(dir, 'missing.json')}), {state: 'none'});
+      // no file in a directory this user made: untrusted (the user could remove an operator's file); no directory: none
+      assert.strictEqual(readCeiling({file: path.join(dir, 'missing.json')}).state, 'untrusted');
+      assert.deepStrictEqual(readCeiling({file: path.join(dir, 'nope', 'missing.json')}), {state: 'none'});
     } finally {
       fs.rmSync(dir, {recursive: true, force: true});
     }
