@@ -111,6 +111,16 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
     });
 
+    it('a service or action named like an Object.prototype member is not found, and nothing runs', async () => {
+      for (const name of ['constructor', '__proto__', 'toString']) {
+        const action = await invoke(name, {n: 'not an integer'});
+        assert.deepStrictEqual([action.status, action.body.code], [500, 'ACTION_NOT_FOUND'], `action ${name}: ${JSON.stringify(action.body)}`);
+        const service = await invoke('take', {n: 'not an integer'}, name);
+        assert.deepStrictEqual([service.status, service.body.code], [500, 'SERVICE_NOT_FOUND'], `service ${name}: ${JSON.stringify(service.body)}`);
+      }
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+    });
+
     it('a valid call runs, once', async () => {
       const r = await invoke('take', {n: 7});
       assert.strictEqual(r.status, 200, JSON.stringify(r.body));

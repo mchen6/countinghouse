@@ -106,12 +106,18 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
     assert.strictEqual(moduleSpec.checkOutput(checked, undefined)[0].code, 'MISSING_OUTPUT_ARGUMENT');
   });
 
-  it('leaves to the worker what it has no spec for: another device, or a name only Object.prototype has', () => {
+  it('leaves to the worker only a device it has no spec for', () => {
     assert.strictEqual(moduleSpec.checkInput(null, own.deviceID, SERVICE, 'take', {input: {n: 'x'}}), null);
     assert.strictEqual(moduleSpec.checkInput(own, 'another-device', SERVICE, 'take', {input: {n: 'x'}}), null);
-    assert.strictEqual(check('toString', 'take', {input: {n: 'x'}}), null);
-    assert.strictEqual(check(SERVICE, 'constructor', {input: {n: 'x'}}), null);
-    assert.strictEqual(check('__proto__', 'take', {input: {n: 'x'}}), null);
+  });
+
+  it('a name only Object.prototype has is not found: the service, or the action', () => {
+    const bad = {input: {n: 'x'}};
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+      assert.deepStrictEqual(answer(check(name, 'take', bad)).slice(0, 1), ['SERVICE_NOT_FOUND'], `service ${name}`);
+      assert.deepStrictEqual(answer(check(SERVICE, name, bad)).slice(0, 1), ['ACTION_NOT_FOUND'], `action ${name}`);
+      assert.deepStrictEqual(answer(check(SERVICE, name, null)).slice(0, 1), ['ACTION_NOT_FOUND'], `action ${name}, no input`);
+    }
   });
 
   describe('the device a worker announces', () => {
@@ -154,6 +160,7 @@ describe('module-loading 23: a module\'s spec and its checks on the main thread'
       const {dm, wm} = announce(own, own.deviceID, announced);
       assert.deepStrictEqual(dm.deviceMap, {});
       assert.deepStrictEqual(wm.deviceList, {});
+      assert.deepStrictEqual(DeviceManager.prototype.getAllDeviceSpecs.call(dm), {}, 'not listed either');
       assert.deepStrictEqual(logged, [notRegistered]);
     });
 
