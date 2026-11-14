@@ -123,16 +123,41 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     }
   });
 
-  it('the largest batch the worker sends fits the envelope at the smallest --maxOutputBytes', () => {
+  it('every batch the worker sends fits the envelope at the smallest --maxOutputBytes, as the envelope measures it on this Node; none is dropped for its size', async () => {
+    const w = new Worker(`
+      const {parentPort} = require('worker_threads');
+      const env = require(${JSON.stringify(path.join(LIB, 'message-envelope'))});
+      const cap = env.capFor(1);
+      const {installModuleStdio} = require(${JSON.stringify(path.join(LIB, 'worker-stdio'))});
+      let lines = 0;
+      let refused = 0;
+      let dropped = 0;
+      let biggest = 0;
+      installModuleStdio('m', {send: (stream, data) => {
+        try {
+          const b = env.wrap({id: stream, category: 'child', command: stream, errMsg: null, data}, cap).envelope.b.byteLength;
+          biggest = Math.max(biggest, b);
+          if (data.lines) lines += data.lines.length;
+          if (data.dropped) dropped += data.dropped;
+          return true;
+        } catch (e) {
+          refused += 1;
+          return e.code === 'MESSAGE_TOO_LARGE' ? 'too-large' : false;
+        }
+      }});
+      // within the budget: empty lines, and long lines of two-byte characters
+      process.stdout.write('\\n'.repeat(15000));
+      process.stderr.write(('\\u4e00'.repeat(2700) + '\\n').repeat(30));
+      setTimeout(() => parentPort.postMessage({lines, refused, dropped, biggest, cap}), 300);`, {eval: true});
+    const got = await new Promise((resolve, reject) => { w.once('message', resolve); w.once('error', reject); });
+    await w.terminate();
+    assert.strictEqual(got.lines, 15030, JSON.stringify(got));
+    assert.strictEqual(got.dropped, 0, JSON.stringify(got));
+    assert.ok(got.biggest <= got.cap, JSON.stringify(got));
+  });
+
+  it('a log record of three full fields fits the envelope at the smallest --maxOutputBytes', () => {
     const cap = envelope.capFor(1);
-    // two-byte characters: the serializer's widest form
-    const line = 'é\u4e00'.repeat(2048).slice(0, 4095);
-    const batch = [];
-    let units = 0;
-    while (units + line.length + 1 <= limits.BATCH_UNITS) { batch.push(line); units += line.length + 1; }
-    assert.doesNotThrow(() => envelope.wrap({id: 'stdout', category: 'child', command: 'stdout', errMsg: null, data: {lines: batch}}, cap));
-    const empties = new Array(limits.BATCH_UNITS).fill('');
-    assert.doesNotThrow(() => envelope.wrap({id: 'stdout', category: 'child', command: 'stdout', errMsg: null, data: {lines: empties}}, cap));
     const record = {level: 50, msg: '\u4e00'.repeat(limits.FIELD_MAX), e: '\u4e00'.repeat(limits.FIELD_MAX), de: '\u4e00'.repeat(limits.FIELD_MAX), lost: 3};
     assert.doesNotThrow(() => envelope.wrap({id: 'log', category: 'child', command: 'log', errMsg: null, data: record}, cap));
   });

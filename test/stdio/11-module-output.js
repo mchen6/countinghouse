@@ -7,7 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {startStdio, waitForTool, INITIALIZE} = require('../helpers/stdio-client');
+const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 const tmp = require('../helpers/test-tmp');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -31,8 +31,10 @@ describe('--stdio: a module\'s output goes to stderr, bounded (--moduleSandbox e
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     await io.request({...INITIALIZE, id: 1});
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
-    const say = await waitForTool(io, /say$/);
-    const flood = await waitForTool(io, /flood$/);
+    // the module's tools, or the server's own account of why there are none
+    const say = await waitForTool(io, /say$/, {deadlineMs: 30000});
+    assert.ok(say != null, `the module's tools are not listed; stderr: ${withoutRedisNoise(io.err).slice(-3000)}`);
+    const flood = await waitForTool(io, /_flood$/, {deadlineMs: 5000});
     await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: say.name, arguments: {}}});
     await io.request({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: flood.name, arguments: {mb: 10}}});
     await new Promise((resolve) => setTimeout(resolve, 1500));
