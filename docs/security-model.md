@@ -333,9 +333,9 @@ In the single-identity profile (`--store local --stdio` without
 made at start, read-only, and no file holds it: the runtime never prints,
 logs or writes it, keeps it out of the options a worker receives, and
 leaves it out of every answer the auth provider gives, a refusal of another
-key included. It still reaches module code as every caller's key does
-(`ctx.caller.apiKey`, and a composing module's composition identity) until
-the opaque caller id below replaces it. Every loaded module runs as that
+key included. Module code never sees it: since R2-1 a module gets the
+caller as its opaque id (`ctx.caller = {id, isAdmin}`), and a composing
+module's binding stays on the main thread. Every loaded module runs as that
 identity, which is not admin. The runtime's caller id for it comes from the
 identity secret, `<storePath>/.identity-secret` (0600, in the always-denied
 set; the store directory is a path no module may declare), and the fixed

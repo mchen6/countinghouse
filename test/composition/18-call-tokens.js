@@ -960,6 +960,23 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
   });
 
+  // The review of #163 (5): at any time, a worker announces only the
+  // devices its own module's api.json declares (read on the main thread at
+  // the spawn); any other device ID is refused.
+  it('(#163-5) a worker announcing a device its module does not declare is refused, at any time', () => {
+    const EventEmitter = require('events');
+    const DeviceManager = require('../../lib/device-manager');
+    const wmM = Object.assign(new EventEmitter(), {hostModuleName: 'M', hostModulePath: '/mods/M', hostDeviceIDs: new Set(['dev-M']), deviceList: {}, workerId: 73});
+    const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true,
+      moduleManager: {modules: {M: wmM}, endedStateForDevice: () => null, clearEndedDevice: () => {}}});
+    DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
+    const announce = (id) => wmM.emit('deviceonline', {data: {deviceID: id, spec: {device: {friendlyName: id}}, moduleName: 'M', modulePath: '/app'}}, wmM);
+    announce('dev-T');
+    assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took a device it does not declare');
+    announce('dev-M');
+    assert.strictEqual(self.deviceMap['dev-M'], wmM);
+  });
+
   // #153's review (2): a device ID is a worker's statement. While module T
   // reloads, its device's ended entry names T; another module announcing
   // T's device ID then must not take it (and so T's hops and tools).
@@ -982,6 +999,73 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device by stating T\'s name');
       announce(wmT, 'T');
       assert.strictEqual(self.deviceMap['dev-T'], wmT);
+    });
+  });
+
+  // The review of #163 (2): job history (jobinfo:<name>, other tenants'
+  // inputs, results and owners) lives in the kv a module's ctx.redis
+  // reaches; a module's command on a runtime key is refused, read or write.
+  describe('a module\'s ctx.redis and the runtime\'s own keys', () => {
+    it('(#163-2) refuses any command naming a jobinfo key; answers the rest', () => {
+      const EventEmitter = require('events');
+      const DeviceManager = require('../../lib/device-manager');
+      const redisAPI = require('../../lib/redis-api');
+      const saved = {client: redisAPI.client, isCommand: redisAPI.isCommand};
+      const ran = [];
+      redisAPI.client = new Proxy({}, {get: (t, op) => (data, cb) => { ran.push([op, data]); cb(null, 'ok'); }});
+      // the allowed set init() fills
+      redisAPI.isCommand = (op) => redisAPI.ALLOWED_COMMANDS.includes(op);
+      try {
+        const wm = Object.assign(new EventEmitter(), {hostModuleName: 'm', deviceList: {}, workerId: 81});
+        const replies = [];
+        wm.sendRedisCommandReplyToChild = (m) => replies.push(m);
+        const self = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}, notifyDeviceLoad: {}, allDevicesLoaded: true, moduleManager: null});
+        DeviceManager.prototype.onWorkerLoaded.call(self, wm);
+        const send = (op, data) => wm.emit('rediscommand', {id: replies.length + ran.length + 1, data: {op, data}}, wm);
+        send('lrange', ['jobinfo:report', 0, -1]);
+        send('lpush', ['jobinfo:report', '{}']);
+        send('del', ['mine', 'jobinfo:report']);
+        send('mget', ['a', 'jobinfo:x']);
+        send('get', ['my-own-key']);
+        assert.strictEqual(replies.filter((r) => r.errMsg != null && /runtime/.test(r.errMsg)).length, 4, JSON.stringify(replies));
+        assert.deepStrictEqual(ran, [['get', ['my-own-key']]], 'a refused command reached the store');
+      } finally {
+        redisAPI.client = saved.client;
+        redisAPI.isCommand = saved.isCommand;
+      }
+    });
+  });
+
+  describe('a job history record\'s owner', () => {
+    it('(#163-2) is the caller\'s opaque id, never the key or a hash of it; the owner still reads the record', (done) => {
+      const identity = require('../../lib/identity');
+      if (!identity.ready()) {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-18-hist-'));
+        identity.initSync({moduleDataPath: dir});
+      }
+      const common = require('../../lib/job-control-common');
+      const redisAPI = require('../../lib/redis-api');
+      const saved = redisAPI.client;
+      const list = [];
+      redisAPI.client = {lpush: (k, v) => list.unshift(v), ltrim: () => {}, lrange: (k, a, b, cb) => cb(null, list.slice())};
+      const KEY = `hist-key-${hex()}`;
+      try {
+        common.saveJobInfo({id: '1', name: 'report', data: {apiKey: KEY, input: {}}, opts: {}, progress: 0}, 'completed');
+        const record = JSON.parse(list[0]);
+        assert.strictEqual(record.job.data.owner, identity.idForKey(KEY), JSON.stringify(record.job.data));
+        assert.ok(!JSON.stringify(record).includes(KEY), 'the key is in the record');
+        common.getJobHistory({appKey: KEY}, 'report', (err, rows) => {
+          try {
+            assert.strictEqual(err, null, String(err));
+            assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+            done();
+          } catch (e) { done(e); }
+        });
+      } catch (e) {
+        done(e);
+      } finally {
+        redisAPI.client = saved;
+      }
     });
   });
 
