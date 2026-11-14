@@ -109,6 +109,38 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
     }
   });
 
+  (process.platform === 'win32' ? it : it.skip)('on Windows under --hardened: the parent checks the secret, the child takes exactly that file, and drops the variable', () => {
+    const lib = JSON.stringify(path.join(__dirname, '..', '..', 'lib', 'identity.js'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-idh-'));
+    const opts = JSON.stringify({singleIdentity: true, storePath: dir});
+    // the parent, not under the permission model
+    const parent = () => spawnSync(process.execPath, ['-e', `require(${lib}).prepareForHardened(${opts}); process.stdout.write(process.env.COUNTINGHOUSE_IDENTITY_ACL_CHECKED || '')`], {encoding: 'utf8'});
+    // the child, under it, as --hardened relaunches
+    const child = (checked) => spawnSync(process.execPath, ['--permission', '--allow-fs-read=*', '--allow-fs-write=*', '-e', `
+      try { require(${lib}).initSync(${opts}); process.stdout.write('ok ' + ('COUNTINGHOUSE_IDENTITY_ACL_CHECKED' in process.env)); }
+      catch (e) { process.stderr.write(e.message); process.exit(2); }`],
+    {encoding: 'utf8', env: Object.assign({}, process.env, checked != null ? {COUNTINGHOUSE_IDENTITY_ACL_CHECKED: checked} : {})});
+    try {
+      // no secret yet, under --permission: refused (the parent creates it)
+      assert.match(child(null).stderr, /does not exist, and under --hardened on Windows it is created before the relaunch/);
+      const p = parent();
+      assert.strictEqual(p.status, 0, p.stderr);
+      const id = JSON.parse(p.stdout);
+      assert.ok(id.path.endsWith('.identity-secret') && id.ino && id.dev, p.stdout);
+      const ok = child(p.stdout);
+      assert.strictEqual(ok.status, 0, ok.stderr);
+      assert.strictEqual(ok.stdout, 'ok false', 'the variable is gone once read');
+      // no word from the parent, or another file's: refused
+      assert.match(child(null).stderr, /were not checked before the relaunch for this file/);
+      assert.match(child(JSON.stringify(Object.assign({}, id, {path: `${id.path}x`}))).stderr, /were not checked before the relaunch/);
+      // changed since the parent's check (another size): refused
+      const changed = JSON.stringify(Object.assign({}, id, {size: String(Number(id.size) + 1)}));
+      assert.match(child(changed).stderr, /is not the file checked before the relaunch/);
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   (process.platform !== 'win32' ? it : it.skip)('elsewhere: the mode bits as before (a 0644 secret is refused)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-idsec-'));
     try {

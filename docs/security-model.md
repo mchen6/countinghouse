@@ -447,6 +447,12 @@ path with a minimal environment. Not checked, because each needs root or an
 administrator to set: macOS extended ACLs (`chmod +a`). A Windows
 conditional access rule, which the ACL's rules do not list, fails closed.
 
+On Windows, `--hardened` cannot verify the ceiling, so no loosening is
+allowed: the permission model refuses the PowerShell the ACL check needs, the
+ceiling reads as one that cannot be trusted, and it fails closed. (The
+identity secret is checked by the `--hardened` parent before it relaunches
+under the permission model; the child takes that same file only, unchanged.)
+
 Two limits. `<home>/history.jsonl` is a record for the user, not a security
 boundary: the user can write it, so nothing the ceiling enforces rests on
 it. And ch-local reads the ceiling with the runtime installed under its
