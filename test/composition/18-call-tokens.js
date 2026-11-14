@@ -959,7 +959,36 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     });
   });
 
+  // The binding a worker's proxy keeps for its calling device (ENTRY's
+  // 'd-callee'), declaring calls on these devices.
+  const DECLARING = (...devices) => ({'d-callee': {identity: 'i', module: 'token-forge', targets: new Set(devices.map((d) => `${d}|svc|act`))}});
+
   describe('the device query', () => {
+    // R2-1 Task 5 (#148, 2): the query answers a spec only for a device the
+    // calling module declared calls on; any other device, present or not, is
+    // refused as its hop would be, and before the verdict it is not ready.
+    it('(#148) answers a spec only for a declared device: anything else CTX_CALL_UNDECLARED, present or not; before the verdict CTX_CALL_NOT_READY', async () => {
+      const DeviceManager = require('../../lib/device-manager');
+      cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
+      try {
+        const replies = [];
+        const wm = {workerId: 35, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-declared')};
+        const present = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(null, {deviceList: {[d]: {device: {friendlyName: d}}}}),
+          missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
+        const missing = Object.assign({}, present, {ensureDeviceState: (d, cb) => cb(new Error('missing'), null)});
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-declared', 'q1', wm, {token: tokens().issue(ENTRY(35))});
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-other', 'q2', wm, {token: tokens().issue(ENTRY(35))});
+        DeviceManager.prototype.queryDeviceForChild.call(missing, 'd-gone', 'q3', wm, {token: tokens().issue(ENTRY(35))});
+        const early = {workerId: 36, sendDeviceQueryReplyToChild: (m) => replies.push(m)};
+        DeviceManager.prototype.queryDeviceForChild.call(present, 'd-declared', 'q4', early, {token: tokens().issue(ENTRY(36))});
+        await sleep(50);
+        assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
+          [['q1', true, undefined], ['q2', false, 'CTX_CALL_UNDECLARED'], ['q3', false, 'CTX_CALL_UNDECLARED'], ['q4', false, 'CTX_CALL_NOT_READY']], JSON.stringify(replies));
+      } finally {
+        cli.setOptions({workerThread: false});
+      }
+    });
+
     it('a hung auth lookup gets the generic answer within the lookup deadline; the query is not left pending', async () => {
       const DeviceManager = require('../../lib/device-manager');
       const authPath = require.resolve('../../lib/user-auth');
@@ -968,7 +997,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       try {
         cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
         const replies = [];
-        const wm = {workerId: 31, sendDeviceQueryReplyToChild: (m) => replies.push(m)};
+        const wm = {workerId: 31, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-gone')};
         const self = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(new Error('missing'), null), missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
         const token = tokens().issue(ENTRY(31));
         const started = Date.now();
@@ -994,7 +1023,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       cli.setOptions({workerThread: true, peerChannelAuthLookupTimeoutMs: 200});
       try {
         const replies = [];
-        const wm = {workerId: 32, sendDeviceQueryReplyToChild: (m) => replies.push(m)};
+        const wm = {workerId: 32, sendDeviceQueryReplyToChild: (m) => replies.push(m), bindings: DECLARING('d-present')};
         const present = {allDevicesLoaded: true, ensureDeviceState: (d, cb) => cb(null, {deviceList: {[d]: {device: {friendlyName: 'present'}}}}), missingDeviceErrorForHop: () => new Error('not reached'), notifyDeviceLoad: {}};
         DeviceManager.prototype.queryDeviceForChild.call(present, 'd-present', 'q1', wm, null);
         DeviceManager.prototype.queryDeviceForChild.call(present, 'd-present', 'q2', wm, {token: `made-up-${hex()}`, appKey: 'k'});

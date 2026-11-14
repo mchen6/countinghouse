@@ -102,8 +102,9 @@ the full mechanism.
 **The identity is not yours to declare.** A module says what it calls; it
 never says who it calls as. Which auth identity a module's inner hops are
 authorized as is bound separately, after the module is written, by the
-operator listing the module's `friendlyName` in that identity's
-`runsModules` entry in the auth config. That split is deliberate: the same
+operator listing the module's name (its package.json `name`, which the
+server loads it under) in that identity's `runsModules` entry in the auth
+config, or with the sqlite CLI's `bind-module`. That split is deliberate: the same
 module can be deployed twice, under two different identities with two
 different grants, without editing it.
 

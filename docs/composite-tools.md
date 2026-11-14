@@ -306,14 +306,16 @@ correctly refusing an identity it has never seen, not a bug in composition.
 
 Every bundled module that composes has one, and **all of them need this**,
 not just `composite-demo`. Each declares its calls in `countinghouse.calls`,
-so each identity must also run its module (`runsModules`, by the device's
-friendly name): a declaring module that no identity runs is unloaded at
-startup with `MODULE_COMPOSITION_INVALID`.
+so each identity must also run its module (`runsModules`, by the module's
+name: the `name` in its package.json, which the server loads it under, not
+a device's friendly name the module states): a declaring module that no
+identity runs is unloaded at startup with `MODULE_COMPOSITION_INVALID`.
+One identity runs a module, all its devices.
 
 | Module | Internal apiKey | Runs (`runsModules`) | Calls |
 |---|---|---|---|
 | `composite-demo` | `composite-demo-internal` | `composite-demo` | `transform-demo`, `echo-device-module` |
-| `echo-device-client-module` | `aabbcc` | `echo-device-client` | `echo-device-module` |
+| `echo-device-client-module` | `aabbcc` | `echo-device-client-module` | `echo-device-module` |
 | `perf-caller-demo` | `perf-caller-demo-internal` | `perf-caller-demo` | `perf-callee-demo` |
 
 Grant whichever ones you load, before starting the server:
@@ -322,11 +324,18 @@ Grant whichever ones you load, before starting the server:
 node -e "var f='auth.json',fs=require('fs');
   var c=JSON.parse(fs.readFileSync(f));
   [['composite-demo-internal','composite-demo-identity','composite-demo'],
-   ['aabbcc','echo-client-identity','echo-device-client'],
+   ['aabbcc','echo-client-identity','echo-device-client-module'],
    ['perf-caller-demo-internal','perf-caller-demo-identity','perf-caller-demo']].forEach(function(p){
     c[p[0]]={userName:p[1], devices:['*'], runsModules:[p[2]]};
   });
   fs.writeFileSync(f, JSON.stringify(c,null,2));"
+```
+
+With `--authProvider sqlite`, the same binding is a CLI command:
+
+```sh
+node bin/countinghouse-auth-sqlite.js --dbPath auth.sqlite3 bind-module composite-demo-internal composite-demo
+node bin/countinghouse-auth-sqlite.js --dbPath auth.sqlite3 unbind-module composite-demo   # removes it
 ```
 
 Under `--debug` with no auth file (the file provider with no
