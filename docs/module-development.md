@@ -230,7 +230,10 @@ validator workers, which all modules share:
 - three such refusals of your own outputs (or compiles) in five minutes
   quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
 - an output over `--maxOutputBytes` (8 MiB by default) is refused
-  `OUTPUT_TOO_LARGE`.
+  `OUTPUT_TOO_LARGE`; any other message your worker sends the runtime (a
+  log line, a `ctx.redis` command) over that plus 64 KiB is refused
+  `MESSAGE_TOO_LARGE` before it leaves the worker. A file write is split
+  for you, so it has no such limit.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load

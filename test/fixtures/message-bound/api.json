@@ -1,0 +1,17 @@
+{
+  "device": {
+    "friendlyName": "message-bound",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "posts large messages and patches MessagePort, for the message bound test (#170)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:boundService": {
+        "actionList": [
+          {"name": "big", "description": "Send the main thread a message of input.bytes bytes through the worker's channel.", "input": {"schema": "/boundService/big/input"}, "output": {"schema": "/boundService/big/output"}},
+          {"name": "patch", "description": "Patch MessagePort.prototype.postMessage, then use ctx.redis.", "input": {"schema": "/boundService/patch/input"}, "output": {"schema": "/boundService/patch/output"}},
+          {"name": "longPath", "description": "Load a file outside the module by a path of 2 000 000 characters.", "input": {"schema": "/boundService/longPath/input"}, "output": {"schema": "/boundService/longPath/output"}},
+          {"name": "writeBig", "description": "Write a 17 MiB file to /data.", "input": {"schema": "/boundService/writeBig/input"}, "output": {"schema": "/boundService/writeBig/output"}}
+        ]
+      }
+    }
+  }
+}

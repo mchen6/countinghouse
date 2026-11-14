@@ -193,7 +193,9 @@ describe('sandbox 42: client calls and errors over the cap', function() {
     it('the worker\'s own size check fooled (byteLength patched): never answered with the output', async () => {
       const r = await invoke('cheat', {kind: 'byteLength', n: SMALL + 1});
       assert.notStrictEqual(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-      assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
+      // #170: the patch breaks the worker's own envelope too; the main thread
+      // ends a worker whose message it cannot read (MODULE_RESTARTING)
+      assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION', 'MODULE_RESTARTING'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
     });
   });
 });

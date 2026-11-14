@@ -279,7 +279,21 @@ each with a 256 / 256 / 10000 default
 ceiling. Time a worker spends waiting on a brokered file call does not count
 as blocked. A worker-to-main message rate limit (`--moduleMessageRate`,
 default 2000/s) answers excess messages with `RATE_LIMITED` instead of
-killing the worker; file traffic has its own budget (layer 2). A worker that
+killing the worker; file traffic has its own budget (layer 2). Every message
+a worker sends the main thread, the file bridge's included, crosses as an
+envelope of serialized bytes whose length the main thread reads before it
+decodes anything: over `--maxOutputBytes` plus 64 KiB (16 MiB plus 64 KiB on
+the file bridge) it is refused in the worker (`MESSAGE_TOO_LARGE`, or
+`EINVAL` for a file call), and under audit and enforce the lockdown pins the
+worker's ports, so module code that patches `MessagePort.prototype` is never
+handed one. A message that is not an envelope, or one over the cap, is a
+tampered worker's: the main thread ends the worker (a bridge call is
+answered `EINVAL` and reported). What remains: Node decodes a posted message
+on receipt, so such a worker gets at most one oversized decode per worker
+life, bounded by its heap (`heapMb`) and by the suspension after 3 exits;
+under `off` there is no lockdown and the bound is cooperative only; a
+worker's stdout and stderr, and a direct peer channel between two workers,
+are not enveloped. A worker that
 ends unexpectedly is restarted after 1 s, then 2 s, and
 suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
 which the current threshold never reaches); calls get

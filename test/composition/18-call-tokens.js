@@ -1065,7 +1065,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const sent = [];
       const failed = [];
       const dm = {pendingPeerInvokes: {}, peerChannels: {}, peerDeviceWorkerMap: {}, workerMessage: {sendPeerChannelRequestToParent: (m) => sent.push(m)},
-        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes};
+        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes, requestPeerChannel: DeviceManager.prototype.requestPeerChannel};
       const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'k', 'k', 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
       invoke('t-dead');
       invoke('t-live');
