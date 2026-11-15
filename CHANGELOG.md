@@ -18,6 +18,95 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — modules run in lean workers; the main thread registers their devices
+
+- Every module now runs in `lib/lean-worker.js`,
+  which loads the module's handler files and little of the runtime: no
+  device manager or discovery in the worker, and a `CHUtil` facade whose
+  helpers load on first use. The main thread registers a module's device
+  from its own reading of `api.json` once the worker has loaded, so a worker
+  no longer announces its device. A handler file that throws while it is
+  required fails the load with `LOAD_MODULE_FAIL` naming the file. Under
+  `--moduleSandbox off`, a module that blocks right after loading is no
+  longer ended by the old discovery bound (as with any blocking handler,
+  `off` bounds nothing; `audit` and `enforce` have the block watchdog).
+
+### Added — guarding settings by conversation, part 3
+
+- `countinghouse_settings` answers a raised cap or timeout, or a pack
+  turned on, with `SETTING_NEEDS_CONFIRMATION`, naming the `ch-local`
+  command the user runs to allow it; loosening the sandbox or automatic
+  upgrades is terminal only (`SETTING_LOOSENS_A_GUARD`, naming the command).
+  Requests not made are recorded in the history, once per kind per start.
+- The operator's ceiling (`/etc/countinghouse/ceiling.json`,
+  `%ProgramData%\countinghouse\ceiling.json`): lowers the hard bounds or
+  forbids a loosening; a file an ordinary user could have written fails
+  closed (docs/security-model.md).
+
+### Added — packs in place, runtime side: a control channel, change notices and `countinghouse_settings` (#183)
+
+For ch-local's single-identity runtime (`--store local --stdio`, no auth
+configuration). None of it is available to a hosted server.
+
+- **`--controlChannel ipc`:** a channel that only `ch-local start` holds,
+  over the IPC descriptor of the process that spawned the runtime.
+  - Requests are applied one at a time, in order, each answered by its id.
+    `notice {module, text}` and `set {name, value}` are served. `load`,
+    `unload` and `reload` follow with the rest of part 2.
+  - Refused at start (exit 2) for any other value, outside the
+    single-identity profile, without an IPC descriptor, or with
+    `--hardened`.
+- **Change notices:** a pack change ch-local applies is said once as an MCP
+  `notifications/message` (level `notice`), and once as a one-line text
+  block on the pack's next result, tasks included.
+  - Over stdio the server declares the `logging` capability and answers
+    `logging/setLevel`; a level above `notice` stops the notifications, not
+    the result line.
+  - A notice and its pack name are cleaned of control characters and line
+    separators, and bounded. Past 20 pending, the newest are kept and the
+    rest counted in one line.
+- **`--settingsFile <path>`** (ch-local's `<home>/settings.json`) lists
+  **`countinghouse_settings`**, to the one local user only, never through
+  `ctx.call`. `get` returns each setting's value, default, bounds, whether
+  it guards, when it applies, and the last 50 changes, without ch-local's
+  host or pid. `set` changes one setting within its bounds and never
+  loosens a guarding one:
+  - `SETTING_UNKNOWN`, `SETTING_OUT_OF_BOUNDS` and `SETTING_LOOSENS_A_GUARD`
+    (the user loosens with the `ch-local` command).
+  - It follows ch-local's protocol: a lock file created whole
+    (`settings.lock`), the change appended to `history.jsonl` before the
+    file is replaced, and every change logged on stderr. That adds
+    `SETTINGS_BUSY`, `SETTINGS_FILE_INVALID` and `SETTING_NOT_RECORDED`.
+- **A live `set`** over the control channel applies `locale`,
+  `maxOutputBytes` and `requestTimeout` from the next call, and reaches
+  every running module worker. A value above what the runtime started with
+  applies at the next start, since the validators' heap is sized at start.
+  A running call keeps its timer.
+
+### Fixed — `countinghouse-auth-sqlite` and `countinghouse-meter` are installed as commands
+
+- They were in `bin/` but missing from `package.json` `"bin"`, so a package
+  install put no such command on the PATH, though the docs name them as
+  commands (`countinghouse-auth-sqlite bind-module`,
+  `countinghouse-meter set`). Before this, run them as
+  `node <install>/bin/<name>.js`.
+
+### Fixed — a worker's durations equal the main thread's (#188, #112)
+
+- A module worker's `jobTimeout` and `jobResultTtl` were 1000 times the main
+  thread's: the worker read the main thread's milliseconds as seconds again.
+  Its `requestTimeout` was right only through a workaround,
+  `requestTimeoutMs`.
+- A worker now sets the main thread's options with
+  `options.setResolvedOptions(o)`, which keeps durations in milliseconds.
+  `setOptions` converts the CLI's seconds once. `requestTimeoutMs` is
+  retired: ctx.call's verdict wait and a direct peer channel hop's timeout
+  read `requestTimeout`.
+- `--requestTimeout`, `--jobTimeout` and `--jobResultTtl` with no number
+  (`--no-requestTimeout`, a bare flag, a repeated one) give the default,
+  as before. Every value is capped at setTimeout's largest delay
+  (2147483647 ms), past which Node fires at once.
+
 ### Changed — a routed hop's input crosses the main thread as bytes (#185)
 
 - A `ctx.call` routed through the main thread (`--no-directPeerChannels`)
@@ -39,6 +128,40 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   that blocks while it is required never answers; under `audit` and
   `enforce` the block watchdog already ended it, but under
   `--moduleSandbox off` nothing did and the worker stayed.
+
+### Changed — `--moduleSandbox enforce` refuses to start on Windows (#195)
+
+- On Windows `--moduleSandbox enforce` exits 2 with a message naming #195:
+  a module's identity is not designed for Windows file URLs yet, so
+  enforce could not hold there. `audit` is the Windows mode for now; the
+  settings tool offers only `audit` on Windows. The identity loader's
+  checks of countinghouse's code roots now follow the host's path rules
+  (backslash on Windows), and taking module roots out of them folds case
+  there.
+
+### Changed — a module's output and its worker's log, bounded
+
+- **Under audit and enforce a module's stdout and stderr are runtime-owned
+  streams**: Node's own, which hold its port to the main thread, are never
+  handed to module code. Output reaches the log line by line, prefixed with
+  the module's name, each line cut at 8 KiB and stripped of control
+  characters but tab, at most 256 KiB a minute per stream (then dropped,
+  with one line a minute saying how much); to stderr under `--stdio`.
+- **A worker's own log crosses as records** (1 MiB a minute, fields cut at
+  8 KiB, the module named by the main thread), so a module flooding its
+  output cannot crowd them out. Each record now carries `module`.
+
+### Added — a bound on what a module's worker sends the main thread (#170)
+
+- **Every message from a module's worker to the main thread is an envelope of
+  serialized bytes**, its length read before anything is decoded. Over
+  `--maxOutputBytes` plus 64 KiB it is refused in the worker,
+  `MESSAGE_TOO_LARGE` (the file bridge: 16 MiB plus 64 KiB, `EINVAL`; a
+  file write is split as before). Under `audit` and `enforce` the lockdown
+  pins the worker's ports, so module code that patches
+  `MessagePort.prototype` is never handed one; a worker whose message is not
+  an envelope, or is over the cap, is ended. Cost: about 20 µs of main-thread
+  CPU per message (a `ctx.redis` command is one).
 
 ### Changed — `ctx.redis` is per module (#164, breaking)
 
@@ -138,7 +261,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `metering.json` under each key's fingerprint (never the key);
   `countinghouse-meter set` seeds one, the key read from
   `COUNTINGHOUSE_SEED_KEY` only.
-- **`ctx.redis`:** the same 21 commands with Redis's answers and errors.
+- **`ctx.redis`:** the same 19 commands (21 before #164 removed `multi`
+  and `exec`), with Redis's answers and errors.
 - **Jobs and MCP tasks:** an in-process runner with job-control's surface;
   not kept across restarts; `--jobResultTtl <seconds>` (default 3600).
 - **The single-identity profile** (`--store local --stdio` without

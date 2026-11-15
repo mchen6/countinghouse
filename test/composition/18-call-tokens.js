@@ -976,13 +976,14 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         pinnedDeviceIDs: {T: new Set(['dev-T']), M: new Set(['dev-M']), N: null}}});
     DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
     DeviceManager.prototype.onWorkerLoaded.call(self, wmN);
-    // since #165 a device registers only as the main thread's own copy of the
-    // spec (moduleSpec.matches): each announcement here has one, so the
+    // since lean worker step 3 a worker announces nothing: the main thread
+    // registers the device its own copy of the module's spec names
+    // (registerFromSpec), so each registration here carries one, and the
     // ownership rule alone decides
     const announce = (w, name, id) => {
       const spec = {device: {friendlyName: id}};
       w.moduleSpec = {deviceID: id, spec: spec, specText: JSON.stringify(spec), modulePath: null};
-      w.emit('deviceonline', {data: {deviceID: id, spec: spec, moduleName: name, modulePath: '/app'}}, w);
+      DeviceManager.prototype.registerFromSpec.call(self, w);
     };
     announce(wmM, 'M', 'dev-T');
     assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took a device T declares');
@@ -1012,18 +1013,19 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         moduleManager: {modules: {T: wmT, M: wmM}, endedStateForDevice: (id) => ended[id] || null, clearEndedDevice: (id) => { delete ended[id]; }}});
       DeviceManager.prototype.onWorkerLoaded.call(self, wmM);
       DeviceManager.prototype.onWorkerLoaded.call(self, wmT);
-      // each with the main thread's own copy of the spec (#165), so the ended
-      // entry alone decides
-      const announce = (w, stated) => {
+      // registered from each worker's main-side spec (registerFromSpec, lean
+      // worker step 3), so the ended entry alone decides; a worker states no
+      // module name at all now
+      const announce = (w) => {
         const spec = {device: {friendlyName: 'T'}};
         w.moduleSpec = {deviceID: 'dev-T', spec: spec, specText: JSON.stringify(spec), modulePath: null};
-        w.emit('deviceonline', {data: {deviceID: 'dev-T', spec: spec, moduleName: stated, modulePath: '/app'}}, w);
+        DeviceManager.prototype.registerFromSpec.call(self, w);
       };
-      announce(wmM, 'M');
+      announce(wmM);
       assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device while T reloads');
-      announce(wmM, 'T');   // stating T's module name changes nothing
+      announce(wmM);   // a second try changes nothing: the worker states no name
       assert.strictEqual(self.deviceMap['dev-T'], undefined, 'M took T\'s device by stating T\'s name');
-      announce(wmT, 'T');
+      announce(wmT);
       assert.strictEqual(self.deviceMap['dev-T'], wmT);
     });
   });
@@ -1197,7 +1199,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         DeviceManager.prototype.onWorkerLoaded.call(self, host);
         const lateSpec = {device: {friendlyName: 'late'}};
         host.moduleSpec = {deviceID: 'd-late', spec: lateSpec, specText: JSON.stringify(lateSpec), modulePath: null};
-        host.emit('deviceonline', {data: {deviceID: 'd-late', spec: lateSpec, moduleName: 'late', modulePath: '/app'}}, host);
+        DeviceManager.prototype.registerFromSpec.call(self, host);
         await sleep(100);
         assert.deepStrictEqual(replies.map((r) => [r.msgID, r.spec != null, r.errCode]).sort(),
           [['q1', true, undefined], ['q2', false, 'USER_HAS_NO_DEVICE']], JSON.stringify(replies));
@@ -1283,7 +1285,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const sent = [];
       const failed = [];
       const dm = {pendingPeerInvokes: {}, peerChannels: {}, peerDeviceWorkerMap: {}, workerMessage: {sendPeerChannelRequestToParent: (m) => sent.push(m)},
-        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes};
+        flushPendingPeerInvokes: DeviceManager.prototype.flushPendingPeerInvokes, requestPeerChannel: DeviceManager.prototype.requestPeerChannel};
       const invoke = (token) => DeviceManager.prototype.invokeActionViaPeerChannel.call(dm, 'd-callee', 'svc', 'bump', {input: {}, token: token}, (e) => failed.push(e != null ? e.code : null));
       invoke('t-dead');
       invoke('t-live');

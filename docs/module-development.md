@@ -242,6 +242,18 @@ validator workers, which all modules share:
   on the main-thread-routed path. A hop's input is sent as bytes: a value
   structured clone cannot carry, or a `SharedArrayBuffer`, fails the
   `ctx.call` in your own worker.
+  Any other message your worker sends the runtime (a log line, a
+  `ctx.redis` command) over the output cap plus 64 KiB is refused
+  `MESSAGE_TOO_LARGE` before it leaves the worker. A file write is split
+  for you, so it has no such limit.
+- what you write to stdout and stderr (and `console`) reaches the
+  operator's log line by line, prefixed with your module's name: each line
+  cut at 8 KiB, control characters other than tab removed (and the line
+  separators and bidi controls), and under audit and enforce at most
+  256 KiB a minute per stream of what is written, each line counted with
+  its prefix and newline; past that it is dropped and counted. The streams
+  are the runtime's: assigning `process.stdout` throws (`TypeError`) in
+  strict mode. Use the log for diagnostics, not for data.
 
 Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
@@ -275,6 +287,23 @@ curl -X POST http://127.0.0.1:9527/load-module \
 
 You do **not** need `--debug` for either. `--debug` disables authentication
 for the whole server; it is not how you get access to an endpoint.
+
+### What your module's worker loads
+
+Under `--workerThread` your module runs in a worker of its own
+(`lib/lean-worker.js`). The main thread reads your `api.json` and
+`schema.json` itself, before the worker starts; the worker only requires
+your handler files, each once, and answers the calls the main thread sends
+it. Your device is what the main thread read from `api.json`. Nothing your
+code does in the worker can change it, add a device or rename one.
+
+The worker loads as little of the runtime as it can. `CHUtil` is a facade:
+each helper (`CHUtil.request`, `createServiceClient`, `deviceLog`, and the
+rest) loads its implementation the first time it is called, so a module
+that uses none never pays for them. `ctx` works the same way: `ctx.call`,
+`ctx.log` and `ctx.redis` load what they need on first use. `CHUtil` has no
+`dm` or `ci`. Those were the runtime's own objects, never part of the
+module API.
 
 ## Files and paths
 
@@ -816,7 +845,9 @@ these checks still takes too long to compile or to validate a value.
 ### 5. The log says `LOAD_MODULE_FAIL`
 
 A handler file threw while being required — a syntax error, a missing
-`require`, a bad path in `CHUtil.loadFile`. The stack is in the log.
+`require`, a bad path in `CHUtil.loadFile`. The message names the handler
+file (`handlers/<service>/<action>.js`) and its error; the worker is ended
+and the module is not loaded.
 
 ### 6. The log says `MODULE_LOAD_TIMEOUT`
 

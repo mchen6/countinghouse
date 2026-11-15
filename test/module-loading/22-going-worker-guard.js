@@ -1,24 +1,23 @@
-// The guard in DeviceManager.onWorkerLoaded's 'deviceonline' handler,
-// server-free: a device announced by a worker that is going -- being
-// unloaded, already ended, or no longer its module's current worker -- is not
-// registered, or it would undo what the unload recorded (the device's ended
-// entry) and leave a device the purge then drops as DEVICE_NOT_FOUND. Its
-// end-to-end test (sandbox 30) re-announced the device from module code,
-// which the one module format no longer allows; the guard is kept as a
-// defence against a late discover answer, and pinned here (reviewer,
-// 2026-11-13). A current worker's announcement is registered, so the guard is
-// shown to tell the cases apart.
+// The guard in DeviceManager's registerFromSpec, server-free: a worker that
+// is going -- being unloaded, already ended, or no longer its module's
+// current worker -- has nothing registered for it when its load is
+// acknowledged, or it would undo what the unload recorded (the device's
+// ended entry) and leave a device the purge then drops as DEVICE_NOT_FOUND.
+// (It guarded the worker's 'deviceonline' until lean worker step 3, Task 4,
+// registered a worker's device from the main thread's spec at its load.) A
+// current worker's device is registered, so the guard is shown to tell the
+// cases apart.
 const assert = require('assert');
 const {EventEmitter} = require('events');
 
 const MODULE = 'going-worker-module';
 
-describe('module-loading 22: a device announced by a worker that is going is not registered', function() {
+describe('module-loading 22: nothing is registered for a worker that is going', function() {
   // Requiring the device manager loads much of the runtime: 30 s, as 18 has.
   this.timeout(30000);
   let DeviceManager = null;
   // The main thread's copy of the module's spec (lib/module-spec.js), which
-  // the worker announces exactly, so only the guard decides.
+  // is what is registered, so only the guard decides.
   let own = null;
   let DEVICE = null;
   // The info lines logged, in place of the logger (none in this process).
@@ -28,7 +27,7 @@ describe('module-loading 22: a device announced by a worker that is going is not
   before(async () => {
     require('../../lib/cli-options').setOptions({workerThread: true});
     DeviceManager = require('../../lib/device-manager');
-    own = await require('../../lib/module-spec').fromParts({device: {friendlyName: MODULE}}, null);
+    own = await require('../../lib/module-spec').fromParts({device: {friendlyName: MODULE, manufacturer: 'countinghouse-test', modelDescription: 'module-loading 22', serviceList: {}}}, null);
     DEVICE = own.deviceID;
     info = LOG.I;
     LOG.I = (line) => { logged.push(String(line)); return line; };
@@ -38,15 +37,17 @@ describe('module-loading 22: a device announced by a worker that is going is not
     require('../../lib/cli-options').setOptions({workerThread: false});
   });
   beforeEach(() => { logged.length = 0; });
-  const refused = () => logged.some((l) => l === `module: ${MODULE}: a device announced by a worker that is going was not registered`);
+  const refused = () => logged.some((l) => l === `module: ${MODULE}: a worker that is going loaded; its device was not registered`);
 
-  // A device manager's own state, and a worker message that announces one
-  // device; `shape` makes the worker going, or not.
+  // A device manager's own state, and a worker message whose load is
+  // acknowledged; `shape` makes the worker going, or not.
   function announce(shape) {
     const wm = new EventEmitter();
     wm.deviceList = {};
     wm.moduleSpec = own;
     wm.hostModulePath = '/host/going-worker-module';
+    wm.hostModuleName = MODULE;
+    wm.hostPackageInfo = {name: MODULE};
     const cleared = [];
     const dm = {
       deviceMap: {},
@@ -56,9 +57,7 @@ describe('module-loading 22: a device announced by a worker that is going is not
       moduleManager: {modules: {[MODULE]: wm}, clearEndedDevice: (id) => { cleared.push(id); }}
     };
     shape(wm, dm);
-    DeviceManager.prototype.onWorkerLoaded.call(dm, wm);
-    wm.emit('deviceonline', {data: {deviceID: DEVICE, moduleName: MODULE, packageInfo: {name: MODULE},
-      spec: JSON.parse(own.specText), modulePath: '/app'}}, wm);
+    DeviceManager.prototype.registerFromSpec.call(dm, wm);
     return {dm, wm, cleared};
   }
 

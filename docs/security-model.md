@@ -17,7 +17,7 @@ below). There is no attempt to run modules from parties the platform
 operator hasn't reviewed.
 
 Since 8.0.0 each module runs inside its own `worker_threads.Worker` by
-default (`lib/sandbox.js`, spawned from `lib/module-manager.js`'s
+default (`lib/lean-worker.js`, spawned from `lib/module-manager.js`'s
 `loadModuleByWorker`). `--no-workerThread` runs modules in the main thread
 instead; that mode is for debugging modules and has no sandbox at all
 ([single-thread mode](#single-thread-mode-has-no-sandbox)). A worker gives:
@@ -32,6 +32,13 @@ instead; that mode is for debugging modules and has no sandbox at all
   (`lib/worker-message.js`) and the file bridge (`lib/fs-broker/`), with a
   fixed set of commands, not shared memory or arbitrary main-thread object
   references.
+- **A device the worker cannot state.** The worker loads only the module's
+  handler files and a small part of the runtime (the dispatcher, `ctx`, and
+  a `CHUtil` facade whose helpers load on first use). A module's device is
+  registered from the main thread's own reading of its `api.json` once the
+  worker has loaded. The worker announces nothing, so module code cannot add,
+  change or rename a device. `test/sandbox/43-lean-worker-files.js` lists
+  every runtime file a worker may load.
 - **Crash containment at the worker level.** `module-manager.js` listens for
   `worker.on('error', ...)` and `worker.on('exit', ...)` and unloads the
   corresponding module rather than letting a worker's end take down the
@@ -69,6 +76,14 @@ it.
 | Outside the namespace, writes to `/app` and to `r` paths | pass through | pass through, logged | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
+| Available on Windows | yes | yes | not yet ([#195](https://github.com/mchen6/countinghouse/issues/195)): refused at start, exit 2 |
+
+**`enforce` is not available on Windows yet.** A module's identity (its files
+as `/app/...`) is not designed for Windows file URLs, so `enforce` could not
+keep a module to its own files there; `--moduleSandbox enforce` on Windows
+refuses to start (exit 2, naming #195) rather than half-work, and `audit` is
+the Windows mode for now, with the protection gap that mode has. The
+settings tool offers only `audit` there.
 
 **Only `enforce` protects files.** Under `audit` and `off` access outside a
 module's namespace passes through to the host, so `auth.json` and other
@@ -163,7 +178,7 @@ like stay usable until parts 3 and 4; the first `require` of each is logged
 
 **2. The file broker and the virtual namespace** (`lib/fs-broker/`). Before
 any countinghouse or dependency code loads, the first statements of
-`lib/sandbox.js` replace every method of the worker's `fs`, `fs/promises`
+`lib/lean-worker.js` replace every method of the worker's `fs`, `fs/promises`
 and `FileHandle.prototype` with locked versions that send each call to the
 main thread. There one broker per module checks it and runs it with Node's
 async `fs`. Synchronous calls wait on shared memory; the main thread never
@@ -270,28 +285,71 @@ failing module is refused with `MODULE_SANDBOX_REFUSED`; in `audit` the
 failures are logged and the module loads. This is a structural check of
 what is on disk at load time, not a review of what the code does.
 
-**6. Resource limits, restart and suspend.** `heapMb` (V8
-`resourceLimits`), `externalMb` (the main thread polls the worker's
-external memory and terminates it over the limit) and `maxBlockMs` (the main
-thread pings the worker and terminates it if a ping goes unanswered for that
-long), checked every second or twice per `maxBlockMs` if that is shorter,
-each with a 256 / 256 / 10000 default
+**6. Resource limits, restart and suspend.** `heapMb` (V8 `resourceLimits`,
+with a 64 MB young generation and a 4 MB stack beside it), `externalMb` (the
+main thread polls the worker's external memory and terminates it over the
+limit) and `maxBlockMs` (the main thread pings the worker and terminates it
+if a ping goes unanswered for that long), checked every second or twice per
+`maxBlockMs` if that is shorter, each with a 256 / 256 / 10000 default
 ceiling. Time a worker spends waiting on a brokered file call does not count
 as blocked. A worker-to-main message rate limit (`--moduleMessageRate`,
 default 2000/s) answers excess messages with `RATE_LIMITED` instead of
-killing the worker; file traffic has its own budget (layer 2). A worker that
-ends unexpectedly is restarted after 1 s, then 2 s, and
-suspended on the 3rd exit within 10 minutes (the code caps the delay at 60 s,
-which the current threshold never reaches); calls get
-`MODULE_RESTARTING` or `MODULE_SUSPENDED` while the tools stay listed. A
-deliberate reload or unload fails its calls in flight with `MODULE_RELOADING`
-or `MODULE_UNLOADED`. Why a device is missing is told only to a caller that
-passes the access check for it, so a key without access cannot learn whether a
-device was ever hosted. When a
-worker ends, its file operations in flight answer `EIO` and its descriptors
-close; a per-name lifecycle lock makes the next start (and an uninstall) wait
-for them. This bounds memory, blocking, disk use and crash loops. It does
-not bound CPU use that yields to the event loop, or network traffic.
+killing the worker; file traffic has its own budget (layer 2). Every message
+a worker sends the main thread, the file bridge's included, crosses as an
+envelope of serialized bytes whose length the main thread reads before it
+decodes anything: over `--maxOutputBytes` plus 64 KiB (16 MiB plus 64 KiB on
+the file bridge) it is refused in the worker (`MESSAGE_TOO_LARGE`, or
+`EINVAL` for a file call), and under audit and enforce the lockdown pins the
+worker's ports, so module code that patches `MessagePort.prototype` is never
+handed one. A message that is not an envelope, or one over the cap, is a
+tampered worker's: the main thread ends the worker (a bridge call is
+answered `EINVAL` and reported, and the worker is ended too). Module code
+gets no port by any other route either: the runtime's port callbacks run in
+a scope of their own (`lib/port-scope.js`), and the lockdown leaves ports
+out of `process._getActiveHandles()` and `_getActiveRequests()`,
+`async_hooks.executionAsyncResource()` and an async hook's `init`, and pins
+Node's own stdio port as well. What remains rests on those: Node decodes a
+posted message on receipt and, when a worker ends, every message it had
+queued, so a worker that did hold a port could have any number of messages
+decoded (20 of 5 MB each, all decoded after `terminate()`, measured on Node
+24.21; removing the listeners or closing the main side's port does not stop
+it), and that serialized data lies outside the worker's heap limits. Under
+`off` there is no lockdown and the bound is cooperative only; a direct peer
+channel between two workers is not enveloped. A worker that ends
+unexpectedly is restarted after 1 s, then 2 s, and suspended on the 3rd exit
+within 10 minutes (the code caps the delay at 60 s, which the current
+threshold never reaches); calls get `MODULE_RESTARTING` or
+`MODULE_SUSPENDED` while the tools stay listed. A deliberate reload or
+unload fails its calls in flight with `MODULE_RELOADING` or
+`MODULE_UNLOADED`. Why a device is missing is told only to a caller that
+passes the access check for it, so a key without access cannot learn whether
+a device was ever hosted. When a worker ends, its file operations in flight
+answer `EIO` and its descriptors close; a per-name lifecycle lock makes the
+next start (and an uninstall) wait for them. This bounds memory, blocking,
+disk use and crash loops. It does not bound CPU use that yields to the event
+loop, or network traffic.
+
+A module's stdout and stderr are bounded the same way. Under audit and
+enforce the lockdown gives module code runtime-owned streams for
+`process.stdout`, `process.stderr` and `process.stdin` (fixed getters),
+points `console` and `process._rawDebug` at them, and Node's own stdio
+streams, which hold its port to the main thread, are never handed out
+(assigning `process.stdout` is refused: a `TypeError` in strict mode, a
+no-op otherwise). What a module writes crosses as messages, as lines: each
+stream has 256 KiB a minute of what is written, each line charged its
+`<module>: ` prefix, its bytes and its newline (counted in the worker; the
+main thread counts again, with twice that as a backstop, since the two
+sides' windows do not line up), past which lines are dropped, output that
+could not be sent is counted with them, and one line a minute says how much
+(`<module>: N bytes of stdout dropped`); each line is cut at 8 KiB, stripped
+of control characters other than tab, the line separators and the bidi
+controls, and written prefixed with the module's name, to stderr under
+`--stdio` (stdout is the MCP channel there). The worker's own log
+(countinghouse's code in the worker) crosses as records under a budget of
+its own, 1 MiB a minute, each record charged 256 bytes plus its fields, each
+field cut at 8 KiB and cleaned the same way and the module named by the main
+thread, in every mode. Under `off` a module's output goes to the process's
+streams as before, unbounded.
 
 **Uninstall.** `POST /uninstall-module {name, keepData}` (admin key) removes
 the registry entry and deletes `<moduleDataPath>/<name>` unless `keepData`,
@@ -342,6 +400,64 @@ set; the store directory is a path no module may declare), and the fixed
 source `local`, so it survives a restart while the key changes per
 process. A multi-tenant `--store local` server keeps its secret under
 `<moduleDataPath>`, so moving to the local store changes no user's id.
+
+### The operator's ceiling (guarding settings)
+
+An operator can bound what anyone on the machine may loosen, through a
+conversation or the `ch-local` command, with an optional, machine-wide file:
+`/etc/countinghouse/ceiling.json` on Linux and macOS,
+`%ProgramData%\countinghouse\ceiling.json` on Windows.
+
+```json
+{"version": 1, "maxOutputBytes": 16777216, "requestTimeout": 60000,
+ "forbid": ["moduleSandbox", "autoUpgrade"], "packs": ["ci-failure-triage"],
+ "conversation": false}
+```
+
+Every key but `version` is optional: `maxOutputBytes` and `requestTimeout`
+lower the hard bounds (`requestTimeout` in whole seconds, as milliseconds:
+the runtime takes seconds, so any other value fails closed); `forbid`
+refuses loosening the sandbox or turning automatic upgrades on; `packs` is
+the operator's allowlist of packs: when present, only those packs ever
+load, at start, in place and on install, whatever `settings.json` or the
+history say, and installing another is refused; `"conversation": false` refuses every
+loosening asked for in conversation (it takes effect once a client can
+confirm one in conversation, part 3's elicitation; until then every such
+loosening already ends at the terminal command). A value above it is
+`SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
+Tightening is never refused by it. It is read once per process, and again
+when the file changes.
+
+It is trusted only when an ordinary user cannot have written it: on Linux and
+macOS the file is not a symbolic link, and it and every directory up to `/`
+(by real path) are owned by root and not writable by group or others; on
+Windows the directory and the file are owned by, and writable only by,
+Administrators, SYSTEM or TrustedInstaller (by SID), and ProgramData is
+the system's known folder, not the caller's `%ProgramData%`. A directory
+made under ProgramData inherits a write right for Users, so the operator
+removes it (`icacls "%ProgramData%\countinghouse" /inheritance:r /grant
+Administrators:F SYSTEM:F Users:RX`). Both must stay readable by every user
+(`0755` and `0644` on Linux and macOS). A file that exists and fails any
+check, or holds anything else, **fails closed**: every loosening is refused
+(`SETTING_CEILING_UNTRUSTED`), naming the file and why; so does a
+`countinghouse` directory an ordinary user could have made, even with no
+file in it. No directory and no file: the hard bounds apply. On Windows the
+ACL is read by the PowerShell in the Windows directory, started by its full
+path with a minimal environment. Not checked, because each needs root or an
+administrator to set: macOS extended ACLs (`chmod +a`). A Windows
+conditional access rule, which the ACL's rules do not list, fails closed.
+
+On Windows, `--hardened` cannot verify the ceiling, so no loosening is
+allowed: the permission model refuses the PowerShell the ACL check needs, the
+ceiling reads as one that cannot be trusted, and it fails closed. (The
+identity secret is checked by the `--hardened` parent before it relaunches
+under the permission model; the child takes that same file only, unchanged.)
+
+Two limits. `<home>/history.jsonl` is a record for the user, not a security
+boundary: the user can write it, so nothing the ceiling enforces rests on
+it. And ch-local reads the ceiling with the runtime installed under its
+home (`app/node_modules/countinghouse`): whoever can replace that code is
+beyond any ceiling, as they are beyond the runtime itself.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
@@ -397,6 +513,15 @@ and the short list of what the in-process sandbox cannot give.
   and which binding authorizes, never by anything the message states, and
   refuses a target outside the module's declared calls
   (`CTX_CALL_UNDECLARED`) whatever route the module took.
+- **A module's messages to the main thread are bounded, with a residual
+  (#170, #186, #190).** Every worker-to-main message is sent as bounded,
+  transferred bytes, the main thread reads its length before decoding, and a
+  worker whose message is not an envelope or is over the cap is ended; the
+  module's console output and its worker's log are capped. Under audit and
+  enforce module code is never handed a port to the main thread. What
+  remains: Node decodes a posted message on receipt, so a worker that did
+  hold a port could have every message it queued decoded, even after it is
+  ended; under `off` the bound is cooperative only.
 - **No network permission is enforced yet.** A module can open outbound
   connections with `net`/`http`/`https`/`fetch` until parts 3 and 4,
   including to Unix-socket paths (`net.connect(path)`,
@@ -482,7 +607,7 @@ and the short list of what the in-process sandbox cannot give.
   stalling, with a backlog of messages ahead of the reply, can still make a
   healthy worker look blocked under a small `maxBlockMs`, and it is then
   terminated and restarted.
-- **Uncaught exceptions in a worker do not end it.** `lib/sandbox.js` catches
+- **Uncaught exceptions in a worker do not end it.** `lib/lean-worker.js` catches
   and logs them, as it always has. The restart policy applies to workers
   that actually end: `process.exit`, the heap limit, kills by the external
   memory or blocked-loop limits, and worker errors.
@@ -632,12 +757,29 @@ these are the checks that predate them and still apply:
   (`lib/validator-pool.js`) for every call the main thread sends to a
   module's worker (a client's call, a job's run, a hop routed through the
   main thread). That is neither the main thread nor the module's own worker,
-  and no module code runs there. A module's code can reach its own worker's
-  copy: under `audit` and `off` the runtime's files are in that worker's
-  `require.cache`. So the in-worker check is used only for a call over a
-  direct peer channel, where a module that interferes with it harms its own
-  input check; moving that check out of reach is lean worker step 4
-  (`docs/superpowers/specs/2026-11-13-lean-worker-design.md`).
+  and no module code runs there.
+
+  **The gap: a call over a direct peer channel** (the hosting default;
+  `--no-directPeerChannels` routes every hop through the main thread
+  instead). That call is still validated in the called module's own worker,
+  both its input and its output.
+  - A module's code can reach its own worker's copy of the checks: under
+    `audit` and `off`, the runtime's files are in that worker's
+    `require.cache`. So a called module that tampers with its worker can
+    skip its own output check.
+  - The calling module does no check of its own. An unchecked output
+    therefore reaches the caller: the harm is to the caller, not only to the
+    tampering module.
+  - None of the pool's bounds below applies to a peer call: no deadline, no
+    caller throttle, no quarantine. A caller can tie up a called module's
+    worker with an input that makes that module's own pattern backtrack.
+  - Nor does the output cap (`--maxOutputBytes`): a peer callee's result
+    goes to the caller's worker unmeasured. A buggy or tampering callee can
+    make its caller deserialise a value of any size.
+
+  Lean worker step 4 moves peer calls' checks into the validator pool, with
+  the same rules as routed calls; until then, use `--no-directPeerChannels`
+  where these guarantees matter.
 
   The main thread never compiles or walks a module's schema, because no
   check made beforehand bounds JSON Schema validation: some patterns
@@ -671,22 +813,37 @@ these are the checks that predate them and still apply:
     checked like any others).
 
   A `schema.json` that is plainly unsafe is also refused at load as a
-  courtesy, checked in a validator (`lib/schema-safety.js`): over 1 MB, a
-  pattern over 1000 characters or of star height above 1, or over 100,000
-  nodes with its `$ref`s expanded.
-- **Redis command allowlist** (`lib/supported-redis-commands.json`,
-  enforced in `lib/redis-api.js` via `_.intersection(redisCommands.list,
-  supportedCommands)`). Modules access Redis only through a wrapper that
-  dynamically exposes exactly the commands on this list —
-  `get`/`set`/`hget`/`hset`/`lpush`/`zadd`/`multi`/`exec` and similar data
-  commands. Administrative and introspection commands that would let a
-  module affect the whole Redis instance or other tenants' keyspaces —
-  `flushall`, `flushdb`, `config`, `keys`, `client`, `monitor`, `shutdown`,
-  and Lua execution via `eval`/`evalscript` — are absent from the list and
-  therefore uncallable through this path. (A module could still reach Redis
-  directly if it required the `redis` package itself and supplied its own
-  connection details — this allowlist constrains the *platform-provided*
-  Redis handle, not arbitrary module code.)
+  courtesy, checked in a validator (`lib/schema-safety.js`). It refuses:
+  - a `schema.json` over 1 MB;
+  - a pattern over 1000 characters, with a repetition inside a repeated
+    group, or with alternatives that start alike inside one;
+  - over 100,000 nodes with its `$ref`s expanded;
+  - a `$ref` cycle, or a `$ref` that names no place.
+
+  It runs under the same `--validationCompileMs` budget as the compile.
+- **`ctx.redis`: a command allowlist and a namespace per module.**
+  - Modules use Redis only through a wrapper that exposes the 19 commands on
+    the allowlist (`lib/supported-redis-commands.json`, intersected in
+    `lib/redis-api.js` as `ALLOWED_COMMANDS`). These are data commands such
+    as `get`, `set`, `hget`, `hset`, `lpush` and `zadd`.
+  - `multi` and `exec` are not on it (#164): under `--store redis`,
+    node_redis's `multi` runs any command name queued in it. Nor are the
+    commands that affect the whole instance or read across keyspaces:
+    `flushall`, `flushdb`, `config`, `keys`, `client`, `monitor`,
+    `shutdown`, and Lua via `eval`/`evalscript`.
+  - Every key a module names is stored under its namespace: `m:`, then the
+    module's name URI-encoded, then `:` (#164, `lib/redis-namespace.js`). That's the name the main thread loaded the
+    module under, never one its worker states. So a module can't read,
+    overwrite or delete another module's keys or the runtime's own
+    (`jobinfo:*`).
+  - Each allowed command's key positions are in a table; a command whose
+    keys can't be placed is refused. Single-thread mode and `--store local`
+    namespace the same way.
+  - What this doesn't stop: a module that opens its own Redis connection
+    with the `redis` package and connection details of its own. Under
+    `audit` and `enforce` the lockdown refuses the configured Redis
+    endpoint in every spelling (layer 1 above), except by the routes listed
+    there. Under `off` nothing does.
 - **Per-apiKey device authorization** (`AuthProvider`, `lib/auth/` — see
   [`design-decisions.md`](design-decisions.md#authprovider-three-pluggable-backends-one-narrow-interface)
   for why it's split into three backends, and

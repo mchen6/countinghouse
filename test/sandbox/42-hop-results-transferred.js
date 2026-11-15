@@ -97,7 +97,7 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
 
   it('a Date, Map, Set, typed array, BigInt and nested undefined cross a hop as they did', async () => {
     const r = await odd('odd', {});
-    assert.deepStrictEqual(r.body.output, {types: {date: true, map: true, set: true, typed: true, bigint: true, undef: true}}, JSON.stringify(r.body));
+    assert.deepStrictEqual(r.body.output.types, {date: true, map: true, set: true, typed: true, bigint: true, undef: true}, JSON.stringify(r.body));
   });
 
   it('an output v8 cannot serialize (a function inside) answers DEVICE_INVOKE_EXCEPTION, as before', async () => {
@@ -117,12 +117,18 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
       ['huge', CAP + 1, ['OUTPUT_TOO_LARGE']]
     ]) {
       it(`${kind}: the caller's call is refused (${codes.join(' or ')}), and the caller goes on`, async () => {
+        const forgedBefore = (await odd('odd', {})).body.output.forged;
         const started = Date.now();
         const r = await odd('forge', {kind: kind, n: n});
         assert.ok(codes.includes(r.body.output && r.body.output.code), `${JSON.stringify(r.body).slice(0, 500)}\n${server.output.slice(-2000)}`);
         assert.ok(Date.now() - started < 5000 + 2000, `${Date.now() - started} ms`);
         assert.strictEqual((await ping()).status, 200);
-        assert.deepStrictEqual((await odd('odd', {})).body.output.types.date, true, 'the caller still decodes a real result');
+        const after = (await odd('odd', {})).body.output;
+        assert.deepStrictEqual(after.types.date, true, 'the caller still decodes a real result');
+        // the reply the main thread refused was forge.js's hand-made bytes, not
+        // a failure of the fixture itself (the merge check of #184): its hook
+        // replaced exactly this one
+        assert.strictEqual(after.forged, forgedBefore + 1, 'the forged bytes were not the ones posted');
       });
     }
 
@@ -204,7 +210,9 @@ describe('sandbox 42: client calls and errors over the cap', function() {
     it('the worker\'s own size check fooled (byteLength patched): never answered with the output', async () => {
       const r = await invoke('cheat', {kind: 'byteLength', n: SMALL + 1});
       assert.notStrictEqual(r.status, 200, JSON.stringify(r.body).slice(0, 300));
-      assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
+      // #170: the patch breaks the worker's own envelope too; the main thread
+      // ends a worker whose message it cannot read (MODULE_RESTARTING)
+      assert.ok(['OUTPUT_TOO_LARGE', 'DEVICE_INVOKE_EXCEPTION', 'MODULE_RESTARTING'].includes(r.body.code), JSON.stringify(r.body).slice(0, 300));
     });
   });
 });

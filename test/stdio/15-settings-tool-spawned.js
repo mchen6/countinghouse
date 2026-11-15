@@ -51,13 +51,17 @@ describe('stdio 15: countinghouse_settings, spawned', function() {
     const set = await call(3, {action: 'set', name: 'requestTimeout', value: '20s'});
     assert.deepStrictEqual(set.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'now'});
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values, {requestTimeout: 20000});
-    const loosen = await call(4, {action: 'set', name: 'moduleSandbox', value: 'audit'});
+    // a loosening conversation may never make (part 3): automatic upgrades on,
+    // on every OS (the sandbox has only audit on Windows, #195)
+    const loosen = await call(4, {action: 'set', name: 'autoUpgrade', value: 'on'});
     assert.strictEqual(loosen.result.isError, true);
     assert.strictEqual(loosen.result._meta['countinghouse/code'], 'SETTING_LOOSENS_A_GUARD');
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).values, {requestTimeout: 20000});
     const bad = await call(5, {action: 'unset'});
     assert.strictEqual(bad.result._meta['countinghouse/code'], 'ARGUMENTS_INVALID');
     const history = fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    assert.deepStrictEqual(history.map((h) => [h.by, h.setting, h.new]), [['settings tool', 'requestTimeout', 20000]]);
+    // the change made, then the refused loosening as asked (part 3, section 5), never as a change
+    assert.deepStrictEqual(history.map((h) => [h.by, h.setting, h.new, h.asked, h.change]), [
+      ['settings tool', 'requestTimeout', 20000, undefined, undefined], ['settings tool', 'autoUpgrade', undefined, true, 'refused, terminal only']]);
   });
 });

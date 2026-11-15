@@ -30,7 +30,6 @@ async function loadFrom(port, dir) {
 // stray-output-module's returnsCleanly handler file, rewritten in a copy:
 // `prelude` runs while the file is required (every load requires it), and
 // v 'crash' ends the worker 50 ms after answering.
-const BLOCK_AFTER_LOAD = 'setImmediate(() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60000));';
 function writeReturnsCleanly(dir, prelude) {
   fs.writeFileSync(path.join(dir, 'handlers', 'svc', 'returnsCleanly.js'), `${prelude}\n` +
     "module.exports = (input, ctx, callback) => {\n" +
@@ -50,11 +49,7 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
       base = fs.mkdtempSync(path.join(os.homedir(), '.ch-codes-after-end-'));
       copy = path.join(base, 'worker-end');
       fs.cpSync(FIXTURE, copy, {recursive: true});
-      // A block-limit ceiling above the discovery bound, so a module can ask
-      // for one (the supervised case below); nothing else here blocks.
-      const policy = path.join(base, 'policy.json');
-      fs.writeFileSync(policy, JSON.stringify({limits: {maxBlockMs: 30000}}));
-      server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--modulePolicy', policy]);
+      server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread']);
       await loadFrom(PORT, copy);
     });
     after(() => {
@@ -109,34 +104,6 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
       await loading;
       assert.ok(ok, `never came back: ${JSON.stringify([...seen])}`);
       assert.ok(!seen.has('DEVICE_NOT_FOUND'), `saw DEVICE_NOT_FOUND during the reload: ${JSON.stringify([...seen])}`);
-    });
-
-    // Under the supervisor, a worker whose discovery outlasts the bound (its
-    // block limit set above it) is unloaded, not restarted: it would only
-    // block again. Its handler file schedules the block for just after its
-    // load, before the worker answers discover.
-    it('a supervised module whose discovery outlasts the bound is unloaded, not restarted', async function() {
-      this.timeout(90000);
-      const dir = path.join(base, 'stray-output-module');
-      fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'stray-output-module'), dir, {recursive: true});
-      const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-      pkg.countinghouse = {permissions: {limits: {maxBlockMs: 30000}}};
-      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
-      const id = deviceIDForName('stray-output-module');
-      const call = () => post(PORT, KEY, `/devices/${id}/invoke-action`,
-        {serviceID: 'urn:countinghouse-test:serviceID:svc', actionName: 'returnsCleanly', input: {v: 'x'}});
-      await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
-      await waitFor(async () => (await call()).status === 200, 20000, 'stray-output-module to answer');
-      writeReturnsCleanly(dir, BLOCK_AFTER_LOAD);
-      const mark = server.output.length;
-      assert.strictEqual((await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'})).status, 200);
-      await waitFor(() => /discovery did not finish within 15 s; worker terminated/.test(server.output.slice(mark)), 30000, 'the bound to end the worker',
-        () => server.output.slice(mark).split('\n').filter((l) => /stray-output|blocked|limit|exit/.test(l))
-          .map((l) => { try { return JSON.parse(l).msg; } catch (e) { return l; } }).slice(0, 12).join('\n'));
-      await sleep(8000);
-      const since = server.output.slice(mark);
-      assert.ok(!/stray-output-module exited .*restarting in/.test(since), 'the supervisor restarted it');
-      assert.strictEqual(codeOf(await call()), 'MODULE_UNLOADED');
     });
 
     // The same for a supervised restart after a crash: from the crash until
@@ -224,40 +191,6 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
       await loadFrom(PORT, FIXTURE);
     });
     after(() => stopServer(server));
-
-    // With the sandbox off nothing stops a worker that blocks, so a module
-    // whose discovery never returns (its handler file blocks just after its
-    // load) must not leave its devices reloading forever: past the discovery
-    // bound, what did not come back is unloaded.
-    it('a reload whose discovery never returns ends MODULE_UNLOADED, its worker ended', async function() {
-      this.timeout(90000);
-      const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-discover-blocks-'));
-      try {
-        const dir = path.join(base, 'stray-output-module');
-        fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'stray-output-module'), dir, {recursive: true});
-        const id = deviceIDForName('stray-output-module');
-        const call = () => post(PORT, KEY, `/devices/${id}/invoke-action`,
-          {serviceID: 'urn:countinghouse-test:serviceID:svc', actionName: 'returnsCleanly', input: {v: 'x'}});
-        await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
-        await waitFor(async () => (await call()).status === 200, 20000, 'stray-output-module to answer', async () => JSON.stringify((await call()).body));
-        writeReturnsCleanly(dir, BLOCK_AFTER_LOAD);
-        const reloaded = await post(PORT, KEY, '/load-module', {path: dir, name: 'stray-output-module'});
-        assert.strictEqual(reloaded.status, 200, JSON.stringify(reloaded.body));
-        const during = await call();
-        assert.strictEqual(codeOf(during), 'MODULE_RELOADING', JSON.stringify(during.body));
-        const mark = server.output.length;
-        await waitFor(async () => codeOf(await call()) === 'MODULE_UNLOADED', 30000, 'the blocked discovery to end MODULE_UNLOADED');
-        // ... and the blocked worker is ended, not left spinning: the same
-        // unload as an operator's (no supervisor restart; it would only
-        // block again), so the module stays unloaded until reloaded.
-        await waitFor(() => /module: stray-output-module unloaded due to reason: CLEANUP MODULE INFO IN MAIN THREAD/.test(server.output.slice(mark)),
-          15000, 'the blocked worker to be unloaded');
-        assert.ok(/discovery did not finish within 15 s; worker terminated/.test(server.output.slice(mark)), 'no error logged for the termination');
-        assert.strictEqual(codeOf(await call()), 'MODULE_UNLOADED');
-      } finally {
-        fs.rmSync(base, {recursive: true, force: true});
-      }
-    });
 
     it('after a crash, a request is MODULE_UNLOADED', async () => {
       await mcpCall(PORT, KEY, 'worker_end_endservice_crash', {}).catch(() => null);

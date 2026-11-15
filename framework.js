@@ -187,6 +187,17 @@ if (options.hardened === true && process.permission == null) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
   }
+  // On Windows the child cannot run the PowerShell the identity secret's
+  // ACL check needs: it is created and checked here (lib/identity.js
+  // prepareForHardened)
+  if (process.platform === 'win32') {
+    try {
+      require('./lib/identity').prepareForHardened(options);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(2);
+    }
+  }
   hardenedLaunch.relaunch(hardenedFlags, realpathRecorder.known());
   return;
 }
@@ -201,6 +212,12 @@ logger.createLogger(options.logStream);
 // error; the default quietly downgrades (lib/cli-options.js).
 if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
+  process.exit(2);
+}
+// enforce does not hold on Windows yet (#195): refused, never half-working.
+const sandboxRefusal = require('./lib/sandbox-platform').platformRefusal(options.moduleSandbox, process.platform);
+if (sandboxRefusal != null) {
+  console.error(sandboxRefusal);
   process.exit(2);
 }
 if (options.moduleSandbox !== 'off' && options.workerThread !== true) {

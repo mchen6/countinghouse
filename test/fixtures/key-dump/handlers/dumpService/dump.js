@@ -3,22 +3,26 @@
 const scan = require('../../scan');
 // A part listening on its own peer channel ports (#153's review, 1): every
 // message that crosses one is kept on globalThis, which the walk reaches,
-// so a key on the wire would be found. Attached at each dump, to the
-// channels open by then; a second call through a channel is seen.
-const portSeen = globalThis.__keyDumpPortSeen || (globalThis.__keyDumpPortSeen = {messages: [], ports: new WeakSet()});
-function listenOnPorts() {
-  for (const k of Object.keys(require.cache)) {
-    const ex = require.cache[k] != null ? require.cache[k].exports : null;
-    const dm = (ex != null && ex.dm != null && ex.dm.peerChannels != null) ? ex.dm : null;
-    if (dm == null) continue;
-    for (const id of Object.keys(dm.peerChannels)) {
-      const port = dm.peerChannels[id] != null ? dm.peerChannels[id].port : null;
-      if (port == null || portSeen.ports.has(port) || typeof(port.on) !== 'function') continue;
-      portSeen.ports.add(port);
-      port.on('message', (m) => { portSeen.messages.push(m); });
-    }
-  }
+// so a key on the wire would be found. The lean worker's peer state is out
+// of a module's reach, so it does what code sharing the worker's realm can:
+// MessagePort.prototype.postMessage is hooked, and the port the callee
+// answers a peer invoke on (a 'peer-reply') gets the listener. The first
+// call through a channel opens it; a second call is seen.
+const portSeen = globalThis.__keyDumpPortSeen || (globalThis.__keyDumpPortSeen = {messages: [], ports: new WeakSet(), hooked: false});
+if (!portSeen.hooked && typeof(globalThis.MessagePort) === 'function') {
+  portSeen.hooked = true;
+  const post = globalThis.MessagePort.prototype.postMessage;
+  globalThis.MessagePort.prototype.postMessage = function(m, ...rest) {
+    try {
+      if (m != null && m.category === 'peer-reply' && !portSeen.ports.has(this) && typeof(this.on) === 'function') {
+        portSeen.ports.add(this);
+        this.on('message', (x) => { portSeen.messages.push(x); });
+      }
+    } catch (e) { /* never break the worker */ }
+    return post.call(this, m, ...rest);
+  };
 }
+function listenOnPorts() { /* the hook above attaches as replies are posted */ }
 
 module.exports = async (input, ctx) => {
   listenOnPorts();
