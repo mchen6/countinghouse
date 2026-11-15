@@ -244,6 +244,21 @@ can never cover countinghouse's own directories (the install directory,
 policy file) or an ancestor of one: such a declaration is refused in every
 mode and logged at spawn.
 
+Nor can a writable declared path hold a name on the path the install is run
+by. An install run by a spelling that is not its real path (through a
+symlink or a junction, kept with `--preserve-symlinks`) is reached through
+links, and whoever can replace one of them, or a directory one of their
+targets passes through, chooses what the next start runs. So a declaration
+with `rw` access is refused when it is the directory of such a name or a
+directory above it, however the declaration spells it; a read-only one is
+kept. Under `--hardened` the names are found before the server restricts
+itself; a server put under Node's permission model another way
+(`node --permission` by hand) cannot look for them, and refuses to start.
+Two things this does not see: a Linux bind mount of a directory that holds
+such a link (the mount is another name for it that no path comparison
+shows; the protected directories above share this), and a Windows mount
+point given by volume GUID.
+
 Beyond declarations, every path in those directories -- every module's code
 (`--modulePath` and each `--loadModule` directory) and data
 (`--moduleDataPath`, also while a module is being validated), the local

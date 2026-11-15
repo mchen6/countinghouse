@@ -99,16 +99,27 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     assert.deepStrictEqual(await childGives([base], {}, [], 'r.installLinks()'), [], 'none found is an answer too: the child does not look');
     assert.strictEqual(await childGives([base], {}, undefined, 'r.installLinks()'), null, 'nothing handed over');
     assert.strictEqual(realpaths.installLinks(), null, 'and never in a process that received nothing');
+    // only absolute paths are places (the reviewer's review of #282, M2)
+    assert.deepStrictEqual(await childGives([base], {}, ['relative/x', place, 7, '', null], 'r.installLinks()'), [place]);
   });
 
-  it('the broker goes by the parent\'s list; a restricted process handed none cannot look, and has none', async () => {
+  it('the broker goes by the parent\'s list; a restricted process handed none cannot look, and is refused', async () => {
     base = mkdtemp('realpaths-');
     const place = path.join(base, 'r', 'install');
     const ask = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).installLinkPlaces()`;
     assert.deepStrictEqual(await childGives([ROOT, base], {}, [place], ask), [place]);
-    // not a --hardened relaunch: lstat above its grants is refused
-    // (ERR_ACCESS_DENIED), which is no failure of the spawn
-    assert.deepStrictEqual(await childGives([ROOT, base], {}, undefined, ask), []);
+    // not a --hardened relaunch: it may not lstat above its grants, and no
+    // parent looked for it. It does not go on unprotected: refused (M1)
+    const refusal = `(() => { try { ${ask}; return 'went on'; } catch (e) { return [e.code, e.message]; } })()`;
+    const [code, message] = await childGives([ROOT, base], {}, undefined, refusal);
+    assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
+    assert.match(message, /--permission.*--hardened/);
+    // framework.js asks this when it starts under the permission model, and
+    // refuses the start with what it says: nothing for a --hardened
+    // relaunch (it was handed a list), the reason for any other
+    const problem = `require(${JSON.stringify(path.join(ROOT, 'lib', 'hardened-launch'))}).startProblem()`;
+    assert.strictEqual(await childGives([ROOT, base], {}, [place], problem), null);
+    assert.match(await childGives([ROOT, base], {}, undefined, problem), /--permission.*--hardened/);
   });
 
   it('without the marker it reads nothing (an ordinary start)', () => {

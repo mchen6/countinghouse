@@ -9,7 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {execFileSync} = require('child_process');
-const {linkLocations} = require('../../lib/fs-broker/install-links');
+const {linkLocations, walkLinks} = require('../../lib/fs-broker/install-links');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {mkdtemp} = require('../helpers/test-tmp');
 
@@ -77,6 +77,50 @@ describe('fs-broker 27: the links an install is reached through', () => {
     assert.deepStrictEqual(linkLocations(install), [install, stage]);
   });
 
+  // The reviewer's security review of #282 (I1). A target that goes into a
+  // directory and leaves it again with ".." puts that directory on the
+  // host's path: replace it with a link and ".." leaves somewhere else. So
+  // every name the walk passes is on the path, not only the links, and a
+  // writable root that holds one is refused.
+  posixIt('a directory a target passes through and leaves with ".." is on the path: a writable root that holds it is refused (I1)', async () => {
+    dir('srv');
+    dir('data', 'x');
+    const v1 = dir('opt', 'v1', 'ch');
+    const current = path.join(base, 'srv', 'current');
+    fs.symlinkSync('../data/x/../../opt/v1', current);
+    const install = path.join(current, 'ch');
+    assert.strictEqual(fs.realpathSync.native(install), v1);
+    assert.deepStrictEqual(linkLocations(install), [current], 'the one link');
+    const walk = walkLinks(install);
+    const x = path.join(base, 'data', 'x');
+    assert.ok(walk.passed.includes(x), `${x}: ${JSON.stringify(walk.passed)}`);
+    assert.ok(walk.passed.includes(path.join(base, 'data')) && walk.passed.includes(path.join(base, 'opt', 'v1')), JSON.stringify(walk.passed));
+    // the declared root holds neither a link nor the install, as written or really
+    const data = path.join(base, 'data');
+    const n = createNamespace({moduleRoot: dir('m', 'app'), dataDir: dir('m', 'data'), tmpDir: dir('m', 'tmp'),
+      protectedPaths: [install], protectedLinks: walk.places.concat(walk.passed),
+      declared: [{path: data, access: 'rw'}, {path: dir('unrelated'), access: 'rw'}]});
+    await n.prepare();
+    assert.deepStrictEqual(n.refused.map((r) => r.path), [data]);
+    assert.match(n.refused[0].reason, /^holds .*, on a path countinghouse runs through$/);
+    // what that root could do with a rename and a symlink of its own:
+    // the host then reaches a directory inside the root
+    fs.renameSync(x, path.join(data, 'x-was'));
+    fs.mkdirSync(path.join(data, 'evil', 'a', 'b'), {recursive: true});
+    const reached = path.join(data, 'evil', 'opt', 'v1', 'ch');
+    fs.mkdirSync(reached, {recursive: true});
+    fs.symlinkSync('evil/a/b', x);
+    assert.strictEqual(fs.realpathSync.native(install), reached, 'the re-pointing the refusal prevents');
+  });
+
+  it('the names passed, for a path with no ".." in a target, are the directories above it: nothing more is refused', () => {
+    const install = link(dir('copy', 'sub'), 'install');
+    const walk = walkLinks(install);
+    assert.deepStrictEqual(walk.places, [install]);
+    // every one is the real target, or above the link or the target
+    for (const p of walk.passed) assert.ok([install, path.join(base, 'copy', 'sub')].some((q) => q === p || q.startsWith(p.endsWith(path.sep) ? p : p + path.sep)), p);
+  });
+
   it('a loop of links ends, with the links it met', () => {
     const a = path.join(base, 'a');
     const b = path.join(base, 'b');
@@ -123,7 +167,7 @@ describe('fs-broker 27: the links an install is reached through', () => {
     it('a writable root that holds a link, declared by another spelling of the link\'s directory, is refused', async () => {
       const z = link(path.join(base, 'x'), 'z');
       const n = await prepared([{path: z, access: 'rw'}, {path: dir('unrelated'), access: 'rw'}]);
-      assert.deepStrictEqual(n.refused, [{path: z, reason: `holds ${viaTarget}, a link countinghouse runs through`}]);
+      assert.deepStrictEqual(n.refused, [{path: z, reason: `holds ${viaTarget}, on a path countinghouse runs through`}]);
     });
 
     it('declared as written it is refused too, and so is a directory above it', async () => {
@@ -178,7 +222,9 @@ describe('fs-broker 27: the links an install is reached through', () => {
         console.log(JSON.stringify({install: b.INSTALL_DIR, links: b.installLinkPlaces(), protectedPaths: b.protectedPaths(${JSON.stringify(options)})}));`;
       const seen = run(['-e', code]);
       assert.strictEqual(seen.install, spelled, 'loaded by its spelling');
-      assert.deepStrictEqual(seen.links, [p, inner]);
+      // the two links, and the other names on the path (the directories above them and above the checkout)
+      for (const place of [p, inner]) assert.ok(seen.links.includes(place), `${place}: ${JSON.stringify(seen.links)}`);
+      assert.ok(seen.links.includes(out) && seen.links.includes(path.dirname(ROOT)), JSON.stringify(seen.links));
       // a protected path is a denied tree, followed to its real path: a
       // link's place as one would refuse the install itself, which stays
       // readable but for its secrets (#260)
@@ -191,8 +237,8 @@ describe('fs-broker 27: the links an install is reached through', () => {
       const kept = outDir('kept');
       const seen = run([path.join(spelled, 'test', 'fs-broker', 'scripts', 'links-spawn.js'), outDir('modules', 'm'), outDir('data'),
         JSON.stringify([{path: z, access: 'rw'}, {path: kept, access: 'rw'}])]);
-      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${inner}, a link countinghouse runs through`}]);
-      assert.deepStrictEqual(seen.reported, [`${z} (holds ${inner}, a link countinghouse runs through)`]);
+      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${inner}, on a path countinghouse runs through`}]);
+      assert.deepStrictEqual(seen.reported, [`${z} (holds ${inner}, on a path countinghouse runs through)`]);
       assert.deepStrictEqual(seen.declaredRoots, [kept]);
     });
 
@@ -205,8 +251,8 @@ describe('fs-broker 27: the links an install is reached through', () => {
       const grants = [out, ROOT, fs.realpathSync.native(path.join(ROOT, 'node_modules'))];
       const seen = run([path.join(spelled, 'test', 'fs-broker', 'scripts', 'relaunch-links.js')].concat(grants));
       assert.notStrictEqual(seen.lstatAboveGrants, 'allowed', 'the relaunched process may not look above its grants');
-      assert.deepStrictEqual(seen.handed, [p, inner]);
-      assert.deepStrictEqual(seen.links, [p, inner]);
+      for (const place of [p, inner]) assert.ok(seen.handed.includes(place), `${place}: ${JSON.stringify(seen.handed)}`);
+      assert.deepStrictEqual(seen.links, seen.handed, 'the broker goes by the parent\'s list');
     });
   });
 });
