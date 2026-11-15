@@ -523,8 +523,9 @@ checks it again on a timer:
 - **every 10 s on Linux and macOS**, where the check is a stat of the file
   and of each directory above it, and the file is read again only when one
   of them changed;
-- **every 5 minutes on Windows**, where a read spawns PowerShell (the same
-  5 minutes a Windows read is taken as current).
+- **every 5 minutes on Windows**, where a read spawns PowerShell (a Windows
+  read is taken as current for a little under those 5 minutes, so every
+  check reads the file again).
 
 So a ceiling lowered on disk bounds a session's calls within about 10 s on
 Linux and macOS and within about 5 minutes on Windows, without anyone calling

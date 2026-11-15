@@ -298,9 +298,11 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
         const before = reads;
         ticks[0].fn();
         assert.strictEqual(reads, before);
-        // lowered on disk; at the next tick past the window it is read, and bounds the next call
+        // lowered on disk; the very next tick, one interval on, reads it (a
+        // Windows read is current for a little less than the interval, so
+        // no tick is ever skipped), and it bounds the next call
         onDisk = trusted({maxOutputBytes: 300});
-        clock += 5 * 60 * 1000 + 1;
+        clock += ticks[0].ms;
         ticks[0].fn();
         assert.strictEqual(reads, before + 1);
         assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 300);
@@ -313,6 +315,48 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
         assert.deepStrictEqual(stopped, {stop: true});
       } finally {
         settingsTool.resetForTests();
+      }
+    });
+
+    // The reviewer's review of #284: a ceiling rewritten in place, to the
+    // same size, with its mtime put back (touch -r, an operator's cp -p) has
+    // the inode, size, mtime, mode and owner it had. Its ctime moved.
+    it('a ceiling rewritten in place with its size and mtime kept is still seen as changed (its ctime)', function() {
+      if (process.platform === 'win32') return this.skip();
+      const fsx = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const settingsTool = require('../../lib/settings-tool');
+      const ceilingLib = require('../../lib/settings-ceiling');
+      const was = ceilingLib.ceilingFile;
+      const dir = fsx.mkdtempSync(path.join(os.tmpdir(), 'ch-ceiling-'));
+      const file = path.join(dir, 'ceiling.json');
+      fsx.writeFileSync(file, '{"version": 1, "maxOutputBytes": 600}');
+      // an mtime in whole seconds, so it can be put back exactly
+      const kept = Math.floor(Date.now() / 1000) - 60;
+      fsx.utimesSync(file, kept, kept);
+      ceilingLib.ceilingFile = () => file;
+      settingsTool.resetForTests();
+      try {
+        let reads = 0;
+        const read = () => { reads += 1; return {state: 'none'}; };
+        settingsTool.cachedCeiling(read);
+        settingsTool.cachedCeiling(read);
+        assert.strictEqual(reads, 1, 'read once while nothing changes');
+        const before = fsx.statSync(file);
+        // wait for the clock's next tick, so the rewrite's ctime differs
+        const until = Date.now() + 20;
+        while (Date.now() < until) { /* spin */ }
+        fsx.writeFileSync(file, '{"version": 1, "maxOutputBytes": 300}');
+        fsx.utimesSync(file, kept, kept);
+        const after = fsx.statSync(file);
+        assert.deepStrictEqual([after.ino, after.size, after.mtimeMs], [before.ino, before.size, before.mtimeMs], 'the same but for its ctime');
+        settingsTool.cachedCeiling(read);
+        assert.strictEqual(reads, 2, 'read again');
+      } finally {
+        ceilingLib.ceilingFile = was;
+        settingsTool.resetForTests();
+        fsx.rmSync(dir, {recursive: true, force: true});
       }
     });
 

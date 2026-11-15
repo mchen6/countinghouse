@@ -304,6 +304,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         assert.deepStrictEqual((await tool.get(ctx(C))).history.map((h) => [h.by, h.setting, h.new]), [['replay', 'maxOutputBytes', 2 * MiB], ['replay', 'requestTimeout', 15000]]);
         assert.deepStrictEqual((await tool.get(ctx(A))).history, []);
         assert.deepStrictEqual(noticed, [], 'it asked for them itself');
+        // its lines count toward what a session may write (the 32): 2 here, 30 more, no further
+        for (let i = 0; i < 30; i++) await tool.set('maxOutputBytes', String(2 * MiB - 1 - i), 'settings tool', ctx(C));
+        await refused(tool.set('maxOutputBytes', String(MiB), 'settings tool', ctx(C)), 'SETTING_TERMINAL_ONLY_SHARED');
         // a replay that applies nothing records nothing
         const lines = history().length;
         openSession('d'.repeat(32)).emit('replay', [{maxOutputBytes: 64 * MiB}, {locale: 'zh'}]);
