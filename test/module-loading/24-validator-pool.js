@@ -860,6 +860,67 @@ describe('module-loading 24: the validator pool', function() {
     });
   });
 
+  describe('homes, a replacement', () => {
+    let homeIndex = null;
+    before(() => { ({homeIndex} = require('../../lib/validator-pool')); });
+    const namesHomedAt = (home, size, n) => {
+      const out = [];
+      for (let i = 0; out.length < n && i < 10000; i++) {
+        const name = `rhome-module-${names}-${i}`;
+        if (homeIndex(name, size) === home) out.push(name);
+      }
+      return out;
+    };
+
+    it('with no ready spare, a fresh replacement warms its slot\'s home modules, and only those, before it takes a call', async () => {
+      const p = newPool();
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const [cName] = namesHomedAt(1, 2, 1);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        const b = moduleWith({type: 'object'}, {}, {type: 'object'}, p, bName);
+        const c = moduleWith({type: 'object'}, {}, {type: 'object'}, p, cName);
+        for (const m of [a, b, c]) assert.strictEqual(await p.warm(m.key), null);
+        await warmed(p);
+        // the spare ends: its successor is not ready for a while
+        p.fail(p.spare, 'the test');
+        assert.ok(!p.spare.ready);
+        // the home of a and b stalls past its deadline: no ready spare, so a
+        // fresh replacement takes slot 0
+        assert.strictEqual(codeOf(await p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, 'u_stall')), 'VALIDATION_TIMEOUT');
+        assert.ok(p.slots[0].replacement, 'a fresh replacement in slot 0');
+        await warmed(p);
+        assert.strictEqual(p.slots[0].compiled.get(a.key), 'all');
+        assert.strictEqual(p.slots[0].compiled.get(b.key), 'all');
+        assert.strictEqual(p.slots[0].compiled.get(c.key), undefined, 'c is homed on slot 1');
+      } finally {
+        p.close();
+      }
+    });
+
+    it('a load\'s warm compile waits for its home only a little: a home that stays busy does not fail the load', async () => {
+      const p = newPool({timeoutMs: 3000});
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        assert.strictEqual(await p.warm(a.key), null);
+        // a's slow inputs hold the home, one after another, longer than the
+        // warm's short wait
+        const holds = Array.from({length: 3}, (_, i) => p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, `u_hold${i}`));
+        await new Promise((r) => setTimeout(r, 30));
+        const b = moduleWith({type: 'object'}, {}, {type: 'object'}, p, bName);
+        const t = Date.now();
+        assert.strictEqual(await p.warm(b.key), null, 'warmed elsewhere');
+        assert.ok(Date.now() - t < 5000, `${Date.now() - t} ms`);
+        await Promise.all(holds);
+      } finally {
+        p.close();
+      }
+    });
+  });
+
   it('ajv\'s log lines are bounded: one per module per level, cut, escaped', async () => {
     warned.length = 0;
     const m = moduleWith({type: 'object', properties: {
