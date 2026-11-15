@@ -229,6 +229,24 @@ can never cover countinghouse's own directories (the install directory,
 policy file) or an ancestor of one: such a declaration is refused in every
 mode and logged at spawn.
 
+Beyond declarations, every path in those directories -- every module's code
+(`--modulePath` and each `--loadModule` directory) and data
+(`--moduleDataPath`, also while a module is being validated), the local
+store, the auth and device configuration, the policy file -- and in
+ch-local's home (the
+directory of `--settingsFile`: its settings, the daemon's session secret
+under `run/`, the launcher, the pack records) is refused to a module's reads
+and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
+named: directly, through `..`, a symlink or a hard link to the settings
+files. The one exception is the module's own `/app`, `/data` and `/tmp`, by
+their real paths at spawn. A listing never shows them, and neither they nor
+any directory above them can be renamed or removed. The install directory is
+the exception: it is countinghouse's public code and stays readable under
+`audit`, except its top-level dot entries (`.git`, `.env*`, `.npmrc`,
+`.claude`, any other) and a top-level `auth.json`, which are refused to reads
+and writes under `audit` and `enforce` as the rest is. Keep no other
+secrets in it.
+
 For each call the broker translates the virtual path, decides by mode, then
 checks the host: the real location must lie inside its root, compared with
 roots resolved at spawn. Under `enforce` every opened descriptor is then
