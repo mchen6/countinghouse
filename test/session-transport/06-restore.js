@@ -88,7 +88,9 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3}}]}),
       plan({sessions: [{session: ID, resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}]}),
       plan({sessions: [{session: ID, resume: 'f'.repeat(63), state: {overrides: [], locks: [], formsLeft: 3}}]}),
-      plan({sessions: [{session: ID, resume: 7, state: {overrides: [], locks: [], formsLeft: 3}}]})
+      plan({sessions: [{session: ID, resume: 7, state: {overrides: [], locks: [], formsLeft: 3}}]}),
+      // two rows sharing a resume hash (#262 review, L1)
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}, {session: 'b'.repeat(32), resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}]})
     ];
     for (const m of bad) {
       const got = [];

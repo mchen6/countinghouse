@@ -69,4 +69,27 @@ describe('session-transport 07: resume across a runtime restart (#255, N3)', () 
     assert.strictEqual(back._announced === true, false, 'not announced until it settles');
     assert.strictEqual(r.get('c'.repeat(32)), null, 'nor B\'s until then');
   });
+
+  it('a hash is removed only by the session it belongs to (#262 review, L1)', async() => {
+    // even if two sessions were ever given one hash, the one that ends never
+    // strands the other
+    const reg = createRegistry({tell: () => {}, reconnectWindowMs: 50});
+    reg._restore([{session: 'e'.repeat(32), resume: sha('rt_shared')}]);
+    const other = reg._create();
+    other._tokenHash = sha('rt_shared');
+    reg._byToken.set(sha('rt_shared'), other);   // the later one owns it now
+    await new Promise((r) => setTimeout(r, 120));   // the restored one's window ends
+    assert.strictEqual(reg._resume('rt_shared'), other, 'the survivor still resumes by it');
+  });
+
+  it('the registry emits gone with the id when any session is forgotten, a restored one never resumed included (#262 review, L2)', async() => {
+    const reg = createRegistry({tell: () => {}, reconnectWindowMs: 50});
+    const gone = [];
+    reg.on('gone', (id) => gone.push(id));
+    reg._restore([{session: 'f'.repeat(32), resume: sha('rt_never')}]);
+    const s = reg._create();
+    s._end();
+    await new Promise((r) => setTimeout(r, 120));
+    assert.deepStrictEqual(gone, [s.id, 'f'.repeat(32)]);
+  });
 });
