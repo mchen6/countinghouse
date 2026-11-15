@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** DRAFT. Written before C1, so the "Consumes from C1" lines below are assumptions, to be fixed against C1's real interfaces before any code.
+**Status:** agreed with C on C1's interface (Task 1); no code until C1's first PR exists.
 
 **Goal:** Every call the shared runtime serves knows its session, on the main thread only: in its call token (with its cap and timeout), in the jobs it creates, and in its usage records. Each session has its own clientInfo and notices. A session's default repository fills a client's direct call only. Modules see nothing of sessions.
 
@@ -43,11 +43,15 @@
 - Test: `test/stdio/30-sessions.js`
 
 **Interfaces:**
-- **Consumes from C1 (to confirm):**
-  - a session object `s` with `s.id`;
-  - `s.client`, the latest `client` frame's fields: `conditions`, `repo`, `token`;
-  - an `end` event;
-  - and the per-session stdio handler C1 builds, which calls the gateway with `(message, ctx)`.
+- **Consumes from C1** (agreed with C, 2026-11-15, as C1's first PR exposes it in `lib/sessions/registry.js`, main thread only):
+  - `registry.on('session', s)`, emitted once per new session; a resume reattaches the same `s`;
+  - `s.id`, 128 random bits in hex;
+  - `s.client` = `{status, conditions, repo}`, updated in place on each `client` frame. `repo` is already pattern-checked, and the token MAC stays private to C1;
+  - `s.connected`, the `'detach'` and `'attach'` events, and `'end'` emitted once (after it, `s` is dead);
+  - `s.notify(obj)`, dropped while detached;
+  - `s.askConditions()` → Promise of `{status, conditions, repo}` or null (B4);
+  - `s.record`, `s.forget` and the `'replay'` event (B2);
+  - the gateway gets the session object in its opts: `gateway.handle(message, cdif, appKey, cb, {..., session: s})`.
 - **Produces:**
   - `sessions.open(s)` and `sessions.close(id)`;
   - `sessions.get(id)`, which returns `{id, clientInfo, repo, notices, logLevel, tokens: Set}`, or null;
@@ -164,6 +168,6 @@
 
 ## Decided (the reviewer, 2026-11-15)
 
-- **C1's interface** is assumed as above: a session object `{id, client, 'end'}`, and the gateway called with `(message, ctx)`. It has been sent to C to confirm or correct in C1's first PR, so both sides agree before either codes against it. No code here until C1's interfaces exist.
+- **C1's interface** is agreed with C (above, Task 1). No code here until C1's first PR exists. Per-session notices ride on results (a modern session's `notifications/message` is legacy-only, #230), so `s.notify` being dropped while detached loses no notice. B1's own queue holds them until the session's next result.
 - **`countinghouse_call_tool`'s inner call is not a direct call:** no session default fills there.
 - **HTTP stays out of shared mode.** In shared mode the runtime serves only the shim's session listener, with no HTTP listener. The hosted HTTP mode stays as today: each key is its own principal, with no session (`Session.sessionId` null, the global values).
