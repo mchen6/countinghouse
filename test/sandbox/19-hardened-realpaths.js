@@ -11,7 +11,8 @@ const {spawn} = require('child_process');
 const realpaths = require('../../lib/hardened-realpaths');
 const {mkdtemp} = require('../helpers/test-tmp');
 
-const LIB = path.join(__dirname, '..', '..', 'lib', 'hardened-realpaths');
+const ROOT = path.join(__dirname, '..', '..');
+const LIB = path.join(ROOT, 'lib', 'hardened-realpaths');
 
 // A child under --permission with only these read grants, given `known` on
 // fd 3 as the relaunch does; it prints what realpathSync gave for `ask`.
@@ -28,6 +29,23 @@ function childSees(grants, known, ask) {
     child.stdout.on('data', (c) => { out += c; });
     child.on('exit', () => resolve(JSON.parse(out)));
     realpaths.send(child, known);
+  });
+}
+
+// The same child, handed the install's links as well (undefined: none
+// handed); it prints what the expression `ask` gives, with r the library.
+function childGives(grants, known, links, ask) {
+  return new Promise((resolve, reject) => {
+    const code = `const r = require(${JSON.stringify(LIB)}); r.receive(); process.stdout.write(JSON.stringify(${ask}));`;
+    const flags = ['--permission'].concat(grants.map((g) => `--allow-fs-read=${g}`), [`--allow-fs-read=${path.dirname(LIB)}`]);
+    const child = spawn(process.execPath, flags.concat(['-e', code]),
+      {env: Object.assign({}, process.env, realpaths.childEnv()), stdio: ['ignore', 'pipe', 'pipe', 'pipe']});
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { err += c; });
+    child.on('exit', () => { try { resolve(JSON.parse(out)); } catch (e) { reject(new Error(`the child printed ${JSON.stringify(out)}; stderr: ${err.slice(-2000)}`)); } });
+    realpaths.send(child, known, links);
   });
 }
 
@@ -74,6 +92,34 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     const seen = await childSees([base], {}, [other, path.join(base, 'missing')]);
     assert.strictEqual(seen[other], other);
     assert.strictEqual(seen[path.join(base, 'missing')], 'ENOENT');
+  });
+
+  // #280's follow-up: the links the install is reached through
+  // (lib/fs-broker/install-links.js) are found by lstat-ing every directory
+  // above it, which the child may not do. The parent's list travels with the
+  // real paths.
+  it('the install\'s links travel with the real paths, and are no real path\'s answer', async () => {
+    base = mkdtemp('realpaths-');
+    const place = path.join(base, 'r', 'install');
+    const seen = await childGives([base], {[base]: base}, [place], `({links: r.installLinks(), real: r.realpathSync(${JSON.stringify(base)})})`);
+    assert.deepStrictEqual(seen, {links: [place], real: base});
+    assert.deepStrictEqual(await childGives([base], {}, [], 'r.installLinks()'), [], 'none found is an answer too: the child does not look');
+    assert.strictEqual(await childGives([base], {}, undefined, 'r.installLinks()'), null, 'nothing handed over');
+    assert.strictEqual(realpaths.installLinks(), null, 'and never in a process that received nothing');
+  });
+
+  it('the relaunched server protects the links its parent found, where it may not look above its grants', async () => {
+    base = mkdtemp('realpaths-');
+    const place = path.join(base, 'r', 'install');
+    const options = {modulePath: path.join(base, 'modules'), moduleDataPath: path.join(base, 'data'), authConfigPath: path.join(base, 'auth.json')};
+    const ask = `(() => { const b = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}); const o = ${JSON.stringify(options)};
+      return {protectedPaths: b.protectedPaths(o), deniedTrees: b.deniedTreesFor(o)}; })()`;
+    const handed = await childGives([ROOT, base], {}, [place], ask);
+    assert.ok(handed.protectedPaths.includes(place), JSON.stringify(handed.protectedPaths));
+    // a denied tree follows its directory to its real path: a link's place
+    // as one would refuse the install itself, which stays readable (#260)
+    assert.ok(!handed.deniedTrees.includes(place), JSON.stringify(handed.deniedTrees));
+    assert.ok(handed.deniedTrees.includes(options.moduleDataPath), JSON.stringify(handed.deniedTrees));
   });
 
   it('without the marker it reads nothing (an ordinary start)', () => {
