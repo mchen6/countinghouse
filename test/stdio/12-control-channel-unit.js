@@ -56,3 +56,42 @@ describe('stdio 12: the control channel, server-free', () => {
     assert.deepStrictEqual(sent, [{value: 1, id: 7, ok: true}]);
   });
 });
+
+describe('stdio 12b: the runtime asks ch-local (part 3 P2, Task 4)', () => {
+  const control = require('../../lib/control-channel');
+  function pair() {
+    let listener = null;
+    const sent = [];
+    const ch = control.start({}, {on: (fn) => { listener = fn; }, off: () => { listener = null; }, send: (m) => sent.push(m)});
+    return {ch, sent, deliver: (m) => listener(m)};
+  }
+  afterEach(() => control.resetForTests());
+
+  it('ask sends a request with an r-id; the reply goes to it, never answered as an unknown request', async () => {
+    const {sent, deliver} = pair();
+    const p = control.ask({type: 'may-elicit', client: {name: 'claude-code', version: '2.1.323'}});
+    const req = sent.find((m) => m.type === 'may-elicit');
+    assert.match(String(req.id), /^r\d+$/);
+    deliver({id: req.id, ok: true, mayElicit: false, why: 'client hook present'});
+    assert.deepStrictEqual(await p, {id: req.id, ok: true, mayElicit: false, why: 'client hook present'});
+    await new Promise((r) => setTimeout(r, 30));
+    assert.ok(!sent.some((m) => m.code === 'CONTROL_UNKNOWN'), JSON.stringify(sent));
+  });
+
+  it('no answer (an older ch-local ignores the request): CONTROL_NO_ANSWER after its timeout; no channel: CONTROL_NONE', async () => {
+    pair();
+    const t = Date.now();
+    assert.deepStrictEqual(await control.ask({type: 'may-elicit'}, {timeoutMs: 60}), {ok: false, code: 'CONTROL_NO_ANSWER'});
+    assert.ok(Date.now() - t >= 50);
+    control.resetForTests();
+    assert.deepStrictEqual(await control.ask({type: 'may-elicit'}), {ok: false, code: 'CONTROL_NONE'});
+  });
+
+  it('an older ch-local that answers the request as unknown: that, not a hang', async () => {
+    const {sent, deliver} = pair();
+    const p = control.ask({type: 'may-elicit'});
+    const req = sent.find((m) => m.type === 'may-elicit');
+    deliver({id: req.id, ok: false, code: 'CONTROL_UNKNOWN'});
+    assert.strictEqual((await p).code, 'CONTROL_UNKNOWN');
+  });
+});
