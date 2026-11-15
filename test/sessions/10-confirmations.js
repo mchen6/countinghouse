@@ -23,6 +23,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
   let clock;
   let timers;
   let told;
+  const WALL0 = 1800000000000;   // the wall clock at the test's start: it moves with the test's own
   // the clock moves, and every timer due by then fires, in order
   const advance = (ms) => {
     const until = clock + ms;
@@ -44,6 +45,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     confirm.resetForTests();
     confirm.configure({
       now: () => clock,
+      wall: () => WALL0 + (clock - 1000000),
       timer: (fn, ms) => { const t = {fn, at: clock + ms, cleared: false}; timers.push(t); return t; },
       clearTimer: (t) => { if (t != null) t.cleared = true; },
       tell: (m) => told.push(m)
@@ -123,6 +125,59 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
 
     it('declines more than 30 minutes apart never add up', () => {
       for (const s of [A, B, C]) { confirm.confirmations(s).decline('requestTimeout'); advance(16 * MIN); }
+      assert.strictEqual(confirm.userWindow().locked('requestTimeout'), false);
+    });
+
+    // Task 6's restore brings the daemon's list: what was declined or left
+    // unanswered before a runtime restart still counts
+    it('the daemon\'s list loads into the window by kind and age: what is older than 30 minutes is dropped, three recent of a kind lock it from the third', () => {
+      const w = confirm.userWindow();
+      const wall = WALL0;
+      assert.strictEqual(w.load([{kind: 'maxOutputBytes', at: wall - 5 * MIN}, {kind: 'maxOutputBytes', at: wall - 40 * MIN}, {kind: 'requestTimeout', at: wall - MIN},
+        {kind: 'pack', at: wall - 20 * MIN}, {kind: 'pack', at: wall - 10 * MIN}, {kind: 'pack', at: wall - 4 * MIN}]), true);
+      assert.strictEqual(w.count('maxOutputBytes'), 1, 'the one inside the 30 minutes');
+      assert.strictEqual(w.count('requestTimeout'), 1);
+      assert.strictEqual(w.locked('maxOutputBytes'), false);
+      assert.strictEqual(w.locked('pack'), true);
+      assert.deepStrictEqual(told, [], 'the daemon has them already');
+      // one more decline of the first kind, here, and one in B: three within the window
+      confirm.confirmations(A).decline('maxOutputBytes');
+      confirm.confirmations(B).decline('maxOutputBytes');
+      assert.strictEqual(w.locked('maxOutputBytes'), true);
+      // the pack lock runs 30 minutes from its third, which was 4 minutes ago
+      advance(25 * MIN);
+      assert.strictEqual(w.locked('pack'), true);
+      advance(2 * MIN);
+      assert.strictEqual(w.locked('pack'), false);
+    });
+
+    it('a list that is not exactly kinds and past times is dropped whole, and every kind is locked for 30 minutes (as when no list came: lockAll)', () => {
+      const wall = WALL0;
+      const good = {kind: 'pack', at: wall - MIN};
+      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'pack', at: wall + 1}], [good, {kind: 'pack', at: 1.5}], [good, {kind: 'pack', at: -1}],
+        [good, {kind: 'pack', at: wall, session: A}], [good, null], Array.from({length: 65}, () => good)];
+      for (const list of bad) {
+        confirm.resetForTests();
+        confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
+        const w = confirm.userWindow();
+        assert.strictEqual(w.load(list), false, JSON.stringify(list).slice(0, 80));
+        for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) {
+          assert.strictEqual(w.locked(kind), true, kind);
+          assert.strictEqual(w.count(kind), 0, 'nothing of the list is kept');
+        }
+        assert.strictEqual(confirm.confirmations(A).stage(change(A)), null);
+        assert.deepStrictEqual(told, []);
+      }
+      // 64 is the most a list holds, and an empty one is a fresh start
+      confirm.resetForTests();
+      confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
+      assert.strictEqual(confirm.userWindow().load(Array.from({length: 64}, () => ({kind: 'pack', at: wall - 31 * MIN}))), true);
+      assert.strictEqual(confirm.userWindow().load([]), true);
+      assert.strictEqual(confirm.userWindow().locked('pack'), false);
+      // the safety net's own call (Task 6: no restore within 3 s)
+      confirm.userWindow().lockAll();
+      assert.strictEqual(confirm.userWindow().locked('requestTimeout'), true);
+      advance(30 * MIN + 1);
       assert.strictEqual(confirm.userWindow().locked('requestTimeout'), false);
     });
 
@@ -223,6 +278,236 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       confirm.latch(A);
       assert.strictEqual(confirm.confirmations(A).verify(inA.requestState, retry(A)).ok, false);
       assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 0);
+    });
+  });
+
+  // The settings tool, for a shared runtime's sessions: a loosening of a cap
+  // asked for in a session is confirmed by that session's user, in that
+  // session's form, and becomes that session's override.
+  describe('the form and its retry, in a session (lib/settings-tool.js)', () => {
+    const EventEmitter = require('events');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const options = require('../../lib/cli-options');
+    const notices = require('../../lib/notices');
+    const sessions = require('../../lib/sessions');
+    const settings = require('../../lib/session-settings');
+    const jobSessions = require('../../lib/job-sessions');
+    const settingsTool = require('../../lib/settings-tool');
+    const CLIENT = {name: 'claude-code', version: '2.1.323'};
+    const ACCEPT = {approve: {action: 'accept', content: {approve: true}}};
+    const DECLINE = {approve: {action: 'decline'}};
+    let reg;
+    let sources;
+    let home;
+    let file;
+    let saved;
+    let grown;
+    let asked;
+    // conditions: what the session's client answers a conditions? with (C1's askConditions)
+    const openSession = (id, conditions = {status: 'ok', conditions: 'yes', repo: null}) => {
+      const s = new EventEmitter();
+      s.id = id;
+      s.client = Object.assign({}, conditions);
+      s.connected = true;
+      s.answer = conditions;
+      s.notify = () => {};
+      s.record = () => {};
+      s.forget = () => {};
+      s.askConditions = async () => { asked.push(id); if (s.answer != null) Object.assign(s.client, s.answer); return s.answer == null ? null : Object.assign({}, s.answer); };
+      sources[id] = s;
+      reg.emit('session', s);
+      return s;
+    };
+    const ctx = (id) => ({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}});
+    const tool = (o = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
+      // the tested-client list is the tool's own concern (stdio 18, 20): any client here
+      sessionClient: (c) => ({ok: true, client: c.clientInfo}),
+      growValidators: async (bytes) => { grown.push(bytes); }}, o));
+    const history = () => (fs.existsSync(path.join(home, 'history.jsonl'))
+      ? fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+    const refused = async (p, code) => {
+      let err = null;
+      try { await p; } catch (e) { err = e; }
+      assert.ok(err != null, `refused ${code}`);
+      assert.strictEqual(err.code, code, err.message);
+      return err;
+    };
+    const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); };
+    beforeEach(() => {
+      saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
+      Object.assign(options, {maxOutputBytes: 8 * MiB, requestTimeout: 30000, locale: 'en-US'});
+      reset();
+      settings.configure({ceiling: () => ({state: 'none'})});
+      home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s10-'));
+      file = path.join(home, 'settings.json');
+      reg = new EventEmitter();
+      sessions.attach(reg);
+      sources = {};
+      grown = [];
+      asked = [];
+      openSession(A);
+      openSession(B);
+    });
+    afterEach(() => { Object.assign(options, saved); reset(); fs.rmSync(home, {recursive: true, force: true}); });
+
+    it('A, at 2 MiB, asks for 4 MiB: a form that says "this session"; accepted, A runs at 4 MiB and nothing else changes', async () => {
+      const t0 = tool();
+      await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
+      const before = {live: settingsTool.liveOptions()};
+      const r = await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A));
+      const form = r.inputRequired.inputRequests.approve;
+      assert.strictEqual(form.params.message, 'Allow countinghouse tools to return up to 4MiB per call in this session (now 2MiB)? This applies to this session only, until it ends.');
+      assert.deepStrictEqual(form.params.requestedSchema, {type: 'object', properties: {approve: {type: 'boolean', title: 'Approve'}}, required: ['approve']});
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB, 'nothing yet');
+      const done = await t0.confirm('maxOutputBytes', '4MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
+      assert.deepStrictEqual(done, {name: 'maxOutputBytes', old: 2 * MiB, new: 4 * MiB, applies: 'this session'});
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB);
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 8 * MiB);
+      assert.strictEqual(settings.limitsOf(B), null);
+      assert.strictEqual(options.maxOutputBytes, 8 * MiB, 'the shared option');
+      assert.deepStrictEqual(settingsTool.liveOptions(), before.live);
+      assert.ok(!fs.existsSync(file), 'settings.json never written');
+      const line = history().pop();
+      assert.deepStrictEqual((({at, ...rest}) => rest)(line), {by: 'settings tool', setting: 'maxOutputBytes', old: 2 * MiB, new: 4 * MiB, change: 'this session',
+        confirmed: 'elicitation (claude-code 2.1.323)', session: A});
+    });
+
+    it('above the default: the validators are grown first, and the override is a loosening over the default in force; a growth that fails applies nothing', async () => {
+      const t0 = tool();
+      const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      assert.match(r.inputRequired.inputRequests.approve.params.message, /up to 16MiB per call in this session \(now 8MiB\)/);
+      await t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
+      assert.deepStrictEqual(grown, [16 * MiB]);
+      assert.deepStrictEqual(settings.overridesOf(A), [{name: 'maxOutputBytes', value: 16 * MiB, loosening: true, over: 8 * MiB, version: null}]);
+      // B asks the same; the validators cannot be grown
+      const failing = tool({growValidators: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
+      const rb = await failing.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      await refused(failing.confirm('maxOutputBytes', '16MiB', {requestState: rb.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B)), 'SETTING_NOT_APPLIED');
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 8 * MiB);
+      assert.deepStrictEqual(history().filter((h) => h.session === B).map((h) => h.change), ['this session', 'not applied']);
+    });
+
+    it('the form\'s text says "this session" in both languages', async () => {
+      const en = await tool().set('requestTimeout', '60s', 'settings tool', ctx(A));
+      assert.strictEqual(en.inputRequired.inputRequests.approve.params.message,
+        'Allow countinghouse tool calls to run for up to 60s in this session (now 30s)? This applies to this session only, until it ends.');
+      options.locale = 'zh-CN';
+      const zh = await tool().set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      assert.strictEqual(zh.inputRequired.inputRequests.approve.params.message, '允许 countinghouse 工具在本会话中每次调用最多返回 16MiB（当前为 8MiB）吗？此设置仅对本会话有效，会话结束即失效。');
+    });
+
+    it('a form staged in A answers only in A: retried from B with A\'s state it fails; A\'s form does not replace B\'s; A\'s end counts its form as an expiry (review focus 2)', async () => {
+      const t0 = tool();
+      const inB = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      const inA = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: inA.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B)), 'SETTING_CONFIRMATION_INVALID');
+      assert.strictEqual(settings.limitsOf(B), null);
+      // B's own form is still good
+      assert.strictEqual((await t0.confirm('maxOutputBytes', '16MiB', {requestState: inB.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B))).new, 16 * MiB);
+      sources[A].emit('end');
+      assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 1, 'A\'s pending form, at its end');
+    });
+
+    it('declined: nothing changes, the kind is locked for that session, and the decline is the user\'s window\'s', async () => {
+      const t0 = tool();
+      const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      assert.deepStrictEqual(await t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(A)),
+        {name: 'maxOutputBytes', old: 8 * MiB, new: 8 * MiB, applies: 'declined'});
+      assert.strictEqual(settings.limitsOf(A), null);
+      // the session's lock, in its own words: for the session, not "until countinghouse restarts"
+      const locked = await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      assert.strictEqual(locked.message, 'Loosening maxOutputBytes is not asked again in this session (it was declined or left unanswered here, or this client\'s configuration could answer for you); '
+        + 'nothing was changed. To allow it, run `ch-local settings set maxOutputBytes 16MiB` in a terminal yourself.');
+      assert.ok((await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B))).inputRequired != null, 'B is not locked by A\'s decline');
+      assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 1);
+      assert.ok(history().some((h) => h.session === A && h.change === 'declined'));
+    });
+
+    it('with two declines in the window and a form up in B, a third session gets none; B\'s accept once the kind has locked is refused (review focus 3)', async () => {
+      const t0 = tool();
+      const C2 = 'c'.repeat(32);
+      const D2 = 'd'.repeat(32);
+      const E2 = 'e'.repeat(32);
+      for (const id of [C2, D2, E2]) openSession(id);
+      for (const id of [C2, D2]) {
+        const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(id));
+        await t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(id));
+      }
+      const inB = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      assert.ok(inB.inputRequired != null, 'the third of the kind');
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(E2)), 'SETTING_NEEDS_CONFIRMATION');
+      // a third decline elsewhere locks the kind while B's form is up: B's yes comes too late
+      confirm.userWindow().note('maxOutputBytes');
+      assert.strictEqual(confirm.userWindow().locked('maxOutputBytes'), true);
+      await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: inB.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.strictEqual(settings.limitsOf(B), null);
+    });
+
+    it('a session whose client does not answer "ok, yes" gets no form, at the form and again at the confirmation (F1)', async () => {
+      const t0 = tool();
+      for (const answer of [null, {status: 'failed', conditions: null, repo: null}, {status: 'ok', conditions: null, repo: null}]) {
+        sources[B].answer = answer;
+        await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_NEEDS_CONFIRMATION');
+      }
+      assert.ok(asked.filter((id) => id === B).length >= 3, 'asked each time, of this session');
+      // yes at the form, no answer at the confirmation: a hook written while the dialog was up
+      const r = await t0.set('requestTimeout', '60s', 'settings tool', ctx(A));
+      sources[A].answer = null;
+      await refused(t0.confirm('requestTimeout', '60s', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.strictEqual(settings.limitsOf(A), null);
+    });
+
+    it('one "conditions: no" from a session\'s client latches it: no form of any kind for its life, though a later answer says yes (N1)', async () => {
+      const t0 = tool();
+      sources[A].answer = {status: 'ok', conditions: 'no', repo: null};
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      sources[A].answer = {status: 'ok', conditions: 'yes', repo: null};
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      assert.strictEqual(confirm.confirmations(A).formsLeft(), 3, 'no form was ever shown');
+      assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => h.change), ['not confirmed (locked in this session)', 'not confirmed (locked in this session)']);
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      // a client frame that says no at the session's start, or at a reattach, latches too
+      const s = openSession('f'.repeat(32), {status: 'ok', conditions: 'no', repo: null});
+      assert.strictEqual(confirm.confirmations(s.id).declined('maxOutputBytes'), true);
+      sources[B].client.conditions = 'no';
+      sources[B].emit('attach');
+      assert.strictEqual(confirm.confirmations(B).declined('requestTimeout'), true);
+    });
+
+    it('a client frame that said no since the last ask latches at the next one, before the shim is asked again', async () => {
+      const t0 = tool();
+      // C1 updates s.client in place at each frame; this one came unasked
+      sources[A].client.conditions = 'no';
+      const before = asked.length;
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      assert.strictEqual(asked.length, before, 'the latest frame said it: nothing more is asked');
+      sources[A].client.conditions = 'yes';
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      // a frame whose status is not ok is no "no": no form now, no latch
+      sources[B].client.status = 'failed';
+      sources[B].client.conditions = 'no';
+      sources[B].answer = {status: 'failed', conditions: 'no', repo: null};
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), []);
+    });
+
+    it('a session that ends while its client is asked gets no form, and nothing of it is kept', async () => {
+      const t0 = tool();
+      sources[A].askConditions = async () => { sources[A].emit('end'); return {status: 'ok', conditions: 'yes', repo: null}; };
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'MODULE_NOT_LISTED');
+      assert.strictEqual(timers.filter((x) => !x.cleared).length, 0, 'no form was staged for it');
+      assert.strictEqual(confirm.userWindow().count('requestTimeout'), 0);
+    });
+
+    it('the ceiling binds a session\'s loosening: above it, refused with no form; conversation off, no form', async () => {
+      const above = tool({ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}})});
+      await refused(above.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_ABOVE_CEILING');
+      const off = tool({ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {forbid: [], conversation: false}})});
+      await refused(off.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.strictEqual(confirm.confirmations(A).formsLeft(), 3, 'no form was spent');
     });
   });
 });

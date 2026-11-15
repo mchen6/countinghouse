@@ -60,7 +60,7 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.strictEqual(err.code, code, err.message);
     return err;
   };
-  const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); };
+  const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); require('../../lib/settings-confirm').resetForTests(); };
   beforeEach(() => {
     saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout, locale: options.locale};
     // the defaults every session shares, whatever the options' own are
@@ -119,14 +119,17 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     }
   });
 
-  it('a loosening stays the terminal\'s (until Task 5), judged against the session\'s own value; nothing changes', async () => {
+  // these sessions' clients say "conditions: no" (openSession), so Task 5's
+  // latch has locked them: a loosening is never asked of their users (the
+  // form and its answer are sessions 10's)
+  it('a loosening is judged against the session\'s own value, and in a session whose client could answer for the user it is not asked; nothing changes', async () => {
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
     // back toward the default is a loosening of A's value
-    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
     assert.match(e.message, /ch-local settings set maxOutputBytes 4MiB/);
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB);
     // B has no override: above the default is one
-    await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_TERMINAL_ONLY_SHARED');
+    await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_DECLINED_THIS_SESSION');
     assert.strictEqual(settings.limitsOf(B), null);
     assert.ok(!fs.existsSync(file), 'settings.json never written');
     assert.strictEqual(options.maxOutputBytes, 8 * MiB);
@@ -166,8 +169,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     // a terminal change: no session
     fs.appendFileSync(path.join(home, 'history.jsonl'), `${JSON.stringify({at: new Date().toISOString(), by: 'cli', setting: 'upgradeCheck', old: 'daily', new: 'weekly'})}\n`);
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
-    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
     await tool.set('requestTimeout', '20s', 'settings tool', ctx(B));
     const value = (got, name) => got.settings.find((s) => s.name === name).value;
     const seen = (got) => got.history.map((h) => [h.setting, h.change || null, h.new !== undefined ? h.new : (h.asked !== undefined ? h.asked : null)]);
@@ -176,9 +179,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.strictEqual(value(a, 'maxOutputBytes'), 2 * MiB, 'A\'s own');
     assert.strictEqual(value(a, 'requestTimeout'), 30000, 'B\'s tightening is not A\'s');
     // A's second request was counted, and the count written (as A's) ahead of the next change recorded: B's
-    assert.deepStrictEqual(seen(a), [['upgradeCheck', null, 'weekly'], ['maxOutputBytes', 'this session', 2 * MiB], ['maxOutputBytes', 'refused, terminal only', 64 * MiB],
-      ['maxOutputBytes', 'refused, terminal only, asked again', null]]);
-    assert.ok(history().some((h) => h.session === A && h.count === 1 && h.change === 'refused, terminal only, asked again'), JSON.stringify(history()));
+    assert.deepStrictEqual(seen(a), [['upgradeCheck', null, 'weekly'], ['maxOutputBytes', 'this session', 2 * MiB], ['maxOutputBytes', 'not confirmed (locked in this session)', 64 * MiB],
+      ['maxOutputBytes', 'not confirmed (locked in this session), asked again', null]]);
+    assert.ok(history().some((h) => h.session === A && h.count === 1 && h.change === 'not confirmed (locked in this session), asked again'), JSON.stringify(history()));
     const b = await tool.get(ctx(B));
     assert.strictEqual(value(b, 'maxOutputBytes'), 8 * MiB);
     assert.strictEqual(value(b, 'requestTimeout'), 20000);
@@ -244,11 +247,12 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   });
 
   it('a session\'s end writes the counts of its repeated requests and keeps nothing of it', async () => {
-    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
-    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
     assert.strictEqual(history().length, 1, 'the second only counted');
     sources[A].emit('end');
-    assert.deepStrictEqual(history().map((h) => [h.session, h.change, h.count]), [[A, 'refused, terminal only', undefined], [A, 'refused, terminal only, asked again', 1]]);
+    assert.deepStrictEqual(history().map((h) => [h.session, h.change, h.count]),
+      [[A, 'not confirmed (locked in this session)', undefined], [A, 'not confirmed (locked in this session), asked again', 1]]);
     // nothing of A is left to write
     tool.writeCounts();
     assert.strictEqual(history().length, 2);
