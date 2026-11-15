@@ -23,7 +23,7 @@ const MODULE = path.join(ROOT, 'test', 'fixtures', 'win-probe');
 const KEY = 'spelled-install-key';
 const WIN = process.platform === 'win32';
 
-describe('stdio 25: an install run by a spelling that isn\'t its real path (#272)', function() {
+describe('stdio 26: an install run by a spelling that isn\'t its real path (#272)', function() {
   this.timeout(180000);
   let base = null;
   let links = [];
