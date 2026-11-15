@@ -288,6 +288,32 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
       assert.strictEqual(settings.limitsOf(A), null);
     });
 
+    it('is recorded in the history, one line a setting, marked as a replay and as its session\'s; the client is sent no notice', async () => {
+      const was = {settingsFile: options.settingsFile, add: notices.add};
+      const noticed = [];
+      options.settingsFile = file;
+      notices.add = (...args) => { noticed.push(args); };
+      try {
+        const s = openSession(C);
+        s.emit('replay', [{maxOutputBytes: 2 * MiB}, {requestTimeout: 20000}, {requestTimeout: 15000}]);
+        assert.deepStrictEqual(history().map(({at, ...rest}) => rest), [
+          {by: 'replay', setting: 'maxOutputBytes', old: 8 * MiB, new: 2 * MiB, change: 'this session (replayed after a restart)', session: C},
+          {by: 'replay', setting: 'requestTimeout', old: 30000, new: 15000, change: 'this session (replayed after a restart)', session: C}]);
+        assert.ok(history().every((h) => !Number.isNaN(Date.parse(h.at))));
+        // the session sees why its values hold; no other session does
+        assert.deepStrictEqual((await tool.get(ctx(C))).history.map((h) => [h.by, h.setting, h.new]), [['replay', 'maxOutputBytes', 2 * MiB], ['replay', 'requestTimeout', 15000]]);
+        assert.deepStrictEqual((await tool.get(ctx(A))).history, []);
+        assert.deepStrictEqual(noticed, [], 'it asked for them itself');
+        // a replay that applies nothing records nothing
+        const lines = history().length;
+        openSession('d'.repeat(32)).emit('replay', [{maxOutputBytes: 64 * MiB}, {locale: 'zh'}]);
+        assert.strictEqual(history().length, lines);
+      } finally {
+        options.settingsFile = was.settingsFile;
+        notices.add = was.add;
+      }
+    });
+
     it('ignores what does not tighten, and what set would refuse (review focus 4)', () => {
       const s = openSession(C);
       s.emit('replay', [
