@@ -221,33 +221,62 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     }
   });
 
-  it('ends, never listening, when ch-local daemon dies while it starts (#255 review)', async() => {
+  // a parent standing in for ch-local daemon, which dies at `when`: 'spawn'
+  // (right after spawning the runtime) or 'ready' (on the control channel's
+  // ready, never sending a restore). The runtime loads a worker-thread module,
+  // whose worker keeps an orphan's process alive.
+  const dyingDaemon = async(when) => {
     const run = path.join(home, 'run', 'daemon');
     fs.mkdirSync(run, {recursive: true});
     fs.chmodSync(path.join(home, 'run'), 0o700);
     fs.chmodSync(run, 0o700);
     const socket = path.join(run, 's');
-    const args = [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
+    const args = [FRAMEWORK, '--workerThread', '--moduleSandbox', 'off', '--loadModule', path.join(ROOT, 'test', 'fixtures', 'handler-map-module'),
+      '--store', 'local', '--storePath', path.join(home, 'store'),
       '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
       '--sessionSocket', socket];
-    // the parent dies as soon as it has spawned the runtime: no restore, ever
+    const die = "process.stdout.write(String(c.pid) + '\\n', () => process.kill(process.pid, 'SIGKILL'))";
     const parentCode = `const c = require('child_process').spawn(process.execPath, ${JSON.stringify(args)}, {stdio: ['ignore', 'ignore', 'ignore', 'ipc'], detached: true,
       env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
-      process.stdout.write(String(c.pid) + '\\n', () => process.kill(process.pid, 'SIGKILL'));`;
+      ${when === 'spawn' ? `${die};` : `c.on('message', (m) => { if (m && m.type === 'ready') ${die}; });`}`;
     const parent = spawn(process.execPath, ['-e', parentCode], {stdio: ['ignore', 'pipe', 'inherit']});
     let out = '';
     parent.stdout.on('data', (d) => { out += d; });
-    let until = Date.now() + 10000;
-    while (!/\n/.test(out) && Date.now() < until) await tick(50);
+    const until0 = Date.now() + 30000;
+    while (!/\n/.test(out) && Date.now() < until0) await tick(20);
     const pid = Number(out.trim());
     const alive = () => { try { process.kill(pid, 0); return true; } catch (e) { return false; } };
+    return {pid, socket, alive, diedAt: Date.now()};
+  };
+  // the orphan is watched every 20 ms: a socket that appears even briefly is seen
+  const watchOrphan = async(d, ms) => {
+    let sawSocket = false;
+    const until0 = Date.now() + ms;
+    while (d.alive() && Date.now() < until0) { if (fs.existsSync(d.socket)) sawSocket = true; await tick(20); }
+    if (fs.existsSync(d.socket)) sawSocket = true;
+    return {ended: !d.alive(), sawSocket, after: Date.now() - d.diedAt};
+  };
+
+  it('ends, never listening, when ch-local daemon dies right after spawning it (#255 review)', async() => {
+    const d = await dyingDaemon('spawn');
     try {
-      until = Date.now() + 15000;
-      while (alive() && Date.now() < until) await tick(100);
-      assert.strictEqual(alive(), false, 'the runtime ended');
-      assert.ok(!fs.existsSync(socket), 'and never held the socket');
+      const w = await watchOrphan(d, 10000);
+      assert.strictEqual(w.ended, true, 'the runtime ended (an orphan would listen at the 3 s net and stay up)');
+      assert.strictEqual(w.sawSocket, false, 'and never held the socket');
     } finally {
-      if (alive()) process.kill(pid, 'SIGKILL');
+      if (d.alive()) process.kill(d.pid, 'SIGKILL');
+    }
+  });
+
+  it('ends, never listening, when ch-local daemon dies after the ready, sending no restore (#255 review)', async() => {
+    const d = await dyingDaemon('ready');
+    try {
+      const w = await watchOrphan(d, 10000);
+      assert.strictEqual(w.ended, true, 'the runtime ended');
+      assert.ok(w.after < 2000, `within 2 s, under the 3 s net (${w.after} ms)`);
+      assert.strictEqual(w.sawSocket, false, 'and never listened');
+    } finally {
+      if (d.alive()) process.kill(d.pid, 'SIGKILL');
     }
   });
 
