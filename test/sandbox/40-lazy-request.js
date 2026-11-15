@@ -81,7 +81,7 @@ function request(io, message, timeoutMs = 30000) {
       server = await startStandIn();
       base = server.base;
       io = start(home, flags);
-      await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
+      await request(io, {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '0'}}});
       io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', method: 'notifications/initialized'})}\n`);
       const deadline = Date.now() + 60000;
       while (tool == null && Date.now() < deadline) {
