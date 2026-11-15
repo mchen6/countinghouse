@@ -237,12 +237,17 @@ The reviewer split it (2026-11-15): B2 owns the runtime's export and import, C3 
   - The daemon always sends it, once, right after spawning the runtime (empty when fresh), and from IPC only; it's never taken from a session's wire.
   - A 3 s timeout is a safety net: when it fires, the runtime starts with an empty table, the per-user window locked (Task 5) and one warning line.
   - The daemon keeps at most 256 rows and 64 KiB per state. `at` is epoch ms.
-- Produces: `sessions.importTable({sessions, declines})`, which C3's `startSessions` calls before `listen()`. A restored row waits for its session's `'session'` event after the resume, and is dropped if none comes within the reconnect window.
+- `restore` also carries a top-level `reset: [session ids]`, each one of the restored rows: the sessions a ch-local re-exec handoff took confirmed loosenings or turned-on packs from (C's handoff seed keeps cap overrides marked `loosening: false` and drops `loosening: true` ones). A normal restore sends `reset: []`. Each listed session is told "your this-session loosenings were reset; ask again" at its first settle after the resume.
+- The shapes are identical in C's `restore.js`, ch-local's `session-table.js` and this export, held by the shared `restoreRows` vectors in `shared-runtime-wire/make-vectors.js` (C's), which this task's tests read:
+  - a row is exactly `{session: 32 hex, resume: 64 lowercase hex, state}`, and `state` exactly `{overrides, locks, formsLeft}`;
+  - a cap's value is within the settings tool's bounds (`maxOutputBytes` 1048576–268435456, `requestTimeout` 5000–120000, inclusive);
+  - a pack override's version is a plain semver (`/^\d{1,9}\.\d{1,9}\.\d{1,9}(-[0-9A-Za-z.-]{1,64})?$/`), always present, and a cap's is null.
+- Produces: `sessions.importTable({sessions, declines, reset})`, which C3's `startSessions` calls before `listen()`. A restored row waits for its session's `'session'` event after the resume, and is dropped if none comes within the reconnect window.
 
 - [ ] **Step 1: Write the failing tests.**
   - An export holds overrides, locks and forms left, and no key, user name, nonce or MAC key. It's under 64 KiB with every override set.
   - On import:
-    - a tightening applies only if at least as tight as today's default and the ceiling, checked as `set` checks a value;
+    - a cap marked `loosening: false` is tighten-only: it applies only if at least as tight as today's default and the ceiling, checked as `set` checks a value (the replay rule). A `loosening: false` cap that is looser than today's default is NOT applied, which C's handoff seed relies on;
     - a loosening waits for the session's client frame, then applies only if the ceiling allows it, may-elicit passes for that session, and today's default isn't tighter than its `over` (finding 6). Otherwise it's dropped, and the session is told "your this-session loosening of `<name>` was reset after a runtime restart; ask again";
     - a pack override whose version doesn't match is dropped and announced;
     - the declines load into the window, each validated as strictly as a state (N2): a known kind, an integer `at` no later than now, and at most 64 in all; a list that fails is dropped whole, and the window starts locked as after the 3 s safety net;
@@ -250,7 +255,8 @@ The reviewer split it (2026-11-15): B2 owns the runtime's export and import, C3 
     - a second `'restore'` is refused `CONTROL_RESTORE_DONE`, and changes nothing;
     - a state with a key other than the three, an override outside its shape, a duplicate name or more than 64 entries drops that row.
   - An empty `restore` starts the listener at once. No `restore` within 3 s starts it with an empty table, the window locked and one warning.
-  - Each restored session is told "restored after a runtime restart".
+  - Each restored session is told "restored after a runtime restart", and each session in `reset` is told its loosenings were reset.
+  - The tests read the shared `restoreRows` vectors: every accepted row imports, every refused row is dropped.
 - [ ] **Steps 2–5:** run (they fail), implement against a test double for C3's channel, run them plus sessions 06–10 (they pass), commit.
 
 ## Decided
