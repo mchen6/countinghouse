@@ -27,6 +27,8 @@ async function setup(mode) {
 }
 const read = async(b, p) => (await b.handle('readFile', [p, 'r'])).toString();
 
+const WIN = process.platform === 'win32';
+
 describe('fs-broker 19: the directory realpath cache', function() {
   this.timeout(20000);
 
@@ -37,12 +39,13 @@ describe('fs-broker 19: the directory realpath cache', function() {
     fsp.realpath = (p, ...rest) => { seen.push(String(p)); return realpath(p, ...rest); };
     try {
       for (let i = 0; i < 5; i++) await t.broker.handle('stat', ['/data/real1/f']);
-      assert.strictEqual(seen.filter((p) => p === path.join(t.dirs.data, 'real1')).length, 1, seen.join('\n'));
+      assert.strictEqual(seen.filter((p) => path.normalize(p) === path.join(t.dirs.data, 'real1')).length, 1, seen.join('\n'));
     } finally { fsp.realpath = realpath; await t.done(); }
   });
 
   ['unlink then symlink', 'rename over', 'rm then symlink'].forEach((how) => {
-    it(`a module's own change clears it: ${how}`, async () => {
+    // Windows refuses to rename a directory link over another (EPERM): rename over's premise.
+    (WIN && how === 'rename over' ? it.skip : it)(`a module's own change clears it: ${how}`, async () => {
       const t = await setup('enforce');
       try {
         await t.broker.handle('symlink', ['real1', '/data/link']);
