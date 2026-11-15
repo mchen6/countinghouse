@@ -152,6 +152,7 @@ one) as well as the ports it binds.
 | `test/sandbox/47-redis-purge.js` | 9738 |
 | `test/sandbox/49-message-bound.js` | 9739 |
 | `test/sandbox/50-module-stdio.js` | 9790 |
+| `test/fixtures/server-left-behind/failing.js` (run by `test/validation/16-no-server-left.js`) | 9791 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
