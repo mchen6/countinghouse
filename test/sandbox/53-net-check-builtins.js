@@ -306,7 +306,7 @@ describe('sandbox 53e: the security review of #227 (Object.prototype pollution, 
       // the denied endpoint by its loopback address, and the name (its
       // address to come later, by denyAddresses)
       const handle = require(${JSON.stringify(LOCKDOWN)}).install({moduleName: 'lockdown-probe', moduleRoot: process.cwd(), mode: 'enforce',
-        denied: {endpoints: [{host: '127.0.0.1', port: DENIED}, {host: ${JSON.stringify(NAME)}, port: DENIED + 1}], socketPaths: []}}, () => {});
+        denied: {endpoints: [{host: '127.0.0.1', port: DENIED}, {host: ${JSON.stringify(NAME)}, port: DENIED + 1}, {host: ${JSON.stringify(NAME)}, port: DENIED + 2}], socketPaths: []}}, () => {});
       // 1. Object.prototype.flowlabel and .port polluted: the handle's check
       // must still match (it used to throw inside and answer false)
       Object.prototype.flowlabel = -1;
@@ -342,6 +342,27 @@ describe('sandbox 53e: the security review of #227 (Object.prototype pollution, 
       let n = 0;
       Object.defineProperty(Object.prototype, 'host', {configurable: true, get() { return n++ === 0 ? 'elsewhere.test' : ${JSON.stringify(NAME)}; }});
       try { out.inherited = await attempt(() => net.connect({port: DENIED + 1, lookup})); } finally { delete Object.prototype.host; }
+      // The name check alone: a port denied by the name only (no address
+      // added), the module's lookup sending the name to 127.0.0.2 there
+      const third = await new Promise((resolve) => {
+        const s = net.createServer((c) => { hits.denied++; c.destroy(); });
+        s.listen(DENIED + 2, '127.0.0.2', () => resolve(s)).on('error', () => resolve(null));
+      });
+      // (by name: the denied name to the listener, any other, localhost
+      // included, nowhere: only a host read twice reaches it)
+      const second2 = (h) => (h === ${JSON.stringify(NAME)} ? '127.0.0.2' : '127.0.0.9');
+      const toSecondLoopback = (h, o, cb) => (o && o.all ? cb(null, [{address: second2(h), family: 4}]) : cb(null, second2(h), 4));
+      // 5a'. an inherited host that answers the check with undefined (so it
+      // sees localhost), then the denied name
+      let u = 0;
+      Object.defineProperty(Object.prototype, 'host', {configurable: true, get() { return u++ === 0 ? undefined : ${JSON.stringify(NAME)}; }});
+      try { out.inheritedUndefined = third != null ? await attempt(() => net.connect({port: DENIED + 2, lookup: toSecondLoopback})) : 'no port'; } finally { delete Object.prototype.host; }
+      // 5a''. an own denied host with an inherited port that answers
+      // undefined first, then the denied port
+      let p = 0;
+      Object.defineProperty(Object.prototype, 'port', {configurable: true, get() { return p++ === 0 ? undefined : DENIED + 2; }});
+      try { out.inheritedPort = third != null ? await attempt(() => net.connect({host: ${JSON.stringify(NAME)}, lookup: toSecondLoopback})) : 'no port'; } finally { delete Object.prototype.port; }
+      if (third != null) third.close();
       // 5b. a fullwidth spelling Node's lookup maps to the name
       out.fullwidth = await attempt(() => net.connect({host: '\\uff52edis-denied.test', port: DENIED + 1, lookup}));
       await new Promise((res) => setTimeout(res, 200));
