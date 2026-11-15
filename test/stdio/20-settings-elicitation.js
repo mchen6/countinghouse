@@ -187,9 +187,9 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   describe('production\'s conditions: a tested client, then ch-local\'s may-elicit (Task 4)', () => {
     const clients = require('../../lib/elicitation-clients');
     const control = require('../../lib/control-channel');
-    let entry;
-    beforeEach(() => { entry = clients.ALLOWLIST.find((e) => e.name === clients.CLAUDE_CODE); entry.versionFloor = '2.0.0'; });
-    afterEach(() => { entry.versionFloor = null; control.resetForTests(); });
+    // the shipped list is frozen: production's conditions over a tested copy
+    const TESTED = clients.ALLOWLIST.map((e) => (e.name === clients.CLAUDE_CODE ? Object.assign({}, e, {versionFloor: '2.0.0'}) : e));
+    afterEach(() => { control.resetForTests(); });
     // a fake ch-local over the control channel, answering may-elicit with `answer`
     const chLocal = (answer) => {
       let listener = null;
@@ -199,7 +199,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
       }});
       return asked;
     };
-    const prod = () => settingsTool.create({file, ceiling: () => ({state: 'none'}), applyChange: async () => {}});
+    const prod = () => settingsTool.create({file, ceiling: () => ({state: 'none'}), allowlist: TESTED, applyChange: async () => {}});
 
     it('ch-local says yes: a form; it was asked with the client\'s name and version only', async () => {
       const asked = chLocal({ok: true, mayElicit: true});
@@ -436,5 +436,75 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
     const clients = require('../../lib/elicitation-clients');
     assert.ok(Object.isFrozen(clients.ALLOWLIST) && clients.ALLOWLIST.every((e) => Object.isFrozen(e)));
     assert.throws(() => { 'use strict'; clients.ALLOWLIST[0].versionFloor = '0.0.0'; });
+  });
+});
+
+describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
+  const M = 1024 * 1024;
+  let dir;
+  let file;
+  let saved;
+  const history = () => (fs.existsSync(path.join(dir, 'history.jsonl')) ? fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const refused = async (p, code) => {
+    try { await p; } catch (e) { assert.strictEqual(e.code, code, `${e.code}: ${e.message}`); return e; }
+    assert.fail(`expected ${code}`);
+  };
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20d-'));
+    file = path.join(dir, 'settings.json');
+    saved = options.maxOutputBytes;
+    options.maxOutputBytes = 8 * M;
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+  });
+  afterEach(() => { options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); });
+  const withCeiling = (ceiling) => settingsTool.create({file, ceiling,
+    mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+    applyChange: async (st) => { options[st.name] = st.next; }});
+  const trusted = (o = {}) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, o)});
+
+  it('the lock reads the ceiling from the cache only: a miss, or a ceiling changed since, refuses with its line', async () => {
+    const calls = [];
+    let value = trusted({maxOutputBytes: 64 * M});
+    let miss = false;
+    const t = withCeiling((o) => { calls.push(o && o.cacheOnly === true); return o && o.cacheOnly && miss ? undefined : value; });
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    miss = true;
+    await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CHANGED_MEANWHILE');
+    assert.ok(calls.includes(true), 'the lock asked the cache only');
+    assert.ok(history().some((h) => h.change === 'not applied (ceiling changed meanwhile)'), JSON.stringify(history()));
+    miss = false;
+    confirmModule.resetForTests();
+    const b = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    value = trusted({maxOutputBytes: 64 * M});
+    const changing = withCeiling((o) => (o && o.cacheOnly ? trusted({maxOutputBytes: 12 * M}) : value));
+    await refused(changing.confirm('maxOutputBytes', '16MiB', {requestState: b.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CHANGED_MEANWHILE');
+    assert.strictEqual(options.maxOutputBytes, 8 * M);
+  });
+
+  it('a ceiling refusal at accept says which: untrusted, forbidden, or above', async () => {
+    const cases = [
+      [{state: 'untrusted', file: 'c', problem: 'group-writable'}, 'SETTING_CEILING_UNTRUSTED', 'not applied (ceiling untrusted)'],
+      [trusted({forbid: ['maxOutputBytes']}), 'SETTING_FORBIDDEN_BY_CEILING', 'not applied (forbidden by the ceiling)'],
+      [trusted({maxOutputBytes: 12 * M}), 'SETTING_ABOVE_CEILING', 'not applied (above the ceiling)']
+    ];
+    for (const [later, code, line] of cases) {
+      confirmModule.resetForTests();
+      settingsTool.resetForTests();
+      let current = {state: 'none'};
+      const t = withCeiling(() => current);
+      const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+      current = later;
+      await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), code);
+      assert.ok(history().some((h) => h.change === line), `${line}: ${JSON.stringify(history())}`);
+    }
+  });
+
+  it('the default apply\'s refusal does not call an unconfirmed change confirmed', async () => {
+    const t = settingsTool.create({file, ceiling: () => ({state: 'none'})});
+    options.maxOutputBytes = 16 * M;   // raised this start
+    const e = await refused(t.set('maxOutputBytes', '12MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
+    assert.doesNotMatch(e.message, /confirmed/i);
+    assert.match(e.message, /maxOutputBytes/);
   });
 });
