@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revision 2, after #252's review (findings 1–10). It builds on B1 (#246, #247, #251) and C1 part 2 (#248). The runtime⇄daemon messages (Task 6) are agreed with C (2026-11-15).
+**Status:** revision 3, after #252's re-check: F1, F3, F4, F7, F8, F10, N1 and N2 folded in. Tasks 0–4 may start; Task 5 includes N1's latch. It builds on B1 (#246, #247, #251) and C1 part 2 (#248). The runtime⇄daemon messages (Task 6) are agreed with C (2026-11-15).
 
 **Goal:** In shared mode, every change made in conversation is the session's own override. Nothing a session does reaches another session, `settings.json`, or the options every session shares. A terminal tightening binds every session at once, calls in flight included. The confirmation state is per session, with a per-user window that a prompt injection can't fan out past. Notices and `logging/setLevel` are per session. This lifts C's #248 guard on cap sets, confirmation retries and `logging/setLevel`, and only those.
 
@@ -29,7 +29,8 @@
 - **What counts as a loosening is judged against the session's current effective value** (§3).
 - **A terminal tightening binds every session:** a session override looser than the new default G is dropped at once, and that session is told "your this-session loosening of `maxOutputBytes` ended: the default was lowered to G". An override tighter than G is kept (§3).
 - **"At once" includes calls in flight:** the reply cap is checked at reply time, and the timeout is re-armed from the call's start (§3).
-- **May-elicit is the session's own:** `clientMayElicit` for the request's client, plus that session's `s.askConditions()` (null or `status: 'failed'` means no). It's asked at the form, at the confirmation and at a restore (finding 1).
+- **May-elicit is the session's own:** `clientMayElicit` for the request's client, plus that session's `s.askConditions()`, which passes only on `status: 'ok'` and `conditions: 'yes'` (null, `failed` or a plain `'no'` is no). It's asked at the form and at the confirmation (finding 1, F1). At a restore there's no request, so the check there is `askConditions()` alone.
+- **The per-session latch (N1):** any `client` frame for a session with `status: 'ok'` and `conditions: 'no'` locks all three kinds for that session's life, as ordinary decline locks (they export unchanged). A hook the client loaded can be deleted from disk, and a fresh `conditions?` would then answer yes while the client auto-answers the form; the latch makes one "no" final for the session. Without the latch, the retry stays refused until B4.
 - **Per session:** the staged change, its nonce, the decline lock per kind, and the forms shown. **Per user:** 3 declines or expiries per kind within 30 minutes stop forms of that kind for the next 30 minutes, across every session, and a form pending anywhere counts toward the 3 (§3, finding 7).
 - **The nonce MAC key stays per runtime, and the MAC payload binds the session id,** which comes from the connection (§3).
 - **Nothing of a session is written to a file** except the history line and the usage record, which carry its opaque id only (§6).
@@ -89,7 +90,7 @@
 - Modify: `lib/call-limits.js`: `of(holder, session = holder.sessionId ?? holder.session ?? null)` takes, field by field, the tighter of the holder's own values and the session's current ones. The session's current values are `limitsOf`, else the defaults.
 - Modify: the holders with no session of their own pass it main-side (finding 5): `sendCounted`'s reply cap (`of({limits: override}, session)`), `TOKEN_TTL_MS`, the peer broker's announced entries (from the announcing token entry's session) and `lib/job-sessions.js` `forRun` for a live session. The invoke message carries none.
 - Modify: `lib/session.js`: an index of in-flight `Session`s by session id, and `rearm()`, which re-arms at `start + of(this).requestTimeout`. It runs after a terminal tightening and after a session's own tightening.
-- Modify: `lib/validator-pool.js`: it grows its heap for a session's effective cap, through #222's resize, and never shrinks in release 1.
+- Modify: `lib/validator-pool.js`: it grows its heap for a session's effective cap, through #222's resize, and never shrinks in release 1. The growth is awaited before `sessionSettings.set` applies a raise, and a failed resize applies nothing (F4).
 - Modify: `lib/settings-tool.js` `applyControlSet`: after a terminal tightening, `dropLooser` runs, then `rearm` for every in-flight call, then Task 3's notice to each dropped session.
 - Test: `test/sessions/07-per-call.js` (server-free), and `test/sandbox/57-session-caps.js`, a spawned server on port 9793 in B's block, registered in `test/ports.md`.
 
@@ -98,7 +99,7 @@
   - A hop's reply and a peer channel's result are held to the session's current cap, after a terminal tightening mid-call (review focus 1).
   - A call's timer fires at the tighter timeout from its start, after a terminal tightening and after the session's own tightening.
   - A job of a live session takes `limitsOf`, and one of an ended session is bounded as in #251.
-  - The validators grow for a 9000 cap and don't shrink.
+  - The validators grow for a 9000 cap and don't shrink. A resize that fails leaves the session's value as it was (F4).
 - [ ] **Steps 2–5:** run (they fail), implement, run them plus sandbox 54, composition 18 and sessions 03–05 (they pass), commit.
 
 ### Task 3: notices and `logging/setLevel` per session (B1's Task 5)
@@ -127,11 +128,12 @@
 **Files:**
 - Modify: `lib/settings-tool.js`:
   - `set(name, value, by, ctx)` with `ctx.shared === true` and a cap name: a change no looser than `effective(session)` goes to `sessionSettings.set`. That means no file, no `options`, no `atStart`, no broadcast and no `applyConfirmed`. It writes a history line `{at, by, setting, old, new, change: 'this session', session}`;
-  - a loosening stays refused, with `SETTING_TERMINAL_ONLY_SHARED`, until Task 5;
+  - a loosening stays refused, with `SETTING_TERMINAL_ONLY_SHARED`, until Task 5, and so does a confirmation's retry (F3): Task 4 lifts sets only;
+  - the "asked and refused" history lines carry the session's id too, so `get` filters them as it filters changes (F8);
   - `get()` in shared mode shows the session's effective values, and only the history lines with no session or with this session's id (finding 8).
 - Modify: `lib/mcp/gateway.js`: C's guard is lifted for the two caps by name. Every other name stays refused (finding 2).
 - Modify: `lib/sessions.js`:
-  - after each change of a session's tightenings, `s.forget()` and then one `s.record(snapshot)` carrying every tightening of that session, so the shim's eviction can never drop a live one (finding 10);
+  - after each change of a session's tightenings, `s.forget()` and then one `s.record(snapshot)` carrying every tightening of that session, so the shim's eviction can never drop a live one (finding 10). The snapshot is sent again on the session's `'attach'`, since `s.record` is dropped while it's detached (F10);
   - at `'replay'`, each entry is checked as `set` checks a value (positive integers, not strings) and applied only if at least as tight as the default and the ceiling.
 - Test: `test/sessions/09-tightenings.js`, with two real sessions through `gateway.handle(…, {session: s})` over C1's listener and shim.
 
@@ -141,6 +143,9 @@
   - A's `get` returns no line with B's id (finding 8).
   - A's record is one snapshot of all its tightenings.
   - `'replay'` applies `{maxOutputBytes: 300}` and ignores `'300'`, `5000` (looser), an unknown name and `locale` (review focus 4).
+  - A confirmation's retry from a session is still refused (F3).
+  - A refused request's history line names its session, and B's `get` doesn't show A's (F8).
+  - A tightening made while A is detached reaches the shim on A's `'attach'` (F10).
 - [ ] **Steps 2–5:** run (they fail), implement, run them plus stdio 14 and 18–21 (they pass), commit.
 
 ### Task 5: the form and its retry, per session
@@ -150,6 +155,8 @@
   - `confirmations(session)`: one store per session, the `--stdio` session's being today's one. `forget(session)` at its end counts a pending form as an expiry;
   - a `UserWindow` per kind: declines and expiries within 30 minutes. Expiries are counted on a timer, at each form's own deadline, not at a later ask;
   - `stage` is refused when declines + expiries + forms pending anywhere reach 3, and an accept is refused once the kind has locked (finding 7);
+  - a form replaced within its own session counts as an expiry (F7);
+  - the per-session latch (N1): a `client` frame with `status: 'ok'` and `conditions: 'no'` locks all three kinds for the session, as ordinary locks;
   - the window starts locked for 30 minutes when no `restore` came within the 3 s safety net (Task 6).
 - Modify: `lib/settings-tool.js` in shared mode (finding 4):
   - a cap loosening is judged against `effective(session)`, and `staged.old` and `CHANGED_MEANWHILE` use it;
@@ -168,7 +175,9 @@
   - A form staged in A, retried from B with A's `requestState`, fails. After A ends, its pending form counts as an expiry (review focus 2).
   - A's form doesn't replace B's.
   - With 2 declines in the window and a form pending in B, a third session gets no form, and B's accept after the kind locks is refused (review focus 3).
-  - A session whose `askConditions` answers null or `failed` gets no form, at the form and at the confirmation.
+  - A session whose `askConditions` answers null, `failed` or a plain `'no'` gets no form, at the form and at the confirmation (F1).
+  - A form A replaces with another of its own counts as an expiry (F7).
+  - After one `client` frame with `conditions: 'no'`, A gets no form of any kind for its life, even when a later `conditions?` answers yes, and the locks export as ordinary ones (N1).
   - The form's text says "for this session" in both languages.
 - [ ] **Steps 2–5:** run (they fail), implement, run them plus stdio 18–21 and sessions 09 (they pass), commit.
 
@@ -209,7 +218,7 @@ The reviewer split it (2026-11-15): B2 owns the runtime's export and import, C3 
     - a tightening applies only if at least as tight as today's default and the ceiling, checked as `set` checks a value;
     - a loosening waits for the session's client frame, then applies only if the ceiling allows it, may-elicit passes for that session, and today's default isn't tighter than its `over` (finding 6). Otherwise it's dropped, and the session is told "your this-session loosening of `<name>` was reset after a runtime restart; ask again";
     - a pack override whose version doesn't match is dropped and announced;
-    - the declines load into the window;
+    - the declines load into the window, each validated as strictly as a state (N2): a known kind, an integer `at` no later than now, and at most 64 in all; a list that fails is dropped whole, and the window starts locked as after the 3 s safety net;
     - a row for a session the registry doesn't have, or one that never resumes, is ignored;
     - a second `'restore'` is refused `CONTROL_RESTORE_DONE`, and changes nothing;
     - a state with a key other than the three, an override outside its shape, a duplicate name or more than 64 entries drops that row.
