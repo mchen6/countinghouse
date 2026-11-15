@@ -22,7 +22,9 @@ All N sessions start together. Each makes one call of the pack's `ci_failure_tri
 
 So every call runs the pack's real modules, all 11 hops, and the runtime's remote path: the main thread's outbound MCP call, its credential injection and its response cap. It runs offline, with no `--debug`. What it leaves out is the round trip to GitHub itself.
 
-The pack is not in this repository. Give `--pack` an installed pack 1, 0.4.0 or later; the tool refuses anything older, because 0.1.0's scenario output fails its own schema (`coverage.historyRebuilt`). Copy the pack under `perf/apps/` first, so the measurement never runs from an install that something else is using. The runtime must have `--remoteOriginMap` (countinghouse after 2026-11-12). Validation 1's 7.1.2 reference rows were measured with an earlier stand-in for ch-access-github, with canned handlers and no remote. They don't include the remote path.
+The pack is not in this repository. It lives in its own repository and is installed by ch-local. Give `--pack` an installed pack 1, release 0.4.0 or later; the tool refuses anything older, or a prerelease, because 0.1.0's scenario output fails its own schema (`coverage.historyRebuilt`). Copy the pack under `perf/apps/` first, so the measurement never runs from an install that something else is using; don't commit that copy (see Running it).
+
+The stub counts every call that doesn't carry the run's token. The result's `remote` line gives that count, which should be 0: the credential injection is checked, not assumed. The runtime must have `--remoteOriginMap` (countinghouse after 2026-11-12). Validation 1's 7.1.2 reference rows were measured with an earlier stand-in for ch-access-github, with canned handlers and no remote. They don't include the remote path.
 
 ## No `--debug`
 
@@ -57,4 +59,4 @@ Other options:
 - `--withParts`: load the scenario's parts too in the shared layout, for a runtime that doesn't expand a pack in multi-key mode;
 - `--json <file>`.
 
-The shared layout's port comes from `test/helpers/test-env.js` (`testPort(9751)`, offset by `CH_TEST_PORT_BASE`).
+The shared layout's port comes from `test/helpers/test-env.js`: `testPort(9751)` is 9751, unless `CH_TEST_PORT_BASE` is set, in which case it is the first port of that block (the base, then the base plus one, and so on, in the order ports are asked for). The stub listens on a port the OS picks.
