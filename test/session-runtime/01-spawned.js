@@ -353,6 +353,8 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const back = await shim.session(r.socket, secret, undefined, {resume: t2});
     assert.strictEqual(back.welcome != null && back.welcome.session, id, `the same session, by the newest token: ${JSON.stringify(back.refused)}`);
     assert.notStrictEqual(back.welcome.resumeToken, t2, 'rotated again on the resume');
+    // the restored row made it busy once, never twice (#263 review)
+    assert.deepStrictEqual(r.told.filter((m) => m.type === 'idle' || m.type === 'busy').map((m) => m.type), ['busy']);
     back.c.end();
   });
 
