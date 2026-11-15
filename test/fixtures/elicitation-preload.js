@@ -6,7 +6,7 @@
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const clients = require(path.join(ROOT, 'lib', 'elicitation-clients'));
-const TESTED = clients.ALLOWLIST.map((e) => (e.name === clients.CLAUDE_CODE ? Object.assign({}, e, {versionFloor: '2.0.0'}) : e));
+const TESTED = clients.ALLOWLIST.map((e) => (e.name === clients.CLAUDE_CODE ? Object.assign({}, e, {tested: [{from: '2.0.0', before: '3.0.0'}]}) : e));
 const options = require(path.join(ROOT, 'lib', 'cli-options'));
 const tool = require(path.join(ROOT, 'lib', 'settings-tool'));
 const create = tool.create;
