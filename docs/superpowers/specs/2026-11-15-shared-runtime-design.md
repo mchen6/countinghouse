@@ -343,7 +343,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 ## 4a. Modules with per-session state (the maintainer's rule 3)
 
-Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store partitioned by session. Two points are **OPEN for Matt** and marked so below.
+Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store and files partitioned by session.
 
 - **The declaration.** In the module's `package.json`: `"countinghouse": {"state": "per-session"}`. Absent, or `"shared"`, means shared. Any other value refuses the load, naming it.
   - It sits beside `role` and `sessionDefaults`, so it's reviewed and pinned with the manifest like them (`manifestPins`). A reload that changes it is refused like any other pinned field.
@@ -354,7 +354,11 @@ Modules are shared by default: one worker per module, as today. A module that **
   - **The HTTP hosting profile:** has no sessions, and serves many users, so "shared" would mean shared across users. A per-session module's load is **refused** there with `MODULE_NEEDS_SESSIONS`, naming the module.
 - **The worker pool.** A per-session module's workers are keyed by (module name, session id), where today's are keyed by module name.
   - A worker starts on the session's first call into the module, a routed hop included.
-  - **When it stops: OPEN for Matt.** A stop drops the module's declared in-memory state, and the rule doesn't say when that's acceptable. The proposal: a live session's worker stops only at the session's end, or when the cap needs its slot (below). Then that session is told "this module's in-memory state was reset; its stored data was kept". No idle timer.
+  - **When it stops (the maintainer's decision).** A stop drops the module's in-memory state, so a session's worker stops only:
+    - at the session's end (its `bye`, or its reconnect window expiring); or
+    - when the cap needs its slot (below). That session is then told "this module's in-memory state was reset; its files were kept".
+
+    There's no idle stop: a worker isn't stopped for being idle.
   - Module code, the sandbox, the validators and the generation rule (`nextGeneration`) are the module's, shared by its session workers. Only the worker and the partition are per session.
 - **Hops and peers.** A hop is served by the worker of the call's own session, which the main thread knows from the call's token entry (section 2).
   - A per-session module is never reached outside a session: a call with no session is refused like an unknown device.
@@ -364,14 +368,12 @@ Modules are shared by default: one worker per module, as today. A module that **
 - **What the module sees: nothing new.** No session id reaches it: not in `options`, `workerData`, its environment, its argv, an error's text or a job's data. Isolation comes from the worker and the partition, so it learns nothing about the user, or about other sessions, that it couldn't learn before.
 - **The partition.**
   - **Store:** keys under their own prefix, `ms:<name>:<session id>:`, never inside the shared module's `m:<name>:`. `<name>` is URI-encoded as `prefixFor` encodes it, and each prefix keeps its trailing colon, so a purge of `ms:foo:` can't reach `ms:foobar:`. So `redis-namespace.js`'s rule that no prefix starts another holds, and a `--stdio` run of the same module can't reach a session's keys. A purge of the module covers both prefixes. `unprefixError` strips the session prefix as it strips `m:<name>:`.
-  - **Files: OPEN for Matt.** Does "store partitioned by session" cover `/data` too, and is it deleted at the session's end? If it does:
+  - **Files (the maintainer's decision):** the partition covers `/data` as well as the store, with the same lifetime (below).
     - the path is `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`, made 0700 by `lib/module-data.js`;
     - the fs broker maps the worker's `/data` and `/tmp` there on the main thread, and the fs scrub strips that root from paths and error texts;
     - the worker is given the root `moduleDataPath`, as today, never the session path.
-
-    If it doesn't, `/data` stays the module's one shared area, and only `/tmp` is per session.
   - **Lifetime.**
-    - A session's partition is removed only on its `bye`, or when its reconnect window expires. It's never removed on `Registry.close()` (a runtime stopping), which ends sessions without their leaving.
+    - A session's partition, store and files alike, survives a runtime restart while the session resumes. It's removed only on the session's `bye`, or when its reconnect window expires. It's never removed on `Registry.close()` (a runtime stopping), which ends sessions without their leaving.
     - A restarted runtime keeps the sessions' ids (**the restored ids**): a restored row's `session` is the old id, and the registry rebuilds each restored session with it, unconnected, with its resume hash (section 6). A rebuilt session's reconnect window **starts at the restore**, so a shim that never comes back has its session, and its partition, removed once that window expires, not at the next restart.
     - **The sweep:** before the listener accepts, the runtime lists the partitions present (directories and `ms:` keys) and removes those whose ids weren't restored.
     - After a daemon death, nothing is restored, so the sweep removes every partition. Each reconnecting session is told "per-session state was reset", as §6 tells loosenings.
@@ -381,7 +383,7 @@ Modules are shared by default: one worker per module, as today. A module that **
   - **The fs quota** applies across all of a module's partitions together, not to each one, so a module can't multiply its disk by its sessions.
 - **The memory cost.** Each live session worker costs one lean worker's resident baseline: **to be measured** (a register row for A: one idle lean worker's RSS per extra worker, on the release's Node and platforms, with a small module loaded). So the cap bounds it at 16 times that, above today's shared workers. The cap is the operator's to lower, never a client's to raise.
 - **Tests** (R1):
-  - two sessions calling one per-session module see separate store keys (and `/data`, if Matt says so), and a shared module sees one;
+  - two sessions calling one per-session module see separate store keys and separate `/data`, and a shared module sees one;
   - a hop runs in the calling session's worker, and a token past its session's end is refused;
   - a restart with a restored table keeps those partitions and sweeps the rest;
   - `close()` removes none, and the window's expiry removes that session's;
@@ -711,7 +713,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 **R1. Per-session modules** (countinghouse, §4a; needs the restored ids of §6 and B2):
 - the manifest field and its pin, and the HTTP refusal;
 - the pool keyed by session, and the hop and job checks;
-- the `ms:` prefix and its purge, and the fs partition if Matt says so;
+- the `ms:` prefix and its purge, and the fs partition;
 - the lifetime, the sweep and the announcements;
 - the cap and `SESSION_WORKERS_BUSY`.
 The tests are §4a's. The owner is assigned by the Reviewer.
