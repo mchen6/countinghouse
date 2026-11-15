@@ -42,7 +42,7 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.deepStrictEqual(settings.overridesOf(A), [{name: 'maxOutputBytes', value: 2 * MiB, loosening: false, over: null, version: null}]);
   });
 
-  it('a ceiling lowered and raised again never brings back the looser value (review focus 5; #268 review 1)', () => {
+  it('a ceiling seen lowered and raised again never brings back the looser value (review focus 5; #268 review 1)', () => {
     loosen(A, 'maxOutputBytes', 16 * MiB);
     ceiling = {state: 'trusted', ceiling: {maxOutputBytes: 12 * MiB}};
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 12 * MiB);
@@ -73,16 +73,46 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.strictEqual(settings.effective(A, 'requestTimeout'), 10000, 'a tightening still holds');
   });
 
-  it('an unmarked tightening is held to the default when it drops; a loosening confirmed over a higher default ends (#268 review 3)', () => {
+  it('an unmarked tightening is bounded by the default while it is lower; a loosening confirmed over a higher default is bounded by it (#268 review 3)', () => {
     settings.set(A, 'maxOutputBytes', 6 * MiB);
     defaults.maxOutputBytes = 4 * MiB;
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB);
     defaults.maxOutputBytes = 8 * MiB;
-    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB, 'never looser than it was held to');
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 6 * MiB, 'its own tightening again, never above the default');
     loosen(B, 'maxOutputBytes', 16 * MiB);   // over 8 MiB
     defaults.maxOutputBytes = 4 * MiB;
-    assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 4 * MiB);
-    assert.strictEqual(settings.limitsOf(B), null, 'the loosening is gone');
+    assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 4 * MiB, 'bounded; a terminal tightening also drops it (dropLooser)');
+  });
+
+  it('a stale or unknown ceiling at a read bounds the value and leaves the store intact (#268 re-check, a)', () => {
+    loosen(A, 'maxOutputBytes', 16 * MiB);
+    ceiling = undefined;   // the cache is stale
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 8 * MiB);
+    ceiling = {state: 'none'};
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 16 * MiB, 'the loosening was never reset by the stale read');
+    assert.strictEqual(settings.overridesOf(A)[0].value, 16 * MiB);
+  });
+
+  it('an idle session is clamped when a lower ceiling is seen, by any read or the settings tool\'s re-read (#268 re-check, a)', () => {
+    loosen(A, 'maxOutputBytes', 16 * MiB);
+    ceiling = {state: 'trusted', ceiling: {maxOutputBytes: 12 * MiB}};
+    settings.effective(B, 'maxOutputBytes');   // B's read sees the change; A is never read meanwhile
+    ceiling = {state: 'trusted', ceiling: {maxOutputBytes: 64 * MiB}};
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 12 * MiB);
+    // the settings tool's re-read says it the same way
+    loosen(B, 'requestTimeout', 90000);
+    settings.ceilingSeen({state: 'trusted', ceiling: {requestTimeout: 60000}});
+    ceiling = {state: 'none'};
+    assert.strictEqual(settings.effective(B, 'requestTimeout'), 60000);
+  });
+
+  it('over is never below the default now; a default that isn\'t a number throws (#268 re-check, b, c)', () => {
+    settings.set(A, 'maxOutputBytes', 16 * MiB, {loosening: true, over: 1});
+    assert.strictEqual(settings.overridesOf(A)[0].over, 8 * MiB);
+    defaults.maxOutputBytes = 4 * MiB;
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB, 'over 8 MiB, so a lower default bounds it');
+    defaults.maxOutputBytes = 'lots';
+    assert.throws(() => settings.effective(A, 'maxOutputBytes'), /no default for maxOutputBytes/);
   });
 
   it('a terminal tightening drops the overrides looser than it, and says whose', () => {
