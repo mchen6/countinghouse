@@ -35,6 +35,16 @@
             "output": {
               "schema": "/sendService/sendAsValue/output"
             }
+          },
+          {
+            "name": "call",
+            "description": "Calls one of hop-input-callee's sink actions with the given input; answers what it answered, its length and digest, or the rejection (test/sandbox/49).",
+            "input": {
+              "schema": "/sendService/call/input"
+            },
+            "output": {
+              "schema": "/sendService/call/output"
+            }
           }
         ]
       }

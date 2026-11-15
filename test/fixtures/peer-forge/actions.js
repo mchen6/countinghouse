@@ -6,8 +6,12 @@
 // channel's own port is not: the module hooks MessagePort.prototype
 // .postMessage, takes the channel's port from the runtime's own invoke on
 // it, and posts its own invoke there for a device the channel was not
-// granted. The callee checks the grant before anything else (no token is
-// needed to be refused).
+// granted. Since lean worker step 4 (the review of #202) the port carries an
+// invoke's id alone: its target is the caller's announcement to the main
+// thread, which the module did not make, so the callee's match finds none
+// and the invoke is refused CALL_TOKEN_INVALID; the device it names is never
+// read. (An announcement naming a device the channel's callee does not host
+// is refused PEER_NOT_GRANTED: composition 18's unit cases.)
 const SERVICE = 'urn:countinghouse-test:serviceID:dynService';
 const outcome = (e, d) => (e != null ? `error: ${e.code || e.message}` : `ok: ${JSON.stringify(d)}`);
 
