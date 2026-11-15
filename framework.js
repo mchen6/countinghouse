@@ -393,17 +393,12 @@ function serve() {
 // loads, so its addresses are denied at the worker's handle guards too
 // (#207); bounded, never rejecting, and not under --moduleSandbox off. It
 // runs beside the id index, not after it. A later refresh that adds an
-// address tells every running module worker.
+// address tells every lockdown worker, a validation's too.
 function deniedResolved() {
   if (options.moduleSandbox === 'off' || options.store === 'local') return Promise.resolve();
-  var config = require('./lib/module-sandbox-config');
-  config.onDeniedChange(function(change) {
-    Object.values(mm.modules || {}).forEach(function(wm) {
-      if (wm == null || typeof(wm.sendMessageToWorker) !== 'function') return;
-      try { wm.sendMessageToWorker({command: 'denied-addresses', addresses: change.addresses, port: change.port}); } catch (e) { /* a worker ending */ }
-    });
-  });
-  return config.refreshDenied(options.redisUrl).then(function() {}, function() {});
+  // (every lockdown worker is told by module-sandbox-config's own set:
+  // lib/module-manager.js tracks each at its set-options)
+  return require('./lib/module-sandbox-config').refreshDenied(options.redisUrl).then(function() {}, function() {});
 }
 
 var denied = deniedResolved();
