@@ -872,35 +872,59 @@ describe('module-loading 24: the validator pool', function() {
       return out;
     };
 
-    it('with no ready spare, a fresh replacement warms its slot\'s home modules, and only those, before it takes a call', async () => {
-      const p = newPool();
-      try {
-        await warmed(p);
-        const [aName, bName] = namesHomedAt(0, 2, 2);
-        const [cName] = namesHomedAt(1, 2, 1);
-        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
-        const b = moduleWith({type: 'object'}, {}, {type: 'object'}, p, bName);
-        const c = moduleWith({type: 'object'}, {}, {type: 'object'}, p, cName);
-        for (const m of [a, b, c]) assert.strictEqual(await p.warm(m.key), null);
-        await warmed(p);
-        // no spare at all: the pool's spare taken out (a successor would boot
-        // in under the stall's 300 ms on a fast machine, and take the place)
-        const spare = p.spare;
-        p.spare = null;
-        spare.ending = true;
-        await spare.worker.terminate();
-        // the home of a and b stalls past its deadline: no ready spare, so a
-        // fresh replacement takes slot 0
-        assert.strictEqual(codeOf(await p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, 'u_stall')), 'VALIDATION_TIMEOUT');
-        assert.ok(p.slots[0].replacement, 'a fresh replacement in slot 0');
-        await warmed(p);
-        assert.strictEqual(p.slots[0].compiled.get(a.key), 'all');
-        assert.strictEqual(p.slots[0].compiled.get(b.key), 'all');
-        assert.strictEqual(p.slots[0].compiled.get(c.key), undefined, 'c is homed on slot 1');
-      } finally {
-        p.close();
-      }
-    });
+    // Both ways a stalled check is refused (lib/validator-pool.js onDeadline):
+    // on time, its validator is failed at once; started late (any time after
+    // it was queued, its wait using part of its deadline), it is refused as a
+    // wait, and its validator is failed a full budget after its start. Either
+    // way slot 0 is replaced within one budget of the refusal, so the case
+    // waits for that, never assumes it happened by the answer (#237: CI took
+    // the late way on a docs-only change). The late way is also forced:
+    // send() delayed 100 ms past the queueing.
+    for (const late of [false, true]) {
+      it(`with no ready spare, a fresh replacement warms its slot's home modules, and only those, before it takes a call${late ? ' (the check started late)' : ''}`, async () => {
+        const p = newPool();
+        try {
+          await warmed(p);
+          const [aName, bName] = namesHomedAt(0, 2, 2);
+          const [cName] = namesHomedAt(1, 2, 1);
+          const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+          const b = moduleWith({type: 'object'}, {}, {type: 'object'}, p, bName);
+          const c = moduleWith({type: 'object'}, {}, {type: 'object'}, p, cName);
+          for (const m of [a, b, c]) assert.strictEqual(await p.warm(m.key), null);
+          await warmed(p);
+          // no spare at all: the pool's spare taken out (a successor would boot
+          // in under the stall's 300 ms on a fast machine, and take the place)
+          const spare = p.spare;
+          p.spare = null;
+          spare.ending = true;
+          await spare.worker.terminate();
+          if (late) {
+            const send = p.send.bind(p);
+            p.send = (slot, req) => {
+              for (const until = Date.now() + 100; Date.now() < until;) { /* the check starts late */ }
+              p.send = send;
+              return send(slot, req);
+            };
+          }
+          // the home of a and b stalls past its deadline: no ready spare, so a
+          // fresh replacement takes slot 0, within one budget of the refusal
+          const home = p.slots[0];
+          assert.strictEqual(codeOf(await p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, 'u_stall')), 'VALIDATION_TIMEOUT');
+          for (const until = Date.now() + TIMEOUT_MS + 2000; p.slots[0] === home && Date.now() < until;) await new Promise((r) => setTimeout(r, 10));
+          assert.notStrictEqual(p.slots[0], home, 'slot 0 replaced within one budget of the refusal');
+          assert.ok(p.slots[0].replacement, 'a fresh replacement in slot 0');
+          // its warm-up done: the slots ready and idle (not warmed(), which also
+          // waits for a ready spare, and this pool has none)
+          for (const until = Date.now() + 30000; !(p.slots.every((x) => x.ready && x.background.size === 0)) && Date.now() < until;) await new Promise((r) => setTimeout(r, 20));
+          assert.ok(p.slots.every((x) => x.ready && x.background.size === 0), 'the replacement warmed up within 30 s');
+          assert.strictEqual(p.slots[0].compiled.get(a.key), 'all');
+          assert.strictEqual(p.slots[0].compiled.get(b.key), 'all');
+          assert.strictEqual(p.slots[0].compiled.get(c.key), undefined, 'c is homed on slot 1');
+        } finally {
+          p.close();
+        }
+      });
+    }
 
     // #217's review: the attacker's slow input pinned on the victim module's
     // home (after its warm, the home is where its action is compiled, so a
