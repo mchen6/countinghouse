@@ -261,7 +261,11 @@ directories, is another path and is not refused. A module cannot make one
 (a `link` with either end outside its roots is refused, and under
 `enforce` a module whose `/data` or `/tmp` holds one does not start); the
 limit is a link that an operator, or other software on the machine, left
-where a module may read. The one exception is the module's own `/app`, `/data` and `/tmp`, by
+where a module may read. A pack loaded in place may come with a credentials
+file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+that file is no option of the runtime's, so it is not a protected path by
+itself; ch-local writes it under `run/` in its home, which is protected as
+a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
 their real paths at spawn. A listing never shows them, and neither they nor
 any directory above them can be renamed or removed. The install directory is
 the exception: it is countinghouse's public code and stays readable under
