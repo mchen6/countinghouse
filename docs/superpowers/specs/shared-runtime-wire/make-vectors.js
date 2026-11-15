@@ -43,7 +43,9 @@ const hello = json({protocol: 1, nc: b64(nc)});
 const prove = json({ns: b64(ns), ms: b64(ms)});
 const auth = json({mc: b64(mc)});
 const authResume = json({mc: b64(mc), resume: 'rt_3q2+7w=='});
-const welcome = json({session: 's_0f1e2d3c4b5a6978', resumeToken: 'rt_AAECAwQFBgcICQoLDA0ODw==', runtimeVersion: '8.0.0', maxToRuntime: 10485760, maxToShim: 268439552});
+const welcome = json({session: 's_0f1e2d3c4b5a6978', resumeToken: 'rt_AAECAwQFBgcICQoLDA0ODw==', runtimeVersion: '8.0.0', maxToRuntime: 8388608 + 4096, maxToShim: 2 * 268435456 + 1048576});
+// maxToRuntime: the default --maxRequestBody (8 MiB) + 4096; maxToShim: twice
+// 256 MiB (no ceiling) + 1 MiB, as section 1 has them
 const refused = json({code: 'BAD_PROOF', message: 'the client\'s proof did not match'});
 const request = '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"x","arguments":{"é":"✓"}}}';
 const reply = '{"jsonrpc":"2.0","id":7,"result":{"content":[],"resultType":"complete"}}';
@@ -128,6 +130,11 @@ const out = {
     refused: [`${hex(secret).toUpperCase()}`, `${hex(secret)}\r\n`, `${hex(secret)}\n\n`, hex(secret).slice(2), ` ${hex(secret)}`, ''],
     refusedRule: 'anything but exactly 64 lowercase hex characters with at most one trailing newline, and a file that is a symlink, not owned by the user, or not 0600 (on Windows, not private by the privateProblem rule)'
   },
+  tooLargeAnswer: {
+    rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',
+    json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}'
+  },
+  seqRule: 'the shim counts seq from 1 for its whole life; it never restarts on a reconnect or a resume',
   crashAnswer: {
     rule: 'exact apart from the id, which is the request\'s own',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse\'s runtime restarted before answering; the call may have run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":true}}}'

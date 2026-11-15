@@ -1,6 +1,6 @@
 # One shared runtime per user, many client sessions
 
-Status: revision 5. Revision 3 was READY after the security review. Revision 4 followed Matt's decision (2026-11-15): the shim is a small native program, written in Rust by implementer A, and this document fixes its wire contract so the two sides can be built and tested apart (section 1, and the vectors in `shared-runtime-wire/`). Revision 5 makes the contract review's seven edits. No code yet.
+Status: revision 5, FROZEN (contract 2). Revision 3 was READY after the security review. Revision 4 followed Matt's decision (2026-11-15): the shim is a small native program, written in Rust by implementer A, and this document fixes its wire contract so the two sides can be built and tested apart (section 1, and the vectors in `shared-runtime-wire/`). Revision 5 makes the contract review's seven edits. No code yet.
 Author: implementer C, 2026-11-15, against countinghouse master 842c5525 and ch-local main.
 It spans countinghouse (the runtime: sessions, per-session settings, the session transport) and ch-local (the daemon, the shim, the lifecycle).
 
@@ -154,7 +154,12 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 **Messages (`M`).**
 - **What the cap bounds.** The cap is on the whole `M` payload: the 2 header-length bytes, the header and the line.
   - `maxToRuntime` is the runtime's `--maxRequestBody` plus 4096.
-  - `maxToShim` is twice the largest output cap a session can have (the ceiling's `maxOutputBytes`, or 256 MiB without one) plus 1 MiB. A tool result carries its output twice, as `content` text and as `structuredContent` (`lib/mcp/gateway.js`), plus its envelope.
+  - `maxToShim` is twice the largest output cap a session can have (the ceiling's `maxOutputBytes`, or 256 MiB without one) plus 1 MiB. It's a **hard frame limit**: a receiver closes the connection on an `M` over it.
+  - **The runtime never writes an `M` over `maxToShim`.** The output cap counts the result's serialized bytes, not its JSON: a control character becomes 6 bytes, and the output appears twice (as `content` text and as `structuredContent`). So the size of a line can't be bounded from the cap in advance. If a line would be over `maxToShim`, the runtime writes this instead, with that `seq`:
+
+    ```json
+    {"jsonrpc":"2.0","id":<id>,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}
+    ```
   - The shim streams an `M` payload to stdout as it reads it. It never has to hold one whole.
 - **A malformed `M` closes the connection:**
   - a payload under 2 bytes;
@@ -163,14 +168,14 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
   - a header field of the wrong type.
 - **Client to runtime.** The shim reads the client's stdin as lines. It splits only on the byte 0x0a, which JSON text never carries unescaped, and bounds each line by `--maxRequestBody` (`maxToRuntime` − 4096).
   - It parses each line only enough to tell what it is.
-  - **A request** (an object with an `id`) gets a header `{"seq": n}`. `n` is the shim's own counter for the connection, from 1, below 2^53. The shim keeps `n`, the id's original bytes and the method.
+  - **A request** (an object with an `id`) gets a header `{"seq": n}`. `n` is the shim's own counter, from 1, below 2^53. It counts for the shim process's whole life and **never restarts on a reconnect or a resume**. So a reply left over from an earlier connection can't carry the `seq` of a newer request. The shim keeps `n`, the id's original bytes and the method.
   - **A batch** (an array) gets `{"seq": n}` too, and the shim keeps the original bytes of each member's id.
   - **A notification**, or a line that isn't JSON, gets no header (header length 0). A line that isn't JSON is answered by the runtime with a parse error, as stdio does today.
   - The line's **original bytes** follow, unchanged and without the newline. The shim keeps a legacy `initialize` line for replay.
 - **Runtime to client.** The answer to a request or a batch has the header `{"seq": n}`, the `n` it came with. A notification, or a message the runtime sends of its own, has no header.
   - The shim writes the bytes after the header, then one newline. It never parses a result body, which can be up to 256 MiB.
   - **Ids are matched by `seq`, never by comparing ids.** So `7`, `7.0`, `1e2` and integers past 2^53 need no rule here. The reply's own `id` is what the runtime writes, as stdio does today.
-  - **A reply whose `seq` the shim doesn't hold** (already answered, or its connection's predecessor's) is written to the client anyway, and nothing is recorded. The exception is the shim's own initialize replay, whose answer it drops.
+  - **A reply whose `seq` the shim doesn't hold** (already answered, or sent to an earlier connection) is written to the client anyway, and nothing is recorded. Since `seq` never repeats in a shim's life, it never clears a newer request. The exception is the shim's own initialize replay, whose answer it drops.
 - **So a client can't produce a `C` frame,** and traffic stays byte-exact: nothing is re-stringified or parsed twice.
 
 **Control (`C`).** An unknown `op` is ignored, so either side can add one within a contract version.
