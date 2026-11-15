@@ -73,7 +73,8 @@ it.
 |---|---|---|---|
 | Virtual paths, file broker, bridge | yes | yes | yes |
 | Link rules, main-thread protection | yes | yes | yes |
-| Outside the namespace, writes to `/app` and to `r` paths | pass through | pass through, logged | refused |
+| Reads outside the namespace | pass through | pass through, logged | refused |
+| Writes outside the module's own area (outside the namespace, `/app`, `r` paths) | pass through | refused (`EACCES`), recorded | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
 
@@ -93,11 +94,25 @@ drive-qualified path as outside the namespace. Under `enforce` such a path is
 refused (ENOENT): it fails closed. The module gets its own `/data` and
 `/tmp`.
 
-**Only `enforce` protects files.** Under `audit` and `off` access outside a
-module's namespace passes through to the host, so `auth.json` and other
-modules' files stay readable: those modes give modules virtual paths and give
-operators a report, not protection. In `audit` every check runs, a violation
-is logged once per (module, rule, target) and the operation goes ahead. In
+**Under `audit` a module changes nothing outside its own area** (Matt,
+2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
+declared `rw`. Every write-class operation aimed anywhere else is refused
+`EACCES` and recorded as a denial: an open for writing, a create or truncate,
+`writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
+`link` with either end outside (a hard link's source included), a symlink
+made outside, `chmod`, `chown`, `utimes`, `truncate`, and `copyFile` or `cp`
+to an outside destination; writes to `/app` and to a path declared `r` too.
+A symlink made inside the namespace that points outside it is refused
+`EPERM`, in every mode, as before.
+
+**Only `enforce` hides files.** Under `audit` and `off` reads outside a
+module's namespace pass through to the host, except the always-denied set
+and the protected paths above: under `audit` a module can read any other
+file the OS user can -- the operator's project directory, the current
+directory, `~/.npmrc`, `~/.ssh` -- and each read is logged. So don't run
+untrusted packs under `audit` on a machine that holds secrets: use
+`enforce`. In `audit` every check runs, a violation is logged once per
+(module, rule, target), and a read goes ahead. In
 `enforce` a violation is blocked with the error Node itself would throw
 (`ENOENT`, `EROFS`, `ENOSPC`, `ERR_ACCESS_DENIED`, `MODULE_NOT_FOUND`) and
 logged. Resource limits apply in `audit` as well, because logging a runaway
@@ -211,7 +226,7 @@ A module sees its own namespace, in every mode:
 
 | Virtual path | Host path | Access |
 |---|---|---|
-| `/app` | the module's install directory | read-only under `enforce` (`EROFS`); writes logged under `audit` |
+| `/app` | the module's install directory | read-only: `EROFS` under `enforce`, `EACCES` under `audit` |
 | `/data` | `<moduleDataPath>/<name>/data` | read-write, quota, kept across restarts |
 | `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as the operator's policy narrows it; no quota |
@@ -652,9 +667,9 @@ and the short list of what the in-process sandbox cannot give.
   refuses `baseUrl`, `proxy`, `har` and the like, so that the host checked is
   the host contacted; redirects are checked hop by hop.
 - **Under `audit` and `off`, nothing outside the namespace is hidden.** A
-  module may read outside paths, the loader's lookups answer truthfully, and
-  a module may learn whether a host path exists, and its type. Under
-  `enforce` those lookups answer missing.
+  module may read outside paths (under `audit` it may not write them), the
+  loader's lookups answer truthfully, and a module may learn whether a host
+  path exists, and its type. Under `enforce` those lookups answer missing.
 - **Host processes can race the checks.** A process outside countinghouse
   writing inside a module's data directory or a declared path at the same
   moment can swap a path between the broker's check and the operation. Under
