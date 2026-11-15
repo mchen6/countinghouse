@@ -11,10 +11,6 @@ const settingsTool = require('../../lib/settings-tool');
 
 const MiB = 1024 * 1024;
 
-// On Windows the sandbox setting offers only audit, until enforce holds
-// there (#195, lib/sandbox-platform.js).
-const WIN = process.platform === 'win32';
-const SANDBOX = WIN ? 'audit' : 'enforce';
 
 describe('stdio 14: countinghouse_settings', () => {
   let home;
@@ -45,8 +41,8 @@ describe('stdio 14: countinghouse_settings', () => {
     const byName = Object.fromEntries(got.settings.map((s) => [s.name, s]));
     assert.deepStrictEqual(byName.maxOutputBytes, {name: 'maxOutputBytes', value: 8 * MiB, default: 8 * MiB, bounds: {min: MiB, max: 256 * MiB}, guarding: true, applies: 'now'});
     assert.deepStrictEqual(byName.requestTimeout, {name: 'requestTimeout', value: 30000, default: 30000, bounds: {min: 5000, max: 120000}, guarding: true, applies: 'now'});
-    assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: WIN ? ['audit'] : ['enforce', 'audit']});
-    assert.strictEqual(byName.moduleSandbox.default, SANDBOX);
+    assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: ['enforce', 'audit']});
+    assert.strictEqual(byName.moduleSandbox.default, 'enforce');
     assert.strictEqual(byName.moduleSandbox.applies, 'next start');
     assert.strictEqual(byName.locale.guarding, false);
     assert.deepStrictEqual(got.history, []);
@@ -58,7 +54,7 @@ describe('stdio 14: countinghouse_settings', () => {
     await tool.set('locale', 'zh');
     await tool.set('locale', 'en');
     // the current value again: a no-op, neither written nor recorded
-    await tool.set('moduleSandbox', SANDBOX);
+    await tool.set('moduleSandbox', 'enforce');
     await tool.set('autoUpgrade', 'off');
     await tool.set('upgradeCheck', 'weekly');
     assert.deepStrictEqual(await tool.set('pack.ci-failure-triage', 'off'), {name: 'pack.ci-failure-triage', old: 'on', new: 'off', applies: 'now'});
@@ -104,7 +100,7 @@ describe('stdio 14: countinghouse_settings', () => {
   });
 
   it('the sandbox and automatic upgrades are loosened from a terminal only: SETTING_LOOSENS_A_GUARD, naming the command', async () => {
-    const loosenings = [['autoUpgrade', 'on']].concat(WIN ? [] : [['moduleSandbox', 'audit']]);
+    const loosenings = [['autoUpgrade', 'on'], ['moduleSandbox', 'audit']];
     for (const [name, value] of loosenings) {
       const err = await refused(tool.set(name, value), 'SETTING_LOOSENS_A_GUARD');
       assert.match(err.message, new RegExp(`Changing ${name} to ${value} would loosen a guarding setting, which can only be done from a terminal.*run \`ch-local settings set ${name} ${value}\``));
@@ -150,8 +146,7 @@ describe('stdio 14: countinghouse_settings', () => {
 
     it('a ceiling that cannot be trusted refuses every loosening, naming the file and why; tightening still works', async () => {
       const t = withCeiling({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'the file is not owned by root'});
-      // (moduleSandbox audit is no loosening on Windows until #197 lands, where audit is the only value)
-      for (const [name, value] of [['maxOutputBytes', '64MiB'], ['autoUpgrade', 'on']].concat(process.platform === 'win32' ? [] : [['moduleSandbox', 'audit']])) {
+      for (const [name, value] of [['maxOutputBytes', '64MiB'], ['autoUpgrade', 'on'], ['moduleSandbox', 'audit']]) {
         const err = await refused(t.set(name, value), 'SETTING_CEILING_UNTRUSTED');
         assert.match(err.message, /ceiling file \/etc\/countinghouse\/ceiling\.json cannot be trusted \(the file is not owned by root\)/);
       }

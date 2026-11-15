@@ -60,7 +60,7 @@ module.exports = [
   // An ES-module fixture: its package.json says "type": "module", which is
   // what test/fs-broker/12-identity.js tests.
   {
-    files: ['test/fixtures/esm-probe/**/*.js'],
+    files: ['test/fixtures/esm-probe/**/*.js', 'test/fixtures/win-probe/lib/esm-pkg/*.js'],
     ignores: ['test/fixtures/esm-probe/node_modules/**'],
     languageOptions: {sourceType: 'module'}
   },

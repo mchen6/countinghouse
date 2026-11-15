@@ -4,6 +4,11 @@ const os = require('os');
 const path = require('path');
 const md = require('../../lib/module-data');
 
+// Windows has no mode bits (every directory reports 0666 there; its ACLs are
+// another matter): the mode cases check the directories exist, nothing more.
+const WIN = process.platform === 'win32';
+const modeIs = (p, mode, msg) => (WIN ? assert.ok(fs.statSync(p).isDirectory(), p) : assert.strictEqual(fs.statSync(p).mode & 0o777, mode, msg));
+
 describe('fs-broker 01: module data directories', () => {
   it('accepts npm-style names, scoped or not', () => {
     ['weather', 'sandbox-probe', '@acme/x', 'a.b_c~d', 'Legacy-Name'].forEach((n) => assert.strictEqual(md.safeName(n), true, n));
@@ -16,8 +21,10 @@ describe('fs-broker 01: module data directories', () => {
 
   it('lays scoped names out as node_modules does', () => {
     const d = md.dirsFor('/srv/data', '@acme/x');
-    assert.deepStrictEqual(d, {root: '/srv/data/@acme/x', data: '/srv/data/@acme/x/data', tmp: '/srv/data/@acme/x/tmp'});
-    assert.strictEqual(md.dirsFor('/srv/data', 'x').root, '/srv/data/x');
+    // the host's form of the path (D:\srv\data\... on Windows)
+    const at = (...p) => path.join(path.resolve('/srv/data'), ...p);
+    assert.deepStrictEqual(d, {root: at('@acme', 'x'), data: at('@acme', 'x', 'data'), tmp: at('@acme', 'x', 'tmp')});
+    assert.strictEqual(md.dirsFor('/srv/data', 'x').root, at('x'));
   });
 
   it('leaves an existing --moduleDataPath\'s mode alone', async () => {
@@ -27,8 +34,8 @@ describe('fs-broker 01: module data directories', () => {
       fs.mkdirSync(store);
       fs.chmodSync(store, 0o750);
       const d = await md.ensureDirs(store, 'x');
-      assert.strictEqual(fs.statSync(store).mode & 0o777, 0o750);
-      assert.strictEqual(fs.statSync(d.root).mode & 0o777, 0o700);
+      modeIs(store, 0o750);
+      modeIs(d.root, 0o700);
     } finally {
       fs.rmSync(root, {recursive: true, force: true});
     }
@@ -39,7 +46,7 @@ describe('fs-broker 01: module data directories', () => {
     try {
       const d = await md.ensureDirs(path.join(root, 'store'), '@acme/x');
       for (const p of [path.join(root, 'store'), path.join(root, 'store', '@acme'), d.root, d.data, d.tmp]) {
-        assert.strictEqual(fs.statSync(p).mode & 0o777, 0o700, p);
+        modeIs(p, 0o700, p);
       }
     } finally {
       fs.rmSync(root, {recursive: true, force: true});
@@ -49,8 +56,8 @@ describe('fs-broker 01: module data directories', () => {
   it('--hardened grants read and write on --moduleDataPath', () => {
     const {permissionFlags} = require('../../lib/hardened-launch');
     const flags = permissionFlags({modulePath: '/m', moduleDataPath: '/d', debug: true, localModulePath: '/m/x'}, '/install', '/');
-    assert.ok(flags.includes('--allow-fs-read=/d'), flags.join(' '));
-    assert.ok(flags.includes('--allow-fs-write=/d'), flags.join(' '));
+    assert.ok(flags.includes(`--allow-fs-read=${path.resolve('/d')}`), flags.join(' '));
+    assert.ok(flags.includes(`--allow-fs-write=${path.resolve('/d')}`), flags.join(' '));
   });
 
   // Node grants a subtree only for a directory that exists when it starts, so
@@ -63,13 +70,13 @@ describe('fs-broker 01: module data directories', () => {
       const missing = path.join(root, 'a', 'store');
       const modules = path.join(root, 'm', 'modules');
       prepareGrants({modulePath: modules, moduleDataPath: missing}, '/');
-      assert.strictEqual(fs.statSync(missing).mode & 0o777, 0o700);
+      modeIs(missing, 0o700);
       assert.ok(fs.statSync(modules).isDirectory(), 'the module folder is created too');
       const existing = path.join(root, 'existing');
       fs.mkdirSync(existing);
       fs.chmodSync(existing, 0o750);
       prepareGrants({modulePath: modules, moduleDataPath: existing}, '/');
-      assert.strictEqual(fs.statSync(existing).mode & 0o777, 0o750);
+      modeIs(existing, 0o750);
     } finally {
       fs.rmSync(root, {recursive: true, force: true});
     }
@@ -89,13 +96,13 @@ describe('fs-broker 01: module data directories', () => {
     try {
       const store = path.join(home, '.countinghouse', 'module_data');
       await md.ensureDirs(store, 'm');
-      [path.join(home, '.countinghouse'), store].forEach((d) => assert.strictEqual(fs.statSync(d).mode & 0o777, 0o700, d));
+      [path.join(home, '.countinghouse'), store].forEach((d) => modeIs(d, 0o700, d));
       const home2 = path.join(home, 'second');
       fs.mkdirSync(path.join(home2, '.countinghouse'), {recursive: true});
       fs.chmodSync(path.join(home2, '.countinghouse'), 0o750);
       await md.ensureDirs(path.join(home2, '.countinghouse', 'module_data'), 'm');
-      assert.strictEqual(fs.statSync(path.join(home2, '.countinghouse')).mode & 0o777, 0o750);
-      assert.strictEqual(fs.statSync(path.join(home2, '.countinghouse', 'module_data')).mode & 0o777, 0o700);
+      modeIs(path.join(home2, '.countinghouse'), 0o750);
+      modeIs(path.join(home2, '.countinghouse', 'module_data'), 0o700);
     } finally {
       fs.rmSync(home, {recursive: true, force: true});
     }

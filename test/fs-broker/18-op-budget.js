@@ -81,7 +81,8 @@ describe('fs-broker 18: the broker\'s work per call', function() {
       reset();
       await round(t.b);
       assert.ok((counts.realpath || 0) > 0, JSON.stringify(counts));
-      assert.ok((counts.readlink || 0) >= 2, 'both opens verified through /proc/self/fd');
+      // Linux also checks an open's /proc/self/fd link; every OS checks its dev and inode
+      if (process.platform === 'linux') assert.ok((counts.readlink || 0) >= 2, 'both opens verified through /proc/self/fd');
     } finally { await t.done(); }
   });
 });

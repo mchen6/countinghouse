@@ -1,0 +1,1 @@
+{"name": "win-probe", "version": "1.0.0", "description": "reports what a module sees of its own files, for #195 (enforce on Windows)", "dependencies": {"probe-dep": "1.0.0"}}

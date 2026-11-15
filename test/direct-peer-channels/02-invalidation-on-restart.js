@@ -122,8 +122,8 @@ describe('direct-peer-channels 02: port invalidation on module restart (D4)', fu
         // online and confirm the channel transparently re-established
         // itself against it (D1's "对调用方模块代码完全透明"). Polled, not a
         // single fixed delay -- restart-module's own unload wait is
-        // ~4-5s, and module rediscovery afterward is a further fixed
-        // ~5s (sandbox.js's 'discover-device' handling), so the total
+        // ~4-5s, and the new worker's load (its device registered from
+        // the main thread's spec once it has loaded) follows, so the total
         // time before the new instance is actually queryable varies and
         // can comfortably exceed 10s under load.
         let finalAttemptsLeft = 20; // ~20s budget at 1s/attempt

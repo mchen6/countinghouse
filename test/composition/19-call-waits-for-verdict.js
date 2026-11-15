@@ -203,11 +203,21 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
     }
   });
 
+  // The window this case needs, a listed tool whose verification has not
+  // failed yet, closes when the startup discovery ends (the purge is part of
+  // the decision; the hook delays only the delivery). The window is
+  // compose-slow's: its ~3 s load holds the discovery open, whatever the
+  // parts' load time. It must not come from how long compose-wait's parts
+  // take to load after it: lean workers made that shorter than one
+  // list-and-call (#177's CI: "compose_wait was never listed", or listed and
+  // then purged before the call reached it, "unknown tool"), and any later
+  // speed-up would close it again.
   it('a module that fails verification at startup releases its waiting calls at once (listed past the stdio gate)', async () => {
-    const s = serve({delayMs: 3000, badCall: true, stdioBoundMs: 1});
+    const s = serve({delayMs: 3000, badCall: true, stdioBoundMs: 1, slowSibling: true});
     try {
       await listed(s);
       const {r, waited} = await timedCall(s, 40000);
+      assert.ok(r.result != null, `no tool result: ${JSON.stringify(r)}; stderr: ${s.stderr().slice(-1500)}`);
       assert.strictEqual(r.result.isError, true, JSON.stringify(r));
       assert.strictEqual(r.result._meta['countinghouse/code'], 'CTX_CALL_NOT_READY', JSON.stringify(r));
       assert.ok(waited < 15000, `released when it was purged (${waited} ms), not at the bound`);

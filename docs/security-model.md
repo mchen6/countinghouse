@@ -17,7 +17,7 @@ below). There is no attempt to run modules from parties the platform
 operator hasn't reviewed.
 
 Since 8.0.0 each module runs inside its own `worker_threads.Worker` by
-default (`lib/sandbox.js`, spawned from `lib/module-manager.js`'s
+default (`lib/lean-worker.js`, spawned from `lib/module-manager.js`'s
 `loadModuleByWorker`). `--no-workerThread` runs modules in the main thread
 instead; that mode is for debugging modules and has no sandbox at all
 ([single-thread mode](#single-thread-mode-has-no-sandbox)). A worker gives:
@@ -32,6 +32,13 @@ instead; that mode is for debugging modules and has no sandbox at all
   (`lib/worker-message.js`) and the file bridge (`lib/fs-broker/`), with a
   fixed set of commands, not shared memory or arbitrary main-thread object
   references.
+- **A device the worker cannot state.** The worker loads only the module's
+  handler files and a small part of the runtime (the dispatcher, `ctx`, and
+  a `CHUtil` facade whose helpers load on first use). A module's device is
+  registered from the main thread's own reading of its `api.json` once the
+  worker has loaded. The worker announces nothing, so module code cannot add,
+  change or rename a device. `test/sandbox/43-lean-worker-files.js` lists
+  every runtime file a worker may load.
 - **Crash containment at the worker level.** `module-manager.js` listens for
   `worker.on('error', ...)` and `worker.on('exit', ...)` and unloads the
   corresponding module rather than letting a worker's end take down the
@@ -69,14 +76,22 @@ it.
 | Outside the namespace, writes to `/app` and to `r` paths | pass through | pass through, logged | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
-| Available on Windows | yes | yes | not yet ([#195](https://github.com/mchen6/countinghouse/issues/195)): refused at start, exit 2 |
 
-**`enforce` is not available on Windows yet.** A module's identity (its files
-as `/app/...`) is not designed for Windows file URLs, so `enforce` could not
-keep a module to its own files there; `--moduleSandbox enforce` on Windows
-refuses to start (exit 2, naming #195) rather than half-work, and `audit` is
-the Windows mode for now, with the protection gap that mode has. The
-settings tool offers only `audit` there.
+**On Windows** a module's files carry a drive (#195): the module sees them,
+its current directory and its stack frames as `<V>:\app\...`, V a drive
+letter the host does not have, picked once per process, because Node there
+loads a file only by a URL with a drive (`file:///<V>:/app/...`). The
+runtime names them `/app/...`, and the file broker maps `<V>:\app`,
+`<V>:\data` and `<V>:\tmp` to `/app`, `/data` and `/tmp`, so every rule
+above applies on Windows as it does elsewhere. With no free drive letter,
+`--moduleSandbox enforce` refuses to start on Windows, saying so.
+
+**On Windows, a module's declared host paths are not available yet**
+([#204](https://github.com/mchen6/countinghouse/issues/204)): a declared
+root is a host path, which there carries a drive, and the broker takes every
+drive-qualified path as outside the namespace. Under `enforce` such a path is
+refused (ENOENT): it fails closed. The module gets its own `/data` and
+`/tmp`.
 
 **Only `enforce` protects files.** Under `audit` and `off` access outside a
 module's namespace passes through to the host, so `auth.json` and other
@@ -171,7 +186,7 @@ like stay usable until parts 3 and 4; the first `require` of each is logged
 
 **2. The file broker and the virtual namespace** (`lib/fs-broker/`). Before
 any countinghouse or dependency code loads, the first statements of
-`lib/sandbox.js` replace every method of the worker's `fs`, `fs/promises`
+`lib/lean-worker.js` replace every method of the worker's `fs`, `fs/promises`
 and `FileHandle.prototype` with locked versions that send each call to the
 main thread. There one broker per module checks it and runs it with Node's
 async `fs`. Synchronous calls wait on shared memory; the main thread never
@@ -600,7 +615,7 @@ and the short list of what the in-process sandbox cannot give.
   stalling, with a backlog of messages ahead of the reply, can still make a
   healthy worker look blocked under a small `maxBlockMs`, and it is then
   terminated and restarted.
-- **Uncaught exceptions in a worker do not end it.** `lib/sandbox.js` catches
+- **Uncaught exceptions in a worker do not end it.** `lib/lean-worker.js` catches
   and logs them, as it always has. The restart policy applies to workers
   that actually end: `process.exit`, the heap limit, kills by the external
   memory or blocked-loop limits, and worker errors.
