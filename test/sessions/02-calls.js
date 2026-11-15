@@ -15,7 +15,7 @@ describe('sessions 02: the session on each call and in its token (shared runtime
   const B = 'b'.repeat(32);
   const issued = [];
   const issue = (o) => { const t = callTokens.issue(Object.assign({billingKey: 'k', workerId: 1}, o)); issued.push(t); return t; };
-  afterEach(() => { for (const t of issued.splice(0)) callTokens.drop(t); });
+  afterEach(() => { for (const t of issued.splice(0)) callTokens.drop(t); require('../../lib/sessions').resetForTests(); });
 
   it('a call\'s Session starts with no session (HTTP, a job), and the gateway sets the request\'s', () => {
     const Session = require('../../lib/session');
@@ -60,6 +60,20 @@ describe('sessions 02: the session on each call and in its token (shared runtime
       assert.strictEqual(resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED');
       done();
     }, {session: {id: 'e'.repeat(32), client: {status: 'ok', conditions: 'no', repo: null}}});
+  });
+
+  it('in shared mode (a registry attached) a call with no session is refused; reset, it is HTTP\'s again', (done) => {
+    const sessions = require('../../lib/sessions');
+    const gateway = require('../../lib/mcp/gateway');
+    sessions.attach(new (require('events'))());
+    assert.strictEqual(sessions.shared(), true);
+    gateway.handle({jsonrpc: '2.0', id: 8, method: 'tools/call', params: {name: 'anything', arguments: {}}}, null, 'k', (err, resp) => {
+      assert.ifError(err);
+      assert.strictEqual(resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED', JSON.stringify(resp));
+      sessions.resetForTests();
+      assert.strictEqual(sessions.shared(), false);
+      done();
+    });
   });
 
   it('a session id is no billing or identity key: the entry\'s keys are as before, the session beside them', () => {
