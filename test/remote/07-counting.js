@@ -10,11 +10,12 @@ const os     = require('os');
 const path   = require('path');
 const wt     = require('worker_threads');
 const {ROOT} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {createUsage} = require('../../lib/usage');
 require('../../lib/logger').createLogger(false);
 
-const REMOTE = 9728;
+const REMOTE = testPort(9728);
 const KEY = 'remote-counting-key';
 const TOKEN = `ghp_${'A'.repeat(36)}`;
 

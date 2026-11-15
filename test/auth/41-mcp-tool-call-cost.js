@@ -5,8 +5,9 @@
 // error, exit 2, naming the flag.
 const assert = require('assert');
 const {startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
-const PORT = 9651;
+const PORT = testPort(9651);
 
 describe('auth 41: --mcpToolCallCost must be a finite number >= 0 (M9)', function() {
   this.timeout(60000);

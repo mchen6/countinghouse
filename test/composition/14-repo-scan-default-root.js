@@ -13,9 +13,10 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 
-const PORT = 9605;
+const PORT = testPort(9605);
 const KEY  = 'k';
 const SCAN = 'repo_scan_scanservice_scan';
 

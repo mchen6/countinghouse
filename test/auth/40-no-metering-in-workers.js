@@ -8,11 +8,12 @@ const assert = require('assert');
 const path   = require('path');
 const redis  = require('redis');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const {redisUrlFor} = require('../helpers/test-env');
 
 const KEY    = 'm6-debug-key';
-const PORT   = 9650;
+const PORT   = testPort(9650);
 const VICTIM = `m6-victim-${process.pid}`;
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'metering-forge');
 

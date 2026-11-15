@@ -7,6 +7,7 @@ const path   = require('path');
 const Module = require('module');
 const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTINS} = require('../../lib/module-lockdown');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY   = 'aabbcc';
@@ -60,14 +61,14 @@ describe('sandbox 05: worker lockdown', function() {
 
   describe('enforce', () => {
     let server = null;
-    before(async () => { server = await startServer(9608, serverArgs('enforce')); }); // serverArgs passes --workerThread
+    before(async () => { server = await startServer(testPort(9608), serverArgs('enforce')); }); // serverArgs passes --workerThread
     after(() => stopServer(server));
 
-    it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(9608, server));
+    it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(testPort(9608), server));
 
     ROUTES.forEach(([what, arg]) => {
       it(`blocks ${what} and logs it`, async () => {
-        const r = await mcpCall(9608, KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
+        const r = await mcpCall(testPort(9608), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(r.isError, false, JSON.stringify(r));
         assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
         assert.ok(server.output.includes('module sandbox: sandbox-probe violation'), server.output.slice(-2000));
@@ -77,67 +78,67 @@ describe('sandbox 05: worker lockdown', function() {
     if (!STREAM_WRAP) {
       STREAM_WRAP_ROUTES.forEach(([what]) => {
         it(`${what} is not found: this Node has no _stream_wrap`, async () => {
-          const r = await mcpCall(9608, KEY, TOOL, {what: what});
+          const r = await mcpCall(testPort(9608), KEY, TOOL, {what: what});
           assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
         });
       });
     }
 
     it('a createRequire on the module directory (trailing slash) still resolves inside it', async () => {
-      const r = await mcpCall(9608, KEY, TOOL, {what: 'createRequireDir'});
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'createRequireDir'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null});
     });
 
     it('process.loadEnvFile reads through the broker', async () => {
-      const r = await mcpCall(9608, KEY, TOOL, {what: 'loadEnvFile'});
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'loadEnvFile'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
     });
 
     it('http2 respondWithFile is not available', async () => {
-      const r = await mcpCall(9608, KEY, TOOL, {what: 'http2RespondFile'});
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'http2RespondFile'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'}, JSON.stringify(r));
     });
 
     it('uses Node\'s own error codes', async () => {
-      const notFound = await mcpCall(9608, KEY, TOOL, {what: 'child_process'});
+      const notFound = await mcpCall(testPort(9608), KEY, TOOL, {what: 'child_process'});
       assert.strictEqual(toolOutput(notFound).code, 'MODULE_NOT_FOUND');
-      const denied = await mcpCall(9608, KEY, TOOL, {what: 'kill'});
+      const denied = await mcpCall(testPort(9608), KEY, TOOL, {what: 'kill'});
       assert.strictEqual(toolOutput(denied).code, 'ERR_ACCESS_DENIED');
     });
   });
 
   describe('audit', () => {
     let server = null;
-    before(async () => { server = await startServer(9609, serverArgs('audit')); }); // serverArgs passes --workerThread
+    before(async () => { server = await startServer(testPort(9609), serverArgs('audit')); }); // serverArgs passes --workerThread
     after(() => stopServer(server));
 
-    it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(9609, server));
+    it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(testPort(9609), server));
 
     ROUTES.forEach(([what, arg]) => {
       it(`allows ${what} and logs it`, async () => {
-        const r = await mcpCall(9609, KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
+        const r = await mcpCall(testPort(9609), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(toolOutput(r).outcome, 'allowed', `${what}: ${JSON.stringify(r)}`);
       });
     });
 
     it('process.loadEnvFile reads through the broker', async () => {
-      const r = await mcpCall(9609, KEY, TOOL, {what: 'loadEnvFile'});
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'loadEnvFile'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
     });
 
     it('the guarded net.Socket still subclasses and recognises Node\'s own sockets', async () => {
-      const r = await mcpCall(9609, KEY, TOOL, {what: 'socketClass'});
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'socketClass'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
     });
 
     it('http2 respondWithFile is not available', async () => {
-      const r = await mcpCall(9609, KEY, TOOL, {what: 'http2RespondFile'});
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'http2RespondFile'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'}, JSON.stringify(r));
     });
 
     it('logs a repeated violation once', async () => {
-      await mcpCall(9609, KEY, TOOL, {what: 'v8'});
-      await mcpCall(9609, KEY, TOOL, {what: 'v8'});
+      await mcpCall(testPort(9609), KEY, TOOL, {what: 'v8'});
+      await mcpCall(testPort(9609), KEY, TOOL, {what: 'v8'});
       const lines = server.output.split('\n').filter((l) => l.includes('module sandbox: sandbox-probe violation builtin v8'));
       assert.strictEqual(lines.length, 1, lines.join('\n'));
     });
@@ -150,7 +151,7 @@ describe('sandbox 05: worker lockdown', function() {
     // auth config and key), plus --moduleSandbox enforce. Direct peer
     // channels are at their default, on.
     before(async () => {
-      server = await startServer(9610, ['--workerThread', '--moduleSandbox', 'enforce',
+      server = await startServer(testPort(9610), ['--workerThread', '--moduleSandbox', 'enforce',
         '--authConfigPath', path.join(ROOT, 'test', 'composition', 'fixtures-auth.json'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-callee'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'compose-caller')]);
@@ -158,7 +159,7 @@ describe('sandbox 05: worker lockdown', function() {
     after(() => stopServer(server));
 
     it('a ctx.call between two modules works, with no violation from countinghouse\'s own code', async () => {
-      const r = await mcpCall(9610, 'composition-test-key', 'compose_caller_callerservice_viacall', {n: 21});
+      const r = await mcpCall(testPort(9610), 'composition-test-key', 'compose_caller_callerservice_viacall', {n: 21});
       assert.strictEqual(r.isError, false, JSON.stringify(r));
       assert.strictEqual(toolOutput(r).n, 42, JSON.stringify(r));
       assert.ok(!/violation builtin/.test(server.output), server.output.slice(-3000));
@@ -240,11 +241,11 @@ describe('sandbox 05: worker lockdown', function() {
 describe('sandbox 05: off', function() {
   this.timeout(120000);
   let server = null;
-  before(async () => { server = await startServer(9610, serverArgs('off')); });
+  before(async () => { server = await startServer(testPort(9610), serverArgs('off')); });
   after(() => stopServer(server));
 
   it('http2 respondWithFile is not available', async () => {
-    const r = await mcpCall(9610, KEY, TOOL, {what: 'http2RespondFile'});
+    const r = await mcpCall(testPort(9610), KEY, TOOL, {what: 'http2RespondFile'});
     assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM'}, JSON.stringify(r));
   });
 });

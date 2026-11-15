@@ -11,8 +11,9 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
-const PORT    = 9612;
+const PORT    = testPort(9612);
 const KEY     = 'schema-at-call-start-key';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'worker-end');
 const BUSY    = 'worker_end_endservice_busy';

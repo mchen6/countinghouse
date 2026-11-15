@@ -10,9 +10,10 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, waitFor, post} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT    = 9740; // C's block, 9740-9749 (test/ports.md)
+const PORT    = testPort(9740); // C's block, 9740-9749 (test/ports.md)
 const KEY     = 'usage-e2e-key';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'usage-scenario');
 const PLAIN   = path.join(ROOT, 'test', 'fixtures', 'usage-plain');

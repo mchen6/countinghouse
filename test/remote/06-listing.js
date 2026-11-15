@@ -7,12 +7,13 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 require('../../lib/logger').createLogger(false);
 
-const REMOTE = 9722;
-const SERVER = 9723;
+const REMOTE = testPort(9722);
+const SERVER = testPort(9723);
 const KEY = 'remote-listing-key';
 const TOKEN = `ghp_${'A'.repeat(36)}`;
 

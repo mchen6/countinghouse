@@ -10,6 +10,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const KEY     = 'jobs-wait-key';
@@ -48,7 +49,7 @@ async function settled(port, deviceID, id, ms) {
 describe('sandbox 25: a job waits through its module\'s reload', function() {
   this.timeout(120000);
 
-  [suite('under audit', 9621, ['--modulePolicy']), suite('under --moduleSandbox off', 9622, ['--moduleSandbox', 'off'])].forEach((s) => {
+  [suite('under audit', testPort(9621), ['--modulePolicy']), suite('under --moduleSandbox off', testPort(9622), ['--moduleSandbox', 'off'])].forEach((s) => {
     describe(s.label, () => {
       let server = null;
       let base = null;
@@ -133,7 +134,7 @@ describe('sandbox 25: a job waits through its module\'s reload', function() {
   });
 
   describe('a supervisor restart (audit)', () => {
-    const PORT = 9623;
+    const PORT = testPort(9623);
     let server = null;
     const ping = () => post(PORT, KEY, `/devices/${END_ID}/invoke-action`, {serviceID: END_SVC, actionName: 'ping', input: {}});
     const addPing = (opts) => post(PORT, KEY, `/devices/${END_ID}/add-job`, {serviceID: END_SVC, actionName: 'ping', input: {},

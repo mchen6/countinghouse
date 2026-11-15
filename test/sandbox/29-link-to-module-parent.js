@@ -6,11 +6,12 @@ const assert = require('assert');
 const fs     = require('fs');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolErrorCode} = require('../helpers/tool-result');
 const {mkdtemp} = require('../helpers/test-tmp');
 
 const KEY = 'aabbcc';
-const PORT = 9650;
+const PORT = testPort(9650);
 const NAME = 'handler-map-convention';
 
 // <base>/m is a copy of the handler-map-convention fixture with the two links;

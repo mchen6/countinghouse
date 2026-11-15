@@ -10,9 +10,10 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT   = 9638;
+const PORT   = testPort(9638);
 const KEY    = 'crash-in-discovery-key';
 const DEVICE = deviceIDForName('stray-output-module');
 const call   = (v) => post(PORT, KEY, `/devices/${DEVICE}/invoke-action`,

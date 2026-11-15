@@ -6,10 +6,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {toolOutput} = require('../helpers/tool-result');
 
-const PORT = 9635;
+const PORT = testPort(9635);
 const KEY = 'k';
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'fs-probe');
 const tool = (a) => `fs_probe_probeservice_${a}`;
