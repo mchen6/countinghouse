@@ -11,12 +11,17 @@
 //   enforce --controlChannel ipc), with perf-time as a scenario; daemon.json
 //   written once it listens; each session is a client running
 //   `ch-shim --home <home>` over stdio, which attaches and proves the secret.
-// Each session makes WARMUP calls, then CALLS timed sequential calls, all N
-// sessions at once. A and S alternate, ROUNDS times per N. A round's figure
-// is the median over every session's timed calls; the result is the median
-// of the rounds. See README.md.
+// Two load shapes (--mode):
+// - closed: each session makes WARMUP calls, then CALLS timed calls back to
+//   back, all N sessions at once;
+// - open: each session makes WARMUP calls, then CALLS timed calls, each after
+//   a gap drawn uniformly from 1-5 s by a seeded RNG (--seed), at random
+//   offsets, so a run repeats; separate and shared get the same schedule.
+// A and S alternate, ROUNDS times per N. A round's figures are the median and
+// p95 over every session's timed calls; the result is the median of the
+// rounds. The verdict uses the medians. See README.md.
 //
-// node perf/latency-gate/gate.js --shim <ch-shim> [--sessions 1,2] [--rounds 5] [--calls 300] [--json <file>]
+// node perf/latency-gate/gate.js --shim <ch-shim> [--mode closed|open] [--sessions 1,2,4] [--rounds 5] [--calls 300] [--seed 1] [--json <file>]
 // node perf/latency-gate/gate.js --ch-local <ch-local checkout>   (builds ch-shim with cargo first)
 const {spawn, spawnSync} = require('child_process');
 const fs = require('fs');
@@ -28,24 +33,50 @@ const ROOT = path.resolve(HERE, '..', '..');
 const WARMUP = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.floor(s.length / 2)]; };
+const p95 = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.min(s.length - 1, Math.floor(s.length * 0.95))]; };
+// mulberry32: a small seeded RNG, so an open-mode schedule repeats
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// a usage error: exit 2, as a harness failure
+class Usage extends Error {}
 const SDK = path.dirname(path.dirname(require.resolve('@modelcontextprotocol/sdk/client/index.js', {paths: [ROOT]})));
 const {Client} = require(path.join(SDK, 'client', 'index.js'));
 const {StdioClientTransport} = require(path.join(SDK, 'client', 'stdio.js'));
 
+// a small positive integer in [lo, hi], given as text (a workflow input is
+// free text): anything else is refused
+function int(name, text, lo, hi) {
+  if (typeof(text) !== 'string' || !/^[0-9]{1,6}$/.test(text)) throw new Usage(`${name} must be an integer from ${lo} to ${hi}, not ${JSON.stringify(text)}`);
+  const n = Number(text);
+  if (n < lo || n > hi) throw new Usage(`${name} must be an integer from ${lo} to ${hi}, not ${n}`);
+  return n;
+}
+
 function args() {
-  const o = {shim: null, chLocal: null, sessions: [1, 2], rounds: 5, calls: 300, json: null};
+  const o = {shim: null, chLocal: null, mode: 'closed', sessions: null, rounds: null, calls: null, seed: 1, json: null};
   const a = process.argv.slice(2);
   for (let i = 0; i < a.length; i++) {
-    if (a[i] === '--shim') o.shim = path.resolve(a[++i]);
-    else if (a[i] === '--ch-local') o.chLocal = path.resolve(a[++i]);
-    else if (a[i] === '--sessions') o.sessions = a[++i].split(',').map(Number);
-    else if (a[i] === '--rounds') o.rounds = Number(a[++i]);
-    else if (a[i] === '--calls') o.calls = Number(a[++i]);
-    else if (a[i] === '--json') o.json = path.resolve(a[++i]);
-    else throw new Error(`unknown option ${a[i]}`);
+    const v = a[i + 1];
+    if (a[i] === '--shim') { o.shim = path.resolve(v); i++; }
+    else if (a[i] === '--ch-local') { o.chLocal = path.resolve(v); i++; }
+    else if (a[i] === '--mode') { if (v !== 'closed' && v !== 'open') throw new Usage('--mode must be closed or open'); o.mode = v; i++; }
+    else if (a[i] === '--sessions') {
+      if (typeof(v) !== 'string' || !/^[0-9]{1,2}(,[0-9]{1,2}){0,5}$/.test(v)) throw new Usage(`--sessions must be up to 6 comma-separated counts from 1 to 16, not ${JSON.stringify(v)}`);
+      o.sessions = v.split(',').map((x) => int('--sessions', x, 1, 16)); i++;
+    }
+    else if (a[i] === '--rounds') { o.rounds = int('--rounds', v, 1, 20); i++; }
+    else if (a[i] === '--calls') { o.calls = int('--calls', v, 10, 2000); i++; }
+    else if (a[i] === '--seed') { o.seed = int('--seed', v, 0, 999999); i++; }
+    else if (a[i] === '--json') { o.json = path.resolve(v); i++; }
+    else throw new Usage(`unknown option ${a[i]}`);
   }
-  if (o.shim == null && o.chLocal == null) throw new Error('--shim <ch-shim binary> or --ch-local <ch-local checkout> is needed');
-  if (o.sessions.some((n) => !(n >= 1)) || !(o.rounds >= 1) || !(o.calls >= 10)) throw new Error('--sessions, --rounds and --calls must be positive (calls >= 10)');
+  if (o.shim == null && o.chLocal == null) throw new Usage('--shim <ch-shim binary> or --ch-local <ch-local checkout> is needed');
+  // the defaults per load shape: open mode's calls are seconds apart
+  if (o.sessions == null) o.sessions = o.mode === 'closed' ? [1, 2, 4] : [2, 3, 10];
+  if (o.rounds == null) o.rounds = o.mode === 'closed' ? 5 : 1;
+  if (o.calls == null) o.calls = o.mode === 'closed' ? 300 : 60;
   return o;
 }
 
@@ -65,11 +96,14 @@ async function connect(command, argv, env) {
   return c;
 }
 
-// every session at once: WARMUP calls, then `calls` timed sequential calls
-async function drive(sessions, calls) {
-  const all = await Promise.all(sessions.map(async ({c, name}) => {
+// every session at once: WARMUP calls back to back, then `calls` timed
+// calls, back to back (closed) or each after a seeded 1-5 s gap (open)
+async function drive(sessions, calls, plan) {
+  const all = await Promise.all(sessions.map(async ({c, name}, k) => {
     const ms = [];
+    const gap = plan.mode === 'open' ? rng(plan.seed * 1000 + k) : null;
     for (let i = 0; i < WARMUP + calls; i++) {
+      if (gap != null && i >= WARMUP) await sleep(1000 + 4000 * gap());
       const t = process.hrtime.bigint();
       const r = await c.callTool({name, arguments: {timezone: 'UTC'}});
       if (r.isError) throw new Error(JSON.stringify(r).slice(0, 300));
@@ -80,11 +114,11 @@ async function drive(sessions, calls) {
   return all.flat();
 }
 
-async function separate(n, calls) {
+async function separate(n, calls, plan) {
   const sessions = [];
   try {
     for (let i = 0; i < n; i++) sessions.push({c: await connect(process.execPath, [path.join(HERE, 'plain-server.js')], process.env), name: 'get_current_time'});
-    return await drive(sessions, calls);
+    return await drive(sessions, calls, plan);
   } finally {
     for (const s of sessions) await s.c.close().catch(() => {});
   }
@@ -92,7 +126,7 @@ async function separate(n, calls) {
 
 const priv = (file, text) => { fs.writeFileSync(file, text, {mode: 0o600}); fs.chmodSync(file, 0o600); };
 
-async function shared(n, calls, shim) {
+async function shared(n, calls, shim, plan) {
   // a short path: a Unix socket's is capped near 107 bytes
   const home = fs.mkdtempSync(path.join(os.homedir(), '.chgate-'));
   const run = path.join(home, 'run', 'daemon');
@@ -125,7 +159,7 @@ async function shared(n, calls, shim) {
       if (name == null) throw new Error(`the shared runtime lists no get_current_time: ${out.slice(-800)}`);
       sessions.push({c, name});
     }
-    return await drive(sessions, calls);
+    return await drive(sessions, calls, plan);
   } finally {
     for (const s of sessions) await s.c.close().catch(() => {});
     rt.kill('SIGINT');
@@ -141,26 +175,28 @@ async function main() {
   const shim = shimOf(o);
   if (!fs.existsSync(shim)) throw new Error(`no ch-shim at ${shim}`);
   const machine = {cpus: os.cpus().length, model: (os.cpus()[0] || {}).model, node: process.version, platform: `${os.platform()} ${os.release()}`, loadavgAtStart: os.loadavg()};
-  process.stdout.write(`latency gate: ${machine.cpus} CPUs (${machine.model}), node ${machine.node}, load ${machine.loadavgAtStart.map((x) => x.toFixed(2)).join('/')}; ${o.rounds} rounds of ${o.calls} calls per session\n`);
+  process.stdout.write(`latency gate (${o.mode}): ${machine.cpus} CPUs (${machine.model}), node ${machine.node}, load ${machine.loadavgAtStart.map((x) => x.toFixed(2)).join('/')}; ${o.rounds} rounds of ${o.calls} calls per session${o.mode === 'open' ? `, 1-5 s gaps, seed ${o.seed}` : ''}\n`);
   const rows = [];
   for (const n of o.sessions) {
-    const a = [], s = [];
+    const a = [], s = [], ap = [], sp = [];
     for (let r = 0; r < o.rounds; r++) {
-      a.push(median(await separate(n, o.calls)));
-      s.push(median(await shared(n, o.calls, shim)));
-      process.stdout.write(`  N=${n} round ${r + 1}: separate ${a[r].toFixed(2)} ms, shared ${s[r].toFixed(2)} ms\n`);
+      const plan = {mode: o.mode, seed: o.seed + r};
+      const sa = await separate(n, o.calls, plan);
+      const ss = await shared(n, o.calls, shim, plan);
+      a.push(median(sa)); ap.push(p95(sa)); s.push(median(ss)); sp.push(p95(ss));
+      process.stdout.write(`  N=${n} round ${r + 1}: separate ${a[r].toFixed(2)} ms (p95 ${ap[r].toFixed(2)}), shared ${s[r].toFixed(2)} ms (p95 ${sp[r].toFixed(2)})\n`);
     }
-    const A = median(a), S = median(s);
+    const A = median(a), S = median(s), AP = median(ap), SP = median(sp);
     const limit = n === 1 ? A + 2 : A;
     const pass = S <= limit;
-    rows.push({n, separateMs: A, sharedMs: S, overMs: S - A, limitMs: limit, pass, rounds: {separate: a, shared: s}});
-    process.stdout.write(`N=${n}: separate ${A.toFixed(2)} ms, shared ${S.toFixed(2)} ms (${S - A >= 0 ? '+' : ''}${(S - A).toFixed(2)} ms); gate ${n === 1 ? 'shared <= separate + 2 ms' : 'shared <= separate'}: ${pass ? 'PASS' : 'FAIL'}\n`);
+    rows.push({n, separateMs: A, sharedMs: S, separateP95Ms: AP, sharedP95Ms: SP, overMs: S - A, limitMs: limit, pass, rounds: {separate: a, shared: s, separateP95: ap, sharedP95: sp}});
+    process.stdout.write(`N=${n}: separate ${A.toFixed(2)} ms (p95 ${AP.toFixed(2)}), shared ${S.toFixed(2)} ms (p95 ${SP.toFixed(2)}), ${S - A >= 0 ? '+' : ''}${(S - A).toFixed(2)} ms; gate ${n === 1 ? 'shared <= separate + 2 ms' : 'shared <= separate'}: ${pass ? 'PASS' : 'FAIL'}\n`);
   }
   const verdict = rows.every((r) => r.pass) ? 'PASS' : 'FAIL';
   process.stdout.write(`verdict: ${verdict}\n`);
-  const result = {when: new Date().toISOString(), machine, calls: o.calls, rounds: o.rounds, rows, verdict, loadavgAtEnd: os.loadavg()};
+  const result = {when: new Date().toISOString(), mode: o.mode, seed: o.mode === 'open' ? o.seed : null, machine, calls: o.calls, rounds: o.rounds, rows, verdict, loadavgAtEnd: os.loadavg()};
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
   process.exitCode = verdict === 'PASS' ? 0 : 1;
 }
 
-main().catch((e) => { process.stderr.write(`${e.stack || e}\n`); process.exitCode = 2; });
+main().catch((e) => { process.stderr.write(e instanceof Usage ? `latency gate: ${e.message}\n` : `${e.stack || e}\n`); process.exitCode = 2; });
