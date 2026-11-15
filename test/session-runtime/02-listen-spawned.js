@@ -20,13 +20,15 @@ const SUB = 'io.modelcontextprotocol/subscriptionId';
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
 
 function scenario(dir, name) {
-  const svc = 'helloService';
+  // a service of its own per pack, so two packs' devices never collide
+  const svc = `${name.replace(/[^a-z]/g, '')}Service`;
+  const action = `${name.replace(/[^a-z]/g, '')}_hello`;
   fs.mkdirSync(path.join(dir, 'handlers', svc), {recursive: true});
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
   fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, manufacturer: 'countinghouse-test', modelDescription: name,
-    serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: 'hello', description: `hello of ${name}`, input: {schema: `/${svc}/hello/input`}, output: {schema: `/${svc}/hello/output`}}]}}}}));
-  fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', [svc]: {hello: {input: {type: 'object'}, output: {type: 'object'}}}}));
-  fs.writeFileSync(path.join(dir, 'handlers', svc, 'hello.js'), 'module.exports = async () => ({output: {}});\n');
+    serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: action, description: `hello of ${name}`, input: {schema: `/${svc}/${action}/input`}, output: {schema: `/${svc}/${action}/output`}}]}}}}));
+  fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', [svc]: {[action]: {input: {type: 'object'}, output: {type: 'object'}}}}));
+  fs.writeFileSync(path.join(dir, 'handlers', svc, `${action}.js`), 'module.exports = async () => ({output: {}});\n');
   return dir;
 }
 
@@ -127,7 +129,8 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     a.c.end();
     await tick(300);
     const three = scenario(path.join(packs, 'ch-pack-three', '1.0.0', 'node_modules', 'ch-pack-three'), 'ch-pack-three');
-    assert.strictEqual((await r.control({type: 'load', name: 'ch-pack-three', scenario: three})).ok, true);
+    const reply3 = await r.control({type: 'load', name: 'ch-pack-three', scenario: three});
+    assert.strictEqual(reply3.ok, true, `${JSON.stringify(reply3)}\n${r.err.slice(-1500)}`);
     const until2 = Date.now() + 15000;
     while (changesFor(rb, lb) < 2 && Date.now() < until2) await tick(100);
     assert.strictEqual(changesFor(rb, lb), 2);
