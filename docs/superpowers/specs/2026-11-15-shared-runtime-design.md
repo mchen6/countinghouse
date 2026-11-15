@@ -341,7 +341,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   The refusal is byte-identical to an unknown device's. Without this, a module visible to session B that calls into a pack only A turned on would reach that pack on B's call: a loosening B never confirmed. And a pack B hid would still be reachable from B's calls.
 - **tools/list and list_changed are per session.** Each session's listed fingerprint is its own, and a change that affects one session's list notifies only that session.
 
-## 4a. Modules with per-session state (Matt's rule 3, DECISIONS.md)
+## 4a. Modules with per-session state (the maintainer's rule 3)
 
 Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store partitioned by session. Two points are **OPEN for Matt** and marked so below.
 
