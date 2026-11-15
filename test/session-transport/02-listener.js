@@ -190,7 +190,7 @@ describe('session-transport 02: the listener and the registry', function() {
       shim.message(a.c, {seq: 9}, `{"jsonrpc":"2.0","id":7,"method":"echo","params":"${'x'.repeat(400)}"}`);
       const m = await shim.readM(a.c);
       assert.deepStrictEqual(m.header, {seq: 9});
-      assert.strictEqual(m.line.toString('utf8'), require('../fixtures/shim-wire-vectors.json').tooLargeAnswer.json);
+      assert.strictEqual(m.line.toString('utf8'), require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').tooLargeAnswer.json);
       a.c.end();
     });
   });
