@@ -102,6 +102,28 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
     });
   });
 
+  describe('tasks: none for a modern request in release 1 (#232)', () => {
+    const options = require('../../lib/cli-options');
+    let workerThread;
+    before(() => { workerThread = options.workerThread; options.workerThread = true; });
+    after(() => { options.workerThread = workerThread; });
+
+    it('server/discover advertises no tasks; a legacy initialize still does', async() => {
+      const now = await viaGateway(modern('server/discover', {}, 20));
+      assert.strictEqual(now.res.result.capabilities.tasks, undefined, JSON.stringify(now.res.result.capabilities));
+      const legacy = await viaGateway({jsonrpc: '2.0', id: 21, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}}});
+      assert.ok(legacy.res.result.capabilities.tasks != null);
+    });
+
+    it('modern tasks/get, tasks/result, tasks/list and tasks/cancel are unknown methods: -32601, 404', async() => {
+      for (const method of ['tasks/get', 'tasks/result', 'tasks/list', 'tasks/cancel']) {
+        const {res, info} = await viaGateway(modern(method, {taskId: 'x'}, 22));
+        assert.strictEqual(res.error.code, -32601, `${method}: ${JSON.stringify(res)}`);
+        assert.strictEqual(info && info.status, 404, method);
+      }
+    });
+  });
+
   describe('the client a request names (P2)', () => {
     const clientInfo = require('../../lib/mcp/client-info');
     afterEach(() => clientInfo.resetForTests());
