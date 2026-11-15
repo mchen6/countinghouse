@@ -3,10 +3,10 @@
 // docs/superpowers/specs/2026-11-13-lean-worker-design.md section 4, as
 // revised on #152). A value its validation takes seconds over is refused
 // at the deadline (--validationTimeoutMs 300 here) while the server answers. The fixture
-// (test/fixtures/main-checked) turns off its own worker's validation on
-// request: under the default module sandbox (audit) and with none, the
-// runtime's Service and validator are in its worker's require.cache, and its
-// tamper action replaces both with ones that accept anything. Even so:
+// (test/fixtures/main-checked) would turn off its own worker's validation on
+// request, replacing the runtime's Service and validator in its worker's
+// require.cache with ones that accept anything; a lean worker holds neither
+// (step 3), so it finds nothing to turn off. Either way:
 // - a bad input never reaches the worker (take counts its runs);
 // - a bad output is refused;
 // - over a hop routed through the main thread too (main-checked-caller);
@@ -102,15 +102,19 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
     });
     after(() => stopServer(server));
 
-    it('the module turns off its worker\'s own validation', async () => {
-      assert.deepStrictEqual(await tamper(), {tampered: true});
-      assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+    // A lean worker holds no validation of its own (lean worker step 3): the
+    // runtime's Service and validator are not in its require.cache, so the
+    // module finds nothing to turn off, and the main thread's checks below
+    // are the only ones.
+    it('the module finds no validation of its worker\'s own to turn off (lean worker)', async () => {
+      assert.deepStrictEqual(await tamper(), {tampered: false});
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
 
     it('a bad input is refused, and never reaches the worker', async () => {
       const r = await REFUSALS.badInput();
       assert.strictEqual(r.body.code, 'INPUT_DATA_VALIDATION_FAIL', JSON.stringify(r.body));
-      assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
 
     it('every refusal is single-thread mode\'s answer: status, code, text and fault', async () => {
@@ -118,7 +122,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
         const r = await REFUSALS[name]();
         assert.deepStrictEqual({status: r.status, body: r.body}, asWorkerMode(singleThread[name]), name);
       }
-      assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
 
     it('a service or action named like an Object.prototype member is not found, and nothing runs', async () => {
@@ -128,7 +132,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
         const service = await invoke('take', {n: 'not an integer'}, name);
         assert.deepStrictEqual([service.status, service.body.code], [500, 'SERVICE_NOT_FOUND'], `service ${name}: ${JSON.stringify(service.body)}`);
       }
-      assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
 
     // another caller: one caller has one validation in flight across the pool
@@ -180,7 +184,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
     it('a valid call runs, once', async () => {
       const r = await invoke('take', {n: 7});
       assert.strictEqual(r.status, 200, JSON.stringify(r.body));
-      assert.deepStrictEqual(await count(), {takes: 1, tampered: true});
+      assert.deepStrictEqual(await count(), {takes: 1, tampered: false});
       assert.strictEqual((await invoke('give', {kind: 'good'})).status, 200);
     });
 

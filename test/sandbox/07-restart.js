@@ -163,8 +163,12 @@ describe('sandbox 07: restart and suspend', function() {
 
     it('is retried with backoff and ends suspended', async () => {
       await waitFor(pingOk(9614), 15000, 'ping');
-      // break the copy so every restart spawn fails
-      fs.writeFileSync(path.join(copy, 'package.json'), '{ not json');
+      // break the copy so every restart fails: a handler file that throws as
+      // it is required fails the load (LOAD_MODULE_FAIL). Not package.json:
+      // the main thread pins it at the first spawn and a supervised restart
+      // keeps the pin (lean worker step 3), so a broken one no longer fails
+      // the restart.
+      fs.writeFileSync(path.join(copy, 'handlers', 'hogService', 'ping.js'), 'throw new Error(\'sandbox 07: a broken copy\');\n');
       await mcpCall(9614, KEY, tool('exit'), {});
       const s = await waitFor(async () => {
         const st = await status(9614);
