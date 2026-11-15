@@ -140,6 +140,12 @@ describe('sandbox 52: the validator pool resized for a larger maxOutputBytes (pa
     assert.strictEqual(ended, false, 'the held request\'s worker was not terminated by the resize');
     assert.ok(all(pool).every((s) => !s.draining), 'nothing left draining');
     await held;
+    // the same raise confirmed again finishes the resize: never taken as done
+    // because the pool's limits were raised (the review of #222)
+    pool.resizeWaitMs = 60000;
+    assert.ok(heaps(pool).some((mb) => mb < 448), JSON.stringify(heaps(pool)));
+    await pool.resize(96 * MiB);
+    assert.deepStrictEqual(heaps(pool), [448, 448, 448]);
   });
 
   it('a slot whose start is still pending is not retired (it starts at the new limits); a draining slot is no share', async () => {

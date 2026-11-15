@@ -753,3 +753,24 @@ describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
     }
   });
 });
+
+describe('stdio 20j: #222\'s review (part 3 P2)', () => {
+  const M = 1024 * 1024;
+  const notices = require('../../lib/notices');
+  let dir;
+  let saved;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20j-')); saved = options.maxOutputBytes; options.maxOutputBytes = 8 * M; confirmModule.resetForTests(); settingsTool.resetForTests(); notices.take(null); });
+  afterEach(() => { options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); notices.take(null); });
+
+  it('an apply that fails with no code says "error", never its message (in the notice, the history and the refusal)', async () => {
+    const file = path.join(dir, 'settings.json');
+    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+      applyChange: async () => { throw new Error('a message that could carry /home/someone or a key'); }});
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    const e = await t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT).then(() => null, (err) => err);
+    assert.strictEqual(e.code, 'SETTING_NOT_APPLIED');
+    const said = JSON.stringify([notices.take(null), fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8'), e.message]);
+    assert.ok(!said.includes('could carry'), said);
+    assert.ok(said.includes('(error)'), said);
+  });
+});
