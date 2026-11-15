@@ -60,11 +60,18 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       assert.deepStrictEqual(res.error.data, {supported: [V], requested: '1900-01-01'});
     });
 
-    it('a modern result carries resultType complete; a legacy one is as it was', async() => {
+    it('ping is removed in 2026-07-28: a modern one is unknown (-32601, 404); a legacy one still answers {}', async() => {
       const now = await viaGateway(modern('ping', {}, 5));
-      assert.deepStrictEqual(now.res.result, {resultType: 'complete'});
+      assert.strictEqual(now.res.error.code, -32601, JSON.stringify(now.res));
+      assert.strictEqual(now.info && now.info.status, 404);
       const legacy = await viaGateway({jsonrpc: '2.0', id: 6, method: 'ping'});
       assert.deepStrictEqual(legacy.res.result, {});
+    });
+
+    it('discover carries its caching hints and serverInfo', async() => {
+      const {res} = await viaGateway(modern('server/discover', {}, 9));
+      assert.strictEqual(res.result.ttlMs, 0);
+      assert.strictEqual(res.result.cacheScope, 'public');
     });
 
     it('initialize stays the legacy path: it echoes a legacy version, with no resultType', async() => {
@@ -82,6 +89,36 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
     it('a notification gets no answer, whatever its method', async() => {
       const {res} = await viaGateway({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 1}});
       assert.strictEqual(res, null);
+    });
+
+    it('any message without an id is a notification: an id-less ping or logging/setLevel gets no answer', async() => {
+      assert.strictEqual((await viaGateway({jsonrpc: '2.0', method: 'ping'})).res, null);
+      assert.strictEqual((await viaGateway({jsonrpc: '2.0', method: 'logging/setLevel', params: {level: 'info'}})).res, null);
+    });
+
+    it('id null is an invalid request: -32600', async() => {
+      const {res} = await viaGateway({jsonrpc: '2.0', id: null, method: 'ping'});
+      assert.strictEqual(res.error.code, -32600, JSON.stringify(res));
+    });
+  });
+
+  describe('the client a request names (P2)', () => {
+    const clientInfo = require('../../lib/mcp/client-info');
+    afterEach(() => clientInfo.resetForTests());
+    const CC = {name: 'claude-code', version: '2.1.323'};
+
+    it('a modern request uses only its own _meta: no client borrowed from a legacy initialize', () => {
+      clientInfo.record(CC);
+      const ctx = clientInfo.contextOf({_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}}}, true);
+      assert.strictEqual(ctx.clientInfo, null);
+      assert.deepStrictEqual(ctx.capabilities, {elicitation: {}});
+    });
+
+    it('a legacy request has no capabilities to form with, whatever its _meta says', () => {
+      clientInfo.record(CC);
+      const ctx = clientInfo.contextOf({_meta: {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}}}, false);
+      assert.deepStrictEqual(ctx.clientInfo, CC);
+      assert.strictEqual(ctx.capabilities, null);
     });
   });
 
@@ -111,6 +148,7 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
       assert.strictEqual(res.body.result.resultType, 'complete');
       assert.deepStrictEqual(res.body.result.supportedVersions, [V]);
+      assert.strictEqual(res.body.result._meta['io.modelcontextprotocol/serverInfo'].name, 'countinghouse');
     });
 
     it('a modern request without MCP-Protocol-Version: 400, -32020', async() => {
@@ -165,6 +203,21 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
       const legacy = await post({jsonrpc: '2.0', id: 1, method: 'resources/list'});
       assert.strictEqual(legacy.status, 200);
       assert.strictEqual(legacy.body.error.code, -32601);
+    });
+
+    it('a modern version in the header makes the request modern: a body without _meta is 400, -32602', async() => {
+      const res = await post({jsonrpc: '2.0', id: 1, method: 'ping'}, H('tools/list'));
+      assert.strictEqual(res.status, 400, JSON.stringify(res.body));
+      assert.strictEqual(res.body.error.code, -32602);
+      const legacy = await post({jsonrpc: '2.0', id: 2, method: 'ping'}, {'MCP-Protocol-Version': '2025-11-25'});
+      assert.strictEqual(legacy.status, 200);
+      assert.deepStrictEqual(legacy.body.result, {});
+    });
+
+    it('an id-less request over HTTP is a notification: 202, no body', async() => {
+      const res = await post({jsonrpc: '2.0', method: 'logging/setLevel', params: {level: 'info'}});
+      assert.strictEqual(res.status, 202);
+      assert.deepStrictEqual(res.body, {});
     });
 
     it('a modern request inside a batch: 400, -32600 (one message per POST)', async() => {

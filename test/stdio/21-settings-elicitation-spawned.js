@@ -73,6 +73,10 @@ describe('stdio 21: the confirmation round trip, spawned (part 3 P2)', function(
     const r = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '60s'}}});
     assert.strictEqual(r.result.resultType, undefined, JSON.stringify(r));
     assert.match(r.result.content[0].text, /needs your own confirmation/);
+    // a retry's fields on a legacy request: MRTR is the modern era's, so no form, no confirmation
+    const retry = await io.request({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '60s'}, requestState: 'x'}});
+    assert.strictEqual(retry.result.resultType, undefined, JSON.stringify(retry));
+    assert.match(retry.result.content[0].text, /needs your own confirmation/);
   });
 
   it('countinghouse_call_tool never forms or confirms; a module\'s look-alike result stays content', async () => {

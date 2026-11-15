@@ -32,6 +32,11 @@ describe('stdio 22: 2026-07-28 discovery and versioning, spawned (#229)', functi
     const list = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/list', params: {_meta: MODERN_META}}, 30000);
     assert.strictEqual(list.result.resultType, 'complete', JSON.stringify(list));
     assert.ok(Array.isArray(list.result.tools));
+    // caching hints (server/utilities/caching: "Servers MUST include caching
+    // hints" on tools/list): the list changes in place and per key
+    assert.strictEqual(list.result.ttlMs, 0);
+    assert.strictEqual(list.result.cacheScope, 'private');
+    assert.strictEqual(list.result._meta['io.modelcontextprotocol/serverInfo'].name, 'countinghouse');
   });
 
   it('an unsupported version over stdio: -32022 naming the supported ones', async() => {
