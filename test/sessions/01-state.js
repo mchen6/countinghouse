@@ -1,0 +1,82 @@
+'use strict';
+// B1 Task 1 (docs/superpowers/plans/2026-11-15-shared-runtime-b1-sessions.md):
+// lib/sessions.js, the main thread's per-session state, kept beside C1's
+// registry (lib/session-transport/registry.js): each session's own
+// clientInfo (its first initialize), its context for a request (P2's
+// contextOf, per session), its repository default, and nothing once it
+// ends. Driven through C1's real listener and its test shim, in-process.
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const {createRegistry} = require('../../lib/session-transport/registry');
+const {createListener} = require('../../lib/session-transport/listener');
+const handshake = require('../../lib/session-transport/handshake');
+const shim = require('../session-transport/helpers/shim');
+const sessions = require('../../lib/sessions');
+
+describe('sessions 01: each session\'s own state on the main thread (shared runtime B1, Task 1)', function() {
+  this.timeout(30000);
+  if (process.platform === 'win32') return;   // the named pipe is C2's
+  let dir;
+  let sock;
+  let secret;
+  let registry;
+  let listener;
+  beforeEach(async () => {
+    sessions.resetForTests();
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-b1-'));
+    sock = path.join(dir, 's');
+    secret = handshake.newSecret();
+    registry = createRegistry({reconnectWindowMs: 200});
+    sessions.attach(registry);
+    listener = createListener({path: sock, secret, registry, runtimeVersion: '8.0.0-test', maxToRuntime: 1 << 20, maxToShim: 1 << 20, tokenMac: null,
+      onMessage: (s, message, reply) => { if (message.id !== undefined) reply({jsonrpc: '2.0', id: message.id, result: {}}); }});
+    await listener.listen();
+  });
+  afterEach(async () => {
+    if (listener != null) await listener.close();
+    listener = null;
+    fs.rmSync(dir, {recursive: true, force: true});
+  });
+  const CC = (version) => ({name: 'claude-code', version});
+  const FORM = {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}};
+
+  it('two sessions each keep their own first initialize, and contextOf answers each with its own client and id', async () => {
+    const a = await shim.session(sock, secret);
+    const b = await shim.session(sock, secret, {status: 'ok', conditions: 'yes', repo: 'octo/repo', token: null});
+    const [sa, sb] = [a.welcome.session, b.welcome.session];
+    assert.notStrictEqual(sa, sb);
+    sessions.recordClientInfo(sa, CC('2.1.323'));
+    sessions.recordClientInfo(sb, CC('2.1.400'));
+    sessions.recordClientInfo(sa, CC('9.9.9'));   // a second initialize changes nothing
+    assert.deepStrictEqual(sessions.contextOf(sa, {_meta: FORM}), {clientInfo: CC('2.1.323'), capabilities: {elicitation: {}}, session: sa});
+    assert.deepStrictEqual(sessions.contextOf(sb, {}).clientInfo, CC('2.1.400'));
+    // _meta disagreeing with the session's initialize: no client, as P2's
+    assert.strictEqual(sessions.contextOf(sa, {_meta: {'io.modelcontextprotocol/clientInfo': CC('1.0.0')}}).clientInfo, null);
+    // the repository default is the session's own, live from C1's client frame
+    assert.strictEqual(sessions.repoOf(sa), null);
+    assert.strictEqual(sessions.repoOf(sb), 'octo/repo');
+    a.c.end();
+    b.c.end();
+  });
+
+  it('a session that ends leaves nothing: its state is gone, and an unknown id has none', async () => {
+    const a = await shim.session(sock, secret);
+    const id = a.welcome.session;
+    sessions.recordClientInfo(id, CC('2.1.323'));
+    assert.ok(sessions.get(id) != null);
+    a.c.send('C', {op: 'bye'});
+    for (let w = 0; sessions.get(id) != null && w < 3000; w += 20) await new Promise((r) => setTimeout(r, 20));
+    assert.strictEqual(sessions.get(id), null);
+    assert.deepStrictEqual(sessions.contextOf(id, {}), {clientInfo: null, capabilities: null, session: null}, 'an ended or unknown session is none');
+    assert.strictEqual(sessions.get('f'.repeat(32)), null);
+  });
+
+  it('stdio mode: one session, with an opaque id, opened at start', () => {
+    const id = sessions.openLocal();
+    assert.match(id, /^[0-9a-f]{32}$/);
+    assert.ok(sessions.get(id) != null);
+    assert.strictEqual(sessions.openLocal(), id, 'one per process');
+  });
+});
