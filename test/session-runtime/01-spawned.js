@@ -118,24 +118,46 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     a.c.end();
   });
 
-  it('until per-session settings land, a session reads settings but changes none, nor reaches tasks; its log level is its own (B2 Task 3)', async() => {
+  it('a session tightens the two caps for itself and reads its own settings; every other set is the terminal\'s; no tasks; its log level is its own (B2 Tasks 3 and 4)', async() => {
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
-    const call = (args, extra = {}) => request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
+    const b = await shim.session(r.socket, secret);
+    const callOf = (s) => (args, extra = {}) => request(s.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
+    const call = callOf(a);
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
     const got = await call({action: 'get'});
     assert.ok(got.result != null && got.result.isError !== true, JSON.stringify(got));
-    // every set is the terminal's: a tightening, a loosening, a pack on or
-    // off, a confirmation's retry; nothing is written
-    for (const [args, extra] of [[{action: 'set', name: 'requestTimeout', value: '20s'}, {}], [{action: 'set', name: 'requestTimeout', value: '60s'}, {}],
+    assert.strictEqual(valueOf(got, 'requestTimeout'), 30000);
+    // a tightening of a cap is the session's own: applied for it, written nowhere
+    const tightened = await call({action: 'set', name: 'requestTimeout', value: '20s'});
+    assert.deepStrictEqual(tightened.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'this session'}, JSON.stringify(tightened));
+    assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000);
+    // its shim is told to forget what it kept, then given the one snapshot
+    assert.deepStrictEqual(await a.c.json('C'), {op: 'forget'});
+    assert.deepStrictEqual(await a.c.json('C'), {op: 'record', entry: {requestTimeout: 20000}});
+    // the other session: its value, its history and its shim hear nothing of it
+    const others = await callOf(b)({action: 'get'});
+    assert.strictEqual(valueOf(others, 'requestTimeout'), 30000);
+    assert.deepStrictEqual(others.result.structuredContent.history, []);
+    assert.strictEqual(await b.c.json('C', 300), null);
+    assert.deepStrictEqual((await call({action: 'get'})).result.structuredContent.history.map((h) => [h.setting, h.new, h.change]), [['requestTimeout', 20000, 'this session']]);
+    // everything else is the terminal's: a loosening (of the session's own
+    // value too), a pack on or off, any other setting, and a confirmation's
+    // retry even for a value that tightens; nothing is written
+    for (const [args, extra] of [[{action: 'set', name: 'requestTimeout', value: '60s'}, {}], [{action: 'set', name: 'requestTimeout', value: '25s'}, {}],
       [{action: 'set', name: 'requestTimeout', value: '60s'}, {requestState: 'x', inputResponses: {}}],
-      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}]]) {
+      [{action: 'set', name: 'requestTimeout', value: '10s'}, {requestState: 'x', inputResponses: {}}],
+      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}],
+      [{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
       assert.match(r2.result.content[0].text, /ch-local settings set/);
     }
+    assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000, 'as it was');
+    b.c.end();
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
       // a modern request: tasks/* are gone in 2026-07-28 (#243), method not found
