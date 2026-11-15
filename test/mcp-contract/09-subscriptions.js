@@ -11,6 +11,7 @@
 // resultType "complete".
 const assert = require('assert');
 const http = require('http');
+const path = require('path');
 const express = require('express');
 const {createHub, SUBSCRIPTION_ID_KEY} = require('../../lib/mcp/subscriptions');
 
@@ -210,6 +211,92 @@ describe('subscriptions/listen (#231)', () => {
         assert.strictEqual(hub.count(null), 0);
         assert.strictEqual(hub.count('not-a-key'), 0);
       }
+    });
+
+    it('the per-key rate limit applies to listen', async() => {
+      const limited = express();
+      limited.use(express.json());
+      const cdifStub = {rateLimit: (key, cb) => cb(null, {limited: true})};
+      limited.use('/mcp', require('../../lib/routes/mcp')(null, cdifStub, hub));
+      const srv = await new Promise((r) => { const x = limited.listen(0, '127.0.0.1', () => r(x)); });
+      const data = JSON.stringify(body(90));
+      const res = await new Promise((resolve) => {
+        const rq = http.request({host: '127.0.0.1', port: srv.address().port, path: '/mcp', method: 'POST',
+          headers: {'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'MCP-Protocol-Version': V, 'Mcp-Method': 'subscriptions/listen', 'X-CH-Key': KEY}}, (r) => {
+          let t = '';
+          r.on('data', (c) => { t += c; });
+          r.on('end', () => resolve({status: r.statusCode, type: r.headers['content-type'], body: t}));
+        });
+        rq.end(data);
+      });
+      await new Promise((r) => srv.close(r));
+      assert.doesNotMatch(String(res.type), /event-stream/);
+      assert.match(res.body, /rate limit exceeded/);
+      assert.strictEqual(hub.count(KEY), 0);
+    });
+
+    describe('with a real file-provider key, and a slow provider', () => {
+      // --debugKey answers from one string, synchronously; here the auth
+      // provider answers, from a real FileAuthProvider over a temporary
+      // config, optionally late. The provider in use is patched in the hook
+      // and put back after.
+      const fs = require('fs');
+      const os = require('os');
+      const FileAuthProvider = require('../../lib/auth/file-provider');
+      const REAL = 'listen-real-file-key';
+      let provider;
+      let real;
+      let delayMs = 0;
+      let cfgDir;
+      before(() => {
+        options.debug = false;
+        cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-listen-auth-'));
+        const cfg = path.join(cfgDir, 'auth.json');
+        fs.writeFileSync(cfg, JSON.stringify({[REAL]: {userName: 'listener', devices: ['*']}}));
+        const file = new FileAuthProvider({configPath: cfg});
+        provider = require('../../lib/auth').getAuthProvider();
+        real = provider.authenticate;
+        provider.authenticate = (...args) => {
+          const cb = args[args.length - 1];
+          const answer = (...r) => (delayMs > 0 ? setTimeout(() => cb(...r), delayMs) : cb(...r));
+          file.authenticate(...args.slice(0, -1), answer);
+        };
+      });
+      after(() => {
+        provider.authenticate = real;
+        options.debug = true;
+        delayMs = 0;
+        fs.rmSync(cfgDir, {recursive: true, force: true});
+      });
+      const H = (key) => ({'MCP-Protocol-Version': V, 'Mcp-Method': 'subscriptions/listen', 'X-CH-Key': key});
+
+      it('a valid key gets a stream; an unknown one the error and no stream', async() => {
+        const ok = await listen(body(80), H(REAL));
+        assert.ok(await until(() => ok.events.length >= 1), ok.raw);
+        assert.match(String(ok.res.headers['content-type']), /^text\/event-stream/);
+        assert.strictEqual(hub.count(REAL), 1);
+        ok.req.destroy();
+        assert.ok(await until(() => hub.count(REAL) === 0));
+        const bad = await listen(body(81), H('not-a-real-key'));
+        assert.ok(await until(() => bad.ended));
+        assert.doesNotMatch(String(bad.res.headers['content-type']), /event-stream/);
+        assert.strictEqual(hub.count('not-a-real-key'), 0);
+      });
+
+      it('a client gone while its key is being checked holds no slot', async() => {
+        delayMs = 300;
+        const http2 = require('http');
+        const data = JSON.stringify(body(82));
+        const req = http2.request({host: '127.0.0.1', port, path: '/mcp', method: 'POST',
+          headers: Object.assign({'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data)}, H(REAL))});
+        req.on('error', () => {});
+        req.end(data);
+        await tick(50);
+        req.destroy();
+        await tick(600);
+        assert.strictEqual(hub.count(REAL), 0, 'no slot held for a gone client');
+        delayMs = 0;
+      });
     });
 
     it('a listen that agrees to nothing ends right after its acknowledgement', async() => {
