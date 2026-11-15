@@ -29,10 +29,14 @@ function connect(socketPath) {
       // if the connection closes first or `ms` passes
       next: (kind = null, ms = 3000) => new Promise((res) => {
         const until = Date.now() + ms;
+        let done = false;
+        const finish = (v) => { done = true; res(v); };
+        // a look left over from a wait that already ended takes nothing
         const look = () => {
+          if (done) return undefined;
           const i = got.findIndex((f) => kind == null || f.kind === kind);
-          if (i >= 0) return res(got.splice(i, 1)[0]);
-          if (closed || Date.now() > until) return res(null);
+          if (i >= 0) return finish(got.splice(i, 1)[0]);
+          if (closed || Date.now() > until) return finish(null);
           waiters.push(look);
           setTimeout(look, Math.max(0, until - Date.now()) + 1);
           return undefined;
