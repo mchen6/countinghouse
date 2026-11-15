@@ -637,3 +637,71 @@ describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, T
     assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 32 * M}), {ok: false, code: 'CONTROL_APPLIES_AT_START'});
   });
 });
+
+describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
+  const M = 1024 * 1024;
+  let saved;
+  beforeEach(() => {
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    options.maxOutputBytes = 8 * M;
+    options.requestTimeout = 30000;
+    settingsTool.resetForTests();
+    settingsTool.captureAtStart();
+  });
+  afterEach(() => { Object.assign(options, saved); settingsTool.resetForTests(); });
+  const base = (o = {}) => Object.assign({pool: null, modules: () => ({}), ask: async () => ({ok: true})}, o);
+  const trusted = (c) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, c)});
+
+  it('the ceiling is checked again once the resize resolves: one lowered meanwhile wins, nothing set', async () => {
+    let c = trusted({maxOutputBytes: 128 * M});
+    const d = base({ceiling: () => c, pool: {resize: async () => { c = trusted({maxOutputBytes: 16 * M}); }}});
+    await assert.rejects(settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 8 * M, next: 96 * M}, d), {code: 'SETTING_CEILING_CHANGED_MEANWHILE'});
+    assert.strictEqual(options.maxOutputBytes, 8 * M);
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 96 * M}), {ok: false, code: 'CONTROL_APPLIES_AT_START'}, 'the start cap not lifted');
+    // conversation turned off meanwhile, or the ceiling untrusted: the same
+    for (const later of [trusted({conversation: false}), {state: 'untrusted', file: 'c', problem: 'p'}]) {
+      c = later;
+      await assert.rejects(settingsTool.applyConfirmed({name: 'requestTimeout', old: 30000, next: 60000}, base({ceiling: () => c})), {code: 'SETTING_CEILING_CHANGED_MEANWHILE'});
+    }
+    // a tightening is never refused by it
+    c = {state: 'untrusted', file: 'c', problem: 'p'};
+    options.maxOutputBytes = 16 * M;
+    await settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 16 * M, next: 12 * M}, base({ceiling: () => c}));
+    assert.strictEqual(options.maxOutputBytes, 12 * M);
+  });
+
+  it('a load-pack with no answer is undone with an unload-pack; a resize that stopped, or no modules to tell, applies nothing', async () => {
+    const asked = [];
+    const d = base({ask: async (m) => { asked.push(m.type); return m.type === 'load-pack' ? {ok: false, code: 'CONTROL_NO_ANSWER'} : {ok: true}; }});
+    await assert.rejects(settingsTool.applyConfirmed({name: 'pack.x', old: false, next: true, version: '1.0.0'}, d), {code: 'SETTING_NOT_APPLIED'});
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(asked, ['load-pack', 'unload-pack']);
+    await assert.rejects(settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 8 * M, next: 32 * M},
+      base({pool: {resize: async () => { throw Object.assign(new Error('x'), {code: 'RESIZE_STOPPED'}); }}})), (e) => e.code === 'SETTING_NOT_APPLIED' && /RESIZE_STOPPED/.test(e.message));
+    assert.strictEqual(options.maxOutputBytes, 8 * M);
+    await assert.rejects(settingsTool.applyConfirmed({name: 'requestTimeout', old: 30000, next: 60000}, base({modules: undefined})), {code: 'SETTING_NOT_APPLIED'});
+    assert.strictEqual(options.requestTimeout, 30000);
+  });
+
+  it('a pack turned on this start is off again when ch-local unloads it, or when its value is written to the file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20i-'));
+    const file = path.join(dir, 'settings.json');
+    try {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+      fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
+      confirmModule.resetForTests();
+      const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
+      const on = async () => {
+        const a = await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+        return t.confirm('pack.ci-failure-triage', 'on', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
+      };
+      await on();
+      assert.strictEqual((await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT)).applies, 'this start', 'on this start: a no-op');
+      settingsTool.packUnloaded('@countinghouse/ch-pack-ci-failure-triage');
+      const again = await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+      assert.ok(again.inputRequired != null, 'off again: asked again');
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+});

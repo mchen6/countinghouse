@@ -124,6 +124,45 @@ describe('sandbox 52: the validator pool resized for a larger maxOutputBytes (pa
     assert.deepStrictEqual(heaps(pool), [448, 448, 448]);
   });
 
+  it('a held request past the wait stops the resize: never terminated by it, nothing left draining; what was resized stays', async () => {
+    pool = new ValidatorPool({size: 2, timeoutMs: 30000, compileMs: 10000, workerOptions, maxOutputBytes: 8 * MiB, resizeWaitMs: 300});
+    const m = moduleWith({type: 'array', uniqueItems: true}, pool);
+    await warmed(pool);
+    // the spare goes first; then a validator holding a long check
+    const held = checkIn(pool, m, Array.from({length: 9000}, (_, i) => ({i})));
+    let slot = null;
+    for (let w = 0; slot == null && w < 5000; w += 5) { await sleep(5); slot = pool.slots.find((s) => s.current != null); }
+    assert.ok(slot != null);
+    const worker = slot.worker;
+    let ended = false;
+    worker.once('exit', () => { ended = true; });
+    await assert.rejects(pool.resize(96 * MiB), {code: 'RESIZE_STOPPED'});
+    assert.strictEqual(ended, false, 'the held request\'s worker was not terminated by the resize');
+    assert.ok(all(pool).every((s) => !s.draining), 'nothing left draining');
+    await held;
+  });
+
+  it('a slot whose start is still pending is not retired (it starts at the new limits); a draining slot is no share', async () => {
+    pool = newPool();
+    await warmed(pool);
+    // a pending replacement, as fail() makes one after a crash at start
+    const pendingSlot = pool.spawn(400, true);
+    pool.slots.push(pendingSlot);
+    assert.strictEqual(pendingSlot.worker, null);
+    await pool.resize(96 * MiB);
+    assert.strictEqual(pendingSlot.ending, false, 'not retired');
+    for (let w = 0; pendingSlot.worker == null && w < 5000; w += 20) await sleep(20);
+    assert.strictEqual(pendingSlot.limitMb, 448, 'started at the new limits');
+    pool.slots.pop();
+    pendingSlot.ending = true;
+    await pendingSlot.worker.terminate();
+    // the share counts only slots that can serve
+    const share = pool.perModuleNow();
+    pool.slots[0].draining = true;
+    assert.strictEqual(pool.perModuleNow(), Math.max(1, share - 1));
+    pool.slots[0].draining = false;
+  });
+
   it('a validator that crashes during a resize is replaced at the new limits as usual, and the resize finishes', async () => {
     pool = newPool();
     const m = moduleWith({type: 'object'}, pool);
