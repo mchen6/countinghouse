@@ -531,12 +531,17 @@ A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims f
 - **Fresh** means `now − 600 000 ≤ at ≤ now + 60 000` (ms). A fresh, valid file means no daemon is spawned, and the session runs its own runtime. Anything else (stale, from the future, unreadable or invalid) is ignored, and the shim goes on as before.
 - **Cleared** by the next daemon whose runtime listens. So the shared mode comes back after 10 minutes, or as soon as a new daemon succeeds.
 - **The fallback at startup:** before the shim has read anything from stdin, it runs `start --stdio --own-runtime --home <home> <its arguments>` with the shim's stdin, waits, and exits with its code. That's today's pass-through path (on Windows, a spawn, since there's no exec). It says on stderr only: `the shared runtime failed (<reason>); this session runs its own`, with `reason` the enum alone.
-- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1). The per-session runtime it starts has never seen this client's `initialize`, so the shim:
-  1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
-  2. then sends the lines it held, then relays stdin as it comes.
+- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1).
+  - **Never looser.** A session's tightenings live only in the runtime's memory and the shim's records, never in `settings.json`. A per-session runtime starts at the file's values and takes no `replay` (it speaks MCP on stdio, with no `C` frames). So **a shim holding any record refuses the mid-session fallback**:
+    - it answers each held request, and each later one, with `sessionCantFallBackAnswer` (exact apart from the id);
+    - it says on stderr: `the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session`;
+    - then it exits non-zero.
+  - **With no record**, the per-session runtime it starts has never seen this client's `initialize`, so the shim:
+    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+    2. then sends the lines it held, then relays stdin as it comes.
 
-  The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
-- **Vectors** (`failedJson`, with the shim's): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key.
+    The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
+- **Vectors** (`failedJson` and `sessionCantFallBackAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
 
 ## 7. Windows and macOS
 
