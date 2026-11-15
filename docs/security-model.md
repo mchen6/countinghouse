@@ -707,7 +707,10 @@ and the short list of what the in-process sandbox cannot give.
   the process's full privileges. They still see `/app`, `/data` and `/tmp`
   through `fs`, `fs/promises` and `os`, but that only translates paths: no
   checks, quota or link rules, and a module can require countinghouse's own
-  dependencies through `NODE_PATH`. It is for debugging modules
+  dependencies through `NODE_PATH`. Nothing the main thread keeps from
+  modules is kept from them there: a call's `Session`, including the
+  shared runtime's session id on it, its call tokens and every other main-
+  thread state are in reach. It is for debugging modules
   ([differences](module-development.md)).
 - **No OS-level isolation.** `worker_threads` share the same process, same
   OS user and same network stack as the main thread. Outside `--hardened`
