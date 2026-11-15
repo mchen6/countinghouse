@@ -45,27 +45,13 @@ that LM1 adds.
 - Outside access and refusals are also what the audit work (P2, after the
   logger) records in full. The two are built on one path, not two.
 
-## Changing runtime limits by asking the agent
+## Changing runtime limits by asking the agent: in the first release
 
-**Why.** The maintainer, 2026-11-13: an agent that uses our packs should
-recognise when a result is over the size cap (`--maxResultBytes`, default
-16 MiB), and the user should be able to change the cap by asking the agent
-in plain language.
+Not later work any more. Release 1 has it:
+- the `countinghouse_settings` tool, in the single-identity profile;
+- `ch-local settings` from the terminal;
+- `--maxOutputBytes`, with a too-large output answered `OUTPUT_TOO_LARGE`;
+- the operator's ceiling, which no conversation can raise.
 
-**Already in the first release:** a too-large result answers with the
-`RESULT_TOO_LARGE` code, structured fields naming the setting, the size and
-the cap, and text that tells the agent the user can raise it and how.
-
-**Later, to design:**
-
-- a launcher setting (`ch-local config set maxResultBytes 64MiB`, persisted
-  in the user's home), applied on the next start, which an agent with a
-  shell can run for the user;
-- for agents without a shell (Claude Desktop, ChatGPT), a built-in settings
-  tool listed only in the single-identity profile, changing only an
-  allowlisted set of settings within fixed bounds, with the agent's own
-  tool-approval prompt as the user's consent;
-- never settable by a module, and never above a hard ceiling the operator
-  fixes, so a prompt injected through a tool result cannot raise a limit
-  without the user seeing the request.
+The design is in `docs/superpowers/specs/2026-11-14-packs-in-place-and-settings-tool-design.md` and `2026-11-14-guarding-settings-by-conversation-design.md`. The `--maxResultBytes` cap and its `RESULT_TOO_LARGE` code once planned here were never built.
 
