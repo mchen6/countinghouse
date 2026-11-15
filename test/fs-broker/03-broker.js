@@ -84,15 +84,15 @@ describe('fs-broker 03: broker operations', function() {
     } finally { await t.done(); }
   });
 
-  it('enforce: /app is read-only (EROFS); audit allows and reports it', async () => {
+  it('enforce: /app is read-only (EROFS); audit refuses it too (EACCES) and records the denial', async () => {
     const e = await setup('enforce');
     try {
       await assert.rejects(e.broker.handle('open', ['/app/index.js', 'w']), (err) => err.code === 'EROFS' && err.path === '/app/index.js');
     } finally { await e.done(); }
     const a = await setup('audit');
     try {
-      await a.broker.handle('close', [await a.broker.handle('open', ['/app/new.js', 'w'])]);
-      assert.ok(a.reports.includes('readonly /app/new.js'), a.reports.join('\n'));
+      await assert.rejects(a.broker.handle('open', ['/app/new.js', 'w']), (err) => err.code === 'EACCES' && err.path === '/app/new.js');
+      assert.ok(a.reports.includes('denied /app/new.js'), a.reports.join('\n'));
     } finally { await a.done(); }
   });
 

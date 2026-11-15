@@ -51,13 +51,18 @@ describe('fs-broker 09: module workers use the broker', function() {
   // The log is JSON: a Windows path's backslashes are doubled in it.
   const logged = (p) => `module sandbox: fs-probe file outside ${JSON.stringify(p).slice(1, -1)}`;
 
-  it('audit: a path outside the namespace passes through and is logged', async () => {
+  // Matt, 2026-11-15: under audit a module reads outside its namespace
+  // (logged) but writes nothing there
+  it('audit: a read outside the namespace passes through and is logged; a write there is refused EACCES', async () => {
     server = await start('audit');
     const outside = outsidePath();
-    const w = await mcpCall(testPort(9626), KEY, tool('write'), {path: outside, content: 'o'});
-    assert.strictEqual(toolOutput(w).ok, true, JSON.stringify(w));
-    assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'o');
+    fs.writeFileSync(outside, 'host');
+    const r = await mcpCall(testPort(9626), KEY, tool('read'), {path: outside});
+    assert.strictEqual(JSON.stringify(toolOutput(r)).includes('host'), true, JSON.stringify(r));
     await waitFor(async () => server.output.includes(logged(outside)), 5000, 'outside log line');
+    const w = await mcpCall(testPort(9626), KEY, tool('write'), {path: outside, content: 'o'});
+    assert.deepStrictEqual([toolOutput(w).ok, toolOutput(w).code], [false, 'EACCES'], JSON.stringify(w));
+    assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'host');
   });
 
   it('enforce refuses a path outside the namespace (ENOENT) and logs it', async () => {
