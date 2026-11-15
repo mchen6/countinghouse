@@ -11,12 +11,12 @@ you have to do. What the sandbox does and does not protect is in
 
 - **Most likely surprise: module outputs are capped, and checked out of a
   module's reach.**
-  - `--maxOutputBytes` (default 8 MiB, at most 256 MiB) caps a module's
+  - `--maxOutputBytes` (default 16 MiB, at most 256 MiB) caps a module's
     output on every call the main thread carries, measured by its bytes
     there: a client's call, a job's run, and a hop routed through the main
     thread (its result and its input). Past it the call is refused with
     `OUTPUT_TOO_LARGE` or `INPUT_TOO_LARGE`, naming the module and the
-    action. A module that returns more than 8 MiB stops working on upgrade:
+    action. A module that returns more than 16 MiB stops working on upgrade:
     raise the cap, or have it return a reference (a path in its data)
     instead.
   - A hop over a direct peer channel (the default; `--no-directPeerChannels`

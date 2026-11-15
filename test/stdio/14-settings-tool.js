@@ -39,7 +39,8 @@ describe('stdio 14: countinghouse_settings', () => {
   it('get, with no file: every setting at its default, with its bounds, whether it guards, and when it applies', async () => {
     const got = await tool.get();
     const byName = Object.fromEntries(got.settings.map((s) => [s.name, s]));
-    assert.deepStrictEqual(byName.maxOutputBytes, {name: 'maxOutputBytes', value: 8 * MiB, default: 8 * MiB, bounds: {min: MiB, max: 256 * MiB}, guarding: true, applies: 'now'});
+    // 16 MiB: the approved default (Matt, 2026-11-15)
+    assert.deepStrictEqual(byName.maxOutputBytes, {name: 'maxOutputBytes', value: 16 * MiB, default: 16 * MiB, bounds: {min: MiB, max: 256 * MiB}, guarding: true, applies: 'now'});
     assert.deepStrictEqual(byName.requestTimeout, {name: 'requestTimeout', value: 30000, default: 30000, bounds: {min: 5000, max: 120000}, guarding: true, applies: 'now'});
     assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: ['enforce', 'audit']});
     assert.strictEqual(byName.moduleSandbox.default, 'enforce');
@@ -49,7 +50,7 @@ describe('stdio 14: countinghouse_settings', () => {
   });
 
   it('every allowlisted setting is set within its bounds, stored as ch-local stores it, the history line first', async () => {
-    assert.deepStrictEqual(await tool.set('maxOutputBytes', '4MiB'), {name: 'maxOutputBytes', old: 8 * MiB, new: 4 * MiB, applies: 'now'});
+    assert.deepStrictEqual(await tool.set('maxOutputBytes', '4MiB'), {name: 'maxOutputBytes', old: 16 * MiB, new: 4 * MiB, applies: 'now'});
     assert.deepStrictEqual(await tool.set('requestTimeout', '20s'), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'now'});
     await tool.set('locale', 'zh');
     await tool.set('locale', 'en');
@@ -61,7 +62,7 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.deepStrictEqual(stored(), {maxOutputBytes: 4 * MiB, requestTimeout: 20000, locale: 'en', upgradeCheck: 'weekly', 'pack.ci-failure-triage': false});
     const h = history();
     assert.strictEqual(h.length, 6);
-    assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(h[0]), {by: 'settings tool', setting: 'maxOutputBytes', old: 8 * MiB, new: 4 * MiB});
+    assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(h[0]), {by: 'settings tool', setting: 'maxOutputBytes', old: 16 * MiB, new: 4 * MiB});
     assert.ok(h.every((e) => e.loosened === undefined));
     assert.strictEqual((await tool.get()).history.length, 6);
   });
