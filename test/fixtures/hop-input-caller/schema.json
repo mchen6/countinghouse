@@ -48,7 +48,9 @@
           "action": {
             "enum": [
               "big",
-              "bad"
+              "bad",
+              "slow",
+              "forge"
             ]
           },
           "args": {
