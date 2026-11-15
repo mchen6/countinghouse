@@ -248,6 +248,85 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
       }
     });
 
+    // A ceiling changed on disk is not known on a call's path until it is
+    // read again (the cache answers "not known" once the file's stamp
+    // differs). Until then calls stay held to the ceiling last seen: never
+    // to the default alone, which a touch of the file would otherwise buy.
+    it('between a change on disk and its re-read, calls stay held to the ceiling last seen', () => {
+      let now = trusted({maxOutputBytes: 600});
+      settings.configure({ceiling: () => now, defaultOf: (n) => defaults()[n], boundsOf: () => ({min: 1, max: 2 ** 31 - 1}), ceilingMemoMs: 0});
+      assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 600);
+      now = undefined;   // the file changed; not read again yet
+      assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 600, 'the previous ceiling, not the default');
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 600);
+      now = trusted({maxOutputBytes: 300});   // read again
+      assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 300);
+      now = {state: 'none'};   // removed, and read again: no ceiling
+      assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 1000);
+    });
+
+    // The reviewer's ruling: the shared runtime re-checks the ceiling on a
+    // timer, so one lowered while it runs bounds calls without anyone
+    // calling the settings tool: every 10 s where the check is a stat
+    // (POSIX; read again only when the file changed), every 5 minutes on
+    // Windows, where reading it costs a PowerShell.
+    it('the shared runtime re-checks the ceiling on a timer: a ceiling lowered while it runs comes to bound calls', () => {
+      const settingsTool = require('../../lib/settings-tool');
+      settingsTool.resetForTests();
+      const ticks = [];
+      const every = (fn, ms) => { ticks.push({fn, ms}); return {stop: true}; };
+      let stopped = null;
+      try {
+        // the interval, by platform
+        settingsTool.watchCeiling({read: () => ({state: 'none'}), every, clear: () => {}, platform: 'linux'});
+        settingsTool.watchCeiling({read: () => ({state: 'none'}), every, clear: () => {}, platform: 'darwin'});
+        settingsTool.watchCeiling({read: () => ({state: 'none'}), every, clear: () => {}, platform: 'win32'});
+        assert.deepStrictEqual(ticks.map((x) => x.ms), [10000, 10000, 300000]);
+        // a tick reads again once the cache is stale (here by the Windows
+        // age rule, with a clock of the test's; on POSIX by the file's stamp)
+        settingsTool.resetForTests();
+        ticks.length = 0;
+        let onDisk = trusted({maxOutputBytes: 600});
+        let clock = 0;
+        let reads = 0;
+        const read = () => { reads += 1; if (onDisk == null) throw new Error('EIO'); return onDisk; };
+        const stop = settingsTool.watchCeiling({read, every, clear: (h) => { stopped = h; }, platform: 'win32', now: () => clock});
+        settingsTool.primeCeiling(read, {platform: 'win32', now: () => clock});
+        settings.configure({defaultOf: (n) => defaults()[n], boundsOf: () => ({min: 1, max: 2 ** 31 - 1})});
+        assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 600);
+        // a tick with nothing changed reads nothing
+        const before = reads;
+        ticks[0].fn();
+        assert.strictEqual(reads, before);
+        // lowered on disk; at the next tick past the window it is read, and bounds the next call
+        onDisk = trusted({maxOutputBytes: 300});
+        clock += 5 * 60 * 1000 + 1;
+        ticks[0].fn();
+        assert.strictEqual(reads, before + 1);
+        assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 300);
+        // a read that fails leaves the last one in force, and the timer running
+        clock += 5 * 60 * 1000 + 1;
+        onDisk = null;
+        assert.doesNotThrow(() => ticks[0].fn());
+        assert.strictEqual(callLimits.of(callOf(A)).maxOutputBytes, 300, 'the last one read');
+        stop();
+        assert.deepStrictEqual(stopped, {stop: true});
+      } finally {
+        settingsTool.resetForTests();
+      }
+    });
+
+    it('the watch never keeps the process alive', () => {
+      const settingsTool = require('../../lib/settings-tool');
+      const stop = settingsTool.watchCeiling({read: () => ({state: 'none'})});
+      try {
+        assert.strictEqual(typeof(stop), 'function');
+      } finally {
+        stop();
+        settingsTool.resetForTests();
+      }
+    });
+
     it('a job run of a session that has ended (its last values, bounded by the defaults) is held to the ceiling too', () => {
       under(trusted({maxOutputBytes: 600}));
       sources[A].emit('end');

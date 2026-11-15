@@ -506,12 +506,38 @@ ceiling reads as one that cannot be trusted, and it fails closed. (The
 identity secret is checked by the `--hardened` parent before it relaunches
 under the permission model; the child takes that same file only, unchanged.)
 
-In a shared runtime, a session's per-call checks don't read the ceiling
-each time: `lib/session-settings.js` takes its last read again for up to
-1 s, on a monotonic clock. A ceiling the settings tool re-reads replaces it at
-once. So a ceiling lowered on disk can take up to 1 s to bound a session's
-calls; until then they're held to the operator's previous ceiling, never
-beyond it.
+In a shared runtime, every call of a session is held to the tighter of the
+runtime's default and the ceiling, whether or not the session set a value of
+its own, and also under a ceiling that turns conversation off or forbids
+changing the setting. ch-local's `start` clamps the defaults it passes to the
+ceiling; a runtime started another way, with a default above it, still
+doesn't serve above it.
+
+A session's per-call checks don't read the ceiling each time:
+`lib/session-settings.js` takes its last read again for up to 1 s, on a
+monotonic clock. A ceiling the settings tool re-reads replaces it at once.
+
+The shared runtime reads the ceiling when it starts serving sessions, and
+checks it again on a timer:
+
+- **every 10 s on Linux and macOS**, where the check is a stat of the file
+  and of each directory above it, and the file is read again only when one
+  of them changed;
+- **every 5 minutes on Windows**, where a read spawns PowerShell (the same
+  5 minutes a Windows read is taken as current).
+
+So a ceiling lowered on disk bounds a session's calls within about 10 s on
+Linux and macOS and within about 5 minutes on Windows, without anyone calling
+the settings tool. Until it is read again the calls are held to the
+operator's previous ceiling: never beyond it, and never to the runtime's
+default alone.
+
+A `--stdio` runtime does not read the ceiling when it starts or watch it:
+its calls are bounded by the ceiling only once the settings tool or a control
+message from ch-local has read it. Under ch-local that changes nothing, since
+`start` has already clamped the flags it passes. The ceiling is a rule for a
+runtime ch-local installed and starts; a `--stdio` runtime started by hand
+with flags above it is not held to it before that first read.
 
 Two limits. `<home>/history.jsonl` is a record for the user, not a security
 boundary: the user can write it, so nothing the ceiling enforces rests on
