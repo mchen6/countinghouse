@@ -61,6 +61,17 @@ describe('--stdio route layer', () => {
     await h.served.done;
   });
 
+  it('a subscriptions/listen inside a batch is refused, never dispatched, and the rest is served (#231)', async () => {
+    const h = harness();
+    h.input.write(`${JSON.stringify([req(1, 'tools/list'), req(2, 'subscriptions/listen', {notifications: {toolsListChanged: true}})])}\n`);
+    await settle();
+    assert.deepStrictEqual(h.calls.map((c) => c.message.method), ['tools/list']);
+    assert.deepStrictEqual(h.json(), [[{jsonrpc: '2.0', id: 1, result: {method: 'tools/list'}},
+      {jsonrpc: '2.0', id: 2, error: {code: -32600, message: 'invalid JSON-RPC 2.0 request: subscriptions/listen is sent alone, never in a batch'}}]]);
+    h.input.end();
+    await h.served.done;
+  });
+
   it('a notification, or a batch of only notifications, gets no line', async () => {
     const h = harness();
     send(h, {jsonrpc: '2.0', method: 'notifications/initialized'});

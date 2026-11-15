@@ -24,6 +24,24 @@ function portIn(args) {
   return null;
 }
 
+// A countinghouse server (framework.js or bin/countinghouse) spawned with no
+// --port listens on its default (9527), outside the run's block, where the
+// test's own client never looks (#234: the direct-peer-channels files); one
+// with --stdio listens on no port. -> true when it is that.
+const SERVER = /(^|[\\/\s"'])(framework\.js|bin[\\/]countinghouse)(["'\s]|$)/;
+function serverWithoutPort(file, args) {
+  const parts = Array.isArray(args) ? [String(file)].concat(args.map(String)) : [String(file)];
+  const text = parts.join(' ');
+  if (!SERVER.test(text)) return false;
+  if (/--stdio\b/.test(text)) return false;
+  return (Array.isArray(args) ? portIn(args) : portIn(String(file))) == null;
+}
+function checkServer(file, args) {
+  if (serverWithoutPort(file, args)) {
+    throw new Error(`port guard: a countinghouse server spawned with no --port under CH_TEST_PORT_BASE=${BASE}: it listens on its default port, outside the run's block; give it --port testPort(...) (#234)`);
+  }
+}
+
 function check(port) {
   if (port == null || !TEST_PORT.test(port)) return;
   if (!require('./test-env').handedOut(port)) {
@@ -39,6 +57,7 @@ if (BASE != null && BASE !== '') {
       check(portIn(Array.isArray(args) ? args : null));
       // spawn(command, {shell: true}) and the like: the command line itself
       if (!Array.isArray(args) && typeof(file) === 'string') check(portIn(file));
+      checkServer(file, args);
       return original.call(this, file, args, ...rest);
     };
   }
@@ -46,9 +65,10 @@ if (BASE != null && BASE !== '') {
     const original = cp[name];
     cp[name] = function(command, ...rest) {
       check(portIn(String(command)));
+      checkServer(String(command), null);
       return original.call(this, command, ...rest);
     };
   }
 }
 
-module.exports = {portIn};
+module.exports = {portIn, serverWithoutPort};
