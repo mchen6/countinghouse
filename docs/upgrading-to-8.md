@@ -123,7 +123,10 @@ you have to do. What the sandbox does and does not protect is in
   `Content-Type: application/bson` is answered 415
   (`REQUEST_UNSUPPORTED_MEDIA_TYPE`) on every route, where
   `POST /devices/:deviceID/invoke-action` used to decode it. Send JSON, with
-  binary data as base64. (MCP was always JSON only.)
+  binary data as base64. (MCP was always JSON only.) The
+  `--maxBsonRequestBody` option is gone with it: a start that still passes
+  it is not refused (the flag is ignored, and bounds nothing), so take it
+  out of your start command.
 
 - **Jobs that run longer than an hour need `--jobTimeout`.** A job that
   sets no timeout of its own is now ended after `--jobTimeout` seconds
