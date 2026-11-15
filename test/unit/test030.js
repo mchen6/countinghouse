@@ -2,12 +2,13 @@ const request = require('supertest');
 const jsf     = require('json-schema-faker');
 const chalk   = require('chalk');
 const BSON    = require('bson');
+const {testPort} = require('../helpers/test-env');
 
 jsf.option({
   alwaysFakeOptionals: true
 });
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 describe('test30: invoke async action which throws inside a never-settling Promise', function() {
   this.timeout(0);

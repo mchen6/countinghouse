@@ -27,20 +27,41 @@ const USES_HELPER = /require\(['"]\.\.\/helpers\/sandbox-server['"]\)/;
 // itself (#192): its code (not a comment) names 'framework.js' or passes a
 // '--port' argument. Validation 14 scans the same files. Validation 14 itself
 // is not one: its numbers are testPort's probes.
-const SPAWNS_SERVER = /['"`/]framework\.js['"`]|['"`]--port(['"`]|=)/;
+// (or runs bin/countinghouse, or, in a shell command line, passes `--port N`
+// with N a test port, or its mapping: test1, 2 and 8)
+const SPAWNS_SERVER = /['"`/]framework\.js['"`]|bin\/countinghouse\b|['"`]--port(['"`]|=)|--port[= ](9[5-9]\d\d\b|\$\{testPort\()/;
 const NOT_SERVER_TESTS = new Set(['test/validation/14-test-ports.js']);
 const codeText = (text) => text.split('\n').map((l) => split(l)[0]).join('\n');
-const isServerTest = (text, rel) => !NOT_SERVER_TESTS.has(rel) && (USES_HELPER.test(text) || SPAWNS_SERVER.test(codeText(text)));
+// A server test's parts: the files of a folder it requires one by one
+// (`require(\`./unit/${file}\`)`: test1's unit/, test3's load-module/, test8's
+// direct-peer-channels/ and the like) run against its server, so their
+// ports are its ports (#215).
+const REQUIRES_FOLDER = /require\(`\.\/([a-z0-9-]+)\/\$\{/g;
+let partDirs = null;
+function partsOf() {
+  if (partDirs != null) return partDirs;
+  partDirs = new Set();
+  const top = path.join(ROOT, 'test');
+  for (const e of fs.readdirSync(top, {withFileTypes: true})) {
+    if (!e.isFile() || !e.name.endsWith('.js')) continue;
+    const text = fs.readFileSync(path.join(top, e.name), 'utf8');
+    if (!(USES_HELPER.test(text) || SPAWNS_SERVER.test(codeText(text)))) continue;
+    for (const m of codeText(text).matchAll(REQUIRES_FOLDER)) partDirs.add(`test/${m[1]}`);
+  }
+  return partDirs;
+}
+const isPart = (rel) => rel != null && partsOf().has(rel.slice(0, rel.lastIndexOf('/')));
+const isServerTest = (text, rel) => !NOT_SERVER_TESTS.has(rel) && (USES_HELPER.test(text) || SPAWNS_SERVER.test(codeText(text)) || isPart(rel));
 // The test ports: test/ports.md's range, 9500-9999.
 const PORT = '9[5-9]\\d\\d';
 
-// Test files in test/<folder>/ (test1.js to test8.js at test/'s top bind the
-// default port 9527 without --port: not a literal to map).
-function testFiles(dir, top = true) {
+// Every test file under test/, but its fixtures and helpers (test1.js to
+// test8.js at test/'s top pass --port 9527 since #215).
+function testFiles(dir) {
   return fs.readdirSync(dir, {withFileTypes: true}).flatMap((e) => {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) return (e.name === 'fixtures' || e.name === 'helpers') ? [] : testFiles(p, false);
-    return (!top && e.name.endsWith('.js')) ? [p] : [];
+    if (e.isDirectory()) return (e.name === 'fixtures' || e.name === 'helpers') ? [] : testFiles(p);
+    return e.name.endsWith('.js') ? [p] : [];
   });
 }
 
@@ -53,8 +74,12 @@ function split(line) {
   return [line.slice(0, cut), line.slice(cut)];
 }
 
-// A port in text: not part of a longer number or name.
+// A port in code: not part of a longer number or name.
 const portIn = () => new RegExp(`(?<![\\w.$])(${PORT})(?!\\d)`, 'g');
+// A port in a string's or template's text: after a colon, a space, an = or
+// the text's start, and not followed by a word character or a hyphen, so a
+// UUID's or hash's group (a53ef5c7-cc2f-5264-9811-...) is never one.
+const portInText = () => new RegExp(`(?<=^|[:\\s=])(${PORT})(?![\\w-])`, 'g');
 
 // Code (no strings in it): a bare port becomes testPort(N), unless it is
 // already one's argument.
@@ -68,11 +93,11 @@ function mapCode(code, keep) {
 // A '...' or "..." string's text with a port: a template that holds
 // ${testPort(N)}; the whole string a port: String(testPort(N)).
 function mapQuoted(quote, inner, keep) {
-  const ports = [...inner.matchAll(portIn())].filter((m) => !keep.has(m[1]));
+  const ports = [...inner.matchAll(portInText())].filter((m) => !keep.has(m[1]));
   if (ports.length === 0) return null;
-  if (portIn().test(inner) && inner === ports[0][1]) return `String(testPort(${inner}))`;
+  if (inner === ports[0][1]) return `String(testPort(${inner}))`;
   const text = inner.replace(/\\(['"])/g, '$1').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-  return '`' + text.replace(portIn(), (all, n) => (keep.has(n) ? all : `\${testPort(${n})}`)) + '`';
+  return '`' + text.replace(portInText(), (all, n) => (keep.has(n) ? all : `\${testPort(${n})}`)) + '`';
 }
 
 // One line of code, string-aware: code, '...' and "..." strings, and
@@ -109,7 +134,7 @@ function mapLine(code, keep) {
       while (j < code.length && code[j] !== '`') {
         if (code[j] === '\\') { text += code.slice(j, j + 2); j += 2; continue; }
         if (code[j] === '$' && code[j + 1] === '{') {
-          out += text.replace(portIn(), (all, n) => (keep.has(n) ? all : `\${testPort(${n})}`));
+          out += text.replace(portInText(), (all, n) => (keep.has(n) ? all : `\${testPort(${n})}`));
           text = '';
           let depth = 1;
           let k = j + 2;
@@ -122,7 +147,7 @@ function mapLine(code, keep) {
         text += code[j];
         j++;
       }
-      out += text.replace(portIn(), (all, n) => (keep.has(n) ? all : `\${testPort(${n})}`));
+      out += text.replace(portInText(), (all, n) => (keep.has(n) ? all : `\${testPort(${n})}`));
       if (j < code.length) out += '`';
       i = j + 1;
       continue;
@@ -164,7 +189,10 @@ function mapFile(file) {
       if (last < 0) last = firstUse - 1;
     }
     if (last < 0) throw new Error(`${rel}: no top-level require to put testPort's after`);
-    all.splice(last + 1, 0, "const {testPort} = require('../helpers/test-env');");
+    // test-env, relative to this file (test/'s top-level files are one up)
+    let helper = path.relative(path.dirname(file), path.join(ROOT, 'test', 'helpers', 'test-env')).split(path.sep).join('/');
+    if (!helper.startsWith('.')) helper = `./${helper}`;
+    all.splice(last + 1, 0, `const {testPort} = require('${helper}');`);
     text = all.join('\n');
   }
   return {rel, text, changes};

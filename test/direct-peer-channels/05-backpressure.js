@@ -2,8 +2,9 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels.md's "Backpressure" section: lib/peer-channel.js
 // caps and queues concurrent invokes (both the caller's outgoing invoke()

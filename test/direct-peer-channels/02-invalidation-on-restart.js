@@ -1,6 +1,7 @@
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 2's required test:
 // "调用进行中热重载目标模块 -> 调用方收到明确错误且下一次调用成功走新实例" (reload the

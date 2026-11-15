@@ -1,6 +1,7 @@
 const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
-const url = 'http://127.0.0.1:9527';
+const {testPort} = require('../helpers/test-env');
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 const Queue       = require('bullmq').Queue;
 const QueueEvents = require('bullmq').QueueEvents;

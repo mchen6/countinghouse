@@ -2,8 +2,9 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 3's required test:
 // "无权模块请求 brokering 被拒" (an unauthorized module's brokering request is
