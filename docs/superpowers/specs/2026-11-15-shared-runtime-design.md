@@ -366,7 +366,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
   - nothing from any client's environment reaches it.
-- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `node ch-local start --stdio --own-runtime` with its arguments, and says so on stderr and in the first result's notice. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
+- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `<node> <chLocal> start --stdio --own-runtime --home <home> <its arguments>`, from `shim.json`, and says so on stderr and in the first result's notice. `--home` is the shim's own (absolute; `start` refuses a relative or missing one with exit 2), and it overrides `COUNTINGHOUSE_HOME`, so a client's environment can't pick another home. ch-local's options come before the pass-through flags, and neither reaches the runtime. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
   - a pass-through runtime flag (`--moduleSandbox`, `--maxOutputBytes`, `--requestTimeout`, `--locale` or any other `start` passes through);
   - a token the client's environment *chooses* under today's precedence, which differs from the daemon's. That's a `COUNTINGHOUSE_GITHUB_TOKEN`, or a `GITHUB_TOKEN` when `gh` has none. A shell-wide `GITHUB_TOKEN` beside a working `gh` login chooses nothing, so it doesn't push a session to its own runtime.
 
@@ -407,7 +407,12 @@ Nothing of a session is ever written to a file.
 **The resume token is single-use and rotated:**
 - Each `WELCOME` gives a new one, and the old one is void.
 - A resume is refused while the session still has a live connection, so a copied token can't take over a live session.
-- The daemon stores only a hash of the current token.
+- The daemon stores only a hash of the current token: **plain SHA-256**, as 64 lowercase hex characters, in memory only.
+  - **Why no key is needed.** The token is 256 random bits (`crypto.randomBytes(32)`), so a preimage of its hash is infeasible. No HMAC key has to outlive a runtime. The new runtime looks a presented token up by its SHA-256, a map lookup, which is fine for the hash of a 256-bit secret.
+  - **Told before it's sent.** The runtime tells the daemon `{type: 'session-resume', session, hash}` for each new token *before* it writes the `WELCOME` carrying it. The tell and the socket write go out on separate descriptors, though. If the runtime is SIGKILLed while the IPC pipe is backed up, the daemon can miss the newest hash while the shim has the token. The shim's resume is then `RESUME_REFUSED`, and it fails closed: it opens a new session and replays only its tightenings. A session's end is told as `{type: 'session-gone', session}`.
+  - **One hash, one session.** A restore with two rows sharing a hash is refused, and a session's end removes its hash only if that hash is still its own.
+  - **Handed back on a restart.** Each restored row is `{session, resume, state}`: `resume` is that hash, beside B's state and never inside it. The runtime validates it as exactly 64 lowercase hex characters, then waits for the session's resume within the reconnect window.
+  - **A hash alone resumes nothing.** The shim authenticates with the new runtime's secret (HELLO, PROVE, AUTH) before its RESUME, and the first resume rotates the token again.
 
 ### The shim's home and `shim.json`
 
@@ -492,7 +497,14 @@ Nothing of a session is ever written to a file.
 2. it starts the new daemon with the table on that pipe, under `start.lock`;
 3. it exits once the new daemon has written `daemon.json`.
 
-If the handoff fails, the new daemon starts empty: loosenings are reset, announced, and tightenings come back from the shims.
+**The handoff never carries a loosening.** Any process of this user can stop the daemon, or outwait it, and start `ch-local daemon --handoff` with a pipe of its own. A restored loosening needs no fresh confirmation (§11 answer 4). So, under the rule that nothing a same-user process could plant becomes a loosening:
+- the new daemon keeps, from the handoff, only each session's tightenings, its packs turned off, its decline locks and the forms it has left;
+- it drops every confirmed loosening, and every pack turned on in conversation;
+- each session that lost one is told, as after a daemon death: "your this-session loosenings were reset; ask again".
+
+A ch-local upgrade is therefore a daemon death for loosenings, and only a runtime upgrade (the daemon living on) keeps them.
+
+The handoff goes on the new daemon's fd 3, as a 4-byte length and `{v: 1, sessions, declines}`. It's never in argv or the environment, and the secret is never in it. If the handoff fails, the new daemon starts empty: loosenings are reset, announced, and tightenings come back from the shims.
 
 ### Reconnecting (finding 8)
 
@@ -512,8 +524,36 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 
 ### Crash of the runtime or the daemon
 
-- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. After 5 failures in 10 minutes it stops and logs why. It hands the table over each time.
+- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. It hands the table over each time. After 5 failures in 10 minutes it stops restarting: it writes `failed.json` (below), removes `daemon.json`, and exits.
 - **The daemon:** the next shim to reconnect finds the pid dead, and starts a new daemon under the lock.
+
+### `failed.json`: falling back without a loop
+
+A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims fall back to the per-session mode instead of starting daemon after daemon.
+
+- **Written** by the daemon as `daemon.json` is: 0600, through an exclusive temporary file, `fchmod`, then a rename. Exactly:
+
+  ```json
+  {"v": 1, "at": <epoch ms>, "exit": <integer or null>, "signal": <"SIG…" or null>, "reason": "restarts-exhausted" | "never-listened"}
+  ```
+
+  - `v` is exactly 1; `at` is a positive safe integer; `exit` is a safe integer or null; `signal` matches `^SIG[A-Z0-9]+$` or is null; `reason` is one of the two strings.
+  - The key set is exact: none extra, none missing, none twice. It holds no path, environment or stderr text.
+- **Read** by the shim with `daemon.json`'s trust checks (the 0700 directory, 0600, the euid's, no links, at most 512 bytes; on Windows the owner and DACL equivalents). It's read at two points: after the `daemon.json` check fails, and again under the start lock, immediately before a spawn. So a daemon that gives up between the two never gets a fresh daemon started behind it.
+- **Fresh** means `now − 600 000 ≤ at ≤ now + 60 000` (ms). A fresh, valid file means no daemon is spawned, and the session runs its own runtime. Anything else (stale, from the future, unreadable or invalid) is ignored, and the shim goes on as before.
+- **Cleared** by the next daemon whose runtime listens. So the shared mode comes back after 10 minutes, or as soon as a new daemon succeeds.
+- **The fallback at startup:** before the shim has read anything from stdin, it runs `start --stdio --own-runtime --home <home> <its arguments>` with the shim's stdin, waits, and exits with its code. That's today's pass-through path (on Windows, a spawn, since there's no exec). It says on stderr only: `the shared runtime failed (<reason>); this session runs its own`, with `reason` the enum alone.
+- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1).
+  - **Never looser.** A session's tightenings live only in the runtime's memory and the shim's records, never in `settings.json`. A per-session runtime starts at the file's values and takes no `replay` (it speaks MCP on stdio, with no `C` frames). So **a shim holding any record refuses the mid-session fallback**:
+    - it answers each held request, and each later one, with `sessionCantFallBackAnswer` (exact apart from the id);
+    - it says on stderr: `the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session`;
+    - then it exits non-zero.
+  - **With no record**, the per-session runtime it starts has never seen this client's `initialize`, so the shim:
+    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+    2. then sends the lines it held, then relays stdin as it comes.
+
+    The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
+- **Vectors** (`failedJson` and `sessionCantFallBackAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
 
 ## 7. Windows and macOS
 
@@ -522,7 +562,7 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 - The daemon runs detached and hidden: no Windows service, no Task Scheduler.
 - The `conditions` child uses the existing PowerShell ancestry reader. The shim passes it its parent's pid.
 
-**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. The shim binary is signed and notarized with the release. The managed preferences and plist sources in the client conditions are unchanged.
+**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. Release 1 ships the shim unsigned (signing comes in a later release), as `shim.yml` and ch-local's README say; macOS notarization and Windows signing come in a later point release. The managed preferences and plist sources in the client conditions are unchanged.
 
 **Linux.** As described. `XDG_RUNTIME_DIR` isn't required.
 
@@ -542,7 +582,13 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 - *Any process of the same user, including the AI through a shell:* can read the secret and attach. **The same as today**, where it can start its own runtime.
 
 **What a session can do to others:**
-- It can't change another session's settings, or any global setting from conversation.
+- It can't change another session's settings.
+- **A global change from conversation is explicit, confirmed, and low-stakes only** (the maintainer's decision):
+  - in one session the user asks for a low-stakes setting to change for all sessions;
+  - after the confirmation it becomes a global change, and every session gets a notice of it;
+  - a heavy setting changes only from the terminal, as before.
+
+  B builds it in B2.
 - A self-answering fake session loosens only its own calls. A terminal tightening ends its loosening, as it does any session's.
 - It can't see another session's notices, staged confirmations, this-session packs, tasks, usage records or settings history.
 - It can't use another session's tools: they look like unknown tools.
