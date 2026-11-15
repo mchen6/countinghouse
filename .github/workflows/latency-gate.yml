@@ -1,0 +1,94 @@
+# Matt's latency gate for the shared runtime, measured on idle GitHub-hosted
+# runners (4 cores; perf/latency-gate/README.md). A one-off measurement
+# started by hand only, approved by the maintainer on 2026-11-15:
+#   gh workflow run latency-gate.yml --ref <branch> -f runs=3
+# Read-only, no secrets; each run is its own job on its own runner.
+name: Latency gate (measurement)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Independent runners, each one full gate run (1-5)'
+        default: '3'
+        required: true
+      rounds:
+        description: 'Alternating rounds per session count'
+        default: '5'
+        required: true
+      calls:
+        description: 'Timed calls per session per round'
+        default: '300'
+        required: true
+      sessions:
+        description: 'Session counts, comma-separated'
+        default: '1,2'
+        required: true
+      ch_local_ref:
+        description: 'The ch-local ref ch-shim is built from'
+        default: 'main'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runs: ${{ steps.runs.outputs.list }}
+    steps:
+      - id: runs
+        env:
+          RUNS: ${{ inputs.runs }}
+        run: |
+          case "$RUNS" in 1|2|3|4|5) ;; *) echo "runs must be 1-5"; exit 1 ;; esac
+          echo "list=[$(seq -s, 1 "$RUNS")]" >> "$GITHUB_OUTPUT"
+
+  gate:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON(needs.plan.outputs.runs) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: mchen6/ch-local
+          ref: ${{ inputs.ch_local_ref }}
+          path: ch-local
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - name: Build ch-shim with ch-local's pinned toolchain
+        working-directory: ch-local/shim
+        run: cargo build --release --locked
+      - name: The machine
+        run: |
+          nproc
+          uptime
+          free -m
+      - name: Measure
+        env:
+          SESSIONS: ${{ inputs.sessions }}
+          ROUNDS: ${{ inputs.rounds }}
+          CALLS: ${{ inputs.calls }}
+        run: |
+          set +e
+          node perf/latency-gate/gate.js --shim ch-local/shim/target/release/ch-shim \
+            --sessions "$SESSIONS" --rounds "$ROUNDS" --calls "$CALLS" --json gate.json
+          echo "gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: latency-gate-run-${{ matrix.run }}
+          path: gate.json
+          if-no-files-found: warn
