@@ -73,10 +73,75 @@ describe('sessions 01: each session\'s own state on the main thread (shared runt
     assert.strictEqual(sessions.get('f'.repeat(32)), null);
   });
 
-  it('stdio mode: one session, with an opaque id, opened at start', () => {
+  it('a second attach of one registry adds nothing; a session is never re-opened over its state', async () => {
+    sessions.attach(registry);   // again
+    const a = await shim.session(sock, secret);
+    const id = a.welcome.session;
+    sessions.recordClientInfo(id, CC('2.1.323'));
+    assert.deepStrictEqual(sessions.get(id).clientInfo, CC('2.1.323'), 'still the first initialize');
+    a.c.end();
+  });
+
+  it('get() is a frozen view, never C1\'s session object; a caller cannot change what contextOf answers', async () => {
+    const a = await shim.session(sock, secret);
+    const id = a.welcome.session;
+    sessions.recordClientInfo(id, CC('2.1.323'));
+    const view = sessions.get(id);
+    assert.ok(Object.isFrozen(view));
+    assert.deepStrictEqual(Object.keys(view).sort(), ['clientInfo', 'id', 'repo']);
+    assert.throws(() => { 'use strict'; view.clientInfo = null; });
+    assert.deepStrictEqual(sessions.contextOf(id, {}).clientInfo, CC('2.1.323'));
+    a.c.end();
+  });
+});
+
+describe('sessions 01b: --stdio is one session (every OS)', () => {
+  const clientInfo = require('../../lib/mcp/client-info');
+  beforeEach(() => sessions.resetForTests());
+
+  it('one session, its id fixed for the process (a reset keeps it)', () => {
     const id = sessions.openLocal();
     assert.match(id, /^[0-9a-f]{32}$/);
     assert.ok(sessions.get(id) != null);
-    assert.strictEqual(sessions.openLocal(), id, 'one per process');
+    assert.strictEqual(sessions.openLocal(), id);
+    sessions.resetForTests();
+    assert.strictEqual(sessions.openLocal(), id, 'the id P2\'s confirmations are bound to never changes');
+  });
+
+  it('client-info over it: its first initialize, contextOf with its id, --debug logs name and version once', () => {
+    const options = require('../../lib/cli-options');
+    const LOG = require('../../lib/logger');
+    const logI = LOG.I;
+    const lines = [];
+    const debug = options.debug;
+    LOG.I = (l) => { lines.push(String(l)); return l; };
+    options.debug = true;
+    try {
+      clientInfo.record({name: 'claude-code', version: '2.1.323'});
+      clientInfo.record({name: 'other', version: '1.0.0'});
+      const ctx = clientInfo.contextOf({});
+      assert.deepStrictEqual(ctx.clientInfo, {name: 'claude-code', version: '2.1.323'});
+      assert.strictEqual(ctx.session, sessions.openLocal());
+      assert.deepStrictEqual(lines.filter((l) => /^mcp: client/.test(l)), ['mcp: client "claude-code" "2.1.323"']);
+    } finally {
+      LOG.I = logI;
+      options.debug = debug;
+    }
+  });
+
+  it('a shared runtime\'s session acts only once its client frame is there', () => {
+    const EventEmitter = require('events');
+    const fake = new EventEmitter();
+    fake.client = null;   // announced before its client frame (C1's fix makes this impossible)
+    fake.id = 'a'.repeat(32);
+    const reg = new EventEmitter();
+    sessions.attach(reg);
+    reg.emit('session', fake);
+    assert.strictEqual(sessions.get(fake.id), null);
+    assert.deepStrictEqual(sessions.contextOf(fake.id, {}), {clientInfo: null, capabilities: null, session: null});
+    fake.client = {status: 'ok', conditions: 'yes', repo: null};
+    assert.ok(sessions.get(fake.id) != null);
+    fake.emit('end');
+    assert.strictEqual(sessions.get(fake.id), null);
   });
 });
