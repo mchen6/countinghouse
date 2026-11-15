@@ -43,7 +43,7 @@
 - Test: `test/stdio/30-sessions.js`
 
 **Interfaces:**
-- **Consumes from C1** (agreed with C, 2026-11-15, as C1's first PR exposes it in `lib/sessions/registry.js`, main thread only):
+- **Consumes from C1** (agreed with C, 2026-11-15, as C1's first PR exposes it in `lib/session-transport/registry.js` (`require('./session-transport/registry')`, beside C1's frames, handshake and lines; its tests in `test/session-transport/`), main thread only):
   - `registry.on('session', s)`, emitted once per new session; a resume reattaches the same `s`;
   - `s.id`, 128 random bits in hex;
   - `s.client` = `{status, conditions, repo}`, updated in place on each `client` frame. `repo` is already pattern-checked, and the token MAC stays private to C1;
