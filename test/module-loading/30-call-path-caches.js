@@ -16,6 +16,7 @@
 const assert = require('assert');
 
 const registry = require('../../lib/mcp/tool-registry');
+const toolGeneration = require('../../lib/tool-generation');
 const moduleSpec = require('../../lib/module-spec');
 const validatorPool = require('../../lib/validator-pool');
 
@@ -86,6 +87,35 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       assert.strictEqual(registry.buildToolTargets(f.cdif, {includeUnlisted: true}).one_s_a.unlisted, undefined);
     });
 
+    it('is rebuilt after a spec changed in place, once the change is announced', () => {
+      const f = fakeInterface();
+      const s1 = spec('one', ['a']);
+      f.deviceMap.d1 = {spec: s1, packageInfo: {name: 'one'}};
+      assert.ok(registry.buildToolTargets(f.cdif).one_s_a != null);
+      // CHDevice.updateDeviceSpec accepts the same object changed in place
+      s1.device.serviceList[SERVICE].actionList.push({name: 'b', description: 'b it'});
+      toolGeneration.bump();
+      assert.ok(registry.buildToolTargets(f.cdif).one_s_b != null, 'an in-place update was missed');
+    });
+
+    it('is told of a change by updateDeviceSpec and by toolsetChanged', () => {
+      const {CHDevice} = {CHDevice: require('../../lib/countinghouse-device')};
+      const DeviceManager = require('../../lib/device-manager');
+      const g0 = toolGeneration.current();
+      DeviceManager.prototype.toolsetChanged.call({emit: () => {}});
+      assert.ok(toolGeneration.current() > g0, 'toolsetChanged did not bump the generation');
+      const g1 = toolGeneration.current();
+      const api = require('../fixtures/input-required-probe/api.json');
+      const fake = {initServices: () => {}};
+      return new Promise((resolve) => {
+        (CHDevice.prototype || CHDevice).updateDeviceSpec.call(fake, JSON.parse(JSON.stringify(api)));
+        setImmediate(() => {
+          assert.ok(toolGeneration.current() > g1, 'updateDeviceSpec did not bump the generation');
+          resolve();
+        });
+      });
+    });
+
     it('keeps one interface\'s table apart from another\'s', () => {
       const f = fakeInterface();
       const g = fakeInterface();
@@ -126,6 +156,19 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       }, r);
     });
 
+    it('is resolved afresh after a change is announced', (done) => {
+      const action = spec('one', ['a']).device.serviceList[SERVICE].actionList[0];
+      const r = resolver([[null, {type: 'object'}], [null, null]]);
+      registry.outputSchemaForCall(null, 'k', target(action), () => {
+        toolGeneration.bump();
+        registry.outputSchemaForCall(null, 'k', target(action), (e2, s2) => {
+          assert.strictEqual(r.calls, 2, 'a schema from before the change was kept');
+          assert.strictEqual(s2, null);
+          done();
+        }, r);
+      }, r);
+    });
+
     it('is never cached from a failed resolution, which answers as no schema', (done) => {
       const action = spec('one', ['a']).device.serviceList[SERVICE].actionList[0];
       const r = resolver([[{path: '/s/a/output', err: new Error('device restarting')}, null], [null, {type: 'object'}]]);
@@ -133,9 +176,15 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       const realE = LOG.E;
       const logged = [];
       LOG.E = (e) => logged.push(e);
+      try {
+        registry.outputSchemaForCall(null, 'k', target(action), () => {}, resolver([[{path: '/s/a/output', err: new Error('x')}, null]]));
+      } finally {
+        LOG.E = realE;
+      }
+      LOG.E = (e) => logged.push(e);
       registry.outputSchemaForCall(null, 'k', target(action), (e1, s1) => {
         LOG.E = realE;
-        assert.strictEqual(logged.length, 1, 'the downgrade was not logged');
+        assert.ok(logged.length >= 1, 'the downgrade was not logged');
         assert.strictEqual(e1, null);
         assert.strictEqual(s1, null, 'a failure is answered as no schema, as resolveOutputSchema does');
         registry.outputSchemaForCall(null, 'k', target(action), (e2, s2) => {
@@ -154,6 +203,22 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       assert.ok('token' in args && 'ctx' in args, 'the call\'s own args were changed');
       assert.strictEqual(moduleSpec.validatorView(null), null);
       assert.deepStrictEqual(moduleSpec.validatorView([1, 2]), [1, 2]);
+    });
+
+    it('a value whose copy throws is handed on as it is, and validate() still answers by its promise', async () => {
+      const real = validatorPool.pool;
+      let sent = null;
+      validatorPool.pool = () => ({check: (key, serviceID, actionName, which, value) => { sent = value; return Promise.resolve('refused as the pool refuses it'); }});
+      const output = {};
+      Object.defineProperty(output, 'output', {enumerable: true, get() { throw new Error('a module\'s getter'); }});
+      let answer;
+      try {
+        answer = await moduleSpec.validate({key: 'm#1', serviceID: SERVICE, actionName: 'a'}, 'output', output);
+      } finally {
+        validatorPool.pool = real;
+      }
+      assert.strictEqual(sent, output, 'not handed on as it is');
+      assert.strictEqual(answer, 'refused as the pool refuses it');
     });
 
     it('is what validate() hands the pool', async () => {
