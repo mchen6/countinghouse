@@ -38,6 +38,20 @@ if (options.stdioWithPort === true) {
   console.error('--stdio and --port: choose one');
   process.exit(2);
 }
+// --sessionSocket (the shared runtime, C1): ch-local daemon's runtime
+{
+  var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
+    : options.sessionSocket == null ? null
+      : options.stdio === true ? '--stdio and --sessionSocket: choose one'
+        : options.sessionWithPort === true ? '--sessionSocket and --port: choose one'
+          : process.platform === 'win32' ? '--sessionSocket is not served on Windows yet'
+            : options.controlChannel !== 'ipc' ? '--sessionSocket needs --controlChannel ipc (ch-local daemon starts it so)'
+              : options.singleIdentity !== true ? '--sessionSocket is only for the single-identity profile (--store local, no --authConfigPath or --authProvider)' : null;
+  if (sessionRefusal != null) {
+    console.error(sessionRefusal);
+    process.exit(2);
+  }
+}
 // The single-identity profile: no direct peer channels (lib/local-profile.js).
 const profileRefusal = require('./lib/local-profile').profileStart(options);
 if (profileRefusal != null) {
