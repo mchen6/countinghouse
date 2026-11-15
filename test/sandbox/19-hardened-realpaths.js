@@ -15,25 +15,9 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIB = path.join(ROOT, 'lib', 'hardened-realpaths');
 
 // A child under --permission with only these read grants, given `known` on
-// fd 3 as the relaunch does; it prints what realpathSync gave for `ask`.
-function childSees(grants, known, ask) {
-  return new Promise((resolve) => {
-    const code = `const r = require(${JSON.stringify(LIB)}); r.receive();
-      const out = {}; for (const p of ${JSON.stringify(ask)}) { try { out[p] = r.realpathSync(p); } catch (e) { out[p] = e.code; } }
-      out.env = process.env[r.ENV] == null ? 'gone' : 'still set';
-      process.stdout.write(JSON.stringify(out));`;
-    const flags = ['--permission'].concat(grants.map((g) => `--allow-fs-read=${g}`), [`--allow-fs-read=${path.dirname(LIB)}`]);
-    const child = spawn(process.execPath, flags.concat(['-e', code]),
-      {env: Object.assign({}, process.env, realpaths.childEnv()), stdio: ['ignore', 'pipe', 'inherit', 'pipe']});
-    let out = '';
-    child.stdout.on('data', (c) => { out += c; });
-    child.on('exit', () => resolve(JSON.parse(out)));
-    realpaths.send(child, known);
-  });
-}
-
-// The same child, handed the install's links as well (undefined: none
-// handed); it prints what the expression `ask` gives, with r the library.
+// fd 3 as the relaunch does, and the install's links with it (undefined:
+// none handed). It prints what the expression `ask` gives, with r the
+// library, read once its output has closed.
 function childGives(grants, known, links, ask) {
   return new Promise((resolve, reject) => {
     const code = `const r = require(${JSON.stringify(LIB)}); r.receive(); process.stdout.write(JSON.stringify(${ask}));`;
@@ -44,9 +28,18 @@ function childGives(grants, known, links, ask) {
     let err = '';
     child.stdout.on('data', (c) => { out += c; });
     child.stderr.on('data', (c) => { err += c; });
-    child.on('exit', () => { try { resolve(JSON.parse(out)); } catch (e) { reject(new Error(`the child printed ${JSON.stringify(out)}; stderr: ${err.slice(-2000)}`)); } });
+    child.on('close', () => { try { resolve(JSON.parse(out)); } catch (e) { reject(new Error(`the child printed ${JSON.stringify(out)}; stderr: ${err.slice(-2000)}`)); } });
     realpaths.send(child, known, links);
   });
+}
+
+// What realpathSync gave that child for each of `ask`, and whether the
+// marker is still in its environment.
+function childSees(grants, known, ask) {
+  return childGives(grants, known, undefined, `(() => {
+    const out = {}; for (const p of ${JSON.stringify(ask)}) { try { out[p] = r.realpathSync(p); } catch (e) { out[p] = e.code; } }
+    out.env = process.env[r.ENV] == null ? 'gone' : 'still set';
+    return out; })()`);
 }
 
 describe('sandbox 19: --hardened precomputed real paths', function() {
@@ -108,18 +101,14 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     assert.strictEqual(realpaths.installLinks(), null, 'and never in a process that received nothing');
   });
 
-  it('the relaunched server protects the links its parent found, where it may not look above its grants', async () => {
+  it('the broker goes by the parent\'s list; a restricted process handed none cannot look, and has none', async () => {
     base = mkdtemp('realpaths-');
     const place = path.join(base, 'r', 'install');
-    const options = {modulePath: path.join(base, 'modules'), moduleDataPath: path.join(base, 'data'), authConfigPath: path.join(base, 'auth.json')};
-    const ask = `(() => { const b = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}); const o = ${JSON.stringify(options)};
-      return {protectedPaths: b.protectedPaths(o), deniedTrees: b.deniedTreesFor(o)}; })()`;
-    const handed = await childGives([ROOT, base], {}, [place], ask);
-    assert.ok(handed.protectedPaths.includes(place), JSON.stringify(handed.protectedPaths));
-    // a denied tree follows its directory to its real path: a link's place
-    // as one would refuse the install itself, which stays readable (#260)
-    assert.ok(!handed.deniedTrees.includes(place), JSON.stringify(handed.deniedTrees));
-    assert.ok(handed.deniedTrees.includes(options.moduleDataPath), JSON.stringify(handed.deniedTrees));
+    const ask = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).installLinkPlaces()`;
+    assert.deepStrictEqual(await childGives([ROOT, base], {}, [place], ask), [place]);
+    // not a --hardened relaunch: lstat above its grants is refused
+    // (ERR_ACCESS_DENIED), which is no failure of the spawn
+    assert.deepStrictEqual(await childGives([ROOT, base], {}, undefined, ask), []);
   });
 
   it('without the marker it reads nothing (an ordinary start)', () => {

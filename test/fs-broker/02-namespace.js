@@ -115,28 +115,6 @@ describe('fs-broker 02: namespace', () => {
     } finally { fs.rmSync(base, {recursive: true, force: true}); }
   });
 
-  // #280's follow-up: a protected link (one an install is reached through,
-  // lib/fs-broker/install-links.js) is named by its place, and its real path
-  // is where it leads. A root declared by another spelling of the directory
-  // the link is in holds the link itself: writable, it could repoint it.
-  it('refuses a root that holds a protected link, declared by another spelling of the link\'s directory', async () => {
-    const base = fs.realpathSync.native(mkdtemp('ns-'));
-    try {
-      fs.mkdirSync(path.join(base, 'r', 'a'), {recursive: true});
-      fs.mkdirSync(path.join(base, 'b', 'real', 'install'), {recursive: true});
-      fs.mkdirSync(path.join(base, 'unrelated'));
-      const link = path.join(base, 'r', 'a', 'link');
-      fs.symlinkSync(path.join(base, 'b', 'real'), link, 'junction');
-      // <base>/z is <base>/r/a under another name
-      fs.symlinkSync(path.join(base, 'r', 'a'), path.join(base, 'z'), 'junction');
-      const n = await prepared(Object.assign({}, CFG, {
-        protectedPaths: [link],
-        declared: [{path: path.join(base, 'z'), access: 'rw'}, {path: path.join(base, 'unrelated'), access: 'rw'}]
-      }));
-      assert.deepStrictEqual(n.refused.map((r) => r.path), [path.join(base, 'z')]);
-    } finally { fs.rmSync(base, {recursive: true, force: true}); }
-  });
-
   it('a root whose host path is a symlink maps its real paths back too', async () => {
     const base = mkdtemp('ns-');
     try {
