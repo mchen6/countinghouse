@@ -53,7 +53,8 @@ function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', restore =
   let nextControl = 1;
   r.told = [];
   child.on('message', (m) => {
-    if (m != null && m.type === 'ready' && restore) child.send({id: 'restore-1', type: 'restore', sessions: [], declines: []});
+    // restore: true sends an empty table; an object sends that one
+    if (m != null && m.type === 'ready' && restore) child.send(restore === true ? {id: 'restore-1', type: 'restore', sessions: [], declines: []} : restore);
     if (m != null && m.id === undefined && m.type !== 'ready') r.told.push(m);
     const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
   });
@@ -398,6 +399,40 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     } finally {
       if (d.alive()) process.kill(d.pid, 'SIGKILL');
     }
+  });
+
+  it('a resume survives a runtime restart by the daemon\'s copy of its newest hash, and only by its newest token (N3)', async() => {
+    r = runtime(home);
+    let secret = await listening(r);
+    const first = await shim.session(r.socket, secret);
+    const id = first.welcome.session;
+    const t1 = first.welcome.resumeToken;
+    first.c.end();
+    await tick(300);
+    // a reconnect rotates the token
+    const second = await shim.session(r.socket, secret, undefined, {resume: t1});
+    assert.strictEqual(second.welcome != null && second.welcome.session, id, JSON.stringify(second.refused));
+    const t2 = second.welcome.resumeToken;
+    second.c.end();
+    await tick(300);
+    // the daemon's copy: the last hash told for the session, which is t2's
+    const told = r.told.filter((m) => m.type === 'session-resume' && m.session === id);
+    assert.strictEqual(told.length, 2, JSON.stringify(r.told));
+    const hash = told[told.length - 1].hash;
+    assert.strictEqual(hash, require('crypto').createHash('sha256').update(t2).digest('hex'));
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+    r = runtime(home, [], {restore: {id: 'restore-1', type: 'restore', sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 3}}], declines: []}});
+    secret = await listening(r);
+    const stale = await shim.attach(r.socket, secret, {resume: t1});
+    assert.strictEqual(stale.refused != null && stale.refused.code, 'RESUME_REFUSED', 'the rotated-out token resumes nothing');
+    stale.c.end();
+    const back = await shim.session(r.socket, secret, undefined, {resume: t2});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, `the same session, by the newest token: ${JSON.stringify(back.refused)}`);
+    assert.notStrictEqual(back.welcome.resumeToken, t2, 'rotated again on the resume');
+    back.c.end();
   });
 
   it('a second restore, and one after the safety net, are refused CONTROL_RESTORE_DONE (#255 review)', async() => {
