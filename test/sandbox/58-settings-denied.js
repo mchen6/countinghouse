@@ -41,6 +41,11 @@ function world(tag) {
     modules: at('modules'), moduleData: at('module_data')};
   for (const f of [w.secret, w.launcher, w.otherCode, w.otherData]) fs.mkdirSync(path.dirname(f), {recursive: true});
   fs.mkdirSync(w.rw);
+  // a second declared directory, under a parent the module may rename under
+  // audit (the root swap of #253's security review, F1)
+  w.proj = path.join(base, 'proj');
+  w.work = path.join(w.proj, 'work');
+  fs.mkdirSync(w.work, {recursive: true});
   w.settingsBytes = `${JSON.stringify({version: 1, values: {maxOutputBytes: 1000}})}\n`;
   fs.writeFileSync(w.settings, w.settingsBytes);
   fs.writeFileSync(w.history, '{"setting":"maxOutputBytes"}\n');
@@ -58,7 +63,7 @@ function world(tag) {
   fs.cpSync(FIXTURE, w.fixture, {recursive: true});
   const pkgPath = path.join(w.fixture, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  pkg.countinghouse.permissions.fs = [{path: home, access: 'rw'}, {path: w.rw, access: 'rw'}];
+  pkg.countinghouse.permissions.fs = [{path: home, access: 'rw'}, {path: w.rw, access: 'rw'}, {path: w.work, access: 'rw'}];
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
   w.moduleTmp = path.join(w.moduleData, NAME, 'tmp');
   return w;
@@ -143,6 +148,28 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
         assert.deepStrictEqual(await call('remove', {path: w.home}), {ok: false, code: 'EACCES'});
         assert.ok(fs.existsSync(w.settings) && fs.existsSync(w.secret) && !fs.existsSync(`${w.base}.old`));
         untouched();
+      });
+
+      it('a declared root that later resolves into the home doesn\'t make the home the module\'s own (F1)', async () => {
+        // the state #253's security review reached: after load, the declared
+        // root's path leads into the home (set up here on the host)
+        fs.renameSync(w.proj, `${w.proj}.old`);
+        fs.mkdirSync(w.proj);
+        fs.symlinkSync(w.home, w.work);
+        await new Promise((r) => setTimeout(r, 1500));   // past any once-a-second re-read of a root
+        const through = path.join(w.work, 'run', 'daemon', 'secret');
+        const r = await call('read', {path: through});
+        assert.deepStrictEqual(r, {content: null, code: 'EACCES'}, `the secret, through the declared root: ${JSON.stringify(r)}`);
+        assert.deepStrictEqual(await call('write', {path: through, content: 'planted'}), {ok: false, code: 'EACCES'});
+        assert.strictEqual(fs.readFileSync(w.secret, 'utf8'), 'x', 'the secret is untouched');
+        const other = await call('read', {path: path.join(w.work, 'module_data', 'other', 'data', 'x.txt')});
+        assert.deepStrictEqual(other, {content: null, code: 'EACCES'}, 'another module\'s data, through the declared root');
+      });
+
+      it('a recursive listing from above the home shows nothing in it (F2)', async () => {
+        const r = await call('list', {path: w.base});
+        const names = r.names || [];
+        assert.deepStrictEqual(names.filter((n) => n === 'home' || n.startsWith('home/') || n.includes('/home/')), [], JSON.stringify(names));
       });
 
       it('a history deleted on the host can\'t be created by the module', async () => {
