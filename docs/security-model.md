@@ -767,27 +767,25 @@ these are the checks that predate them and still apply:
   main thread). That is neither the main thread nor the module's own worker,
   and no module code runs there.
 
-  **The gap: a call over a direct peer channel** (the hosting default;
+  **A call over a direct peer channel** (the hosting default;
   `--no-directPeerChannels` routes every hop through the main thread
-  instead). That call is still validated in the called module's own worker,
-  both its input and its output.
-  - A module's code can reach its own worker's copy of the checks: under
-    `audit` and `off`, the runtime's files are in that worker's
-    `require.cache`. So a called module that tampers with its worker can
-    skip its own output check.
-  - The calling module does no check of its own. An unchecked output
-    therefore reaches the caller: the harm is to the caller, not only to the
-    tampering module.
-  - None of the pool's bounds below applies to a peer call: no deadline, no
-    caller throttle, no quarantine. A caller can tie up a called module's
-    worker with an input that makes that module's own pattern backtrack.
-  - Nor does the output cap (`--maxOutputBytes`): a peer callee's result
-    goes to the caller's worker unmeasured. A buggy or tampering callee can
-    make its caller deserialise a value of any size.
-
-  Lean worker step 4 moves peer calls' checks into the validator pool, with
-  the same rules as routed calls; until then, use `--no-directPeerChannels`
-  where these guarantees matter.
+  instead) is checked by the main thread as well, since lean worker step 4.
+  - The calling module's worker announces the call's target and its input,
+    as bytes, to the main thread, which holds them. The port between the
+    two workers carries only the call's id, so the called module can't
+    restate the target or swap the input.
+  - The input is capped by `--maxOutputBytes` and checked against the
+    callee's input schema in a validator worker before any handler runs. A
+    callee whose spec the main thread doesn't hold is refused.
+  - The callee's result or error comes back as bytes with its bill request.
+    It is capped, checked against the callee's output schema, and only then
+    billed and delivered to the caller by the main thread. A result posted
+    on the port is dropped and reported as a sandbox violation.
+  - The pool's bounds below apply as for a routed call: the deadline, the
+    caller throttle, and strikes against the callee for its own output.
+  - Announced input waiting for its match is bounded per calling worker
+    and in total, so one caller can't fill the main thread's memory or
+    refuse another caller's calls.
 
   The main thread never compiles or walks a module's schema, because no
   check made beforehand bounds JSON Schema validation: some patterns
@@ -881,8 +879,9 @@ these are the checks that predate them and still apply:
   - **Between modules, the check runs when a channel opens, not on every
     hop.** Since 7.1.0 a module calling another module's device does so over
     a direct peer channel by default. `userAuth` runs once, at brokering
-    time; the channel it grants then serves only the devices granted on it,
-    and the callee refuses any other device it hosts (`PEER_NOT_GRANTED`).
+    time; the channel it grants then serves only the devices granted on it:
+    the main thread refuses a call naming any other device, or one the
+    channel's callee doesn't host (`PEER_NOT_GRANTED`).
     A grant revoked while the server runs closes the channel on the
     broker's next re-check (`--peerChannelAuthRecheckSeconds`, 5 by
     default), so a revoked module identity can keep reaching a device for up
