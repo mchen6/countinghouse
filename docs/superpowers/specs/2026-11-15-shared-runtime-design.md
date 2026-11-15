@@ -51,7 +51,7 @@ Matt wants one runtime per user in release 1, shared by every session. To make t
   - records its session's tightenings, which it treats as opaque, and replays them after a daemon death;
   - starts the daemon when none is running.
 
-  It doesn't reimplement the Claude Code client checks. Once per connection it runs `node ch-local conditions --for <client pid>` as a short-lived child, and carries the child's verdict over its own connection (the `client` control frame, section 1). It knows nothing of settings, packs or MCP beyond a line's `id` and `method`.
+  It doesn't reimplement the Claude Code client checks. Once per connection it runs `node ch-local conditions --for <client pid> --home <home>` as a short-lived child, and carries the child's verdict over its own connection (the `client` control frame, section 1). It knows nothing of settings, packs or MCP beyond a line's `id` and `method`.
 - **A platform with no shim binary** runs the per-session mode (`runtime: own`), and says so (section 10). There is no Node shim.
 - **`ch-local daemon`.** It's started by the first shim and owns the runtime, as `ch-local start` does today. It holds:
   - the IPC control channel, the in-place pack applier, the settings watcher and the history;
@@ -344,7 +344,9 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 ## 5. The daemon, the control channel and per-client inputs
 
 - **The control channel** stays one IPC channel between the daemon and the runtime: one per runtime, and so one per user. ch-local's requests arrive on it as now. A request about one session names it.
-- **The client's own inputs come from one short-lived child, `node ch-local conditions --for <client pid>`,** which the shim runs once per connection.
+- **The client's own inputs come from one short-lived child, `node ch-local conditions --for <client pid> --home <home>`,** which the shim runs once per connection.
+  - Both arguments are required. `--home` is the shim's own absolute home, so the child never guesses it from the client's environment; a missing or relative one is refused (exit 2, no line), which the shim counts as failed.
+  - The child reads the secret exactly as the shim does (section 1's checks), and runs `gh` with its working directory set to the home, never the client's.
   - It runs in the shim's working directory, which is the client's. Its environment is the client's, minus every variable whose name starts with `NODE_` or `npm_config_`, so nothing acts in Node before ch-local's own code. The conditions check reads the client's environment as data (`lib/client-conditions.js`), and the variables it reads are none of those.
   - It prints one JSON line and exits:
     - `status`: `"ok"`;
@@ -364,7 +366,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
   - nothing from any client's environment reaches it.
-- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `node ch-local start --stdio --own-runtime` with its arguments, and says so on stderr and in the first result's notice. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
+- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `<node> <chLocal> start --stdio --own-runtime --home <home> <its arguments>`, from `shim.json`, and says so on stderr and in the first result's notice. `--home` is the shim's own (absolute; `start` refuses a relative or missing one with exit 2), and it overrides `COUNTINGHOUSE_HOME`, so a client's environment can't pick another home. ch-local's options come before the pass-through flags, and neither reaches the runtime. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
   - a pass-through runtime flag (`--moduleSandbox`, `--maxOutputBytes`, `--requestTimeout`, `--locale` or any other `start` passes through);
   - a token the client's environment *chooses* under today's precedence, which differs from the daemon's. That's a `COUNTINGHOUSE_GITHUB_TOKEN`, or a `GITHUB_TOKEN` when `gh` has none. A shell-wide `GITHUB_TOKEN` beside a working `gh` login chooses nothing, so it doesn't push a session to its own runtime.
 
@@ -425,7 +427,7 @@ Nothing of a session is ever written to a file.
     - on Windows `SystemRoot`, `TEMP`, `TMP`, `APPDATA` and `LOCALAPPDATA`.
 
     **Any other key is refused**: the attach stops, naming it. It is never dropped silently.
-  - The shim runs `<node> <chLocal> daemon` and `<node> <chLocal> conditions --for <pid>` from it.
+  - The shim runs `<node> <chLocal> daemon --home <home>` and `<node> <chLocal> conditions --for <pid> --home <home>` from it.
 
   The vectors give accepted and refused forms (`shimJson`).
 
@@ -445,7 +447,7 @@ Nothing of a session is ever written to a file.
      4. Remove `.break`.
    - **Releasing.** The holder removes the lock only if it still holds its own `{pid, host, at}`.
    - **Waiting** for a live holder: poll every 200 ms, within the shim's 20 s.
-4. Still nothing, so it spawns `<node> <chLocal> daemon`, from `shim.json`, detached, then **releases the lock at once**:
+4. Still nothing, so it spawns `<node> <chLocal> daemon --home <home>`, from `shim.json`, with its working directory the home too, detached, then **releases the lock at once**. The daemon refuses to start if `--home` and its working directory disagree:
    - on Windows, `DETACHED_PROCESS | CREATE_NO_WINDOW`;
    - on POSIX, in a new process group (`process_group(0)`), with stdio on null.
 
@@ -510,8 +512,36 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 
 ### Crash of the runtime or the daemon
 
-- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. After 5 failures in 10 minutes it stops and logs why. It hands the table over each time.
+- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. It hands the table over each time. After 5 failures in 10 minutes it stops restarting: it writes `failed.json` (below), removes `daemon.json`, and exits.
 - **The daemon:** the next shim to reconnect finds the pid dead, and starts a new daemon under the lock.
+
+### `failed.json`: falling back without a loop
+
+A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims fall back to the per-session mode instead of starting daemon after daemon.
+
+- **Written** by the daemon as `daemon.json` is: 0600, through an exclusive temporary file, `fchmod`, then a rename. Exactly:
+
+  ```json
+  {"v": 1, "at": <epoch ms>, "exit": <integer or null>, "signal": <"SIG…" or null>, "reason": "restarts-exhausted" | "never-listened"}
+  ```
+
+  - `v` is exactly 1; `at` is a positive safe integer; `exit` is a safe integer or null; `signal` matches `^SIG[A-Z0-9]+$` or is null; `reason` is one of the two strings.
+  - The key set is exact: none extra, none missing, none twice. It holds no path, environment or stderr text.
+- **Read** by the shim with `daemon.json`'s trust checks (the 0700 directory, 0600, the euid's, no links, at most 512 bytes; on Windows the owner and DACL equivalents). It's read at two points: after the `daemon.json` check fails, and again under the start lock, immediately before a spawn. So a daemon that gives up between the two never gets a fresh daemon started behind it.
+- **Fresh** means `now − 600 000 ≤ at ≤ now + 60 000` (ms). A fresh, valid file means no daemon is spawned, and the session runs its own runtime. Anything else (stale, from the future, unreadable or invalid) is ignored, and the shim goes on as before.
+- **Cleared** by the next daemon whose runtime listens. So the shared mode comes back after 10 minutes, or as soon as a new daemon succeeds.
+- **The fallback at startup:** before the shim has read anything from stdin, it runs `start --stdio --own-runtime --home <home> <its arguments>` with the shim's stdin, waits, and exits with its code. That's today's pass-through path (on Windows, a spawn, since there's no exec). It says on stderr only: `the shared runtime failed (<reason>); this session runs its own`, with `reason` the enum alone.
+- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1).
+  - **Never looser.** A session's tightenings live only in the runtime's memory and the shim's records, never in `settings.json`. A per-session runtime starts at the file's values and takes no `replay` (it speaks MCP on stdio, with no `C` frames). So **a shim holding any record refuses the mid-session fallback**:
+    - it answers each held request, and each later one, with `sessionCantFallBackAnswer` (exact apart from the id);
+    - it says on stderr: `the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session`;
+    - then it exits non-zero.
+  - **With no record**, the per-session runtime it starts has never seen this client's `initialize`, so the shim:
+    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+    2. then sends the lines it held, then relays stdin as it comes.
+
+    The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
+- **Vectors** (`failedJson` and `sessionCantFallBackAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
 
 ## 7. Windows and macOS
 
@@ -644,7 +674,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - the backoff.
 
 **C4. The shim's Node side** (ch-local). The Rust shim itself is A's: relay, handshake, reconnect and replay, against section 1 and the vectors.
-- `ch-local conditions --for <pid>`: the one JSON line (verdict, slug, token MAC).
+- `ch-local conditions --for <pid> --home <home>`: the one JSON line (verdict, slug, token MAC).
 - `<home>/shim.json` at install.
 - `ch-local start --stdio` execs the shim when installed, and otherwise runs the per-session mode, saying so.
 - Tests:
