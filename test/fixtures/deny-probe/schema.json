@@ -138,6 +138,14 @@
       "output": {
         "type": "object"
       }
+    },
+    "fdmeta": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

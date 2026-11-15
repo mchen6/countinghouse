@@ -112,6 +112,17 @@ describe('sandbox 60: under audit, no write leaves the module\'s own area', func
       assert.deepStrictEqual(await call('symlink', {path: path.join(w.rw, 'out-link'), target: w.file}), {ok: false, code: 'EPERM'});
     });
 
+    it('a descriptor opened read-only on an outside file changes nothing: fchmod, fchown, futimes, ftruncate, write are EACCES (W1)', async () => {
+      fs.chmodSync(w.file, 0o600);
+      const before = fs.statSync(w.file);
+      const r = await call('fdmeta', {path: w.file});
+      assert.deepStrictEqual(r, {open: 'ok', fchmod: 'EACCES', fchown: 'EACCES', futimes: 'EACCES', ftruncate: 'EACCES', write: 'EACCES'});
+      const after = fs.statSync(w.file);
+      assert.strictEqual(after.mode & 0o777, 0o600, 'its mode unchanged');
+      assert.strictEqual(after.mtimeMs, before.mtimeMs, 'its times unchanged');
+      untouched();
+    });
+
     it('a write to /app or to a directory declared r is EACCES; its /data, /tmp and declared rw are writable', async () => {
       assert.deepStrictEqual(await call('write', {path: '/app/planted.js', content: 'x'}), {ok: false, code: 'EACCES'});
       assert.deepStrictEqual(await call('write', {path: path.join(w.ro, 'ro.txt'), content: 'x'}), {ok: false, code: 'EACCES'});
@@ -130,6 +141,18 @@ describe('sandbox 60: under audit, no write leaves the module\'s own area', func
       assert.deepStrictEqual(await call('write', {path: w.file, content: 'changed'}), {ok: false, code: 'ENOENT'});
       assert.deepStrictEqual(await call('write', {path: path.join(w.ro, 'ro.txt'), content: 'x'}), {ok: false, code: 'EROFS'});
       untouched();
+    });
+
+    it('a read-only descriptor of its own /app manifest or of an r file changes nothing: EROFS (W1)', async () => {
+      const manifest = path.join(w.fixture, 'package.json');
+      for (const [p, host] of [['/app/package.json', manifest], [path.join(w.ro, 'ro.txt'), path.join(w.ro, 'ro.txt')]]) {
+        const before = fs.statSync(host);
+        const r = await call('fdmeta', {path: p});
+        assert.deepStrictEqual(r, {open: 'ok', fchmod: 'EROFS', fchown: 'EROFS', futimes: 'EROFS', ftruncate: 'EROFS', write: 'EROFS'}, p);
+        const after = fs.statSync(host);
+        assert.strictEqual(after.mode, before.mode, `${p}: its mode unchanged`);
+        assert.strictEqual(after.mtimeMs, before.mtimeMs, `${p}: its times unchanged`);
+      }
     });
   });
 
