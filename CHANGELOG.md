@@ -18,6 +18,24 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — MCP 2026-07-28 discovery and versioning; `initialize` is the legacy path (#229)
+
+- **`server/discover`**, which 2026-07-28 requires of every server, on HTTP and
+  stdio: `supportedVersions` (`["2026-07-28"]`), the capabilities, and
+  `_meta["io.modelcontextprotocol/serverInfo"]`. A client that probes with it
+  used to get -32601, and by the spec's rule fell back to the legacy handshake.
+- **A modern request is checked.** It is one whose `_meta` carries the
+  revision's `protocolVersion` or `clientCapabilities`. It must carry both
+  (-32602), and name a version served (-32022, with `data: {supported,
+  requested}`). Over HTTP it must also match its `MCP-Protocol-Version`,
+  `Mcp-Method` and `Mcp-Name` headers (-32020). Each of these is HTTP 400.
+  Its result carries `resultType: "complete"`. An unknown method is HTTP 404,
+  and a modern request in a batch is refused.
+- **`initialize` is unchanged** and selects legacy semantics: results stay
+  exactly as before. A legacy session gets no confirmation form for a
+  loosening (`InputRequiredResult` is the 2026-07-28 mechanism). It is told
+  to run the terminal command.
+
 ### Changed — a call over a direct peer channel is checked by the main thread (lean worker step 4, #202)
 
 - **The caller states the call; the callee can't restate it.** The calling

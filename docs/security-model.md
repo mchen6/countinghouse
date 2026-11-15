@@ -173,10 +173,23 @@ any module code). Stops:
   `localhost4`, `localhost6`, `localhost4.localdomain4`,
   `localhost6.localdomain6`, `ip6-localhost`, `ip6-loopback`). A
   Unix-socket Redis is refused under every spelling of its path (`..`,
-  `//`, relative). This is an in-worker
-  check, not a boundary: a name that reaches loopback only through
-  `/etc/hosts` or DNS, a `lookup` function the module passes, another
-  address of the same machine (a LAN IP), and a symlink or hard link to the
+  `//`, relative). A host given by a name is refused by that name, and by
+  every address the main thread resolves it to (the system resolver and DNS
+  together, before the first module loads and every 5 minutes; an address
+  once denied stays denied, and a running worker is told each new one), at
+  the socket's own handle, which decides on the address Node actually
+  connects to, on functions taken before any module code ran (#206, #207).
+  That address check is what holds. The check by name runs in the module's
+  own realm: it, too, calls only functions it took at load and reads no
+  value through a module's accessor or conversion, but code that shares a
+  realm can always be attacked by what it has not thought of, so it is a
+  first line, not the one relied on. This is an in-worker check, not a
+  boundary: a name that reaches loopback only through `/etc/hosts` or DNS,
+  a `lookup` function the module passes, another address of the same
+  machine (a LAN IP), an address of the Redis host name that no resolution
+  has returned yet (a round-robin name with more addresses than an answer
+  lists, a name that moved, or one that did not resolve at start until the
+  next refresh reaches the worker), and a symlink or hard link to the
   socket are not denied until the network broker (parts 3 and 4);
 - `CHUtil.loadFile` outside the module's own directory.
 
@@ -707,7 +720,10 @@ and the short list of what the in-process sandbox cannot give.
   the process's full privileges. They still see `/app`, `/data` and `/tmp`
   through `fs`, `fs/promises` and `os`, but that only translates paths: no
   checks, quota or link rules, and a module can require countinghouse's own
-  dependencies through `NODE_PATH`. It is for debugging modules
+  dependencies through `NODE_PATH`. Nothing the main thread keeps from
+  modules is kept from them there: a call's `Session`, including the
+  shared runtime's session id on it, its call tokens and every other main-
+  thread state are in reach. It is for debugging modules
   ([differences](module-development.md)).
 - **No OS-level isolation.** `worker_threads` share the same process, same
   OS user and same network stack as the main thread. Outside `--hardened`

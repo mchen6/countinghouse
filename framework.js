@@ -403,7 +403,20 @@ function serve() {
   mm.loadAllModules();
 }
 
-identityReady.then(serve, function(e) {
+// The Redis host name a module worker is denied is resolved before any module
+// loads, so its addresses are denied at the worker's handle guards too
+// (#207); bounded, never rejecting, and not under --moduleSandbox off. It
+// runs beside the id index, not after it. A later refresh that adds an
+// address tells every lockdown worker, a validation's too.
+function deniedResolved() {
+  if (options.moduleSandbox === 'off' || options.store === 'local') return Promise.resolve();
+  // (every lockdown worker is told by module-sandbox-config's own set:
+  // lib/module-manager.js tracks each at its set-options)
+  return require('./lib/module-sandbox-config').refreshDenied(options.redisUrl).then(function() {}, function() {});
+}
+
+var denied = deniedResolved();
+identityReady.then(function() { return denied.then(serve); }, function(e) {
   console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + e.message);
   process.exit(2);
 });

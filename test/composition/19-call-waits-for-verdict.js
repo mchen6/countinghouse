@@ -105,7 +105,7 @@ function serve({delayMs, delayModule, args = [], slowStartMs, badCall, stdioBoun
 }
 
 async function listed(s) {
-  await s.request('initialize', {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'composition-19', version: '0'}});
+  await s.request('initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'composition-19', version: '0'}});
   for (const until = Date.now() + 30000; Date.now() < until;) {
     const r = await s.request('tools/list', {});
     if ((r.result.tools || []).some((t) => t.name === 'compose_wait')) return;
@@ -192,7 +192,7 @@ describe('composition 19: ctx.call waits for its module\'s composition verdict, 
   it('through the stdio gate, a module that fails verification at startup is never listed: the first list is final', async () => {
     const s = serve({delayMs: 3000, badCall: true, slowSibling: true});
     try {
-      await s.request('initialize', {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'composition-19', version: '0'}});
+      await s.request('initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'composition-19', version: '0'}});
       const first = await s.request('tools/list', {});
       const names = (first.result.tools || []).map((t) => t.name);
       assert.ok(names.includes('compose_slow'), `the list waited for the startup discovery: ${names.join(', ')}`);
