@@ -203,14 +203,17 @@ describe('session-transport 04: the run directory on Windows (C2)', function() {
     const own = priv();
     own.rules.push(ace(USER, FULL, {inheritOnly: true}));
     assert.strictEqual(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([own, priv()])}), null);
-    // CREATOR OWNER and CREATOR GROUP's inherit-only rules grant nothing by
-    // themselves: they go only to whoever makes a child, which no one else
-    // can here (the Reviewer's ruling); Windows profiles carry them
-    for (const creator of ['S-1-3-0', 'S-1-3-1']) {
-      const profile = priv();
-      profile.rules.push(ace(creator, FULL, {inheritOnly: true}));
-      assert.strictEqual(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([profile, profile])}), null, creator);
-    }
+    // CREATOR OWNER's inherit-only rule grants nothing by itself: it goes
+    // only to whoever makes a child, which no one else can here (the
+    // Reviewer's ruling); Windows profiles carry it
+    const profile = priv();
+    profile.rules.push(ace('S-1-3-0', FULL, {inheritOnly: true}));
+    assert.strictEqual(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([profile, profile])}), null);
+    // CREATOR GROUP's is a real loosening: it becomes a grant to the
+    // creator's primary group (None, every local user; or Domain Users)
+    const group = priv();
+    group.rules.push(ace('S-1-3-1', FULL, {inheritOnly: true}));
+    assert.match(String(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([group, priv()])})), /inherit-only rule for S-1-3-1/);
     // another user's inherit-only rule still fails
     const other = priv();
     other.rules.push(ace('S-1-5-21-1000000000-1000000000-1000000000-1002', FULL, {inheritOnly: true}));
