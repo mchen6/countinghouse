@@ -175,3 +175,113 @@ describe('sandbox 53b: the denied endpoint\'s names resolved by the main thread 
     assert.deepStrictEqual(config.deniedEndpoints(`redis://${NAME}:6379`, resolved).endpoints, [{host: NAME, port: 6379}]);
   });
 });
+
+describe('sandbox 53c: the review of #227: the copy helpers, prototype accessors, functions, iterators; addresses added later', function() {
+  this.timeout(60000);
+  // 127.0.0.2 (the allowed listener) answers on Linux and Windows only
+  const it2 = process.platform === 'darwin' ? it.skip : it;
+  it2('enforce: none of these reach the denied name; a later denyAddresses catches a connection by address', () => {
+    const r = inWorker(`
+      const net = require('net');
+      const hits = {denied: 0};
+      const denied = await new Promise((resolve) => {
+        const s = net.createServer((c) => { hits.denied++; c.destroy(); });
+        s.listen(0, '127.0.0.1', () => resolve(s));
+      });
+      const DENIED = denied.address().port;
+      // an allowed listener on the same port, on another loopback address:
+      // the module's lookup sends the denied name to the denied listener and
+      // any other name to this one, so only a host read twice (allowed when
+      // checked, denied when used) reaches the denied one
+      const allowed = await new Promise((resolve) => {
+        const s = net.createServer((c) => { hits.allowed = (hits.allowed || 0) + 1; c.destroy(); });
+        s.listen(DENIED, '127.0.0.2', () => resolve(s)).on('error', () => resolve(null));
+      });
+      const handle = require(${JSON.stringify(LOCKDOWN)}).install({moduleName: 'lockdown-probe', moduleRoot: process.cwd(), mode: 'enforce',
+        denied: {endpoints: [{host: ${JSON.stringify(NAME)}, port: DENIED}, {host: '::ffff:10.0.0.5', port: DENIED}], socketPaths: []}}, () => {});
+      const outcome = (s) => new Promise((resolve) => {
+        s.on('error', (e) => resolve('error ' + e.code));
+        s.on('connect', () => { s.destroy(); resolve('connected'); });
+      });
+      const attempt = (fn) => { try { return outcome(fn()); } catch (e) { return Promise.resolve('threw ' + e.code); } };
+      const route = (h) => (h === ${JSON.stringify(NAME)} ? '127.0.0.1' : '127.0.0.2');
+      const lookup = (h, o, cb) => (o && o.all ? cb(null, [{address: route(h), family: 4}]) : cb(null, route(h), 4));
+      const out = {};
+      const swap = async (key, obj, prop, value, fn) => {
+        const d = Object.getOwnPropertyDescriptor(obj, prop);
+        try {
+          try { Object.defineProperty(obj, prop, Object.assign({configurable: true, writable: true}, value)); } catch (e) { out[key] = 'locked'; return; }
+          out[key] = await attempt(fn);
+        } finally { if (d != null) Object.defineProperty(obj, prop, d); else delete obj[prop]; }
+      };
+      // a host getter read twice: once by the check, once by Node
+      const twice = () => { let n = 0; return {get host() { return n++ === 0 ? 'elsewhere.test' : ${JSON.stringify(NAME)}; }, port: DENIED, lookup}; };
+      await swap('weakSetHas', WeakSet.prototype, 'has', {value: () => true}, () => net.connect(twice()));
+      await swap('concat', Array.prototype, 'concat', {value: function() { return [twice()]; }}, () => new net.Socket().connect({host: 'elsewhere.test', port: DENIED, lookup}));
+      await swap('slice', Array.prototype, 'slice', {value: function() { return [twice()]; }}, () => net.connect({host: 'elsewhere.test', port: DENIED, lookup}));
+      await swap('keys', Object, 'keys', {value: () => []}, () => net.connect({host: ${JSON.stringify(NAME)}, port: DENIED, lookup}));
+      // an accessor on Object.prototype named host
+      let c = 0;
+      const protoSwap = async () => {
+        const d = Object.getOwnPropertyDescriptor(Object.prototype, 'host');
+        try {
+          Object.defineProperty(Object.prototype, 'host', {get() { return c++ === 0 ? 'elsewhere.test' : ${JSON.stringify(NAME)}; }, set() {}, enumerable: false, configurable: true});
+          out.protoHost = await attempt(() => net.connect({host: ${JSON.stringify(NAME)}, port: DENIED, lookup}));
+        } finally { if (d != null) Object.defineProperty(Object.prototype, 'host', d); else delete Object.prototype.host; }
+      };
+      await protoSwap();
+      // an array's iterator, for the mapped IPv4 spelling
+      await swap('iterator', Array.prototype, Symbol.iterator, {value: function* () {}}, () => net.connect({host: '::ffff:a00:5', port: DENIED, lookup}));
+      // a function as the host: its toPrimitive never runs in the check
+      let ran = 0;
+      const fnHost = Object.assign(() => {}, {[Symbol.toPrimitive]: () => { ran++; return 'elsewhere.test'; }});
+      out.fnHost = await attempt(() => net.connect({host: fnHost, port: DENIED, lookup}));
+      out.fnHostRan = ran;
+      // by address: allowed until the main thread's later resolution reaches the worker
+      out.beforeAdd = await attempt(() => net.connect(DENIED, '127.0.0.1'));
+      const before = hits.denied;
+      handle.denyAddresses(['127.0.0.1'], DENIED);
+      out.afterAdd = await attempt(() => net.connect(DENIED, '127.0.0.1'));
+      await new Promise((res) => setTimeout(res, 200));
+      out.hitsBefore = before;
+      out.hits = hits.denied;
+      out.allowedListening = allowed != null;
+      denied.close();
+      if (allowed != null) allowed.close();
+      return out;`);
+    const all = JSON.stringify(r);
+    // none of them reached the denied listener before the address was added
+    // (connected, here, is to the allowed one: the host was read once)
+    assert.strictEqual(r.hitsBefore, 1, `only the by-address connect, before the address was added, reached it: ${all}`);
+    for (const k of ['keys', 'protoHost', 'iterator']) assert.ok(/^(threw|error) (EACCES|ERR_INVALID_ARG_TYPE)$/.test(String(r[k])), `${k}: ${all}`);
+    assert.strictEqual(r.fnHostRan, 0, all);
+    assert.match(String(r.fnHost), /^(threw|error) /, all);
+    assert.strictEqual(r.beforeAdd, 'connected', 'by address, before the name resolved: the documented residual');
+    assert.match(String(r.afterAdd), /^(threw|error) EACCES$/, all);
+    assert.strictEqual(r.hits, r.hitsBefore, `nothing reached it once the address was added: ${all}`);
+  });
+});
+
+describe('sandbox 53d: the refresh (#227 review)', () => {
+  const config = require('../../lib/module-sandbox-config');
+  afterEach(() => config.resetForTests());
+
+  it('the system resolver and DNS together; a refresh that adds an address tells the listeners; a failure keeps what was known', async () => {
+    const r = await config.resolveDenied(`redis://${NAME}:6379`, {lookup: (h, o, cb) => cb(null, [{address: '10.0.0.1', family: 4}]),
+      resolve4: (h, cb) => cb(null, ['10.0.0.2', '10.0.0.1']), resolve6: (h, cb) => cb(Object.assign(new Error('x'), {code: 'ENODATA'}))});
+    assert.deepStrictEqual(r, {addresses: ['10.0.0.1', '10.0.0.2'], problem: null});
+    const told = [];
+    config.onDeniedChange((c) => told.push(c));
+    let answer = ['10.0.0.1'];
+    const opts = {lookup: (h, o, cb) => (answer == null ? cb(Object.assign(new Error('x'), {code: 'ETIMEOUT'})) : cb(null, answer.map((address) => ({address, family: 4}))))};
+    await config.refreshDenied(`redis://${NAME}:6379`, opts);
+    assert.deepStrictEqual(told, [], 'the first resolution is the workers\' start set');
+    answer = ['10.0.0.3'];
+    await config.refreshDenied(`redis://${NAME}:6379`, opts);
+    assert.deepStrictEqual(told, [{addresses: ['10.0.0.1', '10.0.0.3'], port: 6379}]);
+    answer = null;
+    const c = await config.refreshDenied(`redis://${NAME}:6379`, opts);
+    assert.deepStrictEqual([c.addresses, c.problem], [['10.0.0.1', '10.0.0.3'], 'ETIMEOUT']);
+    assert.deepStrictEqual(config.deniedEndpoints(`redis://${NAME}:6379`).endpoints.map((e) => e.host), [NAME, '10.0.0.1', '10.0.0.3']);
+  });
+});
