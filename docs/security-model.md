@@ -1057,8 +1057,8 @@ these are the checks that predate them and still apply:
     on every route before any key is checked, so an unauthenticated client
     can still make the server read up to `--maxRequestBody` (8 MB) per
     request. A body that says it is BSON (`application/bson`) is answered
-    415 on every route and never read (`lib/route-manager.js`): BSON was
-    retired in 8.0.0. A refused body is discarded unread; a client that
+    415 on every route and never parsed or kept (`lib/route-manager.js`):
+    BSON was retired in 8.0.0. A refused body is discarded as it arrives; a client that
     keeps sending it is cut off by the server's default request timeout
     (300 s).
   - **Between modules, the check runs when a channel opens, not on every
