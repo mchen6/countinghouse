@@ -120,7 +120,7 @@ describe('stdio 25: the shared runtime on a Windows named pipe (C2)', function()
     }
   });
 
-  it('a socket that is no pipe name, or a pipe without --sessionDir, is refused (exit 2)', async() => {
+  it('a socket that is no pipe name, a pipe without --sessionDir, or a --sessionDir that is no drive path, is refused (exit 2)', async() => {
     const h = home();
     const dir = privateRunDir(h, user);
     const path1 = runtime(h, path.join(dir, 'sessions.sock'), ['--sessionDir', dir]);
@@ -131,5 +131,12 @@ describe('stdio 25: the shared runtime on a Windows named pipe (C2)', function()
     children.push(noDir);
     assert.strictEqual(await noDir.exited, 2, noDir.err.slice(-3000));
     assert.match(noDir.err, /needs --sessionDir/);
+    // a UNC or device path for --sessionDir is refused (#275 review): a drive path only
+    for (const far of ['\\\\server\\share\\run\\daemon', '\\\\?\\C:\\run\\daemon']) {
+      const unc = runtime(h, pipeName(), ['--sessionDir', far]);
+      children.push(unc);
+      assert.strictEqual(await unc.exited, 2, unc.err.slice(-3000));
+      assert.match(unc.err, /--sessionDir on Windows must be a drive path/);
+    }
   });
 });

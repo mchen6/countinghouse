@@ -42,6 +42,7 @@ if (options.stdioWithPort === true) {
 {
   var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
     : options.sessionDirInvalid === true ? '--sessionDir needs a path'
+    : options.sessionDirNotDrive === true ? '--sessionDir on Windows must be a drive path (C:\\...), not a UNC or device path'
       : options.sessionSocket == null ? (options.sessionDir != null ? '--sessionDir is only for --sessionSocket' : null)
       : options.stdio === true ? '--stdio and --sessionSocket: choose one'
         : options.sessionWithPort === true ? '--sessionSocket and --port: choose one'

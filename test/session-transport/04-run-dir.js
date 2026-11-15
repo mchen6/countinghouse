@@ -184,6 +184,31 @@ describe('session-transport 04: the run directory on Windows (C2)', function() {
     assert.strictEqual(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([harmless, priv()])}), null);
   });
 
+  it('a parent that is a link (a junction reads as one) is refused, as on POSIX (#275 review)', function() {
+    if (process.platform === 'win32') return this.skip();   // a junction needs no privilege, a symlink does: POSIX makes the link
+    const real = path.join(home, 'elsewhere');
+    fs.mkdirSync(path.join(real, 'daemon'), {recursive: true});
+    const linked = path.join(home, 'linked');
+    fs.symlinkSync(real, linked);
+    assert.match(String(runDir.runDirProblem(path.join(linked, 'daemon'), {platform: 'win32', acls: () => [priv(), priv()]})), /parent .* is not a directory/);
+  });
+
+  it('a directory\'s inherit-only allow rule for anyone else is refused: it would flow into the files made there (#275 review)', () => {
+    const acls = (want) => (files) => files.map((f, i) => want[i]);
+    const flows = priv();
+    flows.rules.push(ace('S-1-1-0', FULL, {inheritOnly: true}));
+    assert.match(String(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([flows, priv()])})), /inherit.*S-1-1-0/);
+    assert.match(String(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([priv(), flows])})), /parent.*inherit.*S-1-1-0/);
+    // this user's and SYSTEM's own inherit-only rules are theirs
+    const own = priv();
+    own.rules.push(ace(USER, FULL, {inheritOnly: true}));
+    assert.strictEqual(runDir.runDirProblem(daemon, {platform: 'win32', acls: acls([own, priv()])}), null);
+    // a file's inherit-only rules flow nowhere: skipped, as before
+    const {privateProblem} = require('../../lib/win-acl');
+    assert.strictEqual(privateProblem('the secret', flows), null);
+    assert.match(String(privateProblem('a directory', flows, {directory: true})), /inherit.*S-1-1-0/);
+  });
+
   it('ACLs that cannot be read, or a directory that is not one, fail closed', () => {
     assert.match(String(runDir.runDirProblem(daemon, {platform: 'win32', acls: () => { throw new Error('powershell timed out'); }})), /could not be read/);
     assert.match(String(runDir.runDirProblem(daemon, {platform: 'win32', acls: () => [priv()]})), /could not be read/);
