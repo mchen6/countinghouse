@@ -44,11 +44,13 @@ function serverArgs(mode) {
 // once-per-target report always logs it.
 async function handleIsNotAdoption(port, server) {
   const from = server.output.length;
-  const mark = `/nonexistent/ch-05-mark-${process.pid}-${Date.now()}`;
+  const name = `ch-05-mark-${process.pid}-${Date.now()}`;
+  const mark = `/nonexistent/${name}`;
   const r = await mcpCall(port, KEY, TOOL, {what: 'socketHandle'});
   assert.strictEqual(toolOutput(r).outcome, 'allowed', JSON.stringify(r));
   await mcpCall(port, KEY, TOOL, {what: 'loadFileOutside', arg: mark});
-  await waitFor(() => server.output.indexOf(mark, from) !== -1, 20000, 'the loadFile violation line');
+  // by its unique name: on Windows the line holds it resolved on the drive, in JSON
+  await waitFor(() => server.output.indexOf(name, from) !== -1, 20000, 'the loadFile violation line');
   const since = server.output.slice(from, server.output.indexOf(mark, from));
   assert.ok(!since.includes('violation descriptor'), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
 }
