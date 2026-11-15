@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "perf-time",
+    "manufacturer": "countinghouse",
+    "modelDescription": "One cheap tool for timing the runtime's per-call path.",
+    "serviceList": {
+      "urn:countinghouse-perf:serviceID:timeService": {
+        "actionList": [
+          {
+            "name": "get_current_time",
+            "description": "The current time in an IANA timezone.",
+            "input":  {"schema": "/timeService/get_current_time/input"},
+            "output": {"schema": "/timeService/get_current_time/output"}
+          }
+        ]
+      }
+    }
+  }
+}
