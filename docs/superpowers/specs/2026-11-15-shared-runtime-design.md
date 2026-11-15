@@ -1,6 +1,6 @@
 # One shared runtime per user, many client sessions
 
-Status: a design for the security review, revision 2. This revision folds in the first review (READY WITH CHANGES: findings 1–9 and the answers to section 11). No code yet.
+Status: revision 3, READY after the security review. It folds in the first review (findings 1–9 and the section 11 answers) and the re-check's five MEDIUM edits. No code yet.
 Author: implementer C, 2026-11-15, against countinghouse master 842c5525 and ch-local main.
 It spans countinghouse (the runtime: sessions, per-session settings, the session transport) and ch-local (the daemon, the shim, the lifecycle).
 
@@ -69,15 +69,15 @@ The runtime, not the daemon, takes the session connections. That saves a copy of
 - Unix socket paths are limited to 108 bytes on Linux and 104 on macOS. The runtime refuses a path over the limit.
 - When `<home>` is too long, it uses `$TMPDIR/ch-<uid>/` instead, created and checked the same way. The chosen path is recorded in `daemon.json`, which is itself under `<home>/run/daemon/`.
 
-**Windows: a named pipe, `\\.\pipe\countinghouse-<16 hex>`.** The hex comes from a hash of the user's SID and the home path. What Node gives us, verified rather than remembered:
+**Windows: a named pipe, `\\.\pipe\countinghouse-<32 hex>`, its name random per runtime start** (16 random bytes). It's recorded in `daemon.json`, which is owner-only through `lib/win-acl.js`. The shim checks that DACL before it trusts the name. A predictable name would let another user hold it, so the runtime never starts; a random one can't be guessed in advance. What Node gives us, verified rather than remembered:
 - **libuv's bind** (`src/win/pipe.c`, at v1.52.1, which Node 24.21 bundles) creates the first instance with `FILE_FLAG_FIRST_PIPE_INSTANCE`. If any process already holds the name, the bind fails with `ERROR_ACCESS_DENIED`, which libuv reports as `EADDRINUSE`.
 - **libuv passes `NULL` security attributes.** Microsoft's CreateNamedPipe documentation says the default descriptor "grant[s] full control to the LocalSystem account, administrators, and the creator owner" and "read access to members of the Everyone group and the anonymous account".
 - **Creating a further instance** of a live pipe needs `FILE_CREATE_PIPE_INSTANCE`, which read access doesn't include. So another user can't add an instance beside ours while the runtime holds the name.
 - **Remote clients are accepted by default** (`PIPE_ACCEPT_REMOTE_CLIENTS` is 0), subject to that DACL. libuv doesn't set `PIPE_REJECT_REMOTE_CLIENTS`.
 
 What follows from those facts:
-- **The gap is a restart.** Between one runtime's exit and the next one's bind, another local user could take the name and serve a fake runtime to this user's shims.
-- **A bind failure is fatal.** The runtime exits, saying the name is taken, and never falls back to another name.
+- **The gap is a restart.** A fixed name could be taken between one runtime's exit and the next one's bind. With a random name per start, there's nothing to take in advance.
+- **A bind failure is fatal** for that runtime start. The runtime exits, saying the name is taken, and never serves under a name it doesn't hold. The daemon's next start picks a new random name.
 - **The shim authenticates the server** (below), so a squatter, local or remote, can't complete a handshake. A remote attacker (Everyone and anonymous have read access) likewise can't open a session without the secret.
 
 ### Mutual authentication: the secret is never sent
@@ -92,7 +92,11 @@ What follows from those facts:
 - **Before the handshake completes:**
   - the shim relays no client byte;
   - the runtime sends nothing but `PROVE` and serves nothing.
-- **Unauthenticated connections are capped:** at most 8 at once, each closed if it hasn't authenticated within 5 seconds. This replaces an accept throttle, so a flood of half-open connections can't starve real shims.
+- **The pre-auth stage has its own bounds.** On Windows any local user, or a remote one with SMB access, can open a read-only instance and reach PROVE.
+  - At most 64 connections may be unauthenticated at once. When a 65th arrives, the **oldest** pre-auth connection is evicted, not the newest refused, so a real shim arriving behind a flood still gets in.
+  - Each has a 2 s deadline to complete AUTH. At most 512 bytes are read from it before PROVE.
+- **The shim retries with jitter.** If a handshake fails before PROVE (evicted, timed out, or refused), it retries after 100 ms to 2 s, randomised, for up to 20 s in all.
+- **If it still can't attach,** the shim says so plainly. It writes the reason on stderr and answers the client's `initialize` (or a pending request) with a JSON-RPC error: `countinghouse could not reach its shared runtime (<reason>); try again, or set runtime: own`. It doesn't hang.
 - **The hello carries nothing about the client:** no pid, no environment, no paths, since paths carry the user's name. The client conditions are evaluated in the shim (section 5).
 
 ### Framing: kind and length, then raw bytes
@@ -105,9 +109,10 @@ Every frame is one kind byte, a 4-byte big-endian length, then the payload's raw
 | `M` | both | one MCP message, the exact bytes of one line of the client's stdio, without its newline |
 | `C` | both | session control, JSON: runtime → shim `may-elicit?`, `drain`, `tightenings?`; shim → runtime `may-elicit`, `tightenings`, `bye` |
 
-- The shim never parses the client's MCP. It splits the client's stdin on newlines and sends each line as one `M` frame. On the way back, it writes each `M` payload followed by a newline.
-  - So a client can't produce a `C` frame. The kind comes from the shim, never from the bytes.
-  - Nothing is parsed and re-stringified, so traffic stays byte-exact, and a 256 MiB result isn't copied twice.
+- **Client to runtime.** The shim reads the client's stdin as lines, each bounded by `--maxRequestBody`. It parses each line only to learn its JSON-RPC `id` and `method`: so it knows which requests are in flight, and can spot `initialize` and keep it for replay. It then forwards the line's **original bytes unchanged** as one `M` frame.
+- **Runtime to client.** A reply goes as an `M` frame whose header carries the request `id` outside the payload: `M`, a 4-byte length, a 2-byte header length, the header JSON `{"id": …}`, then the payload. The shim learns which request was answered without parsing a result body, which can be up to 256 MiB. It writes the payload followed by a newline. A notification goes with an empty header.
+- **So a client can't produce a `C` frame.** The kind comes from the shim, never from the client's bytes.
+- **Traffic stays byte-exact.** Nothing is re-stringified, and a large result isn't parsed or copied twice.
 - **Length caps:**
   - client to runtime: `--maxRequestBody`, as stdio enforces today;
   - runtime to client: the session's effective output cap plus the envelope;
@@ -128,7 +133,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 **What else is per session** (review finding 5):
 - **Tasks.** `tasks/list`, `tasks/get`, `tasks/result` and `tasks/cancel` are keyed by owner key today (`lib/mcp/gateway.js`), so with one key every session would see and cancel every other session's tasks. A task now records its session too, and a session sees and acts on its own tasks only. Another session's task looks exactly like an unknown task.
-- **The usage report** (`countinghouse_usage_report`) shows the calling session's records by default. The terminal (`ch-local usage`) shows all of the user's sessions.
+- **The usage report** (`countinghouse_usage_report`) shows only the calling session's records. There is no conversational way to see other sessions. The terminal (`ch-local usage`) shows all of the user's sessions.
 - **The settings tool's `get`** shows the global values and history, plus *this* session's overrides and history lines. Another session's history lines are left out.
 - **A job outlives its session's loosenings.** When a session ends, its jobs still running take the global defaults for every later step: the next hop's cap and timeout, from a refreshed token entry. A job never keeps a loosening after its session is gone.
 
@@ -152,6 +157,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 - **A terminal tightening binds every session** (finding 4). When the global default is tightened to G, every session override looser than G is dropped at once. Those sessions then run at G, and each is told: "your this-session loosening of `maxOutputBytes` ended: the default was lowered to G". An override tighter than G is kept.
 - A terminal loosening doesn't touch session overrides. A session that tightened stays tighter.
 - The ceiling is checked again at every apply. A loosening in conversation still needs part 3's confirmation, in that session's own dialog.
+- **What counts as a loosening is judged against the session's current effective value,** not the global default. So a form is needed both to raise a session-tightened value back toward the default, and to un-hide a pack the session turned off. Only a change that is tighter than the session's current value needs none.
 
 **Exactly where each per-call value applies.** Each line below reads `options.*` today. Each becomes the call's effective value; a hop, a peer invoke and a job take theirs as above.
 
@@ -208,19 +214,22 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - So the runtime asks the session's own shim over `C` (`may-elicit?`), and the shim answers yes or no from its own check. The hello carries no paths, and neither does the answer.
   - The latch is per session. A shim that doesn't answer within its wait counts as no.
 - **The daemon's environment and working directory are fixed** (finding 3):
-  - its env is ch-local's own (the PATH it starts with, plus the GitHub token from `gh auth token`, held in memory);
+  - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
   - nothing from any client's environment reaches it.
 - **A shim launched with inputs the shared runtime can't honour per session runs as its own runtime** (`--own-runtime`, today's path), and says so on stderr and in the first result's notice. Those inputs are:
   - a pass-through runtime flag (`--moduleSandbox`, `--maxOutputBytes`, `--requestTimeout`, `--locale` or any other `start` passes through);
-  - a `COUNTINGHOUSE_GITHUB_TOKEN` or `GITHUB_TOKEN` in its environment that differs from the daemon's.
+  - a token the client's environment *chooses* under today's precedence, which differs from the daemon's. That's a `COUNTINGHOUSE_GITHUB_TOKEN`, or a `GITHUB_TOKEN` when `gh` has none. A shell-wide `GITHUB_TOKEN` beside a working `gh` login chooses nothing, so it doesn't push a session to its own runtime.
+
+    Tokens are compared by a keyed hash and never sent. The shim sends `HMAC(secret, "ch-token" ‖ token)` in a `C` frame, and the runtime compares it in constant time with the same keyed hash of the daemon's token. Neither token crosses the socket.
 
   Otherwise one session's `--moduleSandbox audit` would put every session in audit, and one client's token would be silently replaced or shared.
-- **`defaultRepo` becomes per session.**
+- **`defaultRepo` becomes a per-session input default. There's no new module API.**
   - Today `start` reads the git remote of its cwd and writes `{defaultRepo}` into the pack's device config: one value for the runtime, so every session would act on the first session's repository.
   - In shared mode, the shim reads its own cwd's remote and sends just the `owner/name` slug in a `C` frame after the handshake. It's a repository name, not a path.
-  - The main thread hands it to the module with each call of that session, as `ctx.defaults.repo`, beside the device config, which no longer carries it.
-  - A module reading device config's `defaultRepo` gets `ctx.defaults.repo` first. This is one small module-facing addition, and pack 1 is changed to read it.
+  - A pack declares which input a session default fills, in its reviewed manifest: `countinghouse.sessionDefaults` in package.json, for example `{"repo": "repo"}`.
+  - The main thread fills that input **only when a client's direct call omits it**, and **never on a hop**. It checks the slug against the `owner/name` pattern before filling. It fills before the input schema check, so the value is validated like any input.
+  - The module sees an ordinary input, never knows it was filled, and an input the caller gave is never overridden. Pack 1 only adds the declaration. Device config no longer carries `defaultRepo`.
 
 ## 6. Lifecycle
 
@@ -353,7 +362,7 @@ So ten sessions cost about 130 MB PSS for shims, beside one runtime. The shim lo
 3. A daemon death resets loosenings, announced, and fails in-flight calls (retryable, may have run).
 4. The secret is only as strong as the user's file permissions.
 5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout. The values stay within the ceiling, and a module already sees all of one user's data.
-6. On Windows, the pipe accepts read-only opens from Everyone and anonymous, local or remote. Before the handshake completes, they get nothing but `PROVE` (a random challenge and a MAC), and they can't authenticate.
+6. **On Windows, another user (local, or remote with SMB access) can slow attaches, but can't lock them out.** The pipe accepts read-only opens from Everyone and anonymous, so pre-auth connections can be opened. Eviction of the oldest, the 2 s deadline and the shim's jittered retry keep real shims getting in. Such a connection gets nothing but `PROVE` (a random challenge and a MAC), can't authenticate, and never reads or forges a session.
 
 ## 10. Migration and the per-session mode
 
@@ -384,7 +393,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 | `options.locale` | global | global, terminal-only |
 | `lib/validator-pool.js` heap; PER_CALLER_IN_FLIGHT and the stall throttle by caller | one pool; per caller | one pool, sized to the largest active cap; in flight and stalls by caller and session, with per-user bounds |
 | `lib/mcp/gateway.js` tasks by owner key | per key | by key and session |
-| the usage report; the settings tool's `get` history | per caller; whole history | per session by default; globals plus the session's own lines |
+| the usage report; the settings tool's `get` history | per caller; whole history | the session's own (the terminal shows all); globals plus the session's own lines |
 | `lib/settings-tool.js` UNCONFIRMED counts | per start, per history file | per user (follows the file) |
 | ceiling cache | machine-wide | unchanged |
 | live modules, captureAtStart | one module set | unchanged; calls carry their session |
@@ -395,7 +404,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 | call tokens | the caller's identity and billing | plus the session, its cap and its timeout |
 | ch-local `client-conditions.js` | start's parent, one latch, start's env | in the shim, per session |
 | ch-local `in-place.js` | one applier per start | in the daemon, per runtime; this-session packs and notes per session |
-| ch-local `start.js`: env, token, defaultRepo, run dir | one start, its env and cwd | the daemon's fixed env and cwd; defaultRepo per session as `ctx.defaults.repo`; a shim with its own flags or token runs its own runtime |
+| ch-local `start.js`: env, token, defaultRepo, run dir | one start, its env and cwd | the daemon's fixed env (an install-resolved PATH) and cwd; defaultRepo as a per-session input default, declared by the pack, for direct calls only; a shim with its own flags or chosen token runs its own runtime |
 | ch-local `history.jsonl` | by start | per user; lines about a session name it opaquely |
 
 ## The plan (for after the re-check)
@@ -407,14 +416,16 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - It covers: the directory checks, the secret, the HMAC handshake, the framing, the pre-auth cap, and the session registry.
 - Each authenticated connection is served by the stdio MCP handler (`lib/mcp/stdio.js`), one instance per session.
 - Tests (Docker):
-  - a wrong MAC either way, no hello, a too-long frame, or a 9th unauthenticated connection are refused;
+  - a wrong MAC either way, no hello, or a too-long frame are refused;
+  - a 65th unauthenticated connection evicts the oldest, and one silent past 2 s is closed;
+  - a reply's id travels in the frame header;
   - two sessions get their own initialize and list;
   - a `C` frame can't come from client bytes;
   - traffic is byte-exact;
   - a long socket path is refused.
 
 **C2. Windows and macOS transport** (countinghouse).
-- The pipe name, the fatal bind, the secret's DACL, and the macOS fallback.
+- The random pipe name in owner-only `daemon.json`, the fatal bind, the secret's DACL, and the macOS fallback.
 - Tests: the Windows CI subset (a second bind is `EADDRINUSE`, and the runtime exits), plus the path limit, server-free.
 
 **C3. `ch-local daemon`** (ch-local).
@@ -428,7 +439,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - the backoff.
 
 **C4. `ch-local connect`, the shim** (ch-local).
-- The checks, attach or start, the handshake, the framing relay, may-elicit, the defaultRepo slug, the tightening record and replay, drain (wait for answers), crash (retryable, may have run), the initialize replay and list_changed.
+- The checks, attach or start with jittered retry and a clear failure, the handshake, the framing relay (request ids from client lines; reply ids from the frame header), may-elicit, the defaultRepo slug, the token's keyed hash, the tightening record and replay, drain (wait for answers), crash (retryable, may have run), the initialize replay and list_changed.
 - Tests:
   - byte-exact relay;
   - a fake server (wrong `ms`) gets no client byte;
@@ -451,7 +462,8 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - Tests:
   - a module sees one caller id from two sessions;
   - a hop takes its token's values;
-  - a job takes the defaults once its session ends.
+  - a job takes the defaults once its session ends;
+  - a declared session default fills a missing input on a direct call only, never on a hop, and a slug outside `owner/name` isn't filled.
 
 **B2. Per-session settings** (needs B1).
 - Overrides for every conversational change, and conversation never writing `settings.json`. A terminal tightening drops looser overrides, announced.
@@ -461,6 +473,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - one session's raise doesn't change another's calls;
   - a conversational tightening or `pack off` changes only its session;
   - a terminal tightening ends a looser override;
+  - raising a session-tightened value back toward the default, or un-hiding a pack, needs a form;
   - a self-answering session loosens only itself;
   - 3 declines across sessions lock that kind;
   - a hop token carries its session's values.
