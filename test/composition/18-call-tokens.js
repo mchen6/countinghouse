@@ -950,6 +950,38 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.ok(broker.announced.has(`${pair()}/84`));
     });
 
+    // #205 merged with #202: a reload's drain counts every invoke the callee
+    // still owes under step 4's accounting, the one whose input is being
+    // checked included; a channel to a module being replaced is denied
+    // before anything is held, so the denial releases nothing.
+    it('(#205 x #202) the drain counts announced, checking and matched invokes; a MODULE_RELOADING denial holds and releases nothing', async () => {
+      let release = null;
+      moduleSpec.validateSerialized = (checked, which, buffer) => new Promise((resolve) => { release = () => resolve({refused: null, buffer: buffer}); });
+      announce(90, tokens().issue(ENTRY(caller.workerId)));
+      assert.strictEqual(broker.openInvokesTo(callee), 1, 'an announced invoke');
+      meter(90, 'm90');
+      await sleep(20);
+      assert.strictEqual(broker.announced.size, 0);
+      assert.strictEqual(broker.openInvokesTo(callee), 1, 'an invoke whose input is being checked was not counted');
+      release();
+      await sleep(20);
+      assert.ok(served('m90'));
+      assert.strictEqual(broker.openInvokesTo(callee), 1, 'a matched, unbilled invoke');
+      bill(replyTo('m90').token, 'b90');
+      await sleep(50);
+      assert.strictEqual(broker.openInvokesTo(callee), 0);
+      // a channel request to a module being replaced: denied, nothing held
+      const denied = [];
+      const requester = {workerId: 18, sendPeerChannelDenyToChild: (m) => denied.push(m), bindings: caller.bindings};
+      callee.replacing = true;
+      const before = [broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size];
+      broker.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(18))}, requester);
+      await sleep(20);
+      assert.deepStrictEqual(denied.map((m) => m.errCode), ['MODULE_RELOADING']);
+      assert.deepStrictEqual([broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size], before);
+      callee.replacing = false;
+    });
+
     // Round 3 (3, 4): an invoke's id is an integer in range, on the
     // announcement and on the match; the id delivered is the announced one.
     it('(#202-r3-3/4) an id that is not an integer in range is not held, and a match by one is refused; the announced id is delivered', async () => {

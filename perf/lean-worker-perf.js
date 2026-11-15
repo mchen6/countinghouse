@@ -18,7 +18,12 @@
 //                 with no such line reports none)
 //   RSS           VmRSS of the server process (/proc/<pid>/status) 1.5 s after
 //                 ready; "added per worker" is the least-squares slope over the
-//                 configurations' worker counts                (target: <= 20 MB)
+//                 configurations with 1..N workers             (target: <= 20 MB);
+//                 "fixed" is what the first worker brings once beyond its
+//                 share (the validator pool, main's): the fit's intercept
+//                 above the 0-module row. Before 2026-11-14 the slope ran
+//                 through the 0-module row, which counted that one-time cost
+//                 per worker; it is still printed, for comparison.
 // The files a worker requires are not counted here: test/sandbox/43 pins them.
 //
 // --pack <dir>: an installed scenario (a package whose countinghouse.role is
@@ -142,17 +147,43 @@ const median = (a) => {
   const mid = Math.floor(x.length / 2);
   return (x.length % 2 === 1) ? x[mid] : (x[mid - 1] + x[mid]) / 2;
 };
-// The least-squares slope of y over x.
-function slope(points) {
+// The least-squares line of y over x: {slope, intercept}, or null.
+function fit(points) {
   if (points.length < 2) return null;
   const n = points.length;
   const mx = points.reduce((s, p) => s + p[0], 0) / n;
   const my = points.reduce((s, p) => s + p[1], 0) / n;
   const sxx = points.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
   if (sxx === 0) return null;
-  return points.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / sxx;
+  const b = points.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / sxx;
+  return {slope: b, intercept: my - b * mx};
+}
+// The least-squares slope of y over x.
+function slope(points) {
+  const f = fit(points);
+  return (f == null) ? null : f.slope;
 }
 const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
+
+// The RSS ladder -> {perWorkerMb, fixedMb, throughZeroMb}. baseline is the
+// RSS of the configuration with no module ([0, MB]), chosen by
+// configuration, not by a measured worker count; rows are the [workers, MB]
+// of the configurations with modules. The per-worker cost is the
+// least-squares slope over those rows (the 20 MB target applies to it);
+// what the first worker brings once, beyond its own share (the validator
+// pool's threads, main's share), is fixedMb: that line's intercept above the
+// baseline. Until 2026-11-14 the slope ran through the baseline too
+// (throughZeroMb, kept for comparison), which counted that one-time cost as
+// a per-worker one.
+function rssFit(baseline, rows) {
+  const line = fit(rows);
+  return {perWorkerMb: (line == null) ? null : line.slope,
+    fixedMb: (line == null || baseline == null) ? null : line.intercept - baseline[1],
+    throughZeroMb: slope((baseline == null) ? rows : [baseline].concat(rows))};
+}
+const RSS_METHOD = 'per worker: the least-squares slope over the configurations with modules (1..N workers); ' +
+  'fixed: that line\'s intercept above the no-module configuration; through zero: the slope over all of them, ' +
+  'the method before 2026-11-14 (addedRssPerWorkerMb was that number until then)';
 
 async function main(argv) {
   const o = parseArgs(argv);
@@ -165,11 +196,13 @@ async function main(argv) {
     for (let i = 0; i < o.runs; i++) runs.push(await once(o, modules, opts));
     const boots = runs.flatMap((r) => Object.values(r.boots));
     const walks = runs.flatMap((r) => Object.values(r.walks));
-    rows.push({label, thread: opts.thread !== false, workers: median(runs.map((r) => r.workers)),
+    rows.push({label, thread: opts.thread !== false, modules: modules.length, workers: median(runs.map((r) => r.workers)),
       readyMs: median(runs.map((r) => r.ready)), rssMb: r1(median(runs.map((r) => r.rss))),
       bootMs: median(boots), walkMs: median(walks), runs});
   }
-  const ladder = rows.filter((r) => r.thread).map((r) => [r.workers, r.rssMb]);
+  const threaded = rows.filter((r) => r.thread);
+  const base = threaded.find((r) => r.modules === 0);
+  const rss = rssFit((base == null) ? null : [0, base.rssMb], threaded.filter((r) => r.modules > 0).map((r) => [r.workers, r.rssMb]));
   const full = rows.filter((r) => r.thread).slice(-1)[0];
   const result = {
     runtime: o.runtime, pack: o.pack, runs: o.runs, node: process.version, cpus: os.cpus().length,
@@ -178,15 +211,20 @@ async function main(argv) {
       packReadyMs: full.readyMs,
       workerBootMedianMs: full.bootMs,
       spawnWalkMedianMs: full.walkMs,
-      addedRssPerWorkerMb: r1(slope(ladder))
-    }
+      fixedRssMb: r1(rss.fixedMb),
+      addedRssPerWorkerMb: r1(rss.perWorkerMb),
+      addedRssPerWorkerThroughZeroMb: r1(rss.throughZeroMb)
+    },
+    rssMethod: RSS_METHOD
   };
   for (const r of result.rows) {
     process.stdout.write(`${r.label.padEnd(26)} workers ${String(r.workers).padStart(2)}  ready ${String(r.readyMs).padStart(6)} ms  ` +
       `RSS ${String(r.rssMb).padStart(6)} MB  boot ${String(r.bootMs).padStart(5)} ms  walk ${String(r.walkMs).padStart(5)} ms\n`);
   }
   process.stdout.write(`targets: pack ready ${result.targets.packReadyMs} ms (<= 5000), worker boot median ${result.targets.workerBootMedianMs} ms (<= 200; ` +
-    `of it the spawn walk ${result.targets.spawnWalkMedianMs} ms), added RSS per worker ${result.targets.addedRssPerWorkerMb} MB (<= 20)\n`);
+    `of it the spawn walk ${result.targets.spawnWalkMedianMs} ms), added RSS per worker ${result.targets.addedRssPerWorkerMb} MB over 1..N workers (<= 20)\n`);
+  process.stdout.write(`fixed: RSS the first worker brings once, beyond its share ${result.targets.fixedRssMb} MB; ` +
+    `the slope through the 0-module row (the method before 2026-11-14) ${result.targets.addedRssPerWorkerThroughZeroMb} MB\n`);
   process.stdout.write(`LEAN-PERF-JSON ${JSON.stringify(result)}\n`);
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
   if (o.selfCheck) {
@@ -195,8 +233,10 @@ async function main(argv) {
       if (!(r.readyMs > 0)) missing.push(`${r.label}: ready`);
       if (!(r.rssMb > 0)) missing.push(`${r.label}: RSS`);
       if (r.workers > 0 && r.bootMs == null) missing.push(`${r.label}: worker boot`);
+      if (r.thread && r.modules > 0 && !(r.workers > 0)) missing.push(`${r.label}: no worker loaded`);
     }
     if (result.targets.addedRssPerWorkerMb == null) missing.push('the RSS slope');
+    if (result.targets.fixedRssMb == null) missing.push('the fixed RSS');
     if (missing.length > 0) throw new Error(`self-check: not measured: ${missing.join(', ')}`);
     process.stdout.write('self-check: every metric was read\n');
   }
@@ -219,4 +259,4 @@ if (typeof(describe) === 'function' && typeof(it) === 'function' && loadedByMoch
   main(process.argv.slice(2)).catch((e) => { process.stderr.write(`${e.message}\n`); process.exit(1); });
 }
 
-module.exports = {main, parseArgs, slope, median};
+module.exports = {main, parseArgs, slope, fit, rssFit, median};
