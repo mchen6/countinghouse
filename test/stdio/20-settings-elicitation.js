@@ -183,6 +183,45 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
     const t = settingsTool.create({file, ceiling: () => ({state: 'none'})});
     await refused(t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
   });
+
+  describe('production\'s conditions: a tested client, then ch-local\'s may-elicit (Task 4)', () => {
+    const clients = require('../../lib/elicitation-clients');
+    const control = require('../../lib/control-channel');
+    let entry;
+    beforeEach(() => { entry = clients.ALLOWLIST.find((e) => e.name === clients.CLAUDE_CODE); entry.versionFloor = '2.0.0'; });
+    afterEach(() => { entry.versionFloor = null; control.resetForTests(); });
+    // a fake ch-local over the control channel, answering may-elicit with `answer`
+    const chLocal = (answer) => {
+      let listener = null;
+      const asked = [];
+      control.start({}, {on: (fn) => { listener = fn; }, off: () => {}, send: (m) => {
+        if (m.type === 'may-elicit') { asked.push(m); if (answer !== undefined) setImmediate(() => listener(Object.assign({id: m.id}, answer))); }
+      }});
+      return asked;
+    };
+    const prod = () => settingsTool.create({file, ceiling: () => ({state: 'none'}), applyChange: async () => {}});
+
+    it('ch-local says yes: a form; it was asked with the client\'s name and version only', async () => {
+      const asked = chLocal({ok: true, mayElicit: true});
+      assert.ok((await prod().set('maxOutputBytes', '16MiB', 'settings tool', CLIENT)).inputRequired);
+      assert.deepStrictEqual(asked.map((m) => [m.type, m.client]), [['may-elicit', {name: 'claude-code', version: '2.1.323'}]]);
+    });
+
+    it('ch-local says no (a hook), or does not answer, or no channel: no form, and why', async () => {
+      chLocal({ok: true, mayElicit: false, why: 'client hook present'});
+      await refused(prod().set('maxOutputBytes', '16MiB', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      assert.ok(history().some((h) => h.change === 'not confirmed (client hook present)'), JSON.stringify(history()));
+      control.resetForTests();
+      confirmModule.resetForTests();
+      settingsTool.resetForTests();
+      chLocal({ok: false, code: 'CONTROL_UNKNOWN'});   // an older ch-local
+      await refused(prod().set('requestTimeout', '60s', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      assert.ok(history().some((h) => h.setting === 'requestTimeout' && h.change === 'not confirmed (client conditions unknown)'));
+      control.resetForTests();   // no channel at all
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.x': false}}));
+      await refused(prod().set('pack.x', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    });
+  });
 });
 
 describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
