@@ -27,13 +27,15 @@ function portIn(args) {
 // A countinghouse server (framework.js or bin/countinghouse) spawned with no
 // --port listens on its default (9527), outside the run's block, where the
 // test's own client never looks (#234: the direct-peer-channels files); one
-// with --stdio listens on no port. -> true when it is that.
+// with --stdio, or --sessionSocket, listens on no port. -> true when it is that.
 const SERVER = /(^|[\\/\s"'])(framework\.js|bin[\\/]countinghouse)(["'\s]|$)/;
 function serverWithoutPort(file, args) {
   const parts = Array.isArray(args) ? [String(file)].concat(args.map(String)) : [String(file)];
   const text = parts.join(' ');
   if (!SERVER.test(text)) return false;
   if (/--stdio\b/.test(text)) return false;
+  // --sessionSocket (the shared runtime): it listens on its socket, on no port
+  if (/--sessionSocket\b/.test(text)) return false;
   return (Array.isArray(args) ? portIn(args) : portIn(String(file))) == null;
 }
 function checkServer(file, args) {

@@ -58,6 +58,94 @@
       "output": {
         "type": "object"
       }
+    },
+    "write": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "rename": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "remove": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "symlink": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "list": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "mkdir": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "copy": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "link": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "chmod": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "truncate": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "fdmeta": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

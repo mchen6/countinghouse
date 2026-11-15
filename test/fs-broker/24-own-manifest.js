@@ -125,10 +125,13 @@ const eacces = (e) => e.code === 'EACCES';
     });
 
     if (mode === 'audit') {
-      it('what is in those directories is unaffected: a new file beside the records, under audit', async () => {
-        await t.broker.handle('writeFile', [path.join(t.dirs.store, 'beside'), 'x']);
-        await t.broker.handle('writeFile', [path.join(t.dirs.keys, 'beside'), 'x']);
-        assert.strictEqual(fs.readFileSync(path.join(t.dirs.store, 'beside'), 'utf8'), 'x');
+      // the guard itself leaves what is in those directories alone; under
+      // audit a new file there is refused all the same, as any write outside
+      // the module's own area is (Matt, 2026-11-15)
+      it('a new file beside the records is refused under audit, as any write outside the module\'s own area', async () => {
+        await assert.rejects(t.broker.handle('writeFile', [path.join(t.dirs.store, 'beside'), 'x']), eacces);
+        await assert.rejects(t.broker.handle('writeFile', [path.join(t.dirs.keys, 'beside'), 'x']), eacces);
+        assert.ok(!fs.existsSync(path.join(t.dirs.store, 'beside')));
       });
     }
 
