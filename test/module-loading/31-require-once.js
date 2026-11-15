@@ -23,4 +23,22 @@ describe('module-loading 31: requireOnce', () => {
     assert.throws(() => lib(), /not yet/);
     assert.deepStrictEqual(lib(), {ok: true});
   });
+
+  it('cached: sees a replaced require.cache entry, and loads the module again once its entry is gone', () => {
+    const file = require.resolve('../../lib/user-auth');
+    const saved = require.cache[file];
+    const lib = requireOnce.cached(file);
+    try {
+      const real = lib();
+      assert.strictEqual(real, require('../../lib/user-auth'));
+      const stub = () => 'stub';
+      require.cache[file] = {id: file, filename: file, loaded: true, exports: stub};
+      assert.strictEqual(lib(), stub, 'a replaced entry is what it returns');
+      delete require.cache[file];
+      assert.strictEqual(typeof lib(), 'function', 'a module whose entry is gone is required again');
+      assert.notStrictEqual(lib(), stub);
+    } finally {
+      if (saved != null) require.cache[file] = saved;
+    }
+  });
 });
