@@ -27,7 +27,7 @@ function mPayload(header, message) {
   const h = header == null ? Buffer.alloc(0) : Buffer.from(JSON.stringify(header), 'utf8');
   const len = Buffer.alloc(2);
   len.writeUInt16BE(h.length, 0);
-  return Buffer.concat([len, h, Buffer.from(message, 'utf8')]);
+  return Buffer.concat([len, h, Buffer.isBuffer(message) ? message : Buffer.from(message, 'utf8')]);
 }
 const json = (o) => JSON.stringify(o);
 
@@ -93,6 +93,10 @@ const out = {
     oddIdToRuntime: {header: {seq: 2}, line: odd, rule: 'the id 1e2 is kept as its bytes, 1e2; matching is by seq only', keep: {seq: 2, idBytes: '1e2', method: 'tools/list'}, hex: hex(frame('M', mPayload({seq: 2}, odd)))},
     batchToRuntime: {header: {seq: 3}, line: batch, keep: {seq: 3, memberIdBytes: ['1', '"b"']}, hex: hex(frame('M', mPayload({seq: 3}, batch)))},
     clientResponseToRuntime: {header: null, line: '{"jsonrpc":"2.0","id":5,"result":{}}', rule: 'an object with an id and no method is a response: no header, no seq, nothing kept, never crash-answered', hex: hex(frame('M', mPayload(null, '{"jsonrpc":"2.0","id":5,"result":{}}')))},
+    nonStringMethod: {header: {seq: 4}, line: '{"jsonrpc":"2.0","id":9,"method":5}', rule: 'an id and a method of any type is a request: the shim gives it a seq; the runtime answers with an error', hex: hex(frame('M', mPayload({seq: 4}, '{"jsonrpc":"2.0","id":9,"method":5}')))},
+    escapedIdKey: {header: {seq: 5}, line: '{"jsonrpc":"2.0","i\\u0064":11,"method":"tools/list"}', rule: 'member names compare after unescaping: "i\\u0064" is id, so it is a request', hex: hex(frame('M', mPayload({seq: 5}, '{"jsonrpc":"2.0","i\\u0064":11,"method":"tools/list"}')))},
+    loneSurrogateKey: {header: null, line: '{"jsonrpc":"2.0","\\ud800":1,"id":10,"method":"tools/list"}', rule: 'a shim parser that refuses the lone surrogate sends it with no header; the runtime, whose JSON.parse accepts it and finds an id, never dispatches it and answers -32600 with id 10', runtimeAnswer: '{"jsonrpc":"2.0","id":10,"error":{"code":-32600,"message":"the line was not framed as a request"}}', hex: hex(frame('M', mPayload(null, '{"jsonrpc":"2.0","\\ud800":1,"id":10,"method":"tools/list"}')))},
+    invalidUtf8: {header: null, lineHex: hex(Buffer.from([0x7b, 0x22, 0x69, 0x64, 0x22, 0x3a, 0x31, 0x32, 0x2c, 0x22, 0x6d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d])), rule: 'invalid UTF-8: not JSON to the shim (no header); the runtime decodes fatally and answers a parse error, id null, and nothing runs', runtimeAnswer: '{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error: the line is not UTF-8"}}', hex: hex(frame('M', mPayload(null, Buffer.from([0x7b, 0x22, 0x69, 0x64, 0x22, 0x3a, 0x31, 0x32, 0x2c, 0x22, 0x6d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]))))},
     notificationToRuntime: {header: null, line: notification.replace('tools/list_changed', 'cancelled'), hex: hex(frame('M', mPayload(null, notification.replace('tools/list_changed', 'cancelled'))))},
     replyToShim: {header: {seq: 1}, line: reply, rule: 'exact: the shim writes the bytes after the header, then one newline', hex: hex(frame('M', mPayload({seq: 1}, reply)))},
     unmatchedReplyToShim: {header: {seq: 99}, line: reply, rule: 'a seq the shim does not hold: written to the client anyway, nothing recorded', hex: hex(frame('M', mPayload({seq: 99}, reply)))},

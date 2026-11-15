@@ -116,6 +116,36 @@
       "rule": "an object with an id and no method is a response: no header, no seq, nothing kept, never crash-answered",
       "hex": "4d0000002600007b226a736f6e727063223a22322e30222c226964223a352c22726573756c74223a7b7d7d"
     },
+    "nonStringMethod": {
+      "header": {
+        "seq": 4
+      },
+      "line": "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":5}",
+      "rule": "an id and a method of any type is a request: the shim gives it a seq; the runtime answers with an error",
+      "hex": "4d0000002e00097b22736571223a347d7b226a736f6e727063223a22322e30222c226964223a392c226d6574686f64223a357d"
+    },
+    "escapedIdKey": {
+      "header": {
+        "seq": 5
+      },
+      "line": "{\"jsonrpc\":\"2.0\",\"i\\u0064\":11,\"method\":\"tools/list\"}",
+      "rule": "member names compare after unescaping: \"i\\u0064\" is id, so it is a request",
+      "hex": "4d0000003f00097b22736571223a357d7b226a736f6e727063223a22322e30222c22695c7530303634223a31312c226d6574686f64223a22746f6f6c732f6c697374227d"
+    },
+    "loneSurrogateKey": {
+      "header": null,
+      "line": "{\"jsonrpc\":\"2.0\",\"\\ud800\":1,\"id\":10,\"method\":\"tools/list\"}",
+      "rule": "a shim parser that refuses the lone surrogate sends it with no header; the runtime, whose JSON.parse accepts it and finds an id, never dispatches it and answers -32600 with id 10",
+      "runtimeAnswer": "{\"jsonrpc\":\"2.0\",\"id\":10,\"error\":{\"code\":-32600,\"message\":\"the line was not framed as a request\"}}",
+      "hex": "4d0000003c00007b226a736f6e727063223a22322e30222c225c7564383030223a312c226964223a31302c226d6574686f64223a22746f6f6c732f6c697374227d"
+    },
+    "invalidUtf8": {
+      "header": null,
+      "lineHex": "7b226964223a31322c226d6574686f64223a22ff227d",
+      "rule": "invalid UTF-8: not JSON to the shim (no header); the runtime decodes fatally and answers a parse error, id null, and nothing runs",
+      "runtimeAnswer": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"parse error: the line is not UTF-8\"}}",
+      "hex": "4d0000001800007b226964223a31322c226d6574686f64223a22ff227d"
+    },
     "notificationToRuntime": {
       "header": null,
       "line": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\"}",
