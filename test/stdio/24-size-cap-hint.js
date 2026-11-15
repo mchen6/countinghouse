@@ -63,12 +63,12 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
     }
   });
 
-  it('spawned under --stdio with --settingsFile: a module\'s output over the cap names the ch-local command (the worker\'s own check)', async () => {
+  ['audit', 'enforce'].forEach((mode) => it(`spawned under --stdio with --settingsFile, ${mode}: a module's output over the cap names the ch-local command (the worker's own check)`, async () => {
     const home = tmp.mkdtemp('ch-s24-');
     const callee = path.join(__dirname, '..', 'fixtures', 'hop-input-callee');
     const io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
       '--moduleDataPath', path.join(home, 'module_data'), '--settingsFile', path.join(home, 'settings.json'), '--maxOutputBytes', '3000',
-      '--authConfigPath', path.join(__dirname, '..', 'sandbox', '48-auth.json'), '--loadModule', callee], {env: {COUNTINGHOUSE_API_KEY: 'hop-input-key'}});
+      '--moduleSandbox', mode, '--authConfigPath', path.join(__dirname, '..', 'sandbox', '48-auth.json'), '--loadModule', callee], {env: {COUNTINGHOUSE_API_KEY: 'hop-input-key'}});
     try {
       const init = await io.request({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'test', version: '1'}}});
       assert.ok(init.result != null, JSON.stringify(init));
@@ -83,5 +83,5 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
       io.child.kill('SIGKILL');
       fs.rmSync(home, {recursive: true, force: true});
     }
-  });
+  }));
 });
