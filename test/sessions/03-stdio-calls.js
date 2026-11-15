@@ -48,7 +48,10 @@ const KEY = 'hop-input-key';
       assert.ok(issued.some((l) => !l.hop && l.ours), `the client's call's token: ${JSON.stringify(issued)}`);
       assert.ok(issued.some((l) => l.hop && l.ours), `its hop's token: ${JSON.stringify(issued)}`);
       assert.deepStrictEqual(issued.filter((l) => !l.ours), [], 'every token of this call is the session\'s');
-      assert.ok(lines.some((l) => l.kind === 'post'), 'the probe saw the posts');
+      // the probe saw the call itself go to its worker (and on a routed hop,
+      // the hop's to the callee's): the messages a session could ride on
+      const invokes = lines.filter((l) => l.kind !== 'issue' && l.command === 'invoke-action').length;
+      assert.ok(invokes >= (route === 'routed' ? 2 : 1), `invoke-action posts seen: ${invokes}; ${JSON.stringify([...new Set(lines.map((l) => `${l.via}:${l.command}`))])}`);
       assert.deepStrictEqual(lines.filter((l) => l.kind === 'leak'), [], 'no worker or port is told the session');
     });
   });

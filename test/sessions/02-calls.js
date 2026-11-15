@@ -28,7 +28,8 @@ describe('sessions 02: the session on each call and in its token (shared runtime
     assert.strictEqual(callTokens.resolve(top, {workerId: 1}).session, A);
     const hop = issue({parent: top, workerId: 2});
     assert.strictEqual(callTokens.resolve(hop, {workerId: 2}).session, A);
-    assert.throws(() => issue({parent: top, workerId: 3, session: B}), /a hop never changes session/);
+    assert.throws(() => issue({parent: top, workerId: 3, session: B}), (e) => e.code === 'CALL_TOKEN_INVALID' && !/session/i.test(e.message), 'refused as an invalid token, naming no session');
+    assert.deepStrictEqual([...callTokens.ofSession(B)], [], 'a refused hop is recorded nowhere');
     assert.strictEqual(callTokens.resolve(issue({workerId: 4}), {workerId: 4}).session, null, 'no session: null');
   });
 
@@ -41,6 +42,24 @@ describe('sessions 02: the session on each call and in its token (shared runtime
     callTokens.drop(t1);   // drops its children too
     assert.deepStrictEqual([...callTokens.ofSession(A)], []);
     assert.deepStrictEqual([...callTokens.ofSession('c'.repeat(32))], []);
+  });
+
+  it('a hop whose parent is gone is refused, not issued as no one\'s (no session, no chain)', () => {
+    const top = callTokens.issue({billingKey: 'k', workerId: 1, session: A});
+    callTokens.drop(top);
+    assert.throws(() => issue({parent: top, workerId: 2}), (e) => e.code === 'CALL_TOKEN_INVALID');
+    assert.deepStrictEqual([...callTokens.ofSession(A)], []);
+  });
+
+  it('a call on a session that has ended (or not settled) is answered as an unknown tool\'s; HTTP\'s has none', (done) => {
+    const gateway = require('../../lib/mcp/gateway');
+    const req = {jsonrpc: '2.0', id: 7, method: 'tools/call', params: {name: 'anything', arguments: {}}};
+    gateway.handle(req, null, 'k', (err, resp) => {
+      assert.ifError(err);
+      assert.strictEqual(resp.result.isError, true, JSON.stringify(resp));
+      assert.strictEqual(resp.result._meta['countinghouse/code'], 'MODULE_NOT_LISTED');
+      done();
+    }, {session: {id: 'e'.repeat(32), client: {status: 'ok', conditions: 'no', repo: null}}});
   });
 
   it('a session id is no billing or identity key: the entry\'s keys are as before, the session beside them', () => {
