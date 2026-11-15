@@ -10,7 +10,9 @@ const path = require('path');
 
 const SITES = [
   ['lib/peer-channel-broker.js', ['./metering/provider', './device-manager']],
-  ['lib/device-manager.js', ['./user-auth']]
+  ['lib/device-manager.js', ['./user-auth', './session']],
+  // #271's session values on a call (tools/call with a session, and each hop)
+  ['lib/mcp/gateway.js', ['../sessions', '../session-settings', '../call-limits']]
 ];
 
 describe('module-loading 32: the hop path requires nothing on a warm call', () => {
