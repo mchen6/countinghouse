@@ -98,6 +98,54 @@
       "output": {
         "type": "object"
       }
+    },
+    "mkdir": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "copy": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "link": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "chmod": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "truncate": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "fdmeta": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }
