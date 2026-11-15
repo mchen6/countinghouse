@@ -543,7 +543,7 @@
     "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"the answer is larger than this connection carries\",\"data\":{\"countinghouse/code\":\"OUTPUT_TOO_LARGE\",\"retryable\":false}}}"
   },
   "restoreRows": {
-    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}; overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a plain version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
+    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}; overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
     "accepted": [
       {
         "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -592,6 +592,7 @@
     "refused": [
       {
         "why": "no resume",
+        "reason": "not exactly {session, resume, state}",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "state": {
@@ -603,6 +604,7 @@
       },
       {
         "why": "an uppercase resume",
+        "reason": "resume hash",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
@@ -615,6 +617,7 @@
       },
       {
         "why": "a session id not 32 hex",
+        "reason": "session id",
         "row": {
           "session": "not-hex",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -627,6 +630,7 @@
       },
       {
         "why": "an extra row key",
+        "reason": "not exactly {session, resume, state}",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -640,6 +644,7 @@
       },
       {
         "why": "an extra state key",
+        "reason": "not exactly {overrides, locks, formsLeft}",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -653,6 +658,7 @@
       },
       {
         "why": "formsLeft 4",
+        "reason": "formsLeft",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -665,6 +671,7 @@
       },
       {
         "why": "a lock twice",
+        "reason": "locks",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -680,6 +687,7 @@
       },
       {
         "why": "a pack override with no version",
+        "reason": "version is not a semver",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -700,6 +708,7 @@
       },
       {
         "why": "a cap loosening with no over",
+        "reason": "over does not fit",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -707,7 +716,7 @@
             "overrides": [
               {
                 "name": "maxOutputBytes",
-                "value": 1,
+                "value": 16777216,
                 "loosening": true,
                 "over": null,
                 "version": null
@@ -720,6 +729,7 @@
       },
       {
         "why": "an unknown override name",
+        "reason": "neither a cap nor pack",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -740,6 +750,7 @@
       },
       {
         "why": "maxOutputBytes under its bound",
+        "reason": "not within",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -760,6 +771,7 @@
       },
       {
         "why": "requestTimeout over its bound",
+        "reason": "not within",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -779,7 +791,8 @@
         }
       },
       {
-        "why": "a pack version that is not a plain version",
+        "why": "a pack version that is not a semver",
+        "reason": "version is not a semver",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -800,6 +813,7 @@
       },
       {
         "why": "a setting overridden twice",
+        "reason": "a setting twice",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -807,14 +821,14 @@
             "overrides": [
               {
                 "name": "maxOutputBytes",
-                "value": 1,
+                "value": 1048576,
                 "loosening": false,
                 "over": null,
                 "version": null
               },
               {
                 "name": "maxOutputBytes",
-                "value": 2,
+                "value": 2097152,
                 "loosening": false,
                 "over": null,
                 "version": null

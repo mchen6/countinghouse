@@ -119,7 +119,11 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const r = createRestore({});
     assert.deepStrictEqual(r.handle(plan({sessions: V.accepted, reset: []})), {sessions: V.accepted.length});
     for (const c of V.refused) {
-      assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [c.row]}))), 'CONTROL_BAD_RESTORE', c.why);
+      // refused, and for the reason the case names, never by another rule
+      let message = null;
+      try { createRestore({}).handle(plan({sessions: [c.row], reset: []})); } catch (e) { assert.strictEqual(e.code, 'CONTROL_BAD_RESTORE', c.why); message = e.message; }
+      assert.ok(message != null, `${c.why}: refused`);
+      assert.ok(typeof(c.reason) === 'string' && message.includes(c.reason), `${c.why}: for its own reason (${c.reason}), not "${message}"`);
     }
   });
 
