@@ -9,11 +9,12 @@ const {createRestore, MAX_DECLINES} = require('../../lib/session-transport/resto
 const {MAX_SESSIONS} = require('../../lib/session-transport/listener');
 
 const ID = 'a'.repeat(32);
+const HASH = 'f'.repeat(64);
 const plan = (over = {}) => Object.assign({id: 'd1', type: 'restore',
-  sessions: [{session: ID, state: {overrides: [{name: 'maxOutputBytes', value: 1024, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}],
+  sessions: [{session: ID, resume: HASH, state: {overrides: [{name: 'maxOutputBytes', value: 1024, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}],
   declines: [{kind: 'maxOutputBytes', at: 1700000000000}]}, over);
 const ov = (over = {}) => Object.assign({name: 'maxOutputBytes', value: 1024, loosening: false, over: null, version: null}, over);
-const st = (state) => plan({sessions: [{session: ID, state}]});
+const st = (state) => plan({sessions: [{session: ID, resume: HASH, state}]});
 const code = (fn) => { try { fn(); } catch (e) { return e.code; } return null; };
 
 describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () => {
@@ -21,7 +22,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
-    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines}]);
+    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines}], 'resume included: the runtime splits it from B\'s state');
     assert.strictEqual(r.done(), true);
   });
 
@@ -46,14 +47,14 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       plan({extra: 1}),
       plan({sessions: {}}),
       plan({declines: 'x'}),
-      plan({sessions: [{session: 'not-hex', state: {overrides: [], locks: [], formsLeft: 3}}]}),
-      plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3, nonce: 'x'}}]}),
-      plan({sessions: [{session: ID, state: {overrides: [], locks: []}}]}),
-      plan({sessions: [{session: ID, state: {overrides: {}, locks: [], formsLeft: 3}}]}),
-      plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3}, mac: 'x'}]}),
-      plan({sessions: [{session: ID, state: {overrides: ['x'.repeat(70 * 1024)], locks: [], formsLeft: 3}}]}),
-      plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3}}, {session: ID, state: {overrides: [], locks: [], formsLeft: 3}}]}),
-      plan({sessions: Array.from({length: MAX_SESSIONS + 1}, (_, i) => ({session: i.toString(16).padStart(32, '0'), state: {overrides: [], locks: [], formsLeft: 3}}))}),
+      plan({sessions: [{session: 'not-hex', resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: [], locks: [], formsLeft: 3, nonce: 'x'}}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: [], locks: []}}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: {}, locks: [], formsLeft: 3}}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}, mac: 'x'}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: ['x'.repeat(70 * 1024)], locks: [], formsLeft: 3}}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}, {session: ID, resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}]}),
+      plan({sessions: Array.from({length: MAX_SESSIONS + 1}, (_, i) => ({session: i.toString(16).padStart(32, '0'), resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}))}),
       plan({declines: [{kind: '', at: 1}]}),
       plan({declines: [{kind: 'x'.repeat(65), at: 1}]}),
       plan({declines: [{kind: 'pack', at: Infinity}]}),
@@ -82,7 +83,12 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       st({overrides: [ov({name: 'pack.one', value: true, version: null})], locks: [], formsLeft: 3}),
       st({overrides: [ov({name: 'pack.one', value: true, version: '1.0.0 && x'})], locks: [], formsLeft: 3}),
       st({overrides: [ov({mac: 'x'})], locks: [], formsLeft: 3}),
-      plan({declines: [{kind: 'other', at: 1}]})
+      plan({declines: [{kind: 'other', at: 1}]}),
+      // the resume hash (N3): exactly 64 lowercase hex, always present
+      plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3}}]}),
+      plan({sessions: [{session: ID, resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}]}),
+      plan({sessions: [{session: ID, resume: 'f'.repeat(63), state: {overrides: [], locks: [], formsLeft: 3}}]}),
+      plan({sessions: [{session: ID, resume: 7, state: {overrides: [], locks: [], formsLeft: 3}}]})
     ];
     for (const m of bad) {
       const got = [];
