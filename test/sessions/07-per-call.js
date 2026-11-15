@@ -20,6 +20,7 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
   const B = 'b'.repeat(32);
   let saved;
   let defaults;
+  let sources;
   beforeEach(() => {
     saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
     options.maxOutputBytes = 1000;
@@ -29,7 +30,8 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
     jobSessions.resetForTests();
     const reg = new EventEmitter();
     sessions.attach(reg);
-    for (const id of [A, B]) { const s = new EventEmitter(); s.id = id; s.client = {status: 'ok', conditions: 'no', repo: null}; reg.emit('session', s); }
+    sources = {};
+    for (const id of [A, B]) { const s = new EventEmitter(); s.id = id; s.client = {status: 'ok', conditions: 'no', repo: null}; sources[id] = s; reg.emit('session', s); }
     defaults = () => ({maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout});
     // bounds widened here so a timer case runs in milliseconds, not the tool's 5 s minimum
     settings.configure({ceiling: () => ({state: 'none'}), defaultOf: (n) => defaults()[n], boundsOf: () => ({min: 1, max: 2 ** 31 - 1})});
@@ -99,6 +101,57 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
     assert.ok(ms >= 150 && ms < 2000, `${ms} ms`);
   });
 
+  it('a hop\'s call is held to its caller\'s session: the session\'s tightening re-arms its timer (holdTo; #271 review, 1)', async () => {
+    loosen(A, 'requestTimeout', 120000);
+    const hop = new Session(null, null, 'u', 'k', 0, 'd', 0, () => {});
+    hop.holdTo({limits: settings.limitsOf(A), session: A});   // as device-manager does for a hop
+    const started = Date.now();
+    const fired = new Promise((resolve) => { hop.callback = () => resolve(Date.now() - started); });
+    hop.installTimer(() => {});
+    settings.set(A, 'requestTimeout', 200);
+    Session.rearmSession(A);
+    const ms = await fired;
+    assert.ok(ms >= 150 && ms < 2000, `${ms} ms`);
+  });
+
+  it('a deadline only moves earlier: a tightening, a raise and a smaller tightening keep the first (#271 review, 2)', () => {
+    loosen(A, 'requestTimeout', 120000);
+    const call = callOf(A);
+    call.callback = () => {};
+    call.installTimer(() => {});
+    const start = call.timerStart;
+    assert.strictEqual(call.deadline, start + 120000);
+    settings.set(A, 'requestTimeout', 1000);
+    Session.rearmSession(A);
+    assert.strictEqual(call.deadline, start + 1000);
+    loosen(A, 'requestTimeout', 120000);
+    settings.set(A, 'requestTimeout', 5000);
+    Session.rearmSession(A);
+    assert.strictEqual(call.deadline, start + 1000, 'never later');
+    call.clearDeviceTimer();
+  });
+
+  it('a session that ends re-arms its calls under way at the defaults (#271 review, 3)', () => {
+    loosen(A, 'requestTimeout', 120000);
+    const call = callOf(A);
+    call.callback = () => {};
+    call.installTimer(() => {});
+    const start = call.timerStart;
+    sources[A].emit('end');
+    assert.strictEqual(call.deadline, start + 60000);
+    call.clearDeviceTimer();
+  });
+
+  it('a peer entry\'s deadline takes its session\'s tightening, never later than it was given (#271 review, 4)', () => {
+    const Broker = require('../../lib/peer-channel-broker');
+    loosen(A, 'requestTimeout', 120000);
+    const at = Date.now();
+    const entry = {at, deadline: at + 90000, limits: settings.limitsOf(A), session: A};
+    assert.strictEqual(Broker.deadlineNow(entry), at + 90000, 'the caller\'s time left');
+    settings.set(A, 'requestTimeout', 500);
+    assert.strictEqual(Broker.deadlineNow(entry), at + 500);
+  });
+
   it('a finished call leaves the index; a live session\'s job run takes the session\'s caps', () => {
     const call = callOf(A);
     call.installTimer(() => {});
@@ -110,8 +163,18 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
   });
 
   it('the validators grow for a session\'s raise, awaited (growFor; resize only grows: sandbox 52); with no pool yet, nothing to grow', async () => {
-    const pool = require('../../lib/validator-pool');
-    assert.strictEqual(pool.started(), null);
-    await pool.growFor(16 * 1024 * 1024);
+    // a fresh copy of the module, so no pool another file started (in a full
+    // run) is taken for this one's; the cached one is put back after
+    const key = require.resolve('../../lib/validator-pool');
+    const cached = require.cache[key];
+    delete require.cache[key];
+    try {
+      const pool = require(key);
+      assert.strictEqual(pool.started(), null);
+      await pool.growFor(16 * 1024 * 1024);
+      assert.strictEqual(pool.started(), null, 'growFor starts no pool');
+    } finally {
+      if (cached != null) require.cache[key] = cached; else delete require.cache[key];
+    }
   });
 });
