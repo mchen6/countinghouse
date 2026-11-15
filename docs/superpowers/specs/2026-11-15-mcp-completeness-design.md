@@ -1,12 +1,12 @@
 # MCP 2026-07-28 completeness: a thin layer over the module contract
 
-Status: draft for review, 2026-11-15, against countinghouse master af9487a4. No code yet.
+Status: revision 2, 2026-11-15, against countinghouse master af9487a4. Revision 2 applies the reviewer's amendments: cancelling a call (section 13) and output schemas of any JSON value (section 14) move in, `x-mcp-header` is refused by validate, the result store's default under Redis is smaller, a handler's own progress is reported, and the breakdown is re-totalled. No code yet.
 It covers countinghouse (the gateway, the validator, the store) and, for section 10 only, ch-local (the shim relay and the acceptance tests).
 Issues: #239 (tasks extension), #232 (closed: what release 1 did before this), #231 (subscriptions/listen), #229 (eras).
 
 ## Intent
 
-A countinghouse module is JSON in, JSON out, checked against its schemas. Today the gateway turns that into one MCP shape only: a text block, plus `structuredContent` when the action has an object output schema. The rest of MCP 2026-07-28 is missing: binary content, resource links, resources, tool metadata, pagination, progress, prompts, completion, elicitation from a module, and tasks for modern clients.
+A countinghouse module is JSON in, JSON out, checked against its schemas. Today the gateway turns that into one MCP shape only: a text block, plus `structuredContent` when the action has an object output schema. The rest of MCP 2026-07-28 is missing: binary content, resource links, resources, tool metadata, pagination, progress, prompts, completion, elicitation from a module, tasks for modern clients, cancelling a call in flight, and structured output that isn't an object.
 
 The maintainer's decision is that all of it ships in release 1, and that none of it becomes a protocol API for modules. A module keeps declaring things, in standard JSON Schema 2020-12 keywords and in `api.json`. The gateway derives every MCP feature from the declaration. One `ctx` call is added, for asking the user a question, because a question can't be derived from an output.
 
@@ -24,9 +24,9 @@ The maintainer's decision is that all of it ships in release 1, and that none of
 - **Sampling and roots are not built.** Both are deprecated in 2026-07-28. Roots would hand a module `/home/<user>` paths, against the rule that a third-party module author knows nothing about the identity of the user. Sampling spends the user's model on a module's behalf. The gateway never puts `sampling/createMessage` or `roots/list` in an `inputRequests`.
 - **URL-mode elicitation.** A third-party module never sends the user to a URL. Only form mode is offered.
 - **BSON.** It's being retired separately (`application/bson` gets 415). Binary travels as base64, as MCP has it.
-- **A module API for progress, resources, prompts or tasks.** Each is derived (sections 3, 6, 7, 9).
+- **A new module API for progress, resources, prompts, tasks or cancellation.** Each is derived (sections 3, 6, 7, 9, 13). A handler's progress uses the call it already has, `ctx.job.progress` (section 6).
 - **Prompts whose messages come from module code**, and prompt messages with image or resource content. Release 1's prompts are declared text (section 7).
-- **A question asked from inside a task.** `ctx.ask` in a task run answers `ASK_UNAVAILABLE` in release 1 (section 8; open question 5).
+- **A question asked from inside a task,** unless the maintainer takes open question 5. Without it, `ctx.ask` in a task run answers `ASK_UNAVAILABLE` (section 8).
 - **Resource change notices across keys.** An update is announced to the caller's own subscriptions only (section 3).
 - **Legacy `resources/subscribe` and `resources/unsubscribe`.** 2026-07-28 removed them, and the legacy era never had them here.
 - **The legacy HTTP+SSE transport** (a GET stream). Unchanged: 405.
@@ -46,7 +46,7 @@ Verified on origin/master af9487a4 with `git show`, not the working tree.
 | Fact | Where |
 |---|---|
 | A module result is one text block; with an object output schema it's also `structuredContent`. No other block type exists. | `lib/mcp/gateway.js:272-282` |
-| An output schema is advertised only when it resolves to `type: "object"`. | `lib/mcp/tool-registry.js:496-504` |
+| An output schema is advertised only when it resolves to `type: "object"`; the code's own comment gives the reason as the rule of the revisions it was written for. Every bundled action's output schema is an object: the 23 tools of the golden list, the 9 of `examples/`, the 5 of `perf/`. | `lib/mcp/tool-registry.js:464-471`, `:496-504` |
 | `tools/list` returns every tool in one answer, with `name`, `description`, `inputSchema` and `outputSchema` only. It reads no cursor. | `lib/mcp/tool-registry.js:602-627`, `lib/mcp/gateway.js:246-262` |
 | Lists are filtered per key by the auth provider's devices, and by listing rules (parts, the single-identity profile). | `lib/mcp/tool-registry.js:575-591`, `:270-278` |
 | An action object in `api.json` is closed (`additionalProperties: false`): `name`, `description`, `input`, `output`, `fault`. | `spec/schema.json:125-190` |
@@ -65,7 +65,8 @@ Verified on origin/master af9487a4 with `git show`, not the working tree.
 | The store decides where state lives: Redis by default, files and memory under `--store local`. The local kv is one JSON file written whole every 5 s. | `lib/store.js:58-140`, `lib/local-kv.js:11-16`, `:28` |
 | The opaque caller id is `u_` plus an HMAC under the identity secret, which is a file or an environment variable, stable across restarts. | `lib/identity.js:1-19` |
 | On the shared runtime the shim relays bytes. An answer carries its request's `seq`; a notification is a headerless frame (`s.notify`) the shim writes as it comes. The runtime sends the client no requests. | `docs/superpowers/specs/2026-11-15-shared-runtime-design.md` section 1, `lib/session-transport/session-listens.js:1-6` |
-| `notifications/cancelled` is honoured for a listen only, not for a call in flight. | `lib/route-manager.js:364-365`, `:546` |
+| `notifications/cancelled` is honoured for a listen only, not for a call in flight. The HTTP route doesn't watch a POST for its client leaving, except on a listen's stream. | `lib/route-manager.js:364-365`, `:546`, `lib/routes/mcp.js:50-57` |
+| A call's token is dropped when the call answers or its timeout passes, and dropping it drops every hop's token under it. A hop, a device query, a remote call or a peer invoke that cites a dropped token is refused `CALL_TOKEN_INVALID`. | `lib/device-manager.js:1350-1355`, `:1596-1599`, `lib/call-tokens.js:100-120` |
 | A call's usage record counts its text blocks only. | `lib/usage/receipt.js:38-41` |
 
 ## The layer at a glance
@@ -81,9 +82,11 @@ Everything new a module can declare. Each field is optional, and a module withou
 | `enum` and `examples` on an argument's schema | `schema.json` | completion values (section 7) |
 | `questions` on an action, and `ctx.ask(name, values)` in its handler | `api.json`, handler | `input_required` with a form (section 8) |
 | `longRunning: true` on an action | `api.json` | a task, for a client that declares the tasks extension (section 9) |
-| nothing | | pagination and progress (sections 5, 6) |
+| an output schema of any JSON type | `schema.json` | `outputSchema` and `structuredContent` for it, for a modern request (section 14) |
+| nothing new: `ctx.job.progress(n)`, the call a task's handler already has | handler | the handler's own progress on the call's stream (section 6) |
+| nothing | | pagination, hop progress and cancellation (sections 5, 6, 13) |
 
-**Which era gets what.** The plain request and response features (blocks, links, resources, prompts, completion, tool metadata, pagination) are served to legacy (`initialize`) and modern requests alike, as `tools/list` and `tools/call` are today. Progress is sent to any request that carries a progress token. `input_required` and the tasks extension are modern only; legacy tasks stay as they are.
+**Which era gets what.** The plain request and response features (blocks, links, resources, prompts, completion, tool metadata, pagination) are served to legacy (`initialize`) and modern requests alike, as `tools/list` and `tools/call` are today. Progress is sent to any request that carries a progress token. `input_required`, the tasks extension, non-object structured output and cancel-by-disconnect are modern only; legacy tasks stay as they are.
 
 ```json
 { "name": "render", "description": "Renders a chart of the given series.",
@@ -129,7 +132,7 @@ Everything new a module can declare. Each field is optional, and a module withou
 - `structuredContent` conforms to the advertised schema by construction. A contract test checks it with ajv for each fixture, and the SDK conformance test (`test/mcp-contract/03`) checks it from the client's side.
 - No bundled module uses the keywords, so the golden list doesn't move.
 
-**A whole output that is binary.** An action whose output schema is itself a binary string gets no `outputSchema` (it isn't an object, as today) and answers with the one block and no text block.
+**A whole output that is binary.** An action whose output schema is itself a binary string follows the same rule once section 14 lifts the object-only limit: its advertised `outputSchema` is the reference shape, `structuredContent` is the one reference, and the block follows the text block. For a legacy request, which gets no `outputSchema` for a non-object schema, the answer is the one block and no text block.
 
 **Where the bytes count.** The cap counts the module's output as the module returned it, base64 included, in its worker and again on the main thread, as today. A binary field so costs four thirds of its size. Nothing is stored or inlined from an output that failed the cap or the validator. The reshaped result is never larger than today's would have been for the same output, so the shared runtime's frame bound holds unchanged. The usage record gains the inline and the linked byte counts beside its text bytes.
 
@@ -164,7 +167,11 @@ Why 1 MiB:
 
 **Limits.**
 - One stored value is bounded by the output cap (three quarters of it, decoded).
-- Per owner: 256 MiB and 1024 items (`--resourceQuotaBytes`, `--resourceQuotaItems`). Across all owners: `--resourceStoreBytes`, default 4 GiB.
+- Across all owners: `--resourceStoreBytes`. Its default follows the store:
+  - **512 MiB under `--store redis`.** An operator's Redis is shared memory: it also holds metering, jobs and the modules' own keys, and an eviction or an out-of-memory there hurts all of them. A 4 GiB default would surprise an operator who never asked for a result store.
+  - **4 GiB under `--store local`,** where the bytes are files on the user's own disk.
+- Per owner: `--resourceQuotaBytes`, default 128 MiB under Redis and 256 MiB for local files, and `--resourceQuotaItems`, default 1024. So one caller can't fill the store alone under either default.
+- The start line logs the effective limits, and the store's use is in the usage report for an admin.
 - Past a limit, the call is refused with `RESULT_STORE_FULL`, naming the limit. Nothing is evicted early, since a link promises its retention.
 
 **Reading.** `resources/read` returns `{contents: [{uri, mimeType, blob}]}`; a `text/*` type whose bytes are valid UTF-8 is returned as `text`. The answer carries `ttlMs` (the time left before expiry) and `cacheScope: "private"`. Each read is rate limited per key, written to the usage records with its bytes, and recorded with the metering provider at `--resourceReadCost`, default 0 (open question 3).
@@ -226,7 +233,8 @@ Why 1 MiB:
   - icon files exist, are of an allowed type and are within the size bound;
   - `readOnlyHint: true` with `destructiveHint: true` is a warning;
   - section 1's binary rules, section 3's template and variable rules, section 7's prompt rules, section 8's question rules;
-  - `longRunning` on a resource action is a problem.
+  - `longRunning` on a resource action is a problem;
+  - `x-mcp-header` anywhere in an input schema is a problem, and the load refuses it too. 2026-07-28 lets a property mirror itself into an HTTP header, with rules a client must enforce. Nothing here designs the server's side, so the keyword is refused until it is, rather than advertised unchecked.
 - The load makes the same checks, and is the one that decides.
 
 **The golden rule.**
@@ -254,8 +262,12 @@ Sent only when the request's `params._meta.progressToken` is a string or an inte
 
 **Sources, with no new module API.**
 - **Composite hops.** The main thread already bills each hop and each remote call to the outer call, on both paths: where it forwards a routed hop, and where the broker matches a direct peer invoke's metering request (`lib/peer-channel-broker.js`). Each hop billed under the outer call is a tick: `progress` is the count so far, with no `total`. No `message` is sent, so an unlisted part is never named to the client.
-- **A job's progress.** `ctx.job.progress(n)` exists only inside a task. It's surfaced as the task's `statusMessage` (section 9), not as `notifications/progress`: once the call has answered with the task, its stream is closed, and progress "MUST stop after completion".
-- A single long handler that makes no hops reports nothing in release 1 (open question 4).
+- **The handler's own progress: `ctx.job.progress(n)`, now outside a task too.** It's the call a task's handler already has, with the same argument (0 to 100). Outside a task it's reported as `notifications/progress` with `progress: n` and `total: 100`, on the call's stream.
+  - **What changes for authors.** `ctx.job` is no longer null outside a task: it's `{id: null, progress(n), info(cb)}`, and `info` calls back with an error there. A handler that asked "am I a task?" with `ctx.job == null` asks `ctx.job.id == null` instead. `docs/module-development.md` and three test fixtures (`job-snoop`, `key-dump`, `worker-end`) read it the old way and change with it. There are no module authors yet, so nothing else does.
+  - **Only the outer handler's reports are sent.** A part's percentage says nothing about the whole call, so a report made under a hop's token is dropped. The main thread decides this from the token, as it resolves everything else.
+  - **One increasing sequence.** Hop ticks and the handler's values share the stream, and a value at or below the last one sent is dropped. Once the outer handler has reported, hop ticks stop for that call, so its scale stays 0 to 100.
+  - Without a progress token, over `invoke-action`, and for a legacy HTTP request, the call does nothing, as it does today outside a task.
+- **A task's progress.** Inside a task, `ctx.job.progress(n)` is surfaced as the task's `statusMessage` (section 9), not as `notifications/progress`: once the call has answered with the task, its stream is closed, and progress "MUST stop after completion".
 
 **Delivery: on the call's own stream.**
 - **HTTP.** The POST's response becomes an SSE stream lazily, when the first notification is due. A call that finishes first is answered as plain JSON, byte for byte as today. The route's stream opener for listens is reused. The final event is the JSON-RPC response, and the stream ends.
@@ -336,7 +348,11 @@ It's unavoidable because a question arises in the middle of a handler, from what
 3. The client retries the same call with `inputResponses` and the state.
 4. The gateway verifies them and runs the handler again from the top. This time `ctx.ask` returns the answer at once.
 
-The contract for authors is one line: **ask first, act after.** What a handler did before asking happens again on the retry, and a hop it made before asking is made, and billed, again. The outer call is billed once, when it completes.
+The contract for authors is one line: **ask first, act after.** Stated plainly, because it costs money and can do damage:
+- **Every hop made before the ask is made again on the retry, and billed again.** A handler that calls three parts and then asks pays for six part calls when the user answers. The outer call is billed once, when it completes.
+- **A non-idempotent action before an ask happens twice.** A handler that sends a message, writes a record or charges a card and then asks does it once on the first pass and again on the retry. If the user declines, the first one has still happened.
+- **`countinghouse-validate` can't detect either.** Whether a handler acts before it asks is a property of its code, which validate doesn't analyse. So the rule is carried by text, in three places that M14 writes: `docs/module-development.md`, `docs/module-authoring.md`, and the countinghouse-module skill (`.claude/skills/countinghouse-module/SKILL.md`), which is what an agent writing a module reads.
+- The usage record of a call that asked shows its rounds, so an operator can see a module that asks late.
 
 **Why not keep the handler suspended.** A suspended handler would need all of this:
 - a worker's closure held for minutes per pending dialog, with a per-key bound to stop it being a memory attack;
@@ -433,14 +449,16 @@ Otherwise the call runs inline, as today, under the request timeout. A legacy `p
 
 Read against `2026-11-15-shared-runtime-design.md`.
 
-**The shim: no change, and the wire contract stays at 2.** The relay treats lines as opaque.
+**The shim: one small, optional addition (section 13's `cancelled` control op), and the wire contract stays at 2.** The relay treats lines as opaque.
 - **Progress** is a notification: a headerless frame, which the shim writes as it arrives, before the answer's frame.
 - **`input_required`** is an ordinary answer on its `seq`. The retry is a new request with a new `seq`. The runtime still sends the client no requests.
 - **A resource read** is an answer within the existing frame bound, since a stored value is within the output cap.
 - **New listen filters** ride the stream the shim already relays. After a crash the client re-issues its listen, as now.
 - **A call in flight when the runtime restarts** gets the crash answer whether or not it was sending progress.
 
-One acceptance test in ch-local proves it through the real shim: progress frames interleaved before an answer, an `input_required` round trip, and a paged list.
+- **A cancelled call** has no answer, which would leave its `seq` in the shim's in-flight table. The runtime sends the control op `cancelled` with that `seq`, and the shim forgets the entry. The contract already says an unknown op is ignored, so an older shim keeps the entry until its connection ends and then writes a crash answer the client ignores. Nothing breaks either way.
+
+One acceptance test in ch-local proves it through the real shim: progress frames interleaved before an answer, an `input_required` round trip, a paged list, and a cancelled call that leaves no in-flight entry.
 
 **The session layers** are where the work is.
 
@@ -453,6 +471,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 | `ctx.ask` | The `requestState` MAC binds the session id. A restored session keeps its id, so a dialog open across a restart still verifies within its 5 minutes. |
 | Tasks | By key and session (the shared-runtime plan's B5). Until B5 lands, modern `tasks/*` stays refused there, as the legacy methods are today. |
 | Progress | The session's connection. A session that detaches gets none; the call finishes. |
+| Cancellation | `notifications/cancelled` names a request of the same session only; another session's id is unknown to it. |
 | Validator load | The base64 assertion and the answer validation run in the shared pool, under its per-session fairness. |
 
 **`--stdio`** is one session: every rule above with one id, as today.
@@ -498,6 +517,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 | A prompt answer | 64 KiB |
 | A dialog | 1000 characters; 8 properties; 3 rounds; a state of 16 KiB at most |
 | Progress | 4 a second and 240 per call |
+| Cancellation | a request of the caller's own connection or session only; an unknown id is ignored; no answer and no error text |
 | Every read, get, completion and task method | the per-key rate limit, before any work |
 
 **Audit records.** There's no audit log on master yet; it's the logger roadmap's next phase. Until it lands, each of these is a usage record or an info line. They're listed here so that phase can take them over. None carries a key, a user name, a module's text or an answer's content.
@@ -505,6 +525,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 - a module resource read (module, action, outcome);
 - a question asked, answered, declined, expired or replayed (module, action, question name, round);
 - a task created, cancelled or expired;
+- a call cancelled (module, tool, how far it had run);
 - a `requestState` refused, and a cursor refused.
 
 ## 12. Task breakdown
@@ -513,7 +534,7 @@ Each task is one PR with its tests and docs, and each estimate includes one revi
 
 | Id | Task | Days | Needs |
 |---|---|---|---|
-| M0 | The meta-schema (`spec/schema.json`) and the `countinghouse-validate` checks for every declaration here; a fixture module that declares everything | 2 | |
+| M0 | The meta-schema (`spec/schema.json`) and the `countinghouse-validate` checks for every declaration here, with `x-mcp-header` refused; a fixture module that declares everything | 2 | |
 | M1 | Pagination: the cursor and page helper, on `tools/list`; a page resolves its own schemas only | 1.5 | |
 | M2 | Tool metadata on `tools/list`: `title`, `annotations`, icons inlined; the second golden | 1.5 | M0 |
 | M3 | Binary fields in the validator: the base64 assertion (input and output), the binary-field map, `OUTPUT_NOT_JSON` | 2 | |
@@ -527,43 +548,127 @@ Each task is one PR with its tests and docs, and each estimate includes one revi
 | M11 | Completion: from the schema, for prompts and templates (1.5); the completion action (1) | 2.5 | M7, M10 |
 | M12 | The request-state helper out of `settings-confirm.js`; the derived key; the used-nonce store | 1.5 | |
 | M13 | `ctx.ask`: declarations, the ask message, the pending question on the outer call, `input_required`, the retry's checks, answer validation, single-thread mode | 4 | M0, M12 |
-| M14 | `ctx.ask` over composition: routed hops and direct peer channels; the limits; the author docs | 1.5 | M13 |
+| M14 | `ctx.ask` over composition: routed hops and direct peer channels; the limits; "ask first, act after" in the author docs and the countinghouse-module skill | 1.5 | M13 |
 | M15 | The tasks extension: negotiation, `longRunning`, minted ids, `tasks/get`, `update`, `cancel`, discover, -32021, `Mcp-Name` | 3 | M0 |
 | M16 | `notifications/tasks` on a listen; `statusMessage` from job progress | 1 | M15 |
 | M17 | The shared runtime: session scope for stored results, lists and tasks; the ch-local acceptance test through the shim | 2 | M6, M9, M13, M15, and the shared-runtime plan's B3 and B5 |
 | M18 | The conformance sweep (`test/mcp-contract/03` for each feature), the docs (module authoring, security model, CLI reference, upgrading), and the fixes from the final security pass | 3 | all |
+| M19 | Cancelling a call in flight (section 13): the in-flight registry, `notifications/cancelled` on stdio and the session transport, the POST's disconnect on HTTP, the token drop, the remote call's abort, the shim's `cancelled` op | 1.5 | M9 |
+| M20 | Output schemas of any JSON value (section 14): the registry's rule by era, `structuredContent` for any value, the text block's rule, the golden unchanged | 1 | M4 |
+| M21 | A handler's own progress (section 6): `ctx.job` outside a task, the worker's message, the outer-call rule, the three fixtures and the doc row | 0.5 | M9 |
+| *M22* | *Only if open question 5 is taken: a question from inside a task. Not in the totals below.* | *3.5* | *M13, M15* |
 
-**Total: 42 implementer-days.**
+**Total: 45 implementer-days** in 22 PRs (M0 to M21). With M22 it's 48.5.
 
-**The critical path is M0 → M13 → M14 → M17 → M18: 12.5 days.** M12 runs beside M0. The next longest chain is M3 → M4 → M6 → M17 → M18, at 11.5.
+**The critical path is unchanged: M0 → M13 → M14 → M17 → M18, 12.5 days.** M12 runs beside M0. The next longest chain is M3 → M4 → M6 → M17 → M18, at 11.5. The three new tasks hang off M4 and M9 and are on neither.
 
-**In parallel, with three implementers,** the work is bound by load, not by the path: 42 days over three is 14, so about 15 working days elapsed if all three do nothing else. A suggested split, by what each already owns:
+**The split,** by what each implementer already owns:
 
-| Implementer | Tasks | Days |
-|---|---|---|
-| A (the shim, latency) | M3, M4, M5, M6, M9, M17 | 13.5 |
-| B (sessions, the settings dialog) | M12, M2, M13, M14, M15, M16, half of M18 | 14 |
-| C (the registry and lists) | M0, M1, M7, M10, M8, M11, half of M18 | 14.5 |
+| Implementer | Tasks | Days | With M22 |
+|---|---|---|---|
+| A (the shim, latency) | M3, M4, M5, M6, M9, M21, M17 | 14 | 15.5 (takes M19) |
+| B (sessions, the settings dialog) | M12, M13, M14, M15, M16, M2, M20, half of M18 | 15 | 17 (takes M22, gives M2 to C) |
+| C (the registry and lists) | M0, M1, M7, M10, M8, M11, M19, half of M18 | 16 | 16 (takes M2, gives M19 to A) |
+
+A writes the shim's `cancelled` op for M19 whoever holds the task; it's a quarter of a day of it.
 
 - **What can start on day one, together:** M0 (C), M12 (B), M3 (A). M1, M5 and M9 need nothing either.
-- **What must not overlap:** M0 lands before any task that edits `spec/schema.json`. M4, M7 and M15 all touch the result-building code in `lib/mcp/gateway.js`, so they merge in that order.
-- **Review load:** 19 PRs. Four are on a trust boundary and need the deeper review: M6, M7, M13, M15.
+- **What must not overlap:** M0 lands before any task that edits `spec/schema.json`. M4, M20, M7 and M15 all touch the result-building code in `lib/mcp/gateway.js` and the registry's schema rule, so they merge in that order. M9, M21 and M19 all touch the routes' stream handling, and merge in that order.
+- **Review load:** 22 PRs. Five are on a trust boundary and need the deeper review: M6, M7, M13, M15, M19.
 - **Outside this spec:** M17 waits on the shared-runtime plan's B3 and B5. If they're late, M17 is late, and nothing else is.
 
-**If the date must hold, cut in this order** (5 days in all):
-1. M16, `notifications/tasks`: 1 day; polling still works.
-2. The completion action in M11: 1 day; schema completion still works.
-3. `resourceSubscriptions` in M8: 1 day; `list_changed` still works, and discover declares no `subscribe`.
-4. Icons in M2: half a day.
-5. M14, bubbling: 1.5 days; a part's `ctx.ask` then answers `ASK_UNAVAILABLE`.
+**Elapsed time.**
 
-## Noticed, outside the maintainer's list
+| Assumption | Elapsed, start to the last merge |
+|---|---|
+| All three implementers on nothing else | 16 working days: the largest load before M18 is 14.5, and M18's last part follows the last feature |
+| **Each also carries their existing release-1 work at about half time** | **32 working days, about 6.5 weeks** |
+| The same, with M22 | 34 working days, about 7 weeks |
 
-Not designed here. Each is for the reviewer to file or dismiss.
+**The slip of the release candidate, honestly.** It's not the 1 to 2 weeks that was allowed for.
+- This is 45 implementer-days of new work on three people whose release-1 queues were already sized to the planned date. That's 15 days each. However it's interleaved with the existing work, the candidate moves by about **3 weeks** (16 working days), or 3.5 with M22.
+- The half-time figure above is the other way of reading the same thing: if this work starts now beside the existing work, its last PR merges about 6.5 weeks from now, and the candidate can't be cut before then.
+- Neither figure includes a second review round on the trust-boundary PRs, or a slip of B3 and B5 under M17. Either would add to it.
 
-- **Cancelling a call.** `notifications/cancelled` is honoured for a listen only. A `tools/call` in flight runs to its end.
-- **Non-object output schemas.** 2026-07-28 allows `structuredContent` to be any JSON value, with an array example. The registry still advertises object schemas only, so an array output goes as text.
-- **`x-mcp-header`.** The revision lets an input schema property mirror itself into an HTTP header, with client-side rules. A module schema carrying it would be advertised as is. A cheap guard is for validate to refuse the keyword until it's designed; it would fit in M0.
+**To hold the slip to 2 weeks, 15 days must go** (45 down to 30, 10 each). In the order I'd cut, each moving to first after release 1:
+
+| Step | Cut | Days | Running total | Slip then |
+|---|---|---|---|---|
+| 1 | The trims: M16 (`notifications/tasks`; polling still works), the completion action in M11, `resourceSubscriptions` in M8 (`list_changed` still works), icons in M2, M14 (a part's `ctx.ask` then answers `ASK_UNAVAILABLE`) | 5 | 40 | about 2.7 weeks |
+| 2 | The tasks extension: M15, and its half day of M17. It was after release 1 until this spec (#239), and legacy tasks still work | 3.5 | 36.5 | about 2.5 weeks |
+| 3 | Prompts and completion: M10, the rest of M11, `promptsListChanged` in M8 | 4 | 32.5 | about 2.2 weeks |
+| 4 | M19 and M20: cancelling a call, and non-object structured output | 2.5 | 30 | 2 weeks |
+
+- **What a 2-week slip still ships:** content blocks, resource links, module resources with `list_changed`, tool titles and annotations, pagination, progress from hops and from a handler, and `ctx.ask` for a listed tool.
+- **What it doesn't:** steps 2 to 4 are whole gaps left open, against "fill all gaps". Step 1 alone leaves no gap fully open, and saves a third of a week.
+- **The other lever isn't mine to pull:** moving 15 implementer-days of other release-1 work behind the candidate would hold 2 weeks with nothing here cut.
+
+## 13. Cancelling a call in flight
+
+Read on the 2026-07-28 cancellation page: how a client cancels depends on the transport.
+
+- **Streamable HTTP:** "Closing the SSE response stream is the cancellation signal. The server MUST treat a client disconnect as cancellation of that request. No `notifications/cancelled` message is required or expected."
+- **stdio:** "The client MUST send a `notifications/cancelled` notification referencing the request ID."
+- A server "SHOULD" stop processing, free what the request held, and send no response. It "MAY" ignore a notice for an unknown request or one already completed.
+
+**What counts as the signal here.**
+
+| Transport | Signal | Scope of the request id |
+|---|---|---|
+| HTTP, a modern request | the POST's connection closing before its answer is written, whether the response had become an SSE stream (section 6) or was still to be plain JSON | none needed: the connection is the request |
+| stdio | `notifications/cancelled` with `params.requestId` | the process's one connection |
+| The shared runtime | the same notification, relayed by the shim as any notification is | the session: a session can name only its own requests |
+| HTTP, a legacy request | nothing: unchanged, the call runs to its end | The disconnect rule is this revision's, and a stateless server can't match a legacy notice on a second POST to a call on the first. |
+
+A notice for an unknown id, a finished request or a request of another kind is ignored, without an answer, as the spec has it. `initialize` and `server/discover` are never cancelled. A listen's cancel is unchanged.
+
+**What can be cancelled:** a `tools/call`, a `resources/read` and a completion action, since each runs module code. The settings tool and the usage report are quick and run to their end.
+
+**How a call stops: cooperatively, with no new module API.** JavaScript in a worker can't be interrupted, and a handler gets no abort signal.
+1. The gateway keeps each cancellable request while it runs: per transport scope, its id and a cancel function. The entry goes when the call answers.
+2. On the signal, the call's token is dropped at once, exactly as its timeout drops it. That drops every hop's token under it.
+3. From then on, the handler's next hop, device query, remote call or peer invoke is refused `CALL_TOKEN_INVALID`, in whichever worker it's made. A handler that doesn't catch it ends there.
+4. A remote call the main thread is making for that call is aborted, so the user's quota on the remote server stops being spent.
+5. A hop already running in a part's worker isn't interrupted. It ends at its own next hop, or finishes, and its reply is discarded.
+6. A handler that makes no hops runs to its end. Its result is discarded.
+7. No response is written. On the shared runtime the shim is told to forget the request (section 10).
+
+**The bill is what ran.** Cancelling never changes the billing rule; it only changes what runs.
+- Each hop that completed was billed when it completed, and stays billed.
+- The outer call is billed only if its handler returned a success, as today. A handler stopped by a refused hop returned an error, so it isn't billed.
+- A handler that ran to its end after the cancel did its work, and is billed, though nobody reads the result. So a client can't dodge a bill by leaving just before the answer, and a module is never paid for work it didn't finish.
+- The usage record is written with outcome `cancelled` and what ran before it.
+
+**Bounds.** The registry holds only calls in flight, which the rate limit and the request timeout already bound. A cancel costs one map lookup, and a flood of notices for unknown ids costs that and nothing more.
+
+**Not covered.**
+- A call that became a task is cancelled with `tasks/cancel` (section 9). If the client leaves before the task's answer is written, the job is removed, since the client never learned its id.
+- A call waiting in `input_required` isn't in flight: there's nothing to cancel, and its state expires.
+- A prompt and a list finish too quickly to matter and aren't registered.
+
+**Tests.** On each transport: a cancelled composite stops at its next hop and bills the hops that ran; a cancelled leaf handler finishes and is billed; an unknown id is ignored; one session can't cancel another's request; a disconnect after the answer changes nothing; a legacy HTTP disconnect changes nothing.
+
+## 14. Output schemas of any JSON value
+
+2026-07-28 says `structuredContent` "can be any JSON value (object, array, string, number, boolean, or null) that conforms to the tool's `outputSchema`", and shows a tool whose `outputSchema` is an array. The registry advertises an output schema only when it's an object, so an action whose output is an array or a string answers in text only.
+
+**The rule, by era.**
+- **A modern request:** any output schema that resolves is advertised as `outputSchema`, and a result carries the validated output as `structuredContent`, whatever its JSON type.
+- **A legacy request:** unchanged. The object-only rule is the earlier revisions', as the registry's comment records, and a legacy SDK client may reject a non-object `structuredContent`. So a legacy `tools/list` omits the `outputSchema` of a non-object schema and its result stays text only, exactly as today.
+
+`tools/list` and `tools/call` keep deriving the answer from one function, which now takes the era.
+
+**The text block.**
+- For a string output it's the string itself, as it is today for a tool with no schema. JSON quoting would only make it worse for a model to read.
+- For every other type it's the JSON of the output, as it is today for an object.
+
+**The golden doesn't move, and no bundled tool's `tools/list` bytes move.** I checked every bundled action's output schema on master: the 21 module tools of the golden list (the other 2 are platform tools with fixed object schemas), the 9 tools of `examples/log-triage` and `examples/repo-review`, and the 5 of `perf/`. Each one's root type is `object`. So there's no open question here.
+
+**What does move:** a test fixture under `test/` with a non-object output schema, read by a modern request. M20 lists them and updates their assertions; none is a bundled tool.
+
+**With section 1.** A whole output that is a binary string becomes a reference under this rule, for a modern request. M20 merges after M4 for that reason.
+
+**Tasks.** A task result's schema hash is taken over the schema as advertised to the era that reads it, so the stamp carries the era.
 
 ## Open questions for the maintainer
 
@@ -573,14 +678,18 @@ Not designed here. Each is for the reviewer to file or dismiss.
    - a module resource read is billed as a call of its action;
    - a completion action is counted and rate limited, and free;
    - a stored-result read is free by default, with an operator price (`--resourceReadCost`).
-4. **Progress from one long handler.** Release 1 reports hops only, so a single handler that takes a minute says nothing. Offering `ctx.job.progress`'s call outside a task would fix it, at half a day, and would be a second `ctx` addition. Recommended: not in release 1; the packs are composites, which hops cover.
-5. **A question from inside a task.** It needs a task to pause as `input_required` and its job to run again after `tasks/update`: about 2.5 days more, on top of M13 and M15. Recommended: after release 1; until then `ctx.ask` in a task answers `ASK_UNAVAILABLE`.
+4. **Progress from one long handler.** Recommended: **yes, in release 1** (M21, half a day, in the totals). A single handler that takes a minute would otherwise say nothing, which is a gap. It isn't a new API: it's `ctx.job.progress`, the call a task's handler already has, now reported on the call's stream outside a task too. The one thing to accept is that `ctx.job` stops being null outside a task (section 6), which changes how a handler asks whether it's a task.
+5. **A question from inside a task.** This is a gap in the tasks extension as built here: the extension defines `input_required` for a task and `tasks/update` to answer it, and without this a `longRunning` action can never ask.
+   - **What it takes.** A run that ends at `ctx.ask` leaves the task `input_required` with its question. `tasks/update` delivers the answer, which is validated and kept with the task. The job then runs again from the top, under the same "ask first, act after" rule. There's no `requestState`: the state is the server's, keyed by the task.
+   - **The cost: 3.5 days** (M22), not the 2.5 my first draft said. Both job runners need a paused state and a second run that doesn't count as a retry (1.5), the gateway needs the two methods' new paths and the task's alias to its current job (1), and it's tested on both stores and on the shared runtime (1).
+   - **Recommended:** include it if the date allows, and otherwise make it the first thing after release 1. It's the last item I'd add and the first I'd drop, since a `longRunning` action can ask before it becomes long: validate can't check that either, but the docs can say it.
 
 ## Spec details not yet verified
 
-Read for this draft, on modelcontextprotocol.io: the 2026-07-28 pages for tools, resources, prompts, completion, elicitation, progress, subscriptions and MRTR, and the tasks extension's overview. Not read, and to be checked before the task that depends on each:
+Read for this draft, on modelcontextprotocol.io: the 2026-07-28 pages for tools, resources, prompts, completion, elicitation, progress, subscriptions, MRTR and cancellation, and the tasks extension's overview. Not read, and to be checked before the task that depends on each:
 
 - **The pagination and caching pages.** The cursor and `ttlMs` rules here are from the task brief and from the list examples on the pages above. (M1)
 - **Whether `Icon.src` may be a `data:` URI in this revision.** The tools page shows only an `https` example. If it may not, icons need another design, or are cut. (M2)
 - **The ext-tasks specification itself** (`specification/2026-07-28/tasks.md` in the ext-tasks repository). Section 9 follows #239's quotations from it and the overview page: the `notifications.taskIds` filter key, -32021 and its `data`, and `Mcp-Name` for task methods are from #239 alone. (M15, M16)
-- **The transport page's rule for answering a request as SSE when the client's `Accept` allows only JSON.** (M9)
+- **The transport page's rule for answering a request as SSE when the client's `Accept` allows only JSON,** and anything it adds to the cancellation page about a disconnect on a response that was never a stream. Section 13 takes the cancellation page's "a client disconnect" to cover both. (M9, M19)
+- **What a legacy client's SDK does with a non-object `structuredContent`.** Section 14 keeps legacy requests on today's rule so that it doesn't matter. (M20)
