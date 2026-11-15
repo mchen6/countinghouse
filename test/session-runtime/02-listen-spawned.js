@@ -46,7 +46,10 @@ function runtime(home, packs) {
   r.exited = new Promise((res) => child.on('exit', res));
   const replies = new Map();
   let next = 1;
-  child.on('message', (m) => { const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); } });
+  child.on('message', (m) => {
+    if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: []});
+    const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
+  });
   r.control = (msg) => new Promise((resolve) => { const id = next++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
   return r;
 }
@@ -98,7 +101,8 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     const packs = path.join(home, 'packs');
     r = runtime(home, packs);
     const end = Date.now() + 30000;
-    while (handshake.parseSecret((() => { try { return fs.readFileSync(path.join(r.run, 'secret'), 'utf8'); } catch (e) { return ''; } })()) == null && Date.now() < end) await tick(100);
+    // the secret is written first, the socket once the restore has come
+    while ((handshake.parseSecret((() => { try { return fs.readFileSync(path.join(r.run, 'secret'), 'utf8'); } catch (e) { return ''; } })()) == null || !fs.existsSync(r.socket)) && Date.now() < end) await tick(100);
     const secret = handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8'));
     const a = await shim.session(r.socket, secret);
     const b = await shim.session(r.socket, secret);
@@ -137,11 +141,33 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     b.c.end();
   });
 
+  it('drain ends every session\'s listen gracefully, so none holds it (C3)', async() => {
+    const packs = path.join(home, 'packs');
+    r = runtime(home, packs);
+    const end = Date.now() + 30000;
+    // the secret is written first, the socket once the restore has come
+    while (!(fs.existsSync(path.join(r.run, 'secret')) && fs.existsSync(r.socket)) && Date.now() < end) await tick(100);
+    await tick(300);
+    const secret = handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8'));
+    const a = await shim.session(r.socket, secret);
+    const ra = reader(a.c);
+    const id = await listen(a.c, ra);
+    const seqOfListen = id;   // listen() uses its id as its seq
+    assert.strictEqual((await r.control({type: 'drain'})).ok, true);
+    const until = Date.now() + 10000;
+    while (!ra.answers.has(seqOfListen) && Date.now() < until) await tick();
+    const done = ra.answers.get(seqOfListen);
+    assert.ok(done != null && done.result != null, JSON.stringify(done));
+    assert.strictEqual(done.result.resultType, 'complete');
+    a.c.end();
+  });
+
   it('the per-session limit counts a session, not the user\'s one key: each session opens its own 2; a duplicate id is refused', async() => {
     const packs = path.join(home, 'packs');
     r = runtime(home, packs);
     const end = Date.now() + 30000;
-    while (!fs.existsSync(path.join(r.run, 'secret')) && Date.now() < end) await tick(100);
+    // the secret is written first, the socket once the restore has come
+    while (!(fs.existsSync(path.join(r.run, 'secret')) && fs.existsSync(r.socket)) && Date.now() < end) await tick(100);
     await tick(300);
     const secret = handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8'));
     const a = await shim.session(r.socket, secret);
