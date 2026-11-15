@@ -522,7 +522,7 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 - The daemon runs detached and hidden: no Windows service, no Task Scheduler.
 - The `conditions` child uses the existing PowerShell ancestry reader. The shim passes it its parent's pid.
 
-**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. Release 1 ships the shim unsigned (Matt: signing comes after the LLC), as `shim.yml` and ch-local's README say; macOS notarization and Windows signing come in a later point release. The managed preferences and plist sources in the client conditions are unchanged.
+**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. Release 1 ships the shim unsigned (signing comes in a later release), as `shim.yml` and ch-local's README say; macOS notarization and Windows signing come in a later point release. The managed preferences and plist sources in the client conditions are unchanged.
 
 **Linux.** As described. `XDG_RUNTIME_DIR` isn't required.
 
@@ -543,7 +543,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 
 **What a session can do to others:**
 - It can't change another session's settings.
-- **A global change from conversation is explicit, confirmed, and low-stakes only** (Matt's decision, DECISIONS.md):
+- **A global change from conversation is explicit, confirmed, and low-stakes only** (the maintainer's decision):
   - in one session the user asks for a low-stakes setting to change for all sessions;
   - after the confirmation it becomes a global change, and every session gets a notice of it;
   - a heavy setting changes only from the terminal, as before.
