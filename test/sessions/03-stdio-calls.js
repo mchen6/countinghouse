@@ -73,7 +73,19 @@ const KEY = 'hop-input-key';
         if (status !== 'completed') await new Promise((r) => setTimeout(r, 100));
       }
       assert.strictEqual(status, 'completed', io.err.slice(-1500));
-      const lines = fs.readFileSync(probe, 'utf8').trim().split('\n').slice(seen).map((l) => JSON.parse(l));
+      // under --stdio a task keeps the store's own ids: BullMQ's integers on
+      // Redis (the s-<hex> ids are a shared runtime's only)
+      if (store === 'redis') assert.match(String(created.result.task.taskId), /^\d+$/);
+      let lines = fs.readFileSync(probe, 'utf8').trim().split('\n').slice(seen).map((l) => JSON.parse(l));
+      // the job's entry is gone once it completed (job-sessions' size back to 0)
+      for (let i = 0; i < 50; i++) {
+        const sizes = lines.filter((l) => l.kind === 'job-sessions');
+        if (sizes.length > 0 && sizes[sizes.length - 1].size === 0) break;
+        await new Promise((r) => setTimeout(r, 100));
+        lines = fs.readFileSync(probe, 'utf8').trim().split('\n').slice(seen).map((l) => JSON.parse(l));
+      }
+      const sizes = lines.filter((l) => l.kind === 'job-sessions');
+      assert.ok(sizes.length > 0 && sizes[sizes.length - 1].size === 0, `the job-session map after the task: ${JSON.stringify(sizes)}`);
       const issued = lines.filter((l) => l.kind === 'issue');
       // on Redis (BullMQ, not shared) the session is set once the add
       // answers: a run that starts first is no session's, never another's

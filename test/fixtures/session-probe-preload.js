@@ -42,6 +42,12 @@ if (isMainThread && process.env.CH_TEST_SESSION_PROBE) {
   };
   Worker.prototype.postMessage = probe('worker', Worker.prototype.postMessage);
   MessagePort.prototype.postMessage = probe('port', MessagePort.prototype.postMessage);
+  // the job-session map's size after each change (lib/job-sessions.js)
+  const jobSessions = require(path.join(ROOT, 'lib', 'job-sessions'));
+  for (const fn of ['remember', 'forget']) {
+    const original = jobSessions[fn];
+    jobSessions[fn] = function(...a) { const r = original.apply(this, a); note({kind: 'job-sessions', op: fn, size: jobSessions.size()}); return r; };
+  }
   const callTokens = require(path.join(ROOT, 'lib', 'call-tokens'));
   const issue = callTokens.issue;
   callTokens.issue = function(o) {
