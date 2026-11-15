@@ -54,7 +54,7 @@ function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', restore =
   r.told = [];
   child.on('message', (m) => {
     // restore: true sends an empty table; an object sends that one
-    if (m != null && m.type === 'ready' && restore) child.send(restore === true ? {id: 'restore-1', type: 'restore', sessions: [], declines: []} : restore);
+    if (m != null && m.type === 'ready' && restore) child.send(restore === true ? {id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []} : restore);
     if (m != null && m.id === undefined && m.type !== 'ready') r.told.push(m);
     const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
   });
@@ -205,7 +205,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       '--requestTimeout', '2', '--sessionSocket', socket];
     const parentCode = `const c = require('child_process').spawn(process.execPath, ${JSON.stringify(args)}, {stdio: ['ignore', 'ignore', 'ignore', 'ipc'], detached: true,
       env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
-      c.on('message', (m) => { if (m && m.type === 'ready') c.send({id: 'restore-1', type: 'restore', sessions: [], declines: []}); });
+      c.on('message', (m) => { if (m && m.type === 'ready') c.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []}); });
       process.stdout.write(String(c.pid) + '\\n'); setInterval(() => {}, 1000);`;
     const parent = spawn(process.execPath, ['-e', parentCode], {stdio: ['ignore', 'pipe', 'inherit']});
     let out = '';
@@ -321,7 +321,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     await r.exited;
     fs.rmSync(r.socket, {force: true});
     fs.rmSync(path.join(r.run, 'secret'), {force: true});
-    r = runtime(home, [], {restore: {id: 'restore-1', type: 'restore', sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 3}}], declines: []}});
+    r = runtime(home, [], {restore: {id: 'restore-1', type: 'restore', sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 3}}], declines: [], reset: []}});
     secret = await listening(r);
     const stale = await shim.attach(r.socket, secret, {resume: t1});
     assert.strictEqual(stale.refused != null && stale.refused.code, 'RESUME_REFUSED', 'the rotated-out token resumes nothing');
@@ -337,7 +337,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
   it('a second restore, and one after the safety net, are refused CONTROL_RESTORE_DONE (#255 review)', async() => {
     r = runtime(home);
     await listening(r);
-    const again = await r.control({type: 'restore', sessions: [], declines: []});
+    const again = await r.control({type: 'restore', sessions: [], declines: [], reset: []});
     assert.deepStrictEqual([again.ok, again.code], [false, 'CONTROL_RESTORE_DONE'], `second: ${JSON.stringify(again)}`);
     r.child.kill('SIGKILL');
     await r.exited;
@@ -348,16 +348,16 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const t0 = Date.now();
     await listening(r);   // after the 3 s net
     assert.ok(Date.now() - t0 >= 2500, 'it listened on the net, not at once');
-    const late = await r.control({type: 'restore', sessions: [], declines: []});
+    const late = await r.control({type: 'restore', sessions: [], declines: [], reset: []});
     assert.deepStrictEqual([late.ok, late.code], [false, 'CONTROL_RESTORE_DONE'], `late: ${JSON.stringify(late)}`);
   });
 
   it('a restore of another shape is refused CONTROL_BAD_RESTORE, and a good one may still come (#255 review)', async() => {
     r = runtime(home, [], {restore: false});
     await tick(500);
-    const odd = await r.control({type: 'restore', sessions: {}, declines: []});
+    const odd = await r.control({type: 'restore', sessions: {}, declines: [], reset: []});
     assert.deepStrictEqual([odd.ok, odd.code], [false, 'CONTROL_BAD_RESTORE'], JSON.stringify(odd));
-    const good = await r.control({type: 'restore', sessions: [], declines: []});
+    const good = await r.control({type: 'restore', sessions: [], declines: [], reset: []});
     assert.strictEqual(good.ok, true, JSON.stringify(good));
     const t0 = Date.now();
     await listening(r);
