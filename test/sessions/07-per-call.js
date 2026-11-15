@@ -104,7 +104,7 @@ describe('sessions 07: a session\'s values on its calls, in flight included (sha
   it('a hop\'s call is held to its caller\'s session: the session\'s tightening re-arms its timer (holdTo; #271 review, 1)', async () => {
     loosen(A, 'requestTimeout', 120000);
     const hop = new Session(null, null, 'u', 'k', 0, 'd', 0, () => {});
-    hop.holdTo({limits: settings.limitsOf(A), session: A});   // as device-manager does for a hop
+    Session.holdTo(hop, {limits: settings.limitsOf(A), session: A});   // as device-manager does for a hop
     const started = Date.now();
     const fired = new Promise((resolve) => { hop.callback = () => resolve(Date.now() - started); });
     hop.installTimer(() => {});
