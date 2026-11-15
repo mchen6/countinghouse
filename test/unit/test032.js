@@ -46,7 +46,9 @@ describe('test32: MCP tools/call error responses carry err.code', function() {
   it('task-augmented tools/call: an input-validation failure carries its code in _meta via tasks/result', (done) => {
     request(url).post('/mcp')
     .set('Content-Type', 'application/json')
-    .send({jsonrpc: '2.0', id: 2, method: 'initialize', params: {protocolVersion: '2026-07-28'}})
+    .set('MCP-Protocol-Version', '2026-07-28')
+    .set('Mcp-Method', 'server/discover')
+    .send({jsonrpc: '2.0', id: 2, method: 'server/discover', params: {_meta: {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}}}})
     .expect(200, (err, res) => {
       if (err) return done(err);
       const tasksSupported = res.body.result != null
