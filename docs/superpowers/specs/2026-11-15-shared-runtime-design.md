@@ -51,7 +51,7 @@ Matt wants one runtime per user in release 1, shared by every session. To make t
   - records its session's tightenings, which it treats as opaque, and replays them after a daemon death;
   - starts the daemon when none is running.
 
-  It doesn't reimplement the Claude Code client checks. Once per connection it runs `node ch-local conditions --for <client pid>` as a short-lived child, and carries the child's verdict over its own connection (the `client` control frame, section 1). It knows nothing of settings, packs or MCP beyond a line's `id` and `method`.
+  It doesn't reimplement the Claude Code client checks. Once per connection it runs `node ch-local conditions --for <client pid> --home <home>` as a short-lived child, and carries the child's verdict over its own connection (the `client` control frame, section 1). It knows nothing of settings, packs or MCP beyond a line's `id` and `method`.
 - **A platform with no shim binary** runs the per-session mode (`runtime: own`), and says so (section 10). There is no Node shim.
 - **`ch-local daemon`.** It's started by the first shim and owns the runtime, as `ch-local start` does today. It holds:
   - the IPC control channel, the in-place pack applier, the settings watcher and the history;
@@ -344,7 +344,9 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 ## 5. The daemon, the control channel and per-client inputs
 
 - **The control channel** stays one IPC channel between the daemon and the runtime: one per runtime, and so one per user. ch-local's requests arrive on it as now. A request about one session names it.
-- **The client's own inputs come from one short-lived child, `node ch-local conditions --for <client pid>`,** which the shim runs once per connection.
+- **The client's own inputs come from one short-lived child, `node ch-local conditions --for <client pid> --home <home>`,** which the shim runs once per connection.
+  - Both arguments are required. `--home` is the shim's own absolute home, so the child never guesses it from the client's environment; a missing or relative one is refused (exit 2, no line), which the shim counts as failed.
+  - The child reads the secret exactly as the shim does (section 1's checks), and runs `gh` with its working directory set to the home, never the client's.
   - It runs in the shim's working directory, which is the client's. Its environment is the client's, minus every variable whose name starts with `NODE_` or `npm_config_`, so nothing acts in Node before ch-local's own code. The conditions check reads the client's environment as data (`lib/client-conditions.js`), and the variables it reads are none of those.
   - It prints one JSON line and exits:
     - `status`: `"ok"`;
@@ -425,7 +427,7 @@ Nothing of a session is ever written to a file.
     - on Windows `SystemRoot`, `TEMP`, `TMP`, `APPDATA` and `LOCALAPPDATA`.
 
     **Any other key is refused**: the attach stops, naming it. It is never dropped silently.
-  - The shim runs `<node> <chLocal> daemon` and `<node> <chLocal> conditions --for <pid>` from it.
+  - The shim runs `<node> <chLocal> daemon --home <home>` and `<node> <chLocal> conditions --for <pid> --home <home>` from it.
 
   The vectors give accepted and refused forms (`shimJson`).
 
@@ -445,7 +447,7 @@ Nothing of a session is ever written to a file.
      4. Remove `.break`.
    - **Releasing.** The holder removes the lock only if it still holds its own `{pid, host, at}`.
    - **Waiting** for a live holder: poll every 200 ms, within the shim's 20 s.
-4. Still nothing, so it spawns `<node> <chLocal> daemon`, from `shim.json`, detached, then **releases the lock at once**:
+4. Still nothing, so it spawns `<node> <chLocal> daemon --home <home>`, from `shim.json`, with its working directory the home too, detached, then **releases the lock at once**. The daemon refuses to start if `--home` and its working directory disagree:
    - on Windows, `DETACHED_PROCESS | CREATE_NO_WINDOW`;
    - on POSIX, in a new process group (`process_group(0)`), with stdio on null.
 
@@ -644,7 +646,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - the backoff.
 
 **C4. The shim's Node side** (ch-local). The Rust shim itself is A's: relay, handshake, reconnect and replay, against section 1 and the vectors.
-- `ch-local conditions --for <pid>`: the one JSON line (verdict, slug, token MAC).
+- `ch-local conditions --for <pid> --home <home>`: the one JSON line (verdict, slug, token MAC).
 - `<home>/shim.json` at install.
 - `ch-local start --stdio` execs the shim when installed, and otherwise runs the per-session mode, saying so.
 - Tests:
