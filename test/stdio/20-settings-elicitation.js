@@ -638,6 +638,54 @@ describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, T
   });
 });
 
+describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', () => {
+  const M = 1024 * 1024;
+  const notices = require('../../lib/notices');
+  const LOG = require('../../lib/logger');
+  let dir;
+  let file;
+  let saved;
+  let logI;
+  const logged = [];
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20h-'));
+    file = path.join(dir, 'settings.json');
+    saved = options.maxOutputBytes;
+    options.maxOutputBytes = 8 * M;
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+    notices.take(null);
+    logI = LOG.I;
+    logged.length = 0;
+    LOG.I = (line) => { logged.push(String(line)); return line; };
+  });
+  afterEach(() => { LOG.I = logI; options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); notices.take(null); });
+  const tool = (applyChange = async (st) => { options[st.name] = st.next; }) => settingsTool.create({file, ceiling: () => ({state: 'none'}),
+    mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange});
+
+  it('an applied confirmation is told as a notice and logged, in the same words; a decline tells nothing', async () => {
+    const t = tool();
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    await t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
+    const text = 'maxOutputBytes raised from 8MiB to 16MiB for this start (confirmed in claude-code)';
+    assert.deepStrictEqual(notices.take(null), [text]);
+    assert.ok(logged.includes(`countinghouse_settings: ${text}`), JSON.stringify(logged));
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+    const t2 = tool();
+    const b = await t2.set('requestTimeout', '60s', 'settings tool', CLIENT);
+    await t2.confirm('requestTimeout', '60s', {requestState: b.inputRequired.requestState, inputResponses: {approve: {action: 'decline'}}}, CLIENT);
+    assert.deepStrictEqual(notices.take(null), []);
+  });
+
+  it('a confirmed change that could not be applied is told too', async () => {
+    const t = tool(async () => { throw Object.assign(new Error('x'), {code: 'CONTROL_NO_ANSWER'}); });
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    await assert.rejects(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), {code: 'SETTING_NOT_APPLIED'});
+    assert.deepStrictEqual(notices.take(null), ['maxOutputBytes not changed: the change you confirmed could not be applied (CONTROL_NO_ANSWER)']);
+  });
+});
+
 describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
   const M = 1024 * 1024;
   let saved;
