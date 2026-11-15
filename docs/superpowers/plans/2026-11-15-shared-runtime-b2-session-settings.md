@@ -190,7 +190,7 @@ In one session the user may explicitly ask to change a low-stakes setting for al
 **Files:**
 - Modify: `lib/settings-tool.js`: `set(name, value, by, ctx)` takes `scope: 'all-sessions'` in its arguments (the model's call names it, because the user asked). Then:
   - a tightening for all sessions is applied as a terminal tightening is, through the file, with `dropLooser` (Task 2);
-  - a loosening for all sessions always needs the form, judged against the global default, never the session's value;
+  - a loosening for all sessions always needs the form, judged against the global default, never the session's value. It is held to the operator's ceiling as any loosening is: a value above the ceiling is refused with no form (the ceiling's own error);
   - the change is written as the terminal's `set` writes it, with a history line `{…, change: 'all sessions', session}` naming the asking session.
 - Modify: `FORM_TEXT` (`en` and `zh`): a third form that names all sessions: "Allow countinghouse tools in all your sessions to return up to … (now …)? This changes the setting for every session, now and after a restart." It gets the text review round with Task 5's.
 - Modify: `lib/notices.js` through Task 3: a global notice to every live session, naming the setting, the new value and "changed from another session".
@@ -203,6 +203,7 @@ In one session the user may explicitly ask to change a low-stakes setting for al
   - A asks to tighten `maxOutputBytes` for all sessions. `settings.json` is written, B's calls are held to the new value at once (and an override of B's looser than it is dropped and B told), and B gets the "changed from another session" notice.
   - A asks to loosen it for all sessions. A gets the all-sessions form, whose text names all sessions; after A accepts, `settings.json` holds the value, and B's effective value is the new default unless B's own override is tighter.
   - A declined all-sessions form counts in the window and locks the kind as any decline does.
+  - Under a 64 MiB ceiling, A's all-sessions loosening to 128 MiB is refused with the ceiling's error and no form, and `settings.json` is unchanged.
   - `scope: 'all-sessions'` for `moduleSandbox`, `locale` or `pack.ci` is refused `SETTING_TERMINAL_ONLY_SHARED`, and the file's bytes are unchanged.
   - A session whose `askConditions` isn't `ok`/`yes`, or that the latch has locked, gets no all-sessions form (N1, F1).
 - [ ] **Steps 2–5:** run (they fail), implement, run them plus sessions 09 and 10 (they pass), commit.
