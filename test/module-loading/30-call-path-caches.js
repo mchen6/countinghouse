@@ -116,6 +116,20 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       });
     });
 
+    it('holds only global state: a per-key or per-session filter runs after it, on a copy', () => {
+      const f = fakeInterface();
+      f.deviceMap.d1 = {spec: spec('one', ['a']), packageInfo: {name: 'one'}};
+      f.deviceMap.d2 = {spec: spec('two', ['b']), packageInfo: {name: 'two'}};
+      const table = registry.buildToolTargets(f.cdif);
+      // what filterTargetsByAuth does for a key that sees d1 only
+      const filtered = {};
+      for (const name in table) if (table[name].deviceID === 'd1') filtered[name] = table[name];
+      assert.strictEqual(Reflect.deleteProperty(table, 'two_s_b'), false, 'a filter could cut the shared table down');
+      assert.strictEqual(Reflect.set(table, 'x', 1), false);
+      assert.deepStrictEqual(Object.keys(registry.buildToolTargets(f.cdif)).sort(), ['one_s_a', 'two_s_b'], 'the next caller lost a tool');
+      assert.deepStrictEqual(Object.keys(filtered), ['one_s_a']);
+    });
+
     it('keeps one interface\'s table apart from another\'s', () => {
       const f = fakeInterface();
       const g = fakeInterface();
@@ -205,20 +219,23 @@ describe('module-loading 30: the tools/call path builds and fetches once per cha
       assert.deepStrictEqual(moduleSpec.validatorView([1, 2]), [1, 2]);
     });
 
-    it('a value whose copy throws is handed on as it is, and validate() still answers by its promise', async () => {
+    it('a value whose copy throws is refused, never sent with its framework keys', async () => {
       const real = validatorPool.pool;
       let sent = null;
-      validatorPool.pool = () => ({check: (key, serviceID, actionName, which, value) => { sent = value; return Promise.resolve('refused as the pool refuses it'); }});
-      const output = {};
-      Object.defineProperty(output, 'output', {enumerable: true, get() { throw new Error('a module\'s getter'); }});
+      validatorPool.pool = () => ({check: (key, serviceID, actionName, which, value) => { sent = value; return Promise.resolve(null); }});
+      // a getter that throws only once: a fallback to the full value would
+      // send the token on the pool's own copy
+      let reads = 0;
+      const output = {token: 'the-call-token', ctx: {id: 'u_x'}};
+      Object.defineProperty(output, 'output', {enumerable: true, get() { reads++; if (reads === 1) throw new Error('a module\'s getter'); return 1; }});
       let answer;
       try {
         answer = await moduleSpec.validate({key: 'm#1', serviceID: SERVICE, actionName: 'a'}, 'output', output);
       } finally {
         validatorPool.pool = real;
       }
-      assert.strictEqual(sent, output, 'not handed on as it is');
-      assert.strictEqual(answer, 'refused as the pool refuses it');
+      assert.strictEqual(sent, null, 'the value went to the pool');
+      assert.ok(Array.isArray(answer) && answer[0] != null && answer[0].code === 'DEVICE_INVOKE_EXCEPTION', `not refused: ${JSON.stringify(answer)}`);
     });
 
     it('is what validate() hands the pool', async () => {
