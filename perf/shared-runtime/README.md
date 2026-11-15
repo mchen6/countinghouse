@@ -2,7 +2,7 @@
 
 `measure.js` measures N MCP client sessions two ways:
 
-- **separate:** each session runs its own runtime, the command `ch-local start --stdio` builds (`bin/countinghouse-stdio.js --workerThread --store local --moduleSandbox enforce …`, the pack loaded). All N share one store, as ch-local's sessions share its home.
+- **separate:** each session runs its own runtime, the command `ch-local start --stdio` builds (`bin/countinghouse-stdio.js --workerThread --store local --moduleSandbox enforce …`, the pack loaded). All N share one store, as ch-local's sessions share its home. The store is prepared first by one runtime, so it already holds its identity secret, as ch-local's home does.
 - **shared:** one countinghouse on loopback HTTP (`framework.js --bindAddr 127.0.0.1 --authProvider file`), with one API key per session.
 
 For N = 1, 3, 6 and 10 it reports:
@@ -11,48 +11,50 @@ For N = 1, 3, 6 and 10 it reports:
 - startup, from spawn to `countinghouse ready`;
 - identity: each session's own `countinghouse_usage_report`. In the shared layout there is also an admin's report, grouped by opaque caller id.
 
-All N sessions start together. Each makes one call of the pack's `ci_failure_triage`, five more, then its own usage report. Results were first reported for Validation 1 (2026-11-14).
+All N sessions start together. Each makes one call of the pack's `ci_failure_triage`, five more, then its own usage report. A process that is gone when its RSS is read fails the row; it is never counted as 0 MB. Results were first reported for Validation 1 (2026-11-14).
 
-## The workload: pack 1, offline, through a stand-in
+## The workload: pack 1 and a stub of GitHub's MCP server
 
-`ci_failure_triage` reaches GitHub through a remote MCP server (`ctx.call('remote:github/…')` in ch-access-github). `make-standin.js` builds a copy of an installed pack in which ch-access-github keeps its name, `api.json` and `schema.json`, but its four actions answer canned results (one failed run, one failed job, a 200-line log, the run's commit) and it declares no remote. Every call then runs the scenario's 11 hops between the pack's real modules, offline.
+`ci_failure_triage` reaches GitHub through a remote MCP server (`remote:github/…` in ch-access-github, declared at `https://api.githubcopilot.com/mcp/`). The measurement starts `github-stub.js`, the SDK's own server on loopback. It answers the tools ch-access-github calls with canned bodies in GitHub's shapes: one failed run, one failed job, a 200-line log, the run's commit. Each runtime is started with:
 
-What the stand-in leaves out, which real use pays:
-- the GitHub round trips;
-- the runtime's remote path: the main thread's outbound MCP call, its credential injection, and its response cap.
+- `--remoteOriginMap https://api.githubcopilot.com=http://127.0.0.1:<stub port>`, which the runtime honours only with `COUNTINGHOUSE_ACCEPTANCE=1` (lib/remote/origin-map.js);
+- a token made at run time, in the variable the remote declares (`COUNTINGHOUSE_GITHUB_TOKEN`), and allowed for that origin in `--remoteCredentials`.
 
-The pack itself is not in this repository. The generator reads an installed one:
+So every call runs the pack's real modules, all 11 hops, and the runtime's remote path: the main thread's outbound MCP call, its credential injection and its response cap. It runs offline, with no `--debug`. What it leaves out is the round trip to GitHub itself.
 
-```
-node perf/shared-runtime/make-standin.js <installed pack>/node_modules/@countinghouse perf/apps/standin
-```
-
-Use pack 1 0.4.0 or later. 0.1.0's scenario output fails its own schema (`coverage.historyRebuilt`).
+The pack is not in this repository. Give `--pack` an installed pack 1, 0.4.0 or later; the tool refuses anything older, because 0.1.0's scenario output fails its own schema (`coverage.historyRebuilt`). Copy the pack under `perf/apps/` first, so the measurement never runs from an install that something else is using. The runtime must have `--remoteOriginMap` (countinghouse after 2026-11-12). Validation 1's 7.1.2 reference rows were measured with an earlier stand-in for ch-access-github, with canned handlers and no remote. They don't include the remote path.
 
 ## No `--debug`
 
-`--debug` would allow a loopback stub as the GitHub remote, since the runtime refuses loopback and private remotes otherwise (lib/remote/declaration.js). But `--debug` also bypasses the auth provider: every request becomes one `debug` session (lib/user-auth.js), and tools/list skips per-key filtering. That would make the identity check meaningless and skip the auth work real use pays on every call. Neither layout uses it.
+`--debug` bypasses the auth provider: every request becomes one `debug` session (lib/user-auth.js), and tools/list skips per-key filtering. That would make the identity check meaningless and skip the auth work real use pays on every call. Neither layout uses it; `--remoteOriginMap` is how the remote reaches the stub.
 
-## Keys
+## Keys and the token
 
-The shared layout's keys (`session-<i>-<random hex>`, an admin, and the pack's internal identity) are made at run time with `crypto.randomBytes`. They are written only to a temporary auth file (mode 0600) that is deleted after the configuration, and no output carries one. None is in this repository.
+The shared layout's keys (`session-<i>-<random hex>`, an admin, and the pack's internal identity), and the remote's token, are made at run time with `crypto.randomBytes`.
+- The keys are written only to a temporary auth file (mode 0600), deleted after each configuration.
+- The token is only in the runtimes' environment.
+- No output carries either, and none is in this repository.
 
 ## Memory guard
 
-A separate layout is N whole runtimes. A configuration that would not fit (N × one runtime's measured RSS, plus 10% and 400 MB) is skipped, and its row says so, because a run that swaps measures the swap. Extrapolate such rows from the measured ones, since RSS is a sum of whole processes, and label them as extrapolated.
+A separate layout is N whole runtimes. A configuration that would not fit is skipped, and its row says so, because a run that swaps measures the swap. The estimate is N × one runtime's RSS from the first separate configuration measured, plus 10% and 400 MB. Sessions run in ascending order, so the smallest N gives the estimate. Extrapolate a skipped row from the measured ones, since RSS is a sum of whole processes, and label it as extrapolated.
 
 ## Running it
 
 Like the lean worker harness, in Docker behind an idle gate:
 
 ```
-echo '["--pack","perf/apps/standin/node_modules/@countinghouse/ch-pack-ci-failure-triage","--runs","3"]' > perf/shared-runtime/measure.args.json
+echo '["--pack","perf/apps/<installed pack 1>/node_modules/@countinghouse/ch-pack-ci-failure-triage","--runs","3"]' > perf/shared-runtime/measure.args.json
 node scripts/run-in-docker.js perf/shared-runtime/measure.js
 ```
 
+Leave `perf/apps/` and `measure.args.json` uncommitted. They are deliberately not in .gitignore, because `run-in-docker.js` copies only files git doesn't ignore.
+
 Other options:
-- `--runtime <dir>`: another countinghouse, for example an installed 7.1.2;
+- `--runtime <dir>`: another countinghouse;
 - `--sessions 1,3,6,10`;
 - `--layouts separate,shared`;
-- `--withParts`: load the scenario's parts too in the shared layout, for runtimes such as 7.1.2 that don't expand a pack in multi-key mode;
+- `--withParts`: load the scenario's parts too in the shared layout, for a runtime that doesn't expand a pack in multi-key mode;
 - `--json <file>`.
+
+The shared layout's port comes from `test/helpers/test-env.js` (`testPort(9751)`, offset by `CH_TEST_PORT_BASE`).

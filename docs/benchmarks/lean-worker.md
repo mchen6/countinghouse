@@ -31,9 +31,11 @@ scenario and parts from a local tarball install). That version's scenario
 emits `coverage.historyRebuilt`, which its own output schema forbids, so a
 call of it fails `OUTPUT_DATA_VALIDATION_FAIL` whenever its history is
 rebuilt (a first call, for one); the harness only loads the pack and never
-calls it, so its numbers stand. From step 5's "after" run on, the harness
-loads pack 1 0.4.0 (the version ch-local installs), and any measurement that
-calls the pack uses 0.4.0 (perf/shared-runtime/).
+calls it, so its numbers stand. Step 5's "after" run is given pack 1 0.4.0
+(the version ch-local installs) by its `--pack`; the harness itself takes
+whatever `--pack` names, so the run's table states the version.
+perf/shared-runtime/measure.js, which calls the pack, refuses anything
+older than 0.4.0.
 
 The numbers below are from `scripts/run-in-docker.js` (Node 24, 2 CPUs,
 `--moduleSandbox audit`). Each run was started by a wrapper of the
