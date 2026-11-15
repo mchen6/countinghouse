@@ -58,7 +58,9 @@ function world(tag) {
   fs.cpSync(SIBLING, w.sibling, {recursive: true});
   const pkgPath = path.join(w.fixture, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  pkg.countinghouse.permissions.fs = [{path: w.rw, access: 'rw'}];
+  // its own directory, and the directory the credentials file is in: that
+  // second declaration covers a protected path, and is refused
+  pkg.countinghouse.permissions.fs = [{path: w.rw, access: 'rw'}, {path: path.dirname(w.credentials), access: 'rw'}];
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
   w.moduleTmp = path.join(w.moduleData, NAME, 'tmp');
   return w;
@@ -98,8 +100,16 @@ describe('sandbox 59: countinghouse\'s protected paths are no module\'s', functi
         }
         assert.strictEqual(fs.readFileSync(w.kv, 'utf8'), '{}', 'the store is untouched');
         assert.strictEqual(fs.readFileSync(w.credentials, 'utf8'), JSON.stringify({'https://api.example.com': ['EXAMPLE_TOKEN']}), 'the credentials file is untouched');
-        // nor made anew beside it, or replaced: its directory is no module's to write under either mode
-        assert.strictEqual((await call('write', {path: `${w.credentials}.new`, content: '{}'})).ok, false);
+      });
+
+      it('a declaration that covers the credentials file is refused: the module declared its directory rw, and may write nothing there', async () => {
+        // approved as declared by the policy; refused all the same, as any
+        // declaration covering a protected path is. With the root kept, this write would succeed
+        const beside = path.join(path.dirname(w.credentials), 'beside.txt');
+        assert.strictEqual((await call('write', {path: beside, content: 'x'})).ok, false);
+        assert.ok(!fs.existsSync(beside));
+        // its other declaration, which covers nothing protected, is kept
+        assert.deepStrictEqual(await call('write', {path: path.join(w.rw, 'mine.txt'), content: 'x'}), {ok: true, code: null});
       });
 
       it('a sibling loaded with --loadModule from its own directory: its code is EACCES to read and to write (G2)', async () => {
