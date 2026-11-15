@@ -188,7 +188,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
     const clients = require('../../lib/elicitation-clients');
     const control = require('../../lib/control-channel');
     // the shipped list is frozen: production's conditions over a tested copy
-    const TESTED = clients.ALLOWLIST.map((e) => (e.name === clients.CLAUDE_CODE ? Object.assign({}, e, {versionFloor: '2.0.0'}) : e));
+    const TESTED = clients.ALLOWLIST.map((e) => (e.name === clients.CLAUDE_CODE ? Object.assign({}, e, {tested: Object.freeze([Object.freeze({from: '2.0.0', before: '3.0.0'})])}) : e));
     afterEach(() => { control.resetForTests(); });
     // a fake ch-local over the control channel, answering may-elicit with `answer`
     const chLocal = (answer) => {
@@ -435,7 +435,7 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
   it('the exported allowlist is frozen', () => {
     const clients = require('../../lib/elicitation-clients');
     assert.ok(Object.isFrozen(clients.ALLOWLIST) && clients.ALLOWLIST.every((e) => Object.isFrozen(e)));
-    assert.throws(() => { 'use strict'; clients.ALLOWLIST[0].versionFloor = '0.0.0'; });
+    assert.throws(() => { 'use strict'; clients.ALLOWLIST[0].tested.push({from: '0.0.0', before: '9.0.0'}); });
   });
 });
 
