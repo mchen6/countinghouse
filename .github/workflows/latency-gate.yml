@@ -1,7 +1,8 @@
 # Matt's latency gate for the shared runtime, measured on idle GitHub-hosted
 # runners (4 cores; perf/latency-gate/README.md). A one-off measurement
 # started by hand only, approved by the maintainer on 2026-11-15:
-#   gh workflow run latency-gate.yml --ref <branch> -f runs=3
+#   gh workflow run latency-gate.yml -f runs=3
+# (workflow_dispatch runs a workflow from the default branch only.)
 # Read-only, no secrets; each run is its own job on its own runner.
 name: Latency gate (measurement)
 
@@ -12,17 +13,29 @@ on:
         description: 'Independent runners, each one full gate run (1-5)'
         default: '3'
         required: true
-      rounds:
-        description: 'Alternating rounds per session count'
+      modes:
+        description: 'Load shapes: closed (back to back), open (1-5 s gaps), or both'
+        default: 'closed,open'
+        required: true
+      closed_sessions:
+        description: 'Closed: session counts, comma-separated'
+        default: '1,2,4'
+        required: true
+      closed_rounds:
+        description: 'Closed: alternating rounds per session count'
         default: '5'
         required: true
-      calls:
-        description: 'Timed calls per session per round'
+      closed_calls:
+        description: 'Closed: timed calls per session per round'
         default: '300'
         required: true
-      sessions:
-        description: 'Session counts, comma-separated'
-        default: '1,2'
+      open_sessions:
+        description: 'Open: session counts, comma-separated'
+        default: '2,3,10'
+        required: true
+      open_calls:
+        description: 'Open: timed calls per session (each after a 1-5 s gap)'
+        default: '60'
         required: true
       ch_local_ref:
         description: 'The ch-local ref ch-shim is built from'
@@ -55,16 +68,16 @@ jobs:
       matrix:
         run: ${{ fromJSON(needs.plan.outputs.runs) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: mchen6/ch-local
           ref: ${{ inputs.ch_local_ref }}
           path: ch-local
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
       - run: npm ci --no-audit --no-fund
@@ -78,17 +91,30 @@ jobs:
           free -m
       - name: Measure
         env:
-          SESSIONS: ${{ inputs.sessions }}
-          ROUNDS: ${{ inputs.rounds }}
-          CALLS: ${{ inputs.calls }}
+          MODES: ${{ inputs.modes }}
+          CLOSED_SESSIONS: ${{ inputs.closed_sessions }}
+          CLOSED_ROUNDS: ${{ inputs.closed_rounds }}
+          CLOSED_CALLS: ${{ inputs.closed_calls }}
+          OPEN_SESSIONS: ${{ inputs.open_sessions }}
+          OPEN_CALLS: ${{ inputs.open_calls }}
+          RUN: ${{ matrix.run }}
         run: |
           set +e
-          node perf/latency-gate/gate.js --shim ch-local/shim/target/release/ch-shim \
-            --sessions "$SESSIONS" --rounds "$ROUNDS" --calls "$CALLS" --json gate.json
-          echo "gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)"
-      - uses: actions/upload-artifact@v4
+          case "$MODES" in closed|open|closed,open|open,closed) ;; *) echo "modes must be closed, open or closed,open"; exit 2 ;; esac
+          shim=ch-local/shim/target/release/ch-shim
+          case ",$MODES," in *,closed,*)
+            node perf/latency-gate/gate.js --shim "$shim" --mode closed \
+              --sessions "$CLOSED_SESSIONS" --rounds "$CLOSED_ROUNDS" --calls "$CLOSED_CALLS" --json gate-closed.json
+            echo "closed: gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)" ;;
+          esac
+          case ",$MODES," in *,open,*)
+            node perf/latency-gate/gate.js --shim "$shim" --mode open \
+              --sessions "$OPEN_SESSIONS" --rounds 1 --calls "$OPEN_CALLS" --seed "$RUN" --json gate-open.json
+            echo "open: gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)" ;;
+          esac
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: latency-gate-run-${{ matrix.run }}
-          path: gate.json
+          path: gate-*.json
           if-no-files-found: warn
