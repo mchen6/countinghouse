@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revision 3, after #252's re-check: F1, F3, F4, F7, F8, F10, N1 and N2 folded in. Tasks 0–4 may start; Task 5 includes N1's latch. It builds on B1 (#246, #247, #251) and C1 part 2 (#248). The runtime⇄daemon messages (Task 6) are agreed with C (2026-11-15).
+**Status:** revision 4: revision 3 (#252's re-check: F1, F3, F4, F7, F8, F10, N1, N2), plus Task 5b, the all-sessions change (Matt, 2026-11-14, from business's decision-coverage audit). Tasks 0–4 may start; Task 5 includes N1's latch. It builds on B1 (#246, #247, #251) and C1 part 2 (#248). The runtime⇄daemon messages (Task 6) are agreed with C (2026-11-15).
 
 **Goal:** In shared mode, every change made in conversation is the session's own override. Nothing a session does reaches another session, `settings.json`, or the options every session shares. A terminal tightening binds every session at once, calls in flight included. The confirmation state is per session, with a per-user window that a prompt injection can't fan out past. Notices and `logging/setLevel` are per session. This lifts C's #248 guard on cap sets, confirmation retries and `logging/setLevel`, and only those.
 
@@ -20,7 +20,7 @@
 
 ## Global constraints
 
-- **Conversation never writes `settings.json` in shared mode,** and never changes `options`, `atStart` or the live options broadcast. The settings tool records a session override and writes only the history, which names the session opaquely (§3).
+- **Conversation never writes `settings.json` in shared mode,** and never changes `options`, `atStart` or the live options broadcast. The settings tool records a session override and writes only the history, which names the session opaquely (§3). The one exception is Task 5b: a low-stakes setting the user explicitly asks to change for all sessions, after a confirmation naming all sessions (Matt, 2026-11-14).
 - **In shared mode only the two caps are lifted from C's guard,** by name: `maxOutputBytes` and `requestTimeout`. Every other setting stays refused (`SETTING_TERMINAL_ONLY_SHARED`):
   - `moduleSandbox`, `autoUpgrade` and `upgradeCheck`, whose `set` writes the file;
   - `locale`, which is global (§3);
@@ -181,6 +181,32 @@
   - The form's text says "for this session" in both languages.
 - [ ] **Steps 2–5:** run (they fail), implement, run them plus stdio 18–21 and sessions 09 (they pass), commit.
 
+### Task 5b: a change for all sessions (Matt, 2026-11-14)
+
+In one session the user may explicitly ask to change a low-stakes setting for all sessions. After its confirmation it's a global change: it writes `settings.json`, as a terminal change does, and every live session is told. Heavy settings stay terminal-only. C fixes #236's text to match.
+
+**Which settings:** the low-stakes ones are exactly the settings conversation may already change, the two caps (`maxOutputBytes`, `requestTimeout`). `moduleSandbox`, `autoUpgrade`, `upgradeCheck`, `locale` and `pack.*` stay terminal-only for all sessions too.
+
+**Files:**
+- Modify: `lib/settings-tool.js`: `set(name, value, by, ctx)` takes `scope: 'all-sessions'` in its arguments (the model's call names it, because the user asked). Then:
+  - a tightening for all sessions is applied as a terminal tightening is, through the file, with `dropLooser` (Task 2);
+  - a loosening for all sessions always needs the form, judged against the global default, never the session's value;
+  - the change is written as the terminal's `set` writes it, with a history line `{…, change: 'all sessions', session}` naming the asking session.
+- Modify: `FORM_TEXT` (`en` and `zh`): a third form that names all sessions: "Allow countinghouse tools in all your sessions to return up to … (now …)? This changes the setting for every session, now and after a restart." It gets the text review round with Task 5's.
+- Modify: `lib/notices.js` through Task 3: a global notice to every live session, naming the setting, the new value and "changed from another session".
+- Test: `test/sessions/12-all-sessions.js`
+
+**Interfaces:**
+- Consumes: Task 5's per-session `Confirmations` and the user window (the same 3-in-30-minutes count and locks per kind, so an all-sessions form spends the asking session's forms and counts in the window like any form); Task 3's global notice; Task 2's `dropLooser` and `rearm`.
+
+- [ ] **Step 1: Write the failing tests.**
+  - A asks to tighten `maxOutputBytes` for all sessions. `settings.json` is written, B's calls are held to the new value at once (and an override of B's looser than it is dropped and B told), and B gets the "changed from another session" notice.
+  - A asks to loosen it for all sessions. A gets the all-sessions form, whose text names all sessions; after A accepts, `settings.json` holds the value, and B's effective value is the new default unless B's own override is tighter.
+  - A declined all-sessions form counts in the window and locks the kind as any decline does.
+  - `scope: 'all-sessions'` for `moduleSandbox`, `locale` or `pack.ci` is refused `SETTING_TERMINAL_ONLY_SHARED`, and the file's bytes are unchanged.
+  - A session whose `askConditions` isn't `ok`/`yes`, or that the latch has locked, gets no all-sessions form (N1, F1).
+- [ ] **Steps 2–5:** run (they fail), implement, run them plus sessions 09 and 10 (they pass), commit.
+
 ### Task 6: a session's state across a runtime restart (the runtime's side)
 
 The reviewer split it (2026-11-15): B2 owns the runtime's export and import, C3 the daemon's in-memory table and the IPC transport. The messages are agreed with C.
@@ -219,7 +245,7 @@ The reviewer split it (2026-11-15): B2 owns the runtime's export and import, C3 
     - a loosening waits for the session's client frame, then applies only if the ceiling allows it, may-elicit passes for that session, and today's default isn't tighter than its `over` (finding 6). Otherwise it's dropped, and the session is told "your this-session loosening of `<name>` was reset after a runtime restart; ask again";
     - a pack override whose version doesn't match is dropped and announced;
     - the declines load into the window, each validated as strictly as a state (N2): a known kind, an integer `at` no later than now, and at most 64 in all; a list that fails is dropped whole, and the window starts locked as after the 3 s safety net;
-    - a row for a session the registry doesn't have, or one that never resumes, is ignored;
+    - a row for a session the registry doesn't have, or one that never resumes, is ignored. A restored session that is never resumed ends without a `'session'` announcement, so its imported state is dropped on the registry's `'gone'` event (`registry.on('gone', id)`, emitted for every forgotten session, announced or not: C's #262), as on `'end'` generally; a test shows an unresumed restored session's state gone after its window, so up to 256 × 64 KiB can't be left behind;
     - a second `'restore'` is refused `CONTROL_RESTORE_DONE`, and changes nothing;
     - a state with a key other than the three, an override outside its shape, a duplicate name or more than 64 entries drops that row.
   - An empty `restore` starts the listener at once. No `restore` within 3 s starts it with an empty table, the window locked and one warning.
@@ -229,7 +255,7 @@ The reviewer split it (2026-11-15): B2 owns the runtime's export and import, C3 
 ## Decided
 
 - **The decline count and the session table go to the daemon over C's control channel,** in Task 6's messages (the reviewer, 2026-11-15). B2 owns the runtime side, C3 the daemon side.
-- **Only the two caps are lifted in shared mode;** pack sets wait for B3, and the other settings stay terminal-only (finding 2).
+- **Only the two caps are lifted in shared mode;** pack sets wait for B3, and the other settings stay terminal-only (finding 2). The same two are the only ones a session may change for all sessions (Task 5b).
 - **Holds, from #252's review:** the MAC binds the session id taken from the connection. A replaced daemon is residual 1, given the ceiling re-check on import.
 
 ## Notes for B5 (from #251's review)
