@@ -20,9 +20,10 @@ you have to do. What the sandbox does and does not protect is in
     raise the cap, or have it return a reference (a path in its data)
     instead.
   - A hop over a direct peer channel (the default; `--no-directPeerChannels`
-    routes hops through the main thread) is not capped yet: its result goes
-    from one module's worker to the other's unmeasured. Lean worker step 4
-    brings peer calls under the same checks.
+    routes hops through the main thread) is capped the same way, on its input
+    (`INPUT_TOO_LARGE`) and its output (`OUTPUT_TOO_LARGE`), and both are
+    checked against the called module's schemas by the main thread before
+    the handler runs and before the caller sees the result.
   - Every call the main thread sends a module (an MCP `tools/call`, an HTTP
     `invoke-action`, a job's run, a hop routed through the main thread) has
     its input and output validated in a validator worker, under a deadline.
@@ -187,9 +188,9 @@ you have to do. What the sandbox does and does not protect is in
   the main thread sends you, the check runs in a validator worker your code
   can't reach, under the deadlines and caps in
   [Before you upgrade](#before-you-upgrade). Patching your own worker's
-  validation no longer changes what's accepted. A call over a direct peer
-  channel is still checked in the called module's worker, until lean worker
-  step 4.
+  validation no longer changes what's accepted. That includes a call over a
+  direct peer channel: the main thread checks its input before your
+  handler runs, and your output before the calling module gets it.
 - **Every hop must be declared.** A composing module's `ctx.call`,
   `ctx.serviceClient` and device queries reach only the devices and actions
   it declares in `countinghouse.calls`; anything else is

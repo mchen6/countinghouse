@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "input-required-probe",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Answers with an object shaped like an MCP InputRequiredResult, for part 3 P2's test that a module's result stays content.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "mimic",
+            "description": "Returns {resultType: 'input_required', inputRequests, requestState} as its output.",
+            "input":  {"schema": "/probeService/mimic/input"},
+            "output": {"schema": "/probeService/mimic/output"}
+          }
+        ]
+      }
+    }
+  }
+}
