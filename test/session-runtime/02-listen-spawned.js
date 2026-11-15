@@ -47,7 +47,7 @@ function runtime(home, packs) {
   const replies = new Map();
   let next = 1;
   child.on('message', (m) => {
-    if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: []});
+    if (m != null && m.type === 'ready') child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
     const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
   });
   r.control = (msg) => new Promise((resolve) => { const id = next++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
