@@ -522,7 +522,7 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 - The daemon runs detached and hidden: no Windows service, no Task Scheduler.
 - The `conditions` child uses the existing PowerShell ancestry reader. The shim passes it its parent's pid.
 
-**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. The shim binary is signed and notarized with the release. The managed preferences and plist sources in the client conditions are unchanged.
+**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. Release 1 ships the shim unsigned (Matt: signing comes after the LLC), as `shim.yml` and ch-local's README say; macOS notarization and Windows signing come in a later point release. The managed preferences and plist sources in the client conditions are unchanged.
 
 **Linux.** As described. `XDG_RUNTIME_DIR` isn't required.
 
@@ -542,7 +542,13 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 - *Any process of the same user, including the AI through a shell:* can read the secret and attach. **The same as today**, where it can start its own runtime.
 
 **What a session can do to others:**
-- It can't change another session's settings, or any global setting from conversation.
+- It can't change another session's settings.
+- **A global change from conversation is explicit, confirmed, and low-stakes only** (Matt's decision, DECISIONS.md):
+  - in one session the user asks for a low-stakes setting to change for all sessions;
+  - after the confirmation it becomes a global change, and every session gets a notice of it;
+  - a heavy setting changes only from the terminal, as before.
+
+  B builds it in B2.
 - A self-answering fake session loosens only its own calls. A terminal tightening ends its loosening, as it does any session's.
 - It can't see another session's notices, staged confirmations, this-session packs, tasks, usage records or settings history.
 - It can't use another session's tools: they look like unknown tools.
