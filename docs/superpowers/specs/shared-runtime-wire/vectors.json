@@ -110,6 +110,12 @@
       },
       "hex": "4d000000ba00097b22736571223a337d5b7b226a736f6e727063223a22322e30222c226964223a312c226d6574686f64223a22746f6f6c732f6c697374227d2c7b226a736f6e727063223a22322e30222c226d6574686f64223a226e6f74696669636174696f6e732f63616e63656c6c6564222c22706172616d73223a7b22726571756573744964223a307d7d2c7b226a736f6e727063223a22322e30222c226964223a2262222c226d6574686f64223a22746f6f6c732f6c697374227d5d"
     },
+    "clientResponseToRuntime": {
+      "header": null,
+      "line": "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{}}",
+      "rule": "an object with an id and no method is a response: no header, no seq, nothing kept, never crash-answered",
+      "hex": "4d0000002600007b226a736f6e727063223a22322e30222c226964223a352c22726573756c74223a7b7d7d"
+    },
     "notificationToRuntime": {
       "header": null,
       "line": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\"}",
@@ -227,6 +233,10 @@
       ""
     ],
     "refusedRule": "anything but exactly 64 lowercase hex characters with at most one trailing newline, and a file that is a symlink, not owned by the user, or not 0600 (on Windows, not private by the privateProblem rule)"
+  },
+  "drainOverflowAnswer": {
+    "rule": "exact apart from the id: a request held past the drain bound (64 requests, or maxToRuntime in all), which never reached the runtime",
+    "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"countinghouse's runtime restarted before this was sent; the call did not run\",\"data\":{\"countinghouse/code\":\"RUNTIME_RESTARTED\",\"retryable\":true,\"mayHaveRun\":false}}}"
   },
   "tooLargeAnswer": {
     "rule": "exact apart from the id; sent with the request's seq instead of an M over maxToShim",
