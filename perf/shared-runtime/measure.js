@@ -1,14 +1,17 @@
 // The shared runtime against separate ones (Validation 1, 2026-11-14;
 // perf/shared-runtime/README.md): N MCP client sessions, each with its own
 // runtime (the command `ch-local start --stdio` builds), against ONE
-// countinghouse on loopback HTTP with one API key per session. Pack 1 with a
-// stand-in ch-access-github (make-standin.js: canned answers, no remote), so
-// every call runs the scenario's 11 hops between real modules, offline, with
-// no --debug (it bypasses the auth provider). Per configuration: process RSS
-// (the layout's total), per-session first-call and warm-call latency,
-// startup; for the shared layout, each session's own usage report and an
-// admin's view by caller. Keys are made here, at random, written only to a
-// temporary auth file that is deleted after; no output carries one.
+// countinghouse on loopback HTTP with one API key per session. Pack 1 as
+// installed (0.4.0 or later), its GitHub remote sent to a local stub
+// (github-stub.js) by --remoteOriginMap under COUNTINGHOUSE_ACCEPTANCE=1, with
+// a token made at run time: every call runs the scenario's 11 hops between the
+// pack's real modules and the runtime's remote path, offline, with no --debug
+// (it bypasses the auth provider). Per configuration: process RSS (the
+// layout's total), per-session first-call and warm-call latency, startup; for
+// the shared layout, each session's own usage report and an admin's view by
+// caller. Keys and the token are made here, at random, written only to a
+// temporary auth file (mode 0600) or a child's environment, and no output
+// carries one.
 'use strict';
 const assert = require('assert');
 const crypto = require('crypto');
@@ -17,12 +20,31 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const {spawn} = require('child_process');
+const {testPort} = require('../../test/helpers/test-env');
+const {startGithubStub} = require('./github-stub');
 
 const ROOT = path.join(__dirname, '..', '..');
 const SERVICE_TOOL = /ci_failure_triage/;
 const ARGS = {repo: 'acme/widgets'};
 const WARM = 5;
-const PORT = 9751;
+const PORT = testPort(9751);
+const MIN_PACK = [0, 4, 0];
+// the pack's GitHub remote: its declared origin, the credential's variable
+function githubRemoteOf(pack) {
+  const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(pack), 'ch-access-github', 'package.json'), 'utf8'));
+  const remote = ((pkg.countinghouse || {}).remotes || []).find((r) => r.name === 'github');
+  if (remote == null) throw new Error('ch-access-github declares no github remote: give an installed pack, not a stand-in');
+  return {origin: new URL(remote.url).origin, variable: remote.credential.env};
+}
+function checkPackVersion(pack) {
+  const v = JSON.parse(fs.readFileSync(path.join(pack, 'package.json'), 'utf8')).version;
+  const parts = String(v).split(/[.+-]/).slice(0, 3).map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (parts[i] > MIN_PACK[i]) return v;
+    if (parts[i] < MIN_PACK[i]) throw new Error(`pack 1 ${v}: 0.4.0 or later is needed (0.1.0's scenario output fails its own schema, coverage.historyRebuilt)`);
+  }
+  return v;
+}
 
 function parseArgs(argv) {
   const o = {runtime: ROOT, pack: null, runs: 1, sessions: [1, 3, 6, 10], layouts: ['separate', 'shared'], json: null, withParts: false};
@@ -31,7 +53,8 @@ function parseArgs(argv) {
     if (a === '--runtime') o.runtime = path.resolve(argv[++i]);
     else if (a === '--pack') o.pack = path.resolve(argv[++i]);
     else if (a === '--runs') o.runs = Number(argv[++i]);
-    else if (a === '--sessions') o.sessions = argv[++i].split(',').map(Number);
+    // ascending: the memory guard's estimate comes from the first measured
+    else if (a === '--sessions') o.sessions = argv[++i].split(',').map(Number).sort((x, y) => x - y);
     else if (a === '--layouts') o.layouts = argv[++i].split(',');
     else if (a === '--json') o.json = path.resolve(argv[++i]);
     // a runtime that loads only the scenario in multi-key mode (7.1.2): its
@@ -39,34 +62,41 @@ function parseArgs(argv) {
     else if (a === '--withParts') o.withParts = true;
     else throw new Error(`unknown argument ${a}`);
   }
-  if (o.pack == null) throw new Error('give --pack <scenario dir>');
+  if (o.pack == null) throw new Error('give --pack <installed scenario dir>');
   return o;
 }
 
+// A process gone (crashed, killed) is never counted as 0 MB: the row fails.
 const rssOf = (pid) => {
-  try {
-    const m = /VmRSS:\s+(\d+) kB/.exec(fs.readFileSync(`/proc/${pid}/status`, 'utf8'));
-    return (m == null) ? 0 : Number(m[1]) / 1024;
-  } catch (e) { return 0; }
+  let text = null;
+  try { text = fs.readFileSync(`/proc/${pid}/status`, 'utf8'); } catch (e) { text = null; }
+  const m = (text == null) ? null : /VmRSS:\s+(\d+) kB/.exec(text);
+  if (m == null) throw new Error(`process ${pid} is gone: its RSS cannot be read`);
+  return Number(m[1]) / 1024;
 };
+const rssSum = (pids) => pids.reduce((s, p) => s + rssOf(p), 0);
 const median = (a) => { if (a.length === 0) return null; const x = [...a].sort((p, q) => p - q); const m = Math.floor(x.length / 2); return x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2; };
 const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // the directories a runtime gets, under one temporary root (shared by every
 // runtime of a layout, as ch-local's home is shared by its sessions)
-function dirsUnder(root) {
+function dirsUnder(root, github) {
   const d = {store: path.join(root, 'store'), modules: path.join(root, 'modules'), moduleData: path.join(root, 'module_data'),
     config: path.join(root, 'config'), rc: path.join(root, 'remote-credentials.json')};
   for (const k of ['modules', 'moduleData', 'config']) fs.mkdirSync(d[k], {recursive: true});
-  fs.writeFileSync(d.rc, '{}\n');
+  // the token's variable may go to the declared origin only (lib/remote/credentials.js)
+  fs.writeFileSync(d.rc, `${JSON.stringify({[github.origin]: [github.variable]})}\n`);
   return d;
 }
-const commonArgs = (d, pack) => ['--workerThread', '--store', 'local', '--storePath', d.store, '--moduleSandbox', 'enforce',
-  '--modulePath', d.modules, '--moduleDataPath', d.moduleData, '--remoteCredentials', d.rc, '--deviceConfigPath', d.config, '--loadModule', pack];
+// The stub stands in for the declared origin (acceptance runs only: the
+// runtime activates the map only with COUNTINGHOUSE_ACCEPTANCE=1).
+const commonArgs = (d, pack, github, stubPort) => ['--workerThread', '--store', 'local', '--storePath', d.store, '--moduleSandbox', 'enforce',
+  '--modulePath', d.modules, '--moduleDataPath', d.moduleData, '--remoteCredentials', d.rc, '--deviceConfigPath', d.config,
+  '--remoteOriginMap', `${github.origin}=http://127.0.0.1:${stubPort}`, '--loadModule', pack];
 
 function child(file, args, env) {
-  const c = spawn(process.execPath, [file].concat(args), {stdio: ['pipe', 'pipe', 'pipe'], env: Object.assign({}, process.env, {COUNTINGHOUSE_ACCEPTANCE: ''}, env || {})});
+  const c = spawn(process.execPath, [file].concat(args), {stdio: ['pipe', 'pipe', 'pipe'], env: Object.assign({}, process.env, env || {})});
   c.out = ''; c.err = '';
   c.stdout.on('data', (b) => { c.out += b; });
   c.stderr.on('data', (b) => { c.err += b; });
@@ -77,19 +107,29 @@ function child(file, args, env) {
 }
 const killAll = (cs) => { for (const c of cs) { try { c.kill('SIGKILL'); } catch (e) { /* gone */ } } };
 
-// A newline JSON-RPC client over a stdio runtime.
+// A newline JSON-RPC client over a stdio runtime: lines parsed once, as they
+// arrive, and matched to the pending request by id.
 function stdioClient(c) {
   let id = 0;
+  let buffered = '';
+  const pending = new Map();
+  c.stdout.on('data', (b) => {
+    buffered += b;
+    let nl;
+    while ((nl = buffered.indexOf('\n')) !== -1) {
+      const line = buffered.slice(0, nl);
+      buffered = buffered.slice(nl + 1);
+      let msg = null;
+      try { msg = JSON.parse(line); } catch (e) { msg = null; }
+      const p = (msg != null && msg.id != null) ? pending.get(msg.id) : null;
+      if (p != null) { pending.delete(msg.id); clearTimeout(p.timer); p.resolve(msg); }
+    }
+  });
   return (method, params) => new Promise((resolve, reject) => {
     const n = ++id;
-    const t = setTimeout(() => reject(new Error(`stdio: no answer to ${method} in 120 s; ${c.err.slice(-400)}`)), 120000);
-    const look = () => {
-      const found = c.out.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).find((r) => r != null && r.id === n);
-      if (found) { clearTimeout(t); c.stdout.off('data', look); resolve(found); }
-    };
-    c.stdout.on('data', look);
+    const timer = setTimeout(() => { pending.delete(n); reject(new Error(`stdio: no answer to ${method} in 120 s; ${c.err.slice(-400)}`)); }, 120000);
+    pending.set(n, {resolve, timer});
     c.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`);
-    look();
   });
 }
 // A JSON-RPC client over the shared server's /mcp, one key.
@@ -147,18 +187,37 @@ const callsIn = (report) => {
   return (total != null && Number.isFinite(total.calls)) ? total.calls : null;
 };
 
+const exited = (c) => c.exitCode != null || c.signalCode != null;
+async function untilReady(procs, what) {
+  for (let w = 0; procs.some((c) => c.readyAt == null) && w < 180000; w += 50) {
+    if (procs.some(exited)) throw new Error(`${what}: a runtime ended (${procs.filter(exited).map((c) => c.signalCode || `exit ${c.exitCode}`).join(', ')}): ${procs.map((c) => c.err.slice(-300)).join(' | ')}`);
+    await sleep(50);
+  }
+  if (procs.some((c) => c.readyAt == null)) throw new Error(`${what}: not ready in 180 s`);
+}
+
 async function once(o, layout, n) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-runtime-'));
-  const d = dirsUnder(root);
+  const d = dirsUnder(root, o.github);
   const procs = [];
+  // the remote's token, made here; only the runtimes' environment carries it
+  const env = {COUNTINGHOUSE_ACCEPTANCE: '1', [o.github.variable]: `measure-${crypto.randomBytes(16).toString('hex')}`};
+  const args = () => commonArgs(d, o.pack, o.github, o.stub.port);
   try {
-    const t0 = Date.now();
     let clients;
     let pids;
     let keys = null;
+    let t0 = Date.now();
     if (layout === 'separate') {
       const file = path.join(o.runtime, 'bin', 'countinghouse-stdio.js');
-      for (let i = 0; i < n; i++) procs.push(child(file, commonArgs(d, o.pack)));
+      // The store as ch-local's home has it in steady state: one runtime
+      // starts first and makes its identity secret, so N fresh ones do not
+      // race to (lib/identity.js). Not timed.
+      const first = child(file, args(), env);
+      try { await untilReady([first], 'separate (preparing the store)'); } finally { first.kill('SIGKILL'); }
+      await sleep(300);
+      t0 = Date.now();
+      for (let i = 0; i < n; i++) procs.push(child(file, args(), env));
       clients = procs.map((c) => stdioClient(c));
       pids = () => procs.map((c) => c.pid);
     } else {
@@ -177,26 +236,21 @@ async function once(o, layout, n) {
       const parts = o.withParts ? [...new Set(((JSON.parse(fs.readFileSync(path.join(o.pack, 'package.json'), 'utf8')).countinghouse || {}).calls || [])
         .map((c) => String(c).split('/')[0]))].map((n) => path.join(path.dirname(o.pack), n)) : [];
       procs.push(child(path.join(o.runtime, 'framework.js'), ['--bindAddr', '127.0.0.1', '--port', String(PORT), '--authProvider', 'file', '--authConfigPath', authFile]
-        .concat(commonArgs(d, o.pack), ...parts.map((p) => ['--loadModule', p]))));
+        .concat(args(), ...parts.map((p) => ['--loadModule', p])), env));
       clients = keys.map((k) => httpClient(k));
       clients.admin = httpClient(admin);
       pids = () => [procs[0].pid];
     }
-    // ready: every runtime's line, bounded
-    for (let w = 0; procs.some((c) => c.readyAt == null) && w < 180000; w += 50) {
-      if (procs.some((c) => c.exitCode != null)) throw new Error(`${layout}: a runtime exited: ${procs.map((c) => c.err.slice(-300)).join(' | ')}`);
-      await sleep(50);
-    }
-    if (procs.some((c) => c.readyAt == null)) throw new Error(`${layout}: not ready in 180 s`);
+    await untilReady(procs, layout);
     const startup = Math.max(...procs.map((c) => c.readyAt)) - t0;
-    const rssReady = pids().reduce((s, p) => s + rssOf(p), 0);
+    const rssReady = rssSum(pids());
     // every session at once
     const sessions = await Promise.all(clients.map((call) => session(call)));
     await sleep(1500);
-    const rssFirst = pids().reduce((s, p) => s + rssOf(p), 0);
+    const rssFirst = rssSum(pids());
     const later = await Promise.all(sessions.map((s) => s.rest()));
     await sleep(1500);
-    const rssWarm = pids().reduce((s, p) => s + rssOf(p), 0);
+    const rssWarm = rssSum(pids());
     const firsts = sessions.map((s) => s.first);
     const warms = later.flatMap((l) => l.warm);
     const out = {layout, n, startupMs: startup, rssReadyMb: r1(rssReady), rssAfterFirstMb: r1(rssFirst), rssAfterWarmMb: r1(rssWarm),
@@ -229,14 +283,27 @@ const memAvailableMb = () => {
 async function main(argv) {
   const o = parseArgs(argv);
   if (!fs.existsSync('/proc/self/status')) throw new Error('reads /proc: Linux only');
+  o.packVersion = checkPackVersion(o.pack);
+  o.github = githubRemoteOf(o.pack);
+  o.stub = await startGithubStub();
+  try {
+    return await measure(o);
+  } finally {
+    o.stub.close();
+  }
+}
+
+async function measure(o) {
   const rows = [];
   for (const layout of o.layouts) {
     let perRuntimeMb = null;
     for (const n of o.sessions) {
       // A separate layout is N whole runtimes: skipped, and said so, when the
       // machine lacks the memory for them (N times one runtime's RSS after its
-      // warm calls, 10% more, and 400 MB of headroom); a run that swaps would
-      // measure the swap.
+      // warm calls, from the first separate configuration measured, whatever
+      // its N; 10% more, and 400 MB of headroom); a run that swaps would
+      // measure the swap. Before any separate row is measured there is no
+      // estimate: put the smallest N first.
       if (layout === 'separate' && perRuntimeMb != null) {
         const need = n * perRuntimeMb * 1.1 + 400;
         const avail = memAvailableMb();
@@ -255,7 +322,7 @@ async function main(argv) {
         firstMedianMs: pick((r) => r.firstMs.median), firstMaxMs: pick((r) => r.firstMs.max),
         warmMedianMs: pick((r) => r.warmMs.median), warmMaxMs: pick((r) => r.warmMs.max),
         failed: runs.flatMap((r) => r.failed), firstFailure: (runs.find((r) => r.firstFailure != null) || {}).firstFailure || null, ownCalls: runs.map((r) => r.ownCalls), adminDistinctCallers: runs.map((r) => r.adminDistinctCallers)};
-      if (layout === 'separate' && n === 1) perRuntimeMb = row.rssAfterWarmMb;
+      if (layout === 'separate' && perRuntimeMb == null) perRuntimeMb = row.rssAfterWarmMb / n;
       rows.push(row);
       process.stdout.write(`${layout.padEnd(8)} N=${String(n).padStart(2)}  ready ${row.startupMs} ms  RSS ready ${row.rssReadyMb} / after first ${row.rssAfterFirstMb} / after warm ${row.rssAfterWarmMb} MB  ` +
         `first ${row.firstMedianMs} (max ${row.firstMaxMs}) ms  warm ${row.warmMedianMs} (max ${row.warmMaxMs}) ms  failed ${row.failed.length}${row.failed.length ? ` (${[...new Set(row.failed)].join(', ').slice(0, 200)})` : ''}` +
@@ -263,7 +330,8 @@ async function main(argv) {
         row.firstFailure != null ? `  first failure: ${row.firstFailure}\n` : ''}`);
     }
   }
-  const result = {runtime: o.runtime, pack: o.pack, node: process.version, cpus: os.cpus().length, rows};
+  const result = {runtime: o.runtime, pack: o.pack, packVersion: o.packVersion, remote: `${o.github.origin} -> the local stub (${o.stub.calls.calls} calls)`,
+    node: process.version, cpus: os.cpus().length, rows};
   process.stdout.write(`SHARED-RUNTIME-JSON ${JSON.stringify(result)}\n`);
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
   return result;
