@@ -99,25 +99,34 @@ describe('module-loading 02: with sqlite3 unloadable, the file backend still wor
       });
   });
 
-  it('HTTP invoke-action works and is metered', (done) => {
-    request(url).get('/balance').set('X-CH-Key', KEY).end((err, res) => {
-      if (err) return done(err);
-      const before = res.body.balance;
-      request(url).post(`/devices/${DEVICE_ID}/invoke-action`).set('X-CH-Key', KEY)
-        .send({serviceID: SERVICE_ID, actionName: 'echo', input: ECHO_INPUT})
-        .expect(200, (err) => {
-          if (err) return done(err);
-          setTimeout(() => {
-            request(url).get('/balance').set('X-CH-Key', KEY).end((err, res2) => {
-              if (err) return done(err);
-              if (res2.body.balance !== before - 1) {
-                return done(new Error(`metering broken without sqlite3: ${before} -> ${res2.body.balance}`));
-              }
-              return done();
-            });
-          }, 800);
-        });
-    });
+  // The balance once every charge has settled: metering is asynchronous, so
+  // the tools/call just before this case may still be landing (#230's run:
+  // 0 -> -2). Settled is the same value on two reads SETTLE_GAP_MS apart,
+  // within SETTLE_WITHIN_MS. It never waits for the value the test expects.
+  const SETTLE_GAP_MS = 200;
+  const SETTLE_WITHIN_MS = 5000;
+  const balance = () => new Promise((resolve, reject) => {
+    request(url).get('/balance').set('X-CH-Key', KEY).end((err, res) => (err ? reject(err) : resolve(res.body.balance)));
+  });
+  const settledBalance = async() => {
+    const until = Date.now() + SETTLE_WITHIN_MS;
+    let last = await balance();
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, SETTLE_GAP_MS));
+      const now = await balance();
+      if (now === last) return now;
+      last = now;
+    }
+    throw new Error(`the balance did not settle within ${SETTLE_WITHIN_MS} ms (last ${last})`);
+  };
+
+  it('HTTP invoke-action works and is metered', async() => {
+    const before = await settledBalance();
+    await request(url).post(`/devices/${DEVICE_ID}/invoke-action`).set('X-CH-Key', KEY)
+      .send({serviceID: SERVICE_ID, actionName: 'echo', input: ECHO_INPUT})
+      .expect(200);
+    const after = await settledBalance();
+    if (after !== before - 1) throw new Error(`metering broken without sqlite3: ${before} -> ${after}`);
   });
 
   it('authorization still denies an unauthorized key', (done) => {
