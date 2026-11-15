@@ -50,6 +50,7 @@ describe('fs-broker 04: scheduler', () => {
 
 const {execFileSync} = require('child_process');
 const path = require('path');
+const {testPort} = require('../helpers/test-env');
 
 // Checks the startup log line (what framework.js set and the cap it derived),
 // not the pool libuv actually created: libuv reads the variable itself.
@@ -63,7 +64,7 @@ describe('fs-broker 04: threadpool size at startup', function() {
     Object.assign(env, extraEnv);
     try {
       execFileSync(process.execPath, [path.join(__dirname, '..', '..', 'framework.js'), '--workerThread', '--debug',
-        '--bindAddr', '127.0.0.1', '--port', '9625', '--modulePolicy', '/nonexistent/policy.json'],
+        '--bindAddr', '127.0.0.1', '--port', String(testPort(9625)), '--modulePolicy', '/nonexistent/policy.json'],
       {env: env, stdio: 'pipe', timeout: 15000});
       return '';
     } catch (e) {

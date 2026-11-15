@@ -121,4 +121,8 @@ function startPrivateRedis({port = 9749, readyMs = 5000} = {}) {
   });
 }
 
-module.exports = {testPort, redisFlag, redisArgs, redisArgsFor, redisUrlFor, startShell, stopAll, startPrivateRedis};
+// Whether testPort handed this port out in this process (the port guard,
+// test/helpers/port-guard.js).
+const handedOut = (port) => [...assigned.values()].includes(Number(port));
+
+module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, startShell, stopAll, startPrivateRedis};

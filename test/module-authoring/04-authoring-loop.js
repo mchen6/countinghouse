@@ -12,6 +12,7 @@ const net     = require('net');
 const spawn   = require('child_process').spawn;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT    = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'handler-map-convention');
@@ -20,7 +21,7 @@ const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'handler-map-convention');
 // Task 3's fix round added a fourth server to 03 after this file's port was
 // first picked, and 9552 collided with it under `npm test`'s single
 // mocha invocation of the whole directory).
-const PORT    = 9553;
+const PORT    = testPort(9553);
 
 // Same technique as test/module-authoring/03-authoring-tools-gating.js's
 // assertPortFree -- a stale server left behind by an earlier run would, by

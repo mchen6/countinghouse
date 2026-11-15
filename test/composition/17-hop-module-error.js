@@ -23,17 +23,18 @@ const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
 const {toolOutput} = require('../helpers/tool-result');
 const {CountinghouseError} = require('../../lib/countinghouse-error');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 const KEY = 'composition-test-key';
 
 const MODES = [
-  {label: 'single-thread', port: 9618, args: ['--no-workerThread']},
-  {label: 'worker, main-thread hop', port: 9619, args: ['--workerThread', '--no-directPeerChannels']},
-  {label: 'worker, direct peer channel', port: 9620, args: ['--workerThread']},
+  {label: 'single-thread', port: testPort(9618), args: ['--no-workerThread']},
+  {label: 'worker, main-thread hop', port: testPort(9619), args: ['--workerThread', '--no-directPeerChannels']},
+  {label: 'worker, direct peer channel', port: testPort(9620), args: ['--workerThread']},
   // the worker default is audit; the require routes are closed only here
-  {label: 'worker, enforce', port: 9694, args: ['--workerThread', '--moduleSandbox', 'enforce']}
+  {label: 'worker, enforce', port: testPort(9694), args: ['--workerThread', '--moduleSandbox', 'enforce']}
 ];
 
 function startServer(mode, done) {

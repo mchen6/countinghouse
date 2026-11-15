@@ -32,6 +32,7 @@ describe('sandbox 10: Node version floor', () => {
 
 const {execFileSync} = require('child_process');
 const pathMod = require('path');
+const {testPort} = require('../helpers/test-env');
 
 describe('sandbox 10: thread-flag guard (test suite only)', function() {
   this.timeout(30000);
@@ -39,7 +40,7 @@ describe('sandbox 10: thread-flag guard (test suite only)', function() {
     let code = 0, out = '';
     try {
       // thread-flag-check: default on purpose (this test is about the missing flag)
-      execFileSync(process.execPath, [pathMod.join(__dirname, '..', '..', 'framework.js'), '--debug', '--bindAddr', '127.0.0.1', '--port', '9624'],
+      execFileSync(process.execPath, [pathMod.join(__dirname, '..', '..', 'framework.js'), '--debug', '--bindAddr', '127.0.0.1', '--port', String(testPort(9624))],
         {env: Object.assign({}, process.env, {COUNTINGHOUSE_TEST_REQUIRE_THREAD_FLAG: '1'}), stdio: 'pipe', timeout: 15000});
     } catch (e) { code = e.status; out = String(e.stderr); }
     assert.strictEqual(code, 3);
