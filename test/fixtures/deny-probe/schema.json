@@ -66,6 +66,22 @@
       "output": {
         "type": "object"
       }
+    },
+    "rename": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "remove": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }
