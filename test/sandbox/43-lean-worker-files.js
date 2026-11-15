@@ -41,6 +41,9 @@ const ALLOWED = [
   'lib/countinghouse-error.js',
   'lib/error-catalogue.js',
   'lib/cli-options.js',
+  // a call's own cap and timeout, held by its token while it runs (#233):
+  // tiny, and requires nothing but cli-options, already above
+  'lib/call-limits.js',
   'lib/call-address.js',
   'lib/resolve-shim.js',
   'lib/node-version.js',

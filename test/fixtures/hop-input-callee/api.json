@@ -45,6 +45,26 @@
             "output": {
               "schema": "/sinkService/bad/output"
             }
+          },
+          {
+            "name": "slow",
+            "description": "Answers after ms milliseconds (test/sandbox/54: a call's own timeout).",
+            "input": {
+              "schema": "/sinkService/slow/input"
+            },
+            "output": {
+              "schema": "/sinkService/slow/output"
+            }
+          },
+          {
+            "name": "forge",
+            "description": "Makes its worker's copy of the call limits huge, then answers n characters (test/sandbox/54).",
+            "input": {
+              "schema": "/sinkService/forge/input"
+            },
+            "output": {
+              "schema": "/sinkService/forge/output"
+            }
           }
         ]
       }
