@@ -470,7 +470,7 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
     const t = withCeiling((o) => { calls.push(o && o.cacheOnly === true); return o && o.cacheOnly && miss ? undefined : value; });
     const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
     miss = true;
-    await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CHANGED_MEANWHILE');
+    await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CEILING_CHANGED_MEANWHILE');
     assert.ok(calls.includes(true), 'the lock asked the cache only');
     assert.ok(history().some((h) => h.change === 'not applied (ceiling changed meanwhile)'), JSON.stringify(history()));
     miss = false;
@@ -478,7 +478,7 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
     const b = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
     value = trusted({maxOutputBytes: 64 * M});
     const changing = withCeiling((o) => (o && o.cacheOnly ? trusted({maxOutputBytes: 12 * M}) : value));
-    await refused(changing.confirm('maxOutputBytes', '16MiB', {requestState: b.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CHANGED_MEANWHILE');
+    await refused(changing.confirm('maxOutputBytes', '16MiB', {requestState: b.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CEILING_CHANGED_MEANWHILE');
     assert.strictEqual(options.maxOutputBytes, 8 * M);
   });
 
@@ -506,5 +506,45 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
     const e = await refused(t.set('maxOutputBytes', '12MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
     assert.doesNotMatch(e.message, /confirmed/i);
     assert.match(e.message, /maxOutputBytes/);
+  });
+});
+
+describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
+  const M = 1024 * 1024;
+  let dir;
+  let file;
+  let saved;
+  const refused = async (p, code) => {
+    try { await p; } catch (e) { assert.strictEqual(e.code, code, `${e.code}: ${e.message}`); return e; }
+    assert.fail(`expected ${code}`);
+  };
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20e-'));
+    file = path.join(dir, 'settings.json');
+    saved = options.maxOutputBytes;
+    options.maxOutputBytes = 8 * M;
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+  });
+  afterEach(() => { options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); });
+
+  it('the re-check at accept is for the client the form was staged for; another refuses', async () => {
+    let client = {name: 'claude-code', version: '2.1.323'};
+    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client}),
+      applyChange: async (st) => { options[st.name] = st.next; }});
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    client = {name: 'claude-code', version: '2.1.400'};
+    await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    assert.strictEqual(options.maxOutputBytes, 8 * M);
+  });
+
+  it('a ceiling changed while the user was asked says so, not that the setting changed', async () => {
+    let current = {state: 'none'};
+    const t = settingsTool.create({file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: [], packs: null}} : current),
+      mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    const e = await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CEILING_CHANGED_MEANWHILE');
+    assert.match(e.message, /ceiling/);
+    current = null;
   });
 });
