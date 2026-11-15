@@ -1,18 +1,22 @@
 // An install run by a spelling that isn't its real path (#272). On Windows,
 // a runtime installed under os.tmpdir() on GitHub's runner runs from
 // C:\Users\RUNNER~1\... (an 8.3 short name), while realpath gives the long
-// form; countinghouse's code roots were listed long only, so under enforce
+// form. countinghouse's code roots were listed long only, so under enforce
 // every module worker died loading countinghouse's own lazily required files
 // (ENOENT, realpath ...\lib\thread-info.js), and no module tool was listed.
-// Here a copy of the runtime is installed under os.tmpdir() as spelled (its
-// node_modules a junction to this checkout's) and a module loaded under
-// enforce must be listed and answer. Elsewhere the same copy runs as a plain
-// regression check: Node runs a POSIX main file by its real path.
+//
+// Here a copy of the runtime is reached through a junction (a symlink off
+// Windows) and run by that spelling, as Node keeps it with
+// --preserve-symlinks-main (a POSIX main file otherwise runs by its real
+// path). On Windows the copy is under os.tmpdir() as spelled, so a
+// short-name component is in play too. A module loaded under enforce must be
+// listed and answer.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
+const tmp = require('../helpers/test-tmp');
 
 const ROOT = path.join(__dirname, '..', '..');
 const MODULE = path.join(ROOT, 'test', 'fixtures', 'win-probe');
@@ -22,28 +26,35 @@ const WIN = process.platform === 'win32';
 describe('stdio 25: an install run by a spelling that isn\'t its real path (#272)', function() {
   this.timeout(180000);
   let base = null;
+  let links = [];
   let io = null;
   after(async () => {
     if (io != null) await io.stop();
+    // the links first, so the removal never follows one into the checkout
+    for (const l of links) { try { fs.unlinkSync(l); } catch (e) { try { fs.rmdirSync(l); } catch (e2) { /* gone */ } } }
     if (base != null) fs.rmSync(base, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
   });
 
-  it('under enforce a module loads and answers: countinghouse\'s own files stay its own', async () => {
-    // os.tmpdir() as it is spelled, never resolved
-    base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-spelled-'));
+  it('under enforce a module loads and answers: countinghouse\'s own files and dependencies stay its own', async () => {
+    // on Windows os.tmpdir() as it is spelled (never resolved); elsewhere test/.tmp
+    base = WIN ? fs.mkdtempSync(path.join(os.tmpdir(), 'ch-spelled-')) : tmp.mkdtemp('ch-spelled-');
+    const copy = path.join(base, 'copy');
+    for (const p of ['framework.js', 'package.json', 'bin', 'lib', 'pre-installed-packages']) fs.cpSync(path.join(ROOT, p), path.join(copy, p), {recursive: true});
+    fs.mkdirSync(path.join(copy, 'spec'));
+    fs.copyFileSync(path.join(ROOT, 'spec', 'schema.json'), path.join(copy, 'spec', 'schema.json'));
+    const nodeModules = path.join(copy, 'node_modules');
+    fs.symlinkSync(path.join(ROOT, 'node_modules'), nodeModules, 'junction');
     const install = path.join(base, 'install');
-    for (const p of ['framework.js', 'package.json', 'bin', 'lib', 'pre-installed-packages']) fs.cpSync(path.join(ROOT, p), path.join(install, p), {recursive: true});
-    fs.mkdirSync(path.join(install, 'spec'));
-    fs.copyFileSync(path.join(ROOT, 'spec', 'schema.json'), path.join(install, 'spec', 'schema.json'));
-    fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(install, 'node_modules'), 'junction');
+    fs.symlinkSync(copy, install, 'junction');
+    links = [install, nodeModules];
     const real = fs.realpathSync.native(install);
-    // what this run checks: on GitHub's windows-latest, a short-name spelling
-    if (WIN) console.log(`      install as spelled: ${install}${real !== install ? `; real: ${real}` : ' (its real path: no short name here)'}`);
+    assert.notStrictEqual(real, install, 'the install is run by a spelling that isn\'t its real path');
+    if (WIN) console.log(`      install as spelled: ${install}; real: ${real}`);
     const auth = path.join(base, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
     io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
       '--moduleDataPath', path.join(base, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'],
-    {env: {COUNTINGHOUSE_API_KEY: KEY}, entry: path.join(install, 'bin', 'countinghouse-stdio.js')});
+    {env: {COUNTINGHOUSE_API_KEY: KEY}, entry: path.join(install, 'bin', 'countinghouse-stdio.js'), nodeArgs: ['--preserve-symlinks', '--preserve-symlinks-main']});
     await io.request({...INITIALIZE, id: 1});
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
     const tool = await waitForTool(io, /win_probe_probeservice_probe$/, {deadlineMs: 60000});

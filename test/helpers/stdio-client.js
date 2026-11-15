@@ -37,9 +37,9 @@ function withoutRedisNoise(err, max = 4000) {
 // ipc: true opens the control channel's fd (packs in place, part 2):
 // io.control(msg) sends a request and resolves with the reply of its id.
 // entry: the stdio entry to run (default this checkout's), e.g. a copy
-// installed elsewhere (stdio 25)
-function startStdio(args, {env = {}, ipc = false, entry = ENTRY} = {}) {
-  const child = spawn(process.execPath, [entry, ...args], {env: {...process.env, ...env}, stdio: ipc ? ['pipe', 'pipe', 'pipe', 'ipc'] : ['pipe', 'pipe', 'pipe']});
+// installed elsewhere; nodeArgs: Node's own flags before it (stdio 25)
+function startStdio(args, {env = {}, ipc = false, entry = ENTRY, nodeArgs = []} = {}) {
+  const child = spawn(process.execPath, [...nodeArgs, entry, ...args], {env: {...process.env, ...env}, stdio: ipc ? ['pipe', 'pipe', 'pipe', 'ipc'] : ['pipe', 'pipe', 'pipe']});
   const io = {child, err: '', lines: []};
   if (ipc) {
     const replies = new Map();
