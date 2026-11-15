@@ -94,6 +94,16 @@ describe('stdio 23: subscriptions/listen, spawned (#231)', function() {
     const changed = messages().filter((m) => m.method === 'notifications/tools/list_changed');
     assert.ok(changed.every((m) => m.params != null && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 2), JSON.stringify(changed));
     assert.ok(!messages().some((m) => m.method === 'notifications/message'), 'nothing unasked');
+    // a second listen, cancelled: it is closed, and never answered (#238's review)
+    io.notify({jsonrpc: '2.0', id: 3, method: 'subscriptions/listen', params: {_meta: MODERN_META, notifications: {toolsListChanged: true}}});
+    assert.ok(await until(() => messages().some((m) => m.method === 'notifications/subscriptions/acknowledged' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 3)));
+    io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 3}});
+    await new Promise((r) => setTimeout(r, 300));
+    const before3 = messages().filter((m) => m.method === 'notifications/tools/list_changed' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 3).length;
+    const three = packVersion(home, 'ch-pack-three', 'tool_three', '1.0.0');
+    assert.strictEqual((await io.control({type: 'load', name: 'ch-pack-three', scenario: three})).ok, true);
+    assert.ok(await until(() => messages().filter((m) => m.method === 'notifications/tools/list_changed' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 2).length >= 2), 'the open listen hears the second load');
+    assert.strictEqual(messages().filter((m) => m.method === 'notifications/tools/list_changed' && m.params._meta['io.modelcontextprotocol/subscriptionId'] === 3).length, before3, 'the cancelled one hears nothing');
     const started = Date.now();
     io.child.stdin.end();
     assert.ok(await until(() => messages().some((m) => m.id === 2 && m.result != null)), 'no graceful end');
@@ -102,5 +112,6 @@ describe('stdio 23: subscriptions/listen, spawned (#231)', function() {
     assert.strictEqual(end.result._meta['io.modelcontextprotocol/subscriptionId'], 2);
     await io.exited;
     assert.ok(Date.now() - started < 10000, 'the listen did not hold the drain');
+    assert.ok(!messages().some((m) => m.id === 3), 'a cancelled listen is never answered');
   });
 });
