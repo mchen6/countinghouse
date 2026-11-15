@@ -429,9 +429,8 @@ refuses loosening the sandbox or turning automatic upgrades on; `packs` is
 the operator's allowlist of packs: when present, only those packs ever
 load, at start, in place and on install, whatever `settings.json` or the
 history say, and installing another is refused; `"conversation": false` refuses every
-loosening asked for in conversation (it takes effect once a client can
-confirm one in conversation, part 3's elicitation; until then every such
-loosening already ends at the terminal command). A value above it is
+loosening asked for in conversation, so no dialog is ever shown and each
+ends at the terminal command (below). A value above it is
 `SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
 Tightening is never refused by it. It is read once per process, and again
 when the file changes.
@@ -466,6 +465,85 @@ boundary: the user can write it, so nothing the ceiling enforces rests on
 it. And ch-local reads the ceiling with the runtime installed under its
 home (`app/node_modules/countinghouse`): whoever can replace that code is
 beyond any ceiling, as they are beyond the runtime itself.
+
+### Confirming a loosening in the client's dialog
+
+A loosening asked for in conversation could come from a prompt injected
+through a tool's result, not from the user. So `countinghouse_settings`
+never applies one on the model's word. A raised `maxOutputBytes` or
+`requestTimeout`, or a pack turned on, is either confirmed by the user in
+their client's own dialog (an MCP elicitation form) or refused with the
+`ch-local` command the user runs at a terminal. Loosening the sandbox or
+turning on automatic upgrades is terminal only.
+
+A dialog is shown only when all of these hold:
+
+- **A tested client.** The client's name and version are inside a range on
+  the tested-client list (`lib/elicitation-clients.json`). A range names
+  exactly the versions tested, with no open range, so a new version gets no
+  dialog until it is re-tested. The list ships empty: until the
+  maintainer's hand test before release
+  ([`docs/development/elicitation-hand-test.md`](development/elicitation-hand-test.md))
+  adds the first range, no client sees a dialog. After that, the automated
+  re-test of each new Claude Code version (not built yet) will open the pull
+  request that adds its range.
+- **The request declares form elicitation.** The capability is read from
+  the request itself, never inferred from earlier ones.
+- **Nothing in the client's own configuration could answer the dialog.**
+  Before every dialog the runtime asks ch-local, which scans the client's
+  configuration (ch-local's `docs/development/settings.md`). Any
+  Elicitation or ElicitationResult hook in any scope, whatever its matcher,
+  means no dialog. So do a plugin a project brings, an installed plugin's
+  hook, a flag on the client's command line not known to be safe, and an
+  environment variable naming a plugin or settings source the scan does not
+  read. Anything it cannot read also means no dialog. A hook seen once holds
+  for the whole start, and the scan runs again before every form. No answer
+  from ch-local within 5 s is no.
+- **The operator's ceiling allows it,** and does not set
+  `"conversation": false`.
+- **Not declined or ignored.** A decline (a cancel counts as one) stops
+  dialogs for that setting until the next start, every pack counting as
+  one setting. So do two dialogs left unanswered. A start shows at most
+  three dialogs.
+
+The dialog has one checkbox and no default. Its text is built from the
+change alone, naming the current value (and a pack's version, from
+`packs.json`); no text from the model appears in it. The model's arguments
+cannot carry the answer: `requestState` and the user's answer are read only
+from the request's own parameters. `requestState` carries only a random
+nonce and an HMAC, under a key held in memory for this start, binding the
+MCP session and the exact change; it is single use and expires after
+120 s. Only an explicit accept applies the change. The client's conditions,
+the current value, the ceiling and the decline lock are all checked again
+first, the history line is written before the change, and `settings.json` is
+never written: the change ends when the client restarts countinghouse. What
+was applied, or could not be, is told to the user as a notice (on the next
+result of any tool, and as an MCP `notifications/message`).
+
+What this does not cover:
+
+- **MCP does not promise that a person answers the dialog.** The
+  specification lets a client answer an elicitation as it likes. The tested
+  list and the configuration scan narrow that to clients and set-ups where
+  a person has been seen to answer it; they do not make it a guarantee.
+- **A client that lies about its name.** The list bounds honest, untested
+  clients, not spoofers. A script that starts its own runtime and answers
+  its own dialog loosens only that runtime: "this start" is one runtime
+  process.
+- **The interactive-session check** (`CLAUDE_CODE_ENTRYPOINT=cli` and
+  `CLAUDECODE=1`) stops honest unattended hosts only: a session nested under
+  a shell inherits them.
+- **Sources the scan does not know.** The scan follows the known parsing and
+  sources of the Claude Code version tested. What a later version adds is
+  covered by the exact-version list and the automated re-test's diff of its
+  configuration surface, not by the scan itself. Hooks in a skill's,
+  subagent's or command's front matter are found by a plain-text scan
+  (any mention of the events, or anything that could spell one without the
+  plain word, means no dialog), not by parsing.
+- **The user's full fix** is Claude Code's managed setting
+  `allowManagedHooksOnly`, which stops hooks outside managed settings from
+  loading at all. The scan does not rely on it: a project hook still means
+  no dialog.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
