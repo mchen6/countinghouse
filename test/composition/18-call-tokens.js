@@ -932,6 +932,24 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       assert.strictEqual(caller.refusals.length, 1, 'an ended call\'s bytes were still held');
     });
 
+    // Round 3's review: a held invoke past its deadline is released when its
+    // caller next needs the room, not only at the 60 s sweep, so it cannot
+    // lock the caller out of its own share meanwhile.
+    it('(#202-r3-1) a caller whose held invokes passed their deadline holds a new one at once, before any sweep', async () => {
+      cli.setOptions({workerThread: true, mcpToolCallCost: 1, maxOutputBytes: 4 * 1024 * 1024});
+      const big = () => bytes({input: {s: 'x'.repeat(4 * 1024 * 1024 - 64)}});
+      for (let i = 0; i < 4; i++) {
+        broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 80 + i, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH,
+          inputBytes: big(), timeLeftMs: 30}, TARGET), caller);
+      }
+      assert.deepStrictEqual(caller.refusals, [], 'four fill the 16 MiB share');
+      await sleep(60);   // past their deadline; their tokens still live, and no sweep has run
+      broker.handleAnnouncement(Object.assign({channel: pair(), invokeId: 84, token: tokens().issue(ENTRY(caller.workerId)), epoch: EPOCH,
+        inputBytes: big()}, TARGET), caller);
+      assert.deepStrictEqual(caller.refusals, [], 'the caller was locked out of its own share by invokes past their deadline');
+      assert.ok(broker.announced.has(`${pair()}/84`));
+    });
+
     // Round 3 (3, 4): an invoke's id is an integer in range, on the
     // announcement and on the match; the id delivered is the announced one.
     it('(#202-r3-3/4) an id that is not an integer in range is not held, and a match by one is refused; the announced id is delivered', async () => {
