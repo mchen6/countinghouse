@@ -62,6 +62,32 @@ describe('session-transport 04: the run directory (#248 review)', function() {
     assert.ok(!fs.existsSync(path.join(daemon, 'runtime.lock')));
   });
 
+  it('two starts finding one dead holder: only one takes the lock', () => {
+    const lockFile = path.join(daemon, 'runtime.lock');
+    fs.writeFileSync(lockFile, JSON.stringify({pid: 2147483646, at: new Date().toISOString()}), {mode: 0o600});
+    // the race: the second start has read the dead holder; before it takes
+    // the lock over, the first start takes it over and holds a new one
+    let first = null;
+    const second = runDir.takeStartLock(daemon, {beforeTakeover: () => {
+      if (first == null) first = runDir.takeStartLock(daemon);
+    }});
+    assert.ok(first != null && first.ok, JSON.stringify(first));
+    assert.strictEqual(second.ok, false, 'the second start must not take the first one\'s live lock');
+    const held = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+    assert.strictEqual(held.pid, process.pid, 'the first start\'s lock is still in place');
+    assert.deepStrictEqual(fs.readdirSync(daemon).filter((n) => /stale/.test(n)), [], 'nothing left aside');
+    first.release();
+  });
+
+  it('a lock that is a symlink is not followed', () => {
+    const target = path.join(home, 'elsewhere.json');
+    fs.writeFileSync(target, JSON.stringify({pid: process.pid}));
+    fs.symlinkSync(target, path.join(daemon, 'runtime.lock'));
+    const r = runDir.takeStartLock(daemon);
+    assert.strictEqual(r.ok, false, 'a symlinked lock is never taken as ours or over');
+    assert.strictEqual(JSON.parse(fs.readFileSync(target, 'utf8')).pid, process.pid, 'its target is untouched');
+  });
+
   it('a stale socket nothing answers on is removed; a live one is in use', async() => {
     const p = path.join(daemon, 's');
     const srv = net.createServer(() => {});
