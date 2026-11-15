@@ -1,6 +1,6 @@
 # MCP 2026-07-28 completeness: a thin layer over the module contract
 
-Status: revision 2, 2026-11-15, against countinghouse master af9487a4. Revision 2 applies the reviewer's amendments: cancelling a call (section 13) and output schemas of any JSON value (section 14) move in, `x-mcp-header` is refused by validate, the result store's default under Redis is smaller, a handler's own progress is reported, and the breakdown is re-totalled. No code yet.
+Status: approved by the maintainer, 2026-11-15 (see "The maintainer's decisions"). Revision 2, 2026-11-15, against countinghouse master af9487a4. Revision 2 applies the reviewer's amendments: cancelling a call (section 13) and output schemas of any JSON value (section 14) move in, `x-mcp-header` is refused by validate, the result store's default under Redis is smaller, a handler's own progress is reported, and the breakdown is re-totalled. No code yet.
 It covers countinghouse (the gateway, the validator, the store) and, for section 10 only, ch-local (the shim relay and the acceptance tests).
 Issues: #239 (tasks extension), #232 (closed: what release 1 did before this), #231 (subscriptions/listen), #229 (eras).
 
@@ -670,19 +670,17 @@ A notice for an unknown id, a finished request or a request of another kind is i
 
 **Tasks.** A task result's schema hash is taken over the schema as advertised to the era that reads it, so the stamp carries the era.
 
-## Open questions for the maintainer
+## The maintainer's decisions (2026-11-15)
 
-1. **Which calls become tasks** (#239's open question). Recommended: the action declares `longRunning: true`. It's explicit, reviewed at install, and consistent with everything else here. The alternatives were an operator setting naming tools, and a timeout heuristic, which the extension's "durably created before the answer" rules out mid-call.
-2. **Declared questions or free text.** Recommended: declared in `api.json`, called as `ctx.ask(name, values)`, so the operator reviews every sentence a module can put in front of a user. The alternative, `ctx.ask(message, schema)`, is simpler for authors and lets a module write any text in the client's dialog at call time.
-3. **What the new paths cost a caller.** Recommended:
-   - a module resource read is billed as a call of its action;
-   - a completion action is counted and rate limited, and free;
-   - a stored-result read is free by default, with an operator price (`--resourceReadCost`).
-4. **Progress from one long handler.** Recommended: **yes, in release 1** (M21, half a day, in the totals). A single handler that takes a minute would otherwise say nothing, which is a gap. It isn't a new API: it's `ctx.job.progress`, the call a task's handler already has, now reported on the call's stream outside a task too. The one thing to accept is that `ctx.job` stops being null outside a task (section 6), which changes how a handler asks whether it's a task.
-5. **A question from inside a task.** This is a gap in the tasks extension as built here: the extension defines `input_required` for a task and `tasks/update` to answer it, and without this a `longRunning` action can never ask.
-   - **What it takes.** A run that ends at `ctx.ask` leaves the task `input_required` with its question. `tasks/update` delivers the answer, which is validated and kept with the task. The job then runs again from the top, under the same "ask first, act after" rule. There's no `requestState`: the state is the server's, keyed by the task.
-   - **The cost: 3.5 days** (M22), not the 2.5 my first draft said. Both job runners need a paused state and a second run that doesn't count as a retry (1.5), the gateway needs the two methods' new paths and the task's alias to its current job (1), and it's tested on both stores and on the shared runtime (1).
-   - **Recommended:** include it if the date allows, and otherwise make it the first thing after release 1. It's the last item I'd add and the first I'd drop, since a `longRunning` action can ask before it becomes long: validate can't check that either, but the docs can say it.
+The draft's five open questions were answered by the maintainer on 2026-11-15:
+
+1. **Which calls become tasks:** the action declares `longRunning: true`, as recommended.
+2. **Module questions** are declared in `api.json` and called as `ctx.ask(name, values)`, as recommended.
+3. **Cost:** a module resource read is billed as a call of its action; a completion action is counted and rate limited, and free; a stored-result read is free by default, with an operator price (`--resourceReadCost`), as recommended.
+4. **Progress from one long handler** is in release 1 (M21), as recommended.
+5. **A question from inside a task** is in release 1 (M22, 3.5 days).
+
+**The date.** The whole spec is built for release 1, M22 included (48.5 implementer-days). The maintainer accepted the release candidate's slip of about three and a half weeks over taking any cut; the cut list above stays as the order to use if the date must move again.
 
 ## Spec details not yet verified
 
