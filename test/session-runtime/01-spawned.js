@@ -118,7 +118,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     a.c.end();
   });
 
-  it('until per-session settings land, a session reads settings but changes none, nor sets the log level, nor reaches tasks', async() => {
+  it('until per-session settings land, a session reads settings but changes none, nor reaches tasks; its log level is its own (B2 Task 3)', async() => {
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
     const secret = await listening(r);
@@ -146,10 +146,14 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       assert.ok(l.error != null, `${method}: ${JSON.stringify(l)}`);
       assert.match(l.error.message, /shared runtime/);
     }
-    // a modern request's logging/setLevel is gone in 2026-07-28; either way
-    // a session gets an error, never a changed level
+    // a modern request's logging/setLevel is gone in 2026-07-28; a legacy
+    // session's sets its own level (B2 Task 3: lib/notices.js, per session)
     const level = await request(a.c, 'logging/setLevel', {level: 'debug'});
-    assert.ok(level.error != null, JSON.stringify(level));
+    assert.ok(level.error != null && level.error.code === -32601, JSON.stringify(level));
+    const legacy = await requestLegacy(a.c, 'logging/setLevel', {level: 'warning'});
+    assert.deepStrictEqual(legacy.result, {}, JSON.stringify(legacy));
+    const bad = await requestLegacy(a.c, 'logging/setLevel', {level: 'loud'});
+    assert.ok(bad.error != null && bad.error.code === -32602, JSON.stringify(bad));
     a.c.end();
   });
 
@@ -175,6 +179,26 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.notStrictEqual(a.welcome.session, b.welcome.session);
     const [ra, rb] = await Promise.all([request(a.c, 'tools/list'), request(b.c, 'tools/list')]);
     assert.ok(ra.result != null && rb.result != null);
+    a.c.end();
+    b.c.end();
+  });
+
+  it('a notice from ch-local reaches each open session once, as its notifications/message, at the level it set (B2 Task 3)', async() => {
+    r = runtime(home);
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    // b asks for warning and above: no notification, the next result's line still
+    assert.deepStrictEqual((await requestLegacy(b.c, 'logging/setLevel', {level: 'warning'})).result, {});
+    const reply = await r.control({type: 'notice', module: null, text: 'ch-pack-x removed'});
+    assert.ok(reply != null && reply.error == null, JSON.stringify(reply));
+    const m = await shim.readM(a.c, 10000);
+    assert.ok(m != null && m.header == null, 'a notification has no header');
+    assert.deepStrictEqual(JSON.parse(m.line.toString('utf8')),
+      {jsonrpc: '2.0', method: 'notifications/message', params: {level: 'notice', logger: 'countinghouse', data: 'ch-pack-x removed'}});
+    // b asked for warning: nothing is sent to it
+    assert.strictEqual(await shim.readM(b.c, 1500), null, 'no notification for b');
+    assert.strictEqual(await shim.readM(a.c, 1500), null, 'a got it once');
     a.c.end();
     b.c.end();
   });
