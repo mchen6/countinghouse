@@ -12,7 +12,7 @@ const setDeviceTimer = Session.prototype.setDeviceTimer;
 Session.prototype.setDeviceTimer = function(device, callback) {
   // a client's own call (an HTTP request), never a hop's session
   if (this.req != null && Object.prototype.hasOwnProperty.call(map, this.actionName)) {
-    this.limits = callLimits.check(Object.assign({}, callLimits.defaults(), map[this.actionName]));
+    callLimits.override(this, Object.assign({}, callLimits.defaults(), map[this.actionName]));
   }
   return setDeviceTimer.call(this, device, callback);
 };

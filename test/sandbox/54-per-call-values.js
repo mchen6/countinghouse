@@ -7,7 +7,7 @@
 // call's values. Each site below is shown holding a call to its own value,
 // tighter than the global one.
 //
-// Port 9754 is used nowhere else in the sandbox folder.
+// Port 9792, in B's block (test/ports.md).
 const assert = require('assert');
 const path = require('path');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
@@ -28,16 +28,20 @@ describe('sandbox 54: lib/call-limits.js and its holders, server-free', () => {
     assert.deepStrictEqual(callLimits.of(null), {maxOutputBytes: 1234, requestTimeout: 5678});
     assert.deepStrictEqual(callLimits.of({limits: {maxOutputBytes: 10, requestTimeout: 20}}), {maxOutputBytes: 10, requestTimeout: 20});
     for (const bad of [{maxOutputBytes: 0, requestTimeout: 20}, {maxOutputBytes: 10}, {maxOutputBytes: '10', requestTimeout: 20}, 'x']) {
-      assert.deepStrictEqual(callLimits.of({limits: bad}), {maxOutputBytes: 1234, requestTimeout: 5678}, JSON.stringify(bad));
+      assert.strictEqual(callLimits.check(bad), null, JSON.stringify(bad));
     }
     assert.ok(Object.isFrozen(callLimits.of(null)));
   });
 
-  it('a session starts with the global values; its timer takes its own timeout', () => {
+  it('a session starts with no override: the global values, read at each check, so a live tightening reaches it; its timer takes its own timeout', () => {
     const Session = require('../../lib/session');
     const s = new Session(null, null, 'u', 'k', 0, 'd', 0, () => {});
-    assert.deepStrictEqual(s.limits, callLimits.defaults());
-    s.limits = {maxOutputBytes: 1, requestTimeout: 30};
+    assert.strictEqual(s.limits, null);
+    options.maxOutputBytes = 9000;
+    assert.strictEqual(callLimits.of(s).maxOutputBytes, 9000);
+    options.maxOutputBytes = 4000;   // a tightening while the call runs
+    assert.strictEqual(callLimits.of(s).maxOutputBytes, 4000);
+    callLimits.override(s, {maxOutputBytes: 1, requestTimeout: 30});
     const started = Date.now();
     return new Promise((resolve) => {
       s.callback = () => { assert.ok(Date.now() - started < 1000, 'expired at its own 30 ms'); resolve(); };
@@ -45,14 +49,30 @@ describe('sandbox 54: lib/call-limits.js and its holders, server-free', () => {
     });
   });
 
-  it('a token carries its call\'s values; a hop\'s token with none takes its parent\'s', () => {
+  it('a token carries its call\'s override; a hop\'s is never looser than its parent\'s, field by field; none is null', () => {
     const parent = callTokens.issue({billingKey: 'k', workerId: 1, limits: {maxOutputBytes: 100, requestTimeout: 200}});
     const child = callTokens.issue({billingKey: 'k', workerId: 2, parent});
-    const e = callTokens.resolve(child, {workerId: 2});
-    assert.deepStrictEqual(e.limits, {maxOutputBytes: 100, requestTimeout: 200});
+    assert.deepStrictEqual(callTokens.resolve(child, {workerId: 2}).limits, {maxOutputBytes: 100, requestTimeout: 200});
+    const own = callTokens.issue({billingKey: 'k', workerId: 4, parent, limits: {maxOutputBytes: 500, requestTimeout: 50}});
+    assert.deepStrictEqual(callTokens.resolve(own, {workerId: 4}).limits, {maxOutputBytes: 100, requestTimeout: 50}, 'the tighter of each');
     const plain = callTokens.issue({billingKey: 'k', workerId: 3});
-    assert.deepStrictEqual(callTokens.resolve(plain, {workerId: 3}).limits, callLimits.defaults());
-    for (const t of [parent, child, plain]) callTokens.drop(t);
+    assert.strictEqual(callTokens.resolve(plain, {workerId: 3}).limits, null);
+    assert.deepStrictEqual(callLimits.of(callTokens.resolve(plain, {workerId: 3})), callLimits.defaults());
+    for (const t of [parent, child, own, plain]) callTokens.drop(t);
+  });
+
+  it('a malformed override is refused where it is set; one present on a holder anyway fails closed', () => {
+    for (const bad of [{maxOutputBytes: 0, requestTimeout: 20}, {maxOutputBytes: 10}, {maxOutputBytes: '10', requestTimeout: 20}, 'x']) {
+      assert.throws(() => callLimits.override({}, bad), /an override is/, JSON.stringify(bad));
+    }
+    assert.throws(() => callLimits.of({limits: {maxOutputBytes: -1, requestTimeout: 5}}), /malformed/);
+  });
+
+  it('the call\'s timer is clamped as setTimeout needs (past 2^31-1 ms it would fire at once)', () => {
+    const Timer = require('../../lib/timer');
+    const t = new Timer(2 ** 40);
+    assert.strictEqual(t.timeout._idleTimeout, 2147483647);
+    clearTimeout(t.timeout);
   });
 
   it('a handler\'s wait for its composition verdict is bounded by its call\'s own timeout (by its token)', () => {
@@ -75,7 +95,7 @@ describe('sandbox 54: lib/call-limits.js and its holders, server-free', () => {
   });
 });
 
-const PORT = testPort(9754);
+const PORT = testPort(9792);
 const KEY = 'hop-input-key';
 const AUTH = path.join(__dirname, '48-auth.json');
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');
