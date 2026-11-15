@@ -36,6 +36,13 @@ describe('stdio 18: the tested-client allowlist for elicitation (part 3 P2)', ()
     assert.ok(clients.ALLOWLIST.every((e) => Object.prototype.hasOwnProperty.call(saved.find((x) => x.name === e.name), 'versionCeiling')), 'every entry has one');
   });
 
+  it('a malformed upper bound fails closed', () => {
+    for (const ceiling of ['3', '3.0', 'v3.0.0', 'x']) {
+      withFloor('2.0.0', ceiling);
+      assert.deepStrictEqual(may({name, version: '5.1.0'}), {ok: false, why: 'version above the tested range'}, ceiling);
+    }
+  });
+
   it('below the floor, or a version that is not plain major.minor.patch, may not', () => {
     withFloor('2.0.0');
     for (const version of ['1.9.9', '2', '2.0', 'v2.0.0', '2.0.0-beta.1', '2.0.0+x', '', null, 20, '02.0.0x']) {

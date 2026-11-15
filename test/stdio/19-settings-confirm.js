@@ -23,7 +23,7 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     assert.match(requestState, /^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
     const ok = c.verify(requestState, retry);
     assert.strictEqual(ok.ok, true);
-    assert.deepStrictEqual(Object.assign({}, ok.staged, {at: undefined}), Object.assign({}, change, {at: undefined}));
+    assert.deepStrictEqual(Object.assign({}, ok.staged, {at: undefined}), Object.assign({}, change, {version: null, at: undefined}));
     assert.deepStrictEqual(c.verify(requestState, retry), {ok: false, code: 'SETTING_CONFIRMATION_USED'});
   });
 
@@ -105,6 +105,23 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     }
   });
 
+  it('an unanswered form replaced after its 120 s counts as an expiry', () => {
+    c.stage(change);
+    clock += 120001;
+    c.stage(change);
+    clock += 120001;
+    c.stage(change);
+    assert.strictEqual(c.declined('maxOutputBytes'), true, 'two left unanswered lock the kind');
+  });
+
+  it('check(): the state verified without using it up', () => {
+    const {requestState} = c.stage(change);
+    assert.strictEqual(c.check(requestState, retry).ok, true);
+    assert.strictEqual(c.check(requestState, retry).ok, true);
+    assert.strictEqual(c.verify(requestState, retry).ok, true);
+    assert.strictEqual(c.check(requestState, retry).code, 'SETTING_CONFIRMATION_USED');
+  });
+
   it('three forms a start: each staging counts one', () => {
     assert.strictEqual(c.formsLeft(), 3);
     c.stage(change);
@@ -112,7 +129,7 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     assert.strictEqual(c.formsLeft(), 1);
     c.stage(change);
     assert.strictEqual(c.formsLeft(), 0);
-    assert.throws(() => c.stage(change), /no forms left/);
+    assert.strictEqual(c.stage(change), null, 'none left: the caller refuses');
   });
 
   it('the staged change holds the values given, not the objects (a caller changing its own copy later changes nothing)', () => {
