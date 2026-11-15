@@ -47,7 +47,7 @@ if (isMainThread && process.env.CH_TEST_SESSION_PROBE) {
   callTokens.issue = function(o) {
     const token = issue.call(this, o);
     const e = callTokens.resolve(token, {workerId: o.workerId});
-    note({kind: 'issue', hop: o.parent != null, ours: e != null && e.session === sessionOf(), none: e != null && e.session == null});
+    note({kind: 'issue', hop: o.parent != null, job: o.jobID != null, ours: e != null && e.session === sessionOf(), none: e != null && e.session == null});
     return token;
   };
 }
