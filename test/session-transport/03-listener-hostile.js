@@ -174,10 +174,44 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       const a = await shim.attach(sock, secret);
       assert.strictEqual(registry.get(a.welcome.session), null);
       assert.deepStrictEqual(registry.all(), []);
+      // reach the unsettled session through the registry's own table, as
+      // the listener holds it, and use B's surface on it
+      const s = registry._byId.get(a.welcome.session);
+      s.notify({jsonrpc: '2.0', method: 'notifications/message'});
+      s.record({kind: 'value'});
+      s.forget();
+      const asked = s.askConditions();
+      assert.strictEqual(await a.c.next(null, 200), null, 'nothing written to an unsettled connection');
       a.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: null, token: null});
-      await a.c.json('C');
+      assert.deepStrictEqual(await a.c.json('C'), {op: 'settled'});
+      assert.strictEqual(await asked, null);
       assert.strictEqual(registry.get(a.welcome.session), opened[0]);
       a.c.end();
+    });
+
+    it('a welcomed connection that never sends client is closed at the deadline, freeing its slot', async() => {
+      await start({listener: {welcomedDeadlineMs: 300, maxSessions: 1}});
+      const a = await shim.attach(sock, secret);
+      assert.ok(a.welcome != null);
+      assert.ok(await until(() => a.c.closed(), 2000), 'closed at the deadline');
+      const b = await shim.session(sock, secret);
+      assert.deepStrictEqual(b.settled, {op: 'settled'}, 'the slot is free again');
+      b.c.end();
+    });
+
+    it('a resumed session dropping before it settles emits detach once', async() => {
+      await start();
+      const a = await shim.session(sock, secret);
+      const s = opened[0];
+      const detaches = [];
+      s.on('detach', () => detaches.push(1));
+      a.c.end();
+      await until(() => detaches.length === 1);
+      const b = await shim.attach(sock, secret, {resume: a.welcome.resumeToken});
+      assert.strictEqual(b.welcome.session, s.id);
+      b.c.end();
+      await tick(150);
+      assert.strictEqual(detaches.length, 1, 'no second detach without an attach between');
     });
 
     it('a replay is taken once per connection, and one of more than 64 entries closes', async() => {
@@ -281,6 +315,32 @@ describe('session-transport 03: the listener against hostile peers (#245 review)
       assert.strictEqual(JSON.parse(big.line).id, null);
       a.c.end();
     });
+  });
+
+  it('a refused connection stays in the pre-auth count until it is gone, so evict-oldest still reaches it', async() => {
+    await start({listener: {preAuthMax: 64, preAuthDeadlineMs: 10000}});
+    const net = require('net');
+    const conns = [];
+    for (let i = 0; i < 80; i++) {
+      const c = net.createConnection({path: sock, allowHalfOpen: true});
+      let closed = false;
+      c.on('close', () => { closed = true; });
+      c.on('error', () => {});
+      c.on('data', () => {});
+      await new Promise((r) => c.once('connect', r));
+      c.write(frames.encode('H', JSON.stringify({protocol: 2, nc: handshake.newChallenge().toString('base64')})));
+      conns.push({c, closed: () => closed});
+    }
+    // within the 1 s grace, the server holds at most 64: the oldest were
+    // evicted (counted server side: a half-open client sees no close)
+    await tick(300);
+    const held = await new Promise((r) => listener.server.getConnections((e, n) => r(n)));
+    assert.ok(held <= 64, `${held} held`);
+    for (const x of conns) x.c.destroy();
+  });
+
+  it('a maxToRuntime that is not a non-negative integer is refused when the listener is made', () => {
+    assert.throws(() => createListener({path: '/nonexistent/s', secret: Buffer.alloc(32), registry: createRegistry(), maxToRuntime: NaN, maxToShim: 1 << 20, onMessage: () => {}}), /maxToRuntime/);
   });
 
   it('a cap that is not a non-negative integer is refused when the decoder is made', () => {
