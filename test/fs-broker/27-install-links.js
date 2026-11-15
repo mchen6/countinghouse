@@ -9,7 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {execFileSync} = require('child_process');
-const {linkLocations} = require('../../lib/fs-broker/install-links');
+const {linkLocations, walkLinks} = require('../../lib/fs-broker/install-links');
 const {createNamespace} = require('../../lib/fs-broker/namespace');
 const {mkdtemp} = require('../helpers/test-tmp');
 
@@ -85,18 +85,38 @@ describe('fs-broker 27: the links an install is reached through', () => {
     assert.deepStrictEqual(linkLocations(path.join(a, 'install')), [a, b]);
   });
 
-  // A name that is not there ends the walk: nothing is reached through what
-  // comes after it. Any other failure is the caller's to see: a list cut
-  // short in silence would leave a link unprotected.
-  it('a missing name ends the walk with what it found; any other failure is thrown', () => {
+  // A name that is not there, or that this process may not reach (a
+  // directory it cannot search), ends the walk: the runtime reaches nothing
+  // through what comes after it. The walk says it stopped short, so its
+  // answer is not kept as the path's last word (the name may appear later,
+  // as a link). Any other failure is the caller's to see: a list cut short
+  // in silence would leave a link unprotected.
+  it('a name that is missing or cannot be reached ends the walk, said as incomplete; any other failure is thrown', () => {
     const install = link(dir('copy'), 'install');
-    assert.deepStrictEqual(linkLocations(path.join(install, 'not', 'there')), [install]);
+    assert.deepStrictEqual(walkLinks(install), {places: [install], complete: true});
+    assert.deepStrictEqual(walkLinks(path.join(install, 'not', 'there')), {places: [install], complete: false});
     const failing = (code) => () => { throw Object.assign(new Error(code), {code}); };
     const real = {lstatSync: fs.lstatSync, readlinkSync: fs.readlinkSync, realpathSync: fs.realpathSync.native};
-    for (const code of ['ERR_ACCESS_DENIED', 'EIO', 'EACCES']) {
+    for (const code of ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM']) {
+      assert.deepStrictEqual(walkLinks(install, Object.assign({}, real, {readlinkSync: failing(code)})), {places: [install], complete: false}, code);
+      assert.deepStrictEqual(linkLocations(install, Object.assign({}, real, {lstatSync: failing(code)})), [], code);
+    }
+    for (const code of ['ERR_ACCESS_DENIED', 'EIO', 'ELOOP']) {
       assert.throws(() => linkLocations(install, Object.assign({}, real, {lstatSync: failing(code)})), {code}, code);
       assert.throws(() => linkLocations(install, Object.assign({}, real, {readlinkSync: failing(code)})), {code}, code);
     }
+  });
+
+  // In this process (the install and the start file are mocha's own): a
+  // configured path whose end is not there yet is asked again at the next
+  // spawn, so a link that appears there later is seen without a restart.
+  it('a path that did not resolve is walked again: a link made later on it is seen', () => {
+    const broker = require('../../lib/fs-broker');
+    const options = {modulePath: dir('modules'), moduleDataPath: dir('data'), authConfigPath: path.join(base, 'auth.json'),
+      deviceConfigPath: path.join(base, 'devices'), modulePolicy: path.join(base, 'later', 'policy.json')};
+    assert.ok(!broker.protectedLinks(options).some((p) => p.startsWith(base)), 'nothing there yet');
+    const later = link(dir('elsewhere'), 'later');
+    assert.ok(broker.protectedLinks(options).includes(later), JSON.stringify(broker.protectedLinks(options)));
   });
 
   // What the protection is for. The install is run as <base>/install, a
@@ -202,6 +222,39 @@ describe('fs-broker 27: the links an install is reached through', () => {
       assert.ok(!seen.protectedPaths.includes(dataLink), JSON.stringify(seen.protectedPaths));
     });
 
+    it('a --loadModule root given through a link: the link is known', () => {
+      const moduleLink = outLink(outDir('store', 'mods'), 'links', 'ml');
+      const withLocal = Object.assign({}, options, {localModulePath: [path.join(moduleLink, 'weather')]});
+      const seen = run([script(ROOT, 'links-print.js'), JSON.stringify(withLocal)], []);
+      assert.ok(seen.links.includes(moduleLink), JSON.stringify(seen.links));
+    });
+
+    // The countinghouse launcher is a shell script that finds itself by its
+    // real path and runs framework.js by it, so Node never sees the link the
+    // operator's command went through. It says how it was started.
+    posixIt('the launcher tells the runtime the path it was started by; that path\'s links are known', () => {
+      // the launcher script itself, under another name (the suite's port
+      // guard takes a spawn of the real one for a server start), reached
+      // through a link: <out>/via leads to <out>/tool
+      const real = path.join(outDir('tool', 'bin'), 'ch-launcher');
+      fs.copyFileSync(path.join(ROOT, 'bin', 'countinghouse'), real);
+      fs.chmodSync(real, 0o755);
+      const via = outLink(path.join(out, 'tool'), 'via');
+      const launcher = path.join(via, 'bin', 'ch-launcher');
+      // a stand-in node, first on PATH, that prints what the launcher handed it
+      const stub = outDir('stub');
+      fs.writeFileSync(path.join(stub, 'node'), '#!/bin/sh\nprintf "%s\\n" "$COUNTINGHOUSE_STARTED_FROM"\n', {mode: 0o755});
+      const env = Object.assign({}, process.env, {PATH: `${stub}:/usr/bin:/bin`});
+      const said = (cmd, cwd) => execFileSync(cmd, [], {encoding: 'utf8', env, cwd, timeout: 20000}).trim().split('\n').pop();
+      assert.strictEqual(said(launcher, out), launcher, 'as it was named, not its real path');
+      assert.strictEqual(path.resolve(said('./ch-launcher', path.dirname(real))), real, 'a relative name is made absolute');
+      // and the runtime walks it: started by its real path, told the named one
+      const seen = JSON.parse(execFileSync(process.execPath, [script(ROOT, 'links-print.js'), JSON.stringify(options)],
+        {encoding: 'utf8', timeout: 60000, env: Object.assign({}, process.env, {COUNTINGHOUSE_STARTED_FROM: launcher})}));
+      assert.strictEqual(seen.install, ROOT);
+      assert.ok(seen.links.includes(via), `${via}: ${JSON.stringify(seen.links)}`);
+    });
+
     // Without --preserve-symlinks Node runs the main file by its real path,
     // so the install has no link in it; the operator's command still goes
     // through one (a "current" link, npm's bin link), and whoever repoints
@@ -241,15 +294,34 @@ describe('fs-broker 27: the links an install is reached through', () => {
     // it could not find the links itself; the parent's lists, one a path,
     // reach it with the real paths (lib/hardened-launch.js precompute and
     // relaunch).
-    it('--hardened: the relaunched runtime has the links its parent found, the install\'s and each configured path\'s', () => {
+    it('--hardened: the relaunched runtime has the links its parent found, for the install, the start file and each configured path', () => {
       // read grants: the spelling it is loaded by, the checkout, and its
       // dependencies where a worktree links them in from elsewhere
       const grants = [out, ROOT, fs.realpathSync.native(path.join(ROOT, 'node_modules'))];
-      const seen = run([script(spelled, 'relaunch-links.js'), JSON.stringify(options)].concat(grants));
+      const started = script(spelled, 'relaunch-links.js');
+      // a spawn's own paths: a throwaway inside the server's data path (a
+      // validation's), and a policy file the server was not started with
+      const stray = path.join(out, 'stray', 'policy.json');
+      const spawn = Object.assign({}, options, {moduleDataPath: path.join(options.moduleDataPath, '.validate', '0123456789abcdef'), modulePolicy: stray});
+      const seen = run([started, JSON.stringify(options), JSON.stringify(spawn)].concat(grants));
       assert.notStrictEqual(seen.lstatAboveGrants, 'allowed', 'the relaunched process may not look above its grants');
+      // the relaunch itself found them (nothing ran before it but the options)
       assert.deepStrictEqual(seen.handed[spelled], [p, inner], JSON.stringify(seen.handed));
+      assert.deepStrictEqual(seen.handed[started], [p, inner], 'the start file, as named');
       assert.deepStrictEqual(seen.handed[options.moduleDataPath], [dataLink], JSON.stringify(seen.handed));
+      assert.ok(!Object.keys(seen.handed).some((k) => k.includes('.validate')), 'a spawn\'s throwaway is no key');
       for (const place of [p, inner, dataLink]) assert.ok(seen.links.includes(place), `${place}: ${JSON.stringify(seen.links)}`);
+      // the throwaway is inside the server's data path: that path's links are its own, and nothing is looked for.
+      // The stray path nothing was handed for cannot be looked for: it is said, not passed over
+      assert.deepStrictEqual(seen.unchecked, [stray]);
+    });
+
+    it('a spawn\'s path inside one of the server\'s own is never walked for itself: no entry is kept for a validation\'s throwaway', () => {
+      const spawn = Object.assign({}, options, {moduleDataPath: path.join(options.moduleDataPath, '.validate', '0123456789abcdef')});
+      const seen = run([script(ROOT, 'links-print.js'), JSON.stringify(spawn), JSON.stringify(options)], []);
+      assert.ok(seen.links.includes(dataLink), JSON.stringify(seen.links));
+      assert.ok(Object.keys(seen.server).includes(options.moduleDataPath), JSON.stringify(Object.keys(seen.server)));
+      assert.ok(!Object.keys(seen.server).some((k) => k.includes('.validate')), JSON.stringify(Object.keys(seen.server)));
     });
   });
 });

@@ -98,8 +98,13 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     const seen = await childGives([base], {[base]: base}, handed, `({links: r.linkPlaces(), real: r.realpathSync(${JSON.stringify(base)})})`);
     assert.deepStrictEqual(seen, {links: handed, real: base});
     assert.deepStrictEqual(await childGives([base], {}, {}, 'r.linkPlaces()'), {}, 'none found is an answer too');
-    assert.strictEqual(await childGives([base], {}, undefined, 'r.linkPlaces()'), null, 'nothing handed over');
-    assert.strictEqual(realpaths.linkPlaces(), null, 'and never in a process that received nothing');
+    // a relaunched server handed none has an empty map, not "look for yourself": it may not
+    assert.deepStrictEqual(await childGives([base], {}, undefined, 'r.linkPlaces()'), {}, 'nothing handed over');
+    assert.strictEqual(realpaths.linkPlaces(), null, 'null only in a process that was not relaunched');
+    // a key is only ever a path: "__proto__" is one more, and the map has no prototype to replace
+    assert.deepStrictEqual(await childGives([base], {}, {['__proto__']: [place]},
+      '({proto: Object.getPrototypeOf(r.linkPlaces()), own: Object.keys(r.linkPlaces()), inherited: r.linkPlaces().toString === undefined})'),
+    {proto: null, own: ['__proto__'], inherited: true});
     // what is not a list of places for a path is dropped, never taken for one
     assert.deepStrictEqual(await childGives([base], {}, {[base]: 'x', [path.join(base, 'ok')]: [place, 7]}, 'r.linkPlaces()'), {[path.join(base, 'ok')]: [place]});
   });
@@ -109,11 +114,16 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     const place = path.join(base, 'r', 'data-link');
     const options = {modulePath: path.join(base, 'modules'), moduleDataPath: path.join(base, 'data'), authConfigPath: path.join(base, 'auth.json'),
       deviceConfigPath: path.join(base, 'devices')};
-    const ask = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).protectedLinks(${JSON.stringify(options)})`;
-    assert.deepStrictEqual(await childGives([ROOT, base], {}, {[options.moduleDataPath]: [place]}, ask), [place]);
-    // not a --hardened relaunch: lstat above its grants is refused
-    // (ERR_ACCESS_DENIED), which is no failure of the spawn
-    assert.deepStrictEqual(await childGives([ROOT, base], {}, undefined, ask), []);
+    const ask = `(() => { const unchecked = []; const links = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).protectedLinks(${JSON.stringify(options)}, (p) => unchecked.push(p));
+      return {links, unchecked}; })()`;
+    const some = await childGives([ROOT, base], {}, {[options.moduleDataPath]: [place]}, ask);
+    assert.deepStrictEqual(some.links, [place]);
+    // every path it was handed nothing for is said: it may not lstat above
+    // its grants (ERR_ACCESS_DENIED), which is no failure of the spawn
+    assert.ok(some.unchecked.includes(options.modulePath) && !some.unchecked.includes(options.moduleDataPath), JSON.stringify(some.unchecked));
+    const none = await childGives([ROOT, base], {}, undefined, ask);
+    assert.deepStrictEqual(none.links, []);
+    assert.ok(none.unchecked.includes(options.moduleDataPath), JSON.stringify(none.unchecked));
   });
 
   it('without the marker it reads nothing (an ordinary start)', () => {

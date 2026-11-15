@@ -2,6 +2,15 @@
 basedir=`dirname "$0"`
 path=`readlink -f "$0"`
 basepath=`dirname $path`
+# How this was started, as it was named: framework.js is run by its real path
+# below, so Node never sees a link the command went through (npm's bin link,
+# a "current" link). The runtime protects the links on this path
+# (lib/fs-broker/index.js startedFrom).
+case "$0" in
+  /*) COUNTINGHOUSE_STARTED_FROM="$0" ;;
+  *) COUNTINGHOUSE_STARTED_FROM="$PWD/$0" ;;
+esac
+export COUNTINGHOUSE_STARTED_FROM
 
 which bunyan
 OUT=$?
