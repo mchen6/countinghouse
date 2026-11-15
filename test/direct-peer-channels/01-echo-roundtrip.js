@@ -13,7 +13,8 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 // specifically exercises the new PeerChannel/PeerChannelBroker path (D1/D2),
 // not the pre-existing main-thread-routed one (which test1.js/test2.js
 // already cover).
-describe('direct-peer-channels 01: echo round trip over a direct peer channel', function() {
+// a part of test/test8.js, against its server: alone, skipped (#234)
+(global.COUNTINGHOUSE_TEST8_PARTS === true ? describe : describe.skip)('direct-peer-channels 01: echo round trip over a direct peer channel (a part of test/test8.js: run it, not this file alone)', function() {
   this.timeout(0);
 
   const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module

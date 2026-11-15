@@ -173,10 +173,23 @@ any module code). Stops:
   `localhost4`, `localhost6`, `localhost4.localdomain4`,
   `localhost6.localdomain6`, `ip6-localhost`, `ip6-loopback`). A
   Unix-socket Redis is refused under every spelling of its path (`..`,
-  `//`, relative). This is an in-worker
-  check, not a boundary: a name that reaches loopback only through
-  `/etc/hosts` or DNS, a `lookup` function the module passes, another
-  address of the same machine (a LAN IP), and a symlink or hard link to the
+  `//`, relative). A host given by a name is refused by that name, and by
+  every address the main thread resolves it to (the system resolver and DNS
+  together, before the first module loads and every 5 minutes; an address
+  once denied stays denied, and a running worker is told each new one), at
+  the socket's own handle, which decides on the address Node actually
+  connects to, on functions taken before any module code ran (#206, #207).
+  That address check is what holds. The check by name runs in the module's
+  own realm: it, too, calls only functions it took at load and reads no
+  value through a module's accessor or conversion, but code that shares a
+  realm can always be attacked by what it has not thought of, so it is a
+  first line, not the one relied on. This is an in-worker check, not a
+  boundary: a name that reaches loopback only through `/etc/hosts` or DNS,
+  a `lookup` function the module passes, another address of the same
+  machine (a LAN IP), an address of the Redis host name that no resolution
+  has returned yet (a round-robin name with more addresses than an answer
+  lists, a name that moved, or one that did not resolve at start until the
+  next refresh reaches the worker), and a symlink or hard link to the
   socket are not denied until the network broker (parts 3 and 4);
 - `CHUtil.loadFile` outside the module's own directory.
 
