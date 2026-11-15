@@ -38,6 +38,7 @@ describe('sessions 01: each session\'s own state on the main thread (shared runt
     if (listener != null) await listener.close();
     listener = null;
     fs.rmSync(dir, {recursive: true, force: true});
+    sessions.resetForTests();   // shared mode off for the files after this one
   });
   const CC = (version) => ({name: 'claude-code', version});
   const FORM = {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}};
@@ -157,5 +158,6 @@ describe('sessions 01b: --stdio is one session (every OS)', () => {
     assert.ok(sessions.get(fake.id) != null);
     fake.emit('end');
     assert.strictEqual(sessions.get(fake.id), null);
+    sessions.resetForTests();
   });
 });
