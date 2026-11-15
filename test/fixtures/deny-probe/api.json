@@ -7,6 +7,7 @@
       "urn:countinghouse-test:serviceID:probeService": {
         "actionList": [
           {"name": "read", "description": "Reads input.path with the module fs; the content, or the error code.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}},
+          {"name": "write", "description": "Writes input.content to input.path with the module fs; ok, or the error code.", "input": {"schema": "/probeService/write/input"}, "output": {"schema": "/probeService/write/output"}},
           {"name": "env", "description": "Whether process.env[input.name] is present; never its value.", "input": {"schema": "/probeService/env/input"}, "output": {"schema": "/probeService/env/output"}},
           {"name": "connect", "description": "net.connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/connect/input"}, "output": {"schema": "/probeService/connect/output"}},
           {"name": "tlsConnect", "description": "tls.connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/tlsConnect/input"}, "output": {"schema": "/probeService/tlsConnect/output"}},

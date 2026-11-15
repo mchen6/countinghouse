@@ -58,6 +58,14 @@
       "output": {
         "type": "object"
       }
+    },
+    "write": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }
