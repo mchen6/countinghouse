@@ -1011,17 +1011,51 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         assert.strictEqual(broker.announced.size, 1);
       });
 
-      it('a caller refused over and over does not make the broker walk every held hop each time: at most once in 100 ms', async () => {
+      // The walk is over every held hop, so a caller refused over and over
+      // buys at most one in 100 ms -- for itself. Another caller's first
+      // refusal walks at once: one caller's attempts never make the others
+      // wait for hops that have ended meanwhile. On the broker's own
+      // monotonic clock, set here.
+      it('a caller refused over and over walks every held hop at most once in 100 ms; another caller is not held back by it', () => {
         fill();
+        let clock = 5000;
+        broker.monotonicMs = () => clock;
         let walks = 0;
         const releaseEnded = broker.releaseEnded.bind(broker);
         broker.releaseEnded = (workerId) => { if (workerId == null) walks += 1; return releaseEnded(workerId); };
         for (let i = 0; i < 5; i++) newcomer(210 + i);
         assert.strictEqual(caller.refusals.length, 5);
-        assert.strictEqual(walks, 1);
-        await sleep(120);
-        newcomer(220);
+        assert.strictEqual(walks, 1, 'the first of the five');
+        clock += 99;
+        newcomer(215);
+        assert.strictEqual(walks, 1, 'still inside its 100 ms');
+        // every held hop's call ends now; the refused caller is inside its
+        // window, but another caller's hop walks, and is held
+        held.forEach((token) => tokens().drop(token));
+        const late = wm(60);
+        late.bindings = caller.bindings;
+        const channel = `${late.workerId}:${callee.workerId}`;
+        broker.channelRegistry[channel] = {callerWM: late, calleeWM: callee, grants: {}};
+        broker.handleAnnouncement(Object.assign({channel, invokeId: 1, token: tokens().issue(ENTRY(late.workerId)), epoch: EPOCH, inputBytes: one}, TARGET), late);
+        assert.deepStrictEqual(late.refusals, [], 'held back by another caller\'s refused attempts');
         assert.strictEqual(walks, 2);
+        // and the first caller's own window passes
+        clock += 2;
+        newcomer(216);
+        assert.strictEqual(caller.refusals.length, 6, 'the six before; this one is held');
+      });
+
+      it('a caller over its own share AND the total walks the held hops once, not twice', () => {
+        fill();
+        let scans = 0;
+        const releaseEnded = broker.releaseEnded.bind(broker);
+        broker.releaseEnded = (workerId) => { scans += 1; return releaseEnded(workerId); };
+        // one of the eight, already at its share, announces again
+        const first = others[0];
+        broker.handleAnnouncement(Object.assign({channel: `${first.workerId}:${callee.workerId}`, invokeId: 150, token: tokens().issue(ENTRY(first.workerId)),
+          epoch: EPOCH, inputBytes: one}, TARGET), first);
+        assert.strictEqual(first.refusals.length, 1);
+        assert.strictEqual(scans, 1);
       });
 
       it('only what has ended goes: with half ended, the live half stays and the newcomer is held', () => {
