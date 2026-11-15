@@ -74,12 +74,33 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     assert.strictEqual(c.verify(second.requestState, Object.assign({}, retry, {next: 32 * MiB})).ok, true);
   });
 
-  it('a decline locks that setting, and only that one, for the start', () => {
+  it('a decline locks that setting\'s kind, and only that one, for the start; any pack locks every pack', () => {
     assert.strictEqual(c.declined('maxOutputBytes'), false);
     c.decline('maxOutputBytes');
     assert.strictEqual(c.declined('maxOutputBytes'), true);
     assert.strictEqual(c.declined('requestTimeout'), false);
+    c.decline('pack.ci-failure-triage');
+    assert.strictEqual(c.declined('pack.other'), true, 'a decline on any pack locks packs');
     assert.strictEqual(new Confirmations({now}).declined('maxOutputBytes'), false, 'a new start forgets it');
+  });
+
+  it('two expiries of a kind lock it too', () => {
+    for (let i = 0; i < 2; i++) {
+      const {requestState} = c.stage(change);
+      clock += 120001;
+      assert.strictEqual(c.verify(requestState, retry).code, 'SETTING_CONFIRMATION_EXPIRED');
+      assert.strictEqual(c.declined('maxOutputBytes'), i === 1, `after ${i + 1}`);
+    }
+  });
+
+  it('three forms a start: each staging counts one', () => {
+    assert.strictEqual(c.formsLeft(), 3);
+    c.stage(change);
+    c.stage(change);
+    assert.strictEqual(c.formsLeft(), 1);
+    c.stage(change);
+    assert.strictEqual(c.formsLeft(), 0);
+    assert.throws(() => c.stage(change), /no forms left/);
   });
 
   it('the staged change holds the values given, not the objects (a caller changing its own copy later changes nothing)', () => {

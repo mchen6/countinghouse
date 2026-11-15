@@ -13,7 +13,7 @@ describe('stdio 18: the tested-client allowlist for elicitation (part 3 P2)', ()
   let saved = null;
   beforeEach(() => { saved = clients.ALLOWLIST.map((e) => Object.assign({}, e)); });
   afterEach(() => { clients.ALLOWLIST.splice(0, clients.ALLOWLIST.length, ...saved); });
-  const withFloor = (floor) => { clients.ALLOWLIST.find((e) => e.name === name).versionFloor = floor; };
+  const withFloor = (floor, ceiling = null) => Object.assign(clients.ALLOWLIST.find((e) => e.name === name), {versionFloor: floor, versionCeiling: ceiling});
 
   it('ships with no floor: no client is asked until a hand test sets one', () => {
     assert.ok(clients.ALLOWLIST.every((e) => e.versionFloor === null), JSON.stringify(clients.ALLOWLIST));
@@ -26,6 +26,14 @@ describe('stdio 18: the tested-client allowlist for elicitation (part 3 P2)', ()
     assert.strictEqual(may({name, version: '2.10.1'}).ok, true, 'numeric, not string, comparison');
     assert.strictEqual(may({name, version: '3.0.0'}, {elicitation: {form: {}}}).ok, true);
     assert.strictEqual(may({name, version: '2.0.0'}, {elicitation: {form: {}, url: {}}}).ok, true);
+  });
+
+  it('the tested range: at or above the upper bound (exclusive) is untested', () => {
+    withFloor('2.0.0', '3.0.0');
+    assert.strictEqual(may({name, version: '2.9.9'}).ok, true);
+    assert.deepStrictEqual(may({name, version: '3.0.0'}), {ok: false, why: 'version above the tested range'});
+    assert.deepStrictEqual(may({name, version: '10.0.0'}), {ok: false, why: 'version above the tested range'});
+    assert.ok(clients.ALLOWLIST.every((e) => Object.prototype.hasOwnProperty.call(saved.find((x) => x.name === e.name), 'versionCeiling')), 'every entry has one');
   });
 
   it('below the floor, or a version that is not plain major.minor.patch, may not', () => {
