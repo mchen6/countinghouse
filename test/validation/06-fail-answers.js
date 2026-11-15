@@ -341,7 +341,11 @@ describe('validation 06: the high review of #37 -- c17', () => {
     });
   }
 
-  it('a direct peer channel answers a callee result that cannot be cloned, and takes the next request', async () => {
+  // Lean worker step 4: a served invoke is answered by the main thread
+  // (peer-result), never on the port; the callee posts only its own refusal,
+  // with no data. A result that cannot be cloned is answered as a crash by
+  // the callee's serialisation (lib/peer-worker.js), through the main thread.
+  it('a direct peer channel\'s callee posts only a refusal, with no data; a served invoke posts nothing; either frees the slot once', async () => {
     const {MessageChannel} = require('worker_threads');
     const PeerChannel = require('../../lib/peer-channel');
     const {port1, port2} = new MessageChannel();
@@ -351,16 +355,17 @@ describe('validation 06: the high review of #37 -- c17', () => {
     channel.dispatchQueue = [];
     let drained = 0;
     channel._drainDispatchQueue = () => { drained++; };
-    channel.onInvoke = (msg, cb) => cb(null, {fn() { return 1; }}, null);
+    const seen = [];
+    port2.on('message', (m) => seen.push(m));
     try {
-      const reply = firstMessage(port2);
+      const {CountinghouseError} = require('../../lib/countinghouse-error');
+      channel.onInvoke = (msg, cb) => { cb(new CountinghouseError('CTX_CALL_UNDECLARED', 's/a')); cb(new CountinghouseError('CTX_CALL_UNDECLARED', 's/a')); };
       channel._dispatchInvoke({id: 4});
-      const msg = await reply;
-      assert.strictEqual(msg.id, 4);
-      assert.strictEqual(msg.category, 'peer-reply');
-      assert.strictEqual(msg.errCode, 'DEVICE_INVOKE_EXCEPTION');
-      assert.strictEqual(msg.data, null);
-      assert.strictEqual(drained, 1);
+      channel.onInvoke = (msg, cb) => { cb(); cb(); };
+      channel._dispatchInvoke({id: 5});
+      await new Promise((r) => setTimeout(r, 100));
+      assert.deepStrictEqual(seen.map((m) => [m.id, m.category, m.errCode, m.data]), [[4, 'peer-reply', 'CTX_CALL_UNDECLARED', null]]);
+      assert.strictEqual(drained, 2, 'once each');
       assert.strictEqual(channel.activeDispatches, 0);
     } finally {
       port1.close();

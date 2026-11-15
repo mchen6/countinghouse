@@ -50,7 +50,9 @@ function hopInput(m) {
   if (m.command === 'invokeforeignaction' && m.data != null && m.data.args != null) {
     return (m.data.args.inputBytes instanceof ArrayBuffer) ? markerInBytes(m.data.args.inputBytes) : m.data.args.input;
   }
-  if (m.command === 'peer-invoke') return m.input;
+  // a peer hop's input is in its announcement, as bytes (lean worker step 4,
+  // the review of #202); the port's invoke carries its id alone
+  if (m.command === 'peer-announce' && m.data != null && m.data.inputBytes instanceof ArrayBuffer) return markerInBytes(m.data.inputBytes);
   return null;
 }
 const holder = (m) => (m.data != null && typeof(m.data) === 'object') ? m.data : m;
@@ -76,13 +78,12 @@ function rewrite(m) {
   if (m == null || typeof(m) !== 'object') return;
   const input = hopInput(m);
   if (input != null && typeof(input.marker) === 'string') {
-    if (m.command === 'peer-invoke') hops.set(m.id, input.marker);
+    if (m.command === 'peer-announce') {
+      hops.set(m.data.invokeId, input.marker);
+      if (state.rules[input.marker] != null) apply(m, state.rules[input.marker], input.marker, 'announce');
+      return;
+    }
     if (state.rules[input.marker] != null) return apply(m, state.rules[input.marker], input.marker, 'hop');
-    return;
-  }
-  if (m.command === 'peer-announce' && m.data != null && hops.has(m.data.invokeId)) {
-    const marker = hops.get(m.data.invokeId);
-    if (state.rules[marker] != null) apply(m, state.rules[marker], marker, 'announce');
     return;
   }
   if (tokenOf(m) !== undefined) {
@@ -133,10 +134,6 @@ if (MessagePort != null && state.hooked !== true) {
       const p = {inner: opened != null ? opened : message, envelope: opened != null ? message : null, rest};
       const m = p.inner;
       try {
-        if (m != null && m.command === 'peer-announce' && m.data != null && !hops.has(m.data.invokeId)) {
-          deferred.set(m.data.invokeId, {port: this, p});
-          return undefined;
-        }
         rewrite(m);
       } catch (e) { /* never break the worker */ }
       let delayMs = null;
