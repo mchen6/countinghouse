@@ -46,15 +46,23 @@ function answer(name, args) {
 }
 
 // -> Promise of {port, close(), calls}: listening on 127.0.0.1, an OS-chosen port.
-function startGithubStub() {
-  const state = {calls: 0};
+// token: the Bearer token the runtimes were given; a call that does not
+// carry it is counted (withoutToken), so a run shows the credential was
+// injected, not only claimed.
+function startGithubStub(token) {
+  const state = {calls: 0, withoutToken: 0};
   const server = http.createServer((req, res) => {
+    const auth = String(req.headers.authorization || '');
     let body = '';
     req.on('data', (d) => { body += d; });
     req.on('end', async () => {
       const mcp = new Server({name: 'github-stub', version: '0.0.0'}, {capabilities: {tools: {}}});
       mcp.setRequestHandler(ListToolsRequestSchema, async () => ({tools: TOOLS.map((n) => ({name: n, inputSchema: {type: 'object'}}))}));
-      mcp.setRequestHandler(CallToolRequestSchema, async (r) => { state.calls++; return answer(r.params.name, r.params.arguments); });
+      mcp.setRequestHandler(CallToolRequestSchema, async (r) => {
+        state.calls++;
+        if (token == null || auth !== `Bearer ${token}`) state.withoutToken++;
+        return answer(r.params.name, r.params.arguments);
+      });
       const transport = new StreamableHTTPServerTransport({sessionIdGenerator: undefined, enableJsonResponse: true});
       res.on('close', () => { transport.close(); mcp.close(); });
       try {

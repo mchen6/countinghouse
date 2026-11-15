@@ -34,14 +34,20 @@ function githubRemoteOf(pack) {
   const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(pack), 'ch-access-github', 'package.json'), 'utf8'));
   const remote = ((pkg.countinghouse || {}).remotes || []).find((r) => r.name === 'github');
   if (remote == null) throw new Error('ch-access-github declares no github remote: give an installed pack, not a stand-in');
+  if (remote.credential == null || typeof(remote.credential.env) !== 'string') throw new Error('ch-access-github\'s github remote declares no credential variable: this pack version is not one the measurement knows');
   return {origin: new URL(remote.url).origin, variable: remote.credential.env};
 }
+// A release version only (a prerelease ranks below its release; anything
+// else is refused): 0.4.0 or later.
 function checkPackVersion(pack) {
   const v = JSON.parse(fs.readFileSync(path.join(pack, 'package.json'), 'utf8')).version;
-  const parts = String(v).split(/[.+-]/).slice(0, 3).map(Number);
+  const m = /^(\d+)\.(\d+)\.(\d+)(\+[0-9A-Za-z.-]+)?$/.exec(String(v));
+  const refuse = () => { throw new Error(`pack 1 ${v}: a release 0.4.0 or later is needed (0.1.0's scenario output fails its own schema, coverage.historyRebuilt)`); };
+  if (m == null) refuse();
+  const parts = m.slice(1, 4).map(Number);
   for (let i = 0; i < 3; i++) {
     if (parts[i] > MIN_PACK[i]) return v;
-    if (parts[i] < MIN_PACK[i]) throw new Error(`pack 1 ${v}: 0.4.0 or later is needed (0.1.0's scenario output fails its own schema, coverage.historyRebuilt)`);
+    if (parts[i] < MIN_PACK[i]) refuse();
   }
   return v;
 }
@@ -95,14 +101,22 @@ const commonArgs = (d, pack, github, stubPort) => ['--workerThread', '--store', 
   '--modulePath', d.modules, '--moduleDataPath', d.moduleData, '--remoteCredentials', d.rc, '--deviceConfigPath', d.config,
   '--remoteOriginMap', `${github.origin}=http://127.0.0.1:${stubPort}`, '--loadModule', pack];
 
+// A runtime child. Its output is read as UTF-8; only the last 16 KB of each
+// stream is kept (for the ready line and for errors), never the replies,
+// which the stdio client reads itself.
+const TAIL = 16384;
 function child(file, args, env) {
   const c = spawn(process.execPath, [file].concat(args), {stdio: ['pipe', 'pipe', 'pipe'], env: Object.assign({}, process.env, env || {})});
+  c.stdout.setEncoding('utf8');
+  c.stderr.setEncoding('utf8');
   c.out = ''; c.err = '';
-  c.stdout.on('data', (b) => { c.out += b; });
-  c.stderr.on('data', (b) => { c.err += b; });
   c.readyAt = null;
-  const look = () => { if (c.readyAt == null && /countinghouse ready/.test(c.err + c.out)) c.readyAt = Date.now(); };
-  c.stdout.on('data', look); c.stderr.on('data', look);
+  const keep = (which) => (b) => {
+    c[which] = (c[which] + b).slice(-TAIL);
+    if (c.readyAt == null && /countinghouse ready/.test(c[which])) c.readyAt = Date.now();
+  };
+  c.stdout.on('data', keep('out'));
+  c.stderr.on('data', keep('err'));
   return c;
 }
 const killAll = (cs) => { for (const c of cs) { try { c.kill('SIGKILL'); } catch (e) { /* gone */ } } };
@@ -125,10 +139,18 @@ function stdioClient(c) {
       if (p != null) { pending.delete(msg.id); clearTimeout(p.timer); p.resolve(msg); }
     }
   });
+  // a runtime that ends fails what it still owed at once, never at each timer
+  let ended = null;
+  c.on('exit', (code, signal) => {
+    ended = new Error(`stdio: the runtime ended (${signal || `exit ${code}`}); ${c.err.slice(-400)}`);
+    for (const [n, p] of pending) { clearTimeout(p.timer); pending.delete(n); p.reject(ended); }
+  });
+  c.stdin.on('error', () => { /* ended: answered above */ });
   return (method, params) => new Promise((resolve, reject) => {
+    if (ended != null) return reject(ended);
     const n = ++id;
     const timer = setTimeout(() => { pending.delete(n); reject(new Error(`stdio: no answer to ${method} in 120 s; ${c.err.slice(-400)}`)); }, 120000);
-    pending.set(n, {resolve, timer});
+    pending.set(n, {resolve, reject, timer});
     c.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`);
   });
 }
@@ -200,23 +222,23 @@ async function once(o, layout, n) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-runtime-'));
   const d = dirsUnder(root, o.github);
   const procs = [];
-  // the remote's token, made here; only the runtimes' environment carries it
-  const env = {COUNTINGHOUSE_ACCEPTANCE: '1', [o.github.variable]: `measure-${crypto.randomBytes(16).toString('hex')}`};
+  // the remote's token (made in main); only the runtimes' environment carries it
+  const env = {COUNTINGHOUSE_ACCEPTANCE: '1', [o.github.variable]: o.token};
   const args = () => commonArgs(d, o.pack, o.github, o.stub.port);
   try {
     let clients;
     let pids;
     let keys = null;
-    let t0 = Date.now();
+    // The store as a home that has run before has it, in both layouts: one
+    // runtime starts first and makes the identity secret and the store's
+    // files, so N fresh ones do not race to (lib/identity.js) and neither
+    // layout's timed startup includes that first-boot work. Not timed.
+    const file = path.join(o.runtime, 'bin', 'countinghouse-stdio.js');
+    const first = child(file, args(), env);
+    try { await untilReady([first], `${layout} (preparing the store)`); } finally { first.kill('SIGKILL'); }
+    await sleep(300);
+    const t0 = Date.now();
     if (layout === 'separate') {
-      const file = path.join(o.runtime, 'bin', 'countinghouse-stdio.js');
-      // The store as ch-local's home has it in steady state: one runtime
-      // starts first and makes its identity secret, so N fresh ones do not
-      // race to (lib/identity.js). Not timed.
-      const first = child(file, args(), env);
-      try { await untilReady([first], 'separate (preparing the store)'); } finally { first.kill('SIGKILL'); }
-      await sleep(300);
-      t0 = Date.now();
       for (let i = 0; i < n; i++) procs.push(child(file, args(), env));
       clients = procs.map((c) => stdioClient(c));
       pids = () => procs.map((c) => c.pid);
@@ -285,7 +307,8 @@ async function main(argv) {
   if (!fs.existsSync('/proc/self/status')) throw new Error('reads /proc: Linux only');
   o.packVersion = checkPackVersion(o.pack);
   o.github = githubRemoteOf(o.pack);
-  o.stub = await startGithubStub();
+  o.token = `measure-${crypto.randomBytes(16).toString('hex')}`;
+  o.stub = await startGithubStub(o.token);
   try {
     return await measure(o);
   } finally {
@@ -314,8 +337,19 @@ async function measure(o) {
           continue;
         }
       }
+      // A configuration that fails (a runtime gone, not ready, a client
+      // error) is a row saying so; the measurement goes on, and the rows
+      // already measured are kept.
       const runs = [];
-      for (let i = 0; i < o.runs; i++) runs.push(await once(o, layout, n));
+      let failure = null;
+      for (let i = 0; i < o.runs && failure == null; i++) {
+        try { runs.push(await once(o, layout, n)); } catch (e) { failure = String(e && e.message).slice(0, 400); }
+      }
+      if (failure != null) {
+        rows.push({layout, n, failedRun: failure, runsCompleted: runs.length});
+        process.stdout.write(`${layout.padEnd(8)} N=${String(n).padStart(2)}  FAILED after ${runs.length} run(s): ${failure}\n`);
+        continue;
+      }
       const pick = (f) => r1(median(runs.map(f)));
       const row = {layout, n, runs: o.runs, startupMs: pick((r) => r.startupMs), rssReadyMb: pick((r) => r.rssReadyMb),
         rssAfterFirstMb: pick((r) => r.rssAfterFirstMb), rssAfterWarmMb: pick((r) => r.rssAfterWarmMb),
@@ -330,7 +364,8 @@ async function measure(o) {
         row.firstFailure != null ? `  first failure: ${row.firstFailure}\n` : ''}`);
     }
   }
-  const result = {runtime: o.runtime, pack: o.pack, packVersion: o.packVersion, remote: `${o.github.origin} -> the local stub (${o.stub.calls.calls} calls)`,
+  const result = {runtime: o.runtime, pack: o.pack, packVersion: o.packVersion,
+    remote: `${o.github.origin} -> the local stub: ${o.stub.calls.calls} calls, ${o.stub.calls.withoutToken} without the run's token`,
     node: process.version, cpus: os.cpus().length, rows};
   process.stdout.write(`SHARED-RUNTIME-JSON ${JSON.stringify(result)}\n`);
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
