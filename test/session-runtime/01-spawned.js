@@ -230,6 +230,10 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     await refused(['--controlChannel', 'ipc', '--stdio'], /--stdio and --sessionSocket: choose one/);
     await refused(['--controlChannel', 'ipc', '--port', '19000'], /--sessionSocket and --port: choose one/);
     await refused(['--controlChannel', 'ipc', '--authConfigPath', path.join(home, 'auth.json')], /only for the single-identity profile/);
+    // shared mode is ch-local's local store: a store shared across processes
+    // (Redis) would break the per-process job-to-session map
+    await refused(['--controlChannel', 'ipc', '--sessionSocket', path.join(run, 's')], /--sessionSocket needs --store local/,
+      [FRAMEWORK, '--no-workerThread', '--store', 'redis', '--redisUrl', 'redis://127.0.0.1:1']);
     await refused(['--controlChannel', 'ipc', '--sessionSocket'], /--sessionSocket needs a path/, [FRAMEWORK, '--no-workerThread', '--store', 'local', '--storePath', path.join(home, 'store')]);
   });
 });

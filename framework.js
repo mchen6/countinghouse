@@ -45,7 +45,8 @@ if (options.stdioWithPort === true) {
       : options.stdio === true ? '--stdio and --sessionSocket: choose one'
         : options.sessionWithPort === true ? '--sessionSocket and --port: choose one'
           : process.platform === 'win32' ? '--sessionSocket is not served on Windows yet'
-            : options.controlChannel !== 'ipc' ? '--sessionSocket needs --controlChannel ipc (ch-local daemon starts it so)'
+            : options.store !== 'local' ? '--sessionSocket needs --store local (the shared runtime is one per user, on ch-local\'s local store)'
+              : options.controlChannel !== 'ipc' ? '--sessionSocket needs --controlChannel ipc (ch-local daemon starts it so)'
               : options.singleIdentity !== true ? '--sessionSocket is only for the single-identity profile (--store local, no --authConfigPath or --authProvider)' : null;
   if (sessionRefusal != null) {
     console.error(sessionRefusal);
