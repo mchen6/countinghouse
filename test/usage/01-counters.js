@@ -2,8 +2,7 @@
 // the receipt. A tools/call begins a call; every server call made for it is an
 // In record (recordIn, from the remote client), its result is one Out record
 // (recordOut, from the gateway), and the receipt sums that call's In records.
-// Records go to memory at once and to <usageDir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl,
-// buffered off the call path (test/usage/15).
+// Records go to memory at once and to <usageDir>/<YYYY-MM-DD>/<pid>-<startMs>.jsonl.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -42,15 +41,13 @@ describe('usage: counters, files and the receipt', () => {
     assert.ok(records.every((r) => r.caller === 'u_local'));
   });
 
-  it('every record reaches <usageDir>/<day>/<pid>-<startMs>.jsonl in order, by flush() at the latest', () => {
+  it('every record is appended as it happens to <usageDir>/<day>/<pid>-<startMs>.jsonl', () => {
     const u = usage();
     const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_1'});
     u.recordIn(call, {server: 'github', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     const file = path.join(dir, day(new Date(Date.parse('2026-11-11T10:00:00Z')).toISOString()), '4242-1794391200000.jsonl');
-    u.flush();
-    assert.strictEqual(fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length, 1, 'not written by the flush');
+    assert.strictEqual(fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length, 1, 'written before the call ends');
     u.recordOut(call, {tool: 't', bytes: 2, lines: 1, ms: 2, outcome: 'ok'});
-    u.flush();
     const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     assert.deepStrictEqual(lines, u.records());
   });

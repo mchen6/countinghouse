@@ -81,9 +81,6 @@ describe('usage: where the usage files go by default', function() {
       const call = await answer(100);
       assert.strictEqual(call.result.isError, false, JSON.stringify(call));
       const usage = path.join(store, 'usage');
-      // a record's line is written off the call path, within the writer's
-      // flush delay (1 s; test/usage/15): wait for it, bounded
-      for (let w = 0; w < 50 && !(fs.existsSync(usage) && fs.readdirSync(usage).length > 0); w++) await new Promise((r) => setTimeout(r, 100));
       const days = fs.existsSync(usage) ? fs.readdirSync(usage) : [];
       assert.strictEqual(days.length, 1, `usage days under ${usage}: ${JSON.stringify(days)}`);
       const files = fs.readdirSync(path.join(usage, days[0]));
