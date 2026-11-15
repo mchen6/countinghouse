@@ -165,7 +165,8 @@ const out = {
   },
   clientFromBadChildLine: {
     rule: 'anything but exactly one valid JSON object line becomes a failed client frame; why is the shim\'s own text',
-    childOutputs: ['', 'not json', '{"status":"ok"}\n{"status":"ok"}', '[1,2]', '"ok"'],
+    childOutputs: ['', 'not json', '{"status":"ok"}\n{"status":"ok"}', '[1,2]', '"ok"', '{"op":"x","status":"ok"}', '{"seq":4,"status":"ok"}'],
+    opOrSeq: 'a child line with its own "op" or "seq" member would make duplicate keys once spliced, so it is failed too ("the child\'s line names op or seq")',
     becomes: {op: 'client', status: 'failed', why: '<the shim\'s reason>'}
   },
   drainOverflowAnswer: {

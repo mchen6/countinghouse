@@ -393,8 +393,11 @@
       "not json",
       "{\"status\":\"ok\"}\n{\"status\":\"ok\"}",
       "[1,2]",
-      "\"ok\""
+      "\"ok\"",
+      "{\"op\":\"x\",\"status\":\"ok\"}",
+      "{\"seq\":4,\"status\":\"ok\"}"
     ],
+    "opOrSeq": "a child line with its own \"op\" or \"seq\" member would make duplicate keys once spliced, so it is failed too (\"the child's line names op or seq\")",
     "becomes": {
       "op": "client",
       "status": "failed",
