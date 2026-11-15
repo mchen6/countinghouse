@@ -4,13 +4,14 @@ const chalk   = require('chalk');
 const BSON    = require('bson');
 const redis   = require('redis');
 const {redisUrlFor} = require('../helpers/test-env');
+const {testPort} = require('../helpers/test-env');
 redisClient = redis.createClient(redisUrlFor());
 
 jsf.option({
   alwaysFakeOptionals: true
 });
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 const LOG_KEY           = 'list:aabbcc#c5284c70-ae5f-591c-b2f1-cf0b4ebd0767#urn:countinghouse-com:serviceID:echoService#echo';
 const SETTLE_POLL_MS    = 200;

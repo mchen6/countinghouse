@@ -1,7 +1,8 @@
 const fs = require('fs');
 const cp = require('child_process');
 const request = require('supertest');
-const url = 'http://127.0.0.1:9527';
+const {testPort} = require('./helpers/test-env');
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 const testFiles = fs.readdirSync(`${__dirname}/benchmark`);
 
@@ -13,6 +14,8 @@ describe("Start benchmarking in single-thread mode", function () {
     "--no-workerThread",
     "--bindAddr",
     "127.0.0.1",
+    "--port",
+    String(testPort(9527)),
     "--debug",
     "--debugKey",
     "aabbcc",

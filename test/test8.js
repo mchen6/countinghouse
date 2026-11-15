@@ -2,7 +2,8 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('./helpers/wait-for-ready');
 const request = require('supertest');
-const url = 'http://127.0.0.1:9527';
+const {testPort} = require('./helpers/test-env');
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5's step-by-step acceptance
 // requires "全量测试在 flag 开/关两态下均绿" -- test1.js/test2.js already cover
@@ -27,7 +28,7 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MODULE = 'echo-device-module';
     // --maxOutputBytes 64 MiB: unit/test019 echoes 20 MB of BSON binary, past
     // the 8 MiB default; the cap itself is tested in test/sandbox/41.
-    const server = exec('"./bin/countinghouse" --workerThread --maxOutputBytes 67108864 --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --maxOutputBytes 67108864 --debug --bindAddr 127.0.0.1 --port ${testPort(9527)} --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 

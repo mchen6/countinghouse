@@ -2,7 +2,8 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('./helpers/wait-for-ready');
 const request = require('supertest');
-const url = 'http://127.0.0.1:9527';
+const {testPort} = require('./helpers/test-env');
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 const testFiles = fs.readdirSync(`${__dirname}/unit`);
 
@@ -10,7 +11,7 @@ describe("Test started in COUNTINGHOUSE single-thread mode", () => {
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
-    const server = exec('"./bin/countinghouse" --no-workerThread --debug --bindAddr 127.0.0.1 --debugKey aabbcc --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --no-workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)} --debugKey aabbcc --apiMonitor --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 
