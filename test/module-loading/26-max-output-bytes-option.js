@@ -12,7 +12,12 @@ describe('module-loading 26: --maxOutputBytes allows at most 256 MiB', () => {
     cli.setOptions({workerThread: false});
     assert.strictEqual(cli.maxOutputBytes, 16777216);
     assert.strictEqual(cli.validatorLimitInvalid, null);
-    for (const v of [1, 8388608, 268435456]) {
+    // one default, stated in four places: the flag's, the settings tool's
+    // (what its `get` reports with no file; ch-local's lib/settings.js is
+    // kept in step with it), and the fallbacks of the two bounds that read
+    // the option (module-loading 28 holds capFor's)
+    assert.strictEqual(require('../../lib/settings-tool').ALLOWLIST.maxOutputBytes.default, cli.maxOutputBytes);
+    for (const v of [1, 8388608, 16777216, 268435456]) {
       cli.setOptions({workerThread: false, maxOutputBytes: v});
       assert.strictEqual(cli.validatorLimitInvalid, null, String(v));
     }
