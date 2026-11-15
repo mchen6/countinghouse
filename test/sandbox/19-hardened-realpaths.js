@@ -101,12 +101,14 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     // a relaunched server handed none has an empty map, not "look for yourself": it may not
     assert.deepStrictEqual(await childGives([base], {}, undefined, 'r.linkPlaces()'), {}, 'nothing handed over');
     assert.strictEqual(realpaths.linkPlaces(), null, 'null only in a process that was not relaunched');
-    // a key is only ever a path: "__proto__" is one more, and the map has no prototype to replace
+    // the map has no prototype to replace, and "__proto__" is no path
     assert.deepStrictEqual(await childGives([base], {}, {['__proto__']: [place]},
       '({proto: Object.getPrototypeOf(r.linkPlaces()), own: Object.keys(r.linkPlaces()), inherited: r.linkPlaces().toString === undefined})'),
-    {proto: null, own: ['__proto__'], inherited: true});
-    // what is not a list of places for a path is dropped, never taken for one
-    assert.deepStrictEqual(await childGives([base], {}, {[base]: 'x', [path.join(base, 'ok')]: [place, 7]}, 'r.linkPlaces()'), {[path.join(base, 'ok')]: [place]});
+    {proto: null, own: [], inherited: true});
+    // what is not a list of places for a path is dropped, never taken for
+    // one; a path and a place are absolute, or they are not one (the review of #282, M2)
+    assert.deepStrictEqual(await childGives([base], {}, {[base]: 'x', [path.join(base, 'ok')]: [place, 7, 'relative/x', ''], 'relative/key': [place]}, 'r.linkPlaces()'),
+      {[path.join(base, 'ok')]: [place]});
   });
 
   it('the broker goes by the parent\'s list for a path; for one it was handed none for, it cannot look, and has none', async () => {
@@ -114,16 +116,24 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     const place = path.join(base, 'r', 'data-link');
     const options = {modulePath: path.join(base, 'modules'), moduleDataPath: path.join(base, 'data'), authConfigPath: path.join(base, 'auth.json'),
       deviceConfigPath: path.join(base, 'devices')};
-    const ask = `(() => { const unchecked = []; const links = require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).protectedLinks(${JSON.stringify(options)}, (p) => unchecked.push(p));
-      return {links, unchecked}; })()`;
-    const some = await childGives([ROOT, base], {}, {[options.moduleDataPath]: [place]}, ask);
-    assert.deepStrictEqual(some.links, [place]);
-    // every path it was handed nothing for is said: it may not lstat above
-    // its grants (ERR_ACCESS_DENIED), which is no failure of the spawn
-    assert.ok(some.unchecked.includes(options.modulePath) && !some.unchecked.includes(options.moduleDataPath), JSON.stringify(some.unchecked));
-    const none = await childGives([ROOT, base], {}, undefined, ask);
-    assert.deepStrictEqual(none.links, []);
-    assert.ok(none.unchecked.includes(options.moduleDataPath), JSON.stringify(none.unchecked));
+    const broker = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))})`;
+    const ask = `(() => { try { return {links: ${broker}.protectedLinks(${JSON.stringify(options)})}; } catch (e) { return {refused: [e.code, e.message]}; } })()`;
+    // handed a list for every path it asks about: the parent's lists, nothing looked for
+    const every = `(() => { const b = ${broker}; const all = {}; for (const p of b.pathsWalked(${JSON.stringify(options)})) all[p] = []; return Object.keys(all); })()`;
+    const paths = await childGives([ROOT, base], {}, {}, every);
+    const handed = Object.fromEntries(paths.map((p) => [p, p === options.moduleDataPath ? [place] : []]));
+    assert.deepStrictEqual(await childGives([ROOT, base], {}, handed, ask), {links: [place]});
+    // one path it was handed nothing for: it may not lstat above its grants,
+    // and does not go on without it (the review of #282, M1)
+    delete handed[options.modulePath];
+    const some = await childGives([ROOT, base], {}, handed, ask);
+    assert.strictEqual(some.refused[0], 'MODULE_SANDBOX_REFUSED');
+    assert.ok(some.refused[1].includes(options.modulePath) && /--permission.*--hardened/.test(some.refused[1]), some.refused[1]);
+    // framework.js asks this when it starts under the permission model, and
+    // refuses the start with what it says: nothing for a --hardened
+    // relaunch, the reason for a process restricted another way
+    const problem = `require(${JSON.stringify(path.join(ROOT, 'lib', 'hardened-launch'))}).startProblem()`;
+    assert.match(await childGives([ROOT, base], {}, undefined, problem), /--permission.*--hardened/);
   });
 
   it('without the marker it reads nothing (an ordinary start)', () => {

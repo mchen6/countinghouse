@@ -77,6 +77,52 @@ describe('fs-broker 27: the links an install is reached through', () => {
     assert.deepStrictEqual(linkLocations(install), [install, stage]);
   });
 
+  // The reviewer's security review of #282 (I1). A target that goes into a
+  // directory and leaves it again with ".." puts that directory on the
+  // host's path: replace it with a link and ".." leaves somewhere else. So
+  // every name the walk passes is on the path, not only the links, and a
+  // writable root that holds one is refused.
+  posixIt('a directory a target passes through and leaves with ".." is on the path: a writable root that holds it is refused (I1)', async () => {
+    dir('srv');
+    dir('data', 'x');
+    const v1 = dir('opt', 'v1', 'ch');
+    const current = path.join(base, 'srv', 'current');
+    fs.symlinkSync('../data/x/../../opt/v1', current);
+    const install = path.join(current, 'ch');
+    assert.strictEqual(fs.realpathSync.native(install), v1);
+    assert.deepStrictEqual(linkLocations(install), [current], 'the one link');
+    const walk = walkLinks(install);
+    const x = path.join(base, 'data', 'x');
+    assert.ok(walk.passed.includes(x), `${x}: ${JSON.stringify(walk.passed)}`);
+    // what a ".." left: srv (the target starts by leaving it), then x, then data
+    assert.deepStrictEqual(walk.left, [path.join(base, 'srv'), x, path.join(base, 'data')]);
+    assert.ok(walk.passed.includes(path.join(base, 'data')) && walk.passed.includes(path.join(base, 'opt', 'v1')), JSON.stringify(walk.passed));
+    // the declared root holds neither a link nor the install, as written or really
+    const data = path.join(base, 'data');
+    const n = createNamespace({moduleRoot: dir('m', 'app'), dataDir: dir('m', 'data'), tmpDir: dir('m', 'tmp'),
+      protectedPaths: [install], protectedLinks: walk.places.concat(walk.passed),
+      declared: [{path: data, access: 'rw'}, {path: dir('unrelated'), access: 'rw'}]});
+    await n.prepare();
+    assert.deepStrictEqual(n.refused.map((r) => r.path), [data]);
+    assert.match(n.refused[0].reason, /^holds .*, on a path countinghouse runs through$/);
+    // what that root could do with a rename and a symlink of its own:
+    // the host then reaches a directory inside the root
+    fs.renameSync(x, path.join(data, 'x-was'));
+    fs.mkdirSync(path.join(data, 'evil', 'a', 'b'), {recursive: true});
+    const reached = path.join(data, 'evil', 'opt', 'v1', 'ch');
+    fs.mkdirSync(reached, {recursive: true});
+    fs.symlinkSync('evil/a/b', x);
+    assert.strictEqual(fs.realpathSync.native(install), reached, 'the re-pointing the refusal prevents');
+  });
+
+  it('the names passed, for a path with no ".." in a target, are the directories above it: nothing more is refused', () => {
+    const install = link(dir('copy', 'sub'), 'install');
+    const walk = walkLinks(install);
+    assert.deepStrictEqual(walk.places, [install]);
+    // every one is the real target, or above the link or the target
+    for (const p of walk.passed) assert.ok([install, path.join(base, 'copy', 'sub')].some((q) => q === p || q.startsWith(p.endsWith(path.sep) ? p : p + path.sep)), p);
+  });
+
   it('a loop of links ends, with the links it met', () => {
     const a = path.join(base, 'a');
     const b = path.join(base, 'b');
@@ -93,12 +139,13 @@ describe('fs-broker 27: the links an install is reached through', () => {
   // in silence would leave a link unprotected.
   it('a name that is missing or cannot be reached ends the walk, said as incomplete; any other failure is thrown', () => {
     const install = link(dir('copy'), 'install');
-    assert.deepStrictEqual(walkLinks(install), {places: [install], complete: true});
-    assert.deepStrictEqual(walkLinks(path.join(install, 'not', 'there')), {places: [install], complete: false});
+    const brief = (w) => ({places: w.places, complete: w.complete});
+    assert.deepStrictEqual(brief(walkLinks(install)), {places: [install], complete: true});
+    assert.deepStrictEqual(brief(walkLinks(path.join(install, 'not', 'there'))), {places: [install], complete: false});
     const failing = (code) => () => { throw Object.assign(new Error(code), {code}); };
     const real = {lstatSync: fs.lstatSync, readlinkSync: fs.readlinkSync, realpathSync: fs.realpathSync.native};
     for (const code of ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM']) {
-      assert.deepStrictEqual(walkLinks(install, Object.assign({}, real, {readlinkSync: failing(code)})), {places: [install], complete: false}, code);
+      assert.deepStrictEqual(brief(walkLinks(install, Object.assign({}, real, {readlinkSync: failing(code)}))), {places: [install], complete: false}, code);
       assert.deepStrictEqual(linkLocations(install, Object.assign({}, real, {lstatSync: failing(code)})), [], code);
     }
     for (const code of ['ERR_ACCESS_DENIED', 'EIO', 'ELOOP']) {
@@ -114,8 +161,9 @@ describe('fs-broker 27: the links an install is reached through', () => {
     const broker = require('../../lib/fs-broker');
     const options = {modulePath: dir('modules'), moduleDataPath: dir('data'), authConfigPath: path.join(base, 'auth.json'),
       deviceConfigPath: path.join(base, 'devices'), modulePolicy: path.join(base, 'later', 'policy.json')};
-    assert.ok(!broker.protectedLinks(options).some((p) => p.startsWith(base)), 'nothing there yet');
-    const later = link(dir('elsewhere'), 'later');
+    const later = path.join(base, 'later');
+    assert.ok(!broker.protectedLinks(options).includes(later), 'not there yet');
+    link(dir('elsewhere'), 'later');
     assert.ok(broker.protectedLinks(options).includes(later), JSON.stringify(broker.protectedLinks(options)));
   });
 
@@ -143,7 +191,7 @@ describe('fs-broker 27: the links an install is reached through', () => {
     it('a writable root that holds a link, declared by another spelling of the link\'s directory, is refused', async () => {
       const z = link(path.join(base, 'x'), 'z');
       const n = await prepared([{path: z, access: 'rw'}, {path: dir('unrelated'), access: 'rw'}]);
-      assert.deepStrictEqual(n.refused, [{path: z, reason: `holds ${viaTarget}, a link countinghouse runs through`}]);
+      assert.deepStrictEqual(n.refused, [{path: z, reason: `holds ${viaTarget}, on a path countinghouse runs through`}]);
     });
 
     it('declared as written it is refused too, and so is a directory above it', async () => {
@@ -222,11 +270,18 @@ describe('fs-broker 27: the links an install is reached through', () => {
       assert.ok(!seen.protectedPaths.includes(dataLink), JSON.stringify(seen.protectedPaths));
     });
 
-    it('a --loadModule root given through a link: the link is known', () => {
+    it('a --loadModule root given through a link: the link is known; the directories above a module root are not taken (the broker guards those)', () => {
       const moduleLink = outLink(outDir('store', 'mods'), 'links', 'ml');
-      const withLocal = Object.assign({}, options, {localModulePath: [path.join(moduleLink, 'weather')]});
+      const plain = outDir('plain', 'mods', 'tides');
+      const withLocal = Object.assign({}, options, {localModulePath: [path.join(moduleLink, 'weather'), plain]});
       const seen = run([script(ROOT, 'links-print.js'), JSON.stringify(withLocal)], []);
       assert.ok(seen.links.includes(moduleLink), JSON.stringify(seen.links));
+      // a module may be given a writable root above another module's code,
+      // as before: writes inside that code, and renames of it and of the
+      // directories above it, are the broker's to refuse
+      for (const above of [plain, path.dirname(plain), path.join(out, 'plain'), path.join(out, 'store', 'mods')]) assert.ok(!seen.links.includes(above), above);
+      // a configured path's own names are taken (they are refused to a declaration anyway)
+      assert.ok(seen.links.includes(path.join(out, 'links')), JSON.stringify(seen.links));
     });
 
     // The countinghouse launcher is a shell script that finds itself by its
@@ -274,8 +329,8 @@ describe('fs-broker 27: the links an install is reached through', () => {
       const kept = outDir('kept');
       const seen = run([script(spelled, 'links-spawn.js'), outDir('modules', 'm'), outDir('data'),
         JSON.stringify([{path: z, access: 'rw'}, {path: kept, access: 'rw'}])]);
-      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${inner}, a link countinghouse runs through`}]);
-      assert.deepStrictEqual(seen.reported, [`${z} (holds ${inner}, a link countinghouse runs through)`]);
+      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${inner}, on a path countinghouse runs through`}]);
+      assert.deepStrictEqual(seen.reported, [`${z} (holds ${inner}, on a path countinghouse runs through)`]);
       assert.deepStrictEqual(seen.declaredRoots, [kept]);
     });
 
@@ -286,7 +341,7 @@ describe('fs-broker 27: the links an install is reached through', () => {
       const kept = outDir('kept');
       const seen = run([script(ROOT, 'links-spawn.js'), outDir('modules', 'm'), options.moduleDataPath,
         JSON.stringify([{path: z, access: 'rw'}, {path: z, access: 'r'}, {path: kept, access: 'rw'}])], []);
-      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${dataLink}, a link countinghouse runs through`}]);
+      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${dataLink}, on a path countinghouse runs through`}]);
       assert.deepStrictEqual(seen.declaredRoots, [z, kept], 'read-only, the same root is kept');
     });
 
@@ -303,17 +358,21 @@ describe('fs-broker 27: the links an install is reached through', () => {
       // validation's), and a policy file the server was not started with
       const stray = path.join(out, 'stray', 'policy.json');
       const spawn = Object.assign({}, options, {moduleDataPath: path.join(options.moduleDataPath, '.validate', '0123456789abcdef'), modulePolicy: stray});
-      const seen = run([started, JSON.stringify(options), JSON.stringify(spawn)].concat(grants));
+      const throwaway = Object.assign({}, spawn, {modulePolicy: undefined});
+      const seen = run([started, JSON.stringify(options), JSON.stringify(throwaway), JSON.stringify(spawn)].concat(grants));
       assert.notStrictEqual(seen.lstatAboveGrants, 'allowed', 'the relaunched process may not look above its grants');
       // the relaunch itself found them (nothing ran before it but the options)
-      assert.deepStrictEqual(seen.handed[spelled], [p, inner], JSON.stringify(seen.handed));
-      assert.deepStrictEqual(seen.handed[started], [p, inner], 'the start file, as named');
-      assert.deepStrictEqual(seen.handed[options.moduleDataPath], [dataLink], JSON.stringify(seen.handed));
+      for (const place of [p, inner]) assert.ok(seen.handed[spelled].includes(place), JSON.stringify(seen.handed));
+      for (const place of [p, inner]) assert.ok(seen.handed[started].includes(place), 'the start file, as named');
+      assert.ok(seen.handed[options.moduleDataPath].includes(dataLink), JSON.stringify(seen.handed));
       assert.ok(!Object.keys(seen.handed).some((k) => k.includes('.validate')), 'a spawn\'s throwaway is no key');
+      // the throwaway is inside the server's data path: that path's names are its own, and nothing is looked for
       for (const place of [p, inner, dataLink]) assert.ok(seen.links.includes(place), `${place}: ${JSON.stringify(seen.links)}`);
-      // the throwaway is inside the server's data path: that path's links are its own, and nothing is looked for.
-      // The stray path nothing was handed for cannot be looked for: it is said, not passed over
-      assert.deepStrictEqual(seen.unchecked, [stray]);
+      assert.strictEqual(seen.links[0], p, 'the links first: a refusal names one where it can');
+      // a spawn with a path nothing was handed for cannot be looked for: it
+      // is refused, not served without it (the review of #282, M1)
+      assert.strictEqual(seen.stray[0], 'MODULE_SANDBOX_REFUSED');
+      assert.ok(seen.stray[1].includes(stray) && /--permission/.test(seen.stray[1]), seen.stray[1]);
     });
 
     it('a spawn\'s path inside one of the server\'s own is never walked for itself: no entry is kept for a validation\'s throwaway', () => {
