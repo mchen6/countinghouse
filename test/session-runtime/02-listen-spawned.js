@@ -137,7 +137,7 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     b.c.end();
   });
 
-  it('the per-session limit counts a session, not the user\'s one key: each session opens its own 8', async() => {
+  it('the per-session limit counts a session, not the user\'s one key: each session opens its own 2; a duplicate id is refused', async() => {
     const packs = path.join(home, 'packs');
     r = runtime(home, packs);
     const end = Date.now() + 30000;
@@ -148,12 +148,18 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     const b = await shim.session(r.socket, secret);
     const ra = reader(a.c);
     const rb = reader(b.c);
-    for (let i = 0; i < 8; i++) await listen(a.c, ra);
-    const ninth = seqs++;
-    shim.message(a.c, {seq: ninth}, JSON.stringify({jsonrpc: '2.0', id: ninth, method: 'subscriptions/listen', params: {_meta: META, notifications: {toolsListChanged: true}}}));
+    const first = await listen(a.c, ra);
+    // the same id again: refused, and the first is untouched
+    shim.message(a.c, {seq: seqs++}, JSON.stringify({jsonrpc: '2.0', id: first, method: 'subscriptions/listen', params: {_meta: META, notifications: {toolsListChanged: true}}}));
+    const untilDup = Date.now() + 15000;
+    while (!ra.notes.concat([...ra.answers.values()]).some((m) => m.id === first && m.error != null) && Date.now() < untilDup) await tick();
+    assert.ok([...ra.answers.values()].some((m) => m.id === first && m.error != null && m.error.code === -32600), JSON.stringify([...ra.answers.values()]));
+    await listen(a.c, ra);
+    const third = seqs++;
+    shim.message(a.c, {seq: third}, JSON.stringify({jsonrpc: '2.0', id: third, method: 'subscriptions/listen', params: {_meta: META, notifications: {toolsListChanged: true}}}));
     const until = Date.now() + 15000;
-    while (!ra.answers.has(ninth) && Date.now() < until) await tick();
-    assert.ok(ra.answers.get(ninth).error != null, 'a\'s ninth is refused');
+    while (!ra.answers.has(third) && Date.now() < until) await tick();
+    assert.ok(ra.answers.get(third).error != null, 'a\'s third is refused');
     const fromB = await listen(b.c, rb);
     assert.ok(rb.notes.some((n) => n.method === 'notifications/subscriptions/acknowledged' && n.params._meta[SUB] === fromB), 'b still gets its own');
     a.c.end();
