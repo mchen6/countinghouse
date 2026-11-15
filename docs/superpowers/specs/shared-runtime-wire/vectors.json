@@ -249,6 +249,111 @@
     "temporaryName": "<lock>.<pid>.<random hex>.tmp",
     "breakName": "<lock>.break"
   },
+  "shimJson": {
+    "rule": "0600 and trust-checked as the secret; node and chLocal absolute; env only the allowlist (PATH, HOME or USERPROFILE, LANG, TMPDIR on POSIX; SystemRoot, TEMP, TMP, APPDATA, LOCALAPPDATA on Windows), string values; any other key refused, naming it",
+    "acceptedPosix": [
+      {
+        "node": "/opt/example/node/bin/node",
+        "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+        "env": {
+          "PATH": "/usr/local/bin:/usr/bin:/bin",
+          "HOME": "/home/example",
+          "LANG": "en_US.UTF-8",
+          "TMPDIR": "/tmp"
+        }
+      },
+      {
+        "node": "/opt/example/node/bin/node",
+        "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+        "env": {
+          "PATH": "/usr/bin:/bin",
+          "HOME": "/home/example"
+        }
+      }
+    ],
+    "acceptedWindows": [
+      {
+        "node": "C:\\Example\\node\\node.exe",
+        "chLocal": "C:\\Example\\ch-local\\bin\\ch-local.js",
+        "env": {
+          "PATH": "C:\\Windows\\system32;C:\\Windows",
+          "USERPROFILE": "C:\\Users\\example",
+          "SystemRoot": "C:\\Windows",
+          "TEMP": "C:\\Users\\example\\AppData\\Local\\Temp",
+          "TMP": "C:\\Users\\example\\AppData\\Local\\Temp",
+          "APPDATA": "C:\\Users\\example\\AppData\\Roaming",
+          "LOCALAPPDATA": "C:\\Users\\example\\AppData\\Local"
+        }
+      }
+    ],
+    "refused": [
+      {
+        "why": "a key outside the allowlist (NODE_OPTIONS)",
+        "value": {
+          "node": "/opt/example/node/bin/node",
+          "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+          "env": {
+            "PATH": "/usr/bin",
+            "HOME": "/home/example",
+            "NODE_OPTIONS": "--require /tmp/x.js"
+          }
+        }
+      },
+      {
+        "why": "a relative node path",
+        "value": {
+          "node": "node",
+          "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+          "env": {
+            "PATH": "/usr/bin",
+            "HOME": "/home/example"
+          }
+        }
+      },
+      {
+        "why": "a relative chLocal path",
+        "value": {
+          "node": "/opt/example/node/bin/node",
+          "chLocal": "bin/ch-local.js",
+          "env": {
+            "PATH": "/usr/bin",
+            "HOME": "/home/example"
+          }
+        }
+      },
+      {
+        "why": "a non-string env value",
+        "value": {
+          "node": "/opt/example/node/bin/node",
+          "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+          "env": {
+            "PATH": [
+              "/usr/bin"
+            ],
+            "HOME": "/home/example"
+          }
+        }
+      },
+      {
+        "why": "node missing",
+        "value": {
+          "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+          "env": {
+            "PATH": "/usr/bin",
+            "HOME": "/home/example"
+          }
+        }
+      },
+      {
+        "why": "env not an object",
+        "value": {
+          "node": "/opt/example/node/bin/node",
+          "chLocal": "/opt/example/ch-local/bin/ch-local.js",
+          "env": "PATH=/usr/bin"
+        }
+      }
+    ]
+  },
   "secretFiles": {
     "accepted": [
       "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",

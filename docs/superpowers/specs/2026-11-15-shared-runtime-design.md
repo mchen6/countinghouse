@@ -344,7 +344,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
     - `conditions`: `"yes"` or `"no"`, from the existing check of *this* client: the process `<client pid>` (the shim's parent), the environment and the project directory;
     - `repo`: the cwd's git remote as an `owner/name` slug, or null;
     - `token`: the keyed hash (below) of the token this environment *chooses*, or null when it chooses none.
-  - `node` and the `ch-local` entry are the absolute paths that `ch-local install` writes to `<home>/shim.json`, which the shim checks like `daemon.json`.
+  - `node` and the `ch-local` entry are the absolute paths that `ch-local install` writes to `<home>/shim.json` (section 6, "The shim's home and `shim.json`").
   - **A failure is never "no token".** The shim waits 10 s for the line. If the child exits non-zero, times out, or prints anything but one valid line, the shim sends `client` with `status: "failed"` and `why`.
     - **For the first `client` frame**, the runtime answers `own-runtime` (`"conditions-failed"`). The session can't be shown to share the daemon's token, so it doesn't share. The per-session runtime says why.
     - **For a `conditions?`**, a failure counts as `"no"` for that form.
@@ -399,6 +399,28 @@ Nothing of a session is ever written to a file.
 - A resume is refused while the session still has a live connection, so a copied token can't take over a live session.
 - The daemon stores only a hash of the current token.
 
+### The shim's home and `shim.json`
+
+- **The home comes from one argument.** `ch-local install` writes the client config as `<absolute shim path> --home <absolute home>`. The shim takes its home only from `--home`, never from the environment, so a client's environment can't point it at another home. Pass-through runtime flags, if any, come after it (section 5's per-session rule).
+- **`<home>/shim.json`**, 0600, is trust-checked exactly as the secret is (section 1): `lstat`, open with `O_NOFOLLOW`, `fstat`, then the owner and the mode; on Windows, the `privateProblem` rule. Its form:
+
+  ```json
+  {"node": "<absolute path to node>", "chLocal": "<absolute path to ch-local's entry .js>", "env": {"PATH": "…", "HOME": "…"}}
+  ```
+
+  - `node` and `chLocal` must be absolute paths. Anything else is refused.
+  - `env` may hold only the allowlist in step 4 below, with string values:
+    - `PATH`;
+    - `HOME` (on Windows `USERPROFILE`);
+    - `LANG`, if set at install;
+    - on POSIX `TMPDIR`;
+    - on Windows `SystemRoot`, `TEMP`, `TMP`, `APPDATA` and `LOCALAPPDATA`.
+
+    **Any other key is refused**: the attach stops, naming it. It is never dropped silently.
+  - The shim runs `<node> <chLocal> daemon` and `<node> <chLocal> conditions --for <pid>` from it.
+
+  The vectors give accepted and refused forms (`shimJson`).
+
 ### Starting
 
 1. A shim makes the directory and ownership checks (section 1). Then it reads `<home>/run/daemon/daemon.json`: `{pid, socket, runtimeVersion, daemonVersion, started}`. `socket` is the Unix socket path or the Windows pipe name.
@@ -415,7 +437,11 @@ Nothing of a session is ever written to a file.
      4. Remove `.break`.
    - **Releasing.** The holder removes the lock only if it still holds its own `{pid, host, at}`.
    - **Waiting** for a live holder: poll every 200 ms, within the shim's 20 s.
-4. Still nothing, so it spawns `<node> <ch-local> daemon`, from `shim.json`, detached: on Windows `DETACHED_PROCESS | CREATE_NO_WINDOW`; on POSIX a new session (`setsid`), with stdio on null.
+4. Still nothing, so it spawns `<node> <chLocal> daemon`, from `shim.json`, detached, then **releases the lock at once**:
+   - on Windows, `DETACHED_PROCESS | CREATE_NO_WINDOW`;
+   - on POSIX, in a new process group (`process_group(0)`), with stdio on null.
+
+   The daemon ignores `SIGHUP` from its first line, so it outlives the shim's parent ending.
    - **The shim clears the environment** and passes only `shim.json`'s `env`, which `ch-local install` resolved and recorded:
      - `PATH`;
      - `HOME` (on Windows `USERPROFILE`);
@@ -425,9 +451,13 @@ Nothing of a session is ever written to a file.
 
      Nothing comes from the client's environment, `NODE_OPTIONS` least of all, since it would act before any of ch-local's code, in every session's runtime.
    - **Its working directory is `<home>`.** The daemon reads the GitHub token itself (section 5).
-5. The daemon spawns the runtime with `--sessionSocket` and the control channel. It writes `daemon.json` once the socket listens, then releases the lock.
+5. **The daemon takes `start.lock` itself, as its first act** (behind the shim's release), and checks `daemon.json` again under it.
+   - A live daemon in it means this daemon exits at once.
+   - Otherwise it spawns the runtime with `--sessionSocket` and the control channel, writes `daemon.json` once the socket listens, then releases the lock.
+
+   Only a holder releases its own lock (`lib/lock.js`), so the shim and the daemon each hold it in turn.
 6. The shim waits up to 20 s for a handshake to succeed.
-7. A second daemon that finds a live one in `daemon.json` exits at once.
+7. **The cost of the gap.** A second shim that gets the lock between the first shim's release and the daemon's take finds no `daemon.json`, and spawns a second daemon. That daemon waits for the lock, finds the first one's `daemon.json` and exits. The only cost is a wasted spawn; two daemons never both run.
 
 ### Idle stop, and the race with an arriving shim
 
@@ -593,6 +623,8 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - The idle stop with its race, the restart backoff, the upgrade requests, and the re-exec handoff.
 - Tests (node:test, stub runtime):
   - two shims start one daemon, and a second daemon exits;
+  - the daemon outlives its launching shim's parent ending (SIGHUP ignored, its own process group);
+  - a `shim.json` with a key outside the allowlist, a relative path, or a non-string value is refused, naming it;
   - an arrival during the idle stop gets a new daemon;
   - the upgrade drain;
   - the handoff keeps overrides;
