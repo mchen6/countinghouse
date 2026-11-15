@@ -21,7 +21,8 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 // therefore the expected steady-state result both before and after the
 // restart; PEER_GONE/DEVICE_NOT_FOUND appearing only *during* the restart
 // window is the actual signal this test is after.
-describe('direct-peer-channels 02: port invalidation on module restart (D4)', function() {
+// a part of test/test8.js, against its server: alone, skipped (#234)
+(global.COUNTINGHOUSE_TEST8_PARTS === true ? describe : describe.skip)('direct-peer-channels 02: port invalidation on module restart (D4) (a part of test/test8.js: run it, not this file alone)', function() {
   this.timeout(0);
 
   const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
