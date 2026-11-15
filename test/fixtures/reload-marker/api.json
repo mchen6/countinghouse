@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "reload-marker",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a handler that says when it has started, in its data directory, then holds its worker until the test releases it: a test can order a reload, and every step after it, by events, not sleeps",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:markService": {
+        "actionList": [
+          {
+            "name": "busy",
+            "description": "Writes /data/started, then holds its worker until /data/release exists (at most input.maxMs, default 20 s), and answers {ok: true}.",
+            "input": {
+              "schema": "/markService/busy/input"
+            },
+            "output": {
+              "schema": "/markService/busy/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
