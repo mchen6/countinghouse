@@ -1,0 +1,151 @@
+'use strict';
+// C1, the session transport's wire layer (docs/superpowers/specs/
+// 2026-11-15-shared-runtime-design.md section 1, contract 2), server free:
+// frames, the M payload, the handshake MACs, the secret file's form, and
+// the line rules the runtime applies whatever the shim did. Each case runs
+// the conformance vectors the Rust shim also runs
+// (test/fixtures/shim-wire-vectors.json).
+const assert = require('assert');
+const frames = require('../../lib/session-transport/frames');
+const handshake = require('../../lib/session-transport/handshake');
+const lines = require('../../lib/session-transport/lines');
+const V = require('../fixtures/shim-wire-vectors.json');
+
+const hexOf = (b) => Buffer.from(b).toString('hex');
+const fromHex = (h) => Buffer.from(h, 'hex');
+
+describe('sessions 01: the wire (contract 2)', () => {
+  it('runs vectors of the contract this code speaks', () => {
+    assert.strictEqual(V.contract, frames.CONTRACT);
+  });
+
+  describe('frames', () => {
+    it('encodes every handshake and control vector byte for byte', () => {
+      const kinds = {hello: 'H', prove: 'P', auth: 'A', authResume: 'A', welcome: 'W', refused: 'R'};
+      for (const [name, kind] of Object.entries(kinds)) {
+        assert.strictEqual(hexOf(frames.encode(kind, V.handshake.frames[name].json)), V.handshake.frames[name].hex, name);
+      }
+      for (const [name, c] of Object.entries(V.control)) assert.strictEqual(hexOf(frames.encode('C', c.json)), c.hex, name);
+    });
+
+    it('decodes frames split at every byte, in order', () => {
+      const all = Buffer.concat([fromHex(V.handshake.frames.hello.hex), fromHex(V.control.drain.hex), fromHex(V.messages.requestToRuntime.hex)]);
+      for (let cut = 1; cut < all.length; cut++) {
+        const got = [];
+        const d = frames.createDecoder({caps: {M: 1 << 20}, onFrame: (kind, payload) => got.push([kind, payload]), onError: (why) => assert.fail(why)});
+        d.push(all.subarray(0, cut));
+        d.push(all.subarray(cut));
+        assert.deepStrictEqual(got.map(([k]) => k), ['H', 'C', 'M'], `cut at ${cut}`);
+        assert.strictEqual(got[0][1].toString('utf8'), V.handshake.frames.hello.json);
+      }
+    });
+
+    it('refuses an over-cap length before reading its payload, and an unknown kind', () => {
+      const errors = [];
+      const d = frames.createDecoder({caps: {M: 16}, onFrame: () => assert.fail('no frame'), onError: (why) => errors.push(why)});
+      const head = Buffer.alloc(5);
+      head.write('M', 0, 'ascii');
+      head.writeUInt32BE(17, 1);
+      d.push(head);
+      assert.strictEqual(errors.length, 1, 'refused from the head alone');
+      const errs2 = [];
+      const d2 = frames.createDecoder({caps: {M: 16}, onFrame: () => assert.fail('no frame'), onError: (why) => errs2.push(why)});
+      d2.push(Buffer.from([0x5a, 0, 0, 0, 0]));
+      assert.strictEqual(errs2.length, 1, 'kind Z');
+    });
+
+    it('caps HELLO at 507 bytes, the other handshake frames at 4096 and C at 65536', () => {
+      assert.strictEqual(frames.CAPS.H, 507);
+      for (const k of ['P', 'A', 'W', 'R']) assert.strictEqual(frames.CAPS[k], 4096);
+      assert.strictEqual(frames.CAPS.C, 65536);
+    });
+  });
+
+  describe('M payloads', () => {
+    it('encodes and decodes the message vectors', () => {
+      for (const name of ['requestToRuntime', 'oddIdToRuntime', 'batchToRuntime', 'clientResponseToRuntime', 'nonStringMethod', 'escapedIdKey',
+        'loneSurrogateKey', 'notificationToRuntime', 'replyToShim', 'unmatchedReplyToShim', 'notificationToShim']) {
+        const m = V.messages[name];
+        assert.strictEqual(hexOf(frames.encode('M', frames.encodeM(m.header, Buffer.from(m.line, 'utf8')))), m.hex, name);
+        const payload = fromHex(m.hex).subarray(5);
+        const back = frames.decodeM(payload);
+        assert.deepStrictEqual(back.header, m.header, name);
+        assert.strictEqual(back.line.toString('utf8'), m.line, name);
+      }
+    });
+
+    it('refuses each malformed payload', () => {
+      for (const name of ['payloadUnder2Bytes', 'headerLongerThanPayload', 'headerNotAnObject', 'seqNotAnInteger']) {
+        const payload = fromHex(V.messages.malformed[name]).subarray(5);
+        assert.throws(() => frames.decodeM(payload), /M/, name);
+      }
+    });
+  });
+
+  describe('the handshake', () => {
+    const secret = fromHex(V.handshake.secretHex);
+    const nc = fromHex(V.handshake.ncHex);
+    const ns = fromHex(V.handshake.nsHex);
+
+    it('makes ms and mc as the vectors have them, with the protocol inside both', () => {
+      assert.strictEqual(hexOf(handshake.serverMac(secret, 1, nc, ns)), V.handshake.msHex);
+      assert.strictEqual(hexOf(handshake.clientMac(secret, 1, ns, nc)), V.handshake.mcHex);
+      assert.notStrictEqual(hexOf(handshake.serverMac(secret, 2, nc, ns)), V.handshake.msHex);
+    });
+
+    it('checks a MAC in constant time, refusing a one-bit change and a wrong length', () => {
+      const ms = fromHex(V.handshake.msHex);
+      assert.strictEqual(handshake.macEquals(ms, Buffer.from(ms)), true);
+      const flipped = Buffer.from(ms);
+      flipped[0] ^= 0x01;
+      assert.strictEqual(handshake.macEquals(ms, flipped), false);
+      assert.strictEqual(handshake.macEquals(ms, ms.subarray(1)), false);
+    });
+
+    it('makes the token MAC as the vectors have it', () => {
+      assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
+    });
+
+    it('reads the accepted secret files and refuses the others', () => {
+      for (const s of V.secretFiles.accepted) assert.strictEqual(hexOf(handshake.parseSecret(s)), V.handshake.secretHex, JSON.stringify(s));
+      for (const s of V.secretFiles.refused) assert.strictEqual(handshake.parseSecret(s), null, JSON.stringify(s));
+      assert.strictEqual(handshake.formatSecret(secret), V.secretFile.contents);
+    });
+  });
+
+  describe('the runtime\'s line rules', () => {
+    const lineOf = (name) => (V.messages[name].lineHex != null ? fromHex(V.messages[name].lineHex) : Buffer.from(V.messages[name].line, 'utf8'));
+
+    it('dispatches a line that came with a seq', () => {
+      const r = lines.classify(lineOf('requestToRuntime'), {seq: 1});
+      assert.strictEqual(r.dispatch, true);
+      assert.strictEqual(r.message.id, 7);
+    });
+
+    it('never dispatches a line with an id that came without a seq, and answers -32600 with its id', () => {
+      const r = lines.classify(lineOf('loneSurrogateKey'), null);
+      assert.strictEqual(r.dispatch, false);
+      assert.strictEqual(JSON.stringify(r.answer), V.messages.loneSurrogateKey.runtimeAnswer);
+      const escaped = lines.classify(lineOf('escapedIdKey'), null);
+      assert.strictEqual(escaped.dispatch, false, 'i\\u0064 is id');
+    });
+
+    it('decodes UTF-8 fatally: invalid UTF-8 is a parse error and nothing runs', () => {
+      const r = lines.classify(lineOf('invalidUtf8'), null);
+      assert.strictEqual(r.dispatch, false);
+      assert.strictEqual(JSON.stringify(r.answer), V.messages.invalidUtf8.runtimeAnswer);
+    });
+
+    it('dispatches a notification without a seq, and ignores a response', () => {
+      assert.strictEqual(lines.classify(lineOf('notificationToRuntime'), null).dispatch, true);
+      const resp = lines.classify(lineOf('clientResponseToRuntime'), null);
+      assert.strictEqual(resp.dispatch, false);
+      assert.strictEqual(resp.answer, null);
+    });
+
+    it('a batch without a seq is never dispatched', () => {
+      const r = lines.classify(lineOf('batchToRuntime'), null);
+      assert.strictEqual(r.dispatch, false);
+    });
+  });
+});
