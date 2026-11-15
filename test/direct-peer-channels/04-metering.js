@@ -2,8 +2,9 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 4's required test:
 // "直连调用产生计量记录，与主线程路径记录字段一致" (a direct-channel call produces a

@@ -1,6 +1,7 @@
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/cross-cutting-matrix.md found that MCP task-augmented tools/call
 // (params.task) never called userAuth -- any apiKey could task-augment a

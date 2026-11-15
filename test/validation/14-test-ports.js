@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const {execFileSync} = require('child_process');
 // the same files the rewrite maps (scripts/map-test-ports.js)
-const {isServerTest, PORT, testFiles} = require('../../scripts/map-test-ports');
+const {isServerTest, testFiles, mapLine} = require('../../scripts/map-test-ports');
 
 const ROOT = path.join(__dirname, '..', '..');
 // test/fixtures/remote-probe/package.json declares http://127.0.0.1:9688
@@ -34,11 +34,11 @@ describe('validation 14: server tests\' ports honour CH_TEST_PORT_BASE', () => {
       if (!isServerTest(text, rel)) continue;
       const allowed = new Set(FIXTURE_PORTS[rel] || []);
       text.split('\n').forEach((line, i) => {
-        // what is left once every testPort(N) is taken out
-        const left = codeOf(line).replace(new RegExp(`testPort\\(\\s*${PORT}\\s*\\)`, 'g'), '');
-        for (const m of left.matchAll(new RegExp(`(^|[^\\w.$])(${PORT})\\b`, 'g'))) {
-          if (!allowed.has(m[2])) unmapped.push(`${rel}:${i + 1}: ${line.trim().slice(0, 120)}`);
-        }
+        // unmapped: a line the script's own mapping would still change (a
+        // port in code, in a string or in a template's text; never a UUID's
+        // group)
+        const code = codeOf(line);
+        if (mapLine(code, allowed) !== code) unmapped.push(`${rel}:${i + 1}: ${line.trim().slice(0, 120)}`);
       });
     }
     assert.deepStrictEqual(unmapped, []);

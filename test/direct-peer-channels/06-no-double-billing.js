@@ -1,8 +1,9 @@
 const exec = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // Regression test for the double-billing fix (docs/composite-tools.md's
 // "billing authority" principle): platform automatic metering is now the

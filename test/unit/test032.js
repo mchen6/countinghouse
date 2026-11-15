@@ -1,7 +1,8 @@
 const request = require('supertest');
 const {toolErrorCode} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/cross-cutting-matrix.md found that MCP tools/call error responses
 // (lib/mcp/gateway.js's toolCallResult()) dropped err.code -- the locale-

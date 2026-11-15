@@ -1,6 +1,7 @@
 const request = require('supertest');
+const {testPort} = require('../helpers/test-env');
 
-const url = 'http://127.0.0.1:9527';
+const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5, step 1's required unit
 // test: "两 worker 直连 echo 往返" (two workers, direct-connect, echo round
