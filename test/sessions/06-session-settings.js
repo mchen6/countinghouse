@@ -104,6 +104,22 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.strictEqual(reads, 0);
   });
 
+  it('the memo\'s age is on a monotonic clock, and a negative one (a clock gone back) is expired (#271 re-check)', () => {
+    let reads = 0;
+    let t = 1000000;
+    settings.configure({ceiling: () => { reads += 1; return ceiling; }, defaultOf: (name) => defaults[name], isLive: (id) => live.has(id), ceilingMemoMs: 1000, nowMs: () => t});
+    loosen(A, 'maxOutputBytes', 16 * MiB);
+    reads = 0;
+    settings.limitsOf(A);
+    assert.strictEqual(reads, 0, 'within the window');
+    t += 1000;
+    settings.limitsOf(A);
+    assert.strictEqual(reads, 1, 'past it, read again');
+    t -= 60000;
+    settings.limitsOf(A);
+    assert.strictEqual(reads, 2, 'a clock gone back: read again, not served from the memo');
+  });
+
   it('a ceiling that turns conversation off, or forbids the setting, bounds it at the default (#268 review 2)', () => {
     loosen(A, 'maxOutputBytes', 16 * MiB);
     loosen(B, 'requestTimeout', 60000);

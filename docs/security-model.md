@@ -506,6 +506,13 @@ ceiling reads as one that cannot be trusted, and it fails closed. (The
 identity secret is checked by the `--hardened` parent before it relaunches
 under the permission model; the child takes that same file only, unchanged.)
 
+In a shared runtime, a session's per-call checks don't read the ceiling
+each time: `lib/session-settings.js` takes its last read again for up to
+1 s, on a monotonic clock. A ceiling the settings tool re-reads replaces it at
+once. So a ceiling lowered on disk can take up to 1 s to bound a session's
+calls; until then they're held to the operator's previous ceiling, never
+beyond it.
+
 Two limits. `<home>/history.jsonl` is a record for the user, not a security
 boundary: the user can write it, so nothing the ceiling enforces rests on
 it. And ch-local reads the ceiling with the runtime installed under its
