@@ -17,6 +17,7 @@ if (require.main !== module) {
 }
 
 const {startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {runCases, MODES} = require('../helpers/error-shape-cases');
 
 const ROOT    = path.join(__dirname, '..', '..');
@@ -26,7 +27,7 @@ const AUTH    = path.join(__dirname, 'error-shape-auth.json');
 
 (async () => {
   const golden = {};
-  let port = 9658;
+  let port = testPort(9658);
   for (const [mode, m] of Object.entries(MODES)) {
     const server = await startServer(port, m.flags.concat(['--authConfigPath', AUTH, '--loadModule', FIXTURE]));
     try { golden[mode] = await runCases(port, m.tasks); } finally { stopServer(server); }

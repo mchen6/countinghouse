@@ -17,6 +17,7 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const KEY     = 'operator-order-key';
@@ -87,7 +88,7 @@ describe('sandbox 33: operator actions on one module, back to back', function() 
   this.timeout(120000);
 
   describe('under --moduleSandbox off', () => {
-    const PORT = 9644;
+    const PORT = testPort(9644);
     const h = helpers(PORT);
     let server = null;
     let base = null;
@@ -196,7 +197,7 @@ describe('sandbox 33: operator actions on one module, back to back', function() 
   });
 
   describe('under audit, with the supervisor', () => {
-    const PORT = 9645;
+    const PORT = testPort(9645);
     const h = helpers(PORT);
     let server = null;
     let base = null;

@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 // Countinghouse installed under /app is refused, not supported (spec decision
@@ -21,16 +22,16 @@ describe('fs-broker 13: virtual and host paths do not collide', function() {
       const mod = path.join(tmp('ch-col-mod-'), 'fs-probe');
       fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), mod, {recursive: true});
       const store = tmp('ch-col-store-');
-      server = await startServer(9631, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
+      server = await startServer(testPort(9631), ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
         '--moduleDataPath', store, '--loadModule', mod]);
-      const res = await mcpCall(9631, 'k', 'fs_probe_probeservice_where', {});
+      const res = await mcpCall(testPort(9631), 'k', 'fs_probe_probeservice_where', {});
       const where = toolOutput(res);
       assert.strictEqual(where.dirname, '/app/handlers/probeService', JSON.stringify(res));
       assert.strictEqual(where.own, 'fs-probe');
-      await mcpCall(9631, 'k', 'fs_probe_probeservice_write', {path: '/tmp/t', content: 'mine'});
+      await mcpCall(testPort(9631), 'k', 'fs_probe_probeservice_write', {path: '/tmp/t', content: 'mine'});
       assert.strictEqual(fs.readFileSync(path.join(store, 'fs-probe', 'tmp', 't'), 'utf8'), 'mine');
       const hostTmpPath = path.join(mod, 'package.json');
-      const r = toolOutput(await mcpCall(9631, 'k', 'fs_probe_probeservice_read', {path: hostTmpPath}));
+      const r = toolOutput(await mcpCall(testPort(9631), 'k', 'fs_probe_probeservice_read', {path: hostTmpPath}));
       assert.strictEqual(r.code, 'ENOENT', 'a host path under /tmp is the module\'s own /tmp, not the host\'s');
     });
   });

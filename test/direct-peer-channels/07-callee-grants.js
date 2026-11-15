@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 const {toolOutput} = require('../helpers/tool-result');
@@ -28,7 +29,7 @@ describe('direct peer channels 07: the callee serves only granted devices', func
       // peer-forge declares its calls (R2-1 Task 4), resolved under 'both'
       both:   {userName: 'both', devices: [deviceIDForName('peer-forge'), dev1, dev2], runsModules: ['peer-forge']}
     }));
-    server = await startServer(9668, ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
+    server = await startServer(testPort(9668), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-callee-1'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-callee-2'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'peer-forge')]);
@@ -36,7 +37,7 @@ describe('direct peer channels 07: the callee serves only granted devices', func
   after(() => { stopServer(server); if (base) fs.rmSync(base, {recursive: true, force: true}); });
 
   it('a granted device is served; a device the channel was not granted is refused', async () => {
-    const r = await mcpCall(9668, 'forger', 'peer_forge_forgeservice_forge', {appKey: 'forger', granted: dev1, other: dev2});
+    const r = await mcpCall(testPort(9668), 'forger', 'peer_forge_forgeservice_forge', {appKey: 'forger', granted: dev1, other: dev2});
     const out = toolOutput(r);
     assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r) + server.output.slice(-1500));
     assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));
@@ -47,7 +48,7 @@ describe('direct peer channels 07: the callee serves only granted devices', func
   // uses it, and the other device, granted to the key but hosted by another
   // worker, is still not served on this channel.
   it('a key granted later on the open channel is served; its other device is not served on this channel', async () => {
-    const r = await mcpCall(9668, 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev1, other: dev2});
+    const r = await mcpCall(testPort(9668), 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev1, other: dev2});
     const out = toolOutput(r);
     assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r));
     assert.strictEqual(out.other, 'error: PEER_NOT_GRANTED', JSON.stringify(out));

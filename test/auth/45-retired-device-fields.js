@@ -10,9 +10,10 @@ const fs     = require('fs');
 const path   = require('path');
 const {spawnSync} = require('child_process');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 
-const PORT    = 9655;
+const PORT    = testPort(9655);
 const CALLER  = `s1-caller-${process.pid}`;
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'retired-device-fields');
 const TOOL    = 'retired_device_fields_greetservice_hello';

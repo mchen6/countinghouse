@@ -9,6 +9,7 @@ const path = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 
@@ -21,7 +22,7 @@ describe('auth 25: repeatable job schedulers are per owner', function() {
   let server = null;
   let base = null;
   let queue = null;
-  const url = 'http://127.0.0.1:9670';
+  const url = `http://127.0.0.1:${testPort(9670)}`;
   const schedulers = async () => (await queue.getJobSchedulers(0, -1)).filter((s) => String(s.key || s.id || s.name).includes(NAME) || s.name === NAME);
   before(async () => {
     base = mkdtemp('schedulers-');
@@ -30,7 +31,7 @@ describe('auth 25: repeatable job schedulers are per owner', function() {
       'alice-key': {userName: 'alice', devices: [DEVICE]},
       'bob-key':   {userName: 'bob', devices: [DEVICE]}
     }));
-    server = await startServer(9670, ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
+    server = await startServer(testPort(9670), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
     queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});
   });

@@ -9,8 +9,9 @@ const fs     = require('fs');
 const http   = require('http');
 const BSON   = require('bson');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
-const PORT       = 9662;
+const PORT       = testPort(9662);
 const AUTH_PATH  = `/tmp/countinghouse-test-auth-26-${process.pid}.json`;
 const ALICE      = `alice-key-26-${process.pid}`;   // holds the echo device
 const BOB        = `bob-key-26-${process.pid}`;     // holds no device

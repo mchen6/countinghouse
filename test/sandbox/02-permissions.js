@@ -7,6 +7,7 @@ const path   = require('path');
 const perms  = require('../../lib/module-permissions');
 const policy = require('../../lib/module-policy');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
 const pkg = (permissions) => ({name: 'm', version: '1.0.0', countinghouse: {permissions: permissions}});
 
@@ -219,7 +220,7 @@ describe('sandbox 02: the policy file', function() {
   it('stops startup on a missing policy file', async () => {
     let server = null;
     try {
-      server = await startServer(9606, ['--debug', '--workerThread', '--modulePolicy', path.join(dir, 'nope.json')], {expectExit: true});
+      server = await startServer(testPort(9606), ['--debug', '--workerThread', '--modulePolicy', path.join(dir, 'nope.json')], {expectExit: true});
       assert.strictEqual(server.exitCode, 2);
       assert.ok(server.output.includes('--modulePolicy'), server.output);
     } finally { stopServer(server); }

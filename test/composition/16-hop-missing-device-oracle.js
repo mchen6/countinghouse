@@ -20,6 +20,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolErrorCode} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
 
@@ -40,8 +41,8 @@ const authFor = (granted) => JSON.stringify({
   [BOUND]: {userName: 'bound', devices: granted ? [DEVICE] : [deviceIDForName('some-other-module')], runsModules: ['hop-prober']}
 });
 
-[{label: 'over a direct peer channel', port: 9616, flags: []},
-  {label: 'through the main thread', port: 9617, flags: ['--no-directPeerChannels']}].forEach((variant) => {
+[{label: 'over a direct peer channel', port: testPort(9616), flags: []},
+  {label: 'through the main thread', port: testPort(9617), flags: ['--no-directPeerChannels']}].forEach((variant) => {
   [{when: 'cached before the unload', hopFirst: true}, {when: 'built after the unload', hopFirst: false}].forEach(({when, hopFirst}) => {
     describe(`composition 16: a hop to a missing device, ${variant.label}, its client ${when}`, function() {
       this.timeout(90000);

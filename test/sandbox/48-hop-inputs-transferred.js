@@ -12,6 +12,7 @@ const assert = require('assert');
 const crypto = require('crypto');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 const hopInput = require('../../lib/hop-input');
 
@@ -91,7 +92,7 @@ describe('sandbox 48: a validator\'s answer to input bytes it cannot read, serve
   });
 });
 
-const PORT   = 9749;
+const PORT   = testPort(9749);
 const KEY    = 'hop-input-key';
 const AUTH   = path.join(__dirname, '48-auth.json');
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');

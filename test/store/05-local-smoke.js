@@ -14,6 +14,7 @@ const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {withoutRedisNoise} = require('../helpers/stdio-client');
 
 // The server's log for a failure message (issue #40, Windows): what it
@@ -21,7 +22,7 @@ const {withoutRedisNoise} = require('../helpers/stdio-client');
 const serverLog = (srv) => `; server log without the Redis noise:\n${withoutRedisNoise((srv && srv.output) || '', 3000)}`;
 const {toolOutput} = require('../helpers/tool-result');
 
-const PORT = 9732;
+const PORT = testPort(9732);
 const KEY = 'local-smoke-key-0001';
 const TOOL = 'local_store_probe_probeservice_remember';
 

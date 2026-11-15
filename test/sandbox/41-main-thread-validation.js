@@ -22,9 +22,10 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT    = 9749;
+const PORT    = testPort(9749);
 const KEY     = 'main-checked-key';
 const OTHER_KEY = 'main-checked-other-key';
 const AUTH    = path.join(__dirname, '41-auth.json');

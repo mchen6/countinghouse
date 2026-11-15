@@ -13,9 +13,10 @@ const path    = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT    = 9641;
+const PORT    = testPort(9641);
 const URL     = `http://127.0.0.1:${PORT}`;
 const DEVICE  = deviceIDForName('job-snoop');
 const SERVICE = 'urn:countinghouse-test:serviceID:jobService';

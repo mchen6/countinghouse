@@ -7,10 +7,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY = 'k';
-const PORT = 9738;
+const PORT = testPort(9738);
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'redis-ns');
 
 function copy(base, name) {

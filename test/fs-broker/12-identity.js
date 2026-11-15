@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 // Required where used, so the server tests run before identity.js exists.
 const identity = () => require('../../lib/fs-broker/identity');
@@ -16,14 +17,14 @@ describe('fs-broker 12: virtual identity', function() {
 
   function start(mode, mod) {
     base = mkdtemp('identity-');
-    return startServer(9630, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
+    return startServer(testPort(9630), ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', mod)]);
   }
 
   ['off', 'audit', 'enforce'].forEach((mode) => {
     it(`${mode}: a module sees /app, cwd /app, tmpdir /tmp, and reads its own files via __dirname`, async () => {
       server = await start(mode, 'fs-probe');
-      const res = await mcpCall(9630, 'k', 'fs_probe_probeservice_where', {});
+      const res = await mcpCall(testPort(9630), 'k', 'fs_probe_probeservice_where', {});
       const r = toolOutput(res);
       assert.strictEqual(r.dirname, '/app/handlers/probeService', JSON.stringify(res));
       assert.strictEqual(r.filename, '/app/handlers/probeService/where.js');
@@ -38,7 +39,7 @@ describe('fs-broker 12: virtual identity', function() {
 
   it('an ES-module package loads through virtual URLs; a dependency without "type" stays CommonJS', async () => {
     server = await start('enforce', 'esm-probe');
-    const res = await mcpCall(9630, 'k', 'esm_probe_probeservice_where', {});
+    const res = await mcpCall(testPort(9630), 'k', 'esm_probe_probeservice_where', {});
     const r = toolOutput(res);
     assert.strictEqual(r.url, 'file:///app/handlers/probeService/where.js', JSON.stringify(res));
     assert.strictEqual(r.dirname, '/app/handlers/probeService');
@@ -83,7 +84,7 @@ describe('fs-broker 12: virtual identity', function() {
 
   it('enforce: module code cannot register a loader hook after set-options', async () => {
     server = await start('enforce', 'route-probe');
-    const res = await mcpCall(9630, 'k', 'route_probe_probeservice_attempt', {what: 'registerHooks', target: '/x'});
+    const res = await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'registerHooks', target: '/x'});
     const r = toolOutput(res);
     assert.deepStrictEqual(r, {outcome: 'refused', code: 'ERR_ACCESS_DENIED'}, JSON.stringify(res));
   });
@@ -101,7 +102,7 @@ describe('fs-broker 12: virtual identity', function() {
       fs.writeFileSync(t.file, '{"secret": true}');
       try {
         server = await start('enforce', 'route-probe');
-        const res = await mcpCall(9630, 'k', 'route_probe_probeservice_attempt', {what: what, target: t.file});
+        const res = await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: what, target: t.file});
         const r = toolOutput(res);
         assert.strictEqual(r.outcome, 'refused', JSON.stringify(res));
       } finally {

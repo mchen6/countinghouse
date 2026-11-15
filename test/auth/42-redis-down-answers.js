@@ -17,10 +17,11 @@ const net    = require('net');
 const path   = require('path');
 const redis  = require('redis');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {redisUrlFor} = require('../helpers/test-env');
 
-const PORT       = 9652;
+const PORT       = testPort(9652);
 const PROXY_PORT = 6391;
 // The Redis the test's proxy forwards to: the servers' own (CH_TEST_REDIS_URL
 // under run-local), else the shared default as before.

@@ -64,13 +64,16 @@ function mapFile(file) {
     return mapped + comment;
   });
   let text = lines.join('\n');
-  // testPort's require at the top level, after the file's last top-level
-  // require: a helper required inside a describe is in that scope only, and
-  // the ports may be used outside it
+  // testPort's require at the top level, beside the file's top-level
+  // sandbox-server require (a helper required inside a describe is in that
+  // scope only, and the ports may be used outside it); without one, after
+  // the last top-level line that is a require itself (`x = require(...)`),
+  // never after one that merely calls require inside a value, which may come
+  // after the ports' first use
   if (changes.length > 0 && !/^const \{[^}]*\btestPort\b[^}]*\}\s*=\s*require\(/m.test(text)) {
     const all = text.split('\n');
-    let last = -1;
-    all.forEach((l, i) => { if (/^(const|let|var) .*require\(/.test(l)) last = i; });
+    let last = all.findIndex((l) => /^(const|let|var) /.test(l) && USES_HELPER.test(l));
+    if (last < 0) all.forEach((l, i) => { if (/^(const|let|var) [^=]+=\s*require\(/.test(l)) last = i; });
     if (last < 0) throw new Error(`${rel}: no top-level require to put testPort's after`);
     all.splice(last + 1, 0, "const {testPort} = require('../helpers/test-env');");
     text = all.join('\n');

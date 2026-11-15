@@ -10,6 +10,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const KEY     = 'codes-after-end-key';
@@ -41,7 +42,7 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
   this.timeout(120000);
 
   describe('under audit', () => {
-    const PORT = 9613;
+    const PORT = testPort(9613);
     let server = null;
     let base = null;
     let copy = null;
@@ -147,7 +148,7 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
   // hosted here, so a key without a grant for it must not get either: the
   // route's grant check (from the auth config) answers first.
   describe('without a grant for the device (not under --debug)', () => {
-    const PORT = 9615;
+    const PORT = testPort(9615);
     const ADMIN = 'codes-after-end-admin';
     const OWNER = 'codes-after-end-owner';
     const OTHER = 'codes-after-end-other';
@@ -184,7 +185,7 @@ describe('sandbox 24: a request for a module that is gone says why', function() 
   });
 
   describe('under --moduleSandbox off (no supervisor)', () => {
-    const PORT = 9614;
+    const PORT = testPort(9614);
     let server = null;
     before(async () => {
       server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', 'off']);

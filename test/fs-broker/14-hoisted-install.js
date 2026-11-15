@@ -7,6 +7,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {toolOutput} = require('../helpers/tool-result');
 
@@ -41,9 +42,9 @@ describe('fs-broker 14: a hoisted npm install', function() {
 
   ['off', 'enforce'].forEach((mode) => {
     it(`${mode}: a worker boots and its module works`, async () => {
-      server = await startServer(9633, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
+      server = await startServer(testPort(9633), ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
         '--moduleDataPath', path.join(project, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')], {root: installed});
-      const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'hoisted'});
+      const w = await mcpCall(testPort(9633), 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'hoisted'});
       assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, server.output.slice(-3000));
     });
   });
@@ -54,10 +55,10 @@ describe('fs-broker 14: a hoisted npm install', function() {
   // (spec: "cannot use files to reach ... other modules' code and data").
   ['secret.json', path.join('lib', 'secret.js')].forEach((file) => {
     it(`enforce: a module cannot require another npm-installed module's ${file}`, async () => {
-      server = await startServer(9633, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
+      server = await startServer(testPort(9633), ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
         '--moduleDataPath', path.join(project, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'route-probe')], {root: installed});
       const target = path.join(project, 'node_modules', 'other-module', file);
-      const r = await mcpCall(9633, 'k', 'route_probe_probeservice_attempt', {what: 'parentRequire', target: target});
+      const r = await mcpCall(testPort(9633), 'k', 'route_probe_probeservice_attempt', {what: 'parentRequire', target: target});
       const out = toolOutput(r);
       assert.strictEqual(out.outcome, 'refused', JSON.stringify(r));
     });
@@ -67,9 +68,9 @@ describe('fs-broker 14: a hoisted npm install', function() {
   it('--hardened (enforce): a worker boots and its module works', async () => {
     const modules = path.join(project, 'modules');
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(modules, 'fs-probe'), {recursive: true});
-    server = await startServer(9633, ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
+    server = await startServer(testPort(9633), ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
       '--modulePath', modules, '--moduleDataPath', `${fs.realpathSync(installed)}_data`, '--loadModule', path.join(modules, 'fs-probe')], {root: installed});
-    const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'hoisted'});
+    const w = await mcpCall(testPort(9633), 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'hoisted'});
     assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, server.output.slice(-3000));
   });
 });
@@ -141,9 +142,9 @@ describe('fs-broker 14: dependencies installed as symlinks', function() {
     ['off', 'enforce'].forEach((mode) => {
       it(`${label}, ${mode}: a worker boots and its module works`, async () => {
         const installed = make();
-        server = await startServer(9633, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
+        server = await startServer(testPort(9633), ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', mode,
           '--moduleDataPath', path.join(project, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'fs-probe')], {root: installed});
-        const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'linked'}, {allowUnknownTool: true});
+        const w = await mcpCall(testPort(9633), 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'linked'}, {allowUnknownTool: true});
         assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, server.output.slice(-3000));
       });
     });
@@ -156,9 +157,9 @@ describe('fs-broker 14: dependencies installed as symlinks', function() {
     const installed = linkedNodeModules();
     const modules = path.join(project, 'modules');
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(modules, 'fs-probe'), {recursive: true});
-    server = await startServer(9633, ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
+    server = await startServer(testPort(9633), ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
       '--modulePath', modules, '--moduleDataPath', `${installed}_data`, '--loadModule', path.join(modules, 'fs-probe')], {root: installed});
-    const w = await mcpCall(9633, 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'linked'}, {allowUnknownTool: true});
+    const w = await mcpCall(testPort(9633), 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'linked'}, {allowUnknownTool: true});
     assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, server.output.slice(-3000));
   });
 });
