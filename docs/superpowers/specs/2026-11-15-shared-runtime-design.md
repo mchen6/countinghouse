@@ -497,7 +497,14 @@ Nothing of a session is ever written to a file.
 2. it starts the new daemon with the table on that pipe, under `start.lock`;
 3. it exits once the new daemon has written `daemon.json`.
 
-If the handoff fails, the new daemon starts empty: loosenings are reset, announced, and tightenings come back from the shims.
+**The handoff never carries a loosening.** Any process of this user can stop the daemon, or outwait it, and start `ch-local daemon --handoff` with a pipe of its own. A restored loosening needs no fresh confirmation (§11 answer 4). So, under the rule that nothing a same-user process could plant becomes a loosening:
+- the new daemon keeps, from the handoff, only each session's tightenings, its packs turned off, its decline locks and the forms it has left;
+- it drops every confirmed loosening, and every pack turned on in conversation;
+- each session that lost one is told, as after a daemon death: "your this-session loosenings were reset; ask again".
+
+A ch-local upgrade is therefore a daemon death for loosenings, and only a runtime upgrade (the daemon living on) keeps them.
+
+The handoff goes on the new daemon's fd 3, as a 4-byte length and `{v: 1, sessions, declines}`. It's never in argv or the environment, and the secret is never in it. If the handoff fails, the new daemon starts empty: loosenings are reset, announced, and tightenings come back from the shims.
 
 ### Reconnecting (finding 8)
 
