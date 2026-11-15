@@ -1,6 +1,7 @@
 const fs = require('fs');
 const cp = require('child_process');
 const {redisUrlFor} = require('./helpers/test-env');
+const {testPort} = require('./helpers/test-env');
 
 const testFiles = fs.readdirSync(`${__dirname}/job-control`);
 
@@ -11,6 +12,8 @@ describe("Start job control tests in multi thread mode", function () {
   child = cp.fork("./framework.js", [
     "--bindAddr",
     "127.0.0.1",
+    "--port",
+    String(testPort(9527)),
     "--workerThread",
     "--debug",
     "--debugKey",

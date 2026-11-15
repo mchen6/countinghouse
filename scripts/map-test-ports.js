@@ -27,20 +27,21 @@ const USES_HELPER = /require\(['"]\.\.\/helpers\/sandbox-server['"]\)/;
 // itself (#192): its code (not a comment) names 'framework.js' or passes a
 // '--port' argument. Validation 14 scans the same files. Validation 14 itself
 // is not one: its numbers are testPort's probes.
-const SPAWNS_SERVER = /['"`/]framework\.js['"`]|['"`]--port(['"`]|=)/;
+// (or, in a shell command line, `--port N` with N a test port: test1, 2, 8)
+const SPAWNS_SERVER = /['"`/]framework\.js['"`]|['"`]--port(['"`]|=)|--port[= ]9[5-9]\d\d\b/;
 const NOT_SERVER_TESTS = new Set(['test/validation/14-test-ports.js']);
 const codeText = (text) => text.split('\n').map((l) => split(l)[0]).join('\n');
 const isServerTest = (text, rel) => !NOT_SERVER_TESTS.has(rel) && (USES_HELPER.test(text) || SPAWNS_SERVER.test(codeText(text)));
 // The test ports: test/ports.md's range, 9500-9999.
 const PORT = '9[5-9]\\d\\d';
 
-// Test files in test/<folder>/ (test1.js to test8.js at test/'s top bind the
-// default port 9527 without --port: not a literal to map).
-function testFiles(dir, top = true) {
+// Every test file under test/, but its fixtures and helpers (test1.js to
+// test8.js at test/'s top pass --port 9527 since #215).
+function testFiles(dir) {
   return fs.readdirSync(dir, {withFileTypes: true}).flatMap((e) => {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) return (e.name === 'fixtures' || e.name === 'helpers') ? [] : testFiles(p, false);
-    return (!top && e.name.endsWith('.js')) ? [p] : [];
+    if (e.isDirectory()) return (e.name === 'fixtures' || e.name === 'helpers') ? [] : testFiles(p);
+    return e.name.endsWith('.js') ? [p] : [];
   });
 }
 
@@ -164,7 +165,10 @@ function mapFile(file) {
       if (last < 0) last = firstUse - 1;
     }
     if (last < 0) throw new Error(`${rel}: no top-level require to put testPort's after`);
-    all.splice(last + 1, 0, "const {testPort} = require('../helpers/test-env');");
+    // test-env, relative to this file (test/'s top-level files are one up)
+    let helper = path.relative(path.dirname(file), path.join(ROOT, 'test', 'helpers', 'test-env')).split(path.sep).join('/');
+    if (!helper.startsWith('.')) helper = `./${helper}`;
+    all.splice(last + 1, 0, `const {testPort} = require('${helper}');`);
     text = all.join('\n');
   }
   return {rel, text, changes};
