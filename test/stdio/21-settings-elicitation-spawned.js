@@ -22,7 +22,19 @@ describe('stdio 21: the confirmation round trip, spawned (part 3 P2)', function(
   this.timeout(120000);
   let io = null;
   let home = null;
-  afterEach(() => { if (io != null) io.child.kill('SIGKILL'); io = null; if (home) fs.rmSync(home, {recursive: true, force: true}); });
+  // the spawned server has exited before its home is removed, and the removal
+  // retries: on Windows a file it held a moment ago can still be EPERM
+  afterEach(async () => {
+    const child = io != null ? io.child : null;
+    io = null;
+    if (child != null && child.exitCode == null && child.signalCode == null) {
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      child.kill('SIGKILL');
+      await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10000))]);
+    }
+    if (home) fs.rmSync(home, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
+    home = null;
+  });
 
   async function begin({legacy = false} = {}) {
     home = tmp.mkdtemp('ch-s21-');

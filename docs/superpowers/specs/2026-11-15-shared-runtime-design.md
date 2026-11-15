@@ -341,6 +341,56 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   The refusal is byte-identical to an unknown device's. Without this, a module visible to session B that calls into a pack only A turned on would reach that pack on B's call: a loosening B never confirmed. And a pack B hid would still be reachable from B's calls.
 - **tools/list and list_changed are per session.** Each session's listed fingerprint is its own, and a change that affects one session's list notifies only that session.
 
+## 4a. Modules with per-session state (the maintainer's rule 3)
+
+Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store and files partitioned by session.
+
+- **The declaration.** In the module's `package.json`: `"countinghouse": {"state": "per-session"}`. Absent, or `"shared"`, means shared. Any other value refuses the load, naming it.
+  - It sits beside `role` and `sessionDefaults`, so it's reviewed and pinned with the manifest like them (`manifestPins`). A reload that changes it is refused like any other pinned field.
+  - `ch-local`'s install review shows it: "keeps state per session".
+- **Where it applies.**
+  - **The shared runtime:** as below.
+  - **`--stdio` (one session):** unchanged. There's no session id and no partition. The module runs in its one worker on today's paths (`<name>/{data,tmp}`, `m:<name>:`), whatever it declares.
+  - **The HTTP hosting profile:** has no sessions, and serves many users, so "shared" would mean shared across users. A per-session module's load is **refused** there with `MODULE_NEEDS_SESSIONS`, naming the module.
+- **The worker pool.** A per-session module's workers are keyed by (module name, session id), where today's are keyed by module name.
+  - A worker starts on the session's first call into the module, a routed hop included.
+  - **When it stops (the maintainer's decision).** A stop drops the module's in-memory state, so a session's worker stops only:
+    - at the session's end (its `bye`, or its reconnect window expiring); or
+    - when the cap needs its slot (below). That session is then told "this module's in-memory state was reset; its files were kept".
+
+    There's no idle stop: a worker isn't stopped for being idle.
+  - Module code, the sandbox, the validators and the generation rule (`nextGeneration`) are the module's, shared by its session workers. Only the worker and the partition are per session.
+- **Hops and peers.** A hop is served by the worker of the call's own session, which the main thread knows from the call's token entry (section 2).
+  - A per-session module is never reached outside a session: a call with no session is refused like an unknown device.
+  - A peer channel or a hop token that outlives its session is refused the same way.
+  - A shared module serving two sessions holds both sessions' tokens, and can hop into either session's worker. That's section 9's residual 5, which covers state too (below).
+- **Jobs.** A per-session module's job carries its session, from the main thread; the module is never shown it. A job whose session has ended is refused like an unknown device, and isn't retried.
+- **What the module sees: nothing new.** No session id reaches it: not in `options`, `workerData`, its environment, its argv, an error's text or a job's data. Isolation comes from the worker and the partition, so it learns nothing about the user, or about other sessions, that it couldn't learn before.
+- **The partition.**
+  - **Store:** keys under their own prefix, `ms:<name>:<session id>:`, never inside the shared module's `m:<name>:`. `<name>` is URI-encoded as `prefixFor` encodes it, and each prefix keeps its trailing colon, so a purge of `ms:foo:` can't reach `ms:foobar:`. So `redis-namespace.js`'s rule that no prefix starts another holds, and a `--stdio` run of the same module can't reach a session's keys. A purge of the module covers both prefixes. `unprefixError` strips the session prefix as it strips `m:<name>:`.
+  - **Files (the maintainer's decision):** the partition covers `/data` as well as the store, with the same lifetime (below).
+    - the path is `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`, made 0700 by `lib/module-data.js`;
+    - the fs broker maps the worker's `/data` and `/tmp` there on the main thread, and the fs scrub strips that root from paths and error texts;
+    - the worker is given the root `moduleDataPath`, as today, never the session path.
+  - **Lifetime.**
+    - A session's partition, store and files alike, survives a runtime restart while the session resumes. It's removed only on the session's `bye`, or when its reconnect window expires. It's never removed on `Registry.close()` (a runtime stopping), which ends sessions without their leaving.
+    - A restarted runtime keeps the sessions' ids (**the restored ids**): a restored row's `session` is the old id, and the registry rebuilds each restored session with it, unconnected, with its resume hash (section 6). A rebuilt session's reconnect window **starts at the restore**, so a shim that never comes back has its session, and its partition, removed once that window expires, not at the next restart.
+    - **The sweep:** before the listener accepts, the runtime lists the partitions present (directories and `ms:` keys) and removes those whose ids weren't restored.
+    - After a daemon death, nothing is restored, so the sweep removes every partition. Each reconnecting session is told "per-session state was reset", as §6 tells loosenings.
+- **The limits.**
+  - At most `maxSessionWorkers` per-session workers in all (default 16). At the cap, the least recently used worker of a session with no call in flight gives up its slot (announced, as above). If none can, the call is refused with `SESSION_WORKERS_BUSY` (retryable). Nothing is queued.
+  - The listener's `maxSessions` (256) bounds the partitions, not the workers.
+  - **The fs quota** applies across all of a module's partitions together, not to each one, so a module can't multiply its disk by its sessions.
+- **The memory cost.** Each live session worker costs one lean worker's resident baseline: **to be measured** (a register row for A: one idle lean worker's RSS per extra worker, on the release's Node and platforms, with a small module loaded). So the cap bounds it at 16 times that, above today's shared workers. The cap is the operator's to lower, never a client's to raise.
+- **Tests** (R1):
+  - two sessions calling one per-session module see separate store keys and separate `/data`, and a shared module sees one;
+  - a hop runs in the calling session's worker, and a token past its session's end is refused;
+  - a restart with a restored table keeps those partitions and sweeps the rest;
+  - `close()` removes none, and the window's expiry removes that session's;
+  - the cap's slot hand-over is announced, and the cap refuses `SESSION_WORKERS_BUSY` when no slot can be freed;
+  - `--stdio` keeps today's paths, and the HTTP profile refuses the load;
+  - no session id reaches the module (options, workerData, env, argv, error texts, job data).
+
 ## 5. The daemon, the control channel and per-client inputs
 
 - **The control channel** stays one IPC channel between the daemon and the runtime: one per runtime, and so one per user. ch-local's requests arrive on it as now. A request about one session names it.
@@ -385,6 +435,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 ### Where session state lives: in memory, never on disk (finding 1)
 
 **The daemon holds the session table, in memory only.** For each session it holds:
+- its session id, the registry's 32 hex characters, which a restarted runtime keeps (the restored ids: below, and §4a);
 - the hash of its current resume token;
 - its overrides: loosenings and tightenings;
 - its this-session packs, and its packs turned off;
@@ -439,6 +490,8 @@ Nothing of a session is ever written to a file.
 ### Starting
 
 1. A shim makes the directory and ownership checks (section 1). Then it reads `<home>/run/daemon/daemon.json`: `{pid, socket, runtimeVersion, daemonVersion, started}`. `socket` is the Unix socket path or the Windows pipe name.
+   - **`socket` may be null.** The daemon clears it when a runtime ends (a crash or an upgrade) and writes the successor's once that one listens, so nothing probes a name that's free for anyone to take.
+   - **A shim treats a null `socket` as not yet ready**, and retries within its 20 s, as for a `daemon.json` mid-write: it's malformed for now, never a stop (the shim's `config.rs` and `attach.rs`).
 2. If the pid is alive and the handshake completes, it's attached.
 3. Otherwise it takes `<home>/run/daemon/start.lock`, and checks again under the lock. **The lock is ch-local's `lib/lock.js` protocol, exactly**, so the Rust shim and Node take one lock and never two daemons start:
    - **The content.** The holder is `{"pid": <int>, "host": <string>, "at": <ISO-8601 UTC time>}` and a newline. `host` is the host name, plus on Linux `#` and the target of `/proc/self/ns/pid` (`pid:[…]`), so two containers sharing a host name don't take each other's live lock for dead.
@@ -605,13 +658,18 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 4. The secret is only as strong as the user's file permissions.
    - The `conditions` child runs as the user, from the paths in `shim.json`.
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
-5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout. The values stay within the ceiling, and a module already sees all of one user's data.
+5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout, and into the other session's worker of a per-session module (§4a), so with its state. The values stay within the ceiling, and a module already sees all of one user's data. A token or peer channel that outlives its session is refused like an unknown device.
 6. **On Windows, another user (local, or remote with SMB access) can slow attaches, but can't lock them out.** The pipe accepts read-only opens from Everyone and anonymous, so pre-auth connections can be opened. Eviction of the oldest, the 2 s deadline and the shim's jittered retry keep real shims getting in. Such a connection gets nothing but `PROVE` (a random challenge and a MAC), can't authenticate, and never reads or forges a session.
 7. **On Windows, the daemon inherits any inheritable handle the client leaked into the shim.**
    - The shim makes its own three standard handles non-inheritable before it spawns the daemon, and refuses to spawn if that fails.
    - Rust's `std` `CreateProcessW` passes `bInheritHandles = TRUE` and offers no `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so closing the rest needs a hand-written `CreateProcessW`. That's post-release.
    - It's accepted for release 1 because Node module code can't use a raw inherited `HANDLE` value the way it can a POSIX descriptor number.
    - On POSIX there's no such residual: the shim marks every descriptor from 3 up `FD_CLOEXEC` at startup, and refuses to start a daemon if it can't.
+8. **On Windows, the daemon's readiness probe uses Node's connect.**
+   - **What's checked otherwise:** a `daemon.json` read from disk may be stale, so its pipe goes through PowerShell, as the shim opens one: Identification only, the pipe's owner this user, SYSTEM or Administrators, then the PROVE.
+   - **What isn't:** the probe of the daemon's own new runtime, after that runtime has told the daemon it listens, uses Node's `net.createConnection`. That allows impersonation and checks no owner.
+   - **Why that's narrow:** the name is fresh and random, and a bind by anyone else first would have failed our runtime's bind. So the only gap is that runtime dying within the probe's ~100 ms after its tell, and another user binding the freed name inside that window.
+   - **Accepted:** rather than a PowerShell run (1 to 10 s) at every runtime restart.
 
 ## 10. Migration and the per-session mode
 
@@ -688,7 +746,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - a `shim.json` with a key outside the allowlist, a relative path, or a non-string value is refused, naming it;
   - an arrival during the idle stop gets a new daemon;
   - the upgrade drain;
-  - the handoff keeps overrides;
+  - the handoff keeps overrides, and the sessions' ids;
   - the backoff.
 
 **C4. The shim's Node side** (ch-local). The Rust shim itself is A's: relay, handshake, reconnect and replay, against section 1 and the vectors.
@@ -704,6 +762,16 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - A shim with pass-through flags or a differing token runs `--own-runtime`, and says so.
 - `runtime: own`.
 - Tests: `--moduleSandbox audit` doesn't reach the shared runtime, and a differing token runs its own runtime.
+
+**R1. Per-session modules** (countinghouse, §4a; needs the restored ids of §6 and B2):
+- the manifest field and its pin, and the HTTP refusal;
+- the pool keyed by session, and the hop and job checks;
+- the `ms:` prefix and its purge, and the fs partition;
+- the lifetime, the sweep and the announcements;
+- the cap and `SESSION_WORKERS_BUSY`.
+The tests are §4a's. The owner is assigned by the Reviewer.
+
+**R2. The install review line** (ch-local; after R1): "keeps state per session".
 
 **C6. Docs and migration.** The README, the client snippets and `ch-local install`; `docs/security-model.md` (section 9's residuals); `docs/upgrading-to-8.md`.
 

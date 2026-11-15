@@ -24,7 +24,7 @@ describe('module-loading 28: messages to the main thread cross as bounded bytes 
     assert.deepStrictEqual(transfer, [envelope.b]);
     assert.deepStrictEqual(unwrap(envelope, CAP).message, m);
     assert.strictEqual(capFor(1024 * 1024), 1024 * 1024 + HEADROOM);
-    assert.strictEqual(capFor(undefined), 8388608 + HEADROOM);
+    assert.strictEqual(capFor(undefined), 16777216 + HEADROOM);
   });
 
   it('over the cap, the worker refuses it MESSAGE_TOO_LARGE before anything is posted', () => {
