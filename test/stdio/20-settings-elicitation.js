@@ -288,3 +288,114 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
     await refused(tool({mayElicit: async () => ({ok: true})}).set('requestTimeout', '60s', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
   });
 });
+
+describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
+  const M = 1024 * 1024;
+  let dir;
+  let file;
+  let saved;
+  const history = () => (fs.existsSync(path.join(dir, 'history.jsonl')) ? fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
+  const tool = (o = {}) => settingsTool.create(Object.assign({
+    file,
+    ceiling: () => ({state: 'none'}),
+    mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+    applyChange: async (staged) => { if (!/^pack\./.test(staged.name)) options[staged.name] = staged.next; }
+  }, o));
+  const refused = async (p, code) => {
+    try { await p; } catch (e) { assert.strictEqual(e.code, code, `${e.code}: ${e.message}`); return e; }
+    assert.fail(`expected ${code}`);
+  };
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20c-'));
+    file = path.join(dir, 'settings.json');
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    options.maxOutputBytes = 8 * M;
+    options.requestTimeout = 30000;
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+  });
+  afterEach(() => { Object.assign(options, saved); fs.rmSync(dir, {recursive: true, force: true}); });
+
+  it('a value tighter than the file\'s is always written (a terminal raise awaiting restart: file 64 MiB, runtime 8 MiB)', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * M}}));
+    const at8 = await tool().set('maxOutputBytes', '8MiB', 'settings tool', CLIENT);
+    assert.deepStrictEqual(at8, {name: 'maxOutputBytes', old: 64 * M, new: 8 * M, applies: 'now'});
+    assert.strictEqual(stored().maxOutputBytes, 8 * M, 'written');
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * M}}));
+    const at32 = await tool().set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
+    assert.strictEqual(at32.new, 32 * M);
+    assert.strictEqual(stored().maxOutputBytes, 32 * M);
+    assert.strictEqual(options.maxOutputBytes, 8 * M, 'the runtime is lowered only below what it runs');
+    // the file's own value again: nothing to write, nothing raised
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * M}}));
+    const same = await tool().set('maxOutputBytes', '64MiB', 'settings tool', CLIENT);
+    assert.deepStrictEqual([same.new, same.applies, options.maxOutputBytes], [64 * M, 'next start', 8 * M]);
+  });
+
+  it('a this-start tightening that cannot be applied leaves "not applied" after its line', async () => {
+    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}})});
+    options.maxOutputBytes = 16 * M;   // raised this start (the file says 8 MiB)
+    await refused(t.set('maxOutputBytes', '12MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
+    assert.deepStrictEqual(history().map((h) => h.change), ['this start', 'not applied']);
+  });
+
+  it('a second expiry found before the third form: declined this start, no form sent', async () => {
+    let clock = 1000;
+    const real = confirmModule.confirmations;
+    const c = new confirmModule.Confirmations({now: () => clock});
+    confirmModule.confirmations = () => c;
+    try {
+      const t = tool();
+      await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+      clock += 120001;
+      await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);   // replaces the expired first: one expiry
+      clock += 120001;
+      await refused(t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT), 'SETTING_DECLINED_THIS_START');
+      assert.strictEqual(c.formsLeft(), 1, 'the third form was not spent');
+    } finally {
+      confirmModule.confirmations = real;
+    }
+  });
+
+  it('refusals at accept leave a history line; the no-answer path records an expiry', async () => {
+    const t = tool();
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    options.maxOutputBytes = 12 * M;   // changed meanwhile
+    await refused(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CHANGED_MEANWHILE');
+    assert.ok(history().some((h) => h.change === 'not applied (changed meanwhile)'), JSON.stringify(history()));
+    let clock = 1000;
+    const real = confirmModule.confirmations;
+    const c = new confirmModule.Confirmations({now: () => clock});
+    confirmModule.confirmations = () => c;
+    try {
+      const b = await t.set('requestTimeout', '60s', 'settings tool', CLIENT);
+      clock += 120001;
+      await refused(t.confirm('requestTimeout', '60s', {requestState: b.inputRequired.requestState}, CLIENT), 'SETTING_CONFIRMATION_EXPIRED');
+      assert.ok(history().some((h) => h.setting === 'requestTimeout' && h.change === 'expired'));
+    } finally {
+      confirmModule.confirmations = real;
+    }
+  });
+
+  it('a pack version over 32 characters is no plain version: no form', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+    fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': `1.0.${'9'.repeat(5000)}`}}}}));
+    await refused(tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+  });
+
+  it('no session: no form, and a confirmation is never bound to the string "undefined"', async () => {
+    const noSession = Object.assign({}, CLIENT, {session: undefined});
+    await refused(tool().set('maxOutputBytes', '16MiB', 'settings tool', noSession), 'SETTING_NEEDS_CONFIRMATION');
+    const c = new confirmModule.Confirmations();
+    assert.strictEqual(c.stage({name: 'maxOutputBytes', old: 1, next: 2, client: {name: 'a', version: '1.0.0'}, session: ''}), null);
+    const s = c.stage({name: 'maxOutputBytes', old: 1, next: 2, client: {name: 'a', version: '1.0.0'}, session: 'undefined'});
+    assert.strictEqual(c.verify(s.requestState, {name: 'maxOutputBytes', next: 2}).code, 'SETTING_CONFIRMATION_INVALID');
+  });
+
+  it('the exported allowlist is frozen', () => {
+    const clients = require('../../lib/elicitation-clients');
+    assert.ok(Object.isFrozen(clients.ALLOWLIST) && clients.ALLOWLIST.every((e) => Object.isFrozen(e)));
+    assert.throws(() => { 'use strict'; clients.ALLOWLIST[0].versionFloor = '0.0.0'; });
+  });
+});

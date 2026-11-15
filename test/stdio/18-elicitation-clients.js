@@ -8,12 +8,13 @@ const clients = require('../../lib/elicitation-clients');
 
 describe('stdio 18: the tested-client allowlist for elicitation (part 3 P2)', () => {
   const FORM = {elicitation: {}};
-  const may = (clientInfo, capabilities = FORM) => clients.clientMayElicit({clientInfo, capabilities});
+  // the shipped list is frozen: a test's own copy, with the range it sets
+  let list = clients.ALLOWLIST;
+  const may = (clientInfo, capabilities = FORM) => clients.clientMayElicit({clientInfo, capabilities}, list);
   const name = clients.CLAUDE_CODE;
-  let saved = null;
-  beforeEach(() => { saved = clients.ALLOWLIST.map((e) => Object.assign({}, e)); });
-  afterEach(() => { clients.ALLOWLIST.splice(0, clients.ALLOWLIST.length, ...saved); });
-  const withFloor = (floor, ceiling = null) => Object.assign(clients.ALLOWLIST.find((e) => e.name === name), {versionFloor: floor, versionCeiling: ceiling});
+  const saved = clients.ALLOWLIST;
+  beforeEach(() => { list = clients.ALLOWLIST; });
+  const withFloor = (floor, ceiling = null) => { list = clients.ALLOWLIST.map((e) => (e.name === name ? Object.assign({}, e, {versionFloor: floor, versionCeiling: ceiling}) : e)); };
 
   it('ships with no floor: no client is asked until a hand test sets one', () => {
     assert.ok(clients.ALLOWLIST.every((e) => e.versionFloor === null), JSON.stringify(clients.ALLOWLIST));
@@ -53,7 +54,7 @@ describe('stdio 18: the tested-client allowlist for elicitation (part 3 P2)', ()
   it('no form elicitation declared on the request: may not', () => {
     withFloor('2.0.0');
     for (const capabilities of [{}, {elicitation: {url: {}}}, {elicitation: null}, {elicitation: true}, null, undefined, {sampling: {}}]) {
-      assert.deepStrictEqual(clients.clientMayElicit({clientInfo: {name, version: '2.0.0'}, capabilities}), {ok: false, why: 'no elicitation capability'}, JSON.stringify(capabilities));
+      assert.deepStrictEqual(clients.clientMayElicit({clientInfo: {name, version: '2.0.0'}, capabilities}, list), {ok: false, why: 'no elicitation capability'}, JSON.stringify(capabilities));
     }
   });
 

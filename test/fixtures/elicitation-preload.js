@@ -6,11 +6,11 @@
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const clients = require(path.join(ROOT, 'lib', 'elicitation-clients'));
-clients.ALLOWLIST.find((e) => e.name === clients.CLAUDE_CODE).versionFloor = '2.0.0';
+const TESTED = clients.ALLOWLIST.map((e) => (e.name === clients.CLAUDE_CODE ? Object.assign({}, e, {versionFloor: '2.0.0'}) : e));
 const options = require(path.join(ROOT, 'lib', 'cli-options'));
 const tool = require(path.join(ROOT, 'lib', 'settings-tool'));
 const create = tool.create;
 tool.create = (o) => create(Object.assign({
-  mayElicit: async (ctx) => { const c = clients.clientMayElicit(ctx); return c.ok ? {ok: true, client: c.client} : c; },
+  mayElicit: async (ctx) => { const c = clients.clientMayElicit(ctx, TESTED); return c.ok ? {ok: true, client: c.client} : c; },
   applyChange: async (staged) => { options[staged.name] = staged.next; }
 }, o));
