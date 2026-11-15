@@ -141,6 +141,15 @@ describe('sessions 08: notices and logging/setLevel per session (shared runtime 
     assert.deepStrictEqual(notices.take(null), [], 'nothing stranded');
   });
 
+  it('a notice that is one session\'s, with no session named, is dropped, never said to all (fails closed; #279 review)', () => {
+    notices.add(null, 'a confirmed change', {session: null, sessionOnly: true});
+    assert.deepStrictEqual(said(A), []);
+    assert.deepStrictEqual(said(B), []);
+    assert.deepStrictEqual(resultFor(A), []);
+    notices.add(null, 'its own', {session: A, sessionOnly: true});
+    assert.deepStrictEqual(said(A), ['its own']);
+  });
+
   it('a per-session queue is bounded as the global one is, and never silent', () => {
     for (let n = 1; n <= notices.PER_MODULE_MAX + 2; n++) notices.add('ch-pack-x', `change ${n}`, {session: A});
     const out = resultFor(A);
