@@ -5,8 +5,8 @@
 //
 // BSON is retired (8.0.0): MCP is JSON only (binary as base64), and the
 // CDIF-era POST /devices/:deviceID/invoke-action was the last route that
-// took a BSON body. An application/bson body is refused 415 on every route,
-// and never read.
+// took a BSON body. An application/bson body is refused 415 on every route;
+// it is not parsed or kept, only discarded as it arrives.
 const assert = require('assert');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -70,7 +70,48 @@ describe('auth 20: request body limits', function() {
     assert.strictEqual(await postRaw(testPort(9661), '/mcp', 'Application/BSON; charset=binary', 16), 415);
   });
 
-  it('a BSON body is not read: one far over --maxRequestBody is refused for its type, not its size', async () => {
+  // a client that sets the header on every call, as a default, and sends no
+  // body with this one: there is no BSON body to refuse
+  it('a request with the BSON type and no body is not refused for it', async () => {
+    server = await startServer(testPort(9661), ['--workerThread', '--debug']);
+    const status = await new Promise((resolve, reject) => {
+      const req = require('http').request({host: '127.0.0.1', port: testPort(9661), path: '/device-list', method: 'GET',
+        headers: {'Content-Type': 'application/bson'}}, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.notStrictEqual(status, 415);
+    assert.notStrictEqual(await postRaw(testPort(9661), '/device-list', 'application/bson', 0), 415, 'nor an empty POST');
+  });
+
+  // the refused body is discarded as it arrives, so the connection is the
+  // client's to use again (as after any refusal: auth 26 held this for BSON)
+  it('after a 415 the same connection serves the next request', async () => {
+    server = await startServer(testPort(9661), ['--workerThread', '--debug']);
+    const http = require('http');
+    const agent = new http.Agent({keepAlive: true, maxSockets: 1});
+    const send = (headers, body) => new Promise((resolve, reject) => {
+      const req = http.request({host: '127.0.0.1', port: testPort(9661), path: '/mcp', method: 'POST', agent, headers}, (res) => {
+        let text = '';
+        res.on('data', (c) => { text += c; });
+        res.on('end', () => resolve({status: res.statusCode, reused: req.reusedSocket, text}));
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+    try {
+      const refused = await send({'Content-Type': 'application/bson'}, Buffer.alloc(4096, 1));
+      assert.strictEqual(refused.status, 415, refused.text);
+      const next = await send({'Content-Type': 'application/json'}, JSON.stringify({jsonrpc: '2.0', id: 1, method: 'ping'}));
+      assert.strictEqual(next.reused, true, 'on the same socket');
+      assert.notStrictEqual(next.status, 415);
+      assert.ok(next.status < 500, `${next.status}: ${next.text}`);
+    } finally {
+      agent.destroy();
+    }
+  });
+
+  it('a BSON body is not parsed or kept: one far over --maxRequestBody is refused for its type, not its size', async () => {
     server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxRequestBody', '1']);
     const big = await postRaw(testPort(9661), '/devices/x/invoke-action', 'application/bson', 4 * 1024 * 1024);
     // answered before the body arrived: 415, or the connection closed under the unsent rest
@@ -83,10 +124,9 @@ describe('auth 20: request body limits', function() {
     assert.strictEqual(await postRaw(testPort(9661), '/mcp', 'application/xml', 2 * 1024 * 1024), 413);
   });
 
-  it('--maxBsonRequestBody is no option any more: given, it is ignored as any unknown flag is, and bounds nothing', async () => {
+  it('--maxBsonRequestBody is no option any more: given, the server starts all the same (it is ignored, as any flag it does not know is)', async () => {
     server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxBsonRequestBody', '1']);
     assert.strictEqual(await postRaw(testPort(9661), '/devices/x/invoke-action', 'application/bson', 64), 415);
-    assert.strictEqual(require('../../lib/cli-options').maxBsonRequestBody, undefined);
   });
 
   // Express's default error page is HTML and, with NODE_ENV unset, carries

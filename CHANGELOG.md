@@ -21,7 +21,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 ### Removed — BSON request bodies
 
 - **An `application/bson` body is no longer taken**, on any route: it is
-  answered 415 (`REQUEST_UNSUPPORTED_MEDIA_TYPE`), and never read. MCP is
+  answered 415 (`REQUEST_UNSUPPORTED_MEDIA_TYPE`), and not parsed or kept
+  (it is discarded as it arrives). MCP is
   JSON only, and `POST /devices/:deviceID/invoke-action`, from the CDIF-era
   HTTP API, was the last route that decoded BSON. Send JSON, with binary
   data as base64.

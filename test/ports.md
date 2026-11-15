@@ -194,9 +194,6 @@ one) as well as the ports it binds.
 | `test/unit/test014.js` | 9527 |
 | `test/unit/test015.js` | 9527 |
 | `test/unit/test016.js` | 9527 |
-| `test/unit/test017.js` | 9527 |
-| `test/unit/test018.js` | 9527 |
-| `test/unit/test019.js` | 9527 |
 | `test/unit/test020.js` | 9527 |
 | `test/unit/test021.js` | 9527 |
 | `test/unit/test022.js` | 9527 |
