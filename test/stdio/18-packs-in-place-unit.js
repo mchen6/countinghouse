@@ -5,10 +5,11 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {PACK_NAME, insideRoots, linkOut} = require('../../lib/packs-in-place');
+const {PACK_NAME, insideRoots, linkOut, chLocalPackOf, ceilingRefusal} = require('../../lib/packs-in-place');
+const settingsTool = require('../../lib/settings-tool');
 const {mergedAllowance, START_ALLOWANCE} = require('../../lib/module-manager');
 
-describe('stdio 17: packs in place, server-free', () => {
+describe('stdio 18: packs in place, server-free', () => {
   it('a pack name is a scenario package name in the characters pack.<name> takes', () => {
     for (const ok of ['ch-pack-x', '@countinghouse/ch-pack-ci-failure-triage', 'a', `${'a'.repeat(64)}`]) assert.ok(PACK_NAME.test(ok), ok);
     for (const no of ['Ch-pack', 'a.b', 'a_b', '-a', '@x/', '@/a', `${'a'.repeat(65)}`, 'a/b', '@a/b/c', '']) assert.ok(!PACK_NAME.test(no), no);
@@ -29,7 +30,7 @@ describe('stdio 17: packs in place, server-free', () => {
   });
 
   it('inside --packsRoot is by real path: a link out of the root is outside; a sibling sharing its prefix is outside', () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-17-'));
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-18-'));
     try {
       const root = path.join(base, 'packs');
       fs.mkdirSync(path.join(root, 'p', 'node_modules', 'm'), {recursive: true});
@@ -47,7 +48,7 @@ describe('stdio 17: packs in place, server-free', () => {
   });
 
   it('a module\'s links are found by walking it: a file link out is named; a link inside the root is not', () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-17-'));
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-18-'));
     try {
       const root = path.join(base, 'packs');
       const m = path.join(root, 'p', 'node_modules', 'm');
@@ -65,5 +66,63 @@ describe('stdio 17: packs in place, server-free', () => {
     } finally {
       fs.rmSync(base, {recursive: true, force: true});
     }
+  });
+
+  // #205's review, item 7: the operator's ceiling binds a load in place. Its
+  // packs allowlist names ch-local's packs; the pack is the scenario's first
+  // directory below --packsRoot, by real path.
+  describe('the ceiling\'s packs allowlist', () => {
+    let base = null;
+    let rs = null;
+    const scenarioOf = (pack) => {
+      const dir = path.join(base, 'packs', pack, 'k1', 'node_modules', '@countinghouse', `ch-pack-${pack}`);
+      fs.mkdirSync(dir, {recursive: true});
+      return dir;
+    };
+    const req = (pack, name) => ({name: name || `@countinghouse/ch-pack-${pack}`, scenario: scenarioOf(pack), roots: rs});
+    beforeEach(() => {
+      base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-18-'));
+      fs.mkdirSync(path.join(base, 'packs'));
+      rs = [fs.realpathSync(path.join(base, 'packs'))];
+    });
+    afterEach(() => {
+      settingsTool.ceilingForControl(() => ({state: 'none'}));
+      settingsTool.resetForTests();
+      fs.rmSync(base, {recursive: true, force: true});
+    });
+    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({packs: null}, ceiling)});
+
+    it('the pack is the scenario\'s first directory below the root, by real path', () => {
+      assert.strictEqual(chLocalPackOf(scenarioOf('ci-failure-triage'), rs), 'ci-failure-triage');
+      fs.symlinkSync(scenarioOf('other'), path.join(base, 'packs', 'alias'), 'dir');
+      assert.strictEqual(chLocalPackOf(path.join(base, 'packs', 'alias'), rs), 'other', 'a link inside the root is its target\'s');
+      assert.strictEqual(chLocalPackOf(base, rs), null);
+    });
+
+    it('no ceiling, or one with no packs list: allowed', () => {
+      settingsTool.ceilingForControl(() => ({state: 'none'}));
+      assert.strictEqual(ceilingRefusal(req('x')), null);
+      settingsTool.ceilingForControl(() => trusted({}));
+      assert.strictEqual(ceilingRefusal(req('x')), null);
+    });
+
+    it('a trusted list: a pack it names loads; one it leaves out is SETTING_FORBIDDEN_BY_CEILING, named as pack.<name>', () => {
+      settingsTool.ceilingForControl(() => trusted({packs: ['ci-failure-triage']}));
+      assert.strictEqual(ceilingRefusal(req('ci-failure-triage')), null);
+      const refused = ceilingRefusal(req('other'));
+      assert.strictEqual(refused.code, 'SETTING_FORBIDDEN_BY_CEILING');
+      assert.match(refused.message, /pack\.other/);
+      // the request's name cannot choose the pack: the path does
+      assert.strictEqual(ceilingRefusal(req('other', '@countinghouse/ch-pack-ci-failure-triage')).code, 'SETTING_FORBIDDEN_BY_CEILING');
+      settingsTool.ceilingForControl(() => trusted({packs: []}));
+      assert.strictEqual(ceilingRefusal(req('ci-failure-triage')).code, 'SETTING_FORBIDDEN_BY_CEILING', 'an empty list allows no pack');
+    });
+
+    it('a ceiling that cannot be trusted refuses every load: SETTING_CEILING_UNTRUSTED', () => {
+      settingsTool.ceilingForControl(() => ({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'it is writable by group or others'}));
+      const refused = ceilingRefusal(req('ci-failure-triage'));
+      assert.strictEqual(refused.code, 'SETTING_CEILING_UNTRUSTED');
+      assert.match(refused.message, /writable by group or others/);
+    });
   });
 });
