@@ -115,7 +115,15 @@ function startStdio(args, {env = {}, ipc = false} = {}) {
   return io;
 }
 
-const INITIALIZE = {jsonrpc: '2.0', method: 'initialize', params: {protocolVersion: '2026-07-28', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
+// The legacy handshake (2025-11-25: "An initialize request selects legacy
+// semantics"). A 2026-07-28 client sends no initialize: each request carries
+// MODERN_META instead (#229).
+const INITIALIZE = {jsonrpc: '2.0', method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
+const MODERN_META = Object.freeze({
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientCapabilities': {},
+  'io.modelcontextprotocol/clientInfo': {name: 'test', version: '0'}
+});
 
 // The first tool whose name matches `pattern`, asking tools/list (at least
 // once) every `everyMs` until `deadlineMs` has passed: null if none was
@@ -135,4 +143,4 @@ async function waitForTool(io, pattern, {deadlineMs = 60000, everyMs = 500} = {}
   return null;
 }
 
-module.exports = {startStdio, waitForTool, withoutRedisNoise, INITIALIZE};
+module.exports = {startStdio, waitForTool, withoutRedisNoise, INITIALIZE, MODERN_META};
