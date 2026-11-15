@@ -548,3 +548,19 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
     current = null;
   });
 });
+
+describe('stdio 20f: #216\'s review (part 3 P2)', () => {
+  it('cacheOnly compares the key only: the Windows 5-minute re-read never makes a fresh pre-lock read look changed', () => {
+    settingsTool.resetForTests();
+    let t = 1000;
+    let reads = 0;
+    const read = () => ({state: 'none', n: ++reads});
+    const at = (o = {}) => settingsTool.cachedCeiling(read, Object.assign({platform: 'win32', now: () => t}, o));
+    assert.deepStrictEqual(at(), {state: 'none', n: 1});
+    t += 5 * 60 * 1000 + 1;
+    assert.deepStrictEqual(at({cacheOnly: true}), {state: 'none', n: 1}, 'past the age rule, the same key: the cached value');
+    assert.deepStrictEqual(at(), {state: 'none', n: 2}, 'a read re-reads past it');
+    settingsTool.resetForTests();
+    assert.strictEqual(at({cacheOnly: true}), undefined, 'nothing cached: a miss');
+  });
+});
