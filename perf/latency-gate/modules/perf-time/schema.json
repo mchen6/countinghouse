@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "timeService": {
+    "get_current_time": {
+      "input":  {"type": "object", "properties": {"timezone": {"type": "string"}}, "required": ["timezone"], "additionalProperties": false},
+      "output": {"type": "object", "properties": {"timezone": {"type": "string"}, "datetime": {"type": "string"}}, "required": ["timezone", "datetime"]}
+    }
+  }
+}

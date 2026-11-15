@@ -418,7 +418,7 @@ configuration). None of it is available to a hosted server.
   deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
   name, until an operator loads it again. A slow input is not held against
   the module: any caller can send one.
-- **`--maxOutputBytes <n>`** (default 8 MiB, at most 256 MiB): a module's
+- **`--maxOutputBytes <n>`** (default 16 MiB, at most 256 MiB): a module's
   output, a hop's result to another module included, is measured in its own
   worker before it is posted, and refused `OUTPUT_TOO_LARGE` (naming the
   module and the action) past it.

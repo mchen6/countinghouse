@@ -16,6 +16,28 @@ describe('stdio 12: the control channel, server-free', () => {
     return {ch, ask, sent, settled, all};
   }
 
+  it('the shared runtime\'s requests: restore and drain are served when given; tell sends an unasked message (C3)', async () => {
+    const {ask, sent, settled, all} = channel({restore: async (m) => ({sessions: m.sessions.length}), drain: async () => ({})});
+    ask({id: 'd1', type: 'restore', sessions: [], declines: []});
+    ask({id: 'd2', type: 'drain'});
+    await settled();
+    assert.deepStrictEqual(sent.map((m) => [m.id, m.ok]), [['d1', true], ['d2', true]]);
+    assert.strictEqual(sent[0].sessions, 0);
+    require('../../lib/control-channel').tell({type: 'session-gone', session: 'abc'});
+    assert.deepStrictEqual(all[all.length - 1], {type: 'session-gone', session: 'abc'}, 'no id: a message, not a request');
+  });
+
+  it('tell refuses a message with an id or no type, and sends nothing without a channel', () => {
+    const cc = require('../../lib/control-channel');
+    const {all} = channel({});
+    const before = all.length;
+    assert.throws(() => cc.tell({type: 'x', id: 1}), /id/);
+    assert.throws(() => cc.tell({}), /type/);
+    assert.strictEqual(all.length, before);
+    cc.resetForTests();
+    assert.strictEqual(cc.tell({type: 'session-gone', session: 'x'}), false, 'no channel: nothing sent');
+  });
+
   it('says ready, unasked and once, as soon as it listens', () => {
     const {all} = channel({});
     assert.deepStrictEqual(all, [{type: 'ready'}]);

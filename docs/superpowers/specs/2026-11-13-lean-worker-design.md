@@ -246,7 +246,7 @@ what the module's worker receives.
   send a slow input, and neither does a wait in the queue. 3 strikes in 5
   minutes quarantine the module by name: `VALIDATION_QUARANTINED` until an
   operator loads it again (a supervisor's restart does not clear it).
-- **The output's size:** `--maxOutputBytes` (default 8 MiB), measured in the
+- **The output's size:** `--maxOutputBytes` (default 16 MiB since Matt's decision of 2026-11-15; 8 MiB when this was written), measured in the
   module's own worker before it posts its reply; past it the call is refused
   `OUTPUT_TOO_LARGE` (naming the module and the action). Step 2's buffers
   make that the main thread's guarantee too.
@@ -315,7 +315,7 @@ superseding the two caps above).** The rulings:
   them, and no module's worker validates them. The deadline, the per-module
   queues and the strike rule are those of section 4: a timeout on a hop's
   result is a strike against the callee.
-- **(b) One cap.** `--maxOutputBytes` (default 8 MiB, at most 256 MiB, the
+- **(b) One cap.** `--maxOutputBytes` (default 16 MiB since Matt's decision of 2026-11-15, 8 MiB when this was written; at most 256 MiB, the
   ceiling above) applies to every module output, a hop's result included.
   It is checked in the callee's worker before posting, and, for a hop's
   bytes, on the main thread from their length; the main thread's check is
