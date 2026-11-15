@@ -373,7 +373,9 @@ describe('stdio 20c: the security review of #213 (part 3 P2)', () => {
   });
 
   it('a this-start tightening that cannot be applied leaves "not applied" after its line', async () => {
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}})});
+    // an apply that fails (a pack ch-local would not unload, a resize gone wrong)
+    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+      applyChange: async () => { throw new Error('boom'); }});
     options.maxOutputBytes = 16 * M;   // raised this start (the file says 8 MiB)
     await refused(t.set('maxOutputBytes', '12MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
     assert.deepStrictEqual(history().map((h) => h.change), ['this start', 'not applied']);
@@ -500,12 +502,13 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
     }
   });
 
-  it('the default apply\'s refusal does not call an unconfirmed change confirmed', async () => {
-    const t = settingsTool.create({file, ceiling: () => ({state: 'none'})});
-    options.maxOutputBytes = 16 * M;   // raised this start
-    const e = await refused(t.set('maxOutputBytes', '12MiB', 'settings tool', CLIENT), 'SETTING_NOT_APPLIED');
+  it('the apply\'s refusal does not call an unconfirmed change confirmed', async () => {
+    // the default apply, for a pack with no ch-local to ask (no control channel)
+    const e = await refused(settingsTool.applyConfirmed({name: 'pack.x', old: true, next: false, version: null},
+      {pool: null, modules: () => null, ask: (m, o) => require('../../lib/control-channel').ask(m, o)}), 'SETTING_NOT_APPLIED');
+    assert.match(e.message, /CONTROL_NONE/);
+    assert.match(e.message, /pack\.x/);
     assert.doesNotMatch(e.message, /confirmed/i);
-    assert.match(e.message, /maxOutputBytes/);
   });
 });
 
@@ -562,5 +565,212 @@ describe('stdio 20f: #216\'s review (part 3 P2)', () => {
     assert.deepStrictEqual(at(), {state: 'none', n: 2}, 'a read re-reads past it');
     settingsTool.resetForTests();
     assert.strictEqual(at({cacheOnly: true}), undefined, 'nothing cached: a miss');
+  });
+});
+
+describe('stdio 20g: the confirmed change applied, this start only (part 3 P2, Task 5)', () => {
+  const M = 1024 * 1024;
+  let saved;
+  beforeEach(() => {
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    options.maxOutputBytes = 8 * M;
+    options.requestTimeout = 30000;
+    settingsTool.resetForTests();
+    settingsTool.captureAtStart();
+  });
+  afterEach(() => { Object.assign(options, saved); settingsTool.resetForTests(); settingsTool.ceilingForControl(() => ({state: 'none'})); });
+  const deps = (o = {}) => {
+    const sent = [];
+    const asked = [];
+    return Object.assign({sent, asked,
+      pool: null,
+      modules: () => ({m: {sendMessageToWorker: (msg) => sent.push(msg)}}),
+      ask: async (msg, opts) => { asked.push([msg, opts]); return {ok: true}; }}, o);
+  };
+
+  it('maxOutputBytes: the pool resized first, the option only once that resolves; every worker told; a later control set up to it applies', async () => {
+    let release;
+    const resized = [];
+    const d = deps({pool: {resize: (n) => { resized.push(n); return new Promise((r) => { release = r; }); }}});
+    const p = settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 8 * M, next: 32 * M}, d);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepStrictEqual(resized, [32 * M]);
+    assert.strictEqual(options.maxOutputBytes, 8 * M, 'not before the resize resolves');
+    release();
+    await p;
+    assert.strictEqual(options.maxOutputBytes, 32 * M);
+    assert.deepStrictEqual(d.sent.map((m) => [m.command, m.options.maxOutputBytes]), [['live-options', 32 * M]]);
+    settingsTool.ceilingForControl(() => ({state: 'none'}));
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 16 * M}), {ok: true});
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 32 * M}), {ok: true}, 'the start cap lifted for this value');
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 33 * M}), {ok: false, code: 'CONTROL_APPLIES_AT_START'});
+  });
+
+  it('a value changed while the pool resized: SETTING_CHANGED_MEANWHILE, nothing assigned', async () => {
+    const d = deps({pool: {resize: async () => { options.maxOutputBytes = 4 * M; }}});
+    await assert.rejects(settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 8 * M, next: 32 * M}, d), {code: 'SETTING_CHANGED_MEANWHILE'});
+    assert.strictEqual(options.maxOutputBytes, 4 * M);
+    assert.deepStrictEqual(d.sent, []);
+  });
+
+  it('requestTimeout: applied at once, every worker told; no pool asked', async () => {
+    const d = deps({pool: {resize: () => assert.fail('no resize for a timeout')}});
+    await settingsTool.applyConfirmed({name: 'requestTimeout', old: 30000, next: 60000}, d);
+    assert.strictEqual(options.requestTimeout, 60000);
+    assert.strictEqual(d.sent[0].options.requestTimeout, 60000);
+  });
+
+  it('a pack on: load-pack asked of ch-local with the version the form showed, within 45 s; a refusal applies nothing; off: unload-pack', async () => {
+    const d = deps();
+    await settingsTool.applyConfirmed({name: 'pack.ci-failure-triage', old: false, next: true, version: '0.4.0'}, d);
+    assert.deepStrictEqual(d.asked, [[{type: 'load-pack', name: 'ci-failure-triage', version: '0.4.0'}, {timeoutMs: 45000}]]);
+    const no = deps({ask: async () => ({ok: false, code: 'CONTROL_VERSION_CHANGED'})});
+    await assert.rejects(settingsTool.applyConfirmed({name: 'pack.ci-failure-triage', old: false, next: true, version: '0.4.0'}, no),
+      (e) => e.code === 'SETTING_NOT_APPLIED' && /CONTROL_VERSION_CHANGED/.test(e.message));
+    const off = deps();
+    await settingsTool.applyConfirmed({name: 'pack.ci-failure-triage', old: true, next: false, version: null}, off);
+    assert.deepStrictEqual(off.asked.map(([m]) => m), [{type: 'unload-pack', name: 'ci-failure-triage'}]);
+  });
+
+  it('atStart is captured at start: a value raised before the first control set is not taken as the start value', () => {
+    options.maxOutputBytes = 64 * M;   // say, raised this start
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 32 * M}), {ok: false, code: 'CONTROL_APPLIES_AT_START'});
+  });
+});
+
+describe('stdio 20h: never silent, for confirmed changes (part 3 P2, Task 6)', () => {
+  const M = 1024 * 1024;
+  const notices = require('../../lib/notices');
+  const LOG = require('../../lib/logger');
+  let dir;
+  let file;
+  let saved;
+  let logI;
+  const logged = [];
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20h-'));
+    file = path.join(dir, 'settings.json');
+    saved = options.maxOutputBytes;
+    options.maxOutputBytes = 8 * M;
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+    notices.take(null);
+    logI = LOG.I;
+    logged.length = 0;
+    LOG.I = (line) => { logged.push(String(line)); return line; };
+  });
+  afterEach(() => { LOG.I = logI; options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); notices.take(null); });
+  const tool = (applyChange = async (st) => { options[st.name] = st.next; }) => settingsTool.create({file, ceiling: () => ({state: 'none'}),
+    mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange});
+
+  it('an applied confirmation is told as a notice and logged, in the same words; a decline tells nothing', async () => {
+    const t = tool();
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    await t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
+    const text = 'maxOutputBytes raised from 8MiB to 16MiB for this start (confirmed in claude-code)';
+    assert.deepStrictEqual(notices.take(null), [text]);
+    assert.ok(logged.includes(`countinghouse_settings: ${text}`), JSON.stringify(logged));
+    confirmModule.resetForTests();
+    settingsTool.resetForTests();
+    const t2 = tool();
+    const b = await t2.set('requestTimeout', '60s', 'settings tool', CLIENT);
+    await t2.confirm('requestTimeout', '60s', {requestState: b.inputRequired.requestState, inputResponses: {approve: {action: 'decline'}}}, CLIENT);
+    assert.deepStrictEqual(notices.take(null), []);
+  });
+
+  it('a confirmed change that could not be applied is told too', async () => {
+    const t = tool(async () => { throw Object.assign(new Error('x'), {code: 'CONTROL_NO_ANSWER'}); });
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    await assert.rejects(t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), {code: 'SETTING_NOT_APPLIED'});
+    assert.deepStrictEqual(notices.take(null), ['maxOutputBytes not changed: the change you confirmed could not be applied (CONTROL_NO_ANSWER)']);
+  });
+});
+
+describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
+  const M = 1024 * 1024;
+  let saved;
+  beforeEach(() => {
+    saved = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
+    options.maxOutputBytes = 8 * M;
+    options.requestTimeout = 30000;
+    settingsTool.resetForTests();
+    settingsTool.captureAtStart();
+  });
+  afterEach(() => { Object.assign(options, saved); settingsTool.resetForTests(); });
+  const base = (o = {}) => Object.assign({pool: null, modules: () => ({}), ask: async () => ({ok: true})}, o);
+  const trusted = (c) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, c)});
+
+  it('the ceiling is checked again once the resize resolves: one lowered meanwhile wins, nothing set', async () => {
+    let c = trusted({maxOutputBytes: 128 * M});
+    const d = base({ceiling: () => c, pool: {resize: async () => { c = trusted({maxOutputBytes: 16 * M}); }}});
+    await assert.rejects(settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 8 * M, next: 96 * M}, d), {code: 'SETTING_CEILING_CHANGED_MEANWHILE'});
+    assert.strictEqual(options.maxOutputBytes, 8 * M);
+    assert.deepStrictEqual(settingsTool.applyControlSet({name: 'maxOutputBytes', value: 96 * M}), {ok: false, code: 'CONTROL_APPLIES_AT_START'}, 'the start cap not lifted');
+    // conversation turned off meanwhile, or the ceiling untrusted: the same
+    for (const later of [trusted({conversation: false}), {state: 'untrusted', file: 'c', problem: 'p'}]) {
+      c = later;
+      await assert.rejects(settingsTool.applyConfirmed({name: 'requestTimeout', old: 30000, next: 60000}, base({ceiling: () => c})), {code: 'SETTING_CEILING_CHANGED_MEANWHILE'});
+    }
+    // a tightening is never refused by it
+    c = {state: 'untrusted', file: 'c', problem: 'p'};
+    options.maxOutputBytes = 16 * M;
+    await settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 16 * M, next: 12 * M}, base({ceiling: () => c}));
+    assert.strictEqual(options.maxOutputBytes, 12 * M);
+  });
+
+  it('a load-pack with no answer is undone with an unload-pack; a resize that stopped, or no modules to tell, applies nothing', async () => {
+    const asked = [];
+    const d = base({ask: async (m) => { asked.push(m.type); return m.type === 'load-pack' ? {ok: false, code: 'CONTROL_NO_ANSWER'} : {ok: true}; }});
+    await assert.rejects(settingsTool.applyConfirmed({name: 'pack.x', old: false, next: true, version: '1.0.0'}, d), {code: 'SETTING_NOT_APPLIED'});
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(asked, ['load-pack', 'unload-pack']);
+    await assert.rejects(settingsTool.applyConfirmed({name: 'maxOutputBytes', old: 8 * M, next: 32 * M},
+      base({pool: {resize: async () => { throw Object.assign(new Error('x'), {code: 'RESIZE_STOPPED'}); }}})), (e) => e.code === 'SETTING_NOT_APPLIED' && /RESIZE_STOPPED/.test(e.message));
+    assert.strictEqual(options.maxOutputBytes, 8 * M);
+    await assert.rejects(settingsTool.applyConfirmed({name: 'requestTimeout', old: 30000, next: 60000}, base({modules: undefined})), {code: 'SETTING_NOT_APPLIED'});
+    assert.strictEqual(options.requestTimeout, 30000);
+  });
+
+  it('a pack turned on this start is off again when ch-local unloads it, or when its value is written to the file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20i-'));
+    const file = path.join(dir, 'settings.json');
+    try {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+      fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
+      confirmModule.resetForTests();
+      const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
+      const on = async () => {
+        const a = await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+        return t.confirm('pack.ci-failure-triage', 'on', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
+      };
+      await on();
+      assert.strictEqual((await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT)).applies, 'this start', 'on this start: a no-op');
+      settingsTool.packUnloaded('@countinghouse/ch-pack-ci-failure-triage');
+      const again = await t.set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+      assert.ok(again.inputRequired != null, 'off again: asked again');
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+});
+
+describe('stdio 20j: #222\'s review (part 3 P2)', () => {
+  const M = 1024 * 1024;
+  const notices = require('../../lib/notices');
+  let dir;
+  let saved;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s20j-')); saved = options.maxOutputBytes; options.maxOutputBytes = 8 * M; confirmModule.resetForTests(); settingsTool.resetForTests(); notices.take(null); });
+  afterEach(() => { options.maxOutputBytes = saved; fs.rmSync(dir, {recursive: true, force: true}); notices.take(null); });
+
+  it('an apply that fails with no code says "error", never its message (in the notice, the history and the refusal)', async () => {
+    const file = path.join(dir, 'settings.json');
+    const t = settingsTool.create({file, ceiling: () => ({state: 'none'}), mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
+      applyChange: async () => { throw new Error('a message that could carry /home/someone or a key'); }});
+    const a = await t.set('maxOutputBytes', '16MiB', 'settings tool', CLIENT);
+    const e = await t.confirm('maxOutputBytes', '16MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT).then(() => null, (err) => err);
+    assert.strictEqual(e.code, 'SETTING_NOT_APPLIED');
+    const said = JSON.stringify([notices.take(null), fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8'), e.message]);
+    assert.ok(!said.includes('could carry'), said);
+    assert.ok(said.includes('(error)'), said);
   });
 });

@@ -90,6 +90,24 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `%ProgramData%\countinghouse\ceiling.json`): lowers the hard bounds or
   forbids a loosening; a file an ordinary user could have written fails
   closed (docs/security-model.md).
+- A loosening asked for in conversation can be confirmed by the user in
+  their client's own dialog (an MCP elicitation form), for this start only:
+  `settings.json` is never written, and the change ends when the client
+  restarts countinghouse. A dialog is shown only to a client inside a tested
+  version range (`lib/elicitation-clients.json`, shipped empty until the
+  maintainer's hand test before release), on a request that declares form
+  elicitation, and when ch-local finds nothing in the client's own
+  configuration that could answer it. Otherwise the terminal command is
+  given, as before. New codes: `SETTING_CONFIRMATION_INVALID`,
+  `SETTING_CONFIRMATION_EXPIRED`, `SETTING_CONFIRMATION_USED`,
+  `SETTING_DECLINED_THIS_START`, `SETTING_CHANGED_MEANWHILE`,
+  `SETTING_CEILING_CHANGED_MEANWHILE`, `SETTING_NOT_APPLIED`
+  (docs/security-model.md, "Confirming a loosening in the client's dialog").
+- A confirmed `maxOutputBytes` raise resizes the validators first
+  (`ValidatorPool.resize`: one slot at a time, the spare first, checks
+  answering throughout), then applies; a pack turned on is loaded by
+  ch-local at the version the dialog showed. What was applied, or could not
+  be, is told to the user as a notice.
 
 ### Added — packs in place, runtime side: a control channel, change notices and `countinghouse_settings` (#183)
 
