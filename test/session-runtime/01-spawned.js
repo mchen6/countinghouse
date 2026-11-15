@@ -36,7 +36,9 @@ const until = async(test, ms = 30000) => {
   return test();
 };
 
-function runtime(home, extra = [], {dirMode = 0o700, socketName = 's'} = {}) {
+// restore: send ch-local daemon's 'restore' (an empty table) once the
+// control channel says ready, as the daemon does
+function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', restore = true} = {}) {
   const run = path.join(home, 'run', 'daemon');
   fs.mkdirSync(run, {recursive: true});
   fs.chmodSync(path.join(home, 'run'), 0o700);
@@ -49,7 +51,12 @@ function runtime(home, extra = [], {dirMode = 0o700, socketName = 's'} = {}) {
   // ch-local's control requests over the IPC channel, as stdio's helper sends them
   const replies = new Map();
   let nextControl = 1;
-  child.on('message', (m) => { const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); } });
+  r.told = [];
+  child.on('message', (m) => {
+    if (m != null && m.type === 'ready' && restore) child.send({id: 'restore-1', type: 'restore', sessions: [], declines: []});
+    if (m != null && m.id === undefined && m.type !== 'ready') r.told.push(m);
+    const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
+  });
   r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.out += d; });
@@ -149,6 +156,76 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.ok(Array.isArray(reply.tools) && reply.tools.length === 1, JSON.stringify(reply));
     const list = await request(a.c, 'tools/list');
     assert.ok(list.result.tools.some((t) => t.name === reply.tools[0]), JSON.stringify(list.result.tools.map((t) => t.name)));
+    a.c.end();
+  });
+
+  it('listens only once ch-local daemon\'s restore has come (C3); without one, after its safety bound', async() => {
+    r = runtime(home, [], {restore: false});
+    await tick(1500);
+    assert.ok(!fs.existsSync(r.socket), 'no socket before the restore, or its bound');
+    const secret = await listening(r);
+    assert.ok(secret != null, 'listens after the bound, with an empty table');
+    assert.match(r.out + r.err, /no session table from ch-local daemon/, 'the warning is logged');
+  });
+
+  it('tells ch-local daemon it listens, naming its socket, once the socket is up (C3)', async() => {
+    r = runtime(home);
+    await listening(r);
+    const until = Date.now() + 10000;
+    while (!r.told.some((m) => m.type === 'listening') && Date.now() < until) await tick(50);
+    assert.deepStrictEqual(r.told.find((m) => m.type === 'listening'), {type: 'listening', socket: r.socket});
+  });
+
+  it('ends, within its drain bound, once ch-local daemon is SIGKILLed, even with a session still attached (C3)', async() => {
+    // a parent standing in for the daemon: it forks the runtime in its own
+    // group, with the IPC channel, sends the restore, and prints the pid
+    const run = path.join(home, 'run', 'daemon');
+    fs.mkdirSync(run, {recursive: true});
+    fs.chmodSync(path.join(home, 'run'), 0o700);
+    fs.chmodSync(run, 0o700);
+    const socket = path.join(run, 's');
+    const args = [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
+      '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
+      '--requestTimeout', '2', '--sessionSocket', socket];
+    const parentCode = `const c = require('child_process').spawn(process.execPath, ${JSON.stringify(args)}, {stdio: ['ignore', 'ignore', 'ignore', 'ipc'], detached: true,
+      env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
+      c.on('message', (m) => { if (m && m.type === 'ready') c.send({id: 'restore-1', type: 'restore', sessions: [], declines: []}); });
+      process.stdout.write(String(c.pid) + '\\n'); setInterval(() => {}, 1000);`;
+    const parent = spawn(process.execPath, ['-e', parentCode], {stdio: ['ignore', 'pipe', 'inherit']});
+    let out = '';
+    parent.stdout.on('data', (d) => { out += d; });
+    let until = Date.now() + 10000;
+    while (!/\n/.test(out) && Date.now() < until) await tick(50);
+    const pid = Number(out.trim());
+    const alive = () => { try { process.kill(pid, 0); return true; } catch (e) { return false; } };
+    try {
+      until = Date.now() + 30000;
+      while (!(fs.existsSync(path.join(run, 'secret')) && fs.existsSync(socket)) && Date.now() < until) await tick(100);
+      await tick(300);
+      const a = await shim.session(socket, handshake.parseSecret(fs.readFileSync(path.join(run, 'secret'), 'utf8')));
+      parent.kill('SIGKILL');
+      assert.deepStrictEqual(await a.c.json('C', 10000), {op: 'drain'}, 'the attached shim is told to drain');
+      // the shim stays attached: the bound (--requestTimeout 2 s), not it, ends the drain
+      until = Date.now() + 10000;
+      while (alive() && Date.now() < until) await tick(100);
+      assert.strictEqual(alive(), false, 'the runtime ended');
+      assert.ok(!fs.existsSync(socket), 'and its socket went with it');
+      a.c.end();
+    } finally {
+      if (alive()) process.kill(pid, 'SIGKILL');
+      parent.kill('SIGKILL');
+    }
+  });
+
+  it('drain (C3): every shim is told, a new handshake is refused SHUTTING_DOWN', async() => {
+    r = runtime(home);
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const reply = await r.control({type: 'drain'});
+    assert.strictEqual(reply.ok, true, JSON.stringify(reply));
+    assert.deepStrictEqual(await a.c.json('C', 10000), {op: 'drain'});
+    const b = await shim.attach(r.socket, secret);
+    assert.strictEqual(b.refused != null && b.refused.code, 'SHUTTING_DOWN', JSON.stringify(b));
     a.c.end();
   });
 
