@@ -9,11 +9,13 @@ const crypto = require('crypto');
 const {createRegistry} = require('../../lib/session-transport/registry');
 
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+// the resume and gone tells only (the idle and busy ones are 08's)
+const keep = (push) => (m) => { if (m.type === 'session-resume' || m.type === 'session-gone') push(m); };
 
 describe('session-transport 07: resume across a runtime restart (#255, N3)', () => {
   it('a resume token is 256 random bits, and its hash is plain SHA-256', () => {
     const told = [];
-    const reg = createRegistry({tell: (m) => told.push(m)});
+    const reg = createRegistry({tell: keep((m) => told.push(m))});
     const s = reg._create();
     const token = reg._issue(s);
     assert.match(token, /^rt_[A-Za-z0-9_-]{43}$/);
@@ -23,7 +25,7 @@ describe('session-transport 07: resume across a runtime restart (#255, N3)', () 
 
   it('the new hash is told before the token is returned to be sent', () => {
     const order = [];
-    const reg = createRegistry({tell: (m) => order.push(`tell ${m.hash}`)});
+    const reg = createRegistry({tell: keep((m) => order.push(`tell ${m.hash}`))});
     const s = reg._create();
     const token = reg._issue(s);
     order.push(`sent ${sha(token)}`);
@@ -47,7 +49,7 @@ describe('session-transport 07: resume across a runtime restart (#255, N3)', () 
 
   it('a restored session not resumed within the reconnect window ends, and the daemon is told it is gone', async() => {
     const told = [];
-    const reg = createRegistry({tell: (m) => told.push(m), reconnectWindowMs: 50});
+    const reg = createRegistry({tell: keep((m) => told.push(m)), reconnectWindowMs: 50});
     reg._restore([{session: 'b'.repeat(32), resume: sha('rt_x')}]);
     assert.strictEqual(reg._count(), 1);
     await new Promise((r) => setTimeout(r, 120));
@@ -58,7 +60,7 @@ describe('session-transport 07: resume across a runtime restart (#255, N3)', () 
 
   it('a session that ends is told gone; a restored one resumed is announced at its first settle', () => {
     const told = [];
-    const reg = createRegistry({tell: (m) => told.push(m)});
+    const reg = createRegistry({tell: keep((m) => told.push(m))});
     const s = reg._create();
     reg._issue(s);
     s._end();
