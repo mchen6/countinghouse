@@ -407,7 +407,11 @@ Nothing of a session is ever written to a file.
 **The resume token is single-use and rotated:**
 - Each `WELCOME` gives a new one, and the old one is void.
 - A resume is refused while the session still has a live connection, so a copied token can't take over a live session.
-- The daemon stores only a hash of the current token.
+- The daemon stores only a hash of the current token: **plain SHA-256**, as 64 lowercase hex characters, in memory only.
+  - **Why no key is needed.** The token is 256 random bits (`crypto.randomBytes(32)`), so a preimage of its hash is infeasible. No HMAC key has to outlive a runtime, and the new runtime checks a presented token by its SHA-256, compared in constant time.
+  - **Told before it's sent.** The runtime tells the daemon `{type: 'session-resume', session, hash}` for each new token *before* the `WELCOME` carrying it leaves. The IPC channel is ordered, so a crash between the two never leaves the daemon holding a hash older than the token the shim has. A session's end is told as `{type: 'session-gone', session}`.
+  - **Handed back on a restart.** Each restored row is `{session, resume, state}`: `resume` is that hash, beside B's state and never inside it. The runtime validates it as exactly 64 lowercase hex characters, then waits for the session's resume within the reconnect window.
+  - **A hash alone resumes nothing.** The shim authenticates with the new runtime's secret (HELLO, PROVE, AUTH) before its RESUME, and the first resume rotates the token again.
 
 ### The shim's home and `shim.json`
 
