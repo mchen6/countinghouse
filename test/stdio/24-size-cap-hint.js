@@ -29,7 +29,23 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
     assert.match(h, /countinghouse_settings \{"action":"set","name":"maxOutputBytes","value":"10MiB"\}/);
     assert.match(h, /`ch-local settings set maxOutputBytes 10MiB` in a terminal/);
     assert.match(callLimits.raiseHint(10), /"value":"1MiB"/, 'never under the setting\'s 1MiB');
-    assert.match(callLimits.raiseHint(300 * MiB), /"value":"256MiB".*\(256MiB is the most it can be\)/);
+    const over = callLimits.raiseHint(300 * MiB, 256 * MiB);
+    assert.strictEqual(over, 'the most allowed here is 256MiB', 'past the setting\'s bound: the most, and no command');
+  });
+
+  it('bounded by the operator\'s ceiling: a 64 MiB ceiling caps the hint, and a size past it gets the most and no command', () => {
+    options.settingsTool = true;
+    const most = callLimits.ceilingBound({state: 'trusted', ceiling: {maxOutputBytes: 64 * MiB}});
+    assert.strictEqual(most, 64 * MiB);
+    assert.match(callLimits.raiseHint(9 * MiB, most), /`ch-local settings set maxOutputBytes 9MiB`/);
+    const past = callLimits.raiseHint(100 * MiB, most);
+    assert.strictEqual(past, 'the most allowed here is 64MiB');
+    assert.ok(!/settings set|countinghouse_settings/.test(past));
+    // no ceiling: the setting's own 256MiB; one that can't be trusted: no raise; one without the cap: 256MiB
+    assert.strictEqual(callLimits.ceilingBound({state: 'none'}), 256 * MiB);
+    assert.strictEqual(callLimits.ceilingBound({state: 'untrusted', problem: 'x'}), null);
+    assert.strictEqual(callLimits.ceilingBound({state: 'trusted', ceiling: {}}), 256 * MiB);
+    assert.match(callLimits.raiseHint(9 * MiB, null), /no raise in conversation here: the operator's ceiling can't be trusted/);
   });
 
   it('without it: the operator\'s flag', () => {
