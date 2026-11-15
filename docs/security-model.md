@@ -485,8 +485,8 @@ A dialog is shown only when all of these hold:
   maintainer's hand test before release
   ([`docs/development/elicitation-hand-test.md`](development/elicitation-hand-test.md))
   adds the first range, no client sees a dialog. After that, the automated
-  re-test of each new Claude Code version opens the pull request that adds
-  its range.
+  re-test of each new Claude Code version (not built yet) will open the pull
+  request that adds its range.
 - **The request declares form elicitation.** The capability is read from
   the request itself, never inferred from earlier ones.
 - **Nothing in the client's own configuration could answer the dialog.**
@@ -522,6 +522,10 @@ result of any tool, and as an MCP `notifications/message`).
 
 What this does not cover:
 
+- **MCP does not promise that a person answers the dialog.** The
+  specification lets a client answer an elicitation as it likes. The tested
+  list and the configuration scan narrow that to clients and set-ups where
+  a person has been seen to answer it; they do not make it a guarantee.
 - **A client that lies about its name.** The list bounds honest, untested
   clients, not spoofers. A script that starts its own runtime and answers
   its own dialog loosens only that runtime: "this start" is one runtime

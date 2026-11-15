@@ -17,13 +17,13 @@ The list ships empty: until this test passes, no client is shown a dialog.
 - **Once, before release, by hand.** The maintainer runs the checklist
   below on the current Claude Code, and the first range is added with the
   results recorded here.
-- **Each new version after that, automatically.** The automated re-test
-  plants a hook at every location ch-local's scan knows
+- **Each new version after that, automatically** (not built yet). The
+  automated re-test will plant a hook at every location ch-local's scan knows
   (`lib/client-conditions-fixtures.js` in ch-local: `LOCATIONS` and
-  `plant()`), checks that the scan finds each, and diffs the new version's
+  `plant()`), check that the scan finds each, and diff the new version's
   configuration surface against the last approved one. When it passes, it
-  opens the pull request that adds the version's range. Nothing is added
-  by hand per version.
+  will open the pull request that adds the version's range. Nothing is to be
+  added by hand per version.
 - **Exact ranges.** A range `{from, before}` names exactly the versions
   tested (`from` inclusive, `before` exclusive). There is no open range, so
   a new version gets no dialog until it is re-tested.
@@ -60,9 +60,9 @@ fail, with the date and the client version.
 
 ### What to record
 
-10. The `clientInfo` name and version Claude Code sends (the runtime logs
-    them at debug level), from the CLI and, if available, from an Agent SDK
-    host.
+10. The `clientInfo` name and version Claude Code sends (with `--debug`
+    the runtime logs them once per session: `mcp: client "<name>" "<version>"`),
+    from the CLI and, if available, from an Agent SDK host.
 11. ch-local start's `cwd`, and whether `CLAUDE_PROJECT_DIR` is set, for a
     project-directory session.
 12. `CLAUDE_CODE_ENTRYPOINT` and `CLAUDECODE` for the CLI, for `claude -p`
