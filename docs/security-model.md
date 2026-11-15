@@ -254,7 +254,14 @@ directory of `--settingsFile`: its settings, the daemon's session secret
 under `run/`, the launcher, the pack records) is refused to a module's reads
 and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
 named: directly, through `..`, a symlink or a hard link to the settings
-files. The one exception is the module's own `/app`, `/data` and `/tmp`, by
+files. The policy file and the `--remoteCredentials` file are refused by
+their paths, not by identity as the settings files and the auth
+configuration are: a hard link to one of them, under a name outside these
+directories, is another path and is not refused. A module cannot make one
+(a `link` with either end outside its roots is refused, and under
+`enforce` a module whose `/data` or `/tmp` holds one does not start); the
+limit is a link that an operator, or other software on the machine, left
+where a module may read. The one exception is the module's own `/app`, `/data` and `/tmp`, by
 their real paths at spawn. A listing never shows them, and neither they nor
 any directory above them can be renamed or removed. The install directory is
 the exception: it is countinghouse's public code and stays readable under
