@@ -439,6 +439,8 @@ Nothing of a session is ever written to a file.
 ### Starting
 
 1. A shim makes the directory and ownership checks (section 1). Then it reads `<home>/run/daemon/daemon.json`: `{pid, socket, runtimeVersion, daemonVersion, started}`. `socket` is the Unix socket path or the Windows pipe name.
+   - **`socket` may be null.** The daemon clears it when a runtime ends (a crash or an upgrade) and writes the successor's once that one listens, so nothing probes a name that's free for anyone to take.
+   - **A shim treats a null `socket` as not yet ready**, and retries within its 20 s, as for a `daemon.json` mid-write: it's malformed for now, never a stop (the shim's `config.rs` and `attach.rs`).
 2. If the pid is alive and the handshake completes, it's attached.
 3. Otherwise it takes `<home>/run/daemon/start.lock`, and checks again under the lock. **The lock is ch-local's `lib/lock.js` protocol, exactly**, so the Rust shim and Node take one lock and never two daemons start:
    - **The content.** The holder is `{"pid": <int>, "host": <string>, "at": <ISO-8601 UTC time>}` and a newline. `host` is the host name, plus on Linux `#` and the target of `/proc/self/ns/pid` (`pid:[…]`), so two containers sharing a host name don't take each other's live lock for dead.
@@ -612,6 +614,11 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - Rust's `std` `CreateProcessW` passes `bInheritHandles = TRUE` and offers no `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so closing the rest needs a hand-written `CreateProcessW`. That's post-release.
    - It's accepted for release 1 because Node module code can't use a raw inherited `HANDLE` value the way it can a POSIX descriptor number.
    - On POSIX there's no such residual: the shim marks every descriptor from 3 up `FD_CLOEXEC` at startup, and refuses to start a daemon if it can't.
+8. **On Windows, the daemon's readiness probe uses Node's connect.**
+   - **What's checked otherwise:** a `daemon.json` read from disk may be stale, so its pipe goes through PowerShell, as the shim opens one: Identification only, the pipe's owner this user, SYSTEM or Administrators, then the PROVE.
+   - **What isn't:** the probe of the daemon's own new runtime, after that runtime has told the daemon it listens, uses Node's `net.createConnection`. That allows impersonation and checks no owner.
+   - **Why that's narrow:** the name is fresh and random, and a bind by anyone else first would have failed our runtime's bind. So the only gap is that runtime dying within the probe's ~100 ms after its tell, and another user binding the freed name inside that window.
+   - **Accepted:** rather than a PowerShell run (1 to 10 s) at every runtime restart.
 
 ## 10. Migration and the per-session mode
 
