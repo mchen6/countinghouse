@@ -92,6 +92,7 @@ const out = {
     requestToRuntime: {header: {seq: 1}, line: request, rule: 'exact: header {"seq": n}, then the client line\'s bytes without its newline', keep: {seq: 1, idBytes: '7', method: 'tools/call'}, hex: hex(frame('M', mPayload({seq: 1}, request)))},
     oddIdToRuntime: {header: {seq: 2}, line: odd, rule: 'the id 1e2 is kept as its bytes, 1e2; matching is by seq only', keep: {seq: 2, idBytes: '1e2', method: 'tools/list'}, hex: hex(frame('M', mPayload({seq: 2}, odd)))},
     batchToRuntime: {header: {seq: 3}, line: batch, keep: {seq: 3, memberIdBytes: ['1', '"b"']}, hex: hex(frame('M', mPayload({seq: 3}, batch)))},
+    clientResponseToRuntime: {header: null, line: '{"jsonrpc":"2.0","id":5,"result":{}}', rule: 'an object with an id and no method is a response: no header, no seq, nothing kept, never crash-answered', hex: hex(frame('M', mPayload(null, '{"jsonrpc":"2.0","id":5,"result":{}}')))},
     notificationToRuntime: {header: null, line: notification.replace('tools/list_changed', 'cancelled'), hex: hex(frame('M', mPayload(null, notification.replace('tools/list_changed', 'cancelled'))))},
     replyToShim: {header: {seq: 1}, line: reply, rule: 'exact: the shim writes the bytes after the header, then one newline', hex: hex(frame('M', mPayload({seq: 1}, reply)))},
     unmatchedReplyToShim: {header: {seq: 99}, line: reply, rule: 'a seq the shim does not hold: written to the client anyway, nothing recorded', hex: hex(frame('M', mPayload({seq: 99}, reply)))},
@@ -132,6 +133,10 @@ const out = {
     accepted: [`${hex(secret)}`, `${hex(secret)}\n`],
     refused: [`${hex(secret).toUpperCase()}`, `${hex(secret)}\r\n`, `${hex(secret)}\n\n`, hex(secret).slice(2), ` ${hex(secret)}`, ''],
     refusedRule: 'anything but exactly 64 lowercase hex characters with at most one trailing newline, and a file that is a symlink, not owned by the user, or not 0600 (on Windows, not private by the privateProblem rule)'
+  },
+  drainOverflowAnswer: {
+    rule: 'exact apart from the id: a request held past the drain bound (64 requests, or maxToRuntime in all), which never reached the runtime',
+    json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse\'s runtime restarted before this was sent; the call did not run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":false}}}'
   },
   tooLargeAnswer: {
     rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',

@@ -170,6 +170,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
   - It parses each line only enough to tell what it is.
   - **A request** (an object with an `id`) gets a header `{"seq": n}`. `n` is the shim's own counter, from 1, below 2^53. It counts for the shim process's whole life and **never restarts on a reconnect or a resume**. So a reply left over from an earlier connection can't carry the `seq` of a newer request. The shim keeps `n`, the id's original bytes and the method.
   - **A batch** (an array) gets `{"seq": n}` too, and the shim keeps the original bytes of each member's id.
+  - **A response** (an object with an `id` and no `method`) gets no header, and nothing is kept for it: it never gets a `seq`, an in-flight entry or a crash answer. In 2026-07-28 the runtime sends the client no requests (elicitation rides in the tool result, and the client answers with a retried `tools/call`), so a response is forwarded and the runtime ignores it.
   - **A notification**, or a line that isn't JSON, gets no header (header length 0). A line that isn't JSON is answered by the runtime with a parse error, as stdio does today.
   - The line's **original bytes** follow, unchanged and without the newline. The shim keeps a legacy `initialize` line for replay.
 - **Runtime to client.** The answer to a request or a batch has the header `{"seq": n}`, the `n` it came with. A notification, or a message the runtime sends of its own, has no header.
@@ -202,7 +203,11 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 {"jsonrpc":"2.0","id":<id>,"error":{"code":-32603,"message":"countinghouse's runtime restarted before answering; the call may have run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":true}}}
 ```
 
-During a drain, a request the client sends is held and forwarded after the reconnect. At most 64 are held, up to `maxToRuntime` in all. Past that, a request is answered as above with `mayHaveRun: false`.
+During a drain, a request the client sends is held and forwarded after the reconnect. At most 64 are held, up to `maxToRuntime` in all. Past that, a request is answered with this, exactly, since it never reached the runtime:
+
+```json
+{"jsonrpc":"2.0","id":<id>,"error":{"code":-32603,"message":"countinghouse's runtime restarted before this was sent; the call did not run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":false}}}
+```
 
 **The conformance vectors** (`vectors.json`, contract 2) fix, from given inputs:
 - the secret file's form;
@@ -514,7 +519,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 
 ## 10. Migration and the per-session mode
 
-- **`ch-shim` is the new client entry,** where a binary exists for the platform: Linux x64 and arm64, macOS x64 and arm64, and Windows x64. Client snippets and `ch-local install` write it, with `<home>/shim.json`.
+- **`ch-shim` is the new client entry,** where a binary exists for the platform: Linux, macOS and Windows, each x64 and arm64 (Matt's six targets). Client snippets and `ch-local install` write it, with `<home>/shim.json`.
 - **No binary for the platform:** `ch-local install` writes `ch-local start --stdio` and says the platform runs one runtime per session. There is no Node shim.
 - **Existing configs keep working.** A client config that launches `ch-local start --stdio` execs the shim when one is installed, and otherwise runs today's per-session runtime, saying so. So no user has to edit a client config.
 - **`runtime: own` stays through release 1** (§11 answer 3). It's set with the terminal command, or per launch with `--own-runtime`, and gives today's behaviour exactly. It's also finding 3's fallback for a shim with flags or a token of its own.
