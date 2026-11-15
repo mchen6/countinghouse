@@ -26,6 +26,31 @@ describe('fs-broker 17: code roots', () => {
     assert.strictEqual(excluded.length, first.length - 1);
   });
 
+  // An install run by a spelling that isn't its real path (#272: on Windows,
+  // one under an 8.3 short name, C:\\Users\\RUNNER~1\\..., from os.tmpdir();
+  // here a symlinked spelling): its own entries are roots under the spelling
+  // its files run by and under their real paths, so its lazily required files
+  // stay inside them; a module root inside it still takes both out.
+  it('lists countinghouse\'s own entries under the spelling it runs from and their real paths (#272)', () => {
+    const base = mkdtemp('code-roots-spelled-');
+    try {
+      const real = path.join(base, 'real-install');
+      fs.mkdirSync(path.join(real, 'lib'), {recursive: true});
+      fs.writeFileSync(path.join(real, 'package.json'), '{}');
+      fs.writeFileSync(path.join(real, 'lib', 'thread-info.js'), '');
+      const spelled = path.join(base, 'spelled');
+      fs.symlinkSync(real, spelled, 'junction');
+      const roots = identity.codeRootsFor(spelled, fs.realpathSync.native, []);
+      for (const p of [path.join(spelled, 'lib'), path.join(real, 'lib'), path.join(spelled, 'package.json'), path.join(real, 'package.json')]) {
+        assert.ok(roots.includes(p), `${p}: ${JSON.stringify(roots)}`);
+      }
+      const excluded = identity.codeRootsFor(spelled, fs.realpathSync.native, [path.join(real, 'lib')]);
+      assert.ok(!excluded.includes(path.join(spelled, 'lib')) && !excluded.includes(path.join(real, 'lib')), JSON.stringify(excluded));
+    } finally {
+      fs.rmSync(base, {recursive: true, force: true});
+    }
+  });
+
   // pnpm and linked node_modules: a dependency reached through a symlink is
   // a root under the name Node looks up and under its real path; a module
   // root subtracts both (review, plan 5).
