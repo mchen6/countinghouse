@@ -366,7 +366,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
   - nothing from any client's environment reaches it.
-- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `node ch-local start --stdio --own-runtime` with its arguments, and says so on stderr and in the first result's notice. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
+- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `<node> <chLocal> start --stdio --own-runtime --home <home> <its arguments>`, from `shim.json`, and says so on stderr and in the first result's notice. `--home` is the shim's own (absolute; `start` refuses a relative or missing one with exit 2), and it overrides `COUNTINGHOUSE_HOME`, so a client's environment can't pick another home. ch-local's options come before the pass-through flags, and neither reaches the runtime. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
   - a pass-through runtime flag (`--moduleSandbox`, `--maxOutputBytes`, `--requestTimeout`, `--locale` or any other `start` passes through);
   - a token the client's environment *chooses* under today's precedence, which differs from the daemon's. That's a `COUNTINGHOUSE_GITHUB_TOKEN`, or a `GITHUB_TOKEN` when `gh` has none. A shell-wide `GITHUB_TOKEN` beside a working `gh` login chooses nothing, so it doesn't push a session to its own runtime.
 
@@ -512,8 +512,36 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 
 ### Crash of the runtime or the daemon
 
-- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. After 5 failures in 10 minutes it stops and logs why. It hands the table over each time.
+- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. It hands the table over each time. After 5 failures in 10 minutes it stops restarting: it writes `failed.json` (below), removes `daemon.json`, and exits.
 - **The daemon:** the next shim to reconnect finds the pid dead, and starts a new daemon under the lock.
+
+### `failed.json`: falling back without a loop
+
+A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims fall back to the per-session mode instead of starting daemon after daemon.
+
+- **Written** by the daemon as `daemon.json` is: 0600, through an exclusive temporary file, `fchmod`, then a rename. Exactly:
+
+  ```json
+  {"v": 1, "at": <epoch ms>, "exit": <integer or null>, "signal": <"SIG…" or null>, "reason": "restarts-exhausted" | "never-listened"}
+  ```
+
+  - `v` is exactly 1; `at` is a positive safe integer; `exit` is a safe integer or null; `signal` matches `^SIG[A-Z0-9]+$` or is null; `reason` is one of the two strings.
+  - The key set is exact: none extra, none missing, none twice. It holds no path, environment or stderr text.
+- **Read** by the shim with `daemon.json`'s trust checks (the 0700 directory, 0600, the euid's, no links, at most 512 bytes; on Windows the owner and DACL equivalents). It's read at two points: after the `daemon.json` check fails, and again under the start lock, immediately before a spawn. So a daemon that gives up between the two never gets a fresh daemon started behind it.
+- **Fresh** means `now − 600 000 ≤ at ≤ now + 60 000` (ms). A fresh, valid file means no daemon is spawned, and the session runs its own runtime. Anything else (stale, from the future, unreadable or invalid) is ignored, and the shim goes on as before.
+- **Cleared** by the next daemon whose runtime listens. So the shared mode comes back after 10 minutes, or as soon as a new daemon succeeds.
+- **The fallback at startup:** before the shim has read anything from stdin, it runs `start --stdio --own-runtime --home <home> <its arguments>` with the shim's stdin, waits, and exits with its code. That's today's pass-through path (on Windows, a spawn, since there's no exec). It says on stderr only: `the shared runtime failed (<reason>); this session runs its own`, with `reason` the enum alone.
+- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1).
+  - **Never looser.** A session's tightenings live only in the runtime's memory and the shim's records, never in `settings.json`. A per-session runtime starts at the file's values and takes no `replay` (it speaks MCP on stdio, with no `C` frames). So **a shim holding any record refuses the mid-session fallback**:
+    - it answers each held request, and each later one, with `sessionCantFallBackAnswer` (exact apart from the id);
+    - it says on stderr: `the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session`;
+    - then it exits non-zero.
+  - **With no record**, the per-session runtime it starts has never seen this client's `initialize`, so the shim:
+    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+    2. then sends the lines it held, then relays stdin as it comes.
+
+    The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
+- **Vectors** (`failedJson` and `sessionCantFallBackAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
 
 ## 7. Windows and macOS
 
