@@ -343,35 +343,51 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 ## 4a. Modules with per-session state (Matt's rule 3, DECISIONS.md)
 
-Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its data partitioned by session.
+Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store partitioned by session. Two points are **OPEN for Matt** and marked so below.
 
 - **The declaration.** In the module's `package.json`: `"countinghouse": {"state": "per-session"}`. Absent, or `"shared"`, means shared. Any other value refuses the load, naming it.
   - It sits beside `role` and `sessionDefaults`, so it's reviewed and pinned with the manifest like them (`manifestPins`). A reload that changes it is refused like any other pinned field.
   - `ch-local`'s install review shows it: "keeps state per session".
+- **Where it applies.**
+  - **The shared runtime:** as below.
+  - **`--stdio` (one session):** unchanged. There's no session id and no partition. The module runs in its one worker on today's paths (`<name>/{data,tmp}`, `m:<name>:`), whatever it declares.
+  - **The HTTP hosting profile:** has no sessions, and serves many users, so "shared" would mean shared across users. A per-session module's load is **refused** there with `MODULE_NEEDS_SESSIONS`, naming the module.
 - **The worker pool.** A per-session module's workers are keyed by (module name, session id), where today's are keyed by module name.
-  - A worker starts on the session's first call into the module, a routed hop included. It stops at the session's end (the registry's `'end'`, after the reconnect window), or after it has been idle for `moduleSessionIdleMinutes` (default 10). It is started again on the next call.
-  - A hop is served by the worker of the call's own session, which the main thread already knows (section 2's token entry). A per-session module is never reached outside a session: a call with no session is refused like an unknown device.
-  - Module code, the sandbox, the validators and the generation rule (`nextGeneration`) are the module's, shared by its session workers. Only the worker and its data are per session.
-- **What the module sees: nothing new.** It's handed no session id. Isolation comes from the worker and the partition, so a module learns nothing about the user or the other sessions that it couldn't learn before. Its `/data`, `/tmp` and `ctx.redis` look exactly as they do today.
+  - A worker starts on the session's first call into the module, a routed hop included.
+  - **When it stops: OPEN for Matt.** A stop drops the module's declared in-memory state, and the rule doesn't say when that's acceptable. The proposal: a live session's worker stops only at the session's end, or when the cap needs its slot (below). Then that session is told "this pack's in-memory state was reset; its stored data was kept". No idle timer.
+  - Module code, the sandbox, the validators and the generation rule (`nextGeneration`) are the module's, shared by its session workers. Only the worker and the partition are per session.
+- **Hops and peers.** A hop is served by the worker of the call's own session, which the main thread knows from the call's token entry (section 2).
+  - A per-session module is never reached outside a session: a call with no session is refused like an unknown device.
+  - A peer channel or a hop token that outlives its session is refused the same way.
+  - A shared module serving two sessions holds both sessions' tokens, and can hop into either session's worker. That's section 9's residual 5, which covers state too (below).
+- **Jobs.** A per-session module's job carries its session, from the main thread; the module is never shown it. A job whose session has ended is refused like an unknown device, and isn't retried.
+- **What the module sees: nothing new.** No session id reaches it: not in `options`, `workerData`, its environment, its argv, an error's text or a job's data. Isolation comes from the worker and the partition, so it learns nothing about the user, or about other sessions, that it couldn't learn before.
 - **The partition.**
-  - Files: `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`, made 0700 by `lib/module-data.js` as today's are. The fs broker maps the worker's `/data` and `/tmp` there. The session id is the registry's 32 hex characters, so it is always one safe path segment.
-  - Store: keys under `m:<name>:s:<session id>:` in place of `m:<name>:` (`lib/redis-namespace.js`), applied on the main thread as today, never named by the worker.
-  - Lifetime: a session's partition is removed when the session ends. A runtime started with a restored table (section 6) keeps the partitions of restored sessions and sweeps the others once the reconnect window has passed.
+  - **Store:** keys under their own prefix, `ms:<name>:<session id>:`, never inside the shared module's `m:<name>:`. So `redis-namespace.js`'s rule that no prefix starts another holds, and a `--stdio` run of the same module can't reach a session's keys. A purge of the module covers both prefixes. `unprefixError` strips the session prefix as it strips `m:<name>:`.
+  - **Files: OPEN for Matt.** Does "store partitioned by session" cover `/data` too, and is it deleted at the session's end? If it does:
+    - the path is `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`, made 0700 by `lib/module-data.js`;
+    - the fs broker maps the worker's `/data` and `/tmp` there on the main thread, and the fs scrub strips that root from paths and error texts;
+    - the worker is given the root `moduleDataPath`, as today, never the session path.
+
+    If it doesn't, `/data` stays the module's one shared area, and only `/tmp` is per session.
+  - **Lifetime.**
+    - A session's partition is removed only on its `bye`, or when its reconnect window expires. It's never removed on `Registry.close()` (a runtime stopping), which ends sessions without their leaving.
+    - A restarted runtime keeps the sessions' ids: a restored row's `session` is the old id, and the registry rebuilds each restored session with it (section 6, the resume hash).
+    - **The sweep:** before the listener accepts, the runtime lists the partitions present (directories and `ms:` keys) and removes those whose ids weren't restored.
+    - After a daemon death, nothing is restored, so the sweep removes every partition. Each reconnecting session is told "per-session state was reset", as §6 tells loosenings.
 - **The limits.**
-  - At most `maxSessionWorkers` per-session workers in all (default 16). At the cap, the least recently used idle one is stopped; if none is idle, the call is refused with `SESSION_WORKERS_BUSY` (retryable). Nothing is queued.
-  - The listener's `maxSessions` (256) bounds the partitions, not the workers. A session past the worker cap still has its partition, and waits for a worker.
-- **The memory cost.** Each live session worker costs one lean worker's resident baseline (A's per-worker measurement), so the cap bounds it at 16 times that above today's shared workers. The cap is the operator's ceiling to lower, never a client's to raise.
-- **`--stdio` (one session) is unchanged.** It has no session id and no partition: the module runs in its one worker on today's paths (`<name>/{data,tmp}`, `m:<name>:`), whatever it declares.
-- **The task split** (a suggestion; the Reviewer assigns it):
-  - **R1, countinghouse:** the manifest field and its pin, the pool keyed by session, the fs and store partition, the cap and the idle stop, the sweep, and `SESSION_WORKERS_BUSY` in the error catalogue. Suggested owner: **C**, who knows the lean worker, `module-data.js` and the registry.
-  - **R2, ch-local:** the install review line. Suggested owner: whoever holds the install review at that point.
-  - Tests:
-    - two sessions calling one per-session module see separate `/data` and store keys, and one shared module sees one;
-    - a hop runs in the calling session's worker;
-    - a session's end stops its worker and removes its partition;
-    - the cap refuses `SESSION_WORKERS_BUSY` when no worker is idle;
-    - `--stdio` keeps today's paths;
-    - a module learns no session id.
+  - At most `maxSessionWorkers` per-session workers in all (default 16). At the cap, the least recently used worker of a session with no call in flight gives up its slot (announced, as above). If none can, the call is refused with `SESSION_WORKERS_BUSY` (retryable). Nothing is queued.
+  - The listener's `maxSessions` (256) bounds the partitions, not the workers.
+  - **The fs quota** applies across all of a module's partitions together, not to each one, so a module can't multiply its disk by its sessions.
+- **The memory cost.** Each live session worker costs one lean worker's resident baseline: **[A's measured figure, MB per worker, to be filled before merge]**. So the cap bounds it at 16 times that, above today's shared workers. The cap is the operator's to lower, never a client's to raise.
+- **Tests** (R1):
+  - two sessions calling one per-session module see separate store keys (and `/data`, if Matt says so), and a shared module sees one;
+  - a hop runs in the calling session's worker, and a token past its session's end is refused;
+  - a restart with a restored table keeps those partitions and sweeps the rest;
+  - `close()` removes none, and the window's expiry removes that session's;
+  - the cap's slot hand-over is announced, and the cap refuses `SESSION_WORKERS_BUSY` when no slot can be freed;
+  - `--stdio` keeps today's paths, and the HTTP profile refuses the load;
+  - no session id reaches the module (options, workerData, env, argv, error texts, job data).
 
 ## 5. The daemon, the control channel and per-client inputs
 
@@ -637,7 +653,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 4. The secret is only as strong as the user's file permissions.
    - The `conditions` child runs as the user, from the paths in `shim.json`.
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
-5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout. The values stay within the ceiling, and a module already sees all of one user's data.
+5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout, and into the other session's worker of a per-session module (§4a), so with its state. The values stay within the ceiling, and a module already sees all of one user's data. A token or peer channel that outlives its session is refused like an unknown device.
 6. **On Windows, another user (local, or remote with SMB access) can slow attaches, but can't lock them out.** The pipe accepts read-only opens from Everyone and anonymous, so pre-auth connections can be opened. Eviction of the oldest, the 2 s deadline and the shim's jittered retry keep real shims getting in. Such a connection gets nothing but `PROVE` (a random challenge and a MAC), can't authenticate, and never reads or forges a session.
 7. **On Windows, the daemon inherits any inheritable handle the client leaked into the shim.**
    - The shim makes its own three standard handles non-inheritable before it spawns the daemon, and refuses to spawn if that fails.
@@ -736,6 +752,16 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - A shim with pass-through flags or a differing token runs `--own-runtime`, and says so.
 - `runtime: own`.
 - Tests: `--moduleSandbox audit` doesn't reach the shared runtime, and a differing token runs its own runtime.
+
+**R1. Per-session modules** (countinghouse, §4a; needs N3's restored ids and B2):
+- the manifest field and its pin, and the HTTP refusal;
+- the pool keyed by session, and the hop and job checks;
+- the `ms:` prefix and its purge, and the fs partition if Matt says so;
+- the lifetime, the sweep and the announcements;
+- the cap and `SESSION_WORKERS_BUSY`.
+The tests are §4a's. The owner is assigned by the Reviewer.
+
+**R2. The install review line** (ch-local; after R1): "keeps state per session".
 
 **C6. Docs and migration.** The README, the client snippets and `ch-local install`; `docs/security-model.md` (section 9's residuals); `docs/upgrading-to-8.md`.
 
