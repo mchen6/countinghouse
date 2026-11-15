@@ -107,7 +107,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     a.c.end();
   });
 
-  it('until per-session settings land, a session may tighten or read settings but not loosen or confirm, nor set the log level', async() => {
+  it('until per-session settings land, a session reads settings but changes none, nor sets the log level, nor reaches tasks', async() => {
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
     const secret = await listening(r);
@@ -115,16 +115,26 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const call = (args, extra = {}) => request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
     const got = await call({action: 'get'});
     assert.ok(got.result != null && got.result.isError !== true, JSON.stringify(got));
-    const tighter = await call({action: 'set', name: 'requestTimeout', value: '20s'});
-    assert.ok(tighter.result.isError !== true, JSON.stringify(tighter));
-    const looser = await call({action: 'set', name: 'requestTimeout', value: '60s'});
-    assert.strictEqual(looser.result.isError, true, JSON.stringify(looser));
-    assert.strictEqual(looser.result._meta['countinghouse/code'], 'SETTING_LOOSENS_A_GUARD');
-    const confirm = await call({action: 'set', name: 'requestTimeout', value: '60s'}, {requestState: 'x', inputResponses: {}});
-    assert.strictEqual(confirm.result._meta['countinghouse/code'], 'SETTING_LOOSENS_A_GUARD', JSON.stringify(confirm));
+    // every set is the terminal's: a tightening, a loosening, a pack on or
+    // off, a confirmation's retry; nothing is written
+    for (const [args, extra] of [[{action: 'set', name: 'requestTimeout', value: '20s'}, {}], [{action: 'set', name: 'requestTimeout', value: '60s'}, {}],
+      [{action: 'set', name: 'requestTimeout', value: '60s'}, {requestState: 'x', inputResponses: {}}],
+      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}]]) {
+      const r2 = await call(args, extra);
+      assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
+      assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
+      assert.match(r2.result.content[0].text, /ch-local settings set/);
+    }
+    assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
+    for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
+      const t = await request(a.c, method, {taskId: 'x'});
+      assert.ok(t.error != null, `${method}: ${JSON.stringify(t)}`);
+      assert.match(t.error.message, /shared runtime/);
+    }
+    // a modern request's logging/setLevel is gone in 2026-07-28; either way
+    // a session gets an error, never a changed level
     const level = await request(a.c, 'logging/setLevel', {level: 'debug'});
     assert.ok(level.error != null, JSON.stringify(level));
-    assert.match(level.error.message, /shared runtime/);
     a.c.end();
   });
 
@@ -197,7 +207,8 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const second = runtime(home);
     const {code} = await second.exited;
     assert.strictEqual(code, 2, second.err.slice(-1500));
-    assert.match(second.err, /in use/);
+    // the start lock stops it first; a socket in use would too
+    assert.match(second.err, /another runtime holds|in use/);
   });
 
   it('refuses --sessionSocket without --controlChannel ipc, or with --stdio', async() => {
@@ -209,10 +220,16 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     without.stderr.on('data', (d) => { e1 += d; });
     assert.strictEqual(await new Promise((res) => without.on('exit', res)), 2, e1);
     assert.match(e1, /--sessionSocket needs --controlChannel ipc/);
-    const both = spawn(process.execPath, [...args, '--controlChannel', 'ipc', '--stdio'], {stdio: ['pipe', 'pipe', 'pipe', 'ipc']});
-    let e2 = '';
-    both.stderr.on('data', (d) => { e2 += d; });
-    assert.strictEqual(await new Promise((res) => both.on('exit', res)), 2, e2);
-    assert.match(e2, /--stdio and --sessionSocket: choose one/);
+    const refused = async(extra, pattern, base = args) => {
+      const c = spawn(process.execPath, [...base, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc']});
+      let e = '';
+      c.stderr.on('data', (d) => { e += d; });
+      assert.strictEqual(await new Promise((res) => c.on('exit', res)), 2, e);
+      assert.match(e, pattern);
+    };
+    await refused(['--controlChannel', 'ipc', '--stdio'], /--stdio and --sessionSocket: choose one/);
+    await refused(['--controlChannel', 'ipc', '--port', '19000'], /--sessionSocket and --port: choose one/);
+    await refused(['--controlChannel', 'ipc', '--authConfigPath', path.join(home, 'auth.json')], /only for the single-identity profile/);
+    await refused(['--controlChannel', 'ipc', '--sessionSocket'], /--sessionSocket needs a path/, [FRAMEWORK, '--no-workerThread', '--store', 'local', '--storePath', path.join(home, 'store')]);
   });
 });
