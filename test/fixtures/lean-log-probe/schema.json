@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "logService": {
+    "log": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "marker": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "marker"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "forged": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "marker": {
+            "type": "string"
+          },
+          "other": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "marker",
+          "other"
+        ]
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}

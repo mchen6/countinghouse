@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "lean-probe-caller",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: makes one routed ctx.call, then lists every file its worker has required, so the allowed-files test holds the hop path lean too.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeCallerService": {
+        "actionList": [
+          {
+            "name": "filesAfterCall",
+            "description": "Calls token-callee's bump once, then returns every file in its worker's require cache and how the call answered.",
+            "input": {
+              "schema": "/probeCallerService/filesAfterCall/input"
+            },
+            "output": {
+              "schema": "/probeCallerService/filesAfterCall/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

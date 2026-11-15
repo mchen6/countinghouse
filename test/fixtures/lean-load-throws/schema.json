@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "#/",
   "type": "object",
-  "squatService": {
-    "noop": {
+  "pingService": {
+    "ping": {
       "input": {"type": "object", "properties": {}},
       "output": {"type": "object", "properties": {}}
     }

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeCallerService": {
+    "filesAfterCall": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "called": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "files",
+          "called"
+        ]
+      }
+    }
+  }
+}

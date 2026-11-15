@@ -1,0 +1,33 @@
+{
+  "device": {
+    "friendlyName": "lean-log-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Lean worker step 3: ctx.log from a lean worker.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:logService": {
+        "actionList": [
+          {
+            "name": "log",
+            "description": "Writes its input to its device log with ctx.log.",
+            "input": {
+              "schema": "/logService/log/input"
+            },
+            "output": {
+              "schema": "/logService/log/output"
+            }
+          },
+          {
+            "name": "forged",
+            "description": "Writes to another device's log with CHUtil.deviceLog.",
+            "input": {
+              "schema": "/logService/forged/input"
+            },
+            "output": {
+              "schema": "/logService/forged/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

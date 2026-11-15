@@ -23,23 +23,32 @@ function forged(kind, n) {
   return Buffer.concat([HEAD, len, Buffer.alloc(n, 0x78), TAIL]);
 }
 
-// The worker's WorkerMessage, through the runtime's own countinghouse-util
-// in require.cache: since R2-1 Task 5 the global CHUtil a module sees has no
-// dm, and a module that goes around it reaches what require.cache holds.
-function workerMessage() {
-  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
-  const util = (key != null) ? require.cache[key].exports : null;
-  return (util != null && util.dm != null) ? util.dm.workerMessage : null;
+// The worker's next serialized reply is replaced: the lean worker's
+// WorkerMessage instance is out of a module's reach (CHUtil has no dm), and
+// since #170 the port to the main thread is pinned, so a hook on
+// MessagePort.prototype never sees it. What module code sharing the worker's
+// realm still reaches is lib/worker-message.js's exports in require.cache
+// (spec section 3's residual): it patches WorkerMessage.prototype's
+// sendSerializedReplyToParent for this one answer.
+const hook = globalThis.__mainCheckedForge || (globalThis.__mainCheckedForge = {next: null, replaced: 0, hooked: false});
+if (!hook.hooked) {
+  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]worker-message\.js$/.test(k) && !k.startsWith('/app/'));
+  const WorkerMessage = (key != null) ? require.cache[key].exports : null;
+  if (WorkerMessage != null && WorkerMessage.prototype != null) {
+    hook.hooked = true;
+    const real = WorkerMessage.prototype.sendSerializedReplyToParent;
+    WorkerMessage.prototype.sendSerializedReplyToParent = function(id, buffer) {
+      if (hook.next == null) return real.call(this, id, buffer);
+      const ab = hook.next;
+      hook.next = null;
+      hook.replaced += 1;
+      return real.call(this, id, ab);
+    };
+  }
 }
 
 module.exports = async (input) => {
   const bytes = forged(input.kind, input.n || 0);
-  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const wm = workerMessage();
-  const real = wm.sendSerializedReplyToParent;
-  wm.sendSerializedReplyToParent = function(id) {
-    wm.sendSerializedReplyToParent = real;
-    return real.call(this, id, ab);
-  };
+  hook.next = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   return {output: {ok: true}};
 };

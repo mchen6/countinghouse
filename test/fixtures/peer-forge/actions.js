@@ -1,64 +1,51 @@
-// Module code reaches its worker's peer channels (runtime().ci.deviceManager, a
-// documented gap), so once a channel to a worker is open for one granted
-// device it can post an invoke for any other device that worker hosts. The
-// callee must serve only the devices granted on that channel (review R2-2).
-// The runtime's own CHUtil, through require.cache: since R2-1 Task 5 the
-// global CHUtil a module sees has no ci or dm, so a module that goes around
-// it does so this way (still reachable: tidying, not a boundary).
-function runtime() {
-  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
-  return (key != null) ? require.cache[key].exports : {};
-}
+// A module that forges a direct peer channel invoke from its own realm (the
+// callee must serve only the devices granted on that channel; review R2-2).
+// The lean worker's peer state is out of a module's reach (CHUtil has no ci
+// or dm; countinghouse-util's read as undefined in a worker), and since #170
+// the port to the main thread is pinned under audit and enforce. A peer
+// channel's own port is not: the module hooks MessagePort.prototype
+// .postMessage, takes the channel's port from the runtime's own invoke on
+// it, and posts its own invoke there for a device the channel was not
+// granted. The callee checks the grant before anything else (no token is
+// needed to be refused).
 const SERVICE = 'urn:countinghouse-test:serviceID:dynService';
 const outcome = (e, d) => (e != null ? `error: ${e.code || e.message}` : `ok: ${JSON.stringify(d)}`);
 
-// The forged invoke carries the call's token (R2-1 Task 3: a hop without
-// one is refused before any handler), read off the worker's own send path
-// as a module sharing the worker's realm can: the token of the last
-// announced peer invoke.
-const state = globalThis.__peerForge || (globalThis.__peerForge = {token: null, hooked: false});
-// The runtime posts to the main thread as envelopes (#170): a module that
-// shares its worker's realm (--moduleSandbox off) opens one with the
-// runtime's own lib/message-envelope.js, found in require.cache (keyed by
-// host path), buffers carried beside it (t) included. Under audit and
-// enforce the runtime's ports are pinned, so a hook never sees them.
-function runtimeEnvelope() {
-  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/message-envelope.js') && !k.startsWith('/app/'));
-  return key != null ? require.cache[key].exports : null;
-}
-function openEnvelope(message) {
-  const env = runtimeEnvelope();
-  if (env == null || message == null || !(message.b instanceof ArrayBuffer)) return null;
-  const r = env.unwrap(message, Infinity);
-  return r.violation == null ? r.message : null;
-}
-
+const state = globalThis.__peerForge || (globalThis.__peerForge = {port: null, nextId: 3000000, hooked: false});
 if (!state.hooked && typeof(globalThis.MessagePort) === 'function') {
   state.hooked = true;
   const post = globalThis.MessagePort.prototype.postMessage;
-  try {
-    globalThis.MessagePort.prototype.postMessage = function(message, ...rest) {
-      try {
-        const m = openEnvelope(message) || message;
-        if (m != null && m.command === 'peer-announce' && m.data != null) state.token = m.data.token;
-      } catch (e) { /* never break the worker */ }
-      return post.call(this, message, ...rest);
+  globalThis.MessagePort.prototype.postMessage = function(m, ...rest) {
+    try { if (m != null && m.command === 'peer-invoke') state.port = this; } catch (e) { /* never break the worker */ }
+    return post.call(this, m, ...rest);
+  };
+}
+
+function forge(deviceID) {
+  return new Promise((resolve) => {
+    const port = state.port;
+    if (port == null) return resolve('no channel');
+    const id = state.nextId++;
+    const timer = setTimeout(() => resolve('error: no reply'), 5000);
+    const onReply = (m) => {
+      if (m == null || m.category !== 'peer-reply' || m.id !== id) return;
+      clearTimeout(timer);
+      port.off('message', onReply);
+      resolve(m.errMsg != null ? `error: ${m.errCode || m.errMsg}` : `ok: ${JSON.stringify(m.data)}`);
     };
-  } catch (e) { /* never break the worker */ }
+    port.on('message', onReply);
+    port.postMessage({id: id, command: 'peer-invoke', deviceID: deviceID, serviceID: SERVICE, actionName: 'hello', input: {}});
+  });
 }
 
 module.exports = {
   forgeService: {
     forge: async (input, ctx) => {
-      const dm = runtime().ci.deviceManager;
       // the channel is opened by a hop made the proper way (its request
       // carries the call's token; one forged without it is denied)
       const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE},
         (ce, client) => (ce != null ? resolve(outcome(ce)) : client.invoke({actionName: 'hello', input: {}}, (e, d) => resolve(outcome(e, d))))));
-      const channel = dm.peerChannels[dm.peerDeviceWorkerMap[input.granted]];
-      if (channel == null) return {output: {granted: granted, other: 'no channel'}};
-      const other = await new Promise((resolve) => channel.invoke(input.other, SERVICE, 'hello', {}, 5000,
-        (e, d) => resolve(outcome(e, d)), state.token));
+      const other = await forge(input.other);
       return {output: {granted: granted, other: other}};
     }
   }
