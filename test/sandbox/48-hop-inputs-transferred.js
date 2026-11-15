@@ -43,7 +43,10 @@ describe('sandbox 48: lib/hop-input.js, server-free', () => {
     assert.strictEqual(hopInput.sizeRefusal(args.inputBytes, {module: 'm', action: 'a', max: n}), null);
     const err = hopInput.sizeRefusal(args.inputBytes, {module: 'm', action: 'a', max: n - 1});
     assert.strictEqual(err.code, 'INPUT_TOO_LARGE');
-    assert.strictEqual(err.message, `m/a: its input is ${n} bytes, over the ${n - 1}-byte limit (--maxOutputBytes), so the call was refused`);
+    const refused = `m/a: its input is ${n} bytes, over the ${n - 1}-byte limit (--maxOutputBytes), so the call was refused`;
+    assert.ok(err.message.startsWith(refused), err.message);
+    // then how to raise it (#265), matched by its shape as stdio 24 does
+    assert.match(err.message.slice(refused.length), /^\. To allow more: .*--maxOutputBytes \d+/);
   });
 
   it('a post to the callee that throws leaves no reply waiting, so the worker\'s end never answers the hop again', () => {

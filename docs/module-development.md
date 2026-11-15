@@ -237,7 +237,7 @@ validator workers, which all modules share:
   past which the call is refused `VALIDATION_TIMEOUT`;
 - three such refusals of your own outputs (or compiles) in five minutes
   quarantine your module, `VALIDATION_QUARANTINED`, until it is loaded again;
-- an output over `--maxOutputBytes` (8 MiB by default) is refused
+- an output over `--maxOutputBytes` (16 MiB by default) is refused
   `OUTPUT_TOO_LARGE`, and so is a `ctx.call` input over it, `INPUT_TOO_LARGE`,
   on the main-thread-routed path. A hop's input is sent as bytes: a value
   structured clone cannot carry, or a `SharedArrayBuffer`, fails the
