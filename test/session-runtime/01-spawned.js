@@ -17,12 +17,11 @@ const ROOT = path.join(__dirname, '..', '..');
 const FRAMEWORK = path.join(ROOT, 'framework.js');
 // A scenario module (the single-identity profile lists scenarios only),
 // written into the test's home: one tool that says hello.
-function scenario(home) {
-  const dir = path.join(home, 'pack', 'ch-session-hello');
+function scenario(home, {dir = path.join(home, 'pack', 'ch-session-hello'), name = 'ch-session-hello'} = {}) {
   const svc = 'helloService';
   fs.mkdirSync(path.join(dir, 'handlers', svc), {recursive: true});
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: 'ch-session-hello', version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
-  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'ch-session-hello', manufacturer: 'countinghouse-test', modelDescription: 'hello',
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
+  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: name, manufacturer: 'countinghouse-test', modelDescription: 'hello',
     serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: 'hello', description: 'says hello', input: {schema: `/${svc}/hello/input`}, output: {schema: `/${svc}/hello/output`}}]}}}}));
   fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
     [svc]: {hello: {input: {type: 'object'}, output: {type: 'object'}}}}));
@@ -47,6 +46,11 @@ function runtime(home, extra = [], {dirMode = 0o700, socketName = 's'} = {}) {
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
     '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
   const r = {child, socket, run, err: '', out: '', code: undefined};
+  // ch-local's control requests over the IPC channel, as stdio's helper sends them
+  const replies = new Map();
+  let nextControl = 1;
+  child.on('message', (m) => { const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); } });
+  r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
   child.stderr.on('data', (d) => { r.err += d; });
   child.stdout.on('data', (d) => { r.out += d; });
   r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
@@ -121,6 +125,20 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const level = await request(a.c, 'logging/setLevel', {level: 'debug'});
     assert.ok(level.error != null, JSON.stringify(level));
     assert.match(level.error.message, /shared runtime/);
+    a.c.end();
+  });
+
+  it('takes ch-local\'s control requests: a pack loaded in place is listed to a session', async() => {
+    const packs = path.join(home, 'packs');
+    const dir = scenario(home, {dir: path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), name: 'ch-pack-two'});
+    r = runtime(home, ['--packsRoot', packs]);
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: dir});
+    assert.strictEqual(reply.ok, true, `${JSON.stringify(reply)}\n${r.err.slice(-1500)}`);
+    assert.ok(Array.isArray(reply.tools) && reply.tools.length === 1, JSON.stringify(reply));
+    const list = await request(a.c, 'tools/list');
+    assert.ok(list.result.tools.some((t) => t.name === reply.tools[0]), JSON.stringify(list.result.tools.map((t) => t.name)));
     a.c.end();
   });
 
