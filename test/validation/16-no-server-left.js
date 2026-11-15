@@ -15,7 +15,7 @@ const ROOT = path.join(__dirname, '..', '..');
 describe('validation 16: no server left behind (#234)', function() {
   this.timeout(180000);
 
-  it('the port guard: a countinghouse server with no --port is refused; one with a port, or --stdio, is not', () => {
+  it('the port guard: a countinghouse server with no --port is refused; one with a port, --stdio or --sessionSocket, is not', () => {
     const {serverWithoutPort} = require('../helpers/port-guard');
     const node = process.execPath;
     assert.strictEqual(serverWithoutPort(node, [path.join(ROOT, 'framework.js'), '--workerThread']), true);
@@ -23,6 +23,8 @@ describe('validation 16: no server left behind (#234)', function() {
     assert.strictEqual(serverWithoutPort(node, ['--expose-gc', path.join(ROOT, 'framework.js'), '--port', '1234']), false);
     assert.strictEqual(serverWithoutPort('"./bin/countinghouse" --port 1234 --debug', null), false);
     assert.strictEqual(serverWithoutPort(node, [path.join(ROOT, 'framework.js'), '--stdio']), false);
+    // a shared runtime on its session socket binds no port either
+    assert.strictEqual(serverWithoutPort(node, [path.join(ROOT, 'framework.js'), '--store', 'local', '--sessionSocket', '/tmp/x/s']), false);
     assert.strictEqual(serverWithoutPort(node, ['-e', '1']), false, 'not a server');
   });
 
