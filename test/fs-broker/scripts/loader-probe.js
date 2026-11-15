@@ -8,8 +8,9 @@ const identity = require('../../../lib/fs-broker/identity');
 
 module.exports = async (fs, root, ctx) => {
   const {ch, mod, outside} = ctx.extra;
+  // on Windows with a virtual drive, as the runtime always gives one (#195)
   identity.install({installDir: ch, moduleRoot: mod, mode: ctx.extra.mode, grant: ctx.handled.grant,
-    registerHooks: Module.registerHooks, report: () => {}});
+    registerHooks: Module.registerHooks, report: () => {}, virtualDrive: process.platform === 'win32' ? 'M' : undefined});
   const code = (fn) => { try { return fn(); } catch (e) { return `throws ${e.code}`; } };
   const file = path.join(outside, 'f.js');
   return {

@@ -11,7 +11,10 @@ function result(fn) {
   }
 }
 
-const libKey = () => Object.keys(require.cache).find((k) => k.includes('/lib/') && !k.startsWith('/app/'));
+// countinghouse's own code in the cache: a host path with lib/ in it (either
+// separator on Windows), not the module's own (/app/..., or <V>:\app\... on
+// Windows, #195)
+const libKey = () => Object.keys(require.cache).find((k) => /[\\/]lib[\\/]/.test(k) && !k.startsWith('/app/') && !/^[A-Za-z]:\\app\\/.test(k));
 
 module.exports = async (input) => {
   const target = input.target;

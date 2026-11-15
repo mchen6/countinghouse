@@ -51,19 +51,39 @@ function rawHop(ctx, deviceID, serviceID, actionName, as, extra, keep) {
           data: {targetDeviceID: deviceID, token: state.lastToken}});
       });
     }
+    // Since lean worker step 4 (the review of #202) the target and the input
+    // bytes are the caller's announcement to the main thread, and the port
+    // carries the invoke's id alone; the main thread answers the caller
+    // (peer-result, or peer-announce-refused) on the parent port. So the
+    // hand-built hop announces its own target, as a tampered caller would,
+    // and listens there as well as on the port (a callee's refusal).
     return new Promise((resolve) => {
       const id = Number(state.announce.invokeId) + 100000 + (state.nextId++ % 1000);
-      const timer = setTimeout(() => resolve({output: {code: 'NO_REPLY', message: null, n: null}}), 5000);
-      const onReply = (m) => {
-        if (m == null || m.category !== 'peer-reply' || m.id !== id) return;
+      const sr = runtimeFile('serialized-result.js');
+      if (sr == null) return resolve({output: {code: 'NO_RUNTIME', message: null, n: null}});
+      let timer = null;
+      const finish = (m) => {
         clearTimeout(timer);
-        state.port.off('message', onReply);
+        state.port.off('message', onPort);
+        state.parent.off('message', onParent);
+        // the callee's own error, as bytes: its fields
+        if (m != null && m.errorBuffer instanceof ArrayBuffer) {
+          let payload = null;
+          try { payload = sr.decode(m.errorBuffer); } catch (e) { payload = null; }
+          m = (payload != null && payload.fields != null) ? payload.fields : {errMsg: 'unreadable', errCode: 'NO_CODE'};
+        }
         done(resolve)(m);
       };
-      state.port.on('message', onReply);
+      const onPort = (m) => { if (m != null && m.category === 'peer-reply' && m.id === id) finish(m); };
+      const onParent = (m) => { if (m != null && m.invokeId === id && (m.command === 'peer-result' || m.command === 'peer-announce-refused')) finish(m); };
+      timer = setTimeout(() => finish(null), 5000);
+      state.port.on('message', onPort);
+      state.parent.on('message', onParent);
+      const inputBytes = sr.toArrayBuffer(sr.serialize({input: args.input}));
       forgedPost(state.parent, {id: state.nextId++, category: 'child', command: 'peer-announce', errMsg: null,
-        data: {channel: state.announce.channel, invokeId: id, token: state.lastToken}});
-      forgedPost(state.port, Object.assign({id: id, command: 'peer-invoke', deviceID, serviceID, actionName, input: args.input}, (extra != null) ? {ctx: extra.ctx} : {}));
+        data: Object.assign({channel: state.announce.channel, invokeId: id, token: state.lastToken, deviceID, serviceID, actionName,
+          epoch: 'forged', inputBytes: inputBytes}, (extra != null) ? {ctx: extra.ctx} : {})});
+      forgedPost(state.port, Object.assign({id: id, command: 'peer-invoke', deviceID, serviceID, actionName}, (extra != null) ? {ctx: extra.ctx} : {}));
     });
   }
   if (state.parent == null) return Promise.resolve({output: {code: 'NO_RUNTIME', message: null, n: null}});

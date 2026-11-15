@@ -129,15 +129,17 @@ configuration). None of it is available to a hosted server.
   `enforce` the block watchdog already ended it, but under
   `--moduleSandbox off` nothing did and the worker stayed.
 
-### Changed — `--moduleSandbox enforce` refuses to start on Windows (#195)
+### Added — `--moduleSandbox enforce` on Windows (#195)
 
-- On Windows `--moduleSandbox enforce` exits 2 with a message naming #195:
-  a module's identity is not designed for Windows file URLs yet, so
-  enforce could not hold there. `audit` is the Windows mode for now; the
-  settings tool offers only `audit` on Windows. The identity loader's
-  checks of countinghouse's code roots now follow the host's path rules
-  (backslash on Windows), and taking module roots out of them folds case
-  there.
+- A module's files carry a drive on Windows: they are `<V>:\app\...` to
+  the module (its `__filename`, `__dirname`, current directory and stack
+  frames), V a drive letter the host does not have, picked once per
+  process, so Node there can load them as `file:///<V>:/app/...`. The
+  runtime keeps naming them `/app/...` and the file broker maps `<V>:\app`
+  back to `/app`; enforce keeps a module to its own files on Windows as it
+  does elsewhere. The identity loader's checks of countinghouse's code
+  roots follow the host's path rules (backslash on Windows), and taking
+  module roots out of them folds case there. Off Windows nothing changes.
 
 ### Changed — a module's output and its worker's log, bounded
 
