@@ -17,6 +17,7 @@ const os = require('os');
 const path = require('path');
 const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 const tmp = require('../helpers/test-tmp');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const MODULE = path.join(ROOT, 'test', 'fixtures', 'win-probe');
@@ -53,7 +54,7 @@ describe('stdio 26: an install run by a spelling that isn\'t its real path (#272
     const auth = path.join(base, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'probe', devices: ['*']}}));
     io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--debug', '--loadModule', MODULE, '--authConfigPath', auth,
-      '--moduleDataPath', path.join(base, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749'],
+      '--moduleDataPath', path.join(base, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`],
     {env: {COUNTINGHOUSE_API_KEY: KEY}, entry: path.join(install, 'bin', 'countinghouse-stdio.js'), nodeArgs: ['--preserve-symlinks', '--preserve-symlinks-main']});
     await io.request({...INITIALIZE, id: 1});
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
