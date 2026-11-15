@@ -1,6 +1,6 @@
 # One shared runtime per user, many client sessions
 
-Status: revision 4. Revision 3 was READY after the security review. Revision 4 follows Matt's decision (2026-11-15): the shim is a small native program, written in Rust by implementer A, and this document fixes its wire contract so the two sides can be built and tested apart (section 1, and the vectors in `shared-runtime-wire/`). No code yet.
+Status: revision 5. Revision 3 was READY after the security review. Revision 4 followed Matt's decision (2026-11-15): the shim is a small native program, written in Rust by implementer A, and this document fixes its wire contract so the two sides can be built and tested apart (section 1, and the vectors in `shared-runtime-wire/`). Revision 5 makes the contract review's seven edits. No code yet.
 Author: implementer C, 2026-11-15, against countinghouse master 842c5525 and ch-local main.
 It spans countinghouse (the runtime: sessions, per-session settings, the session transport) and ch-local (the daemon, the shim, the lifecycle).
 
@@ -94,12 +94,12 @@ This is the interface between A's Rust shim and the runtime's session listener (
 
 | Kind | Name | Direction | Payload | Cap |
 |---|---|---|---|---|
-| `H` | HELLO | shim → runtime | JSON `{protocol: 1, nc}` | 4096 |
+| `H` | HELLO | shim → runtime | JSON `{protocol: 1, nc}` | 507 (the whole frame within the 512 bytes read before HELLO) |
 | `P` | PROVE | runtime → shim | JSON `{ns, ms}` | 4096 |
 | `A` | AUTH | shim → runtime | JSON `{mc, resume?}` | 4096 |
 | `W` | WELCOME | runtime → shim | JSON `{session, resumeToken, runtimeVersion, maxToRuntime, maxToShim}` | 4096 |
 | `R` | REFUSED | runtime → shim | JSON `{code, message}` | 4096 |
-| `M` | message | both | a 2-byte big-endian header length, the header JSON (none when 0), then one MCP message's bytes | WELCOME's `maxToRuntime` or `maxToShim` |
+| `M` | message | both | a 2-byte big-endian header length, the header JSON object (none when 0), then one line's bytes | the whole payload: WELCOME's `maxToRuntime` or `maxToShim` |
 | `C` | control | both | JSON `{op, …}` | 65536 |
 
 - **Receiving.** A receiver reads the 5-byte head, checks the length against the kind's cap *before* reading the payload, and closes on an over-cap length or an unknown kind.
@@ -109,13 +109,21 @@ This is the interface between A's Rust shim and the runtime's session listener (
 **The secret.**
 - It's 32 random bytes, new at each runtime start. The runtime writes it to `<home>/run/daemon/secret` before the socket listens: 0600 on POSIX, and on Windows an owner-only DACL through `lib/win-acl.js` (#201).
 - The file holds 64 lowercase hex characters, optionally followed by one newline.
-- Before trusting the directory, `daemon.json` or the secret, the shim checks that each is owned by the user and isn't a symlink, and that the directory is 0700 and the files 0600 (on Windows, that the DACL grants only the user, SYSTEM and Administrators).
+- Before trusting the directory, `daemon.json`, `shim.json` or the secret, the shim checks each one.
+  - **POSIX.** It must be owned by the user's uid and not be a symlink (checked with `lstat`, then the file opened with `O_NOFOLLOW`). The directory must be mode 0700 and the files 0600, with no other bits.
+  - **Windows: the rule of countinghouse's `lib/win-acl.js` `privateProblem`, exactly.** Read the owner and the DACL by SID:
+    - the ACL must be readable, and every ACE a plain allow or deny. Any other ACE type (an object, callback, audit or unrecognised ACE), or an ACE that can't be read, fails;
+    - the owner must be the user's SID, `S-1-5-18` (SYSTEM) or `S-1-5-32-544` (Administrators);
+    - deny ACEs, and inherit-only ACEs, are skipped;
+    - every allow ACE whose SID is not one of those three may grant nothing beyond `SYNCHRONIZE` (0x100000), `READ_CONTROL` (0x20000) and `FILE_READ_ATTRIBUTES` (0x80);
+    - anything the shim can't read fails closed.
+  - A check that fails stops the attach, naming what and why. The vectors give the cases.
 
 **The handshake: each side proves the secret, and the secret is never sent.**
 1. **HELLO** `{protocol: 1, nc}`, where `nc` is 32 random bytes.
-2. **PROVE** `{ns, ms}`, where `ns` is 32 random bytes and `ms = HMAC-SHA256(secret, "ch-server" ‖ nc ‖ ns)`. The labels are their ASCII bytes; `nc` and `ns` are their raw 32 bytes.
-3. **The shim checks `ms`** in constant time. On a mismatch it closes and sends nothing more: the server isn't ours.
-4. **AUTH** `{mc, resume?}`, where `mc = HMAC-SHA256(secret, "ch-client" ‖ ns ‖ nc)` and `resume` is the last WELCOME's `resumeToken`, if the shim has one.
+2. **PROVE** `{ns, ms}`, where `ns` is 32 random bytes and `ms = HMAC-SHA256(secret, "ch-server" ‖ p ‖ nc ‖ ns)`. The labels are their ASCII bytes, `p` is the HELLO's `protocol` as one byte, and `nc` and `ns` are their raw 32 bytes. So a MAC made for one protocol is never accepted for another.
+3. **The shim checks `ms`** in constant time. On a mismatch it closes and sends nothing more on that connection. A runtime that restarted between the shim's read of the secret and its connect has a new secret, so this can be a race, not an impostor. The shim re-reads `daemon.json` and the secret (with their checks) and tries again, within the 20 s of retries below. It relays no client byte until a PROVE checks.
+4. **AUTH** `{mc, resume?}`, where `mc = HMAC-SHA256(secret, "ch-client" ‖ p ‖ ns ‖ nc)` and `resume` is the last WELCOME's `resumeToken`, if the shim has one.
 5. **The runtime checks `mc`** in constant time, then answers WELCOME, or REFUSED and closes.
 
 A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCOL", supported: [1]}`.
@@ -124,7 +132,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 
 | Code | When | The shim then |
 |---|---|---|
-| `BAD_PROOF` | `mc` didn't match | stops; says the runtime refused it (another runtime's secret) |
+| `BAD_PROOF` | `mc` didn't match | re-reads `daemon.json` and the secret and retries within the 20 s (a restart race); after that, says the runtime refused it |
 | `PROTOCOL` | unsupported `protocol` | stops; says the shim and the runtime are different releases |
 | `RESUME_REFUSED` | the token is unknown or used, or its session is still connected | opens a new session (AUTH without `resume`, on a new connection) and replays its records |
 | `BUSY` | the session limit is reached | retries with jitter, then gives up as below |
@@ -144,44 +152,63 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 **The hello carries nothing about the client:** no pid, no environment, no paths, since paths carry the user's name.
 
 **Messages (`M`).**
-- **Client to runtime.** The shim reads the client's stdin as lines. It splits only on the byte 0x0a, which JSON text never carries unescaped, and bounds each line by WELCOME's `maxToRuntime` (the runtime's `--maxRequestBody`).
-  - It parses each line only for its JSON-RPC `id` and `method`. That tells it which requests are in flight, and lets it keep a legacy `initialize` for replay.
-  - It forwards the line's **original bytes unchanged**, without the newline, after an empty header (header length 0).
-  - A line that isn't JSON is forwarded too. The runtime answers it with a parse error, as stdio does today.
-- **Runtime to client.** A reply's header is `{"id": <the request's id>}`, the id's JSON value exactly. So `"7"` and `7` are different ids. A notification has no header.
-  - The shim matches the header against its in-flight ids, writes the bytes after the header, then one newline.
-  - It never parses a result body, which can be up to 256 MiB.
+- **What the cap bounds.** The cap is on the whole `M` payload: the 2 header-length bytes, the header and the line.
+  - `maxToRuntime` is the runtime's `--maxRequestBody` plus 4096.
+  - `maxToShim` is twice the largest output cap a session can have (the ceiling's `maxOutputBytes`, or 256 MiB without one) plus 1 MiB. A tool result carries its output twice, as `content` text and as `structuredContent` (`lib/mcp/gateway.js`), plus its envelope.
+  - The shim streams an `M` payload to stdout as it reads it. It never has to hold one whole.
+- **A malformed `M` closes the connection:**
+  - a payload under 2 bytes;
+  - a header length greater than the payload's remaining bytes;
+  - a header that isn't a JSON object;
+  - a header field of the wrong type.
+- **Client to runtime.** The shim reads the client's stdin as lines. It splits only on the byte 0x0a, which JSON text never carries unescaped, and bounds each line by `--maxRequestBody` (`maxToRuntime` − 4096).
+  - It parses each line only enough to tell what it is.
+  - **A request** (an object with an `id`) gets a header `{"seq": n}`. `n` is the shim's own counter for the connection, from 1, below 2^53. The shim keeps `n`, the id's original bytes and the method.
+  - **A batch** (an array) gets `{"seq": n}` too, and the shim keeps the original bytes of each member's id.
+  - **A notification**, or a line that isn't JSON, gets no header (header length 0). A line that isn't JSON is answered by the runtime with a parse error, as stdio does today.
+  - The line's **original bytes** follow, unchanged and without the newline. The shim keeps a legacy `initialize` line for replay.
+- **Runtime to client.** The answer to a request or a batch has the header `{"seq": n}`, the `n` it came with. A notification, or a message the runtime sends of its own, has no header.
+  - The shim writes the bytes after the header, then one newline. It never parses a result body, which can be up to 256 MiB.
+  - **Ids are matched by `seq`, never by comparing ids.** So `7`, `7.0`, `1e2` and integers past 2^53 need no rule here. The reply's own `id` is what the runtime writes, as stdio does today.
+  - **A reply whose `seq` the shim doesn't hold** (already answered, or its connection's predecessor's) is written to the client anyway, and nothing is recorded. The exception is the shim's own initialize replay, whose answer it drops.
 - **So a client can't produce a `C` frame,** and traffic stays byte-exact: nothing is re-stringified or parsed twice.
 
 **Control (`C`).** An unknown `op` is ignored, so either side can add one within a contract version.
 
 | `op` | Direction | Fields | Meaning |
 |---|---|---|---|
-| `client` | shim → runtime | `conditions`: `"yes"` or `"no"`; `repo`: `"owner/name"` or null; `token`: base64 MAC or null; `why`? | The child's verdict (section 5). Sent once, right after WELCOME, and again after each reconnect. |
+| `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none); when failed: `why` | The child's line (section 5). Sent right after WELCOME, after each reconnect, and in answer to each `conditions?`. |
+| `conditions?` | runtime → shim | `seq` | Run the child again and answer with `client` carrying this `seq`. The runtime sends it before each form and again at the confirmation, and counts no answer within 10 s as `"no"`. |
+| `settled` | runtime → shim | | The first `client` frame is accepted. The shim forwards client lines from here. |
 | `replay` | shim → runtime | `entries`: array | After WELCOME on a new session: the records the shim kept, as it received them. |
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
 | `drain` | runtime → shim | | Forward no new request; relay answers until the runtime closes, then reconnect. |
-| `own-runtime` | runtime → shim | `reason` | This session can't be shared (a token of its own). The runtime closes; the shim runs the per-session mode (section 5). |
+| `own-runtime` | runtime → shim | `reason`: `"token"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
+
+**Holding until settled.** After WELCOME the shim sends its first `client` frame and forwards no client line until `settled` arrives. Lines read meanwhile are held, as during a drain. An `own-runtime` instead hands the held lines to the per-session runtime. So no call runs on the shared runtime before the session's token is known to match.
 
 **What the shim keeps:** its resume token, its records, its in-flight ids, and a legacy `initialize` line. All of it is in memory, and none of it is ever written to disk.
 
-**The crash answer.** If the connection is lost without `drain`, the shim answers each request it relayed and never saw answered:
+**The crash answer.** If the connection is lost without `drain`, the shim answers each request it relayed and never saw answered, with the id's original bytes in place of `<id>`. A batch is answered with an array of these, one per member that has an id:
 
 ```json
-{"jsonrpc":"2.0","id":<the request's id>,"error":{"code":-32603,"message":"countinghouse's runtime restarted before answering; the call may have run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":true}}}
+{"jsonrpc":"2.0","id":<id>,"error":{"code":-32603,"message":"countinghouse's runtime restarted before answering; the call may have run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":true}}}
 ```
 
 During a drain, a request the client sends is held and forwarded after the reconnect. At most 64 are held, up to `maxToRuntime` in all. Past that, a request is answered as above with `mayHaveRun: false`.
 
-**The conformance vectors** (`vectors.json`) fix, from given inputs:
+**The conformance vectors** (`vectors.json`, contract 2) fix, from given inputs:
 - the secret file's form;
 - `ms` and `mc`;
 - every handshake frame's bytes;
 - the token MAC;
-- the `M` encodings, with a numeric and a string id and a notification;
-- each control frame;
+- the `M` encodings: a request and a batch with their `seq`, the reply, a notification, and malformed payloads;
+- every control frame, including a failed `client`;
+- every REFUSED code;
+- the lock's content and its host string;
+- the secret file's accepted and refused forms;
 - the crash answer.
 
 They also name the behaviour each side must show, with the cases the tests must cover:
@@ -283,14 +310,18 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 - **The control channel** stays one IPC channel between the daemon and the runtime: one per runtime, and so one per user. ch-local's requests arrive on it as now. A request about one session names it.
 - **The client's own inputs come from one short-lived child, `node ch-local conditions --for <client pid>`,** which the shim runs once per connection.
-  - It inherits the shim's environment and working directory, which are the client's. It prints one JSON line and exits:
-    - `conditions`: `"yes"` or `"no"`, from the existing check (`lib/client-conditions.js`) of *this* client: the process `<client pid>` (the shim's parent), the environment and the project directory;
+  - It runs in the shim's working directory, which is the client's. Its environment is the client's, minus every variable whose name starts with `NODE_` or `npm_config_`, so nothing acts in Node before ch-local's own code. The conditions check reads the client's environment as data (`lib/client-conditions.js`), and the variables it reads are none of those.
+  - It prints one JSON line and exits:
+    - `status`: `"ok"`;
+    - `conditions`: `"yes"` or `"no"`, from the existing check of *this* client: the process `<client pid>` (the shim's parent), the environment and the project directory;
     - `repo`: the cwd's git remote as an `owner/name` slug, or null;
     - `token`: the keyed hash (below) of the token this environment *chooses*, or null when it chooses none.
   - `node` and the `ch-local` entry are the absolute paths that `ch-local install` writes to `<home>/shim.json`, which the shim checks like `daemon.json`.
-  - The shim waits 10 s for it. If the child fails or times out, the shim sends `conditions: "no"`, `repo: null`, `token: null` and `why`. The runtime then gives this session no form and no session default. The first result's notice says the client checks couldn't run.
+  - **A failure is never "no token".** The shim waits 10 s for the line. If the child exits non-zero, times out, or prints anything but one valid line, the shim sends `client` with `status: "failed"` and `why`.
+    - **For the first `client` frame**, the runtime answers `own-runtime` (`"conditions-failed"`). The session can't be shown to share the daemon's token, so it doesn't share. The per-session runtime says why.
+    - **For a `conditions?`**, a failure counts as `"no"` for that form.
   - The shim carries the line, unchanged, as the `client` control frame. So the client checks stay in one place, in Node, and the Rust shim never reads a client's environment for meaning.
-- **may-elicit is that verdict,** per session. The runtime waits for the `client` frame up to 10 s before a form, and counts a missing one as no. The latch is per session.
+- **may-elicit is that verdict, asked fresh.** Part 3 P2 checks the conditions again before each form and again at the confirmation. So the runtime sends `conditions?` each time, and the shim reruns the child. No answer within 10 s, or a failed one, is no. The latch is per session.
 - **The daemon's environment and working directory are fixed** (finding 3):
   - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
@@ -325,7 +356,7 @@ Nothing of a session is ever written to a file.
 - The daemon hands the table to the new runtime over the IPC control channel before that runtime accepts connections.
 - Each shim reconnects and resumes, with its overrides, packs and locks as they were.
 - Restored loosenings need no fresh confirmation (§11 answer 4). Each is re-checked against the ceiling, and a this-session pack is restored only if its version still matches the one its form named.
-- may-elicit is asked again before the next dialog.
+- The conditions are asked again (`conditions?`) before the next form, as before every form.
 - The restore is announced: "restored after a runtime restart".
 
 **A daemon death** loses the table:
@@ -342,10 +373,28 @@ Nothing of a session is ever written to a file.
 
 1. A shim makes the directory and ownership checks (section 1). Then it reads `<home>/run/daemon/daemon.json`: `{pid, socket, runtimeVersion, daemonVersion, started}`. `socket` is the Unix socket path or the Windows pipe name.
 2. If the pid is alive and the handshake completes, it's attached.
-3. Otherwise it takes `<home>/run/daemon/start.lock`, and checks again under the lock.
-   - The lock is the file created exclusively (`O_CREAT|O_EXCL`; on Windows `CREATE_NEW`), holding `{pid, started}`. That's the same form as ch-local's `lib/lock.js`, so the shim and Node take one lock.
-   - A lock older than 30 s, or whose pid is dead, is stale and taken over.
+3. Otherwise it takes `<home>/run/daemon/start.lock`, and checks again under the lock. **The lock is ch-local's `lib/lock.js` protocol, exactly**, so the Rust shim and Node take one lock and never two daemons start:
+   - **The content.** The holder is `{"pid": <int>, "host": <string>, "at": <ISO-8601 UTC time>}` and a newline. `host` is the host name, plus on Linux `#` and the target of `/proc/self/ns/pid` (`pid:[…]`), so two containers sharing a host name don't take each other's live lock for dead.
+   - **Created whole.** The content is written to `<lock>.<pid>.<random hex>.tmp`, hard-linked to the lock's name (`link`; on Windows `CreateHardLinkW`), then the temporary file is removed. A link that fails with "exists" means another holds it. So a lock is never seen empty, and an empty or unreadable lock is never taken for stale.
+   - **The heartbeat.** While held, the holder sets the lock's mtime to now every 15 s.
+   - **Gone.** A holder is gone when its `host` is this host and its pid is dead (`kill(pid, 0)` fails with anything but `EPERM`; on Windows `OpenProcess` fails), or when the lock's mtime is more than 2 minutes old on any host.
+   - **Taking a gone holder's lock.**
+     1. Create `<lock>.break` exclusively, holding the pid.
+     2. If that exists already, and is more than 10 s old, remove it and try again later. Otherwise wait.
+     3. Read the lock again. Remove it only if it is still the same holder: `pid`, `host` and `at` all equal.
+     4. Remove `.break`.
+   - **Releasing.** The holder removes the lock only if it still holds its own `{pid, host, at}`.
+   - **Waiting** for a live holder: poll every 200 ms, within the shim's 20 s.
 4. Still nothing, so it spawns `<node> <ch-local> daemon`, from `shim.json`, detached: on Windows `DETACHED_PROCESS | CREATE_NO_WINDOW`; on POSIX a new session (`setsid`), with stdio on null.
+   - **The shim clears the environment** and passes only `shim.json`'s `env`, which `ch-local install` resolved and recorded:
+     - `PATH`;
+     - `HOME` (on Windows `USERPROFILE`);
+     - `LANG`, if set at install;
+     - on POSIX `TMPDIR`;
+     - on Windows `SystemRoot`, `TEMP`, `TMP`, `APPDATA` and `LOCALAPPDATA`.
+
+     Nothing comes from the client's environment, `NODE_OPTIONS` least of all, since it would act before any of ch-local's code, in every session's runtime.
+   - **Its working directory is `<home>`.** The daemon reads the GitHub token itself (section 5).
 5. The daemon spawns the runtime with `--sessionSocket` and the control channel. It writes `daemon.json` once the socket listens, then releases the lock.
 6. The shim waits up to 20 s for a handshake to succeed.
 7. A second daemon that finds a live one in `daemon.json` exits at once.
