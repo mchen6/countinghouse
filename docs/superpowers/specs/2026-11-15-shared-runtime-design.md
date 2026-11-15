@@ -134,6 +134,8 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 |---|---|---|
 | `BAD_PROOF` | `mc` didn't match | re-reads `daemon.json` and the secret and retries within the 20 s (a restart race); after that, says the runtime refused it |
 | `PROTOCOL` | unsupported `protocol` | stops; says the shim and the runtime are different releases |
+
+**Before a PROVE checks, the shim trusts nothing from the runtime.** The only frame it accepts in place of PROVE is REFUSED with code `PROTOCOL`. It shows fixed text of its own for it ("this shim and the runtime are different releases") and never the frame's `message`, since an unproven peer could be anyone. Any other frame, or any other code, before a checked PROVE is treated as a wrong `ms`: re-read the files and retry.
 | `RESUME_REFUSED` | the token is unknown or used, or its session is still connected | opens a new session (AUTH without `resume`, on a new connection) and replays its records |
 | `BUSY` | the session limit is reached | retries with jitter, then gives up as below |
 | `SHUTTING_DOWN` | the runtime is draining | retries with jitter |
@@ -167,6 +169,11 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
   - a header that isn't a JSON object;
   - a header field of the wrong type.
 - **Client to runtime.** The shim reads the client's stdin as lines. It splits only on the byte 0x0a, which JSON text never carries unescaped, and bounds each line by `--maxRequestBody` (`maxToRuntime` − 4096).
+  - **A line over that bound** can't be read whole, so it has no id the shim could know. The shim discards it to its newline and never forwards it. It answers the client itself, with exactly this, `<limit>` being the bound in bytes (vector `tooLongLineAnswer`):
+
+    ```json
+    {"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"the request is larger than countinghouse accepts (<limit> bytes)"}}
+    ```
   - It parses each line only enough to tell what it is.
   - **A request** is an object with an `id` member and a `method` member of any type (a `method` that isn't a string is still a request: the runtime answers it with an error, and the shim must have given it a seq). Member names are compared after JSON unescaping, so `"i\u0064"` is `id`. It gets a header `{"seq": n}`. `n` is the shim's own counter, from 1, below 2^53. It counts for the shim process's whole life and **never restarts on a reconnect or a resume**. So a reply left over from an earlier connection can't carry the `seq` of a newer request. The shim keeps `n`, the id's original bytes and the method.
   - **A batch** (an array) gets `{"seq": n}` too, and the shim keeps the original bytes of each member's id.
@@ -348,7 +355,8 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - **A failure is never "no token".** The shim waits 10 s for the line. If the child exits non-zero, times out, or prints anything but one valid line, the shim sends `client` with `status: "failed"` and `why`.
     - **For the first `client` frame**, the runtime answers `own-runtime` (`"conditions-failed"`). The session can't be shown to share the daemon's token, so it doesn't share. The per-session runtime says why.
     - **For a `conditions?`**, a failure counts as `"no"` for that form.
-  - The shim carries the line, unchanged, as the `client` control frame. So the client checks stay in one place, in Node, and the Rust shim never reads a client's environment for meaning.
+  - **The `client` frame is the child's line, spliced in.** The child's one JSON object (`status`, `conditions`, `repo`, `token`, `why`) is spliced into `{"op": "client"}`, with `"seq": n` added only when it answers a `conditions?` (vector `clientFromChildLine`). Anything but exactly one valid JSON object line becomes `{"op": "client", "status": "failed", "why": "…"}` (vector `clientFromBadChildLine`).
+  - So the shim carries the child's verdict as it is. So the client checks stay in one place, in Node, and the Rust shim never reads a client's environment for meaning.
 - **may-elicit is that verdict, asked fresh.** Part 3 P2 checks the conditions again before each form and again at the confirmation. So the runtime sends `conditions?` each time, and the shim reruns the child.
   - **The timeouts:** the shim gives the child 10 s, and the runtime waits 12 s for the answer. The child's Windows ancestry read, through PowerShell, takes 1 to 10 s; that's why P2's 5 s `ask` wait doesn't apply here. No answer within 12 s, or a failed one, is no: no form.
   - **The latch is the runtime's, per session.** The child lives a second and can't hold it.
@@ -551,6 +559,11 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
 5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout. The values stay within the ceiling, and a module already sees all of one user's data.
 6. **On Windows, another user (local, or remote with SMB access) can slow attaches, but can't lock them out.** The pipe accepts read-only opens from Everyone and anonymous, so pre-auth connections can be opened. Eviction of the oldest, the 2 s deadline and the shim's jittered retry keep real shims getting in. Such a connection gets nothing but `PROVE` (a random challenge and a MAC), can't authenticate, and never reads or forges a session.
+7. **On Windows, the daemon inherits any inheritable handle the client leaked into the shim.**
+   - The shim makes its own three standard handles non-inheritable before it spawns the daemon, and refuses to spawn if that fails.
+   - Rust's `std` `CreateProcessW` passes `bInheritHandles = TRUE` and offers no `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so closing the rest needs a hand-written `CreateProcessW`. That's post-release.
+   - It's accepted for release 1 because Node module code can't use a raw inherited `HANDLE` value the way it can a POSIX descriptor number.
+   - On POSIX there's no such residual: the shim marks every descriptor from 3 up `FD_CLOEXEC` at startup, and refuses to start a daemon if it can't.
 
 ## 10. Migration and the per-session mode
 

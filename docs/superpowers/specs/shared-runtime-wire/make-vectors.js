@@ -152,6 +152,22 @@ const out = {
     refused: [`${hex(secret).toUpperCase()}`, `${hex(secret)}\r\n`, `${hex(secret)}\n\n`, hex(secret).slice(2), ` ${hex(secret)}`, ''],
     refusedRule: 'anything but exactly 64 lowercase hex characters with at most one trailing newline, and a file that is a symlink, not owned by the user, or not 0600 (on Windows, not private by the privateProblem rule)'
   },
+  tooLongLineAnswer: {
+    rule: 'a client line over maxToRuntime - 4096: discarded to its newline, never forwarded; the shim answers with this, <limit> the bound in bytes',
+    json: '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"the request is larger than countinghouse accepts (8388608 bytes)"}}',
+    limit: 8388608
+  },
+  clientFromChildLine: {
+    rule: 'the child\'s one JSON object spliced into {"op":"client"}; "seq" added only when answering conditions?',
+    childLine: '{"status":"ok","conditions":"yes","repo":"acme/widgets","token":null}',
+    first: {json: json({op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null}), hex: hex(frame('C', json({op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null})))},
+    answeringSeq3: {json: json({op: 'client', seq: 3, status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null}), hex: hex(frame('C', json({op: 'client', seq: 3, status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null})))}
+  },
+  clientFromBadChildLine: {
+    rule: 'anything but exactly one valid JSON object line becomes a failed client frame; why is the shim\'s own text',
+    childOutputs: ['', 'not json', '{"status":"ok"}\n{"status":"ok"}', '[1,2]', '"ok"'],
+    becomes: {op: 'client', status: 'failed', why: '<the shim\'s reason>'}
+  },
   drainOverflowAnswer: {
     rule: 'exact apart from the id: a request held past the drain bound (64 requests, or maxToRuntime in all), which never reached the runtime',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse\'s runtime restarted before this was sent; the call did not run","data":{"countinghouse/code":"RUNTIME_RESTARTED","retryable":true,"mayHaveRun":false}}}'
