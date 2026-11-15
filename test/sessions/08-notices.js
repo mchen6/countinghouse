@@ -28,7 +28,8 @@ describe('sessions 08: notices and logging/setLevel per session (shared runtime 
   let sources;
   let sent;
   let saved;
-  const openSession = (id) => {
+  // legacy: the session sent initialize, so it's sent notifications/message
+  const openSession = (id, {legacy = true} = {}) => {
     const s = new EventEmitter();
     s.id = id;
     s.client = {status: 'ok', conditions: 'no', repo: null};
@@ -36,6 +37,7 @@ describe('sessions 08: notices and logging/setLevel per session (shared runtime 
     s.notify = (m) => sent[id].push(m);
     sources[id] = s;
     reg.emit('session', s);
+    if (legacy) sessions.recordClientInfo(id, {name: 'test-client', version: '1.0.0'});
     return s;
   };
   const reset = () => { sessions.resetForTests(); settings.resetForTests(); jobSessions.resetForTests(); notices.resetForTests(); settingsTool.resetForTests(); };
@@ -111,6 +113,32 @@ describe('sessions 08: notices and logging/setLevel per session (shared runtime 
     assert.deepStrictEqual(resultFor(A), [sentence]);
     assert.deepStrictEqual(said(B), []);
     assert.deepStrictEqual(resultFor(B), []);
+  });
+
+  it('a session that never sent initialize (a 2026-07-28 one) is sent no notification; its next result carries the notice (review, 1)', () => {
+    openSession(C, {legacy: false});
+    notices.add(null, 'for all');
+    assert.deepStrictEqual(said(C), [], 'nothing unasked');
+    assert.deepStrictEqual(resultFor(C), ['for all']);
+    assert.deepStrictEqual(said(A), ['for all']);
+  });
+
+  it('a level for a session whose notices aren\'t open is refused, not answered as set (review, 3)', async () => {
+    notices.forget(B);
+    const r = await setLevel(B, 'warning');
+    assert.ok(r.error != null && /cannot be set now/.test(r.error.message), JSON.stringify(r));
+  });
+
+  it('what the process queue held before shared mode is dropped when it starts (review, 5)', () => {
+    reset();
+    notices.add(null, 'before the sessions');
+    reg = new EventEmitter();
+    sessions.attach(reg);
+    openSession(A);
+    assert.deepStrictEqual(resultFor(A), []);
+    // the process queue, seen with shared mode off again: emptied, nothing stranded
+    sessions.resetForTests();
+    assert.deepStrictEqual(notices.take(null), [], 'nothing stranded');
   });
 
   it('a per-session queue is bounded as the global one is, and never silent', () => {

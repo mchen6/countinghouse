@@ -183,11 +183,17 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     b.c.end();
   });
 
-  it('a notice from ch-local reaches each open session once, as its notifications/message, at the level it set (B2 Task 3)', async() => {
+  it('a notice from ch-local reaches each open legacy session once, as its notifications/message, at the level it set; a modern one, unasked, none (B2 Task 3)', async() => {
     r = runtime(home);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
     const b = await shim.session(r.socket, secret);
+    const c = await shim.session(r.socket, secret);
+    // a and b are legacy sessions: they sent initialize; c never does
+    for (const x of [a, b]) {
+      const init = await requestLegacy(x.c, 'initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test-client', version: '1.0.0'}});
+      assert.ok(init != null && init.result != null && init.result.capabilities.logging != null, JSON.stringify(init));
+    }
     // b asks for warning and above: no notification, the next result's line still
     assert.deepStrictEqual((await requestLegacy(b.c, 'logging/setLevel', {level: 'warning'})).result, {});
     const reply = await r.control({type: 'notice', module: null, text: 'ch-pack-x removed'});
@@ -199,8 +205,10 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     // b asked for warning: nothing is sent to it
     assert.strictEqual(await shim.readM(b.c, 1500), null, 'no notification for b');
     assert.strictEqual(await shim.readM(a.c, 1500), null, 'a got it once');
+    assert.strictEqual(await shim.readM(c.c, 1500), null, 'nothing unasked for a modern session');
     a.c.end();
     b.c.end();
+    c.c.end();
   });
 
   it('keeps serving when its stdin ends (unlike --stdio)', async() => {
