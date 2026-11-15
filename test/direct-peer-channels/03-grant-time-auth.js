@@ -1,6 +1,5 @@
 const fs = require('fs');
-const exec = require('child_process').exec;
-const waitForReady = require('../helpers/wait-for-ready');
+const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
 const request = require('supertest');
 const {testPort} = require('../helpers/test-env');
 
@@ -26,18 +25,22 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 describe('direct-peer-channels 03: grant-time authorization (D3)', function() {
   this.timeout(0);
 
-  before(function(done) {
+  // started on the run's own port (testPort), stopped in after() whatever
+  // happens (#234: it used to listen on the default port, and to be asked
+  // to stop on another, so a failing run left it running)
+  let server = null;
+  before(async function() {
     this.timeout(0);
     console.log('starting countinghouse with a debugKey other than the key echo-device-client-module once hardcoded...');
-    const server = exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --debugKey not-aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module', (err, stdout, stderr) => { console.log(err); });
-    waitForReady(server, done);
+    server = await startServer(testPort(9527), '--workerThread --debug --debugKey not-aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module'.split(/\s+/).filter(Boolean), {nodeArgs: ['--expose-gc']});
   });
 
-  after((done) => {
+  after(() => {
     // /shutdown is now admin-gated (lib/routes/admin-only.js) -- this
     // server's --debugKey is the mismatched 'not-aabbcc' (the whole point
     // of this file), not the shared 'aabbcc' other standalone tests use.
-    request(url).post('/shutdown').set('X-CH-Key', 'not-aabbcc').end(() => { done(); });
+    // asked to stop, then stopped whatever it answered, or did not (#234)
+    return shutdownThenStop(server, testPort(9527), 'not-aabbcc');
   });
 
   const ECHO_DEVICE_CLIENT_ID = 'efefb416-bdc0-54eb-96a9-38f96f52779d'; // echo-device-client-module
