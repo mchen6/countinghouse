@@ -7,6 +7,11 @@
       "urn:countinghouse-test:serviceID:probeService": {
         "actionList": [
           {"name": "read", "description": "Reads input.path with the module fs; the content, or the error code.", "input": {"schema": "/probeService/read/input"}, "output": {"schema": "/probeService/read/output"}},
+          {"name": "write", "description": "Writes input.content to input.path with the module fs; ok, or the error code.", "input": {"schema": "/probeService/write/input"}, "output": {"schema": "/probeService/write/output"}},
+          {"name": "rename", "description": "Renames input.from to input.to with the module fs; ok, or the error code.", "input": {"schema": "/probeService/rename/input"}, "output": {"schema": "/probeService/rename/output"}},
+          {"name": "remove", "description": "Removes input.path, recursively, with the module fs; ok, or the error code.", "input": {"schema": "/probeService/remove/input"}, "output": {"schema": "/probeService/remove/output"}},
+          {"name": "symlink", "description": "Makes a symlink at input.path to input.target with the module fs; ok, or the error code.", "input": {"schema": "/probeService/symlink/input"}, "output": {"schema": "/probeService/symlink/output"}},
+          {"name": "list", "description": "Lists input.path recursively with the module fs; the names, or the error code.", "input": {"schema": "/probeService/list/input"}, "output": {"schema": "/probeService/list/output"}},
           {"name": "env", "description": "Whether process.env[input.name] is present; never its value.", "input": {"schema": "/probeService/env/input"}, "output": {"schema": "/probeService/env/output"}},
           {"name": "connect", "description": "net.connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/connect/input"}, "output": {"schema": "/probeService/connect/output"}},
           {"name": "tlsConnect", "description": "tls.connect(input.port, input.host): connected, or the error code.", "input": {"schema": "/probeService/tlsConnect/input"}, "output": {"schema": "/probeService/tlsConnect/output"}},

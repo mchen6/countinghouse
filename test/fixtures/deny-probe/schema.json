@@ -58,6 +58,46 @@
       "output": {
         "type": "object"
       }
+    },
+    "write": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "rename": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "remove": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "symlink": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
+    },
+    "list": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

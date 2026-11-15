@@ -18,7 +18,8 @@ const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 const {toolOutput} = require('../helpers/tool-result');
 
-describe('direct peer channels 07: the callee serves only granted devices', function() {
+// a part of test/test8.js, against its server: alone, skipped (#234)
+(global.COUNTINGHOUSE_TEST8_PARTS === true ? describe : describe.skip)('direct peer channels 07: the callee serves only granted devices (a part of test/test8.js: run it, not this file alone)', function() {
   this.timeout(120000);
   let server = null;
   let base = null;

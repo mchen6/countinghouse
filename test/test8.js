@@ -2,7 +2,7 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const waitForReady = require('./helpers/wait-for-ready');
 const request = require('supertest');
-const {testPort} = require('./helpers/test-env');
+const {testPort, redisFlag} = require('./helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 // docs/direct-peer-channels-design.md section 5's step-by-step acceptance
@@ -17,6 +17,9 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 // covered by test/direct-peer-channels/*.js below.
 const testFiles = fs.readdirSync(`${__dirname}/unit`);
 const peerChannelTestFiles = fs.readdirSync(`${__dirname}/direct-peer-channels`);
+// The parts below run against this file's server: each skips, saying so, when
+// run alone (#234: alone, it had no server and failed as refused connections)
+global.COUNTINGHOUSE_TEST8_PARTS = true;
 
 describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChannels", () => {
   before(function (done) {
@@ -28,7 +31,7 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MODULE = 'echo-device-module';
     // --maxOutputBytes 64 MiB: unit/test019 echoes 20 MB of BSON binary, past
     // the 8 MiB default; the cap itself is tested in test/sandbox/41.
-    const server = exec(`"./bin/countinghouse" --workerThread --maxOutputBytes 67108864 --debug --bindAddr 127.0.0.1 --port ${testPort(9527)} --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --maxOutputBytes 67108864 --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 
