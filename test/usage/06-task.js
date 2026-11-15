@@ -39,6 +39,17 @@ describe('task-augmented tools/call: counting and the receipt', () => {
     assert.deepStrictEqual([out.call, out.pack, out.module, out.tool, out.caller, out.ms], [extra.usageCall, 'ch-pack-ci-failure-triage', 'ch-pack-ci-failure-triage', 'ci_failure_triage', 'u_k1', 40]);
   });
 
+  it('a completion takes no pack notice: its sentence is the receipt\'s, and the notice stays for a result that is sent (B2 Task 3 review, 2)', () => {
+    const notices = require('../../lib/notices');
+    notices.take(null);
+    notices.take('ch-pack-ci-failure-triage');
+    notices.add(null, 'ch-pack-x removed');
+    const extra = hooks.start(job(SCENARIO));
+    const kept = hooks.complete(job(SCENARIO), {output: {summary: 'x'}}, {extra});
+    assert.match(kept.usageSentence, /reached the model\.$/);
+    assert.deepStrictEqual(notices.take('ch-pack-ci-failure-triage'), ['ch-pack-x removed']);
+  });
+
   it('a job that is not a listed tool is not counted', () => {
     assert.strictEqual(hooks.start({deviceID: 'nope', serviceID: 's', actionName: 'x', apiKey: 'k1'}), null);
     assert.strictEqual(hooks.start(null), null);

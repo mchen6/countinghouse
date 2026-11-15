@@ -125,24 +125,46 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     a.c.end();
   });
 
-  it('until per-session settings land, a session reads settings but changes none, nor sets the log level, nor reaches tasks', async() => {
+  it('a session tightens the two caps for itself and reads its own settings; every other set is the terminal\'s; no tasks; its log level is its own (B2 Tasks 3 and 4)', async() => {
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
-    const call = (args, extra = {}) => request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
+    const b = await shim.session(r.socket, secret);
+    const callOf = (s) => (args, extra = {}) => request(s.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
+    const call = callOf(a);
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
     const got = await call({action: 'get'});
     assert.ok(got.result != null && got.result.isError !== true, JSON.stringify(got));
-    // every set is the terminal's: a tightening, a loosening, a pack on or
-    // off, a confirmation's retry; nothing is written
-    for (const [args, extra] of [[{action: 'set', name: 'requestTimeout', value: '20s'}, {}], [{action: 'set', name: 'requestTimeout', value: '60s'}, {}],
+    assert.strictEqual(valueOf(got, 'requestTimeout'), 30000);
+    // a tightening of a cap is the session's own: applied for it, written nowhere
+    const tightened = await call({action: 'set', name: 'requestTimeout', value: '20s'});
+    assert.deepStrictEqual(tightened.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'this session'}, JSON.stringify(tightened));
+    assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000);
+    // its shim is told to forget what it kept, then given the one snapshot
+    assert.deepStrictEqual(await a.c.json('C'), {op: 'forget'});
+    assert.deepStrictEqual(await a.c.json('C'), {op: 'record', entry: {requestTimeout: 20000}});
+    // the other session: its value, its history and its shim hear nothing of it
+    const others = await callOf(b)({action: 'get'});
+    assert.strictEqual(valueOf(others, 'requestTimeout'), 30000);
+    assert.deepStrictEqual(others.result.structuredContent.history, []);
+    assert.strictEqual(await b.c.json('C', 300), null);
+    assert.deepStrictEqual((await call({action: 'get'})).result.structuredContent.history.map((h) => [h.setting, h.new, h.change]), [['requestTimeout', 20000, 'this session']]);
+    // everything else is the terminal's: a loosening (of the session's own
+    // value too), a pack on or off, any other setting, and a confirmation's
+    // retry even for a value that tightens; nothing is written
+    for (const [args, extra] of [[{action: 'set', name: 'requestTimeout', value: '60s'}, {}], [{action: 'set', name: 'requestTimeout', value: '25s'}, {}],
       [{action: 'set', name: 'requestTimeout', value: '60s'}, {requestState: 'x', inputResponses: {}}],
-      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}]]) {
+      [{action: 'set', name: 'requestTimeout', value: '10s'}, {requestState: 'x', inputResponses: {}}],
+      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}],
+      [{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
       assert.match(r2.result.content[0].text, /ch-local settings set/);
     }
+    assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000, 'as it was');
+    b.c.end();
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
       // a modern request: tasks/* are gone in 2026-07-28 (#243), method not found
@@ -153,10 +175,14 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       assert.ok(l.error != null, `${method}: ${JSON.stringify(l)}`);
       assert.match(l.error.message, /shared runtime/);
     }
-    // a modern request's logging/setLevel is gone in 2026-07-28; either way
-    // a session gets an error, never a changed level
+    // a modern request's logging/setLevel is gone in 2026-07-28; a legacy
+    // session's sets its own level (B2 Task 3: lib/notices.js, per session)
     const level = await request(a.c, 'logging/setLevel', {level: 'debug'});
-    assert.ok(level.error != null, JSON.stringify(level));
+    assert.ok(level.error != null && level.error.code === -32601, JSON.stringify(level));
+    const legacy = await requestLegacy(a.c, 'logging/setLevel', {level: 'warning'});
+    assert.deepStrictEqual(legacy.result, {}, JSON.stringify(legacy));
+    const bad = await requestLegacy(a.c, 'logging/setLevel', {level: 'loud'});
+    assert.ok(bad.error != null && bad.error.code === -32602, JSON.stringify(bad));
     a.c.end();
   });
 
@@ -347,6 +373,34 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.ok(ra.result != null && rb.result != null);
     a.c.end();
     b.c.end();
+  });
+
+  it('a notice from ch-local reaches each open legacy session once, as its notifications/message, at the level it set; a modern one, unasked, none (B2 Task 3)', async() => {
+    r = runtime(home);
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    const c = await shim.session(r.socket, secret);
+    // a and b are legacy sessions: they sent initialize; c never does
+    for (const x of [a, b]) {
+      const init = await requestLegacy(x.c, 'initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test-client', version: '1.0.0'}});
+      assert.ok(init != null && init.result != null && init.result.capabilities.logging != null, JSON.stringify(init));
+    }
+    // b asks for warning and above: no notification, the next result's line still
+    assert.deepStrictEqual((await requestLegacy(b.c, 'logging/setLevel', {level: 'warning'})).result, {});
+    const reply = await r.control({type: 'notice', module: null, text: 'ch-pack-x removed'});
+    assert.ok(reply != null && reply.error == null, JSON.stringify(reply));
+    const m = await shim.readM(a.c, 10000);
+    assert.ok(m != null && m.header == null, 'a notification has no header');
+    assert.deepStrictEqual(JSON.parse(m.line.toString('utf8')),
+      {jsonrpc: '2.0', method: 'notifications/message', params: {level: 'notice', logger: 'countinghouse', data: 'ch-pack-x removed'}});
+    // b asked for warning: nothing is sent to it
+    assert.strictEqual(await shim.readM(b.c, 1500), null, 'no notification for b');
+    assert.strictEqual(await shim.readM(a.c, 1500), null, 'a got it once');
+    assert.strictEqual(await shim.readM(c.c, 1500), null, 'nothing unasked for a modern session');
+    a.c.end();
+    b.c.end();
+    c.c.end();
   });
 
   it('keeps serving when its stdin ends (unlike --stdio)', async() => {
