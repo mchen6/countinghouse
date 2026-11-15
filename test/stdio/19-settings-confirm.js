@@ -48,6 +48,18 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     assert.strictEqual(c.verify(requestState, retry).ok, true);
   });
 
+  it('one spelling only: a state differing in its padding bits alone is invalid', () => {
+    const {requestState} = c.stage(change);
+    const [nonce, mac] = requestState.split('.');
+    const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const last = ABC.indexOf(mac.slice(-1));
+    // the same top four bits, other padding bits: the same bytes, another string
+    const twin = `${nonce}.${mac.slice(0, -1)}${ABC[(last & ~3) | ((last & 3) ^ 1)]}`;
+    assert.deepStrictEqual(Buffer.from(twin.split('.')[1], 'base64url'), Buffer.from(mac, 'base64url'), 'premise: it decodes alike');
+    assert.deepStrictEqual(c.verify(twin, retry), {ok: false, code: 'SETTING_CONFIRMATION_INVALID'});
+    assert.strictEqual(c.verify(requestState, retry).ok, true);
+  });
+
   it('another start (another key) refuses this start\'s state', () => {
     const {requestState} = c.stage(change);
     const other = new Confirmations({now});
