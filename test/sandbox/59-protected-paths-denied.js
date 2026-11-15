@@ -1,16 +1,20 @@
 'use strict';
 // countinghouse's protected paths are no module's, in a deployment of
-// countinghouse alone (no ch-local, no --settingsFile; #253's follow-up):
-// under audit and under enforce every path in each of protectedPaths() but
-// the install (public code, and in a checkout the repository itself) --
-// --modulePath (every module's code), --moduleDataPath (every module's
+// countinghouse alone (no ch-local, no --settingsFile; #253's follow-up,
+// #260's review): under audit and under enforce every path in each of
+// protectedPaths() and every module root -- --modulePath and each
+// --loadModule (every module's code), --moduleDataPath (every module's
 // data), the local store, the auth configuration, the device configuration,
-// the module policy -- is EACCES to reads and writes, however
-// the module names it, but its own base roots (its code at /app, its /data
-// and /tmp), by their real paths at load. A recursive listing from above
-// shows none of it.
+// the module policy -- is EACCES to reads and writes, however the module
+// names it, but its own base roots (its code at /app, its /data and /tmp), by
+// their real paths at load; also while a module is being validated, whose
+// spawn swaps --moduleDataPath for a throwaway. The install directory stays
+// readable but for its top-level dot entries (.git, .env*, .npmrc, .claude,
+// any other) and a top-level auth.json. A recursive listing from above shows
+// none of the protected paths.
 //
-// Ports 9796 (audit) and 9797 (enforce), in B's block (test/ports.md).
+// Ports 9796 (audit), 9797 (enforce) and 9798 (a validation under audit), in
+// B's block (test/ports.md).
 const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
@@ -21,8 +25,11 @@ const {toolOutput} = require('../helpers/tool-result');
 
 const ADMIN   = 'protected-denied-admin-key';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'deny-probe');
+const SIBLING = path.join(ROOT, 'test', 'fixtures', 'handler-map-module');
 const NAME    = 'deny-probe';
 const tool    = (a) => `deny_probe_probeservice_${a.toLowerCase()}`;
+// the install's names refused to every module, existing or not
+const INSTALL_SECRETS = ['.git', path.join('.git', 'config'), '.env', '.env.local', '.npmrc', path.join('.claude', 'settings.json'), 'auth.json', '.anything'];
 
 function world(tag) {
   const base = fs.mkdtempSync(path.join(os.homedir(), `.ch-protected-${tag}-`));
@@ -40,8 +47,11 @@ function world(tag) {
   fs.writeFileSync(path.join(w.rw, 'ok.txt'), 'declared');
   fs.writeFileSync(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
   fs.writeFileSync(w.policy, JSON.stringify({modules: {[NAME]: {approve: 'as-declared'}}}));
-  w.fixture = path.join(w.modules, NAME);
+  // the module and a sibling, each loaded from its own directory (--loadModule)
+  w.fixture = at('srv', 'a');
+  w.sibling = at('srv', 'b');
   fs.cpSync(FIXTURE, w.fixture, {recursive: true});
+  fs.cpSync(SIBLING, w.sibling, {recursive: true});
   const pkgPath = path.join(w.fixture, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   pkg.countinghouse.permissions.fs = [{path: w.rw, access: 'rw'}];
@@ -63,7 +73,7 @@ describe('sandbox 59: countinghouse\'s protected paths are no module\'s', functi
         w = world(mode);
         server = await startServer(port, ['--workerThread', '--authConfigPath', w.authPath, '--modulePath', w.modules, '--moduleDataPath', w.moduleData,
           '--store', 'local', '--storePath', w.store, '--deviceConfigPath', w.devices,
-          '--moduleSandbox', mode, '--modulePolicy', w.policy, '--loadModule', w.fixture]);
+          '--moduleSandbox', mode, '--modulePolicy', w.policy, '--loadModule', w.fixture, '--loadModule', w.sibling]);
       });
       after(() => {
         stopServer(server);
@@ -85,8 +95,24 @@ describe('sandbox 59: countinghouse\'s protected paths are no module\'s', functi
         assert.strictEqual(fs.readFileSync(w.kv, 'utf8'), '{}', 'the store is untouched');
       });
 
+      it('a sibling loaded with --loadModule from its own directory: its code is EACCES to read and to write (G2)', async () => {
+        const p = path.join(w.sibling, 'package.json');
+        assert.deepStrictEqual(await call('read', {path: p}), {content: null, code: 'EACCES'});
+        assert.deepStrictEqual(await call('write', {path: path.join(w.sibling, 'actions.js'), content: 'planted'}), {ok: false, code: 'EACCES'});
+      });
+
+      it('the install\'s top-level dot entries and auth.json are EACCES to read and to write; the rest of it is as any outside path', async () => {
+        for (const name of INSTALL_SECRETS) {
+          const p = path.join(ROOT, name);
+          assert.deepStrictEqual(await call('read', {path: p}), {content: null, code: 'EACCES'}, `read ${name}`);
+          assert.deepStrictEqual(await call('write', {path: p, content: 'planted'}), {ok: false, code: 'EACCES'}, `write ${name}`);
+        }
+        const plain = await call('read', {path: path.join(ROOT, 'package.json')});
+        assert.ok(mode === 'audit' ? plain.code === null : plain.code === 'ENOENT', JSON.stringify(plain).slice(0, 200));
+      });
+
       it('and through a symlink in its own /tmp', async () => {
-        for (const [p, tag] of [[w.otherData, 'data'], [w.kv, 'kv'], [w.otherCode, 'code']]) {
+        for (const [p, tag] of [[w.otherData, 'data'], [w.kv, 'kv'], [w.otherCode, 'code'], [path.join(w.sibling, 'package.json'), 'sibling']]) {
           fs.symlinkSync(p, path.join(w.moduleTmp, `${tag}-link`));
           assert.deepStrictEqual(await call('read', {path: `/tmp/${tag}-link`}), {content: null, code: 'EACCES'}, `symlink ${p}`);
         }
@@ -103,9 +129,44 @@ describe('sandbox 59: countinghouse\'s protected paths are no module\'s', functi
         fs.symlinkSync(w.base, link);
         for (const from of [w.base, link]) {
           const names = (await call('list', {path: from})).names || [];
-          assert.deepStrictEqual(names.filter((n) => /(^|\/)(other|kv\.json|device\.json)(\/|$)/.test(n)), [], `${from}: ${JSON.stringify(names)}`);
+          assert.deepStrictEqual(names.filter((n) => /(^|\/)(other|kv\.json|device\.json|b)(\/|$)/.test(n)), [], `${from}: ${JSON.stringify(names)}`);
         }
       });
+    });
+  });
+
+  // A validation's spawn swaps --moduleDataPath for a throwaway under
+  // <moduleDataPath>/.validate: the real one stays protected while the
+  // validated code runs (G1). The probe reads a live module's /data file
+  // when the validator requires it, and throws what it got.
+  describe('a module being validated (audit)', () => {
+    const port = testPort(9798);
+    let w = null;
+    let server = null;
+    before(async () => {
+      w = world('validate');
+      w.secret = path.join(w.moduleData, NAME, 'data', 'secret.txt');
+      fs.mkdirSync(path.dirname(w.secret), {recursive: true});
+      fs.writeFileSync(w.secret, 'live module data');
+      w.probe = path.join(w.base, 'probe');
+      fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'validate-probe'), w.probe, {recursive: true});
+      fs.writeFileSync(path.join(w.probe, 'handlers', 'probeService', 'probe.js'),
+        `const seen = {};\nseen.other = (() => { try { return 'read:' + require('fs').readFileSync(${JSON.stringify(w.secret)}, 'utf8'); } catch (e) { return e.code; } })();\n` +
+        'throw new Error(`VALIDATE-PROBE ${JSON.stringify(seen)}`);\n');
+      server = await startServer(port, ['--workerThread', '--debug', '--debugKey', 'k', '--authoringTools', '--moduleSandbox', 'audit',
+        '--moduleDataPath', w.moduleData, '--modulePolicy', w.policy, '--loadModule', w.fixture]);
+    });
+    after(() => {
+      stopServer(server);
+      if (w != null) fs.rmSync(w.base, {recursive: true, force: true});
+    });
+
+    it('can\'t read another module\'s /data (G1)', async () => {
+      const r = await mcpCall(port, 'k', 'countinghouse_validate_module', {path: w.probe});
+      const text = JSON.stringify(r.structuredContent != null ? r.structuredContent : r).replace(/\\"/g, '"');
+      const m = /VALIDATE-PROBE (\{[^}]*\})/.exec(text);
+      assert.ok(m != null, text.slice(0, 600));
+      assert.deepStrictEqual(JSON.parse(m[1]), {other: 'EACCES'}, text.slice(0, 600));
     });
   });
 });

@@ -148,9 +148,11 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
 
   before((done) => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-conformance-'));
-    // repo-scan and repo-review read a directory; the fixture is small, and
-    // outside /tmp, which a sandboxed module sees as its own private one.
-    ARGS = argsTable(FIXTURE);
+    // repo-scan and repo-review read a directory: a small fixture outside
+    // /tmp (which a sandboxed module sees as its own private one) and not a
+    // module this server loads, whose code is no other module's to read
+    // (#260's review, G2).
+    ARGS = argsTable(path.join(ROOT, 'test', 'fixtures', 'deny-probe'));
     freePort().then((p) => {
       port = p;
       startServer(port, tmp, async (err, s) => {
