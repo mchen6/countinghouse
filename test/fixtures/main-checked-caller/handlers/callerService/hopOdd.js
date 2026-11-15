@@ -16,5 +16,5 @@ module.exports = async (input, ctx) => {
     typed: r.t instanceof Uint8Array && r.t.length === 2 && r.t[1] === 2,
     bigint: r.b === 10n,
     undef: Array.isArray(r.u) && r.u.length === 1 && r.u[0] === undefined
-  }}};
+  }, forged: r.forged}};
 };

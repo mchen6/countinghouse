@@ -17,6 +17,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9720–9729 | A: RC1-min, step 3 onward |
 | 9730–9739 | B |
 | 9740–9749 | C |
+| 9750–9754 | A: lean worker step 3 |
 | 9790–9799 | B (2026-11-14) |
 
 ## By file
@@ -112,6 +113,7 @@ one) as well as the ports it binds.
 | `test/module-loading/14-lifecycle.js` | 9634 |
 | `test/module-loading/15-reload-scenarios.js` | 9606 |
 | `test/module-loading/16-failed-reload-ends-worker.js` | 9632 |
+| `test/module-loading/27-lean-ctx-log.js` | 9753 |
 | `test/module-loading/28-lean-perf-harness.js` (perf/lean-worker-perf.js) | 9752 |
 | `test/remote/01-declaration.js` | 9688 |
 | `test/remote/02-credentials.js` | 9688–9689 |
@@ -142,7 +144,6 @@ one) as well as the ports it binds.
 | `test/sandbox/24-codes-after-worker-end.js` | 9613–9615 |
 | `test/sandbox/25-jobs-wait-through-reload.js` | 9621–9623 |
 | `test/sandbox/26-job-timeout.js` | 9624–9625, 9627 |
-| `test/sandbox/27-reload-during-discovery-bound.js` | 9637 |
 | `test/sandbox/28-crash-during-restart-discovery.js` | 9638 |
 | `test/sandbox/29-link-to-module-parent.js` | 9650 |
 | `test/sandbox/30-deviceonline-while-unloading.js` | 9640 |
@@ -160,6 +161,8 @@ one) as well as the ports it binds.
 | `test/sandbox/41-main-thread-validation.js` | 9749 |
 | `test/sandbox/42-hop-results-transferred.js` | 9749 (after 41's server has stopped: one mocha process runs the folder's files one after another) |
 | `test/sandbox/48-hop-inputs-transferred.js` | 9749 (after 41's and 42's servers have stopped, as 42) |
+| `test/sandbox/43-lean-worker-files.js` | 9750 |
+| `test/sandbox/48-lean-lockdown.js` | 9751 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |

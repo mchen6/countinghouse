@@ -120,12 +120,14 @@ describe('CHUtil.queryDeviceSpec', () => {
         const DEVICE_ID = ${JSON.stringify(DEVICE_ID)};
         const SPEC = ${JSON.stringify(SPEC)};
 
-        CHUtil.dm = {workerMessage: {
+        // in a worker the state comes by attach, as a lean worker's does
+        // (lib/chutil-facade.js); an assignment to dm is ignored there
+        CHUtil.__attach({dm: {workerMessage: {
           sendDeviceQueryMessageToParent: (deviceID, cb) => {
             if (deviceID !== DEVICE_ID) return cb(new Error('deviceID mismatch'));
             return cb(null, SPEC);
           }
-        }};
+        }}});
 
         CHUtil.queryDeviceSpec(DEVICE_ID, (err, spec) => {
           parentPort.postMessage({errMessage: (err != null) ? err.message : null, spec: spec});

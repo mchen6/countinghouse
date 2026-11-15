@@ -1,5 +1,5 @@
-// A worker's options are the main thread's (lib/sandbox.js and the lean
-// worker's set-options), set with setResolvedOptions from
+// A worker's options are the main thread's (lib/lean-worker.js's
+// set-options), set with setResolvedOptions from
 // getOptionsForWorker(): durations in milliseconds, kept as they are. A
 // worker's requestTimeout, jobTimeout and jobResultTtl equal the main
 // thread's, never 1000 times them (#112). One conversion, in setOptions, for

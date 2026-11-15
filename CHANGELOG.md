@@ -18,6 +18,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — modules run in lean workers; the main thread registers their devices
+
+- Every module now runs in `lib/lean-worker.js`,
+  which loads the module's handler files and little of the runtime: no
+  device manager or discovery in the worker, and a `CHUtil` facade whose
+  helpers load on first use. The main thread registers a module's device
+  from its own reading of `api.json` once the worker has loaded, so a worker
+  no longer announces its device. A handler file that throws while it is
+  required fails the load with `LOAD_MODULE_FAIL` naming the file. Under
+  `--moduleSandbox off`, a module that blocks right after loading is no
+  longer ended by the old discovery bound (as with any blocking handler,
+  `off` bounds nothing; `audit` and `enforce` have the block watchdog).
 
 ### Added — guarding settings by conversation, part 3
 
@@ -30,6 +42,7 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `%ProgramData%\countinghouse\ceiling.json`): lowers the hard bounds or
   forbids a loosening; a file an ordinary user could have written fails
   closed (docs/security-model.md).
+
 ### Added — packs in place, runtime side: a control channel, change notices and `countinghouse_settings` (#183)
 
 For ch-local's single-identity runtime (`--store local --stdio`, no auth

@@ -191,11 +191,12 @@ describe('composition 21: a device that claims another module\'s friendlyName', 
   });
 });
 
-// The review of #163 (5): a running module that announces another module's
-// device while that module is unloaded takes nothing: the ID is the other
-// module's (its api.json declares it, and it owned it), and it registers
-// its own again when it is loaded back.
-describe('composition 21: a running module announcing another module\'s device', function() {
+// The review of #163 (5), as the high review of #177 re-expressed it for the
+// lean worker, which announces nothing: a module whose own api.json names
+// another module's device takes nothing while that module is unloaded (the
+// ID is the other module's: its api.json declares it, and it owned it), and
+// the other module registers its own again when it is loaded back.
+describe('composition 21: a module whose spec names another module\'s device', function() {
   this.timeout(120000);
   let base = null;
   let server = null;
@@ -203,7 +204,6 @@ describe('composition 21: a running module announcing another module\'s device',
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-declared-21q-'));
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--authoringTools', '--moduleSandbox', 'off',
       '--moduleDataPath', path.join(base, 'store'),
-      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'id-squatter'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'token-callee')]);
   });
   after(() => {
@@ -213,15 +213,23 @@ describe('composition 21: a running module announcing another module\'s device',
 
   it('is refused while that module is unloaded, and the module registers its own when loaded back', async () => {
     const callee = path.join(ROOT, 'test', 'fixtures', 'token-callee');
+    // the squatter: token-callee's files under another package name
+    const squatter = path.join(base, 'token-squatter');
+    fs.cpSync(callee, squatter, {recursive: true});
+    const pkg = JSON.parse(fs.readFileSync(path.join(squatter, 'package.json'), 'utf8'));
+    pkg.name = 'token-squatter';
+    fs.writeFileSync(path.join(squatter, 'package.json'), JSON.stringify(pkg));
     assert.strictEqual((await post(PORT, 'k', '/unload-module', {name: 'token-callee'})).status, 200);
-    await mcpCall(PORT, 'k', 'id_squatter_squatservice_noop', {});
-    await waitFor(() => /id-squatter announced device/.test(server.output), 10000, 'the refusal in the log', async () => server.output.slice(-2000));
+    const mark = server.output.length;
+    await mcpCall(PORT, 'k', 'countinghouse_load_module', {path: squatter, name: 'token-squatter'});
+    await waitFor(() => /module token-squatter's device \S+ is module token-callee's -- refused/.test(server.output.slice(mark)), 15000, 'the refusal in the log',
+      async () => server.output.slice(-2000));
     const loaded = await mcpCall(PORT, 'k', 'countinghouse_load_module', {path: callee, name: 'token-callee'});
     assert.ok(loaded != null && loaded.isError !== true, JSON.stringify(loaded).slice(0, 400));
     const r = await waitFor(async () => {
       const x = await mcpCall(PORT, 'k', COUNT, {}, {allowUnknownTool: true});
       return (x != null && x.isError !== true && !/unknown tool/.test(JSON.stringify(x))) ? x : null;
-    }, 20000, 'token-callee to answer');
+    }, 20000, 'token-callee to answer', async () => server.output.slice(-3000));
     assert.ok(r != null);
   });
 });
