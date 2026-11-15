@@ -72,7 +72,12 @@ function stopAll(done, delayMs = 0) {
   while (started.length > 0) {
     const child = started.pop();
     if (child.pid == null) continue;
-    try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+    if (process.platform === 'win32') {
+      // no process groups: taskkill's tree kill (a negative pid does nothing)
+      try { require('child_process').execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {stdio: 'ignore', windowsHide: true}); } catch (e) { /* already gone */ }
+    } else {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+    }
   }
   if (typeof done === 'function') setTimeout(done, delayMs);
 }

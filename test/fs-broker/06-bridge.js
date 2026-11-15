@@ -66,7 +66,7 @@ describe('fs-broker 06: the bridge', function() {
 
   it('a call past the broker deadline gets ETIMEDOUT; the late reply is discarded and the next call in the same worker gets its own', async () => {
     const h = await harness({deadlineMs: 200,
-      hooks: {afterCheck: (syscall, host) => (host.endsWith('/slow') ? new Promise((r) => setTimeout(r, 400)) : null)}});
+      hooks: {afterCheck: (syscall, host) => (host.replace(/\\/g, '/').endsWith('/slow') ? new Promise((r) => setTimeout(r, 400)) : null)}});
     try {
       fs.writeFileSync(path.join(h.dirs.data, 'ok'), 'fine');
       const m = await h.run(`
@@ -81,7 +81,7 @@ describe('fs-broker 06: the bridge', function() {
   });
 
   it('refuses a second sync request while one is in flight (a waiting worker cannot send two)', async () => {
-    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.endsWith('/wait') ? new Promise((r) => setTimeout(r, 300)) : null)}});
+    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.replace(/\\/g, '/').endsWith('/wait') ? new Promise((r) => setTimeout(r, 300)) : null)}});
     try {
       const port = h.bridge.transfer.syncPort;
       // the wire's envelope (#170), as the client sends it
@@ -139,7 +139,7 @@ describe('fs-broker 06: the bridge', function() {
   it('two stuck operations put the worker on EIO, and do not stop another worker', async () => {
     const scheduler = new FsScheduler({globalCap: 3});
     const h = await harness({scheduler, key: 'stuck', deadlineMs: 100, maxStuck: 2,
-      hooks: {afterCheck: (syscall, host) => (host.endsWith('/hang') ? new Promise(() => {}) : null)}});
+      hooks: {afterCheck: (syscall, host) => (host.replace(/\\/g, '/').endsWith('/hang') ? new Promise(() => {}) : null)}});
     const other = await harness({scheduler, key: 'other'});
     try {
       const m = await h.run(`
@@ -156,7 +156,7 @@ describe('fs-broker 06: the bridge', function() {
 
   it('counts sync calls in flight for the heartbeat', async () => {
     let release;
-    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.endsWith('/wait') ? new Promise((r) => { release = r; }) : null)}});
+    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.replace(/\\/g, '/').endsWith('/wait') ? new Promise((r) => { release = r; }) : null)}});
     try {
       const pending = h.run(`try { client.sync('stat', ['/data/wait']); } catch (e) { return e.code; } return 'ok';`);
       // Wait for the call to reach the hook (slow on a loaded machine). Not
@@ -171,7 +171,7 @@ describe('fs-broker 06: the bridge', function() {
   });
 
   it('a worker terminated while waiting ends promptly, and close() releases its descriptors', async () => {
-    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.endsWith('/forever') ? new Promise(() => {}) : null)}});
+    const h = await harness({hooks: {afterCheck: (syscall, host) => (host.replace(/\\/g, '/').endsWith('/forever') ? new Promise(() => {}) : null)}});
     try {
       fs.writeFileSync(path.join(h.dirs.data, 'f'), 'x');
       h.run(`client.sync('open', ['/data/f', 'r']); client.sync('stat', ['/data/forever']);`);

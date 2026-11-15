@@ -19,6 +19,11 @@ describe('sandbox 18: --hardened grant probe', function() {
     const flags = ['--permission', '--allow-fs-read=/x/ch', '--allow-fs-read=/x/ch_data', '--allow-fs-write=/x/ch_data',
       '--allow-fs-read=/x/ch/lib', '--allow-fs-read=/x/a', '--allow-fs-read=/x/b', '--allow-fs-read=/y/redis', '--allow-fs-read=/y/redis-commands'];
     assert.deepStrictEqual(hardened.grantOverlaps(flags), [['/x/ch', '/x/ch_data'], ['/y/redis', '/y/redis-commands']]);
+    // on Windows a directory inside another continues with "\\": nested, not a name extended (#197)
+    if (process.platform === 'win32') {
+      assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\x\\ch', '--allow-fs-read=C:\\x\\ch\\node_modules\\a', '--allow-fs-read=C:\\x\\ch_data']),
+        [['C:\\x\\ch', 'C:\\x\\ch_data']]);
+    }
   });
 
   it('allows grants with distinct names, on every Node', () => {

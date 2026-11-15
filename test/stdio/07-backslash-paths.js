@@ -126,8 +126,9 @@ describe('stdio 07: "\\" paths on Windows (issue #40, round 4)', () => {
       const form = virtualFormFor('win32');
       const r = n.resolve(form('\\data\\a.txt'), '/app');
       assert.strictEqual(r.kind, 'root');
-      assert.strictEqual(r.host, `${dirs.data}/a.txt`);
-      assert.strictEqual(n.resolve(form('handlers\\a.js'), '/app').host, `${dirs.app}/handlers/a.js`);
+      // the host path in the host's separators (#197 round 6)
+      assert.strictEqual(r.host, `${dirs.data}\\a.txt`);
+      assert.strictEqual(n.resolve(form('handlers\\a.js'), '/app').host, `${dirs.app}\\handlers\\a.js`);
     });
 
     it('POSIX: unchanged, "\\" is part of a name and C: is a file name', async () => {
