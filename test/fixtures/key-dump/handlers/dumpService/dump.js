@@ -3,22 +3,37 @@
 const scan = require('../../scan');
 // A part listening on its own peer channel ports (#153's review, 1): every
 // message that crosses one is kept on globalThis, which the walk reaches,
-// so a key on the wire would be found. The lean worker's peer state is out
-// of a module's reach, so it does what code sharing the worker's realm can:
-// MessagePort.prototype.postMessage is hooked, and the port the callee
-// answers a peer invoke on (a 'peer-reply') gets the listener. The first
-// call through a channel opens it; a second call is seen.
+// so a key on the wire would be found (bytes are searched too: the scan
+// decodes them). The lean worker's peer state is out of a module's reach,
+// so it does what code sharing the worker's realm can. Since lean worker
+// step 4 (#202) a served invoke gets no reply on the port (the main thread
+// delivers the result), so the listener can't wait for one. Instead,
+// MessagePort.prototype.on is hooked, and every port the runtime starts
+// listening on gets this part's listener beside the runtime's: it sees each
+// invoke as it crosses, whatever the callee answers. A port it posts a
+// 'peer-reply' on (a refusal) is listened to as well. The port to the main
+// thread is pinned under audit and enforce, so only peer ports are seen
+// there.
 const portSeen = globalThis.__keyDumpPortSeen || (globalThis.__keyDumpPortSeen = {messages: [], ports: new WeakSet(), hooked: false});
+const listen = (port) => {
+  if (port == null || portSeen.ports.has(port)) return;
+  portSeen.ports.add(port);
+  port.on('message', (x) => { portSeen.messages.push(x); });
+};
 if (!portSeen.hooked && typeof(globalThis.MessagePort) === 'function') {
   portSeen.hooked = true;
-  const post = globalThis.MessagePort.prototype.postMessage;
-  globalThis.MessagePort.prototype.postMessage = function(m, ...rest) {
-    try {
-      if (m != null && m.category === 'peer-reply' && !portSeen.ports.has(this) && typeof(this.on) === 'function') {
-        portSeen.ports.add(this);
-        this.on('message', (x) => { portSeen.messages.push(x); });
-      }
-    } catch (e) { /* never break the worker */ }
+  const proto = globalThis.MessagePort.prototype;
+  const on = proto.on;
+  if (typeof(on) === 'function') {
+    proto.on = function(event, ...rest) {
+      const r = on.call(this, event, ...rest);
+      try { if (event === 'message') listen(this); } catch (e) { /* never break the worker */ }
+      return r;
+    };
+  }
+  const post = proto.postMessage;
+  proto.postMessage = function(m, ...rest) {
+    try { if (m != null && m.category === 'peer-reply') listen(this); } catch (e) { /* never break the worker */ }
     return post.call(this, m, ...rest);
   };
 }
