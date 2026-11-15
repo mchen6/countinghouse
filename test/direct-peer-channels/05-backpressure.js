@@ -1,6 +1,5 @@
 const fs = require('fs');
-const exec = require('child_process').exec;
-const waitForReady = require('../helpers/wait-for-ready');
+const {startServer, shutdownThenStop} = require('../helpers/sandbox-server');
 const request = require('supertest');
 const {testPort} = require('../helpers/test-env');
 
@@ -23,14 +22,19 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 describe('direct-peer-channels 05: backpressure queueing is correct, not just fast', function() {
   this.timeout(0);
 
-  before(function(done) {
+  // started on the run's own port (testPort), stopped in after() whatever
+  // happens (#234: it used to listen on the default port, and to be asked
+  // to stop on another, so a failing run left it running)
+  let server = null;
+  before(async function() {
     this.timeout(0);
     console.log('starting countinghouse with --directPeerChannelsMaxConcurrency 2...');
-    waitForReady(exec('"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --directPeerChannels --directPeerChannelsMaxConcurrency 2 --loadModule ./pre-installed-packages/perf-callee-demo --loadModule ./pre-installed-packages/perf-caller-demo', (err, stdout, stderr) => { console.log(err); }), done);
+    server = await startServer(testPort(9527), '--workerThread --debug --directPeerChannels --directPeerChannelsMaxConcurrency 2 --loadModule ./pre-installed-packages/perf-callee-demo --loadModule ./pre-installed-packages/perf-caller-demo'.split(/\s+/).filter(Boolean), {nodeArgs: ['--expose-gc']});
   });
 
-  after((done) => {
-    request(url).post('/shutdown').end(() => { done(); });
+  after(() => {
+    // asked to stop, then stopped whatever it answered, or did not (#234)
+    return shutdownThenStop(server, testPort(9527), null);
   });
 
   const CALLER_DEVICE_ID = '13793b1a-132d-5a03-a46b-2e0bb72d0d82'; // perf-caller-demo
