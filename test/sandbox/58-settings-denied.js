@@ -172,6 +172,27 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
         assert.deepStrictEqual(names.filter((n) => n === 'home' || n.startsWith('home/') || n.includes('/home/')), [], JSON.stringify(names));
       });
 
+      it('a recursive listing through a symlink to the home\'s parent shows nothing in the home (F2)', async () => {
+        // the module makes the link itself where it may (under audit an
+        // outside symlink is allowed); else the host makes it, the same state
+        const link = path.join(w.base, 'up');
+        const made = await call('symlink', {path: link, target: w.base});
+        if (made.ok !== true) fs.symlinkSync(w.base, link);
+        const r = await call('list', {path: link});
+        const names = r.names || [];
+        assert.deepStrictEqual(names.filter((n) => n === 'home' || n.startsWith('home/') || n.includes('/home/')), [], JSON.stringify(names));
+      });
+
+      it('a recursive listing that meets a symlinked subdirectory into the home shows nothing in it (F2)', async () => {
+        const deep = path.join(w.base, 'deep');
+        fs.mkdirSync(deep);
+        fs.symlinkSync(w.home, path.join(deep, 'into-home'));
+        fs.symlinkSync(w.base, path.join(deep, 'up-again'));
+        const r = await call('list', {path: deep});
+        const names = r.names || [];
+        assert.deepStrictEqual(names.filter((n) => /(^|\/)(run|module_data|bin|settings\.json|history\.jsonl)(\/|$)/.test(n) || n.includes('into-home')), [], JSON.stringify(names));
+      });
+
       it('a history deleted on the host can\'t be created by the module', async () => {
         fs.rmSync(w.history);
         assert.deepStrictEqual(await call('write', {path: w.history, content: 'planted'}), {ok: false, code: 'EACCES'});

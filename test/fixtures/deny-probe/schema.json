@@ -83,14 +83,6 @@
         "type": "object"
       }
     },
-    "mkdir": {
-      "input": {
-        "type": "object"
-      },
-      "output": {
-        "type": "object"
-      }
-    },
     "symlink": {
       "input": {
         "type": "object"
