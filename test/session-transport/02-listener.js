@@ -185,12 +185,12 @@ describe('session-transport 02: the listener and the registry', function() {
     });
 
     it('an answer over maxToShim is never written: OUTPUT_TOO_LARGE on its seq instead', async() => {
-      await start({listener: {maxToShim: 200}});
+      await start({listener: {maxToShim: 260}});
       const a = await shim.session(sock, secret);
       shim.message(a.c, {seq: 9}, `{"jsonrpc":"2.0","id":7,"method":"echo","params":"${'x'.repeat(400)}"}`);
       const m = await shim.readM(a.c);
       assert.deepStrictEqual(m.header, {seq: 9});
-      assert.strictEqual(m.line.toString('utf8'), '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}');
+      assert.strictEqual(m.line.toString('utf8'), require('../fixtures/shim-wire-vectors.json').tooLargeAnswer.json);
       a.c.end();
     });
   });
