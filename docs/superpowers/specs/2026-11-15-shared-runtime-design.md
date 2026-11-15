@@ -512,8 +512,31 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 
 ### Crash of the runtime or the daemon
 
-- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. After 5 failures in 10 minutes it stops and logs why. It hands the table over each time.
+- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. It hands the table over each time. After 5 failures in 10 minutes it stops restarting: it writes `failed.json` (below), removes `daemon.json`, and exits.
 - **The daemon:** the next shim to reconnect finds the pid dead, and starts a new daemon under the lock.
+
+### `failed.json`: falling back without a loop
+
+A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims fall back to the per-session mode instead of starting daemon after daemon.
+
+- **Written** by the daemon as `daemon.json` is: 0600, through an exclusive temporary file, `fchmod`, then a rename. Exactly:
+
+  ```json
+  {"v": 1, "at": <epoch ms>, "exit": <integer or null>, "signal": <"SIG…" or null>, "reason": "restarts-exhausted" | "never-listened"}
+  ```
+
+  - `v` is exactly 1; `at` is a positive safe integer; `exit` is a safe integer or null; `signal` matches `^SIG[A-Z0-9]+$` or is null; `reason` is one of the two strings.
+  - The key set is exact: none extra, none missing, none twice. It holds no path, environment or stderr text.
+- **Read** by the shim with `daemon.json`'s trust checks (the 0700 directory, 0600, the euid's, no links, at most 512 bytes; on Windows the owner and DACL equivalents). It's read at two points: after the `daemon.json` check fails, and again under the start lock, immediately before a spawn. So a daemon that gives up between the two never gets a fresh daemon started behind it.
+- **Fresh** means `now − 600 000 ≤ at ≤ now + 60 000` (ms). A fresh, valid file means no daemon is spawned, and the session runs its own runtime. Anything else (stale, from the future, unreadable or invalid) is ignored, and the shim goes on as before.
+- **Cleared** by the next daemon whose runtime listens. So the shared mode comes back after 10 minutes, or as soon as a new daemon succeeds.
+- **The fallback at startup:** before the shim has read anything from stdin, it runs `start --stdio --own-runtime --home <home> <its arguments>` with the shim's stdin, waits, and exits with its code. That's today's pass-through path (on Windows, a spawn, since there's no exec). It says on stderr only: `the shared runtime failed (<reason>); this session runs its own`, with `reason` the enum alone.
+- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1). The per-session runtime it starts has never seen this client's `initialize`, so the shim:
+  1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+  2. then sends the lines it held, then relays stdin as it comes.
+
+  The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
+- **Vectors** (`failedJson`, with the shim's): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key.
 
 ## 7. Windows and macOS
 
