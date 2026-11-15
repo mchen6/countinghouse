@@ -40,7 +40,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     s.id = id;
     s.client = {status: 'ok', conditions: 'no', repo: null};
     s.notify = () => {};
-    // C1's session: a record or a forget is dropped while it's detached
+    // C1's session: connected is true from a connection's WELCOME, before it
+    // has settled; a record or a forget sent with none attached is dropped
     s.connected = true;
     frames[id] = [];
     s.record = (entry) => { if (s.connected) frames[id].push(['record', entry]); };
@@ -205,22 +206,85 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
 
   it('a tightening made while the session is detached reaches the shim when it attaches again (F10)', async () => {
     sources[A].connected = false;
+    sources[A].emit('detach');
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
-    assert.deepStrictEqual(frames[A], [], 'dropped while detached');
+    assert.deepStrictEqual(frames[A], [], 'nothing is sent while detached');
+    // a resumed connection is welcomed (connected) before it has settled,
+    // and C1 drops what is sent in between: nothing is taken as sent until
+    // the session's 'attach'
     sources[A].connected = true;
+    await tool.set('requestTimeout', '20s', 'settings tool', ctx(A));
+    assert.deepStrictEqual(frames[A], [], 'nor between the welcome and the settle');
     sources[A].emit('attach');
-    assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB}]]);
+    assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 20000}]]);
     // a session with no tightening sends nothing on attach
+    sources[B].emit('detach');
     sources[B].emit('attach');
     assert.deepStrictEqual(frames[B], []);
+    // an override ended while detached: the shim is told to forget at the attach
+    sources[A].emit('detach');
+    settings.dropLooser('maxOutputBytes', 1 * MiB);
+    settings.dropLooser('requestTimeout', 10000);
+    frames[A].length = 0;
+    sources[A].emit('attach');
+    assert.deepStrictEqual(frames[A], [['forget']]);
+  });
+
+  it('a session writes at most 32 changes to the history every session reads; past that its changes are the terminal\'s', async () => {
+    // one history, read by its 64 KiB tail: a session stepping a cap down
+    // call after call must not push the others' lines out of it
+    for (let i = 0; i < 32; i++) await tool.set('maxOutputBytes', String(8 * MiB - 1 - i), 'settings tool', ctx(A));
+    const at = settings.effective(A, 'maxOutputBytes');
+    await refused(tool.set('maxOutputBytes', String(at - 1), 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    await refused(tool.set('requestTimeout', '20s', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), at, 'unchanged');
+    assert.strictEqual(history().filter((h) => h.session === A && h.change === 'this session').length, 32);
+    // another session has its own
+    assert.deepStrictEqual(await tool.set('requestTimeout', '20s', 'settings tool', ctx(B)), {name: 'requestTimeout', old: 30000, new: 20000, applies: 'this session'});
+  });
+
+  it('a session\'s end writes the counts of its repeated requests and keeps nothing of it', async () => {
+    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+    assert.strictEqual(history().length, 1, 'the second only counted');
+    sources[A].emit('end');
+    assert.deepStrictEqual(history().map((h) => [h.session, h.change, h.count]), [[A, 'refused, terminal only', undefined], [A, 'refused, terminal only, asked again', 1]]);
+    // nothing of A is left to write
+    tool.writeCounts();
+    assert.strictEqual(history().length, 2);
+  });
+
+  it('the ceiling is read afresh before a session\'s set is judged, as a terminal-less set reads it', async () => {
+    let reads = 0;
+    const t2 = settingsTool.create({file, lockWaitMs: 200, ceiling: (o) => { if (o == null || o.cacheOnly !== true) reads += 1; return {state: 'none'}; }});
+    await t2.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
+    assert.ok(reads >= 1, 'a real read, not the cache only');
+  });
+
+  it('attaching again (or another registry) hears each change once', async () => {
+    sessions.attach(reg);
+    const other = new EventEmitter();
+    sessions.attach(other);
+    await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
+    assert.deepStrictEqual(frames[A], [['forget'], ['record', {maxOutputBytes: 2 * MiB}]]);
   });
 
   describe('a replay (a new session, from a restarted daemon\'s shim)', () => {
     it('applies a tightening, and records it as the session\'s snapshot', () => {
       const s = openSession(C);
-      s.emit('replay', [{maxOutputBytes: 2 * MiB, requestTimeout: 20000}]);
-      assert.deepStrictEqual(settings.limitsOf(C), {maxOutputBytes: 2 * MiB, requestTimeout: 20000});
-      assert.deepStrictEqual(frames[C].slice(-2), [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 20000}]]);
+      const was = Session.rearmSession;
+      const rearmed = [];
+      Session.rearmSession = (id) => rearmed.push(id);
+      try {
+        s.emit('replay', [{maxOutputBytes: 2 * MiB}, {requestTimeout: 20000}, {requestTimeout: 15000}]);
+      } finally {
+        Session.rearmSession = was;
+      }
+      assert.deepStrictEqual(settings.limitsOf(C), {maxOutputBytes: 2 * MiB, requestTimeout: 15000});
+      // one snapshot for the whole replay, not one per entry
+      assert.deepStrictEqual(frames[C], [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 15000}]]);
+      // a replay may come mid-life (a resumed connection's): its calls under way are re-armed, once
+      assert.deepStrictEqual(rearmed, [C]);
       assert.strictEqual(settings.limitsOf(A), null);
     });
 
@@ -235,7 +299,9 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
         null, 'maxOutputBytes', 7, [{maxOutputBytes: 2 * MiB}]
       ]);
       assert.strictEqual(settings.limitsOf(C), null, 'nothing applied');
-      assert.deepStrictEqual(frames[C], [], 'and nothing recorded');
+      // the shim holds what it replayed: with nothing of it applied it is
+      // told to forget, or it would replay it at every later restart
+      assert.deepStrictEqual(frames[C], [['forget']]);
     });
 
     it('takes an entry\'s good names and leaves its bad ones; a later entry only tightens further', () => {
