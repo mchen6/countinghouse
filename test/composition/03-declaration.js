@@ -41,8 +41,9 @@ const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
 const {toolErrorCode} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
-const PORT = 9557;
+const PORT = testPort(9557);
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const AUTH_CONFIG = path.join(__dirname, 'fixtures-auth.json');
 const BASE = `http://127.0.0.1:${PORT}`;

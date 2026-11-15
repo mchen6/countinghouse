@@ -26,9 +26,10 @@ const path   = require('path');
 const spawn  = require('child_process').spawn;
 const waitForReady = require('../helpers/wait-for-ready');
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
-const PORT = 9562;   // verified unused across test/ and examples/
+const PORT = testPort(9562);   // verified unused across test/ and examples/
 
 describe('composition 08: a bare server completes discovery', function() {
   this.timeout(40000);
@@ -81,7 +82,7 @@ describe('composition 08b: a module loaded at runtime into a bare server can ctx
   const os      = require('os');
   const request = require('supertest');
 
-  const PORT_E2E = 9563;   // verified unused across test/ and examples/
+  const PORT_E2E = testPort(9563);   // verified unused across test/ and examples/
   const BASE     = `http://127.0.0.1:${PORT_E2E}`;
   const ADMIN    = 'e2e-admin-key';
 

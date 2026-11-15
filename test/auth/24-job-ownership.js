@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {deviceIDForName} = require('../../lib/call-address');
 const {toolOutput} = require('../helpers/tool-result');
@@ -19,7 +20,7 @@ describe('auth 24: a module reaches only its own jobs', function() {
   this.timeout(120000);
   let server = null;
   let base = null;
-  const url = 'http://127.0.0.1:9669';
+  const url = `http://127.0.0.1:${testPort(9669)}`;
   before(async () => {
     base = mkdtemp('jobs-');
     const authPath = path.join(base, 'auth.json');
@@ -27,7 +28,7 @@ describe('auth 24: a module reaches only its own jobs', function() {
       'alice-key': {userName: 'alice', devices: [DEVICE]},
       'bob-key':   {userName: 'bob', devices: [DEVICE]}
     }));
-    server = await startServer(9669, ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
+    server = await startServer(testPort(9669), ['--workerThread', '--authConfigPath', authPath, '--moduleDataPath', path.join(base, 'store'),
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
   });
   after(() => { stopServer(server); if (base) fs.rmSync(base, {recursive: true, force: true}); });
@@ -54,7 +55,7 @@ describe('auth 24: a module reaches only its own jobs', function() {
   it('another tenant\'s job is refused, by read and by progress update', async () => {
     const created = await addJob('alice-key', {note: 'secret'});
     const before = await settled('alice-key', created.body.id);
-    const r = await mcpCall(9669, 'bob-key', 'job_snoop_jobservice_snoop', {jobID: String(created.body.id)});
+    const r = await mcpCall(testPort(9669), 'bob-key', 'job_snoop_jobservice_snoop', {jobID: String(created.body.id)});
     const out = toolOutput(r);
     assert.ok(/^error: /.test(String(out.read)), `bob read alice's job: ${JSON.stringify(out)}`);
     assert.ok(!/alice-key/.test(JSON.stringify(r)), 'the key leaked');

@@ -8,6 +8,7 @@ const os     = require('os');
 const path   = require('path');
 const {parseRemotes} = require('../../lib/remote/declaration');
 const {loadAllowance, resolveCredential} = require('../../lib/remote/credentials');
+const {testPort} = require('../helpers/test-env');
 
 // Synthetic and low-entropy, built here, never a realistic literal.
 const TOKEN = `ghp_${'A'.repeat(36)}`;
@@ -46,9 +47,9 @@ describe('remote 02: the credential allowance', () => {
       assert.ok(!JSON.stringify(c).includes(TOKEN));
     }
     // The scheme, where both are possible (a loopback origin).
-    const local = remoteFor('http://127.0.0.1:9688/mcp', {env: 'CH_TEST_REMOTE_TOKEN'});
-    const c = resolveCredential(local, {CH_TEST_REMOTE_TOKEN: TOKEN}, allowance({'https://127.0.0.1:9688': ['CH_TEST_REMOTE_TOKEN']}));
-    assert.deepStrictEqual(c, {missing: 'not-allowed', variable: 'CH_TEST_REMOTE_TOKEN', origin: 'http://127.0.0.1:9688'});
+    const local = remoteFor(`http://127.0.0.1:${testPort(9688)}/mcp`, {env: 'CH_TEST_REMOTE_TOKEN'});
+    const c = resolveCredential(local, {CH_TEST_REMOTE_TOKEN: TOKEN}, allowance({[`https://127.0.0.1:${testPort(9688)}`]: ['CH_TEST_REMOTE_TOKEN']}));
+    assert.deepStrictEqual(c, {missing: 'not-allowed', variable: 'CH_TEST_REMOTE_TOKEN', origin: `http://127.0.0.1:${testPort(9688)}`});
   });
 
   it('allows env and fallbackEnv one by one', () => {
@@ -91,8 +92,8 @@ describe('remote 02: the credential allowance', () => {
   });
 
   it('loadAllowance accepts an http loopback origin, for the tests\' local server', () => {
-    const a = allowance({'http://127.0.0.1:9688': ['CH_TEST_REMOTE_TOKEN']});
-    assert.ok(a.get('http://127.0.0.1:9688').has('CH_TEST_REMOTE_TOKEN'));
+    const a = allowance({[`http://127.0.0.1:${testPort(9688)}`]: ['CH_TEST_REMOTE_TOKEN']});
+    assert.ok(a.get(`http://127.0.0.1:${testPort(9688)}`).has('CH_TEST_REMOTE_TOKEN'));
   });
 });
 
@@ -100,7 +101,7 @@ describe('remote 02: the allowance at start', function() {
   this.timeout(30000);
   const {spawnSync} = require('child_process');
   const ROOT = path.join(__dirname, '..', '..');
-  const start = (args) => spawnSync(process.execPath, ['framework.js', '--no-workerThread', '--debug', '--port', '9689'].concat(args),
+  const start = (args) => spawnSync(process.execPath, ['framework.js', '--no-workerThread', '--debug', '--port', String(testPort(9689))].concat(args),
     {cwd: ROOT, encoding: 'utf8', timeout: 20000});
 
   it('a malformed --remoteCredentials file stops the start, naming the file', () => {
@@ -119,7 +120,7 @@ describe('remote 02: the allowance at start', function() {
   it('an all-digit file path is a path, not a number (code review)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02n-'));
     fs.writeFileSync(path.join(dir, '123'), JSON.stringify({'https://example.com/mcp': ['A']}));
-    const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--no-workerThread', '--debug', '--port', '9689', '--remoteCredentials', '123'],
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--no-workerThread', '--debug', '--port', String(testPort(9689)), '--remoteCredentials', '123'],
       {cwd: dir, encoding: 'utf8', timeout: 20000});
     assert.strictEqual(r.status, 2, r.stderr);
     assert.ok(r.stderr.includes('is not an origin'), `read the file, not "needs a file": ${r.stderr}`);

@@ -8,6 +8,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 
 const SECRET = `s${crypto.randomBytes(12).toString('hex')}`;
 const pieces = Array.from({length: SECRET.length - 5}, (_, i) => SECRET.slice(i, i + 6));
@@ -22,10 +23,10 @@ describe('device-config 03: JSON errors without the file\'s content', function()
     base = fs.mkdtempSync(path.join(os.homedir(), '.ch-json-errors-'));
     // Unquoted, so V8 says "Unexpected token 's', ..." and quotes the secret.
     fs.writeFileSync(path.join(base, 'fs-probe.json'), `{\n  "apiSecret": ${SECRET}\n}\n`);
-    const server = await startServer(9629, ['--workerThread', '--debug', '--debugKey', 'k', '--deviceConfigPath', base,
+    const server = await startServer(testPort(9629), ['--workerThread', '--debug', '--debugKey', 'k', '--deviceConfigPath', base,
       '--moduleDataPath', path.join(base, 'store')]);
     try {
-      await post(9629, 'k', '/load-module', {path: path.join(ROOT, 'test', 'fixtures', 'fs-probe'), name: 'fs-probe'});
+      await post(testPort(9629), 'k', '/load-module', {path: path.join(ROOT, 'test', 'fixtures', 'fs-probe'), name: 'fs-probe'});
       await new Promise((r) => setTimeout(r, 500));
       assert.match(server.output, /Failed to get app config info/);
       assert.match(server.output, /not valid JSON at line 2, column \d+/);

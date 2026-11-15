@@ -12,10 +12,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY = 'k';
-const PORT = 9790;
+const PORT = testPort(9790);
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'stdout-flood');
 
 // The server's main thread's CPU time, in ms (Linux).

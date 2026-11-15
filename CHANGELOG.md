@@ -18,6 +18,36 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — a call over a direct peer channel is checked by the main thread (lean worker step 4, #202)
+
+- **The caller states the call; the callee can't restate it.** The calling
+  module's worker announces each peer invoke's target (device, service,
+  action) and its input, as bytes, to the main thread, which holds them. The
+  port between the two workers carries the invoke's id alone. The callee
+  learns the target and the checked input only from the main thread.
+- **Input, before any handler runs:** checked at the announcement (strings
+  within bounds, an action the caller declared, a device the channel's
+  callee hosts: otherwise `CTX_CALL_UNDECLARED` or `PEER_NOT_GRANTED`),
+  capped by `--maxOutputBytes` (`INPUT_TOO_LARGE`), then validated against
+  the callee's input schema in a validator worker, as a routed hop's is. A
+  callee whose spec the main thread doesn't hold is refused: nothing passes
+  unchecked.
+- **Output, before it reaches the caller:** the callee sends its result or
+  error as bytes with its bill request. The main thread caps it
+  (`OUTPUT_TOO_LARGE`), validates it against the callee's output schema
+  (`OUTPUT_DATA_VALIDATION_FAIL`), bills only a result that passes, and
+  delivers it. A result a callee posts on the port is dropped and reported
+  as a sandbox violation (`peer-forged-reply`).
+- **The pool's bounds apply to peer calls too:** the deadline, the caller
+  throttle and strikes against the callee for its own output.
+- **Bounded held input:** each calling worker holds at most two hops at the
+  cap (at least 16 MiB) of announced input awaiting a match, and all
+  callers at most eight (at least 128 MiB); past that, an invoke is refused
+  `RATE_LIMITED`. A caller's announcements are released when the call ends
+  or its deadline passes. Invoke ids are integers in range.
+- **No added round trip:** the input rides the existing announcement and
+  match, and the result rides the existing bill request.
+
 ### Changed — modules run in lean workers; the main thread registers their devices
 
 - Every module now runs in `lib/lean-worker.js`,
@@ -414,9 +444,10 @@ configuration). None of it is available to a hosted server.
   actions were plain objects, so such a name found the prototype's member.
   An undeclared one answered `ACTION_NOT_IMPLEMENTED` or crashed, and a
   declared one's handler was set on `Object.prototype`'s function.
-- **Unchanged:** a call over a direct peer channel is still validated in the
-  called worker (until step 4), and single-thread mode validates in-process
-  as before.
+- **Unchanged here:** single-thread mode validates in-process as before. (A
+  call over a direct peer channel was still validated in the called worker
+  at this point. Lean worker step 4 moved it to the main thread: see its
+  entry above.)
 - **A courtesy refusal at load** (`MODULE_ASSEMBLY_FAIL`, stage
   `schemaSafety`, naming the module and the schema path, never the pattern),
   run in a validator in worker mode (`lib/schema-safety.js`); a check that

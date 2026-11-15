@@ -7,10 +7,11 @@
 const assert = require('assert');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 const {toolOutput} = require('../helpers/tool-result');
 
-const PORT = 9727;
+const PORT = testPort(9727);
 const KEY = 'k';
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'sandbox-probe');
 

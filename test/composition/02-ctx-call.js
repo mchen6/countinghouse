@@ -93,8 +93,9 @@ const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
 // test/composition/05-module-identity.js.
 require('../../lib/cli-options').setOptions({workerThread: false});
 const handlerCtx = require('../../lib/handler-ctx');
+const {testPort} = require('../helpers/test-env');
 
-const PORT = 9556;
+const PORT = testPort(9556);
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -261,7 +262,7 @@ describe('ctx.call: guard clause messages (in-process, same production code)', f
 // files back to back -- see this file's after() below for the other half
 // of that fix (waiting for the process to actually exit before the next
 // file's before() tries to bind the port it just freed).
-const PORT_SINGLE_THREAD = 9560;
+const PORT_SINGLE_THREAD = testPort(9560);
 const BASE_SINGLE_THREAD = `http://127.0.0.1:${PORT_SINGLE_THREAD}`;
 
 let singleThreadServer;

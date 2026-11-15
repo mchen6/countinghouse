@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const path   = require('path');
 const {MessageChannel} = require('worker_threads');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 const PeerChannel = require('../../lib/peer-channel');
 const {CountinghouseError} = require('../../lib/countinghouse-error');
@@ -170,7 +171,7 @@ describe('sandbox 49: a peer channel\'s caller, server-free', () => {
   });
 });
 
-const PORT   = 9749;
+const PORT   = testPort(9749);
 const KEY    = 'hop-input-key';
 const AUTH   = path.join(__dirname, '48-auth.json');
 const CALLEE = path.join(ROOT, 'test', 'fixtures', 'hop-input-callee');

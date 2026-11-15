@@ -20,12 +20,13 @@ const spawn   = require('child_process').spawn;
 const fork    = require('child_process').fork;
 
 const waitForReady = require('../helpers/wait-for-ready');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT     = path.join(__dirname, '..', '..');
 const FIXTURES = path.join(ROOT, 'test', 'fixtures');
 
-const PORT       = 9599;
-const PORT_PM2   = 9604;
+const PORT       = testPort(9599);
+const PORT_PM2   = testPort(9604);
 const CALLER_KEY = 'compose-caller-internal';
 
 describe('composition 13: the server says when it is ready', function() {

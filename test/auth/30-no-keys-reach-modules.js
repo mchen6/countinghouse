@@ -15,9 +15,10 @@ const os      = require('os');
 const path    = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT = 9631;
+const PORT = testPort(9631);
 const URL  = `http://127.0.0.1:${PORT}`;
 const hex  = () => crypto.randomBytes(8).toString('hex');
 const ALICE = `alice-key-${hex()}`;

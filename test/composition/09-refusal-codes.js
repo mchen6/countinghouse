@@ -155,8 +155,9 @@ describe('ctx.call refusals carry a code an MCP client can branch on', () => {
 const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
+const {testPort} = require('../helpers/test-env');
 
-const PORT     = 9564;
+const PORT     = testPort(9564);
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const BASE     = `http://127.0.0.1:${PORT}`;
 

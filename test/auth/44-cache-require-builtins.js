@@ -10,10 +10,11 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY   = 'm44key';
-const PORT  = 9653;
+const PORT  = testPort(9653);
 const PROBE = path.join(ROOT, 'test', 'fixtures', 'cache-require-probe');
 const TOOL  = 'cache_require_probe_probeservice_attempt';
 const BUILTINS = ['child_process', 'worker_threads', 'vm'];

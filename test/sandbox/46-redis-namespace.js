@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY = 'k';
@@ -25,7 +26,7 @@ function copy(base, name) {
   return dir;
 }
 
-for (const [label, thread, port] of [['worker', '--workerThread', 9736], ['single-thread', '--no-workerThread', 9737]]) {
+for (const [label, thread, port] of [['worker', '--workerThread', testPort(9736)], ['single-thread', '--no-workerThread', testPort(9737)]]) {
   describe(`sandbox 46: ctx.redis is per module (#164), ${label}`, function() {
     this.timeout(120000);
     let server = null;

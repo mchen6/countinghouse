@@ -18,6 +18,7 @@ const path = require('path');
 const {spawnSync} = require('child_process');
 const {mkdtemp, remove} = require('../helpers/test-tmp');
 const {startStdio, INITIALIZE} = require('../helpers/stdio-client');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const VALIDATE = path.join(ROOT, 'bin', 'countinghouse-validate.js');
@@ -316,8 +317,8 @@ describe('module-loading 21: one module format, decided statically', function() 
   // POST /restart-module -- and the version already loaded keeps serving.
   // HTTP, because /reload-module and /restart-module have no stdio route.
   [
-    ['in a worker', 9740, ['--workerThread']],
-    ['in single-thread mode', 9741, ['--no-workerThread']]
+    ['in a worker', testPort(9740), ['--workerThread']],
+    ['in single-thread mode', testPort(9741), ['--no-workerThread']]
   ].forEach(([where, port, flags]) => {
     describe(`a reload into the retired layout is refused, and the loaded version keeps serving, ${where}`, () => {
       const {startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');

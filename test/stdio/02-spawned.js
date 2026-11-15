@@ -11,6 +11,7 @@ const path = require('path');
 const {spawnSync} = require('child_process');
 const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 const tmp = require('../helpers/test-tmp');
+const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const ENTRY = path.join(ROOT, 'bin', 'countinghouse-stdio.js');
@@ -21,7 +22,7 @@ function start(home, extra = [], module = MODULE) {
   const auth = path.join(home, 'auth.json');
   fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
   return startStdio(['--workerThread', '--loadModule', module, '--authConfigPath', auth,
-    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', 'redis://127.0.0.1:9749', ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
+    '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`, ...extra], {env: {COUNTINGHOUSE_API_KEY: KEY}});
 }
 
 describe('--stdio: a flag given twice, as --hardened\'s relaunch gives it (#124)', () => {
@@ -53,11 +54,11 @@ describe('--stdio: a flag given twice, as --hardened\'s relaunch gives it (#124)
 describe('--stdio, spawned: the failure message', () => {
   it('drops the Redis connection noise and keeps the rest', () => {
     const err = [
-      '{"level":50,"e":"Redis client error: Redis connection to 127.0.0.1:9749 failed - connect ECONNREFUSED 127.0.0.1:9749"}',
-      'Error: connect ECONNREFUSED 127.0.0.1:9749',
+      `{"level":50,"e":"Redis client error: Redis connection to 127.0.0.1:${testPort(9749)} failed - connect ECONNREFUSED 127.0.0.1:${testPort(9749)}"}`,
+      `Error: connect ECONNREFUSED 127.0.0.1:${testPort(9749)}`,
       '    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {',
-      "  errno: -4078,", "  code: 'ECONNREFUSED',", "  syscall: 'connect',", "  address: '127.0.0.1',", '  port: 9749', '}',
-      '{"level":50,"e":"job queue error: Error: connect ECONNREFUSED 127.0.0.1:9749"}',
+      "  errno: -4078,", "  code: 'ECONNREFUSED',", "  syscall: 'connect',", "  address: '127.0.0.1',", `  port: ${testPort(9749)}`, '}',
+      `{"level":50,"e":"job queue error: Error: connect ECONNREFUSED 127.0.0.1:${testPort(9749)}"}`,
       '{"level":50,"e":"module handler-map-module failed to load: the real reason"}'
     ].join('\n');
     assert.strictEqual(withoutRedisNoise(err), '{"level":50,"e":"module handler-map-module failed to load: the real reason"}');
@@ -121,7 +122,7 @@ describe('--stdio, spawned', function() {
   });
 
   it('--stdio with --port is refused: choose one', () => {
-    const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', '9748'], {encoding: 'utf8', timeout: 30000});
+    const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', String(testPort(9748))], {encoding: 'utf8', timeout: 30000});
     assert.strictEqual(r.status, 2, r.stderr);
     assert.match(r.stderr, /--stdio and --port: choose one/);
     assert.strictEqual(r.stdout, '');

@@ -10,10 +10,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY = 'k';
-const PORT = 9739;
+const PORT = testPort(9739);
 
 describe('sandbox 49: messages to the main thread are bounded (#170)', function() {
   this.timeout(120000);

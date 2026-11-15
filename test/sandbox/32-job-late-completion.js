@@ -11,9 +11,10 @@ const path   = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
-const PORT    = 9643;
+const PORT    = testPort(9643);
 const URL     = `http://127.0.0.1:${PORT}`;
 const KEY     = `late-completion-${process.pid}`;
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'worker-end');

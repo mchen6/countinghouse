@@ -15,6 +15,7 @@ const os     = require('os');
 const path   = require('path');
 const {spawnSync} = require('child_process');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
 const KEY     = 'aabbcc';
@@ -41,13 +42,13 @@ function hardenedRoot(dir) {
 }
 
 const ROWS = [
-  ['enforce', 9683, (dir) => ({args: ['--moduleSandbox', 'enforce', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})],
-  ['hardened enforce', 9685, (dir) => {
+  ['enforce', testPort(9683), (dir) => ({args: ['--moduleSandbox', 'enforce', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})],
+  ['hardened enforce', testPort(9685), (dir) => {
     const root = hardenedRoot(dir);
     return {args: ['--hardened', '--moduleSandbox', 'enforce', '--modulePath', root, '--loadModule', path.join(root, NAME)],
       cert: path.join(root, 'cert.pem'), root: root};
   }],
-  ['audit', 9684, (dir) => ({args: ['--moduleSandbox', 'audit', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})]
+  ['audit', testPort(9684), (dir) => ({args: ['--moduleSandbox', 'audit', '--loadModule', FIXTURE], cert: path.join(dir, 'cert.pem')})]
 ];
 
 describe('sandbox 35: TLS client connections under enforce', function() {

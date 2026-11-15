@@ -15,6 +15,7 @@ const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const moduleValidator = require('../../lib/module-validator');
 
@@ -68,7 +69,7 @@ function start(port, w, mode, provider, authPath) {
 describe('sandbox 34: the always-denied set', function() {
   this.timeout(180000);
 
-  [['audit', 9680], ['enforce', 9681]].forEach(([mode, port]) => {
+  [['audit', testPort(9680)], ['enforce', testPort(9681)]].forEach(([mode, port]) => {
     describe(`${mode}`, () => {
       let w = null;
       let server = null;
@@ -176,7 +177,7 @@ describe('sandbox 34: the always-denied set', function() {
     let sqlite3 = null;
     try { sqlite3 = require('sqlite3'); } catch (e) { sqlite3 = null; }
     const CLI = path.join(ROOT, 'bin', 'countinghouse-auth-sqlite.js');
-    const port = 9682;
+    const port = testPort(9682);
     let w = null;
     let server = null;
     before(async function() {
@@ -205,7 +206,7 @@ describe('sandbox 34: the always-denied set', function() {
   });
 
   describe('off decides nothing', () => {
-    const port = 9680;
+    const port = testPort(9680);
     let w = null;
     let server = null;
     before(async () => {

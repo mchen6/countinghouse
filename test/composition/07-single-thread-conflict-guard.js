@@ -34,12 +34,13 @@ const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
 const {toolOutput} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
 // Same reasoning as 02-ctx-call.js and friends: something downstream reaches
 // lib/countinghouse-util.js at require time, which needs options.redisUrl.
 require('../../lib/cli-options').setOptions({workerThread: false});
 
-const PORT      = 9561;
+const PORT      = testPort(9561);
 const FIXTURES  = path.join(__dirname, '..', 'fixtures');
 const BASE      = `http://127.0.0.1:${PORT}`;
 const DEBUG_KEY = 'dup-deviceid-test-key';

@@ -475,7 +475,7 @@ describe('module-loading 24: the validator pool', function() {
       assert.deepStrictEqual([1, 2, 3, 4, 10].map(respawnDelay), [0, 100, 200, 400, 5000]);
     });
 
-    it('a call whose action is still compiling is refused at its own deadline, with no strike; a replacement compiles every known module before it takes a call', async () => {
+    it('a call whose action is still compiling is refused at its own deadline, with no strike; after a replacement, the same holds where it lands, and it is served once compiled', async () => {
       // slow to compile (seconds), quick to validate once compiled
       const props = Object.fromEntries(Array.from({length: 1500}, (_, i) => [`p${i}`, {type: 'string', maxLength: 10, pattern: `^x${i}`}]));
       const answerFast = async (p, m, caller) => {
@@ -501,12 +501,17 @@ describe('module-loading 24: the validator pool', function() {
         // the compile went on in the background: then the module is served
         await warmed(p);
         assert.ok(await answerFast(p, m, 'u_a'), 'served once compiled');
-        // the validator replaced: the spare, which compiled every known
-        // module off the call path, serves it at once
+        // the validator replaced: the spare takes its place at once and warms
+        // nothing (homes), so m's first call there compiles its action: past
+        // its deadline it is refused with no strike, and the compile goes on
+        // in the background; once done, m is served there
         assert.strictEqual(codeOf(await checkFrom(p, staller, STALLING, 'u_b')), 'VALIDATION_TIMEOUT');
         await warmed(p);
-        assert.ok(await answerFast(p, m, 'u_c'), 'served by the replacement');
-        assert.strictEqual((p.strikes.get(m.name) || []).length, 0);
+        const first = await checkFrom(p, m, {p1: 'x1'}, 'u_c');
+        assert.ok(first == null || codeOf(first) === 'VALIDATION_TIMEOUT', JSON.stringify(first));
+        await warmed(p);
+        assert.ok(await answerFast(p, m, 'u_d'), 'served where it landed, once compiled');
+        assert.strictEqual((p.strikes.get(m.name) || []).length, 0, 'no strike, before or after the replacement');
       } finally {
         p.close();
       }
@@ -719,6 +724,237 @@ describe('module-loading 24: the validator pool', function() {
     await warmed(pool);
     assert.strictEqual(codeOf(await checkIn(m, new Num())), 'INPUT_DATA_VALIDATION_FAIL');
     assert.strictEqual(await checkIn(m, {n: 1}), null);
+  });
+
+  // Homes (the RSS split of 2026-11-14): a module is compiled on one
+  // validator, its home (FNV-1a of its name, modulo the pool's size), not
+  // on every validator. Its checks go to its home when the home is free; to
+  // another free validator when the home is busy, respawning or gone, which
+  // compiles the action there on that first check and keeps it. Homes decide
+  // only where a request goes: every fairness rule above stays. The spare is
+  // kept from the start and warms nothing; it takes a failed validator's
+  // place at once, and compiles that slot's home modules as their checks
+  // come (a compile in the background would make it unservable meanwhile).
+  describe('homes', () => {
+    let homeIndex = null;
+    before(() => { ({homeIndex} = require('../../lib/validator-pool')); });
+    // `n` module names whose home in a pool of `size` is `home`
+    const namesHomedAt = (home, size, n) => {
+      const out = [];
+      for (let i = 0; out.length < n && i < 10000; i++) {
+        const name = `home-module-${names}-${i}`;
+        if (homeIndex(name, size) === home) out.push(name);
+      }
+      return out;
+    };
+    const checkFrom = (p, m, input, caller) => p.check(m.key, SERVICE, 'a', 'input', {input: input}, caller);
+    const compiledOn = (p, key) => p.slots.map((s, i) => [i, s.compiled.get(key)]).filter(([, c]) => c != null).map(([i]) => i);
+    const QUIET = {type: 'object', properties: {n: {type: 'integer'}}};
+
+    it('a module\'s warm compile runs on its home only, and the spare warms nothing', async () => {
+      const p = newPool();
+      try {
+        await warmed(p);
+        const ms = [0, 1, 0, 1].map((home, i) => moduleWith(QUIET, {}, {type: 'object'}, p, namesHomedAt(home, 2, i + 1)[i]));
+        for (const m of ms) assert.strictEqual(await p.warm(m.key), null);
+        await warmed(p);
+        for (const m of ms) assert.deepStrictEqual(compiledOn(p, m.key), [homeIndex(m.name, 2)], `${m.name} compiled on ${compiledOn(p, m.key)}`);
+        assert.strictEqual(p.spare.compiled.size, 0, 'the spare warmed nothing');
+        assert.strictEqual(p.spare.loaded.size, 0, 'nor holds any module');
+      } finally {
+        p.close();
+      }
+    });
+
+    it('a check goes to its module\'s home when the home is free', async () => {
+      const p = newPool();
+      try {
+        await warmed(p);
+        // homed on the second validator: a dispatch that takes the first free
+        // validator would send it to the first
+        const m = moduleWith(QUIET, {}, {type: 'object'}, p, namesHomedAt(1, 2, 1)[0]);
+        assert.strictEqual(await p.warm(m.key), null);
+        const before = p.slots.map((s) => s.sent);
+        for (let i = 0; i < 5; i++) assert.strictEqual(await checkIn(m, {n: i}, p), null);
+        assert.deepStrictEqual(p.slots.map((s, i) => s.sent - before[i]), [0, 5]);
+      } finally {
+        p.close();
+      }
+    });
+
+    it('a check whose home is busy runs on another validator, which compiles the action there and keeps it', async () => {
+      const p = newPool();
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        const b = moduleWith(QUIET, {}, {type: 'object'}, p, bName);
+        assert.strictEqual(await p.warm(a.key), null);
+        assert.strictEqual(await p.warm(b.key), null);
+        await warmed(p);
+        assert.deepStrictEqual(compiledOn(p, b.key), [0]);
+        // a's slow input holds the home both share
+        const stalled = checkFrom(p, a, STALLING, 'u_stall');
+        await new Promise((r) => setTimeout(r, 30));
+        assert.strictEqual(p.slots[0].current != null && p.slots[0].current.key, a.key, 'the home is busy');
+        assert.strictEqual(await checkIn(b, {n: 1}, p), null);
+        assert.ok(p.slots[1].compiled.get(b.key) != null, 'compiled where it spilled');
+        assert.notStrictEqual(p.slots[1].compiled.get(b.key), 'all', 'only the action checked');
+        await stalled;
+      } finally {
+        p.close();
+      }
+    });
+
+    it('a spilled check whose compile outlasts its deadline is refused for that check only, with no strike; its home compiled it within the budget', async () => {
+      // slow to compile (about a second), quick to validate once compiled
+      const props = Object.fromEntries(Array.from({length: 1500}, (_, i) => [`p${i}`, {type: 'string', maxLength: 10, pattern: `^x${i}`}]));
+      const p = newPool({compileMs: 30000});
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        const b = moduleWith({type: 'object', properties: props}, {}, {type: 'object'}, p, bName);
+        assert.strictEqual(await p.warm(a.key), null);
+        assert.strictEqual(await p.warm(b.key), null, 'compiled on its home within the compile budget');
+        await warmed(p);
+        const stalled = checkFrom(p, a, STALLING, 'u_stall');
+        await new Promise((r) => setTimeout(r, 30));
+        const t = Date.now();
+        assert.strictEqual(codeOf(await checkFrom(p, b, {p1: 'x1'}, 'u_b')), 'VALIDATION_TIMEOUT');
+        assert.ok(Date.now() - t < TIMEOUT_MS + 300, `${Date.now() - t} ms: never past the check's own deadline`);
+        assert.strictEqual((p.strikes.get(b.name) || []).length, 0, 'no strike');
+        assert.ok(!p.quarantined.has(b.name));
+        await stalled;
+        // the home serves it as before
+        await warmed(p);
+        assert.strictEqual(await checkFrom(p, b, {p1: 'x1'}, 'u_c'), null);
+      } finally {
+        p.close();
+      }
+    });
+
+    it('a home that fails: its module is answered by another validator meanwhile, with no strike; the spare takes the place and compiles only that slot\'s home modules', async () => {
+      const p = newPool();
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const [cName] = namesHomedAt(1, 2, 1);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        const b = moduleWith(QUIET, {}, {type: 'object'}, p, bName);
+        const c = moduleWith(QUIET, {}, {type: 'object'}, p, cName);
+        for (const m of [a, b, c]) assert.strictEqual(await p.warm(m.key), null);
+        await warmed(p);
+        const spare = p.spare;
+        // a's slow input stalls the home past its deadline: the home is replaced
+        assert.strictEqual(codeOf(await checkFrom(p, a, STALLING, 'u_stall')), 'VALIDATION_TIMEOUT');
+        assert.strictEqual(p.slots[0], spare, 'the spare took the place at once');
+        assert.strictEqual(spare.compiled.size, 0, 'and warmed nothing');
+        assert.strictEqual(await checkIn(b, {n: 1}, p), null);
+        assert.strictEqual(await checkIn(c, {n: 1}, p), null);
+        assert.strictEqual((p.strikes.get(b.name) || []).length, 0);
+        assert.ok(spare.compiled.get(c.key) == null, 'c (homed elsewhere, its home free) never reached the spare');
+      } finally {
+        p.close();
+      }
+    });
+  });
+
+  describe('homes, a replacement', () => {
+    let homeIndex = null;
+    before(() => { ({homeIndex} = require('../../lib/validator-pool')); });
+    const namesHomedAt = (home, size, n) => {
+      const out = [];
+      for (let i = 0; out.length < n && i < 10000; i++) {
+        const name = `rhome-module-${names}-${i}`;
+        if (homeIndex(name, size) === home) out.push(name);
+      }
+      return out;
+    };
+
+    it('with no ready spare, a fresh replacement warms its slot\'s home modules, and only those, before it takes a call', async () => {
+      const p = newPool();
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const [cName] = namesHomedAt(1, 2, 1);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        const b = moduleWith({type: 'object'}, {}, {type: 'object'}, p, bName);
+        const c = moduleWith({type: 'object'}, {}, {type: 'object'}, p, cName);
+        for (const m of [a, b, c]) assert.strictEqual(await p.warm(m.key), null);
+        await warmed(p);
+        // no spare at all: the pool's spare taken out (a successor would boot
+        // in under the stall's 300 ms on a fast machine, and take the place)
+        const spare = p.spare;
+        p.spare = null;
+        spare.ending = true;
+        await spare.worker.terminate();
+        // the home of a and b stalls past its deadline: no ready spare, so a
+        // fresh replacement takes slot 0
+        assert.strictEqual(codeOf(await p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, 'u_stall')), 'VALIDATION_TIMEOUT');
+        assert.ok(p.slots[0].replacement, 'a fresh replacement in slot 0');
+        await warmed(p);
+        assert.strictEqual(p.slots[0].compiled.get(a.key), 'all');
+        assert.strictEqual(p.slots[0].compiled.get(b.key), 'all');
+        assert.strictEqual(p.slots[0].compiled.get(c.key), undefined, 'c is homed on slot 1');
+      } finally {
+        p.close();
+      }
+    });
+
+    // #217's review: the attacker's slow input pinned on the victim module's
+    // home (after its warm, the home is where its action is compiled, so a
+    // check of it is placed there first); the victim's trivial check then
+    // finds the home busy and runs on a validator where the action is cold,
+    // and is served: a primed validator compiles it within the bound. With
+    // two validators a module holds one at a time (its share), so there the
+    // victim waits out the attacker's stall in the queue, as on master: the
+    // case "one slow input a second to module B ... (2 validators)" above.
+    for (const size of [3]) {
+      it(`a slow input pinned on a module's home (${size} validators): another caller's trivial check of it, spilled to a cold validator, is served`, async () => {
+        const p = newPool({size: size});
+        try {
+          await warmed(p);
+          const b = moduleWith({type: 'object', properties: {s: {type: 'string', pattern: '^(\\w|a)+$'}}}, {}, {type: 'object'}, p, namesHomedAt(0, size, 1)[0]);
+          assert.strictEqual(await p.warm(b.key), null);
+          await warmed(p);
+          assert.deepStrictEqual(p.slots.map((s) => s.compiled.get(b.key) != null), p.slots.map((_, i) => i === 0), 'compiled on its home only');
+          const attack = p.check(b.key, SERVICE, 'a', 'input', {input: {s: `${'a'.repeat(30)}!`}}, 'u_attacker');
+          for (let w = 0; !(p.slots[0].current != null && p.slots[0].current.meta.caller === 'u_attacker') && w < 2000; w += 5) await new Promise((r) => setTimeout(r, 5));
+          assert.ok(p.slots[0].current != null && p.slots[0].current.meta.caller === 'u_attacker', 'the attacker holds the home');
+          const t = Date.now();
+          const answer = await p.check(b.key, SERVICE, 'a', 'input', {input: {s: 'abc'}}, 'u_legit');
+          const ms = Date.now() - t;
+          assert.strictEqual(answer, null, `refused after ${ms} ms: ${JSON.stringify(answer && answer[0] && answer[0].code)}`);
+          assert.ok(p.slots.slice(1).some((s) => s.compiled.get(b.key) != null), 'it ran where the action was cold');
+          assert.ok(ms < 50, `${ms} ms`);
+          await attack;
+        } finally {
+          p.close();
+        }
+      });
+    }
+
+    it('a load\'s warm compile waits for its home only a little: a home that stays busy does not fail the load', async () => {
+      const p = newPool({timeoutMs: 3000});
+      try {
+        await warmed(p);
+        const [aName, bName] = namesHomedAt(0, 2, 2);
+        const a = moduleWith(STALL, {}, {type: 'object'}, p, aName);
+        assert.strictEqual(await p.warm(a.key), null);
+        // a's slow inputs hold the home, one after another, longer than the
+        // warm's short wait
+        const holds = Array.from({length: 3}, (_, i) => p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, `u_hold${i}`));
+        await new Promise((r) => setTimeout(r, 30));
+        const b = moduleWith({type: 'object'}, {}, {type: 'object'}, p, bName);
+        const t = Date.now();
+        assert.strictEqual(await p.warm(b.key), null, 'warmed elsewhere');
+        assert.ok(Date.now() - t < 5000, `${Date.now() - t} ms`);
+        await Promise.all(holds);
+      } finally {
+        p.close();
+      }
+    });
   });
 
   it('ajv\'s log lines are bounded: one per module per level, cut, escaped', async () => {

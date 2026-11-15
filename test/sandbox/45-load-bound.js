@@ -6,11 +6,12 @@
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
+const {testPort} = require('../helpers/test-env');
 // A copy of the options singleton, set from argv.
 const optionsFrom = (argv) => { const o = Object.create(require('../../lib/cli-options')); o.setOptions(argv); return o; };
 
 const KEY  = 'aabbcc';
-const PORT = 9734;
+const PORT = testPort(9734);
 const TRAP = path.join(ROOT, 'test', 'fixtures', 'sandbox-load-trap');
 
 describe('sandbox 45: a load that never answers is bounded in every mode (#144)', function() {
@@ -47,7 +48,7 @@ describe('sandbox 45: a load that never answers is bounded in every mode (#144)'
 
   it('a refused --moduleLoadTimeout stops the start, exit 2, saying why', async () => {
     for (const bad of [['--moduleLoadTimeout', '0'], ['--moduleLoadTimeout']]) {
-      const s = await startServer(9735, ['--debug', '--debugKey', KEY, '--workerThread'].concat(bad), {expectExit: true});
+      const s = await startServer(testPort(9735), ['--debug', '--debugKey', KEY, '--workerThread'].concat(bad), {expectExit: true});
       assert.strictEqual(s.exitCode, 2, s.output);
       assert.match(s.output, /--moduleLoadTimeout must be a number of seconds > 0/);
     }
