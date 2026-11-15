@@ -115,6 +115,30 @@ describe('sessions 04: a job\'s session, in memory on the main thread (B1 Task 3
     assert.strictEqual(callLimits.check({maxOutputBytes: 1, requestTimeout: 1, bound: 'other'}).bound, undefined);
   });
 
+  it('a key re-remembered for the same session keeps its ended override; replace and putBack (a re-upsert)', () => {
+    open(A);
+    jobSessions.remember('sched', A);
+    sessions.overrideForTests(A, {maxOutputBytes: 300, requestTimeout: 60000});
+    end(A);
+    jobSessions.remember('sched', A);
+    assert.strictEqual(valuesOf('sched').maxOutputBytes, 300, 'kept');
+    // a re-upsert from no session: the ended tightening carries across
+    jobSessions.replace('sched', null);
+    assert.strictEqual(valuesOf('sched').maxOutputBytes, 300);
+    // a failed re-upsert puts the entry back exactly
+    const before = jobSessions.entryOf('sched');
+    open(B);
+    jobSessions.replace('sched', B);
+    assert.strictEqual(jobSessions.forRun('sched').session, B, 'a live session\'s request takes the scheduler');
+    jobSessions.putBack('sched', before);
+    assert.strictEqual(jobSessions.forRun('sched').session, A);
+    assert.strictEqual(valuesOf('sched').maxOutputBytes, 300, 'with its ended override');
+    // a re-upsert from no session of a job with no ended override drops it
+    jobSessions.remember('other', B);
+    jobSessions.replace('other', null);
+    assert.deepStrictEqual(jobSessions.forRun('other'), {session: null, limits: null});
+  });
+
   it('re-remembering a key moves it; only an id is kept', () => {
     open(A);
     open(B);

@@ -75,9 +75,12 @@ const KEY = 'hop-input-key';
       assert.strictEqual(status, 'completed', io.err.slice(-1500));
       const lines = fs.readFileSync(probe, 'utf8').trim().split('\n').slice(seen).map((l) => JSON.parse(l));
       const issued = lines.filter((l) => l.kind === 'issue');
-      assert.ok(issued.some((l) => l.job && l.ours), `the run's token: ${JSON.stringify(issued)}`);
-      assert.ok(issued.some((l) => l.hop && l.ours), `its hop's token: ${JSON.stringify(issued)}`);
-      assert.deepStrictEqual(issued.filter((l) => !l.ours), [], 'every token of the task is the session\'s');
+      // on Redis (BullMQ, not shared) the session is set once the add
+      // answers: a run that starts first is no session's, never another's
+      const fine = (l) => l.ours || (store === 'redis' && l.none);
+      assert.ok(issued.some((l) => l.job && fine(l)), `the run's token: ${JSON.stringify(issued)}`);
+      if (store === 'local') assert.ok(issued.some((l) => l.hop && l.ours), `its hop's token: ${JSON.stringify(issued)}`);
+      assert.deepStrictEqual(issued.filter((l) => !fine(l)), [], 'every token of the task is the session\'s (or, on Redis, none)');
       assert.deepStrictEqual(lines.filter((l) => l.kind === 'leak'), [], 'no worker or port is told the session');
     });
   });

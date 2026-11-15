@@ -97,6 +97,28 @@ describe('sessions 05: a job\'s session through the local runner (B1 Task 3)', f
     assert.strictEqual(jobSessions.size(), 0);
   });
 
+  it('removing a limited scheduler\'s last pending run ends its entry; a re-upsert from no session keeps an ended tightening', async () => {
+    const {MIN_REPEAT_EVERY_MS} = require('../../lib/job-control-common');
+    const {runner, calls} = runnerWith(ok);
+    // limit 1, at a cron time ahead: its one (and last) run is pending now
+    assert.ifError((await call(runner, 'addJob', IN_A, {name: 'two', repeat: {cron: '0 0 1 1 *', limit: 1}}, 'dev', 'svc', 'act', {})).err);
+    const last = (await call(runner, 'listJobs', INTERNAL)).r.find((e) => e.state === 'delayed' || e.state === 'waiting');
+    assert.ok(last != null, 'the second run is pending');
+    assert.strictEqual(jobSessions.size(), 1);
+    assert.ifError((await call(runner, 'removeJob', IN_A, 'two', last.job.id, false)).err);
+    assert.strictEqual(jobSessions.size(), 0, 'its last pending run gone: the scheduler is done');
+    // re-upsert from no session of an ended session's scheduler
+    jobSessions.resetForTests();
+    options.maxOutputBytes = 1000;
+    options.requestTimeout = 5000;
+    assert.ifError((await call(runner, 'addJob', IN_A, {name: 'rep', repeat: {every: MIN_REPEAT_EVERY_MS * 60}}, 'dev', 'svc', 'act', {})).err);
+    jobSessions.sessionEnded(A, {maxOutputBytes: 300, requestTimeout: 60000});
+    assert.ifError((await call(runner, 'addJob', {appKey: 'k'}, {name: 'rep', repeat: {every: MIN_REPEAT_EVERY_MS * 60}}, 'dev', 'svc', 'act', {})).err);
+    const {schedulerId} = require('../../lib/job-control-common');
+    assert.strictEqual(require('../../lib/call-limits').of({limits: jobSessions.forRun(schedulerId({appKey: 'k'}, 'rep')).limits}).maxOutputBytes, 300, 'never looser than it was');
+    runner.close();
+  });
+
   it('a delayed job removed before it runs ends its entry; a job from no session has none', async () => {
     const {runner, calls} = runnerWith(ok);
     const {r} = await call(runner, 'addJob', IN_A, {name: 'n', delay: 5000}, 'dev', 'svc', 'act', {});
