@@ -6,8 +6,46 @@
     "serviceList": {
       "urn:countinghouse-test:serviceID:sinkService": {
         "actionList": [
-          {"name": "sink", "description": "The length and sha256 of input.s.", "input": {"schema": "/sinkService/sink/input"}, "output": {"schema": "/sinkService/sink/output"}},
-          {"name": "count", "description": "How many times sink ran.", "input": {"schema": "/sinkService/count/input"}, "output": {"schema": "/sinkService/count/output"}}
+          {
+            "name": "sink",
+            "description": "The length and sha256 of input.s.",
+            "input": {
+              "schema": "/sinkService/sink/input"
+            },
+            "output": {
+              "schema": "/sinkService/sink/output"
+            }
+          },
+          {
+            "name": "count",
+            "description": "How many times sink ran.",
+            "input": {
+              "schema": "/sinkService/count/input"
+            },
+            "output": {
+              "schema": "/sinkService/count/output"
+            }
+          },
+          {
+            "name": "big",
+            "description": "An output of n characters (test/sandbox/49).",
+            "input": {
+              "schema": "/sinkService/big/input"
+            },
+            "output": {
+              "schema": "/sinkService/big/output"
+            }
+          },
+          {
+            "name": "bad",
+            "description": "An output its own schema refuses (test/sandbox/49).",
+            "input": {
+              "schema": "/sinkService/bad/input"
+            },
+            "output": {
+              "schema": "/sinkService/bad/output"
+            }
+          }
         ]
       }
     }

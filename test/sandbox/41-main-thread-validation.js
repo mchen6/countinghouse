@@ -17,8 +17,10 @@
 //   message, such as the unknown action's, is not repeated);
 // - the order of the checks is kept: an unknown service or action is
 //   answered as such, whatever the input.
-// A direct peer channel still validates in the called worker (until step 4
-// moves that check out of the module's reach too), shown before the tamper.
+// A direct peer channel's call is checked by the main thread's validators
+// too (lean worker step 4): its input before the callee's handler runs, its
+// output before the caller sees it. A module that tampers with its own
+// worker changes neither.
 const assert = require('assert');
 const path   = require('path');
 const {ROOT, startServer, stopServer, post} = require('../helpers/sandbox-server');
@@ -233,7 +235,7 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
 
-    it('a peer channel checks in the called worker, which validates as before', async () => {
+    it('a peer channel\'s call is checked by the main thread\'s validators, with the same answers', async () => {
       const bad = await hop('take', {n: 'not an integer'});
       assert.deepStrictEqual(bad.body, {output: {code: 'INPUT_DATA_VALIDATION_FAIL'}}, JSON.stringify(bad.body));
       const out = await hop('give', {kind: 'badType'});
@@ -241,13 +243,25 @@ describe('sandbox 41: a module\'s input and output are checked on the main threa
       assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
 
-    it('once the module turns off its worker\'s validation, every client call is still single-thread mode\'s answer', async () => {
-      assert.deepStrictEqual(await tamper(), {tampered: true});
+    // Since lean worker step 4 no call is validated in a module's worker, a
+    // peer channel's included, so the worker never loads Service: a module
+    // that tries to turn validation off finds nothing to turn off
+    // (tampered: false). Every answer stays the main thread's either way.
+    it('once the module tries to turn off its worker\'s validation, every client call is still single-thread mode\'s answer', async () => {
+      assert.deepStrictEqual(await tamper(), {tampered: false}, 'nothing in the worker to tamper with');
       for (const name of Object.keys(REFUSALS)) {
         const r = await REFUSALS[name]();
         assert.deepStrictEqual({status: r.status, body: r.body}, asWorkerMode(singleThread[name]), name);
       }
-      assert.deepStrictEqual(await count(), {takes: 0, tampered: true});
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
+    });
+
+    it('and over a peer channel too: the tampering callee\'s bad input and bad output are still refused (lean worker step 4)', async () => {
+      const bad = await hop('take', {n: 'not an integer'});
+      assert.deepStrictEqual(bad.body, {output: {code: 'INPUT_DATA_VALIDATION_FAIL'}}, JSON.stringify(bad.body));
+      const out = await hop('give', {kind: 'badType'});
+      assert.deepStrictEqual(out.body, {output: {code: 'OUTPUT_DATA_VALIDATION_FAIL'}}, JSON.stringify(out.body));
+      assert.deepStrictEqual(await count(), {takes: 0, tampered: false});
     });
   });
 });

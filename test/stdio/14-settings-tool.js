@@ -94,7 +94,8 @@ describe('stdio 14: countinghouse_settings', () => {
     }
     assert.strictEqual(fs.readFileSync(file, 'utf8'), before);
     // each asked for and not confirmed: in the history (asked, never old/new), unchanged
-    const asked = history().filter((h) => h.change === 'not confirmed').map((h) => h.setting);
+    // (a client not on the tested-client list gets no form: part 3 P2, the reason recorded)
+    const asked = history().filter((h) => h.change === 'not confirmed (not on the tested-client list)').map((h) => h.setting);
     assert.deepStrictEqual(asked, ['maxOutputBytes', 'requestTimeout', 'pack.ci-failure-triage']);
   });
 
@@ -130,12 +131,12 @@ describe('stdio 14: countinghouse_settings', () => {
     const asked = () => history().slice(before);
     for (const v of ['64MiB', '65MiB', '66MiB', '64MiB']) await refused(fresh().set('maxOutputBytes', v), 'SETTING_NEEDS_CONFIRMATION');
     for (const p of ['a', 'b', 'made-up']) await refused(fresh().set(`pack.${p}`, 'on'), 'SETTING_NEEDS_CONFIRMATION');
-    assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.asked]), [['maxOutputBytes', 'not confirmed', 64 * MiB], ['pack.a', 'not confirmed', true]]);
+    assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.asked]), [['maxOutputBytes', 'not confirmed (not on the tested-client list)', 64 * MiB], ['pack.a', 'not confirmed (not on the tested-client list)', true]]);
     assert.ok(asked().every((h) => h.old === undefined && h.new === undefined), 'a request is never written as a change made');
     await fresh().set('locale', 'zh');
     assert.deepStrictEqual(asked().map((h) => [h.setting, h.change, h.count]), [
-      ['maxOutputBytes', 'not confirmed', undefined], ['pack.a', 'not confirmed', undefined],
-      ['maxOutputBytes', 'not confirmed, asked again', 3], ['pack', 'not confirmed, asked again', 2], ['locale', undefined, undefined]]);
+      ['maxOutputBytes', 'not confirmed (not on the tested-client list)', undefined], ['pack.a', 'not confirmed (not on the tested-client list)', undefined],
+      ['maxOutputBytes', 'not confirmed (not on the tested-client list), asked again', 3], ['pack', 'not confirmed (not on the tested-client list), asked again', 2], ['locale', undefined, undefined]]);
   });
 
   // Part 3, section 4: the operator's ceiling binds conversation too
@@ -168,7 +169,7 @@ describe('stdio 14: countinghouse_settings', () => {
       assert.strictEqual(got.settings.find((x) => x.name === 'maxOutputBytes').bounds.max, 16 * MiB);
       // grouped per kind and outcome: the 8MiB request is not filed under the ceiling's refusal
       assert.deepStrictEqual(history().filter((h) => h.setting === 'maxOutputBytes' && h.asked != null).map((h) => [h.asked, h.change]),
-        [[32 * MiB, 'refused by the ceiling'], [8 * MiB, 'not confirmed']]);
+        [[32 * MiB, 'refused by the ceiling'], [8 * MiB, 'not confirmed (not on the tested-client list)']]);
       // a ceiling below a setting's least value: get's bounds stay sane
       const low = withCeiling(trusted({maxOutputBytes: 1000}));
       assert.deepStrictEqual((await low.get()).settings.find((x) => x.name === 'maxOutputBytes').bounds, {min: MiB, max: MiB});

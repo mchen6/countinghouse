@@ -119,6 +119,11 @@ describe(`auth 30: no API key, user name or Redis URL reaches a module (${label}
     const r = await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
     assert.strictEqual(r.result && r.result.isError, false, JSON.stringify(r).slice(0, 500));
     const out = r.result.structuredContent || JSON.parse(r.result.content[0].text);
+    // the hop's payload, on the route it takes since lean worker step 4: the
+    // callee's input as the main thread delivered it, and the answer as
+    // delivered to the composite, are scanned too
+    assert.ok(out.callee.roots.includes('input') && out.callee.inputArrived === true, `the callee's input was not scanned: ${JSON.stringify(out.callee.roots)}`);
+    assert.ok(out.self.roots.includes('answered'), `the delivered answer was not scanned: ${JSON.stringify(out.self.roots)}`);
     const failures = [];
     [[out.callee, 'peer callee'], [out.self, 'composite']].forEach(([view, label]) => {
       try { assertClean(view, label); } catch (e) { failures.push(e.message); }
