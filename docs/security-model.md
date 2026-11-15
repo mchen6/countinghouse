@@ -241,7 +241,7 @@ paths in results and errors. Ancestors of a root (`/`, `/var`) answer as
 read-only directories that list only the way to the root. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
-policy file) or an ancestor of one: such a declaration is refused in every
+policy file, the `--remoteCredentials` file) or an ancestor of one: such a declaration is refused in every
 mode and logged at spawn.
 
 Nor can a writable declared path hold a name on a path countinghouse runs
@@ -274,7 +274,8 @@ Windows mount point given by volume GUID.
 Beyond declarations, every path in those directories -- every module's code
 (`--modulePath` and each `--loadModule` directory) and data
 (`--moduleDataPath`, also while a module is being validated), the local
-store, the auth and device configuration, the policy file -- and in
+store, the auth and device configuration, the policy file, the
+`--remoteCredentials` file (which says where each credential may be sent) -- and in
 ch-local's home (the
 directory of `--settingsFile`: its settings, the daemon's session secret
 under `run/`, the launcher, the pack records) is refused to a module's reads
