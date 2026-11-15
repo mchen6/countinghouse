@@ -87,25 +87,30 @@ describe('sandbox 19: --hardened precomputed real paths', function() {
     assert.strictEqual(seen[path.join(base, 'missing')], 'ENOENT');
   });
 
-  // #280's follow-up: the links the install is reached through
-  // (lib/fs-broker/install-links.js) are found by lstat-ing every directory
-  // above it, which the child may not do. The parent's list travels with the
-  // real paths.
-  it('the install\'s links travel with the real paths, and are no real path\'s answer', async () => {
+  // #280's follow-up: the links countinghouse is reached through
+  // (lib/fs-broker/index.js protectedLinks) are found by lstat-ing every
+  // directory above each path, which the child may not do. The parent's
+  // lists, one a path, travel with the real paths.
+  it('each path\'s links travel with the real paths, and are no real path\'s answer', async () => {
     base = mkdtemp('realpaths-');
     const place = path.join(base, 'r', 'install');
-    const seen = await childGives([base], {[base]: base}, [place], `({links: r.installLinks(), real: r.realpathSync(${JSON.stringify(base)})})`);
-    assert.deepStrictEqual(seen, {links: [place], real: base});
-    assert.deepStrictEqual(await childGives([base], {}, [], 'r.installLinks()'), [], 'none found is an answer too: the child does not look');
-    assert.strictEqual(await childGives([base], {}, undefined, 'r.installLinks()'), null, 'nothing handed over');
-    assert.strictEqual(realpaths.installLinks(), null, 'and never in a process that received nothing');
+    const handed = {[path.join(base, 'install')]: [place], [path.join(base, 'data')]: []};
+    const seen = await childGives([base], {[base]: base}, handed, `({links: r.linkPlaces(), real: r.realpathSync(${JSON.stringify(base)})})`);
+    assert.deepStrictEqual(seen, {links: handed, real: base});
+    assert.deepStrictEqual(await childGives([base], {}, {}, 'r.linkPlaces()'), {}, 'none found is an answer too');
+    assert.strictEqual(await childGives([base], {}, undefined, 'r.linkPlaces()'), null, 'nothing handed over');
+    assert.strictEqual(realpaths.linkPlaces(), null, 'and never in a process that received nothing');
+    // what is not a list of places for a path is dropped, never taken for one
+    assert.deepStrictEqual(await childGives([base], {}, {[base]: 'x', [path.join(base, 'ok')]: [place, 7]}, 'r.linkPlaces()'), {[path.join(base, 'ok')]: [place]});
   });
 
-  it('the broker goes by the parent\'s list; a restricted process handed none cannot look, and has none', async () => {
+  it('the broker goes by the parent\'s list for a path; for one it was handed none for, it cannot look, and has none', async () => {
     base = mkdtemp('realpaths-');
-    const place = path.join(base, 'r', 'install');
-    const ask = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).installLinkPlaces()`;
-    assert.deepStrictEqual(await childGives([ROOT, base], {}, [place], ask), [place]);
+    const place = path.join(base, 'r', 'data-link');
+    const options = {modulePath: path.join(base, 'modules'), moduleDataPath: path.join(base, 'data'), authConfigPath: path.join(base, 'auth.json'),
+      deviceConfigPath: path.join(base, 'devices')};
+    const ask = `require(${JSON.stringify(path.join(ROOT, 'lib', 'fs-broker'))}).protectedLinks(${JSON.stringify(options)})`;
+    assert.deepStrictEqual(await childGives([ROOT, base], {}, {[options.moduleDataPath]: [place]}, ask), [place]);
     // not a --hardened relaunch: lstat above its grants is refused
     // (ERR_ACCESS_DENIED), which is no failure of the spawn
     assert.deepStrictEqual(await childGives([ROOT, base], {}, undefined, ask), []);

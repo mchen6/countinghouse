@@ -144,20 +144,25 @@ describe('fs-broker 27: the links an install is reached through', () => {
     });
   });
 
-  // The runtime itself, loaded through links (as --preserve-symlinks runs an
-  // install by its spelling). <out>/p is a link to <out>/realp, and
-  // <out>/realp/install a link to this checkout. <out> is outside the
-  // checkout: a root inside the install's real path is refused for that
-  // alone, whatever links there are.
-  describe('the runtime, loaded as <out>/p/install', () => {
+  // The runtime itself. Its install may be loaded through links (as
+  // --preserve-symlinks runs it by its spelling): <out>/p is a link to
+  // <out>/realp, and <out>/realp/install a link to this checkout. So may the
+  // file it is started from, and any path it is configured with. <out> is
+  // outside the checkout: a root inside the install's real path is refused
+  // for that alone, whatever links there are.
+  describe('the runtime: its install, the file it is started from, and its configured paths', () => {
     let out;
     let made;
     let p;
     let inner;
     let spelled;
+    let options;
+    let dataLink;
     const outDir = (...names) => { const d = path.join(out, ...names); fs.mkdirSync(d, {recursive: true}); return d; };
     const outLink = (target, ...names) => { const l = path.join(out, ...names); fs.symlinkSync(target, l, 'junction'); made.push(l); return l; };
-    const run = (args) => JSON.parse(execFileSync(process.execPath, ['--preserve-symlinks', '--preserve-symlinks-main'].concat(args), {encoding: 'utf8', timeout: 60000}));
+    const PRESERVE = ['--preserve-symlinks', '--preserve-symlinks-main'];
+    const run = (args, flags = PRESERVE) => JSON.parse(execFileSync(process.execPath, flags.concat(args), {encoding: 'utf8', timeout: 60000}));
+    const script = (root, name) => path.join(root, 'test', 'fs-broker', 'scripts', name);
     beforeEach(() => {
       out = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-install-links-')));
       made = [];
@@ -165,6 +170,11 @@ describe('fs-broker 27: the links an install is reached through', () => {
       p = outLink(path.join(out, 'realp'), 'p');
       inner = outLink(ROOT, 'realp', 'install');
       spelled = path.join(p, 'install');
+      // module data configured through a link: <out>/links/dl leads to <out>/store/real-data
+      outDir('links');
+      dataLink = outLink(outDir('store', 'real-data'), 'links', 'dl');
+      options = {modulePath: outDir('modules'), moduleDataPath: path.join(dataLink, 'data'), authConfigPath: path.join(out, 'auth.json'),
+        deviceConfigPath: path.join(out, 'devices')};
     });
     afterEach(() => {
       // the links first, so the removal never follows one into the checkout
@@ -172,41 +182,74 @@ describe('fs-broker 27: the links an install is reached through', () => {
       fs.rmSync(out, {recursive: true, force: true});
     });
 
-    it('knows the links it is reached through; its protected paths are as they were', () => {
-      const options = {modulePath: path.join(out, 'modules'), moduleDataPath: path.join(out, 'data'), authConfigPath: path.join(out, 'auth.json')};
-      const code = `const b = require(${JSON.stringify(path.join(spelled, 'lib', 'fs-broker'))});
-        console.log(JSON.stringify({install: b.INSTALL_DIR, links: b.installLinkPlaces(), protectedPaths: b.protectedPaths(${JSON.stringify(options)})}));`;
-      const seen = run(['-e', code]);
+    it('an install loaded through links knows them; its protected paths are as they were', () => {
+      const seen = run([script(spelled, 'links-print.js'), JSON.stringify(options)]);
       assert.strictEqual(seen.install, spelled, 'loaded by its spelling');
-      assert.deepStrictEqual(seen.links, [p, inner]);
-      // a protected path is a denied tree, followed to its real path: a
-      // link's place as one would refuse the install itself, which stays
-      // readable but for its secrets (#260)
-      for (const place of [p, inner]) assert.ok(!seen.protectedPaths.includes(place), JSON.stringify(seen.protectedPaths));
+      for (const place of [p, inner]) {
+        assert.ok(seen.links.includes(place), `${place}: ${JSON.stringify(seen.links)}`);
+        // a protected path is a denied tree, followed to its real path: a
+        // link's place as one would refuse the install itself, which stays
+        // readable but for its secrets (#260)
+        assert.ok(!seen.protectedPaths.includes(place), JSON.stringify(seen.protectedPaths));
+      }
+      assert.strictEqual(new Set(seen.links).size, seen.links.length, 'each once');
     });
 
-    it('a module\'s spawn refuses a writable root that holds one of them, declared by another spelling', () => {
+    it('a configured path given through a link: the link is known, with no install link in play', () => {
+      const seen = run([script(ROOT, 'links-print.js'), JSON.stringify(options)], []);
+      assert.strictEqual(seen.install, ROOT);
+      assert.ok(seen.links.includes(dataLink), JSON.stringify(seen.links));
+      assert.ok(!seen.protectedPaths.includes(dataLink), JSON.stringify(seen.protectedPaths));
+    });
+
+    // Without --preserve-symlinks Node runs the main file by its real path,
+    // so the install has no link in it; the operator's command still goes
+    // through one (a "current" link, npm's bin link), and whoever repoints
+    // that link chooses what the next start runs.
+    posixIt('the file the runtime is started from, through a link: the link is known though the install is its real path', () => {
+      const started = path.join(out, 'started.js');
+      fs.symlinkSync(script(ROOT, 'links-print.js'), started);
+      made.push(started);
+      const seen = run([started, JSON.stringify(options)], []);
+      assert.strictEqual(seen.install, ROOT, 'the install as Node resolved it');
+      assert.ok(seen.links.includes(started), JSON.stringify(seen.links));
+    });
+
+    it('a module\'s spawn refuses a writable root that holds an install link, declared by another spelling', () => {
       // <out>/z is <out>/realp, where the link "install" is, under another name
       const z = outLink(path.join(out, 'realp'), 'z');
       const kept = outDir('kept');
-      const seen = run([path.join(spelled, 'test', 'fs-broker', 'scripts', 'links-spawn.js'), outDir('modules', 'm'), outDir('data'),
+      const seen = run([script(spelled, 'links-spawn.js'), outDir('modules', 'm'), outDir('data'),
         JSON.stringify([{path: z, access: 'rw'}, {path: kept, access: 'rw'}])]);
       assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${inner}, a link countinghouse runs through`}]);
       assert.deepStrictEqual(seen.reported, [`${z} (holds ${inner}, a link countinghouse runs through)`]);
       assert.deepStrictEqual(seen.declaredRoots, [kept]);
     });
 
+    it('a module\'s spawn refuses a writable root that holds a configured path\'s link, declared by another spelling', () => {
+      // <out>/z is <out>/links, where the data path's link "dl" is, under
+      // another name; the data itself is elsewhere (<out>/store)
+      const z = outLink(path.join(out, 'links'), 'z');
+      const kept = outDir('kept');
+      const seen = run([script(ROOT, 'links-spawn.js'), outDir('modules', 'm'), options.moduleDataPath,
+        JSON.stringify([{path: z, access: 'rw'}, {path: z, access: 'r'}, {path: kept, access: 'rw'}])], []);
+      assert.deepStrictEqual(seen.refused, [{path: z, reason: `holds ${dataLink}, a link countinghouse runs through`}]);
+      assert.deepStrictEqual(seen.declaredRoots, [z, kept], 'read-only, the same root is kept');
+    });
+
     // --hardened: the relaunched server may not lstat above its grants, so
-    // it could not find the links itself; the parent's list reaches it with
-    // the real paths (lib/hardened-launch.js relaunch).
-    it('--hardened: the relaunched runtime has the links its parent found', () => {
+    // it could not find the links itself; the parent's lists, one a path,
+    // reach it with the real paths (lib/hardened-launch.js precompute and
+    // relaunch).
+    it('--hardened: the relaunched runtime has the links its parent found, the install\'s and each configured path\'s', () => {
       // read grants: the spelling it is loaded by, the checkout, and its
       // dependencies where a worktree links them in from elsewhere
       const grants = [out, ROOT, fs.realpathSync.native(path.join(ROOT, 'node_modules'))];
-      const seen = run([path.join(spelled, 'test', 'fs-broker', 'scripts', 'relaunch-links.js')].concat(grants));
+      const seen = run([script(spelled, 'relaunch-links.js'), JSON.stringify(options)].concat(grants));
       assert.notStrictEqual(seen.lstatAboveGrants, 'allowed', 'the relaunched process may not look above its grants');
-      assert.deepStrictEqual(seen.handed, [p, inner]);
-      assert.deepStrictEqual(seen.links, [p, inner]);
+      assert.deepStrictEqual(seen.handed[spelled], [p, inner], JSON.stringify(seen.handed));
+      assert.deepStrictEqual(seen.handed[options.moduleDataPath], [dataLink], JSON.stringify(seen.handed));
+      for (const place of [p, inner, dataLink]) assert.ok(seen.links.includes(place), `${place}: ${JSON.stringify(seen.links)}`);
     });
   });
 });
