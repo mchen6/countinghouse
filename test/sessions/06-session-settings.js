@@ -56,6 +56,40 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 8 * MiB);
   });
 
+  it('a loosening set above the ceiling in force is stored at it: a ceiling raised later never lets it past (#268 re-check, 1)', () => {
+    ceiling = {state: 'trusted', ceiling: {maxOutputBytes: 13 * MiB}};
+    assert.deepStrictEqual(loosen(A, 'maxOutputBytes', 32 * MiB), {old: 8 * MiB, new: 13 * MiB});
+    assert.strictEqual(settings.overridesOf(A)[0].value, 13 * MiB, 'stored at the ceiling, not as asked');
+    ceiling = {state: 'trusted', ceiling: {maxOutputBytes: 64 * MiB}};
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 13 * MiB);
+  });
+
+  it('a loosening with no usable ceiling now is refused: untrusted, not known, forbidding it, conversation off (#268 re-check, 1)', () => {
+    for (const c of [{state: 'untrusted', problem: 'x'}, undefined, {state: 'trusted', ceiling: {forbid: ['maxOutputBytes']}}, {state: 'trusted', ceiling: {conversation: false}}]) {
+      ceiling = c;
+      assert.throws(() => loosen(A, 'maxOutputBytes', 16 * MiB), /no loosening without a usable ceiling/, JSON.stringify(c));
+      assert.deepStrictEqual(settings.overridesOf(A), [], JSON.stringify(c));
+    }
+    assert.deepStrictEqual(settings.set(A, 'maxOutputBytes', 2 * MiB), {old: 8 * MiB, new: 2 * MiB}, 'a tightening still sets');
+  });
+
+  it('a loosening confirmed over a default above today\'s is refused, so none lies dormant (#268 re-check, 2)', () => {
+    assert.throws(() => settings.set(A, 'maxOutputBytes', 16 * MiB, {loosening: true, over: 12 * MiB}), /over the default in force/);
+    assert.deepStrictEqual(settings.overridesOf(A), []);
+  });
+
+  it('a ceiling seen while one session\'s clamp throws is seen again in full at the next read (#268 re-check, 3)', () => {
+    loosen(A, 'maxOutputBytes', 16 * MiB);
+    loosen(B, 'requestTimeout', 60000);
+    ceiling = {state: 'untrusted', problem: 'x'};
+    defaults.requestTimeout = 'not a number';
+    assert.throws(() => settings.effective(A, 'maxOutputBytes'), /no default for requestTimeout/);
+    defaults.requestTimeout = 30000;
+    settings.effective(A, 'maxOutputBytes');   // the same ceiling, seen again
+    ceiling = {state: 'none'};
+    assert.strictEqual(settings.effective(B, 'requestTimeout'), 30000, 'B was clamped too');
+  });
+
   it('a ceiling that turns conversation off, or forbids the setting, bounds it at the default (#268 review 2)', () => {
     loosen(A, 'maxOutputBytes', 16 * MiB);
     loosen(B, 'requestTimeout', 60000);
