@@ -1,25 +1,22 @@
-// Every server test built on test/helpers/sandbox-server.js honours
+// Every server test (built on test/helpers/sandbox-server.js, or, since #192,
+// one that spawns framework.js or passes --port itself) honours
 // CH_TEST_PORT_BASE (test/helpers/run-local.js): it maps every port it uses
 // with testPort, once, by its default, so its server, its URLs, its Host
 // headers and any --port agree. The helpers take ports as given. A test file
-// with a server port (9600-9799) left as a literal is named here. The one
+// with a server port (9500-9999, test/ports.md's range) left as a literal is
+// named here. The one
 // exception is a port a fixture declares in its own files.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {execFileSync} = require('child_process');
+// the same files the rewrite maps (scripts/map-test-ports.js)
+const {isServerTest, PORT, testFiles} = require('../../scripts/map-test-ports');
 
 const ROOT = path.join(__dirname, '..', '..');
 // test/fixtures/remote-probe/package.json declares http://127.0.0.1:9688
 const FIXTURE_PORTS = {'test/remote/05-route.js': ['9688']};
 
-function testFiles(dir) {
-  return fs.readdirSync(dir, {withFileTypes: true}).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) return (e.name === 'fixtures' || e.name === 'helpers') ? [] : testFiles(p);
-    return e.name.endsWith('.js') ? [p] : [];
-  });
-}
 
 // The code of a line: without a whole-line comment or a trailing // comment.
 const codeOf = (line) => {
@@ -29,17 +26,17 @@ const codeOf = (line) => {
 };
 
 describe('validation 14: server tests\' ports honour CH_TEST_PORT_BASE', () => {
-  it('every server port in a sandbox-server test is mapped with testPort', () => {
+  it('every server port in a server test (sandbox-server, or one that spawns framework.js or passes --port) is mapped with testPort', () => {
     const unmapped = [];
     for (const file of testFiles(path.join(ROOT, 'test'))) {
       const text = fs.readFileSync(file, 'utf8');
-      if (!/require\(['"]\.\.\/helpers\/sandbox-server['"]\)/.test(text)) continue;
       const rel = path.relative(ROOT, file).split(path.sep).join('/');
+      if (!isServerTest(text, rel)) continue;
       const allowed = new Set(FIXTURE_PORTS[rel] || []);
       text.split('\n').forEach((line, i) => {
         // what is left once every testPort(N) is taken out
-        const left = codeOf(line).replace(/testPort\(\s*9[67]\d\d\s*\)/g, '');
-        for (const m of left.matchAll(/(^|[^\w.$])(9[67]\d\d)\b/g)) {
+        const left = codeOf(line).replace(new RegExp(`testPort\\(\\s*${PORT}\\s*\\)`, 'g'), '');
+        for (const m of left.matchAll(new RegExp(`(^|[^\\w.$])(${PORT})\\b`, 'g'))) {
           if (!allowed.has(m[2])) unmapped.push(`${rel}:${i + 1}: ${line.trim().slice(0, 120)}`);
         }
       });
@@ -61,5 +58,33 @@ describe('validation 14: server tests\' ports honour CH_TEST_PORT_BASE', () => {
 
   it('without one (CI): every port is the test\'s own', () => {
     assert.deepStrictEqual(probe({CH_TEST_PORT_BASE: '', CH_TEST_REDIS_URL: ''}, [9749, 9688]), [9749, 9688, 9749]);
+  });
+
+  // #192: under a base, no server a test spawns listens outside the block.
+  // The guard (test/helpers/port-guard.js, loaded for every mocha run) refuses
+  // a spawn whose --port is a test port testPort did not hand out.
+  const guarded = (env, body) => execFileSync(process.execPath, ['-e', `
+    require('./test/helpers/port-guard');
+    const {testPort} = require('./test/helpers/test-env');
+    const cp = require('child_process');
+    const tryIt = (f) => { try { f(); return 'ran'; } catch (e) { return /port guard/.test(e.message) ? 'refused' : 'error: ' + e.message; } };
+    console.log(JSON.stringify(${body}));
+  `], {cwd: ROOT, env: Object.assign({}, process.env, env), encoding: 'utf8'});
+  const cases = `[
+    tryIt(() => cp.spawnSync(process.execPath, ['-e', '0', '--port', '9625'])),
+    tryIt(() => cp.spawnSync(process.execPath, ['-e', '0', '--port=9626'])),
+    tryIt(() => cp.execSync('node -e 0 -- --port 9627')),
+    tryIt(() => cp.spawnSync(process.execPath, ['-e', '0', '--port', String(testPort(9625))])),
+    tryIt(() => cp.spawnSync(process.execPath, ['-e', '0', '--port', '41234'])),
+    tryIt(() => cp.spawnSync(process.execPath, ['-e', '0']))
+  ]`;
+
+  it('(#192) with a base: a spawn with an unmapped test --port is refused, in each form; a mapped, an OS-assigned or no port runs', () => {
+    assert.deepStrictEqual(JSON.parse(guarded({CH_TEST_PORT_BASE: '9740', CH_TEST_REDIS_URL: 'redis://127.0.0.1:9749'}, cases)),
+      ['refused', 'refused', 'refused', 'ran', 'ran', 'ran']);
+  });
+
+  it('(#192) without a base (CI): the guard does nothing', () => {
+    assert.deepStrictEqual(JSON.parse(guarded({CH_TEST_PORT_BASE: '', CH_TEST_REDIS_URL: ''}, cases)), ['ran', 'ran', 'ran', 'ran', 'ran', 'ran']);
   });
 });

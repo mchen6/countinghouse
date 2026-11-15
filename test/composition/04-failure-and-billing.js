@@ -74,6 +74,7 @@ const path    = require('path');
 const request = require('supertest');
 const spawn   = require('child_process').spawn;
 const {toolOutput, toolErrorCode} = require('../helpers/tool-result');
+const {testPort} = require('../helpers/test-env');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const ROOT     = path.join(__dirname, '..', '..');
@@ -86,8 +87,8 @@ const ROOT     = path.join(__dirname, '..', '..');
 // nor in the task's own "taken elsewhere" list). 9560 was added later --
 // 02-ctx-call.js's single-thread server moved there off 9557 once it was
 // found colliding with 03-declaration.js's server of the same number.
-const PORT_FLAG_OFF = 9558;
-const PORT_FLAG_ON  = 9559;
+const PORT_FLAG_OFF = testPort(9558);
+const PORT_FLAG_ON  = testPort(9559);
 
 // Under --debug, every appKey in the call chain must equal this exactly
 // (see header comment) -- also the identity fixtures-auth.json's

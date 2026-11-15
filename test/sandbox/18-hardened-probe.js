@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const hardened = require('../../lib/hardened-launch');
 const {mkdtemp} = require('../helpers/test-tmp');
+const {testPort} = require('../helpers/test-env');
 
 describe('sandbox 18: --hardened grant probe', function() {
   this.timeout(30000);
@@ -78,7 +79,7 @@ describe('sandbox 18: --hardened grant probe', function() {
     base = mkdtemp('probe-');
     const x = path.join(base, 'X');
     const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, '..', '..', 'framework.js'),
-      '--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--port', '9653',
+      '--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--port', String(testPort(9653)),
       '--modulePath', x, '--moduleDataPath', `${x}_data`], {encoding: 'utf8', timeout: 20000, cwd: base});
     assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
     assert.ok(r.stderr.includes(`${x} and ${x}_data`), r.stderr);
