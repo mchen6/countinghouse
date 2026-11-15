@@ -7,9 +7,19 @@
 // resultType; an initialize still opens a legacy session.
 const assert = require('assert');
 const path = require('path');
-const {startStdio, withoutRedisNoise, INITIALIZE, MODERN_META} = require('../helpers/stdio-client');
+const {startStdio, waitForTool, withoutRedisNoise, INITIALIZE, MODERN_META} = require('../helpers/stdio-client');
 const tmp = require('../helpers/test-tmp');
+const {testPort} = require('../helpers/test-env');
 
+// a module the session's key may call, as stdio 02 runs it
+const MODULE = path.join(__dirname, '..', 'fixtures', 'handler-map-module');
+const KEY = 'stdio-22-key';
+function startWithModule(home) {
+  const auth = path.join(home, 'auth.json');
+  require('fs').writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
+  return startStdio(['--workerThread', '--loadModule', MODULE, '--authConfigPath', auth, '--moduleDataPath', path.join(home, 'module_data'),
+    '--redisUrl', `redis://127.0.0.1:${testPort(9749)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
+}
 function start(home) {
   return startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data')]);
@@ -37,6 +47,18 @@ describe('stdio 22: 2026-07-28 discovery and versioning, spawned (#229)', functi
     assert.strictEqual(list.result.ttlMs, 0);
     assert.strictEqual(list.result.cacheScope, 'private');
     assert.strictEqual(list.result._meta['io.modelcontextprotocol/serverInfo'].name, 'countinghouse');
+  });
+
+  it('a modern tools/call with params.task runs as an ordinary call, never a task (#232)', async() => {
+    io = startWithModule(home);
+    const tool = await waitForTool(io, /hello/);
+    assert.ok(tool != null, withoutRedisNoise(io.err));
+    const r = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {_meta: MODERN_META, name: tool.name,
+      arguments: {name: 'stdio'}, task: {ttl: 60000}}}, 60000);
+    assert.strictEqual(r.result.task, undefined, JSON.stringify(r));
+    assert.notStrictEqual(r.result.resultType, 'task');
+    assert.strictEqual(r.result.resultType, 'complete');
+    assert.match(JSON.stringify(r.result.content), /hello stdio/);
   });
 
   it('an unsupported version over stdio: -32022 naming the supported ones', async() => {
