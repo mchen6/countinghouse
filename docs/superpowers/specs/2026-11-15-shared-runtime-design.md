@@ -183,7 +183,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `op` | Direction | Fields | Meaning |
 |---|---|---|---|
 | `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none); when failed: `why` | The child's line (section 5). Sent right after WELCOME, after each reconnect, and in answer to each `conditions?`. |
-| `conditions?` | runtime → shim | `seq` | Run the child again and answer with `client` carrying this `seq`. The runtime sends it before each form and again at the confirmation, and counts no answer within 10 s as `"no"`. |
+| `conditions?` | runtime → shim | `seq` | Run the child again and answer with `client` carrying this `seq`. The runtime sends it before each form and again at the confirmation. It waits **12 s**, longer than the shim's 10 s for the child, so a slow Windows ancestry read still answers. No answer by then counts as `"no"`: no form. |
 | `settled` | runtime → shim | | The first `client` frame is accepted. The shim forwards client lines from here. |
 | `replay` | shim → runtime | `entries`: array | After WELCOME on a new session: the records the shim kept, as it received them. |
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
@@ -240,7 +240,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 - **Tasks.** `tasks/list`, `tasks/get`, `tasks/result` and `tasks/cancel` are keyed by owner key today (`lib/mcp/gateway.js`), so with one key every session would see and cancel every other session's tasks. A task now records its session too, and a session sees and acts on its own tasks only. Another session's task looks exactly like an unknown task.
 - **The usage report** (`countinghouse_usage_report`) shows only the calling session's records. There is no conversational way to see other sessions. The terminal (`ch-local usage`) shows all of the user's sessions.
 - **The settings tool's `get`** shows the global values and history, plus *this* session's overrides and history lines. Another session's history lines are left out.
-- **A job outlives its session's loosenings.** When a session ends, its jobs still running take the global defaults for every later step: the next hop's cap and timeout, from a refreshed token entry. A job never keeps a loosening after its session is gone.
+- **A job outlives its session's loosenings, never its tightenings.** The main thread indexes token entries by session. When a session ends, it rewrites the limits of that session's live tokens and their children. For every later step of a job still running (the next hop's cap and timeout), each value becomes the tighter of the session's last effective value and the global default. So a loosening ends with its session. A session's tightening stays with its jobs, since raising them to the default would loosen them.
 
 ## 3. Settings: three layers
 
@@ -260,6 +260,11 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 - **A session override exists** for the setting: effective = the tighter of the ceiling and the override.
 - **Otherwise:** effective = the tighter of the ceiling and the global default.
 - **A terminal tightening binds every session** (finding 4). When the global default is tightened to G, every session override looser than G is dropped at once. Those sessions then run at G, and each is told: "your this-session loosening of `maxOutputBytes` ended: the default was lowered to G". An override tighter than G is kept.
+- **"At once" includes calls already in flight.** A call reads its cap and timeout when it starts, and the main thread holds them for its life (#233). So at each check the main thread takes the tighter of the call's start value and the session's current effective value:
+  - the reply cap is checked at reply time;
+  - the timeout is re-armed when the tightening is applied, measured from the call's start.
+
+  That's one lookup per reply.
 - A terminal loosening doesn't touch session overrides. A session that tightened stays tighter.
 - The ceiling is checked again at every apply. A loosening in conversation still needs part 3's confirmation, in that session's own dialog.
 - **What counts as a loosening is judged against the session's current effective value,** not the global default. So a form is needed both to raise a session-tightened value back toward the default, and to un-hide a pack the session turned off. Only a change that is tighter than the session's current value needs none.
@@ -282,7 +287,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 **Validators sized for the largest active cap.**
 - The pool's heap limit is shared. It's raised when a session's effective cap needs more than the current size (a graceful replace, as #165's resize does).
-- It's lowered lazily, once the last session needing it ends.
+- **It isn't lowered in release 1.** #222's resize only grows. Once raised, the pool keeps the larger heap until the runtime restarts. A shrink would need its own operation, with the same rule as growing: a slot is replaced only when no call in flight needs the larger heap. It's listed as later work, not assumed.
 - A residual: a session can raise its own cap up to the ceiling and so enlarge the shared validators. The ceiling bounds it.
 
 **Validator fairness, per session** (finding 6). Today `PER_CALLER_IN_FLIGHT = 1` and the stall throttle (`CALLER_STALLS = 3` per window) are keyed by caller. With one caller id for all sessions, ten sessions would share one validation slot, and one session's stalls would throttle a module for all.
@@ -293,13 +298,16 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 **The confirmation state.**
 - **Per session:** the staged change, its nonce, the decline lock per kind, and the forms shown.
 - **Per user** (per runtime, held by the daemon so it survives a runtime restart): 3 declines *or expiries* per kind within 30 minutes stop forms of that kind for the next 30 minutes, across every session (§11 answer 2). That stops a prompt injection from fanning out across a user's sessions.
+  - **How it reaches the daemon.** The runtime sends each decline or expiry to the daemon over the IPC control channel: the kind and the time, nothing else.
+  - The daemon keeps the last 30 minutes of them per kind, in memory, with the session table, and hands them back with the table to a restarted runtime.
+  - A per-session decline lock is the runtime's and ends with it. The per-user count doesn't.
 - The nonce MAC key stays per runtime, and the MAC payload binds the session id.
-- The form's text changes from "until your client restarts countinghouse" to "for this session" (finding 9).
+- The form's text changes from "until your client restarts countinghouse" to "for this session" (finding 9). That changes P2's `FORM_TEXT` and its zh strings, so they need a new review round (B, in B2).
 
 **Every change is announced.**
 - A per-session change goes to its session: `notifications/message`, the one-line notice on its next result, and the history (naming the session opaquely).
 - A global change goes to every session the same way, and so does a dropped override (above).
-- The notice queue, the notifier and `logging/setLevel`'s level are per session. A global notice is copied into each session's queue.
+- The notice queue, the notifier and `logging/setLevel`'s level are per session. A global notice is copied into each session's queue, within notices' per-module bound. A session's queue is dropped when the session ends, so a session that never calls a tool holds its copies no longer than its life.
 
 ## 4. Packs
 
@@ -309,6 +317,11 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - It's unloaded once that set is empty and the global settings don't list it.
 - **A pack turned off in conversation** is hidden from that session only (a session override). It stays loaded and listed for the others.
 - **A tool not listed to a session is answered exactly as an unknown tool,** byte for byte (§11 answer 1). A distinct code would reveal another session's packs.
+- **The session is checked at every hop, not only at the client's call.** A call's token entry carries its session (section 2). At each hop, routed and over a direct peer channel alike, the main thread refuses a callee whose pack the call's session doesn't list:
+  - another session's this-session pack;
+  - a pack this session turned off.
+
+  The refusal is byte-identical to an unknown device's. Without this, a module visible to session B that calls into a pack only A turned on would reach that pack on B's call: a loosening B never confirmed. And a pack B hid would still be reachable from B's calls.
 - **tools/list and list_changed are per session.** Each session's listed fingerprint is its own, and a change that affects one session's list notifies only that session.
 
 ## 5. The daemon, the control channel and per-client inputs
@@ -326,7 +339,9 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
     - **For the first `client` frame**, the runtime answers `own-runtime` (`"conditions-failed"`). The session can't be shown to share the daemon's token, so it doesn't share. The per-session runtime says why.
     - **For a `conditions?`**, a failure counts as `"no"` for that form.
   - The shim carries the line, unchanged, as the `client` control frame. So the client checks stay in one place, in Node, and the Rust shim never reads a client's environment for meaning.
-- **may-elicit is that verdict, asked fresh.** Part 3 P2 checks the conditions again before each form and again at the confirmation. So the runtime sends `conditions?` each time, and the shim reruns the child. No answer within 10 s, or a failed one, is no. The latch is per session.
+- **may-elicit is that verdict, asked fresh.** Part 3 P2 checks the conditions again before each form and again at the confirmation. So the runtime sends `conditions?` each time, and the shim reruns the child.
+  - **The timeouts:** the shim gives the child 10 s, and the runtime waits 12 s for the answer. The child's Windows ancestry read, through PowerShell, takes 1 to 10 s; that's why P2's 5 s `ask` wait doesn't apply here. No answer within 12 s, or a failed one, is no: no form.
+  - **The latch is the runtime's, per session.** The child lives a second and can't hold it.
 - **The daemon's environment and working directory are fixed** (finding 3):
   - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
@@ -606,12 +621,17 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - one session's raise doesn't change another's calls;
   - a conversational tightening or `pack off` changes only its session;
   - a terminal tightening ends a looser override;
+  - a call in flight when the default is tightened gets the tighter cap at its reply, and a re-armed timeout;
+  - a job of a session that tightened keeps the tighter value after the session ends, and one that loosened takes the default;
   - raising a session-tightened value back toward the default, or un-hiding a pack, needs a form;
   - a self-answering session loosens only itself;
   - 3 declines across sessions lock that kind;
   - a hop token carries its session's values.
 
-**B3. Per-session packs** (needs B1). This-session packs with session sets, `pack off` per session, an unknown tool for an unlisted one (byte-identical), and per-session tools/list and list_changed.
+**B3. Per-session packs** (needs B1). This-session packs with session sets, `pack off` per session, an unknown tool for an unlisted one (byte-identical), per-session tools/list and list_changed, and the session check at every hop.
+- Tests:
+  - from session B, a hop (routed, and over a peer channel) into a pack only A turned on, or one B turned off, is answered byte-identically to an unknown device;
+  - the same hop on A's call succeeds.
 
 **B4. The dialog through the shim** (needs C4 and B2). may-elicit from the `client` frame, the per-session latch, the restore checks (ceiling, may-elicit, the pack's version).
 

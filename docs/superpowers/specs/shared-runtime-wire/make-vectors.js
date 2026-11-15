@@ -31,9 +31,11 @@ function mPayload(header, message) {
 }
 const json = (o) => JSON.stringify(o);
 
-const secret = fill(32, 0x01);
-const nc = fill(32, 0x40);
-const ns = fill(32, 0x80);
+// Plainly made-up inputs (repeated bytes, example names), so no value here
+// reads as a credential to a secret scanner. Each MAC is derived from them.
+const secret = Buffer.alloc(32, 0x5a);
+const nc = Buffer.alloc(32, 0x6e);
+const ns = Buffer.alloc(32, 0x73);
 const P = Buffer.from([1]);   // HELLO's protocol, one byte
 const ms = hmac(secret, 'ch-server', P, nc, ns);
 const mc = hmac(secret, 'ch-client', P, ns, nc);
@@ -42,15 +44,16 @@ const token = 'example-token-not-a-real-one';
 const hello = json({protocol: 1, nc: b64(nc)});
 const prove = json({ns: b64(ns), ms: b64(ms)});
 const auth = json({mc: b64(mc)});
-const authResume = json({mc: b64(mc), resume: 'rt_3q2+7w=='});
-const welcome = json({session: 's_0f1e2d3c4b5a6978', resumeToken: 'rt_AAECAwQFBgcICQoLDA0ODw==', runtimeVersion: '8.0.0', maxToRuntime: 8388608 + 4096, maxToShim: 2 * 268435456 + 1048576});
+const authResume = json({mc: b64(mc), resume: 'rt_example_resume_value'});
+const welcome = json({session: 's_example_session', resumeToken: 'rt_example_resume_value', runtimeVersion: '8.0.0', maxToRuntime: 8388608 + 4096, maxToShim: 2 * 268435456 + 1048576});
 // maxToRuntime: the default --maxRequestBody (8 MiB) + 4096; maxToShim: twice
 // 256 MiB (no ceiling) + 1 MiB, as section 1 has them
 const refused = json({code: 'BAD_PROOF', message: 'the client\'s proof did not match'});
 const request = '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"x","arguments":{"é":"✓"}}}';
 const reply = '{"jsonrpc":"2.0","id":7,"result":{"content":[],"resultType":"complete"}}';
 const notification = '{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}';
-const client = json({op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: b64(hmac(secret, 'ch-token', token))});
+// With a token chosen, the client frame's `token` field holds tokenMac.macB64.
+const client = json({op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
 const clientNoToken = json({op: 'client', status: 'ok', conditions: 'no', repo: null, token: null});
 const clientFailed = json({op: 'client', status: 'failed', why: 'the conditions check timed out after 10 s'});
 const clientAnswer = json({op: 'client', seq: 3, status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
@@ -150,7 +153,7 @@ const out = {
     {name: 'a client line with a newline inside a string', given: 'the line is split only on the byte 0x0a, which JSON text never carries unescaped', expect: 'each line is one M frame'},
     {name: 'client lines before settled', given: 'WELCOME, then the client writes a request before settled arrives', expect: 'the shim holds it and forwards it after settled; on own-runtime it hands it to the per-session runtime'},
     {name: 'a wrong ms after a restart', given: 'PROVE fails, then daemon.json and the secret are rewritten', expect: 'the shim re-reads both and attaches within its 20 s'},
-    {name: 'conditions? unanswered', given: 'the shim sends no client frame for 10 s after conditions?', expect: 'the runtime counts it as no for that form'}
+    {name: 'conditions? unanswered', given: 'the shim sends no client frame for 12 s after conditions? (it gives the child 10 s)', expect: 'the runtime counts it as no for that form: no form'}
   ]
 };
 fs.writeFileSync(path.join(__dirname, 'vectors.json'), `${JSON.stringify(out, null, 2)}\n`);
