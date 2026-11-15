@@ -75,6 +75,17 @@ async function request(c, method, params = {}) {
   }
 }
 
+// the same without _meta: a legacy request
+async function requestLegacy(c, method, params = {}) {
+  const seq = nextSeq++;
+  shim.message(c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method, params}));
+  for (;;) {
+    const m = await shim.readM(c, 60000);
+    if (m == null) return null;
+    if (m.header != null && m.header.seq === seq) return JSON.parse(m.line.toString('utf8'));
+  }
+}
+
 describe('session-runtime 01: the runtime on --sessionSocket, spawned', function() {
   this.timeout(120000);
   if (process.platform === 'win32') return; // the named pipe is C2's
@@ -127,9 +138,13 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     }
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
+      // a modern request: tasks/* are gone in 2026-07-28 (#243), method not found
       const t = await request(a.c, method, {taskId: 'x'});
-      assert.ok(t.error != null, `${method}: ${JSON.stringify(t)}`);
-      assert.match(t.error.message, /shared runtime/);
+      assert.ok(t.error != null && t.error.code === -32601, `${method}: ${JSON.stringify(t)}`);
+      // a legacy one reaches the session guard: not served on a shared runtime
+      const l = await requestLegacy(a.c, method, {taskId: 'x'});
+      assert.ok(l.error != null, `${method}: ${JSON.stringify(l)}`);
+      assert.match(l.error.message, /shared runtime/);
     }
     // a modern request's logging/setLevel is gone in 2026-07-28; either way
     // a session gets an error, never a changed level
