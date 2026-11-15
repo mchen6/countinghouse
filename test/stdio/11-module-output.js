@@ -14,10 +14,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const MODULE = path.join(ROOT, 'test', 'fixtures', 'stdout-flood');
 const KEY = 'stdio-output-key';
 
-// enforce on Linux and macOS; audit on Windows, where enforce refuses to
-// start until a module's identity is designed for Windows file URLs (#195).
-// The swap of the module's streams is the same in both modes.
-const MODE = process.platform === 'win32' ? 'audit' : 'enforce';
+// enforce on every OS (on Windows a module's files carry a drive, #195).
+const MODE = 'enforce';
 
 describe(`--stdio: a module's output goes to stderr, bounded (--moduleSandbox ${MODE})`, function() {
   this.timeout(120000);

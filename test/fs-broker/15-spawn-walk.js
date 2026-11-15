@@ -8,11 +8,14 @@ const {mkdtemp} = require('../helpers/test-tmp');
 describe('fs-broker 15: the spawn walk', () => {
   let base = null;
   let outside = null;
+  // Outside the module's tree, on its drive (a hard link cannot cross drives,
+  // and on a Windows runner the home directory is C: and the tree D:).
+  const outsideParent = () => (process.platform === 'win32' ? path.dirname(base) : os.homedir());
   afterEach(() => { [base, outside].forEach((d) => d && fs.rmSync(d, {recursive: true, force: true})); base = outside = null; });
 
   it('empties /tmp without following links', async () => {
     base = mkdtemp('walk-');
-    outside = fs.mkdtempSync(path.join(os.homedir(), '.ch-walk-outside-'));
+    outside = fs.mkdtempSync(path.join(outsideParent(), '.ch-walk-outside-'));
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
     const tmp = path.join(base, 'tmp');
     fs.mkdirSync(path.join(tmp, 'd'), {recursive: true});
@@ -25,7 +28,7 @@ describe('fs-broker 15: the spawn walk', () => {
 
   it('refuses to empty a /tmp root that is a link', async () => {
     base = mkdtemp('walk-');
-    outside = fs.mkdtempSync(path.join(os.homedir(), '.ch-walk-outside-'));
+    outside = fs.mkdtempSync(path.join(outsideParent(), '.ch-walk-outside-'));
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
     fs.symlinkSync(outside, path.join(base, 'tmp'));
     await assert.rejects(walk.emptyTmp(path.join(base, 'tmp')), /not a directory/);
@@ -40,7 +43,7 @@ describe('fs-broker 15: the spawn walk', () => {
     fs.mkdirSync(tmp);
     fs.writeFileSync(path.join(data, 'a'), Buffer.alloc(1000));
     fs.linkSync(path.join(data, 'a'), path.join(data, 'sub', 'a2'));       // hard link inside: bytes once, two entries, not listed
-    outside = fs.mkdtempSync(path.join(os.homedir(), '.ch-walk-outside-'));
+    outside = fs.mkdtempSync(path.join(outsideParent(), '.ch-walk-outside-'));
     fs.writeFileSync(path.join(outside, 'o'), Buffer.alloc(10));
     fs.linkSync(path.join(outside, 'o'), path.join(data, 'out'));           // a link whose other name is outside: listed
     const sparse = fs.openSync(path.join(data, 'sparse'), 'w'); fs.ftruncateSync(sparse, 5000); fs.closeSync(sparse);

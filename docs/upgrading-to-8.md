@@ -374,9 +374,12 @@ says how to write a module for this.
     the runtime serves. It works only in the single-identity profile, over
     an IPC descriptor the spawning process holds, and is refused with
     `--hardened`. It serves `notice` (a pack change to announce) and `set`
-    (a setting that applies now). Loading, unloading and reloading packs
-    over it follow with the rest of packs in place; until then they answer
-    `CONTROL_NOT_READY`, and a pack change takes a restart.
+    (a setting that applies now), and `load`, `unload` and `reload` of a
+    pack, named by its scenario's package name. A reload drains, then
+    switches: calls already running finish on the old version, and new calls
+    to the pack wait until the new version is up. That wait is at most
+    `--requestTimeout` plus the new worker's start, the cost of upgrading
+    without a restart.
   - Neither is for a hosted server.
 - **Disk limits in the policy:** `diskMb` and `diskEntries` take the same
   ceilings and per-module entries as the other limits.
@@ -479,3 +482,17 @@ in 8.0.0 will not find that data after a downgrade. Copy what you need out of
   an ES module show its host path.
 - `--hardened` does not support pnpm installs
   ([nodejs/node#66812](https://github.com/nodejs/node/issues/66812)).
+- On Windows, `--hardened` with an npm-hoisted install (countinghouse's
+  dependencies beside it in `node_modules`) is refused before it relaunches:
+  Node 24.22's permission model refuses grants whose names extend each
+  other's there (`ajv` beside `ajv-formats`;
+  [nodejs/node#66812](https://github.com/nodejs/node/issues/66812)), and
+  countinghouse names them and exits 2. This is a limitation of Node, not of
+  countinghouse: until Node fixes it, on Windows run `--moduleSandbox enforce`
+  without `--hardened` (enforce protects files on Windows without it;
+  `--hardened` is the opt-in extra layer), or from an install whose
+  dependencies are inside it.
+- On Windows, a module's declared host paths (`countinghouse.permissions.fs`)
+  are not available yet; it gets its own `/data` and `/tmp`
+  ([#204](https://github.com/mchen6/countinghouse/issues/204)). Under
+  `enforce` a declared path is refused, as any path outside the namespace.

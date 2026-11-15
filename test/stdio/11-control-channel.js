@@ -34,7 +34,8 @@ describe('stdio 11: the control channel', function() {
     assert.deepStrictEqual({ok: r.ok, code: r.code}, {ok: false, code: 'CONTROL_UNKNOWN'});
     const ready = await io.control({type: 'load', name: 'x'});
     assert.strictEqual(ready.ok, false);
-    assert.ok(['CONTROL_NOT_READY', 'CONTROL_BAD_REQUEST'].includes(ready.code), JSON.stringify(ready));
+    // served since Task A3: a load naming no scenario is refused
+    assert.ok(['CONTROL_NOT_READY', 'CONTROL_BAD_REQUEST', 'CONTROL_FAILED'].includes(ready.code), JSON.stringify(ready));
     assert.ok(!io.lines.some((l) => /CONTROL_/.test(l)), 'nothing of the channel on stdout');
   });
 

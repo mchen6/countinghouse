@@ -187,6 +187,13 @@ if (options.hardened === true && process.permission == null) {
     console.error(hardenedLaunch.refusalMessage(probe, hardenedLaunch.grantOverlaps(hardenedFlags), process.version));
     process.exit(2);
   }
+  // enforce on Windows: the virtual drive is picked here, where looking at
+  // drive letters is allowed, and handed to the child (#195;
+  // lib/fs-broker/virtual-drive.js)
+  if (options.moduleSandbox === 'enforce' && process.platform === 'win32') {
+    var drive = require('./lib/fs-broker/virtual-drive').pick();
+    if (drive != null) process.env.COUNTINGHOUSE_VIRTUAL_DRIVE = drive;
+  }
   // On Windows the child cannot run the PowerShell the identity secret's
   // ACL check needs: it is created and checked here (lib/identity.js
   // prepareForHardened)
@@ -214,10 +221,10 @@ if (['off', 'audit', 'enforce'].indexOf(options.moduleSandbox) === -1) {
   console.error('--moduleSandbox must be one of off, audit, enforce (got "' + options.moduleSandbox + '")');
   process.exit(2);
 }
-// enforce does not hold on Windows yet (#195): refused, never half-working.
-const sandboxRefusal = require('./lib/sandbox-platform').platformRefusal(options.moduleSandbox, process.platform);
-if (sandboxRefusal != null) {
-  console.error(sandboxRefusal);
+// enforce on Windows needs a drive letter for a module's files (#195,
+// lib/fs-broker/virtual-drive.js): with none free it refuses to start.
+if (options.moduleSandbox === 'enforce' && process.platform === 'win32' && require('./lib/fs-broker/virtual-drive').pick() == null) {
+  console.error('--moduleSandbox enforce needs a free drive letter on Windows for the modules\' files (none of D: to Z: is free); free one, or use --moduleSandbox audit');
   process.exit(2);
 }
 if (options.moduleSandbox !== 'off' && options.workerThread !== true) {

@@ -3,7 +3,15 @@ const path = require('path');
 module.exports = async (fs, root) => {
   const fsp = require('fs/promises');
   const j = (...p) => path.posix.join(root, ...p);
-  const rel = (p) => (typeof(p) === 'string' && p.startsWith(root) ? `<root>${p.slice(root.length)}` : p);
+  // a path under root as <root>/...: on Windows the real fs answers in the
+  // host's form (\\?\D:\...\p), the broker in the namespace's
+  const norm = (p) => (process.platform === 'win32' ? p.replace(/^\\\\\?\\/, '').replace(/\\/g, '/') : p);
+  const rel = (p) => {
+    if (typeof(p) !== 'string') return p;
+    const n = norm(p);
+    const r = norm(root);
+    return n === r || n.startsWith(`${r}/`) ? `<root>${n.slice(r.length)}` : p;
+  };
   const steps = [];
   const step = async(name, fn) => {
     try {

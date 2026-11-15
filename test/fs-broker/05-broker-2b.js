@@ -26,6 +26,8 @@ const quick = async(fn) => {
   return out;
 };
 
+const WIN = process.platform === 'win32';
+
 describe('fs-broker 05: broker additions for the bridge', function() {
   this.timeout(10000);
 
@@ -50,7 +52,8 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
-  it('readFile reads files whose stat size is 0 but which have content (procfs)', async () => {
+  // procfs is Linux's (no /proc on Windows or macOS)
+  (process.platform === 'linux' ? it : it.skip)('readFile reads files whose stat size is 0 but which have content (procfs)', async () => {
     const t = await setup('audit');
     try {
       const r = Buffer.from(await t.broker.handle('readFile', ['/proc/self/status', 'r'])).toString();
@@ -58,7 +61,40 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
-  it('enforce: a FIFO is EPERM, without blocking', async () => {
+  // Windows makes no FIFO in a directory: its pipes and devices are named
+  // \\.\pipe\..., \\.\NUL and so on, which are no namespace paths. Refused
+  // under enforce, without blocking.
+  (WIN ? it : it.skip)('Windows, enforce: a pipe or device path is refused, without blocking', async () => {
+    const t = await setup('enforce');
+    try {
+      for (const p of ['\\\\.\\pipe\\ch-probe', '\\\\.\\NUL', 'NUL', '\\\\?\\GLOBALROOT\\Device\\Null', 'CON']) {
+        const r = await quick(() => t.broker.handle('open', [p, 'r']));
+        assert.ok(r.code === 'ENOENT' || r.code === 'EPERM', `${p}: ${JSON.stringify(r)}`);
+        const c = await quick(() => t.broker.handle('copyFile', [p, '/data/copy']));
+        assert.ok(c.code === 'ENOENT' || c.code === 'EPERM', `copyFile ${p}: ${JSON.stringify(c)}`);
+      }
+      assert.strictEqual(t.broker.fds.size, 0);
+      assert.ok(!fs.existsSync(path.join(t.dirs.data, 'copy')));
+    } finally { await t.done(); }
+  });
+
+  // Under off and audit a path outside the namespace passes through to the
+  // host by design (audit logs it): there a pipe or device path is opened
+  // and copied as the host has it, and never blocks (CON, the console, is
+  // left out: it would wait for input like a terminal anywhere).
+  (WIN ? it : it.skip)('Windows, off and audit: a pipe or device path passes through without blocking', async () => {
+    for (const mode of ['off', 'audit']) {
+      const t = await setup(mode);
+      try {
+        for (const p of ['\\\\.\\pipe\\ch-probe-none', '\\\\.\\NUL', 'NUL']) {
+          const c = await quick(() => t.broker.handle('copyFile', [p, '/data/copy']));
+          assert.ok(c != null && (c.ok !== undefined || typeof(c.code) === 'string'), `${mode} copyFile ${p}: ${JSON.stringify(c)}`);
+        }
+      } finally { await t.done(); }
+    }
+  });
+
+  (WIN ? it.skip : it)('enforce: a FIFO is EPERM, without blocking', async () => {
     const t = await setup('enforce');
     try {
       execFileSync('mkfifo', [path.join(t.dirs.data, 'pipe')]);
@@ -67,7 +103,7 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
-  it('audit: a FIFO is reported and opened without blocking, whatever the flags', async () => {
+  (WIN ? it.skip : it)('audit: a FIFO is reported and opened without blocking, whatever the flags', async () => {
     const t = await setup('audit');
     try {
       execFileSync('mkfifo', [path.join(t.dirs.data, 'pipe')]);
@@ -79,7 +115,7 @@ describe('fs-broker 05: broker additions for the bridge', function() {
     } finally { await t.done(); }
   });
 
-  it('copyFile refuses a FIFO source in every mode, without blocking', async () => {
+  (WIN ? it.skip : it)('copyFile refuses a FIFO source in every mode, without blocking', async () => {
     for (const mode of ['off', 'audit', 'enforce']) {
       const t = await setup(mode);
       try {
@@ -102,7 +138,7 @@ describe('fs-broker 05: broker additions for the bridge', function() {
   it('a truncating open swapped toward another file is refused before anything is truncated', async () => {
     let victim = null;
     const t = await setup('enforce', {hooks: {afterCheck: (syscall, host) => {
-      if (syscall === 'open' && host.endsWith('/target')) {
+      if (syscall === 'open' && host.replace(/\\/g, '/').endsWith('/target')) {
         fs.rmSync(host);
         fs.symlinkSync(victim, host);
       }

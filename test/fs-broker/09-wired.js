@@ -48,13 +48,16 @@ describe('fs-broker 09: module workers use the broker', function() {
     return path.join(dir, 'outside.txt');
   }
 
+  // The log is JSON: a Windows path's backslashes are doubled in it.
+  const logged = (p) => `module sandbox: fs-probe file outside ${JSON.stringify(p).slice(1, -1)}`;
+
   it('audit: a path outside the namespace passes through and is logged', async () => {
     server = await start('audit');
     const outside = outsidePath();
     const w = await mcpCall(testPort(9626), KEY, tool('write'), {path: outside, content: 'o'});
     assert.strictEqual(toolOutput(w).ok, true, JSON.stringify(w));
     assert.strictEqual(fs.readFileSync(outside, 'utf8'), 'o');
-    await waitFor(async () => server.output.includes(`module sandbox: fs-probe file outside ${outside}`), 5000, 'outside log line');
+    await waitFor(async () => server.output.includes(logged(outside)), 5000, 'outside log line');
   });
 
   it('enforce refuses a path outside the namespace (ENOENT) and logs it', async () => {
@@ -63,7 +66,7 @@ describe('fs-broker 09: module workers use the broker', function() {
     const w = await mcpCall(testPort(9626), KEY, tool('write'), {path: outside, content: 'o'});
     assert.deepStrictEqual(toolOutput(w), {ok: false, code: 'ENOENT'}, JSON.stringify(w));
     assert.strictEqual(fs.existsSync(outside), false);
-    await waitFor(async () => server.output.includes(`module sandbox: fs-probe file outside ${outside}`), 5000, 'outside log line');
+    await waitFor(async () => server.output.includes(logged(outside)), 5000, 'outside log line');
     // The worker booted and loaded the module with countinghouse's own code
     // read under the boot grant, not through the broker (review C1).
     [ROOT, fs.realpathSync(ROOT)].forEach((r) => assert.ok(!server.output.includes(`file outside ${r}`), server.output));
@@ -117,9 +120,11 @@ describe('fs-broker 09: module workers use the broker', function() {
   // before it is ready, naming the path and what to do (R2-1 Task 1; it used
   // to fail each module load instead).
   it('a data directory that cannot be created refuses startup and says what to do', async () => {
+    // a directory it may not write to; on Windows, where a mode does not
+    // stop that, a path under a regular file
     const ro = path.join(base, 'ro');
-    fs.mkdirSync(ro);
-    fs.chmodSync(ro, 0o500);
+    const WIN = process.platform === 'win32';
+    if (WIN) fs.writeFileSync(ro, 'a file'); else { fs.mkdirSync(ro); fs.chmodSync(ro, 0o500); }
     try {
       const store = path.join(ro, 'store');
       const r = await new Promise((resolve) => {
@@ -135,7 +140,7 @@ describe('fs-broker 09: module workers use the broker', function() {
       assert.ok(!/countinghouse ready/.test(r.output), 'the server became ready');
       assert.ok(r.output.includes(`--moduleDataPath ${store} cannot be created or is not writable: set it to a writable directory`), r.output.slice(-600));
     } finally {
-      fs.chmodSync(ro, 0o700);
+      if (!WIN) fs.chmodSync(ro, 0o700);
     }
   });
 

@@ -64,15 +64,26 @@ describe('fs-broker 14: a hoisted npm install', function() {
     });
   });
 
-  // --hardened grants read access to the hoisted dependencies too.
-  it('--hardened (enforce): a worker boots and its module works', async () => {
+  // --hardened grants read access to the hoisted dependencies too. On
+  // Windows, Node 24.22's permission model refuses grants whose names extend
+  // each other's (nodejs/node#66812), and an npm-hoisted install has them
+  // (ajv beside ajv-formats): there countinghouse refuses before relaunching,
+  // naming them and saying what to do, which is what this pins.
+  it('--hardened (enforce): a worker boots and its module works (on Windows: refused clearly before relaunching)', async () => {
     const modules = path.join(project, 'modules');
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'fs-probe'), path.join(modules, 'fs-probe'), {recursive: true});
-    server = await startServer(testPort(9633), ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
-      '--modulePath', modules, '--moduleDataPath', `${fs.realpathSync(installed)}_data`, '--loadModule', path.join(modules, 'fs-probe')], {root: installed});
+    const args = ['--workerThread', '--hardened', '--debug', '--debugKey', 'k', '--moduleSandbox', 'enforce',
+      '--modulePath', modules, '--moduleDataPath', `${fs.realpathSync(installed)}_data`, '--loadModule', path.join(modules, 'fs-probe')];
+    if (process.platform === 'win32') {
+      await assert.rejects(startServer(testPort(9633), args, {root: installed}),
+        (e) => /exited \(code 2/.test(e.message) && /names that do not extend another grant/.test(e.message) && /node_modules\\ajv and .*node_modules\\ajv-formats/.test(e.message));
+      return;
+    }
+    server = await startServer(testPort(9633), args, {root: installed});
     const w = await mcpCall(testPort(9633), 'k', 'fs_probe_probeservice_write', {path: '/data/x', content: 'hoisted'});
     assert.deepStrictEqual(toolOutput(w), {ok: true, code: null}, server.output.slice(-3000));
   });
+
 });
 
 // Installs whose dependencies are symlinks: pnpm links each package into
