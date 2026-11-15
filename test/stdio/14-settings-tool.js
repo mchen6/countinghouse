@@ -143,10 +143,16 @@ describe('stdio 14: countinghouse_settings', () => {
       ['maxOutputBytes', 'not confirmed (not on the tested-client list), asked again', 3], ['pack', 'not confirmed (not on the tested-client list), asked again', 2], ['locale', undefined, undefined]]);
   });
 
+  // the runtime as it started: its options, recorded when it starts serving
+  // (lib/route-manager.js captureAtStart)
+  const startedAt = (values) => {
+    settingsTool.resetForTests();
+    Object.assign(options, values);
+    settingsTool.captureAtStart();
+  };
+  afterEach(() => settingsTool.resetForTests());
+
   describe('what a cap is judged against, and when a change applies', () => {
-    let was;
-    beforeEach(() => { was = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout}; });
-    afterEach(() => Object.assign(options, was));
 
     it('a stored value above what runs (a terminal raise awaiting the next start), tightened: written for the next start, and said so', async () => {
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 128 * MiB}}));
@@ -170,12 +176,33 @@ describe('stdio 14: countinghouse_settings', () => {
       assert.strictEqual((await tool.get()).settings.find((s) => s.name === 'maxOutputBytes').stored, undefined);
     });
 
-    it('nothing stored and a runtime under the default (a flag given by hand): a value between them is a loosening of what runs, not a tightening of the default', async () => {
-      options.maxOutputBytes = 8 * MiB;
+    it('nothing stored and a runtime started under the default (a flag given by hand): a value between them is a loosening of what it started with, not a tightening of the default', async () => {
+      startedAt({maxOutputBytes: 8 * MiB});
       assert.strictEqual((await tool.get()).settings.find((s) => s.name === 'maxOutputBytes').value, 8 * MiB);
       await refused(tool.set('maxOutputBytes', '12MiB'), 'SETTING_NEEDS_CONFIRMATION');
       assert.ok(!fs.existsSync(file), 'not written');
       assert.strictEqual(options.maxOutputBytes, 8 * MiB);
+    });
+
+    it('started under the default, then raised this start: a value between is a this-start tightening, written nowhere (the start value is the baseline, not what runs)', async () => {
+      startedAt({maxOutputBytes: 8 * MiB});
+      options.maxOutputBytes = 12 * MiB;   // a raise confirmed for this start
+      const t = settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), applyChange: async (staged) => { options[staged.name] = staged.next; }});
+      assert.deepStrictEqual(await t.set('maxOutputBytes', '10MiB'), {name: 'maxOutputBytes', old: 12 * MiB, new: 10 * MiB, applies: 'this start'});
+      assert.ok(!fs.existsSync(file), 'not written: 10 MiB is above what it started with');
+      assert.strictEqual(options.maxOutputBytes, 10 * MiB);
+    });
+
+    it('started above the default by a flag, nothing stored: a value under it is a tightening of what it started with, written', async () => {
+      startedAt({maxOutputBytes: 32 * MiB});
+      assert.deepStrictEqual(await tool.set('maxOutputBytes', '24MiB'), {name: 'maxOutputBytes', old: 32 * MiB, new: 24 * MiB, applies: 'now'});
+      assert.strictEqual(stored().maxOutputBytes, 24 * MiB);
+    });
+
+    it('a pack\'s value in get is the stored one, as before: only the two caps are reported by what runs', async () => {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci': false}}));
+      const pack = (await tool.get()).settings.find((s) => s.name === 'pack.ci');
+      assert.deepStrictEqual([pack.value, pack.stored], ['off', undefined]);
     });
   });
 
@@ -200,13 +227,10 @@ describe('stdio 14: countinghouse_settings', () => {
     // ceiling, and was said to apply now though nothing changed.
     describe('a ceiling under the default, nothing stored, the runtime started at the ceiling', () => {
       let t;
-      let was;
       beforeEach(() => {
-        was = {maxOutputBytes: options.maxOutputBytes, requestTimeout: options.requestTimeout};
-        Object.assign(options, {maxOutputBytes: 12 * MiB, requestTimeout: 20000});
+        startedAt({maxOutputBytes: 12 * MiB, requestTimeout: 20000});
         t = withCeiling(trusted({maxOutputBytes: 12 * MiB, requestTimeout: 20000}));
       });
-      afterEach(() => Object.assign(options, was));
 
       it('get reports what the runtime runs with, not the file\'s default', async () => {
         const byName = Object.fromEntries((await t.get()).settings.map((s) => [s.name, s]));
@@ -229,31 +253,42 @@ describe('stdio 14: countinghouse_settings', () => {
         assert.deepStrictEqual((({by, setting, old, new: n}) => ({by, setting, old, new: n}))(history().pop()), {by: 'settings tool', setting: 'maxOutputBytes', old: 12 * MiB, new: 10 * MiB});
       });
 
-      it('the value that runs, set again, changes nothing and records nothing', async () => {
+      it('the value that runs, asked for: it is stored (it holds when the ceiling is raised), and nothing changes now; again, a no-op', async () => {
         assert.deepStrictEqual(await t.set('maxOutputBytes', '12MiB'), {name: 'maxOutputBytes', old: 12 * MiB, new: 12 * MiB, applies: 'now'});
-        assert.ok(!fs.existsSync(file));
+        assert.strictEqual(stored().maxOutputBytes, 12 * MiB, 'the user\'s choice, kept');
+        const lines = history().length;
+        assert.deepStrictEqual(await t.set('maxOutputBytes', '12MiB'), {name: 'maxOutputBytes', old: 12 * MiB, new: 12 * MiB, applies: 'now'});
+        assert.strictEqual(history().length, lines, 'stored already: nothing recorded');
       });
     });
 
-    it('every write is checked against the ceiling: a tightening of a stored value that is still above it is refused', async () => {
-      const was = options.maxOutputBytes;
+    it('a write above the ceiling AND above what runs is refused, also as a tightening of a stored value', async () => {
       // stored before the ceiling was lowered; ch-local started the runtime at the ceiling
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * MiB}}));
-      options.maxOutputBytes = 12 * MiB;
-      try {
-        const t = withCeiling(trusted({maxOutputBytes: 12 * MiB}));
-        await refused(t.set('maxOutputBytes', '32MiB'), 'SETTING_ABOVE_CEILING');
-        assert.strictEqual(stored().maxOutputBytes, 64 * MiB, 'unchanged');
-        // down to the ceiling: written, and nothing changes live
-        assert.deepStrictEqual(await t.set('maxOutputBytes', '12MiB'), {name: 'maxOutputBytes', old: 64 * MiB, new: 12 * MiB, applies: 'now'});
-        assert.strictEqual(stored().maxOutputBytes, 12 * MiB);
-        // a ceiling that cannot be trusted refuses no tightening
-        fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * MiB}}));
-        const untrusted = withCeiling({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'x'});
-        assert.strictEqual((await untrusted.set('maxOutputBytes', '32MiB')).new, 32 * MiB);
-      } finally {
-        options.maxOutputBytes = was;
-      }
+      startedAt({maxOutputBytes: 12 * MiB});
+      const t = withCeiling(trusted({maxOutputBytes: 12 * MiB}));
+      await refused(t.set('maxOutputBytes', '32MiB'), 'SETTING_ABOVE_CEILING');
+      assert.strictEqual(stored().maxOutputBytes, 64 * MiB, 'unchanged');
+      // down to the ceiling: written, and nothing changes live
+      assert.deepStrictEqual(await t.set('maxOutputBytes', '12MiB'), {name: 'maxOutputBytes', old: 64 * MiB, new: 12 * MiB, applies: 'now'});
+      assert.strictEqual(stored().maxOutputBytes, 12 * MiB);
+      // a ceiling that cannot be trusted refuses no tightening
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * MiB}}));
+      const untrusted = withCeiling({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'x'});
+      assert.strictEqual((await untrusted.set('maxOutputBytes', '32MiB')).new, 32 * MiB);
+    });
+
+    it('a tightening of what the runtime runs with is never refused by the ceiling, though it is still above it', async () => {
+      // the ceiling was lowered under a runtime that runs above it (not yet clamped, or not ch-local's)
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * MiB}}));
+      startedAt({maxOutputBytes: 64 * MiB});
+      const t = withCeiling(trusted({maxOutputBytes: 12 * MiB}));
+      assert.deepStrictEqual(await t.set('maxOutputBytes', '32MiB'), {name: 'maxOutputBytes', old: 64 * MiB, new: 32 * MiB, applies: 'now'});
+      assert.strictEqual(options.maxOutputBytes, 32 * MiB, 'lowered now');
+      // a ceiling under a setting's least value: the least value can still be set
+      const low = withCeiling(trusted({maxOutputBytes: 1000}));
+      assert.strictEqual((await low.set('maxOutputBytes', '1MiB')).new, MiB);
+      assert.strictEqual(options.maxOutputBytes, MiB);
     });
 
     it('a loosening it forbids, or a value above it: SETTING_ABOVE_CEILING; get shows the lowered bound', async () => {
