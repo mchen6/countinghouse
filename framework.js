@@ -389,7 +389,15 @@ function serve() {
   mm.loadAllModules();
 }
 
-identityReady.then(serve, function(e) {
+// The Redis host name a module worker is denied is resolved before any module
+// loads, so its addresses are denied at the worker's handle guards too
+// (#207); bounded, never rejecting, and not under --moduleSandbox off.
+function deniedResolved() {
+  if (options.moduleSandbox === 'off' || options.store === 'local') return Promise.resolve();
+  return require('./lib/module-sandbox-config').refreshDenied(options.redisUrl).then(function() {}, function() {});
+}
+
+identityReady.then(function() { return deniedResolved().then(serve); }, function(e) {
   console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + e.message);
   process.exit(2);
 });
