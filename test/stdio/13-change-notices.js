@@ -27,6 +27,13 @@ describe('stdio 13: pack change notices', () => {
     assert.deepStrictEqual(x2.content.map((c) => c.text), ['x'], 'once');
   });
 
+  it('a task\'s completion (takeNotices false) takes no notice: they stay for a result that is sent (B2 Task 3 review, 2)', () => {
+    notices.add(null, 'for the next result');
+    const done = finishToolCall({usage: null, call: null, result: {content: [{type: 'text', text: 't'}]}, role: 'scenario', tool: 't', module: 'ch-pack-x', takeNotices: false, startedMs: 0});
+    assert.deepStrictEqual(done.content.map((c) => c.text), ['t']);
+    assert.deepStrictEqual(notices.take('ch-pack-x'), ['for the next result']);
+  });
+
   it('a notice is one line of at most 200 characters', () => {
     notices.add('ch-pack-x', `line one\nline two ${'z'.repeat(400)}`);
     const [t] = notices.take('ch-pack-x');
