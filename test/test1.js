@@ -11,14 +11,12 @@ describe("Test started in COUNTINGHOUSE multi-thread mode", () => {
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
-    // --maxOutputBytes 64 MiB: unit/test019 echoes 20 MB of BSON binary, past
-    // the 16 MiB default; the cap itself is tested in test/sandbox/41.
-    const server = exec(`"./bin/countinghouse" --workerThread --maxOutputBytes 67108864 --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --no-directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --no-directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 
   testFiles.forEach((file) => {
-    if (file !== 'input.bson' && file !== 'test018.js') require(`./unit/${file}`);
+    require(`./unit/${file}`);
   });
 
   after((done) => {

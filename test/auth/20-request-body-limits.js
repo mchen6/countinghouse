@@ -1,10 +1,12 @@
 // JSON and XML bodies are read before any route checks the caller's key, so
-// their size is bounded app-wide by --maxRequestBody (MB, default 8). BSON
-// bodies are read only on invoke-action, the one route that takes them, only
-// for a caller who passes the key check (auth 26), and are bounded by
-// --maxBsonRequestBody (MB, default 64). They were 1 GB everywhere, which let an unauthenticated client exhaust the main thread's
-// memory with a few concurrent posts (review R1-1). The BSON cases run under
-// keyless --debug, which admits every caller, so the body is read.
+// their size is bounded app-wide by --maxRequestBody (MB, default 8). They
+// were 1 GB everywhere, which let an unauthenticated client exhaust the main
+// thread's memory with a few concurrent posts (review R1-1).
+//
+// BSON is retired (8.0.0): MCP is JSON only (binary as base64), and the
+// CDIF-era POST /devices/:deviceID/invoke-action was the last route that
+// took a BSON body. An application/bson body is refused 415 on every route,
+// and never read.
 const assert = require('assert');
 const {startServer, stopServer} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -53,17 +55,38 @@ describe('auth 20: request body limits', function() {
     assert.strictEqual(await postRaw(testPort(9661), '/mcp', 'application/json', 9 * 1024 * 1024), 413);
   });
 
-  it('parses BSON only on the routes that take it', async () => {
-    server = await startServer(testPort(9661), ['--workerThread', '--maxBsonRequestBody', '1']);
-    // /mcp does not take BSON, so its body is never read: over the BSON limit, yet no 413
-    const status = await postRaw(testPort(9661), '/mcp', 'application/bson', 2 * 1024 * 1024);
-    assert.notStrictEqual(status, 413);
+  it('an application/bson body is refused 415 on every route, said plainly, whoever sends it', async () => {
+    server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxRequestBody', '1']);
+    for (const route of ['/devices/x/invoke-action', '/devices/x/add-job', '/mcp', '/load-module']) {
+      const r = await postRaw(testPort(9661), route, 'application/bson', 64, true);
+      assert.strictEqual(r.status, 415, `${route}: ${JSON.stringify(r)}`);
+      assert.ok(/application\/json/.test(r.type), r.type);
+      const body = JSON.parse(r.text);
+      assert.strictEqual(body.code, 'REQUEST_UNSUPPORTED_MEDIA_TYPE');
+      assert.match(body.message, /application\/bson.*no longer.*JSON.*base64/);
+      assert.ok(!/node_modules|\bat \S+ \(/.test(r.text), `a stack: ${r.text}`);
+    }
+    // the type as HTTP allows it written: another case, with parameters
+    assert.strictEqual(await postRaw(testPort(9661), '/mcp', 'Application/BSON; charset=binary', 16), 415);
   });
 
-  it('the XML parser is bounded too, and add-job reads no BSON (review)', async () => {
-    server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxRequestBody', '1', '--maxBsonRequestBody', '1']);
+  it('a BSON body is not read: one far over --maxRequestBody is refused for its type, not its size', async () => {
+    server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxRequestBody', '1']);
+    const big = await postRaw(testPort(9661), '/devices/x/invoke-action', 'application/bson', 4 * 1024 * 1024);
+    // answered before the body arrived: 415, or the connection closed under the unsent rest
+    assert.ok(big === 415 || big === 'closed', String(big));
+    assert.notStrictEqual(big, 413);
+  });
+
+  it('the XML parser is bounded too (review)', async () => {
+    server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxRequestBody', '1']);
     assert.strictEqual(await postRaw(testPort(9661), '/mcp', 'application/xml', 2 * 1024 * 1024), 413);
-    assert.notStrictEqual(await postRaw(testPort(9661), '/devices/x/add-job', 'application/bson', 2 * 1024 * 1024), 413);
+  });
+
+  it('--maxBsonRequestBody is no option any more: given, it is ignored as any unknown flag is, and bounds nothing', async () => {
+    server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxBsonRequestBody', '1']);
+    assert.strictEqual(await postRaw(testPort(9661), '/devices/x/invoke-action', 'application/bson', 64), 415);
+    assert.strictEqual(require('../../lib/cli-options').maxBsonRequestBody, undefined);
   });
 
   // Express's default error page is HTML and, with NODE_ENV unset, carries
@@ -88,10 +111,5 @@ describe('auth 20: request body limits', function() {
     assert.strictEqual(bad.status, 400, bad.text);
     assert.ok(!/node_modules|\bat \S+ \(/.test(bad.text), `a stack: ${bad.text}`);
     assert.strictEqual(JSON.parse(bad.text).code, 'REQUEST_INVALID');
-  });
-
-  it('refuses a BSON body over --maxBsonRequestBody with 413 on invoke-action', async () => {
-    server = await startServer(testPort(9661), ['--workerThread', '--debug', '--maxBsonRequestBody', '1']);
-    assert.strictEqual(await postRaw(testPort(9661), '/devices/x/invoke-action', 'application/bson', 2 * 1024 * 1024), 413);
   });
 });

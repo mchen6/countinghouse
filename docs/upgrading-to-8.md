@@ -116,11 +116,14 @@ you have to do. What the sandbox does and does not protect is in
 - **Browser-based clients need `--allowedOrigins`.** CORS is off by default
   (it allowed every origin), and every route refuses a request from a
   browser origin not listed there. Clients outside a browser are unaffected.
-- **Request bodies are bounded:** 8 MB for JSON, XML and forms
-  (`--maxRequestBody`), 64 MB for BSON on `invoke-action`
-  (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies
-  gets 413 until you raise the limit. `add-job` takes JSON only; a BSON job
-  never worked there (it failed with `SERVICEID_NOT_AVAILABLE`).
+- **Request bodies are bounded:** 8 MB for JSON and XML
+  (`--maxRequestBody`); they were 1 GB. A client that sends larger bodies
+  gets 413 until you raise the limit.
+- **BSON bodies are no longer taken.** A request with
+  `Content-Type: application/bson` is answered 415
+  (`REQUEST_UNSUPPORTED_MEDIA_TYPE`) on every route, where
+  `POST /devices/:deviceID/invoke-action` used to decode it. Send JSON, with
+  binary data as base64. (MCP was always JSON only.)
 
 - **Jobs that run longer than an hour need `--jobTimeout`.** A job that
   sets no timeout of its own is now ended after `--jobTimeout` seconds

@@ -18,6 +18,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Removed — BSON request bodies
+
+- **An `application/bson` body is no longer taken**, on any route: it is
+  answered 415 (`REQUEST_UNSUPPORTED_MEDIA_TYPE`), and never read. MCP is
+  JSON only, and `POST /devices/:deviceID/invoke-action`, from the CDIF-era
+  HTTP API, was the last route that decoded BSON. Send JSON, with binary
+  data as base64.
+- **`--maxBsonRequestBody` is gone** (it bounded those bodies, and existed
+  only in this release's development). Given, it is ignored, as any flag
+  the runtime does not know is.
+- The `bson` package is no longer a dependency, and `INVALID_BSON_REQUEST`
+  is no longer an error code.
+
 ### Added — MCP 2026-07-28 discovery and versioning; `initialize` is the legacy path (#229)
 
 - **`server/discover`**, which 2026-07-28 requires of every server, on HTTP and
@@ -1192,21 +1205,13 @@ configuration). None of it is available to a hosted server.
 
 ### Security — review round R1
 
-- **Request bodies are bounded.** JSON, XML and form bodies are limited to
-  `--maxRequestBody` MB (default 8) on every route, and BSON bodies are read
-  only on `invoke-action`, limited to `--maxBsonRequestBody` MB (default
-  64). Both were 1 GB on every route, read before any key was checked, so a
-  few concurrent large posts from an unauthenticated client could exhaust
-  the server's memory. An oversized body is answered 413.
-- **A BSON body is read only for a caller who may use the device.** On
-  `invoke-action` the key and its grant for the URL's device are checked
-  before the body, from the headers and the URL, so a client without one is
-  refused (the same 500 and code as before) without the server reading up
-  to 64 MB first.
-- **`add-job` takes no BSON.** It accepted and read an `application/bson`
-  body, but never decoded it, so every BSON job failed with
-  `SERVICEID_NOT_AVAILABLE`. A job is a JSON description of the task, so the
-  route no longer reads a BSON body at all.
+- **Request bodies are bounded.** JSON and XML bodies are limited to
+  `--maxRequestBody` MB (default 8) on every route. They were 1 GB, read
+  before any key was checked, so a few concurrent large posts from an
+  unauthenticated client could exhaust the server's memory. An oversized
+  body is answered 413. (BSON bodies, which this round first bounded and
+  read only for a caller who may use the device, are no longer taken at
+  all: see "Removed — BSON request bodies" above.)
 - **The server binds `127.0.0.1` by default.** Without `--bindAddr` it used
   to bind the first non-internal IPv4 address. Give `--bindAddr` (for
   example `0.0.0.0`) for remote clients.
