@@ -117,7 +117,11 @@ section 1:
 
 **What it can do:**
 - lower the hard bounds per setting;
-- forbid a loosening outright;
+- forbid a loosening outright (`"forbid"`: the sandbox, automatic upgrades);
+- allow only the packs it names (`"packs"`): when present, no other pack
+  ever loads, at start, in place or on install, whatever `settings.json` or
+  the history say (the reviewer's ruling on ch-local #18: the history is
+  the user's to write, so no pack rule rests on it);
 - forbid conversational loosening entirely (`"conversation": false`).
 
 **How it's checked:**

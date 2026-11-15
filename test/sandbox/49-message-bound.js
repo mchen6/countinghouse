@@ -54,7 +54,7 @@ describe('sandbox 49: messages to the main thread are bounded (#170)', function(
 
   // the review of #186, HIGH 1
   it('module code finds no port: not as its async resource at load, in its handler or in a reply\'s callback; not among the active handles; not in a hook\'s init; not through a replaced Array or WeakMap method', async () => {
-    assert.deepStrictEqual(await call('scopes'), {atLoad: false, inHandler: false, inReply: false, handles: 0, hookSaw: false, hookThisIsHook: true, handedOver: false});
+    assert.deepStrictEqual(await call('scopes'), {atLoad: false, inHandler: false, inReply: false, handles: 0, hookSaw: false, hookThisIsHook: true, handedOver: false, scopeSawPort: false});
   });
 
   it('an uncaught error whose stack throws when read is logged as such, and the worker serves on', async () => {
