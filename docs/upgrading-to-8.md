@@ -145,6 +145,22 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `contentEncoding: "base64"` is an assertion.** A string whose
+  schema says `contentEncoding: "base64"` must now be canonical RFC 4648
+  base64 (the standard alphabet, padded, no whitespace, zero pad bits), in an
+  input and in an output, on every path. Before, it was an annotation that
+  asserted nothing, so a schema that used it loosely could have passed values
+  that are now refused (`INPUT_DATA_VALIDATION_FAIL` or
+  `OUTPUT_DATA_VALIDATION_FAIL`, naming the field). No bundled module used it.
+  Any other `contentEncoding` stays an annotation.
+- **Breaking: a Buffer in an output is refused, `OUTPUT_NOT_JSON`.** An output
+  holding a Buffer, a typed array or a DataView is refused in the module's
+  worker, naming the field: before, it was mangled, differently in each mode.
+  Return `buf.toString('base64')` in a field its output schema declares
+  `{"type": "string", "contentEncoding": "base64", "contentMediaType": "<type>/<subtype>"}`.
+  The check costs a clean output nothing. A bare `ArrayBuffer` is not caught
+  by it: under a typed field the validator refuses it, and under an untyped
+  one it is sent as `{}`, so don't return one.
 - **Breaking: one module format.** A module is `api.json`, `schema.json` and
   `handlers/<service>/<action>.js`. A module with a main entry
   (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is

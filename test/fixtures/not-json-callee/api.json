@@ -1,0 +1,15 @@
+{
+  "device": {
+    "friendlyName": "not-json-callee",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "A part whose action returns a Buffer where base64 belongs.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:bytesService": {
+        "actionList": [
+          {"name": "bytes", "description": "Returns a Buffer in a field declared base64.",
+           "input": {"schema": "/bytesService/bytes/input"}, "output": {"schema": "/bytesService/bytes/output"}}
+        ]
+      }
+    }
+  }
+}

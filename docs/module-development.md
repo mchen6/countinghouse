@@ -246,6 +246,16 @@ validator workers, which all modules share:
   `ctx.redis` command) over the output cap plus 64 KiB is refused
   `MESSAGE_TOO_LARGE` before it leaves the worker. A file write is split
   for you, so it has no such limit.
+- an output is JSON: one holding a Buffer, a typed array or a DataView is
+  refused `OUTPUT_NOT_JSON` in your worker, naming the field (a bare
+  `ArrayBuffer` is only caught by a typed field's check, and is sent as `{}`
+  otherwise). Binary data goes in a field declared
+  `{"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}`
+  (your type in place of `image/png`), as `buf.toString('base64')`. Such a
+  field is checked for canonical base64 (the standard alphabet, padded, no
+  whitespace), in an input as in an output. Declare it inline, under
+  `properties` or an array's `items`: one reached through `$ref`, `oneOf` or
+  the like isn't recognised as binary.
 - what you write to stdout and stderr (and `console`) reaches the
   operator's log line by line, prefixed with your module's name: each line
   cut at 8 KiB, control characters other than tab removed (and the line
