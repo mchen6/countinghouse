@@ -703,6 +703,23 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(a.c.sock.destroyed, true, 'its connection closed by the runtime');
   });
 
+  it('a pack credential the client chooses that the runtime\'s environment holds the same: shared; another value, or one it lacks: own-runtime (credential)', async() => {
+    // made here, plainly not a real credential
+    const value = `example-${require('crypto').randomBytes(6).toString('hex')}`;
+    r = runtime(home, [], {env: {CH_EXAMPLE_PACK_TOKEN: value}});
+    const secret = await listening(r);
+    const handshake = require('../../lib/session-transport/handshake');
+    const frame = (name, v) => ({status: 'ok', conditions: 'no', repo: null, token: null, credentials: {[name]: handshake.credentialMac(secret, name, v).toString('base64')}});
+    const same = await shim.session(r.socket, secret, frame('CH_EXAMPLE_PACK_TOKEN', value));
+    assert.deepStrictEqual(same.settled, {op: 'settled'});
+    const other = await shim.session(r.socket, secret, frame('CH_EXAMPLE_PACK_TOKEN', `${value}-other`));
+    assert.deepStrictEqual(other.settled, {op: 'own-runtime', reason: 'credential'});
+    const lacking = await shim.session(r.socket, secret, frame('CH_EXAMPLE_OTHER_TOKEN', value));
+    assert.deepStrictEqual(lacking.settled, {op: 'own-runtime', reason: 'credential'});
+    assert.ok(!r.err.includes(value) && !r.out.includes(value), 'the value is never printed');
+    same.c.end();
+  });
+
   it('two sessions each get their own answers', async() => {
     r = runtime(home);
     const secret = await listening(r);

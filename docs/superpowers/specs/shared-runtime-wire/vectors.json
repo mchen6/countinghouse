@@ -69,6 +69,80 @@
     "rule": "HMAC-SHA256(secret, \"ch-token\" || the token's UTF-8 bytes), sent base64",
     "macB64": "QveAbUsC61CJrznLyqzJYsMAN3MwnyoUU4PFI4f5jK4="
   },
+  "credentialMac": {
+    "name": "EXAMPLE_TOKEN",
+    "value": "example-value-not-a-real-one",
+    "rule": "HMAC-SHA256(secret, \"ch-cred\" || the variable's name || 0x00 || the value's UTF-8 bytes), sent standard base64 as credentials[name]",
+    "macB64": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM="
+  },
+  "credentialsMalformed": {
+    "rule": "on the first client frame, any of these as credentials is own-runtime (conditions-failed), never shared: not an object, over 32 entries, a name not ^[A-Za-z_][A-Za-z0-9_]{0,127}$, a value not the standard base64 of exactly 32 bytes",
+    "cases": [
+      null,
+      [],
+      "EXAMPLE_TOKEN",
+      7,
+      {
+        "1BAD": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM="
+      },
+      {
+        "A-B": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM="
+      },
+      {
+        "": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM="
+      },
+      {
+        "EXAMPLE_TOKEN": null
+      },
+      {
+        "EXAMPLE_TOKEN": "not base64!"
+      },
+      {
+        "EXAMPLE_TOKEN": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+      },
+      {
+        "EXAMPLE_TOKEN": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM"
+      },
+      {
+        "EXAMPLE_TOKEN": "KT3Zl29zj56V_HU1_LuPk9Pj5VGFSbc4TiQb6JDz7dM"
+      },
+      {
+        "V0": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V1": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V2": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V3": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V4": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V5": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V6": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V7": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V8": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V9": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V10": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V11": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V12": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V13": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V14": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V15": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V16": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V17": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V18": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V19": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V20": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V21": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V22": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V23": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V24": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V25": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V26": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V27": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V28": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V29": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V30": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V31": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=",
+        "V32": "KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM="
+      }
+    ]
+  },
   "messages": {
     "requestToRuntime": {
       "header": {
@@ -203,6 +277,11 @@
       "json": "{\"op\":\"client\",\"seq\":3,\"status\":\"ok\",\"conditions\":\"yes\",\"repo\":\"acme/widgets\",\"token\":null}",
       "hex": "430000005b7b226f70223a22636c69656e74222c22736571223a332c22737461747573223a226f6b222c22636f6e646974696f6e73223a22796573222c227265706f223a2261636d652f77696467657473222c22746f6b656e223a6e756c6c7d"
     },
+    "clientCredentials": {
+      "json": "{\"op\":\"client\",\"status\":\"ok\",\"conditions\":\"no\",\"repo\":null,\"token\":null,\"credentials\":{\"EXAMPLE_TOKEN\":\"KT3Zl29zj56V/HU1/LuPk9Pj5VGFSbc4TiQb6JDz7dM=\"}}",
+      "hex": "43000000977b226f70223a22636c69656e74222c22737461747573223a226f6b222c22636f6e646974696f6e73223a226e6f222c227265706f223a6e756c6c2c22746f6b656e223a6e756c6c2c2263726564656e7469616c73223a7b224558414d504c455f544f4b454e223a224b54335a6c32397a6a3536562f4855312f4c75506b39506a355647465362633454695162364a447a37644d3d227d7d",
+      "rule": "credentials: the pack credentials the client environment chooses, by the installed packs' declared names (never the GitHub ones, which token covers), each credentialMac; absent or {}: none chosen. On the first client frame only: one whose hash is unlike the runtime's own for that name, or that the runtime has no value for, is own-runtime (credential)"
+    },
     "settled": {
       "json": "{\"op\":\"settled\"}",
       "hex": "43000000107b226f70223a22736574746c6564227d"
@@ -234,6 +313,10 @@
     "ownRuntimeConditions": {
       "json": "{\"op\":\"own-runtime\",\"reason\":\"conditions-failed\"}",
       "hex": "43000000317b226f70223a226f776e2d72756e74696d65222c22726561736f6e223a22636f6e646974696f6e732d6661696c6564227d"
+    },
+    "ownRuntimeCredential": {
+      "json": "{\"op\":\"own-runtime\",\"reason\":\"credential\"}",
+      "hex": "430000002a7b226f70223a226f776e2d72756e74696d65222c22726561736f6e223a2263726564656e7469616c227d"
     },
     "unknownOp": {
       "json": "{\"op\":\"later-op\",\"x\":1}",

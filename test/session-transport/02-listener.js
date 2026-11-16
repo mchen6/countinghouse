@@ -144,6 +144,76 @@ describe('session-transport 02: the listener and the registry', function() {
       none.c.end();
     });
 
+    // a pack credential the client's environment chooses (ch-local's
+    // conditions child, by the installed packs' declared names), compared by
+    // HMAC-SHA256(secret, "ch-cred" || name || 0x00 || value), never sent
+    const DAEMON = {OTHER_TOKEN: 'the-daemon-value-for-a-test'};
+    const daemonCreds = (s, name) => (Object.prototype.hasOwnProperty.call(DAEMON, name) ? handshake.credentialMac(s, name, DAEMON[name]) : null);
+    const base = {status: 'ok', conditions: 'no', repo: null, token: null};
+
+    it('a pack credential unlike the runtime\'s, or one it has no value for: own-runtime (credential); equal ones, or none, settle', async() => {
+      await start({listener: {credentialMac: daemonCreds}});
+      const other = await shim.session(sock, secret, {...base, credentials: {OTHER_TOKEN: handshake.credentialMac(secret, 'OTHER_TOKEN', 'another-value').toString('base64')}});
+      assert.deepStrictEqual(other.settled, {op: 'own-runtime', reason: 'credential'});
+      const unknown = await shim.session(sock, secret, {...base, credentials: {THIRD_TOKEN: handshake.credentialMac(secret, 'THIRD_TOKEN', 'v').toString('base64')}});
+      assert.deepStrictEqual(unknown.settled, {op: 'own-runtime', reason: 'credential'}, 'the runtime has no value: different');
+      const same = await shim.session(sock, secret, {...base, credentials: {OTHER_TOKEN: handshake.credentialMac(secret, 'OTHER_TOKEN', DAEMON.OTHER_TOKEN).toString('base64')}});
+      assert.deepStrictEqual(same.settled, {op: 'settled'});
+      const empty = await shim.session(sock, secret, {...base, credentials: {}});
+      assert.deepStrictEqual(empty.settled, {op: 'settled'});
+      const absent = await shim.session(sock, secret, base);
+      assert.deepStrictEqual(absent.settled, {op: 'settled'}, 'an older ch-local sends no credentials');
+      // one key among several unlike the runtime's is enough
+      const mixed = await shim.session(sock, secret, {...base, credentials: {
+        OTHER_TOKEN: handshake.credentialMac(secret, 'OTHER_TOKEN', DAEMON.OTHER_TOKEN).toString('base64'),
+        THIRD_TOKEN: handshake.credentialMac(secret, 'THIRD_TOKEN', 'v').toString('base64')}});
+      assert.deepStrictEqual(mixed.settled, {op: 'own-runtime', reason: 'credential'});
+      for (const c of [same, empty, absent]) c.c.end();
+      assert.strictEqual(opened.length, 3, 'only the settled ones opened a session');
+    });
+
+    it('a malformed credentials key: own-runtime (conditions-failed), never shared', async() => {
+      await start({listener: {credentialMac: daemonCreds}});
+      const mac = handshake.credentialMac(secret, 'OTHER_TOKEN', DAEMON.OTHER_TOKEN).toString('base64');
+      const many = {};
+      for (let i = 0; i < 33; i++) many[`V${i}`] = mac;
+      const cases = [
+        null, [], 'OTHER_TOKEN', 7, many,
+        {'1BAD': mac}, {'A-B': mac}, {'': mac}, {[`V${'x'.repeat(128)}`]: mac},
+        {OTHER_TOKEN: null}, {OTHER_TOKEN: 7}, {OTHER_TOKEN: 'not base64!'},
+        {OTHER_TOKEN: Buffer.alloc(31, 1).toString('base64')}, {OTHER_TOKEN: Buffer.alloc(33, 1).toString('base64')},
+        {OTHER_TOKEN: mac.replace(/=$/, '')}, {OTHER_TOKEN: Buffer.from(mac, 'base64').toString('base64url')}
+      ];
+      for (const credentials of cases) {
+        const a = await shim.session(sock, secret, {...base, credentials});
+        assert.deepStrictEqual(a.settled, {op: 'own-runtime', reason: 'conditions-failed'}, JSON.stringify(credentials).slice(0, 80));
+      }
+      assert.strictEqual(opened.length, 0);
+    });
+
+    it('the vectors\' credentials: the frame with the runtime\'s own value settles, without it is own-runtime (credential); each malformed case is conditions-failed', async() => {
+      const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json');
+      const frame = JSON.parse(V.control.clientCredentials.json);
+      const vsecret = Buffer.from(V.handshake.secretHex, 'hex');
+      const theirs = (s, name) => (name === V.credentialMac.name ? handshake.credentialMac(s, name, V.credentialMac.value) : null);
+      await start({listener: {credentialMac: theirs}});
+      // the frame's hash is of the vectors' secret: made again here with this runtime's
+      const own = {...frame, credentials: {[V.credentialMac.name]: handshake.credentialMac(secret, V.credentialMac.name, V.credentialMac.value).toString('base64')}};
+      delete own.op;
+      assert.strictEqual(handshake.credentialMac(vsecret, V.credentialMac.name, V.credentialMac.value).toString('base64'), frame.credentials[V.credentialMac.name]);
+      const same = await shim.session(sock, secret, own);
+      assert.deepStrictEqual(same.settled, {op: 'settled'});
+      same.c.end();
+      await listener.close();
+      await start({listener: {credentialMac: () => null}});
+      const lacking = await shim.session(sock, secret, own);
+      assert.deepStrictEqual(lacking.settled, JSON.parse(V.control.ownRuntimeCredential.json));
+      for (const credentials of V.credentialsMalformed.cases) {
+        const a = await shim.session(sock, secret, {...own, credentials});
+        assert.deepStrictEqual(a.settled, {op: 'own-runtime', reason: 'conditions-failed'}, JSON.stringify(credentials).slice(0, 80));
+      }
+    });
+
     it('a repo that is not an owner/name slug is kept as null', async() => {
       await start();
       const a = await shim.session(sock, secret, {status: 'ok', conditions: 'yes', repo: '../etc/passwd', token: null});
