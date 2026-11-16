@@ -19,18 +19,19 @@ const ASKS = path.join(ROOT, 'test', 'fixtures', 'asks-questions');
 const FORMS = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {elicitation: {}},
   'io.modelcontextprotocol/clientInfo': {name: 'test', version: '1.0.0'}};
 
-describe('sandbox 61: a question\'s state over HTTP, across a restart (MCP completeness M13)', function() {
+describe('sandbox 61: a module\'s question over HTTP: across a restart, and in single-thread mode (MCP completeness M13)', function() {
   this.timeout(180000);
   let base = null;
   let server = null;
   let nextId = 1;
-  const start = async () => {
-    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--store', 'local', '--storePath', path.join(base, 'store'),
+  const start = async (thread = ['--workerThread']) => {
+    server = await startServer(PORT, [...thread, '--debug', '--debugKey', KEY, '--store', 'local', '--storePath', path.join(base, 'store'),
       '--moduleDataPath', path.join(base, 'module_data'), '--loadModule', ASKS]);
   };
-  before(() => { base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ask-http-')); });
-  after(() => {
+  beforeEach(() => { base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ask-http-')); });
+  afterEach(() => {
     stopServer(server);
+    server = null;
     if (base != null) fs.rmSync(base, {recursive: true, force: true});
   });
   // one modern MCP request, answered as JSON
@@ -79,5 +80,29 @@ describe('sandbox 61: a question\'s state over HTTP, across a restart (MCP compl
     assert.ok(kept.result != null && kept.result.structuredContent != null, JSON.stringify(kept).slice(0, 500));
     assert.deepStrictEqual([kept.result.structuredContent.asked, kept.result.structuredContent.answer], [true, {yes: false}]);
     assert.strictEqual(codeOf(await call({what: 'that'}, accept(unused.result.requestState, {yes: false}))), 'ASK_STATE_INVALID');
+  });
+
+  // Single-thread mode (--workerThread false) has no worker and no call
+  // token: the call's ask context rides on its args, the form is read from
+  // the device's own schema document, and the answer is checked on the main
+  // thread, which in this mode isolates nothing.
+  it('single-thread mode: the handler\'s question is the call\'s answer, and the retry\'s answer reaches the handler', async () => {
+    await start(['--workerThread', 'false']);
+    await listed();
+    const first = await call({what: 'it'});
+    assert.strictEqual(first.result && first.result.resultType, 'input_required', JSON.stringify(first).slice(0, 600));
+    assert.deepStrictEqual(first.result.inputRequests.answer.params, {mode: 'form', message: 'asks-questions: Do it?',
+      requestedSchema: require(path.join(ASKS, 'schema.json')).askService.probe.questions.confirm});
+    const wrong = await call({what: 'it'}, accept(first.result.requestState, {yes: 'perhaps'}));
+    assert.strictEqual(wrong.result && wrong.result.resultType, 'input_required', 'an answer that does not fit the form gets the question again');
+    const extra = await call({what: 'it'}, accept(wrong.result.requestState, {yes: true, more: 1}));
+    assert.strictEqual(extra.result && extra.result.resultType, 'input_required', 'so does one with a property the form has not');
+    const done = await call({what: 'it'}, accept(extra.result.requestState, {yes: true}));
+    assert.ok(done.result != null && done.result.structuredContent != null, JSON.stringify(done).slice(0, 600));
+    assert.deepStrictEqual([done.result.structuredContent.asked, done.result.structuredContent.answer], [true, {yes: true}]);
+    assert.strictEqual(codeOf(await call({what: 'it'}, accept(extra.result.requestState, {yes: true}))), 'ASK_STATE_INVALID');
+    // and a request that declares no form has no one to ask
+    const bare = await mcp('tools/call', {name: tool, arguments: {what: 'it'}, _meta: Object.assign({}, FORMS, {'io.modelcontextprotocol/clientCapabilities': {}})});
+    assert.deepStrictEqual([bare.result.structuredContent.asked, bare.result.structuredContent.code], [false, 'ASK_UNAVAILABLE']);
   });
 });
