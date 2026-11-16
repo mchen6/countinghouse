@@ -37,6 +37,9 @@ describe('questions 04: a question\'s form and its answer, in a validator (MCP c
     return spec;
   };
   before(async () => {
+    // a fresh shared pool, whatever ran before this file in the same mocha
+    // process (CI's functional run: module-loading 23 closed it, #311)
+    require('../../lib/validator-pool').closeShared();
     logE = LOG.E;
     logW = LOG.W;
     LOG.E = (e) => { logged.push(String(e && e.message)); return e; };
@@ -46,7 +49,8 @@ describe('questions 04: a question\'s form and its answer, in a validator (MCP c
     own = await loaded(FIXTURE, 'declares-everything');
   });
   after(() => {
-    require('../../lib/validator-pool').pool().close();
+    // closed and forgotten, so a later file starts a pool of its own
+    require('../../lib/validator-pool').closeShared();
     require('../../lib/cli-options').setOptions({workerThread: false});
     LOG.E = logE;
     LOG.W = logW;
