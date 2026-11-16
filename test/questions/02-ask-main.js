@@ -144,10 +144,13 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
   });
 
   it('newState takes only a Map of answers, and a state that is not one asks no one', () => {
-    const fresh = {askable: false, answers: new Map(), pending: null, rounds: new Map(), unavailable: new Set()};
+    const fresh = {askable: false, answers: new Map(), pending: null, rounds: new Map(), unavailable: new Set(), callRounds: 0};
     assert.deepStrictEqual(ask.newState(), fresh);
     assert.deepStrictEqual(ask.newState({askable: 'yes', answers: {a: 1}}), fresh);
-    for (const junk of [{}, {askable: true}, {askable: true, answers: {}}, {askable: true, answers: new Map(), pending: null}, 'x', 7]) {
+    // (one with no count of the call's rounds, or one that is no count, is no state: the cap is never skipped)
+    const whole = () => Object.assign(ask.newState({askable: true}));
+    for (const junk of [{}, {askable: true}, {askable: true, answers: {}}, {askable: true, answers: new Map(), pending: null}, 'x', 7,
+      (({callRounds, ...rest}) => rest)(whole()), Object.assign(whole(), {callRounds: -1}), Object.assign(whole(), {callRounds: '0'}), Object.assign(whole(), {callRounds: 0.5})]) {
       refusedWith('ASK_UNAVAILABLE', () => ask.answer({token: call(junk), name: 'overwrite', values: {id: 'first'}}, 'w1'));
     }
   });

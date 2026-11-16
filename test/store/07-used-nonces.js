@@ -149,7 +149,7 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
         const key = require('crypto').randomBytes(32);
         const b = {caller: 'u_x', session: '', method: 'tools/call', tool: 't', arguments: {}};
         const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
-        const v = rs.verify(key, rs.mint(key, {question: 'q', round: 1, answers: {}}, b), b);
+        const v = rs.verify(key, rs.mint(key, {question: 'q', round: 1, callRound: 1, answers: {}}, b), b);
         return [await rs.consume(used, v), await rs.consume(used, v)];`, {STORE_DIR: dir});
       assert.deepStrictEqual(out, [true, false]);
     });

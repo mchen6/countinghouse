@@ -123,7 +123,7 @@ the answer at once. So:
   `invoke-action` or as a task, the operator turned questions off
   (`--moduleQuestions off`), your action was reached through another
   module's `ctx.call`, three rounds brought no valid answer, or the call
-  has settled eight questions already.
+  has had eight rounds in all already (every question's together).
 - **Keep a question's values the same on every run.** A time or a counter
   in `values` makes a new question each time, and the answer the user gave
   is for the old one.

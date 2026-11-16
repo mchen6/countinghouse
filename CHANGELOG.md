@@ -50,6 +50,8 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   tool and the arguments, lasts five minutes and is used once, also across
   a restart. New error codes: `ASK_PENDING`, `ASK_UNAVAILABLE`,
   `ASK_NOT_DECLARED`, `ASK_STATE_INVALID`, `ASK_STATE_UNCHECKED`.
+- **A call is asked at most eight rounds in all**, three at most of one
+  question; after that `ctx.ask` is `ASK_UNAVAILABLE`.
 - **`--moduleQuestions off`** turns every module's question off. Under
   `--store redis` the used states' nonces are in Redis db 14, which must
   not evict.
