@@ -41,10 +41,12 @@ if (options.stdioWithPort === true) {
 // --sessionSocket (the shared runtime, C1): ch-local daemon's runtime
 {
   var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
-    : options.sessionSocket == null ? null
+    : options.sessionDirInvalid === true ? '--sessionDir needs a path'
+    : options.sessionDirNotDrive === true ? '--sessionDir on Windows must be a drive path (C:\\...), not a UNC or device path'
+      : options.sessionSocket == null ? (options.sessionDir != null ? '--sessionDir is only for --sessionSocket' : null)
       : options.stdio === true ? '--stdio and --sessionSocket: choose one'
         : options.sessionWithPort === true ? '--sessionSocket and --port: choose one'
-          : process.platform === 'win32' ? '--sessionSocket is not served on Windows yet'
+          : (process.platform === 'win32' && options.sessionDir == null) ? '--sessionSocket on Windows (a named pipe) needs --sessionDir, the directory of its secret'
             : options.store !== 'local' ? '--sessionSocket needs --store local (the shared runtime is one per user, on ch-local\'s local store)'
               : options.controlChannel !== 'ipc' ? '--sessionSocket needs --controlChannel ipc (ch-local daemon starts it so)'
               : options.singleIdentity !== true ? '--sessionSocket is only for the single-identity profile (--store local, no --authConfigPath or --authProvider)' : null;
