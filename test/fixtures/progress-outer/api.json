@@ -1,0 +1,33 @@
+{
+  "device": {
+    "friendlyName": "progress-outer",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a composite whose part reports progress (MCP completeness M21)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:outerService": {
+        "actionList": [
+          {
+            "name": "wrap",
+            "description": "Calls progress-part work twice, reporting nothing of its own.",
+            "input": {
+              "schema": "/outerService/wrap/input"
+            },
+            "output": {
+              "schema": "/outerService/wrap/output"
+            }
+          },
+          {
+            "name": "wrapReporting",
+            "description": "Reports 20, then calls progress-part work.",
+            "input": {
+              "schema": "/outerService/wrapReporting/input"
+            },
+            "output": {
+              "schema": "/outerService/wrapReporting/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
