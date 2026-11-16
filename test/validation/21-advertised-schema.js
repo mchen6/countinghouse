@@ -44,6 +44,17 @@ describe('validation 21: the advertised output schema (M4)', () => {
     assert.strictEqual(advertisedSchema(null), null);
   });
 
+  it('a property named __proto__ is copied as data, never as the prototype', () => {
+    const {reshape} = require('../../lib/binary-fields');
+    const s = JSON.parse('{"type": "object", "properties": {"__proto__": {"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}}}');
+    const a = advertisedSchema(s);
+    assert.ok(Object.hasOwn(a.properties, '__proto__'));
+    assert.strictEqual(a.properties.__proto__.type, 'object');
+    const out = reshape(JSON.parse('{"__proto__": "AA=="}'), s, {module: 'm', action: 'a'});
+    assert.ok(Object.hasOwn(out.structured, '__proto__'));
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(out.structured)), JSON.parse('{"__proto__": {"mimeType": "image/png", "bytes": 1, "block": 1}}'));
+  });
+
   it('is computed once per schema object', () => {
     assert.strictEqual(advertisedSchema(schema), advertisedSchema(schema));
   });

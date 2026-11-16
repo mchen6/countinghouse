@@ -32,7 +32,7 @@ function recorder() {
         outcome: i.outcome || 'ok', credential: 'GITHUB_TOKEN', mapped: i.mapped === true});
       t += 1;
     }
-    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, lines: 1, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
+    if (out !== null) u.recordOut(c, {tool, bytes: out.bytes || 0, lines: 1, inlineBytes: out.inline || 0, ms: out.ms === undefined ? 5 : out.ms, outcome: out.outcome || 'ok', code: out.code});
     return c;
   };
   return u;
@@ -40,6 +40,17 @@ function recorder() {
 const report = (u, args, who = ADMIN, usageDir = null) => usageReport(args, who, {usage: u, usageDir, now: () => NOW});
 
 describe('countinghouse_usage_report, Part A', () => {
+  // M4: an image or audio block reached the model as surely as text did, so
+  // it counts as out (bytesOut, and so neither kept out nor estimated away)
+  it('an image or audio block\'s bytes count as out, and not as kept out of the model\'s context', async () => {
+    const u = recorder();
+    u.call({at: '2026-11-13T10:00:00.000Z', ins: [{bytes: 4000}], out: {bytes: 400, inline: 2000}});
+    const r = await report(u, {since: '2026-11-01'});
+    assert.strictEqual(r.totals.bytesOut, 2400);
+    assert.strictEqual(r.totals.keptOut.estimate, 400);
+    assert.strictEqual(r.days[0].bytesOut, 2400);
+  });
+
   describe('the window: until, and since "all"', () => {
     it('until takes a day (its end, inclusive), an ISO time or a duration; the default is now', async () => {
       const u = recorder();
