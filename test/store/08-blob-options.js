@@ -43,6 +43,12 @@ describe('store 08: the result store\'s options (M5)', function() {
     assert.strictEqual(limitsFor({resourceRetention: 604800}).retentionMs, 604800000);
   });
 
+  it('--store local with --storePath under --moduleDataPath exits 2 at start, naming --storePath', () => {
+    const r = start(['--store', 'local', '--moduleDataPath', '/tmp/ch-store-08/module_data', '--storePath', '/tmp/ch-store-08/module_data/store']);
+    assert.strictEqual(r.status, 2, r.stderr);
+    assert.match(r.stderr, /--storePath must be outside --moduleDataPath/);
+  });
+
   for (const [args, name] of [
     [['--resourceRetention', '59'], 'resourceRetention'],
     [['--resourceRetention', '604801'], 'resourceRetention'],
