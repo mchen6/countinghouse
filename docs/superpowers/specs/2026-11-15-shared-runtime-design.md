@@ -202,6 +202,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
+| `cancelled` | runtime → shim | `seq`: the request's | The client cancelled that call, which will have no answer: forget its seq, so no crash answer is made for it, and a close waiting on it ends once nothing is left (MCP completeness section 13). Optional: an older shim ignores it, as it ignores any op it doesn't know. |
 | `drain` | runtime → shim | | Forward no new request; relay answers until the runtime closes, then reconnect. |
 | `own-runtime` | runtime → shim | `reason`: `"token"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
 
