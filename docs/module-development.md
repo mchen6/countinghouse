@@ -122,7 +122,15 @@ the answer at once. So:
   to fall back: the client offered no form, the call came by HTTP
   `invoke-action` or as a task, the operator turned questions off
   (`--moduleQuestions off`), your action was reached through another
-  module's `ctx.call`, or three rounds brought no valid answer.
+  module's `ctx.call`, three rounds brought no valid answer, or the call
+  has settled eight questions already.
+- **Keep a question's values the same on every run.** A time or a counter
+  in `values` makes a new question each time, and the answer the user gave
+  is for the old one.
+- **A retry that is refused after the user answered asks again.** The
+  answer's state is used up when the retry is taken; if the call is then
+  refused before your handler runs (a rate limit, say), the next call
+  starts from the question.
 - **`ASK_NOT_DECLARED`** is your own mistake: no such question on this
   action, or a value that is missing or is not a string, a number or a
   boolean.

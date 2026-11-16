@@ -96,6 +96,12 @@ if (options.validatorLimitInvalid != null) {
     JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// --moduleQuestions (ctx.ask): on or off, and nothing else
+if (options.moduleQuestionsInvalid != null) {
+  console.error('--' + options.moduleQuestionsInvalid.name + ' must be ' + options.moduleQuestionsInvalid.what + ' (got ' +
+    JSON.stringify(String(options.moduleQuestionsInvalid.value)) + ')');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
 // IPC fd. --hardened relaunches this process as a child, which the channel

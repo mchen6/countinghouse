@@ -805,6 +805,13 @@ bounds it:
   six minutes, which makes a state from those minutes usable once more by
   whoever holds it and the caller's key. Run Redis with AOF or RDB
   persistence if that matters to you.
+- **A call settles at most eight questions**, and one that three rounds
+  left unanswered stays so for the call: both ride in the state, so a
+  module cannot ask a user without end by changing its question's text.
+- **A state is used up when its retry is taken**, before the call's own
+  checks: a retry that is then refused (a rate limit, a busy worker) has
+  spent the user's answer, and the next call asks again. Single use is
+  put before that convenience.
 - **Under `--stdio` a restart ends every dialog.** Its one session's id is
   made at each start, and a state is bound to its session. A shared
   runtime's session keeps its id across a restart, and HTTP has none, so

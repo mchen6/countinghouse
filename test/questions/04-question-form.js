@@ -50,6 +50,18 @@ describe('questions 04: a question\'s form and its answer, in a validator (MCP c
     assert.strictEqual((await moduleSpec.question(own, POINTER, {replace: true, __proto__: {x: 1}})).valid, true, 'an inherited one is not sent');
   });
 
+  // /code-review of M13, 1: a form may carry what a client shows and a validator does not know (enumNames):
+  // the answer is checked against the form's rules alone
+  it('a form with enumNames is answered: what only a client reads is no part of the check', async () => {
+    const asks = await moduleSpec.build(path.join(__dirname, '..', 'fixtures', 'asks-questions'), 'asks-questions');
+    const pointer = '/askService/probe/questions/confirm';
+    const shown = await moduleSpec.question(asks, pointer);
+    assert.deepStrictEqual(shown.schema.properties.when.enumNames, ['Now', 'Later'], 'the client still gets it');
+    assert.strictEqual((await moduleSpec.question(asks, pointer, {yes: true, when: 'later'})).valid, true);
+    assert.strictEqual((await moduleSpec.question(asks, pointer, {yes: true, when: 'Later'})).valid, false, 'a name is no value');
+    assert.strictEqual((await moduleSpec.question(asks, pointer, {yes: true})).valid, true);
+  });
+
   it('a pointer that names no schema has no form, and nothing is valid for it', async () => {
     for (const pointer of ['/notesService/saveNote/questions/none', '/nowhere', '', 'notesService', 7, null]) {
       assert.deepStrictEqual(await moduleSpec.question(own, pointer, {replace: true}), {schema: null, valid: null}, JSON.stringify(pointer));

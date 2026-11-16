@@ -82,6 +82,19 @@ describe('questions 03: ctx.ask as a handler has it (MCP completeness M13)', () 
     }
   });
 
+  // /code-review of M13, 8: a worker's call that was given no token asks no one (never CALL_TOKEN_INVALID,
+  // which a module following the docs would not catch)
+  it('in a worker, a call with no token has no one to ask: ASK_UNAVAILABLE, with nothing sent', async () => {
+    const workerThreads = require('worker_threads');
+    const was = Object.getOwnPropertyDescriptor(workerThreads, 'isMainThread');
+    Object.defineProperty(workerThreads, 'isMainThread', {value: false, configurable: true, writable: true});
+    try {
+      await rejectedWith('ASK_UNAVAILABLE', handlerCtx.buildCtx(null, {input: {}}).ask('overwrite', {id: 'first'}));
+    } finally {
+      Object.defineProperty(workerThreads, 'isMainThread', was);
+    }
+  });
+
   it('the action is the context\'s: saveNote\'s question is not readNote\'s', async () => {
     const state = ask.newState({askable: true});
     await rejectedWith('ASK_NOT_DECLARED', ctxOf(state, {actionName: 'readNote'}).ctx.ask('overwrite', {id: 'first'}));

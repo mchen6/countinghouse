@@ -128,6 +128,21 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
     assert.strictEqual(state.pending.key, keyFor());
   });
 
+  // /code-review of M13, 8: a call's token may name no module (no composition binding yet); the dialog's
+  // name is the worker's own module's, as the main thread knows it, and with none there is no one to ask
+  it('the dialog names the module the main thread says: the worker\'s own, never "null"', () => {
+    const state = ask.newState({askable: true});
+    const token = call(state, {module: null});
+    refusedWith('ASK_PENDING', () => ask.answer({token, name: 'overwrite', values: {id: 'first'}}, 'w1', SPEC, MODULE));
+    assert.strictEqual(state.pending.text, TEXT);
+    assert.strictEqual(state.pending.key, keyFor());
+    for (const none of [null, undefined, '', 7]) {
+      const s = ask.newState({askable: true});
+      refusedWith('ASK_UNAVAILABLE', () => ask.decide({state: s, module: none, serviceID: SERVICE, actionName: 'saveNote', spec: SPEC}, 'overwrite', {id: 'first'}));
+      assert.strictEqual(s.pending, null);
+    }
+  });
+
   it('newState takes only a Map of answers, and a state that is not one asks no one', () => {
     const fresh = {askable: false, answers: new Map(), pending: null, rounds: new Map(), unavailable: new Set()};
     assert.deepStrictEqual(ask.newState(), fresh);

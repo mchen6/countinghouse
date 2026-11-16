@@ -37,7 +37,7 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     if (pointer !== DECLARED.schema) return {schema: null, valid: null};
     return {schema: FORM, valid: content === undefined ? null : (content != null && typeof(content.replace) === 'boolean' && Object.keys(content).length === 1)};
   };
-  const deps = (over = {}) => Object.assign({modern: true, questionsOn: true, binding: binding(), declared: (name) => (name === 'overwrite' ? DECLARED : null), form, key, used}, FORMS, over);
+  const deps = (over = {}) => Object.assign({modern: true, questionsOn: true, asks: true, binding: binding(), declared: (name) => (name === 'overwrite' ? DECLARED : null), form, key, used}, FORMS, over);
   const rejectedWith = (code, promise) => assert.rejects(promise, (e) => e instanceof CountinghouseError && e.code === code, code);
   // one pass of a handler that asks about `id`: its ask's outcome
   const asks = (state, id = 'first') => { try { return {answer: ask.decide(CONTEXT(state), 'overwrite', {id})}; } catch (e) { return {code: e.code}; } };
@@ -47,6 +47,8 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     assert.deepStrictEqual(asks(state), {code: 'ASK_PENDING'});
     return ask.formOf(state, deps(over));
   };
+  // a pass that asks about the first note again, for the form that follows
+  const asksThen = (state) => { asks(state); return state; };
   const retryWith = (made, response, over = {}) => ask.begin(deps(Object.assign({params: {requestState: made.requestState, inputResponses: response === undefined ? undefined : {answer: response}}}, over)));
   beforeEach(() => { used = new requestState.UsedNonces(); formCalls = []; });
 
@@ -162,10 +164,46 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       await rejectedWith('ASK_STATE_INVALID', retryWith(made2, {action: 'accept', content: {replace: true}}, {used: {use: async () => 'yes'}}));
     });
 
-    it('an answer is read from params only: a call whose arguments carry a state or responses is refused', async () => {
+    it('an answer is read from params only: a call of an action that asks, whose arguments carry a state or responses, is refused', async () => {
       for (const smuggled of [{requestState: 'v1.a.b'}, {inputResponses: {answer: {action: 'accept', content: {replace: true}}}}]) {
         await rejectedWith('ARGUMENTS_INVALID', ask.begin(deps({binding: binding({arguments: Object.assign({id: 'first'}, smuggled)})})));
+        // an action that declares no question may have an input of that name (/code-review of M13, 6)
+        const state = await ask.begin(deps({asks: false, binding: binding({arguments: Object.assign({id: 'first'}, smuggled)})}));
+        assert.strictEqual(state.askable, true);
       }
+    });
+
+    // /code-review of M13, 4: the key and the store are for a state; a call that carries none, and one that
+    // cannot be asked, touch neither
+    it('the key and the used-nonce store are reached only for a state: a first pass and a call no one can be asked touch neither', async () => {
+      let reached = 0;
+      const lazy = {key: () => { reached += 1; return key; }, used: () => { reached += 1; return used; }};
+      await ask.begin(deps(lazy));
+      await ask.begin(deps(Object.assign({modern: false}, lazy)));
+      await ask.begin(deps(Object.assign({capabilities: null}, lazy)));
+      assert.strictEqual(reached, 0);
+      // a state needs both, and the form the key
+      const state = await ask.begin(deps(lazy));
+      asks(state);
+      const made = await ask.formOf(state, deps(lazy));
+      assert.strictEqual(reached, 1);
+      assert.deepStrictEqual(asks(await retryWith(made, {action: 'accept', content: {replace: true}}, lazy)), {answer: {replace: true}});
+      assert.strictEqual(reached, 3);
+    });
+
+    it('a key or a store that cannot be had is "could not be checked" for a retry, and "no one to ask" for a form: never a failed call of its own', async () => {
+      const made = await firstForm();
+      const broken = () => { throw new Error('identity: not initialized'); };
+      const e1 = await retryWith(made, {action: 'accept', content: {replace: true}}, {key: broken}).then(() => null, (err) => err);
+      assert.strictEqual(e1 && e1.code, 'ASK_STATE_UNCHECKED');
+      const e2 = await retryWith(made, {action: 'accept', content: {replace: true}}, {used: broken}).then(() => null, (err) => err);
+      assert.strictEqual(e2 && e2.code, 'ASK_STATE_UNCHECKED');
+      // nothing was used up
+      assert.deepStrictEqual(asks(await retryWith(made, {action: 'accept', content: {replace: true}})), {answer: {replace: true}});
+      const state = await ask.begin(deps({key: broken}));
+      assert.strictEqual(state.askable, true, 'a first pass needs no key');
+      asks(state);
+      await rejectedWith('ASK_UNAVAILABLE', ask.formOf(state, deps({key: broken})));
     });
   });
 
@@ -197,6 +235,31 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       assert.strictEqual(third.pending, null);
       // another question of the same call is still asked
       assert.deepStrictEqual(asks(third, 'second'), {code: 'ASK_PENDING'});
+    });
+
+    // /code-review of M13, 7: what three rounds settled stays settled for the call
+    it('a question whose three rounds brought none stays unavailable for the call: a later question\'s retry does not bring it back', async () => {
+      let made = await firstForm();
+      for (let round = 1; round <= 2; round++) made = await ask.formOf(asksThen(await retryWith(made, {action: 'accept', content: {replace: 'no'}})), deps());
+      const third = await retryWith(made, {action: 'accept', content: {replace: 'no'}});
+      assert.deepStrictEqual(asks(third), {code: 'ASK_UNAVAILABLE'});
+      // the handler falls back and asks about another note
+      assert.deepStrictEqual(asks(third, 'second'), {code: 'ASK_PENDING'});
+      const next = await retryWith(await ask.formOf(third, deps()), {action: 'accept', content: {replace: true}});
+      assert.deepStrictEqual(asks(next), {code: 'ASK_UNAVAILABLE'}, 'the first is not asked again');
+      assert.deepStrictEqual(asks(next, 'second'), {answer: {replace: true}});
+      assert.strictEqual(next.pending, null);
+    });
+
+    it('a call settles at most eight questions: a ninth has no one to ask', async () => {
+      let state = await ask.begin(deps());
+      for (let i = 1; i <= 8; i++) {
+        assert.deepStrictEqual(asks(state, `note-${i}`), {code: 'ASK_PENDING'}, String(i));
+        state = await retryWith(await ask.formOf(state, deps()), {action: 'decline'});
+        for (let j = 1; j <= i; j++) assert.deepStrictEqual(asks(state, `note-${j}`), {answer: null});
+      }
+      assert.deepStrictEqual(asks(state, 'note-9'), {code: 'ASK_UNAVAILABLE'});
+      assert.strictEqual(state.pending, null);
     });
 
     it('an answer to a question the action no longer declares is none', async () => {
