@@ -36,7 +36,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
   let file;
   let saved;
   let sent;     // live options told to the module workers
-  let applied;  // changes applied live by a confirmation
+  let grown;    // the validators grown for a confirmed raise of the output cap
   const openSession = (id, conditions = {status: 'ok', conditions: 'yes', repo: null}) => {
     const s = new EventEmitter();
     s.id = id;
@@ -54,8 +54,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
   const ctx = (id, over = {}) => Object.assign({shared: true, session: id, clientInfo: CLIENT, capabilities: {elicitation: {form: {}}}, scope: 'all-sessions'}, over);
   const tool = (o = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}),
     sessionClient: (c) => ({ok: true, client: c.clientInfo}),
-    // a confirmed raise applied live, as production's applyConfirmed does (the validators, the option, the workers)
-    applyChange: async (staged) => { applied.push([staged.name, staged.old, staged.next]); options[staged.name] = staged.next; }}, o));
+    growValidators: async (bytes) => { grown.push(bytes); }}, o));
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
   const history = () => (fs.existsSync(path.join(home, 'history.jsonl'))
     ? fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
@@ -78,7 +77,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     sessions.attach(reg);
     sources = {};
     sent = [];
-    applied = [];
+    grown = [];
     settingsTool.setLiveModules(() => ({m: {sendMessageToWorker: (msg) => sent.push(msg)}}));
     for (const id of [A, B, C]) openSession(id);
   });
@@ -159,6 +158,54 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       assert.ok(!fs.existsSync(file));
     });
 
+    it('what the file yields is the file\'s own value when it holds one: a value above it is not stored, though it tightens what is in force', async () => {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 8 * MiB}}));   // the next start's, tighter than what runs
+      const done = await tool().set('maxOutputBytes', '12MiB', 'settings tool', ctx(A));
+      assert.deepStrictEqual(done, {name: 'maxOutputBytes', old: 16 * MiB, new: 12 * MiB, applies: 'all sessions, until the runtime restarts'});
+      assert.strictEqual(stored().maxOutputBytes, 8 * MiB, 'the file is not raised');
+      assert.strictEqual(options.maxOutputBytes, 12 * MiB);
+    });
+
+    it('a stored raise awaiting the next start, cancelled for all sessions: said from the file\'s value, since nothing in force changes', async () => {
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 64 * MiB}}));   // ch-local settings set, for the next start
+      const done = await tool().set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      assert.deepStrictEqual(done, {name: 'maxOutputBytes', old: 64 * MiB, new: 16 * MiB, applies: 'all sessions'});
+      assert.strictEqual(stored().maxOutputBytes, 16 * MiB);
+      assert.deepStrictEqual(history().map((h) => [h.old, h.new, h.change]), [[64 * MiB, 16 * MiB, 'all sessions']]);
+      assert.deepStrictEqual(sent, [], 'nothing in force changed');
+    });
+
+    it('a change made for all sessions is in every session\'s history, with no session\'s id; a request that was not made is the asking session\'s only', async () => {
+      const t0 = tool();
+      await t0.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A));
+      const under = tool({ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 24 * MiB, forbid: [], conversation: true}})});
+      await refused(under.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A)), 'SETTING_ABOVE_CEILING');
+      const seen = (got) => got.history.map((h) => [h.setting, h.old !== undefined ? h.old : null, h.new !== undefined ? h.new : (h.asked !== undefined ? h.asked : null), h.change]);
+      const made = ['maxOutputBytes', 16 * MiB, 4 * MiB, 'all sessions'];
+      assert.deepStrictEqual(seen(await t0.get(ctx(A))), [made, ['maxOutputBytes', null, 32 * MiB, 'refused by the ceiling']]);
+      assert.deepStrictEqual(seen(await t0.get(ctx(B))), [made]);
+      // a session opened later reads why the value is what it is
+      const D = 'd'.repeat(32);
+      openSession(D);
+      assert.deepStrictEqual(seen(await t0.get(ctx(D))), [made]);
+      for (const id of [A, B, D]) assert.ok((await t0.get(ctx(id))).history.every((h) => h.session === undefined), id);
+    });
+
+    it('a request for all sessions that is not made says so: its line carries the scope, and is not counted with a this-session one', async () => {
+      const under = tool({ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 24 * MiB, forbid: [], conversation: true}})});
+      await refused(under.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A, {scope: undefined})), 'SETTING_ABOVE_CEILING');
+      await refused(under.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_ABOVE_CEILING');
+      assert.deepStrictEqual(history().map((h) => [h.asked, h.change, h.scope]), [[32 * MiB, 'refused by the ceiling', undefined], [64 * MiB, 'refused by the ceiling', 'all-sessions']]);
+      // a declined form, and one left for another, say what they were for
+      const t0 = tool();
+      const r = await t0.set('requestTimeout', '60s', 'settings tool', ctx(B));
+      await t0.confirm('requestTimeout', '60s', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(B));
+      await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(C));
+      await t0.set('maxOutputBytes', '48MiB', 'settings tool', ctx(C));
+      assert.deepStrictEqual(history().filter((h) => h.session !== A).map((h) => [h.asked, h.change, h.scope]), [[60000, 'declined', 'all-sessions'], [32 * MiB, 'replaced', 'all-sessions']]);
+      assert.strictEqual((await t0.get(ctx(B))).history.pop().scope, 'all-sessions', 'and get shows it');
+    });
+
     it('each is one of the asking session\'s 32 recorded changes', async () => {
       const t0 = tool();
       for (let i = 0; i < 32; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
@@ -181,7 +228,10 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       const done = await t0.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
       assert.deepStrictEqual(done, {name: 'maxOutputBytes', old: 16 * MiB, new: 32 * MiB, applies: 'all sessions'});
       assert.strictEqual(stored().maxOutputBytes, 32 * MiB);
-      assert.deepStrictEqual(applied, [['maxOutputBytes', 16 * MiB, 32 * MiB]], 'applied live, as a confirmed raise is');
+      // in force at once, as a confirmed raise is: the validators grown first, the option, the workers told
+      assert.deepStrictEqual(grown, [32 * MiB]);
+      assert.strictEqual(options.maxOutputBytes, 32 * MiB);
+      assert.deepStrictEqual(sent.map((m) => [m.command, m.options.maxOutputBytes]), [['live-options', 32 * MiB]]);
       assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 32 * MiB);
       assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 32 * MiB);
       assert.strictEqual(settings.effective(C, 'maxOutputBytes'), 2 * MiB, 'its own, tighter');
@@ -275,14 +325,107 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
     });
 
     it('a confirmed change that cannot be applied changes nothing: the file is not written', async () => {
-      const failing = tool({applyChange: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
+      const failing = tool({growValidators: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
       const r = await failing.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
       const e = await refused(failing.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_NOT_APPLIED_ALL_SESSIONS');
       assert.strictEqual(e.message, 'The change to maxOutputBytes for all sessions could not be applied (RESIZE_FAILED); nothing was changed.');
       assert.ok(!fs.existsSync(file));
       assert.strictEqual(options.maxOutputBytes, 16 * MiB);
-      assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => h.change), ['all sessions', 'not applied']);
+      // no line says a change for all sessions was made; one says it was not applied
+      assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => [h.change, h.problem]), [['not applied', 'RESIZE_FAILED']]);
       assert.deepStrictEqual(notices.take(null, B), [], 'nobody is told of a change not made');
+      assert.deepStrictEqual(sent, []);
+    });
+
+    // my /code-review: the validators' growth is a wait (seconds). What is
+    // checked is checked after it, in the one lock that also stores the
+    // change and puts it in force, with no wait in between.
+    describe('whatever happens while the validators grow, the change is checked after it', () => {
+      const during = async (what, code, o = {}) => {
+        const t0 = tool(Object.assign({growValidators: async (bytes) => { grown.push(bytes); await what(t0); }}, o));
+        const r = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
+        const e = await refused(t0.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), code);
+        assert.deepStrictEqual(grown, [32 * MiB], 'the growth ran');
+        assert.notStrictEqual(options.maxOutputBytes, 32 * MiB, 'not in force');
+        assert.ok(!fs.existsSync(file) || stored().maxOutputBytes !== 32 * MiB, 'not stored');
+        assert.ok(!history().some((h) => h.change === 'all sessions' && h.new === 32 * MiB), 'no line says it was made');
+        assert.deepStrictEqual(notices.take(null, C), [], 'nobody else is told');
+        return e;
+      };
+
+      it('the asking session latched (its client said no): not applied', async () => {
+        await during(async () => { sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null}); }, 'SETTING_DECLINED_THIS_SESSION');
+      });
+
+      it('the asking session ended: not applied', async () => {
+        await during(async () => { sources[A].emit('end'); }, 'MODULE_NOT_LISTED');
+      });
+
+      it('the default changed (another session\'s tightening for all): not applied', async () => {
+        await during(async (t0) => { await t0.set('maxOutputBytes', '8MiB', 'settings tool', ctx(B)); notices.take(null, C); }, 'SETTING_CHANGED_MEANWHILE');
+        assert.strictEqual(options.maxOutputBytes, 8 * MiB);
+        assert.strictEqual(stored().maxOutputBytes, 8 * MiB);
+      });
+
+      it('a ceiling put under the value: it is the ceiling as it is then that binds', async () => {
+        let c = {state: 'none'};
+        await during(async () => { c = {state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 24 * MiB, forbid: [], conversation: true}}; },
+          'SETTING_ABOVE_CEILING', {ceiling: () => c});
+        assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => [h.asked, h.change, h.scope]), [[32 * MiB, 'not applied (above the ceiling)', 'all-sessions']]);
+      });
+
+      it('the file changed since the form was shown (a terminal change written, its control set not here yet): the terminal\'s wins, and is not overwritten', async () => {
+        await during(async () => { fs.writeFileSync(file, JSON.stringify({version: 1, values: {maxOutputBytes: 8 * MiB}})); }, 'SETTING_CHANGED_MEANWHILE');
+        assert.strictEqual(stored().maxOutputBytes, 8 * MiB, 'the terminal\'s value is still the file\'s');
+        assert.strictEqual(options.maxOutputBytes, 16 * MiB);
+      });
+    });
+
+    it('the confirmation is held to the ceiling as it is then, and to the asking session\'s 32 recorded changes', async () => {
+      // a ceiling that allowed the form, lowered before the answer
+      let max = 64 * MiB;
+      const under = tool({ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: max, forbid: [], conversation: true}})});
+      const r = await under.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
+      max = 24 * MiB;
+      await refused(under.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_ABOVE_CEILING');
+      assert.ok(!fs.existsSync(file));
+      // 31 tightenings, a form, a 32nd change, then the accept
+      const t0 = tool();
+      for (let i = 0; i < 31; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(B, {scope: undefined}));
+      const rb = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(B));
+      await t0.set('requestTimeout', '20s', 'settings tool', ctx(B, {scope: undefined}));
+      await refused(t0.confirm('maxOutputBytes', '32MiB', {requestState: rb.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B)), 'SETTING_TERMINAL_ONLY_SHARED');
+      assert.strictEqual(options.maxOutputBytes, 16 * MiB);
+      assert.ok(!fs.existsSync(file));
+    });
+
+    it('a settings file that cannot be written: nothing is put in force, and nobody is told', async () => {
+      const t0 = tool();
+      const r = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
+      fs.mkdirSync(file);   // no file can be renamed onto a directory that holds something
+      fs.writeFileSync(path.join(file, 'x'), '');
+      let err = null;
+      try { await t0.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)); } catch (e) { err = e; }
+      assert.ok(err != null && err.code === 'SETTINGS_FILE_INVALID', String(err && err.code));
+      assert.strictEqual(options.maxOutputBytes, 16 * MiB);
+      assert.deepStrictEqual(sent, []);
+      assert.deepStrictEqual(notices.take(null, B), []);
+      fs.rmSync(file, {recursive: true});
+    });
+
+    it('the session that asked gets the value too: its own lower value for that cap goes, and it is told; a higher one of its own stays', async () => {
+      const t0 = tool();
+      settings.set(A, 'maxOutputBytes', 2 * MiB);
+      const r = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
+      await t0.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 32 * MiB, 'A asked for all sessions, itself included');
+      assert.strictEqual(settings.limitsOf(A), null);
+      assert.deepStrictEqual(notices.take(null, A), ['maxOutputBytes raised from 16MiB to 32MiB for all sessions (confirmed in claude-code); this session\'s own 2MiB no longer applies']);
+      // B, with a confirmed value of its own above the new default, asks 48 MiB for all: its own 64 MiB stays
+      settings.set(B, 'maxOutputBytes', 64 * MiB, {loosening: true, over: 32 * MiB});
+      const rb = await t0.set('maxOutputBytes', '48MiB', 'settings tool', ctx(B));
+      await t0.confirm('maxOutputBytes', '48MiB', {requestState: rb.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B));
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 64 * MiB);
     });
   });
 

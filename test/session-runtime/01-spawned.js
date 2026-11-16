@@ -317,7 +317,8 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(storedNow().requestTimeout, 20000, 'settings.json, as a terminal change writes it');
     const seenByB = await call(b, {action: 'get'});
     assert.strictEqual(valueOf(seenByB, 'requestTimeout'), 20000);
-    assert.deepStrictEqual(seenByB.result.structuredContent.history, [], 'B reads no line of A\'s');
+    // a change made for all sessions is every session's to read, with no session's id
+    assert.deepStrictEqual(seenByB.result.structuredContent.history.map((h) => [h.setting, h.old, h.new, h.change, h.session]), [['requestTimeout', 30000, 20000, 'all sessions', undefined]]);
     const toldB = await request(b.c, 'tools/call', {name: hello, arguments: {name: 'b'}});
     assert.ok(JSON.stringify(toldB.result).includes('requestTimeout changed to 20s for all sessions (changed from another session)'), JSON.stringify(toldB.result).slice(0, 600));
     // A, who asked, is told nothing of another session

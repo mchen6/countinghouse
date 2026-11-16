@@ -702,19 +702,30 @@ is:
 - it is written to `settings.json` and applied at once to every session: a
   session whose own value is tighter keeps it, and a looser one of its own
   is dropped and that session told, as after a terminal tightening;
-- the other sessions are told the setting was changed from another session,
-  and the history line names the asking session.
+- the other sessions are told the setting was changed from another session;
+  the history line names the asking session and, unlike a session's own
+  lines, is every session's to read (no session's id is ever shown). A
+  request for all sessions that was not made is the asking session's line,
+  and says what it was for.
 
 A tightening needs no dialog. A loosening always needs one: the asking
 session's own (it spends one of that session's three and counts in the
 user's window), whose text names all sessions and says the change holds
 after a restart. Its state confirms that change only: a dialog that said
 "this session" confirms nothing for all sessions, and the other way round.
-It is held to the operator's ceiling as any loosening is, and applied
-before it is stored, so a change that cannot be applied changes nothing.
-What is written without a dialog never raises what the file yields (a
-runtime started above it by a flag): such a value holds for every session
-until the runtime restarts. Every other setting stays the terminal's.
+It is held to the operator's ceiling as any loosening is. For a raised
+output cap the validators grow first, which changes nothing; then, under
+one lock and with no wait in it, everything is checked as it is then (the
+session, its lock, the ceiling, the default in force, the file as the
+dialog saw it), the file is written, and the value is put in force. So a
+change that cannot be stored is not in force, and a terminal change made
+meanwhile is never written over. The session that asked gets the value
+too: its own lower value for that setting goes, and it is told; another
+session's own tighter value stays. What is written without a dialog never
+raises what the file yields (a runtime started above it by a flag, or a
+tighter value stored for the next start): such a value holds for every
+session until the runtime restarts. Every other setting stays the
+terminal's.
 
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
