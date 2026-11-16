@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft for the reviewer; no code until it is reviewed. It builds on B1 and on B2 Tasks 1–5, all on master (read at 11c57088). It needs nothing of B3. B3's Task 8 waits for this plan's Task 1.
+**Status:** draft for the reviewer; no code until it is reviewed. It builds on B1 and on B2 Tasks 1–5, all on master (read at 11c57088). It needs nothing of B3. B3's Task 8 waits for this plan's Task 1 (its Steps 1–5; the description's commit may follow).
 
-**Goal:** In shared mode each session sees its own tasks, its own usage and its own settings history, and nothing of another session's. Another session's task is answered exactly as an unknown one. The legacy `tasks/*` methods, refused on a shared runtime today, are served there again. The terminal still shows everything.
+**Goal:** In shared mode each session sees its own tasks, its own usage and its own settings history, and nothing of another session's. Another session's task is answered exactly as an unknown one. A session's tasks are cancelled when it ends. The legacy `tasks/*` methods, refused on a shared runtime today, are served there again. The terminal still shows everything.
 
 **Architecture:**
 - One rule, in a new main-thread `lib/session-scope.js`: what a request's session may see of a thing a session owns. Tasks and the usage report use it, and so will M17's stored results.
@@ -23,7 +23,7 @@
 - **In shared mode the session is checked whoever asks.** An identity that is an admin, or any identity under `--debug`, sees no other session's task or usage. Only the runtime's own `INTERNAL` context sees every job.
 - **A thing with no session is seen by no session** in shared mode: a null owner never matches a null scope.
 - **Outside shared mode nothing changes.** Under `--stdio`, over HTTP and with `runtime: own`: job ids count up from 1, a job is its owner key's, the report is the caller's, and `get` reads the whole history. The CLI report (`bin/countinghouse-usage.js`) shows every session.
-- **The tool surface doesn't move:** no change to `countinghouse_usage_report`'s or `countinghouse_settings`' name, description, input schema or output schema. The `tools/list` golden stays as it is.
+- **The tool surface moves in one place, on purpose:** `countinghouse_usage_report`'s description, so that it is true on a shared runtime (the reviewer's ruling). That is one commit of its own, which changes the description and the golden's entry for that one tool and nothing else, and the PR names the change. No name, input schema or output schema changes, and nothing of `countinghouse_settings`.
 - **The session never reaches a worker** (B1), and a job's session is never in its data, its history or the store (the reviewer's ruling on B1's Task 3). It stays in the main thread's memory.
 - **A session id is shown to no one:** not in a task, a report, a `get` answer or an error text.
 - No API key, user name or secret in a log line, error text, history line or anything a module receives.
@@ -35,7 +35,7 @@
 2. **A finished task's owner.** `lib/job-sessions.js` forgets a one-off job's session at its last run (`lib/job-control-local.js:301`), because it exists for a run's caps. A view built on that map would show every finished task to every session, since all sessions share one key. The owner session must live as long as the job's record.
 3. **Every section of the usage report.** Groups, days, the kept-out totals, the profiling (errors by code, server calls per call), the stand-in section and `source` are built from one filtered list. A section computed from the unfiltered pool names another session's tools. The cheap text match on a line is not the filter; the parsed record's `session` is. Memory and files are both filtered.
 4. **The history's look-back.** `readHistory` reads the file's last 64 KiB and then drops other sessions' lines. Each session writes at most `MAX_SESSION_CHANGES` (32) changes, but with up to 256 sessions, other sessions' lines can push a session's own, and the global ones, out of that window. Also: a line with no `session` is shown to everyone, so a session's writer that forgets the field leaks it; and a line of B2's Task 5b (a change for all sessions) names its asker, so the filter would hide a global change from the others.
-5. **Ends and resumes.** An ended session's tasks must not become visible to a new session. A resumed session, which keeps its id, sees its own again. A job from no session stays invisible to all.
+5. **Ends and resumes.** An ended session's tasks must not become visible to a new session, and must not run on unread: they are cancelled at the session's end, and what ran is billed once (Task 4). A detach cancels nothing, and a resumed session, which keeps its id, sees its own again. A job from no session stays invisible to all.
 
 ---
 
@@ -73,7 +73,8 @@
 - `streamUsage(dir, {…, session})`: a line without the text `"session":"<id>"` is skipped before it is parsed, and every kept record is checked again after parsing, as the caller filter does.
 - The gateway passes `session: sessions.shared() ? sessionId : undefined`. In shared mode `sessionIdOf` has already refused a request with no live session.
 - A record with no `session` field (a call from before the shared runtime, or a job that outlived a restart) is in no session's report. The terminal shows it.
-- The report's shape is unchanged, and so is the tool's description.
+- The report's shape is unchanged.
+- **The description** (`lib/mcp/tool-registry.js`, `PLATFORM_TOOLS`) is one text for every mode, so it must be true in each. After "from this process and earlier ones." it gains: "On a shared runtime, the calls of this session only." The reviewer checks the wording with the PR.
 
 - [ ] **Step 1: Write the failing tests.**
   - With records of A and B in memory and in files: A's report counts A's calls only, and its text, serialized whole, has none of B's tool, pack, module or server names and no error code only B met. This holds for each `groupBy`, and for the day rows, the kept-out totals and the profiling.
@@ -86,9 +87,10 @@
 - [ ] **Step 2:** Run `npx mocha --exit test/usage/21-session-report.js`; it fails (A's report has B's tool).
 - [ ] **Step 3:** Implement: one `own` predicate for caller and session, used by the memory filter and handed to `streamUsage`.
 - [ ] **Step 4:** Run it, then one at a time `npx mocha --exit test/usage/03-report.js`, `…/13-report-part-a.js`, `…/20-session-records.js`; they pass.
-- [ ] **Step 5:** Commit under the suite lock (the hook runs the golden, which must not move).
+- [ ] **Step 5:** Commit under the suite lock. The golden has not moved yet.
+- [ ] **Step 6: The description, in its own commit.** Change the text; regenerate `test/mcp-contract/tools-list.golden.json` with `test/mcp-contract/capture-tools-list.js`; check that the golden's diff is that one tool's `description` and nothing else (`git diff --stat` shows the one file, and the diff one line). If `test/mcp-contract/02-approved-tool-changes.js` compares descriptions, list the change there with its reason. Run `node test/helpers/run-local.js test/mcp-contract/01-tools-list-unchanged.js` and `npx mocha --exit test/mcp-contract/02-approved-tool-changes.js`; they pass. Commit under the suite lock, with a message that says the golden moved and why. The PR's body names the change.
 
-**Size:** 1 day. **Needs:** Task 0.
+**Size:** 1.25 days. **Needs:** Task 0.
 
 ### Task 2: tasks by key and session
 
@@ -108,7 +110,7 @@
 - `JobControl.sessionOf(id)` → the job's owner session, null for a job from no session, or undefined for no such job. Main thread only, for M15's tombstone; nothing sends it on.
 - **The gateway.** Each handler's `authCtx` is `{appKey, isAdmin, session: sessionIdOf(opts)}`, as `createTaskForToolCall`'s already is. A request whose `sessionIdOf` is undefined is answered as an unknown task (`tasks/list`: an empty list).
 - A modern request's `tasks/*` stays an unknown method (`REMOVED_IN_MODERN`) until M15.
-- A session's end changes no job: its jobs run on (B1), are recorded in usage, and are seen by no one until their records go.
+- A session's end cancels its tasks (Task 4). Until that task is in, an ended session's jobs run on and are seen by no one.
 
 - [ ] **Step 1: Write the failing tests.**
   - Server-free:
@@ -118,7 +120,7 @@
     - B's `tasks/list` is empty while A's has the task.
     - After the task completes, B still gets unknown (review focus 2).
     - With `isAdmin: true` in B's context, B still gets unknown.
-    - After A ends, a new session C gets unknown, and the job's run completes and is in the usage records under A's id.
+    - After A ends, a new session C gets unknown for A's id.
     - A job added with `INTERNAL` is in no session's list, and `INTERNAL` lists every job.
     - No task, list or error text contains a session id, and `jobRecord` has no `session` key.
     - Outside shared mode `getJob` answers `JOB_ACCESS_DENIED` to another key, as today.
@@ -155,17 +157,51 @@
 
 **Size:** 0.75 day. **Needs:** nothing in this plan. The all-sessions case is skipped until B2's Task 5b is on master.
 
+### Task 4: an ended session's tasks are cancelled
+
+The reviewer's ruling (2026-11-15): nothing runs on that no one can read. When the registry says a session is gone, its tasks are cancelled, and what already ran is billed.
+
+**Files:**
+- Modify: `lib/job-control-local.js`: `cancelSession(session)`
+- Modify: `lib/sessions.js` `close` (calls it)
+- Test: `test/sessions/24-session-tasks-end.js` (server-free), and one case added to `test/session-runtime/04-session-tasks-spawned.js`
+
+**Interfaces:**
+- **When.** At the session's `'end'`: its `bye`, or its reconnect window expiring. A detach cancels nothing, and a session that resumes within its window keeps its tasks. `Registry.close()` (the runtime stopping) emits the same `'end'`; the local runner's jobs end with the runtime anyway.
+- `JobControl.cancelSession(session)` → `{removed, finishing}` (counts), for every job whose `job.session` is that session:
+  - waiting or delayed: removed, as `removeJob` removes one. It never runs and costs nothing;
+  - active: marked cancelled. A run in a worker isn't interrupted (as `tasks/cancel`, it is cooperative): it finishes, is billed and recorded in usage under the session's id, as any run is. It is not retried, and its record and result are dropped when it finishes;
+  - finished: its record and result are dropped now, not at the result's TTL.
+- A scheduler whose session it is (none can be made over MCP today) is stopped the same way.
+- The run that is finishing is still bounded by the ended session's last caps (B1's Task 4, #251), and its hops by B3's Task 4.
+- A job from no session is untouched. Outside shared mode `close` is never reached for `--stdio`'s one session while the runtime serves, and nothing changes.
+
+- [ ] **Step 1: Write the failing tests.**
+  - A has one delayed task, one active and one completed. A ends:
+    - the delayed one never runs, and no usage record or charge is made for it;
+    - the active one's handler finishes, its usage record carries A's id, it is charged once, it is not retried after a failure, and its record is gone once it finishes;
+    - the completed one's record is gone at once.
+  - After that, `INTERNAL`'s `listJobs` has none of A's, and `job-sessions` holds no entry of A's once the active run has finished.
+  - B's tasks are untouched by A's end.
+  - A detached and then resumed keeps all three, and reads the completed one's result.
+  - A session C opened after A's end gets `unknown task` for each of A's ids.
+  - Spawned: A makes a long task and its shim says `bye`; the runtime's job count for A falls to zero once the run ends, and B's task completes.
+- [ ] **Steps 2–5:** run `npx mocha --exit test/sessions/24-session-tasks-end.js` (it fails: the delayed task runs), implement, run it, `npx mocha --exit test/sessions/04-job-sessions.js`, `npx mocha --exit test/sessions/21-session-tasks.js` and `node test/helpers/run-local.js test/session-runtime/04-session-tasks-spawned.js` under the suite lock (they pass), commit.
+
+**Size:** 0.75 day. **Needs:** Task 2.
+
 ## Sizes and order
 
 | Task | Days | Needs |
 |---|---|---|
 | 0. `lib/session-scope.js` | 0.25 | – |
-| 1. The usage report per session | 1 | 0 |
+| 1. The usage report per session, and its description | 1.25 | 0 |
 | 2. Tasks by key and session | 2 | 0 |
 | 3. The settings history: what is left | 0.75 | – |
-| **Total** | **4** | |
+| 4. An ended session's tasks are cancelled | 0.75 | 2 |
+| **Total** | **5** | |
 
-- **In parallel:** Tasks 1, 2 and 3 beside each other once Task 0 is in. Tasks 1 and 2 both touch `lib/mcp/gateway.js`, in different handlers. Two implementers finish in about 2.5 days.
+- **In parallel:** Tasks 1, 2 and 3 beside each other once Task 0 is in. Tasks 1 and 2 both touch `lib/mcp/gateway.js`, in different handlers. Task 4 follows Task 2. Two implementers finish in about 3 days.
 - **With B3:** all of this plan can run beside B3's Tasks 1–7. Task 1 goes first: B3's Task 8 waits for it, since until then a session's usage report would name another session's pack and tools. M17 waits for both plans.
 - Each task is its own PR. Task 2 is a trust-boundary PR.
 
@@ -181,8 +217,8 @@ M17 (`docs/superpowers/specs/2026-11-15-mcp-completeness-design.md`, sections 9 
 
 ## Open, for the reviewer and the maintainer
 
-- **The usage report's words.** Its description says "what this countinghouse has done for you … from this process and earlier ones". On a shared runtime it becomes this session's only, and calls made before the shared runtime (no session on the record) are in no session's report. Saying so in the description moves the `tools/list` golden, which needs an approved tool change. This plan leaves the text alone.
-- **An ended session's tasks** keep running and are billed, and no session can read their results. §2 implies it; it is stated here so it is a decision.
+- **Decided (the reviewer, 2026-11-15): the usage report's description is made true on a shared runtime,** and the golden moves for that one tool, in its own commit (Task 1, Step 6). Calls made before the shared runtime carry no session and are in no session's report; the terminal shows them.
+- **Decided: an ended session's tasks are cancelled** when the registry says the session is gone, billed for what ran (Task 4). §2's "a job outlives its session's loosenings" then covers only a run already in a worker when the session ends.
 - **The id's length.** The MCP completeness spec (section 9) says a session's job "already gets" 128 random bits. `lib/job-control.js:333` gives 96 (`randomBytes(12)`), and only on the BullMQ runner, which a shared runtime never uses. Task 2 gives 128 on the local runner. The spec's sentence should point there.
 - **B2's Task 5b** writes its all-sessions line with the asker's session, which master's filter would hide from every other session. Task 3 shows it to all; B2's plan should say the same.
 - **The terminal's report by session.** `countinghouse-usage` shows every session's records but can't group by session. Not needed for release 1; a `--groupBy session` would be a later change.
