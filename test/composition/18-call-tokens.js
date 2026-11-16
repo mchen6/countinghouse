@@ -1067,6 +1067,71 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       });
     });
 
+    // The reviewer's follow-up to #288: the count of held hops (4096) had no
+    // share per caller, as the bytes have. One caller holding 4096 small
+    // live hops kept every other caller refused until its deadlines passed.
+    describe('(#288 follow-up) the count held by one caller', () => {
+      let small;
+      const hop = (w, channel, invokeId, token) => broker.handleAnnouncement(Object.assign({channel, invokeId, token, epoch: EPOCH, inputBytes: small}, TARGET), w);
+      const another = (id) => {
+        const other = wm(id);
+        other.bindings = caller.bindings;
+        broker.channelRegistry[`${other.workerId}:${callee.workerId}`] = {callerWM: other, calleeWM: callee, grants: {}};
+        return other;
+      };
+      beforeEach(() => {
+        cli.setOptions({workerThread: true, mcpToolCallCost: 1});
+        // one buffer for them all: the broker holds a reference and counts its length
+        small = bytes({input: {v: 1}});
+      });
+
+      it('a caller at its share (a quarter of the count) is refused RATE_LIMITED; another caller is not; its own ended hops make room', () => {
+        const token = tokens().issue(ENTRY(caller.workerId));
+        for (let i = 0; i < 1024; i++) hop(caller, pair(), 1000 + i, token);
+        assert.deepStrictEqual(caller.refusals, [], '1024 small hops are within its share');
+        hop(caller, pair(), 3000, token);
+        assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[3000, 'RATE_LIMITED']]);
+        assert.strictEqual(broker.announced.size, 1024, 'nothing live was released');
+        // another caller worker, on its own channel: not refused by the first one's count
+        const other = another(17);
+        hop(other, `${other.workerId}:${callee.workerId}`, 1, tokens().issue(ENTRY(other.workerId)));
+        assert.deepStrictEqual(other.refusals, []);
+        // the first caller's call ends: its hops go when it next announces, before any sweep
+        tokens().drop(token);
+        hop(caller, pair(), 3001, tokens().issue(ENTRY(caller.workerId)));
+        assert.strictEqual(caller.refusals.length, 1, 'refused by its own ended hops');
+        assert.strictEqual(broker.announced.size, 2, 'the other caller\'s and the new one');
+      });
+
+      it('one caller can no longer fill the count: with its share held live, three more callers each hold theirs', () => {
+        const callers = [caller, another(41), another(42), another(43)];
+        for (const w of callers) {
+          const token = tokens().issue(ENTRY(w.workerId));
+          const channel = w === caller ? pair() : `${w.workerId}:${callee.workerId}`;
+          for (let i = 0; i < 1024; i++) hop(w, channel, 5000 + i, token);
+        }
+        assert.deepStrictEqual(callers.flatMap((w) => w.refusals), [], 'each within its own share');
+        assert.strictEqual(broker.announced.size, 4096);
+        // the total still bounds them all: a fifth caller is refused while all are live
+        const fifth = another(44);
+        hop(fifth, `${fifth.workerId}:${callee.workerId}`, 1, tokens().issue(ENTRY(fifth.workerId)));
+        assert.deepStrictEqual(fifth.refusals.map((r) => r.errCode), ['RATE_LIMITED']);
+      });
+
+      it('the count per caller is given back as its hops are matched or dropped', () => {
+        const token = tokens().issue(ENTRY(caller.workerId));
+        for (let i = 0; i < 1024; i++) hop(caller, pair(), 7000 + i, token);
+        // one is announced again under its id (the earlier one is dropped), and one is forgotten
+        hop(caller, pair(), 7000, token);
+        assert.deepStrictEqual(caller.refusals, [], 'a hop announced again does not count twice');
+        broker.forgetAnnounced(`${pair()}/7001`);
+        hop(caller, pair(), 9000, token);
+        assert.deepStrictEqual(caller.refusals, [], 'the room of the one forgotten');
+        hop(caller, pair(), 9001, token);
+        assert.strictEqual(caller.refusals.length, 1);
+      });
+    });
+
     // #205 merged with #202: a reload's drain counts every invoke the callee
     // still owes under step 4's accounting, the one whose input is being
     // checked included; a channel to a module being replaced is denied
