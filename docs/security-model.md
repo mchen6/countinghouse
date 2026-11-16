@@ -676,6 +676,49 @@ What this does not cover:
   loading at all. The scan does not rely on it: a project hook still means
   no dialog.
 
+In a shared runtime (one runtime serving several of a user's client
+sessions) all of this is each session's own, for the two caps:
+
+- **The change.** A confirmed raise of `maxOutputBytes` or `requestTimeout`
+  is that session's override, for its calls only, until the session ends.
+  It is judged against the value the session runs with. The options every
+  session shares, and `settings.json`, are not touched; every history line
+  names the session, and only that session reads it. Every other setting,
+  a pack included, is changed from a terminal.
+- **The dialog.** Each session has its own pending change, nonce, decline
+  locks and three dialogs. The key is one for the runtime and the session's
+  id, which comes from its connection and not from the request, is in the
+  HMAC: a state staged in one session confirms nothing in another. The
+  dialog says the change is for this session only.
+- **The client's conditions are the session's.** They are asked of that
+  session's own shim, before the dialog and again before the change is
+  applied; nothing process-wide is asked. Any frame from a session's client
+  that says its configuration could answer a dialog locks every setting for
+  that session's life, even when a later answer says otherwise (a hook the
+  client has loaded can be deleted from disk and still answer). Every frame
+  is seen as it arrives, also one that answers late or that nobody asked
+  for. A locked session is told `SETTING_DECLINED_THIS_SESSION`, with the
+  terminal command. A confirmed raise of the output cap waits for the
+  validators to grow; the session, its lock, the ceiling and its value are
+  checked again after that wait, and a change made meanwhile wins.
+- **One window for the user, across sessions.** Per setting (every pack
+  counting as one), three dialogs declined or left unanswered within 30
+  minutes stop that setting's dialogs in every session for the next 30. A
+  dialog open in any session counts toward the three, so an injected
+  prompt cannot spread dialogs over sessions; an accept that arrives once
+  the setting has locked is refused. A dialog counts as unanswered when its
+  own 120 s pass, or when its session ends, or when its session asks for
+  another (the second such dialog of a setting locks it for the session,
+  and no third is shown). An answer that comes after the 120 s is told the
+  dialog expired. Each one is told to ch-local's daemon (the setting and a
+  time, nothing else), which keeps it to hand back to a restarted runtime.
+  A lock runs 30 minutes from its third event, so a restarted runtime
+  needs the last 60 minutes of them to rebuild one still running (reading
+  that list back at a restart is not built yet).
+
+A `--stdio` runtime has the one store and the one start it always had, and
+is outside the window.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
