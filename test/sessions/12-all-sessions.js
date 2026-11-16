@@ -108,6 +108,23 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
         'maxOutputBytes changed to 4MiB for all sessions (changed from another session)']);
     });
 
+    // the reviewer's ruling on #296: a change for all drops a session's
+    // confirmed LOOSENING above the new value; a session's own tightening is
+    // its own choice and survives, held to the default while that is lower
+    it('another session\'s own tightening survives a change for all: bounded by it now, and back when the default rises again', async () => {
+      const t0 = tool();
+      await t0.set('maxOutputBytes', '12MiB', 'settings tool', ctx(B, {scope: undefined}));   // B, for itself
+      await t0.set('maxOutputBytes', '8MiB', 'settings tool', ctx(A));                         // A, for all
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 8 * MiB, 'held to the default in force');
+      assert.deepStrictEqual(settings.overridesOf(B).map((o) => [o.name, o.value, o.loosening]), [['maxOutputBytes', 12 * MiB, false]], 'B\'s own value is kept');
+      assert.deepStrictEqual(notices.take(null, B), ['maxOutputBytes changed to 8MiB for all sessions (changed from another session)'], 'and B is not told a loosening ended: it had none');
+      // the default is raised later (A, for all, by its form): B runs at its own 12 MiB, not at the new default
+      const r = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
+      await t0.confirm('maxOutputBytes', '32MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A));
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 12 * MiB);
+      assert.strictEqual(settings.effective(C, 'maxOutputBytes'), 32 * MiB);
+    });
+
     it('it is judged against the default in force, never the asking session\'s own value', async () => {
       // A runs at 2 MiB by its own tightening; 4 MiB for all is still a tightening of the 16 MiB default
       await tool().set('maxOutputBytes', '2MiB', 'settings tool', ctx(A, {scope: undefined}));

@@ -711,9 +711,11 @@ is:
 
 - it is judged against the default in force, never the asking session's own
   value;
-- it is written to `settings.json` and applied at once to every session: a
-  session whose own value is tighter keeps it, and a looser one of its own
-  is dropped and that session told, as after a terminal tightening;
+- it is written to `settings.json` and applied at once to every session, as
+  a terminal tightening is: a session's confirmed loosening above the new
+  value is dropped and that session told; a session's own tightening is
+  never dropped (it is held to the default while the default is lower,
+  and is in force again if the default rises);
 - the other sessions are told the setting was changed from another session;
   the history line names the asking session and, unlike a session's own
   lines, is every session's to read (no session's id is ever shown). A
