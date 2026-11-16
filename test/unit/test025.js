@@ -1,7 +1,6 @@
 const request = require('supertest');
 const jsf     = require('json-schema-faker');
 const chalk   = require('chalk');
-const BSON    = require('bson');
 const redis   = require('redis');
 const {redisUrlFor} = require('../helpers/test-env');
 const {testPort} = require('../helpers/test-env');

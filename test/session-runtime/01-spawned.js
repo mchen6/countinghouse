@@ -517,6 +517,8 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const back = await shim.session(r.socket, secret, undefined, {resume: t2});
     assert.strictEqual(back.welcome != null && back.welcome.session, id, `the same session, by the newest token: ${JSON.stringify(back.refused)}`);
     assert.notStrictEqual(back.welcome.resumeToken, t2, 'rotated again on the resume');
+    // the restored row made it busy once, never twice (#263 review)
+    assert.deepStrictEqual(r.told.filter((m) => m.type === 'idle' || m.type === 'busy').map((m) => m.type), ['busy']);
     back.c.end();
   });
 
@@ -548,6 +550,36 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     const t0 = Date.now();
     await listening(r);
     assert.ok(Date.now() - t0 < 2500, 'it listened on the good restore, not the net');
+  });
+
+  it('the idle stop (#262 review): idle at listen; busy with a session; idle-stop refused while one is held, then accepted, and new handshakes refused', async() => {
+    r = runtime(home, ['--requestTimeout', '2']);
+    const secret = await listening(r);
+    const until0 = Date.now() + 5000;
+    while (!r.told.some((m) => m.type === 'idle') && Date.now() < until0) await tick(50);
+    assert.ok(r.told.some((m) => m.type === 'idle'), `idle at listen: ${JSON.stringify(r.told)}`);
+    const a = await shim.session(r.socket, secret);
+    await tick(200);
+    assert.strictEqual(r.told.filter((m) => m.type === 'idle' || m.type === 'busy').pop().type, 'busy');
+    const held = await r.control({type: 'idle-stop'});
+    assert.deepStrictEqual([held.ok, held.code], [false, 'CONTROL_BUSY'], JSON.stringify(held));
+    // a pre-auth connection counts too
+    const half = await shim.connect(r.socket);
+    const mid = await r.control({type: 'idle-stop'});
+    assert.deepStrictEqual([mid.ok, mid.code], [false, 'CONTROL_BUSY'], 'a session, and a handshake in pre-auth');
+    half.end();
+    a.c.end();
+    assert.strictEqual((await r.control({type: 'idle-stop'})).code, 'CONTROL_BUSY', 'detached, within its window: not idle');
+  });
+
+  it('idle-stop on an idle runtime drains it: ok, and a new handshake is refused SHUTTING_DOWN (#262 review)', async() => {
+    r = runtime(home);
+    const secret = await listening(r);
+    await tick(300);
+    const stop = await r.control({type: 'idle-stop'});
+    assert.strictEqual(stop.ok, true, JSON.stringify(stop));
+    const late = await shim.attach(r.socket, secret);
+    assert.strictEqual(late.refused != null && late.refused.code, 'SHUTTING_DOWN', JSON.stringify(late));
   });
 
   it('drain (C3): every shim is told, a new handshake is refused SHUTTING_DOWN', async() => {
