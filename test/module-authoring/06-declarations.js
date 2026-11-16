@@ -512,6 +512,52 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         one(asking(undefined), /questions\.overwrite points to .*, which is not in schema\.json/, 'a pointer to nothing');
       });
 
+      // the reviewer's M1 on #302: the form is sent to the client as requestedSchema, so M0 bounds what it may hold
+      it('a form property holds only what a form field takes, each bounded and clean', () => {
+        const prop = (p) => asking(obj({field: p}));
+        // what each kind may carry
+        clean(prop({type: 'string', title: 'A reason', description: 'Why.', minLength: 1, maxLength: 200, format: 'email', default: 'none'}));
+        clean(prop({type: 'integer', title: 'Copies', minimum: 0, maximum: 3, default: 1}));
+        clean(prop({type: 'number', minimum: 0, maximum: 1, default: 0.5}));
+        clean(prop({type: 'boolean', title: 'Approve', default: false}));
+        clean(prop({type: 'string', enum: ['fast', 'safe'], enumNames: ['Fast', 'Safe'], default: 'safe'}));
+        clean(prop({enum: Array.from({length: 64}, (x, i) => `v${i}`)}));
+        // a keyword a form field does not take
+        for (const extra of [{pattern: '^a+$'}, {const: 'x'}, {examples: ['x']}, {contentEncoding: 'base64'}, {'x-anything': 1}, {readOnly: true}, {minimum: 1}]) {
+          one(prop(Object.assign({type: 'string'}, extra)), /property "field".*may not carry/, JSON.stringify(extra));
+        }
+        one(prop({type: 'boolean', maxLength: 3}), /property "field".*may not carry maxLength/, 'a string\'s keyword on a boolean');
+        // bounds
+        one(prop({enum: Array.from({length: 65}, (x, i) => `v${i}`)}), /property "field".*at most 64 values/, '65 values');
+        one(prop({enum: ['a'.repeat(257)]}), /property "field".*at most 256 characters/, 'a long value');
+        one(prop({enum: ['a', 'a']}), /property "field".*twice/, 'a value twice');
+        one(prop({type: 'string', enum: ['a', 'b'], enumNames: ['A']}), /property "field".*enumNames/, 'names that do not pair');
+        one(prop({type: 'string', title: 't'.repeat(129)}), /property "field".*title.*at most 128/, 'a long title');
+        one(prop({type: 'string', description: 'd'.repeat(501)}), /property "field".*description.*at most 500/, 'a long description');
+        one(prop({type: 'string', default: 'd'.repeat(257)}), /property "field".*default/, 'a long default');
+        one(prop({type: 'integer', default: 'one'}), /property "field".*default/, 'a default of another type');
+        one(prop({type: 'string', enum: ['a', 'b'], default: 'c'}), /property "field".*default/, 'a default that is no value of the enum');
+        one(prop({type: 'string', format: 'regex'}), /property "field".*format/, 'a format a form has not');
+        one(prop({type: 'string', minLength: -1}), /property "field".*minLength/, 'a negative length');
+        one(prop({type: 'number', minimum: 'low'}), /property "field".*minimum/, 'a bound that is no number');
+        // clean: no control or bidi character in anything a user is shown
+        for (const dirty of [{title: 'Approve\u202e'}, {description: 'line one\nline two'}, {enum: ['a\u0007']}, {enumNames: ['A\u2066'], enum: ['a']}, {default: 'x\u001b[31m'}]) {
+          one(prop(Object.assign({type: 'string'}, dirty)), /property "field".*control or bidi character/, JSON.stringify(dirty));
+        }
+        // the property's own name too, and the form's own title and description
+        one(asking(obj({'na\u202eme': {type: 'string'}})), /property .*control or bidi character/, 'a name');
+        one(asking(obj({ok: {type: 'string'}}, {title: 't'.repeat(129)})), /its title.*at most 128/, 'the form\'s title');
+        one(asking(obj({ok: {type: 'string'}}, {description: 'bad\u202e'})), /its description.*control or bidi character/, 'the form\'s description');
+        one(asking(obj({ok: {type: 'string'}}, {minProperties: 1})), /may not carry minProperties/, 'a keyword a form has not');
+        one(asking(obj({['n'.repeat(65)]: {type: 'string'}})), /property .*name.*at most 64/, 'a long name');
+      });
+
+      it('a question\'s message carries no control or bidi character', () => {
+        for (const bad of ['Replace\nit?', 'Replace \u202eit?', 'Replace\u0000 it?']) {
+          one(asking(FORM, {overwrite: {message: bad, schema: Q.overwrite.schema}}), /message.*control or bidi character/, JSON.stringify(bad));
+        }
+      });
+
       it('its message holds text and {name} placeholders, nothing else in braces', () => {
         clean(asking(FORM, {overwrite: {message: 'Replace {name} in {folder_2}?', schema: Q.overwrite.schema}}));
         for (const bad of ['Replace {name?', 'Replace name}?', 'Replace {}?', 'Replace {na me}?', 'Replace {{name}}?', 'Replace {name.first}?', 'Replace {1st}?']) {
@@ -645,8 +691,37 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
       const message = schemaSafety.refusalFor('shaped', problem).message;
       assert.ok(!/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(message), JSON.stringify(message.slice(0, 120)));
       assert.ok(message.length < 700, String(message.length));
-      // validate, the author's own tool, says it whole
-      assert.ok(declarations.check(spec, null).problems[0].message.length > 5000);
+    });
+
+    // the reviewer's I1 on #302: validate's result reaches an MCP client (countinghouse_validate_module), so
+    // what it says is cut and cleaned at its source, as the load's line is
+    it('every message of the checks, a problem\'s and a warning\'s and an icon\'s, is cut and carries no control or bidi character', async () => {
+      const DIRTY = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+      const evil = `k\n\u001b[31m\u202e${'x'.repeat(5000)}`;
+      const spec = specOf({
+        name: `read${evil}`,
+        resource: {uriTemplate: 'notes/{id}', name: 'note', changesWith: [`notesService.${evil}`], completion: {[evil]: `notesService.${evil}`}},
+        questions: {overwrite: {message: 'Replace it?', schema: '/q/form'}},
+        icons: [{file: `icons/${evil}.png`}]
+      }, {promptList: [{name: 'triage', arguments: {schema: '/p/args'}, messages: [{role: 'user', text: `Triage {{${evil}}} and {{ ${evil} }}.`}], completion: {[evil]: 'notesService.none'}}]});
+      const schema = {notesService: {[`read${evil}`]: {}}, q: {form: {type: 'object', properties: {[evil]: {type: 'object'}, password: {type: 'string', title: evil}}, required: [evil, `also${evil}`]}},
+        p: {args: {type: 'object', properties: {[evil]: {type: 'integer'}, [`s${evil}`]: {type: 'string'}}, required: [`gone${evil}`]}}};
+      spec.device.serviceList[SERVICE].actionList[0].input = {schema: '/in'};
+      schema.in = {type: 'object', properties: {id: {type: 'string'}}, required: ['id', evil]};
+      const r = declarations.check(spec, schema);
+      assert.ok(r.problems.length >= 8 && r.warnings.length >= 2, `${r.problems.length} problems, ${r.warnings.length} warnings`);
+      const iconProblems = require('../../lib/declared-icons').problems(os.tmpdir(), spec);
+      assert.strictEqual(iconProblems.length, 1);
+      for (const p of r.problems.concat(r.warnings, iconProblems)) {
+        assert.ok(p.message.length <= 512 && p.path.length <= 512, `${p.message.length}: ${JSON.stringify(p.message.slice(0, 80))}`);
+        assert.ok(!DIRTY.test(p.message) && !DIRTY.test(p.path), JSON.stringify(p.message.slice(0, 120)));
+      }
+      // and so what validate answers with
+      const dir = moduleWith('dirty', {action: {resource: {uriTemplate: 'notes/{id}', name: 'note', changesWith: [`greetService.${evil}`]}}});
+      const result = await validated(dir);
+      const said = result.problems.filter((p) => p.stage === 'declarations');
+      assert.ok(said.length >= 1);
+      for (const p of said) assert.ok(p.message.length <= 512 && !DIRTY.test(p.message), JSON.stringify(p.message.slice(0, 120)));
     });
 
     it('schemaProblem (what a validator runs for a spawn) gives the problem its stage; refusalFor says it', () => {
