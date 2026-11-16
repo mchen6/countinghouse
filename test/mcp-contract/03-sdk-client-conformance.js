@@ -84,7 +84,8 @@ function argsTable(scanDir) {
     [`${SHAPE}string_out`]:                                     {args: {}, expect: 'ok'},
     [`${SHAPE}number_out`]:                                     {args: {}, expect: 'ok'},
     [`${SHAPE}null_out`]:                                       {args: {}, expect: 'ok'},
-    [`${SHAPE}binary_whole_out`]:                               {args: {}, expect: 'block'}
+    [`${SHAPE}binary_whole_out`]:                               {args: {}, expect: 'block'},
+    [`${SHAPE}images_array_out`]:                               {args: {}, expect: 'ok'}
   };
 }
 

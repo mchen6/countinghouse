@@ -230,6 +230,20 @@
         "contentEncoding": "base64",
         "contentMediaType": "image/png"
       }
+    },
+    "images_array_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "contentMediaType": "image/png"
+        }
+      }
     }
   }
 }

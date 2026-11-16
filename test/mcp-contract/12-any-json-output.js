@@ -101,6 +101,32 @@ describe('mcp-contract 12: output schemas of any JSON value, by era (M20)', func
     });
   }
 
+  it('images nested under a non-object root: modern advertises the array of references; legacy gets their text, then the blocks', async () => {
+    const b = (t) => Buffer.from(t).toString('base64');
+    const refs = [{mimeType: 'image/png', bytes: 3, block: 1}, {mimeType: 'image/png', bytes: 4, block: 2}];
+    const blocks = [{type: 'image', data: b('one'), mimeType: 'image/png'}, {type: 'image', data: b('two!'), mimeType: 'image/png'}];
+    assert.strictEqual(tools.modern[`${SHAPE}images_array_out`].outputSchema.items.type, 'object');
+    assert.strictEqual(tools.legacy[`${SHAPE}images_array_out`].outputSchema, undefined);
+    const m = (await rpc('tools/call', {name: `${SHAPE}images_array_out`, arguments: {}}, {modern: true})).result;
+    assert.deepStrictEqual(m.structuredContent, refs);
+    assert.deepStrictEqual(m.content.slice(1, 3), blocks);
+    const l = (await rpc('tools/call', {name: `${SHAPE}images_array_out`, arguments: {}}, {modern: false})).result;
+    assert.strictEqual(l.structuredContent, undefined);
+    assert.deepStrictEqual(l.content.slice(0, 3), [{type: 'text', text: JSON.stringify(refs)}, ...blocks], 'never the base64 in the text');
+  });
+
+  it('a whole binary output as a legacy task: tasks/result is its one block, as a call is', async () => {
+    const created = await rpc('tools/call', {name: `${SHAPE}binary_whole_out`, arguments: {}, task: {}}, {modern: false});
+    const taskId = created.result.task.taskId;
+    for (let i = 0; i < 100; i++) {
+      const got = await rpc('tasks/get', {taskId}, {modern: false});
+      if (got.result && got.result.status === 'completed') break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const r = (await rpc('tasks/result', {taskId}, {modern: false})).result;
+    assert.deepStrictEqual(r.content.filter((c) => c.type !== 'text' || !/receipt|reached the model/.test(c.text)), [{type: 'image', data: PNG, mimeType: 'image/png'}]);
+  });
+
   it('an object schema is advertised alike to both eras', () => {
     assert.deepStrictEqual(tools.modern[`${SHAPE}object_out`].outputSchema, tools.legacy[`${SHAPE}object_out`].outputSchema);
   });

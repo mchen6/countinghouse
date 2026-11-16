@@ -146,6 +146,16 @@
             "output": {
               "schema": "/shapeService/binary_whole_out/output"
             }
+          },
+          {
+            "name": "images_array_out",
+            "description": "Returns two PNGs as an array, its items declared contentEncoding: base64.",
+            "input": {
+              "schema": "/shapeService/images_array_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/images_array_out/output"
+            }
           }
         ]
       }
