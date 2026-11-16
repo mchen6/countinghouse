@@ -185,3 +185,75 @@ describe('module-validator: unusable input', () => {
     });
   });
 });
+
+// What the load refuses as unsafe (lib/schema-safety.js: MODULE_ASSEMBLY_FAIL,
+// stage=schemaSafety), validate reports too: an author must not learn of it
+// only when an operator's load fails. The same check, the same words.
+describe('module-validator: a schema.json the load refuses as unsafe', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const schemaSafety = require('../../lib/schema-safety');
+  const dirs = [];
+  after(() => { for (const d of dirs) fs.rmSync(d, {recursive: true, force: true}); });
+  // the well-formed fixture, its one action's input replaced, and `extra` beside the services in schema.json
+  function moduleWith(input, extra = {}, raw = null) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-unsafe-'));
+    dirs.push(dir);
+    fs.cpSync(fixture('handler-map-convention'), dir, {recursive: true});
+    const schema = JSON.parse(fs.readFileSync(path.join(dir, 'schema.json'), 'utf8'));
+    if (input != null) schema.greetService.hello.input = input;
+    fs.writeFileSync(path.join(dir, 'schema.json'), raw != null ? raw : JSON.stringify(Object.assign(schema, extra)));
+    return dir;
+  }
+  const validated = (dir) => new Promise((resolve, reject) => moduleValidator.validateModule(dir, (err, result) => (err ? reject(err) : resolve(result))));
+  const unsafe = (result) => result.problems.filter((p) => p.stage === 'schemaSafety');
+
+  it('a pattern that can backtrack catastrophically fails validate, naming the schema path and not the pattern', async () => {
+    const dir = moduleWith({type: 'object', properties: {name: {type: 'string', pattern: '^(a+)+$'}}});
+    const result = await validated(dir);
+    assert.strictEqual(result.ok, false);
+    const found = unsafe(result);
+    assert.strictEqual(found.length, 1, JSON.stringify(result.problems));
+    assert.match(found[0].message, /\/greetService\/hello\/input\/properties\/name\/pattern/);
+    assert.ok(!found[0].message.includes('(a+)+'), found[0].message);
+    assert.strictEqual(found[0].code, 'MODULE_ASSEMBLY_FAIL');
+    assert.strictEqual(typeof(found[0].fix), 'string');
+    // the load's own refusal says the same of it
+    const refusal = schemaSafety.schemaRefusal(dir, 'handler-map-convention');
+    assert.ok(refusal.message.includes(found[0].message), `${refusal.message} / ${found[0].message}`);
+  });
+
+  it('schemas that come to more than 100,000 nodes with their $refs expanded fail validate', async () => {
+    const defs = {l0: {type: 'string'}};
+    for (let i = 1; i <= 12; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+    const found = unsafe(await validated(moduleWith({$ref: '#/defs/l12'}, {defs})));
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /more than 100000 schema nodes/);
+  });
+
+  it('so do a schema.json over 1 MB, a $ref to itself, and a $ref that names no place', async () => {
+    const big = unsafe(await validated(moduleWith(null, {}, JSON.stringify({$id: '#/', pad: 'x'.repeat(1024 * 1024 + 10), greetService: {hello: {input: {type: 'object'}, output: {type: 'object'}}}}))));
+    assert.match(big[0].message, /larger than 1 MB/);
+    const self = unsafe(await validated(moduleWith({$ref: '#/greetService/hello/input'})));
+    assert.match(self[0].message, /refers to itself/);
+    const nowhere = unsafe(await validated(moduleWith({type: 'object', properties: {name: {$ref: '#/nowhere'}}})));
+    assert.match(nowhere[0].message, /names no place in schema\.json/);
+  });
+
+  it('an unsafe schema is not walked for its declarations: one problem says why, and the rest wait for a safe one', async () => {
+    const PNG = {type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png'};
+    const dir = moduleWith({type: 'object', properties: {name: {type: 'string', pattern: '^(a+)+$', 'x-mcp-header': 'X-Name'}}});
+    const schema = JSON.parse(fs.readFileSync(path.join(dir, 'schema.json'), 'utf8'));
+    schema.greetService.hello.output = {type: 'object', oneOf: [{type: 'object', properties: {image: PNG}}]};
+    fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify(schema));
+    const result = await validated(dir);
+    assert.strictEqual(unsafe(result).length, 1);
+    assert.deepStrictEqual(result.problems.filter((p) => p.stage === 'declarations'), []);
+  });
+
+  it('a safe schema has no such problem, and its declarations are checked as before', async () => {
+    const result = await validated(moduleWith({type: 'object', properties: {name: {type: 'string', pattern: '^[a-z]+$', 'x-mcp-header': 'X-Name'}}}));
+    assert.deepStrictEqual(unsafe(result), []);
+    assert.strictEqual(result.problems.filter((p) => p.stage === 'declarations').length, 1);
+  });
+});

@@ -326,6 +326,9 @@ Keep patterns simple, schemas small, and outputs modest: return a reference
 - actions whose schemas come to more than 100,000 nodes once their `$ref`s
   are expanded, or a `$ref` that refers to itself.
 
+`countinghouse-validate` reports the same, in the same words (stage
+`schemaSafety`), so you meet it before an operator's load does.
+
 What your module declares is checked at load as well, where the meta-schema
 cannot say it (`MODULE_ASSEMBLY_FAIL`, stage `declarations`, naming the
 action):
