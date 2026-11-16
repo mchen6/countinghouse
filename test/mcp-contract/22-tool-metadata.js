@@ -53,12 +53,12 @@ describe('mcp-contract 22: tool metadata on tools/list (M2)', function() {
   before(() => options.setOptions(OPTIONS));
 
   describe('the icons a load keeps (declared-icons inline)', () => {
-    it('reads each declared file once, as {mimeType, data}', () => {
+    it('reads each declared file once, as {mimeType, data, src}', () => {
       const spec = JSON.parse(fs.readFileSync(path.join(FIXTURE, 'api.json'), 'utf8'));
       const got = icons.inline(FIXTURE, spec);
       assert.strictEqual(got.problem, undefined, got.problem);
       assert.deepStrictEqual([...got.icons.keys()], ['icons/note.png']);
-      assert.deepStrictEqual(got.icons.get('icons/note.png'), {mimeType: 'image/png', data: PNG.toString('base64')});
+      assert.deepStrictEqual(got.icons.get('icons/note.png'), {mimeType: 'image/png', data: PNG.toString('base64'), src: `data:image/png;base64,${PNG.toString('base64')}`});
     });
 
     it('a file that is missing, an SVG, too large or outside the module is the load\'s refusal, naming it', () => {
@@ -76,6 +76,13 @@ describe('mcp-contract 22: tool metadata on tools/list (M2)', function() {
           assert.match(got.problem, why);
         }
         assert.deepStrictEqual(icons.inline(dir, {device: {friendlyName: 'x', serviceList: {[SVC]: {actionList: [action('go')]}}}}), {icons: new Map()});
+        // the review of M2: the bound is on files read, not on entries; one
+        // file named by many actions is read once and loads
+        fs.copyFileSync(path.join(FIXTURE, 'icons', 'note.png'), path.join(dir, 'icons', 'one.png'));
+        const many = {device: {friendlyName: 'x', serviceList: {[SVC]: {actionList: Array.from({length: 70}, (_, i) => action(`a${i}`, {icons: [{file: 'icons/one.png'}, {file: 'icons/one.png'}, {file: 'icons/one.png'}, {file: 'icons/one.png'}]}))}}}};
+        const got = icons.inline(dir, many);
+        assert.strictEqual(got.problem, undefined, got.problem);
+        assert.deepStrictEqual([...got.icons.keys()], ['icons/one.png']);
       } finally {
         fs.rmSync(dir, {recursive: true, force: true});
       }
@@ -90,9 +97,11 @@ describe('mcp-contract 22: tool metadata on tools/list (M2)', function() {
         action('plain'),
         action('all', {title: 'All of it', annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
           icons: [{file: 'icons/note.png', sizes: ['1x1']}, {file: 'icons/note.png'}]}),
-        action('some', {annotations: {destructiveHint: true}})
+        action('some', {annotations: {destructiveHint: true}}),
+        action('none', {annotations: {}})
       ], kept);
-      const [plain, all, some] = moduleTools(await list(ci, {modern}));
+      const [plain, all, some, none] = moduleTools(await list(ci, {modern}));
+      assert.deepStrictEqual(Object.keys(none), ['name', 'description', 'inputSchema', 'outputSchema'], 'no hint declared: no annotations');
       assert.deepStrictEqual(Object.keys(plain), ['name', 'description', 'inputSchema', 'outputSchema']);
       assert.deepStrictEqual(Object.keys(all), ['name', 'description', 'inputSchema', 'outputSchema', 'title', 'annotations', 'icons']);
       assert.strictEqual(all.title, 'All of it');
@@ -124,7 +133,7 @@ describe('mcp-contract 22: tool metadata on tools/list (M2)', function() {
     do {
       const r = await list(ci, {cursor});
       assert.ok(r.result != null, JSON.stringify(r).slice(0, 300));
-      assert.ok(Buffer.byteLength(JSON.stringify(r.result.tools)) <= pages.MAX_PAGE_BYTES, `page ${count}`);
+      assert.ok(Buffer.byteLength(JSON.stringify(r)) <= pages.MAX_PAGE_BYTES, `page ${count}: the whole answer, envelope and cursor too`);
       got.push(...r.result.tools);
       cursor = r.result.nextCursor;
       count += 1;
