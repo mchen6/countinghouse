@@ -63,7 +63,9 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
       const ci = stub(true);
       const res = await read(`countinghouse://r/${id}`, ci);
       assert.strictEqual(res.result, undefined, JSON.stringify(res));
-      assert.match(res.error.message, /metering is down/);
+      // a fixed text: the provider's own message is logged, never echoed
+      assert.strictEqual(res.error.message, 'the read could not be metered');
+      assert.ok(!JSON.stringify(res).includes('metering is down'));
       assert.ok(!JSON.stringify(res).includes(Buffer.from('%PDF secret').toString('base64')), 'no bytes');
       assert.deepStrictEqual(ci.charges, [['countinghouse:resources/read', 3]]);
     });
@@ -84,7 +86,32 @@ describe('mcp-contract 17: stored values, in-process (M6)', function() {
     });
   });
 
+  // M19 x M6: a resources/read is cancellable (the review of #314); a read
+  // cancelled before it is charged is neither charged nor answered
+  it('a resources/read cancelled before it is served: no charge, nothing answered', async () => {
+    const {id} = await blobs.put({owner: identity.idForKey(KEY), session: null, mimeType: 'application/pdf', bytes: Buffer.from('%PDF x'), source: {}});
+    const charges = [];
+    const ci = {rateLimit: (k, cb) => cb(null, {limited: false}), recordCall: (k, tool, cost, cb) => { charges.push(tool); cb(null, {}); }};
+    const got = await new Promise((resolve) => {
+      gateway.handle({jsonrpc: '2.0', id: 9, method: 'resources/read', params: {uri: `countinghouse://r/${id}`}}, ci, KEY,
+        (err, res, info) => resolve({err, res, info}), {cancellable: (cancel) => { setImmediate(cancel); return () => {}; }});
+    });
+    assert.deepStrictEqual([got.err, got.res, got.info], [null, null, {cancelled: true}]);
+    assert.deepStrictEqual(charges, []);
+  });
+
   describe('a task\'s stored values are in its job\'s session', () => {
+    it('a task completed twice keeps its first stored values (the review of #313): nothing stored again', async () => {
+      const owner = identity.idForKey(KEY);
+      const who = {module: 'm', action: 'a', tool: 't'};
+      const out = {output: {doc: Buffer.from('%PDF twice').toString('base64')}};
+      const first = await gateway.placeTaskValues({ownerId: owner}, out, PDF, null, who);
+      const before = await blobs.usage(owner);
+      const again = await gateway.placeTaskValues({ownerId: owner, resultUris: first.uris}, out, PDF, null, who);
+      assert.deepStrictEqual(again.uris, first.uris);
+      assert.deepStrictEqual(await blobs.usage(owner), before, 'no new item');
+    });
+
     it('placeTaskValues stores in the session it is given, and none when given none', async () => {
       const owner = identity.idForKey(KEY);
       const who = {module: 'm', action: 'a', tool: 't'};

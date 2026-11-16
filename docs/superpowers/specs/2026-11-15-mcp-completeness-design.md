@@ -466,7 +466,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 |---|---|
 | The three new lists, and their `list_changed` | Per session, like `tools/list`: a pack one session turned on lists its resources and prompts to that session only. A resource or prompt not listed to a session is answered as unknown, byte for byte. |
 | Cursors | A position in the session's own list. Nothing in them is a session id. |
-| Stored results | The record carries the session. Another session of the same user is answered "not found". They end with the session, and survive a runtime restart while it resumes. They live in the local store's files. |
+| Stored results | The record carries the session (since M6: the call's session at store time, and `resources/read` checks the request's). Another session of the same user is answered "not found". They end with the session, and survive a runtime restart while it resumes. They live in the local store's files. M17 also removes a call's stored values when its answer could not be delivered (the session ended before it, or the answer was too large for the connection), so undelivered values don't hold the owner's quota until their retention (the review of #313). |
 | Module resources of a per-session module (§4a) | Read in the calling session's worker, by the call's token entry, as a hop is. |
 | `ctx.ask` | The `requestState` MAC binds the session id. A restored session keeps its id, so a dialog open across a restart still verifies within its 5 minutes. |
 | Tasks | By key and session (the shared-runtime plan's B5). Until B5 lands, modern `tasks/*` stays refused there, as the legacy methods are today. |

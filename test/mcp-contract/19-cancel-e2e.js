@@ -212,6 +212,22 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
       assert.deepStrictEqual(list.result.tasks, [], JSON.stringify(list.result));
     });
 
+    // the review of #314: the client's slot is freed at the cancel, but the
+    // process waits for a cancelled call still running (up to the request
+    // timeout), so its bill is never lost to a shutdown
+    it('stdin closed right after a cancel: the process waits for the cancelled leaf, and its record lands', async () => {
+      io.notify({jsonrpc: '2.0', id: 25, method: 'tools/call', params: {name: LEAF, arguments: {}}});
+      await tick(200);
+      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 25}});
+      await tick(50);
+      const closedAt = Date.now();
+      io.child.stdin.end();
+      await new Promise((r) => (io.child.exitCode != null ? r() : io.child.once('exit', r)));
+      assert.ok(Date.now() - closedAt >= 400, `the process waited for the leaf (${Date.now() - closedAt} ms)`);
+      assert.deepStrictEqual(runsOf(h), ['leaf']);
+      assert.strictEqual(outsOf(h, LEAF)[0].outcome, 'cancelled', 'its Out record was written before the exit');
+    });
+
     it('an unknown id, and a cancel for a call already answered, are ignored', async () => {
       io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 'never-sent'}});
       const answer = await io.request({jsonrpc: '2.0', id: 22, method: 'tools/call', params: {name: LEAF, arguments: {}}}, 10000);
