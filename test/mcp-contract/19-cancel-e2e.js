@@ -118,9 +118,8 @@ function balance(port) {
 describe('mcp-contract 19: cancelling a call in flight (M19), end to end', function() {
   this.timeout(120000);
 
-  for (const [label, port, extra] of [['routed hops', 9587, []], ['direct peer channels', 9588, ['--directPeerChannels']]]) {
+  for (const [label, PORT, extra] of [['routed hops', testPort(9587), []], ['direct peer channels', testPort(9588), ['--directPeerChannels']]]) {
     describe(`HTTP, ${label}`, () => {
-      const PORT = testPort(port);
       let h;
       let server;
       beforeEach(async () => {
@@ -204,8 +203,11 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
     // before its CreateTaskResult is written, has its job removed (the
     // client never learned its id); nothing is answered
     it('a legacy task-augmented call cancelled before its answer: no answer, and no job left', async () => {
-      io.notify({jsonrpc: '2.0', id: 23, method: 'tools/call', params: {name: LEAF, arguments: {}, task: {}}});
-      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 23}});
+      // one write, so the two lines are taken together, as a client sending a
+      // cancel at once would have them; a cancel that came after its task's
+      // job had started would let it run to its end, as documented
+      io.child.stdin.write(`${JSON.stringify({jsonrpc: '2.0', id: 23, method: 'tools/call', params: {name: LEAF, arguments: {}, task: {}}})}\n` +
+        `${JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 23}})}\n`);
       await tick(2000);
       assert.deepStrictEqual(io.lines.map((l) => JSON.parse(l)).filter((m) => m.id === 23), [], 'no answer');
       const list = await io.request({jsonrpc: '2.0', id: 24, method: 'tasks/list', params: {}}, 10000);
