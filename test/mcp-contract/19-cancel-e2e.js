@@ -214,6 +214,23 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
       assert.deepStrictEqual(list.result.tasks, [], JSON.stringify(list.result));
     });
 
+    // the other side of the task case (the review of #314): a cancel that
+    // comes after its task's answer names nothing in flight (the client has
+    // the task's id, and tasks/cancel is its way): the job runs to its end
+    it('a cancel after a task\'s answer changes nothing: the job runs to its end and is counted', async () => {
+      const created = await io.request({jsonrpc: '2.0', id: 26, method: 'tools/call', params: {name: LEAF, arguments: {}, task: {}}}, 10000);
+      const taskId = created.result.task.taskId;
+      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 26}});
+      let status = null;
+      for (let w = 0; w < 10000 && status !== 'completed'; w += 100) {
+        status = (await io.request({jsonrpc: '2.0', id: `g${w}`, method: 'tasks/get', params: {taskId}}, 5000)).result.status;
+        if (status !== 'completed') await tick(100);
+      }
+      assert.strictEqual(status, 'completed');
+      assert.deepStrictEqual(runsOf(h), ['leaf']);
+      assert.strictEqual(outsOf(h, LEAF)[0].outcome, 'ok', 'counted as the run it was');
+    });
+
     // the review of #314: the client's slot is freed at the cancel, but the
     // process waits for a cancelled call still running (up to the request
     // timeout), so its bill is never lost to a shutdown
