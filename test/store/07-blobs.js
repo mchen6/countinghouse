@@ -194,7 +194,9 @@ for (const kind of ['local', 'redis']) {
           assert.strictEqual(fs.statSync(dir).mode & 0o777, 0o700);
           for (const f of fs.readdirSync(dir)) assert.strictEqual(fs.statSync(path.join(dir, f)).mode & 0o777, 0o600, f);
         }
-        assert.deepStrictEqual(fs.readdirSync(dir).sort(), [`${id}.bin`, `${id}.json`, 'index.json']);
+        // both sides in plain code-unit order: the id is random, so it may
+        // sort before or after index.json
+        assert.deepStrictEqual(fs.readdirSync(dir).sort(), [`${id}.bin`, `${id}.json`, 'index.json'].sort());
         await b.close();
         const again = open(LIMITS, roots[roots.length - 1]);
         assert.notStrictEqual(await again.get(id, {owner: OWNER_A, session: null}), null);
