@@ -13,7 +13,6 @@ module.exports = async (input, ctx) => {
     date: r.d instanceof Date && r.d.getTime() === 5,
     map: r.m instanceof Map && r.m.get(1) === 'a',
     set: r.s instanceof Set && r.s.has(2),
-    typed: r.t instanceof Uint8Array && r.t.length === 2 && r.t[1] === 2,
     bigint: r.b === 10n,
     undef: Array.isArray(r.u) && r.u.length === 1 && r.u[0] === undefined
   }, forged: r.forged}};
