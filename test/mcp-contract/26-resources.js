@@ -50,8 +50,13 @@ const DEVICES = {
     act('allNotes', {description: 'Every note.', resource: {uriTemplate: 'all', name: 'all'}}),
     act('cover', {resource: {uriTemplate: 'cover/{id}', name: 'cover'}}),
     act('broken', {resource: {uriTemplate: 'broken/{id}', name: 'broken'}}),
+    act('loop', {resource: {uriTemplate: 'loop/{id}', name: 'loop'}}),
     act('save')
   ]},
+  // two modules whose names slug alike: neither's resources are served, so
+  // a URI can never come to name the other's (the review of M7)
+  'twin-a': {role: null, actions: [act('readTwin', {resource: {uriTemplate: 'x/{id}', name: 'twin'}})]},
+  'twin_a': {role: null, actions: [act('readTwin', {resource: {uriTemplate: 'x/{id}', name: 'twin'}})]},
   secret: {role: null, actions: [act('readNote', {resource: {uriTemplate: 'secret/{k}', name: 'secret'}})]},
   'ch-pack-x': {role: 'scenario', actions: [act('readRun', {resource: {uriTemplate: 'runs/{run}', name: 'run'}})]},
   'ch-step-part': {role: 'part', actions: [act('readPart', {resource: {uriTemplate: 'parts/{p}', name: 'part'}})]}
@@ -59,6 +64,7 @@ const DEVICES = {
 
 const invoked = [];
 const billed = [];
+let limited = false;
 function buildInterface() {
   const deviceMap = {};
   const specs = {};
@@ -70,7 +76,7 @@ function buildInterface() {
   return {
     deviceManager: {deviceMap, moduleManager: {unlisted: new Set(['ch-step-part'])}, getAllDeviceSpecs: () => specs},
     getDeviceSchema(deviceID, p, session) { session.localCallback(null, SCHEMAS[p] || {type: 'object'}); },
-    rateLimit: (key, cb) => cb(null, {limited: false}),
+    rateLimit: (key, cb) => cb(null, {limited: limited}),
     recordCall(appKey, tool, cost, cb) { billed.push({appKey, tool, cost}); cb(null); },
     // the call path's one way into a module: a read reaches it as a call does
     invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
@@ -81,6 +87,7 @@ function buildInterface() {
       if (actionName === 'allNotes') return answer(null, {output: {ids: ['first']}});
       if (actionName === 'cover') return answer(null, {output: PNG64});
       if (actionName === 'broken') return answer(Object.assign(new Error('the note is gone'), {code: 'NOTE_GONE'}), null);
+      if (actionName === 'loop') { const o = {}; o.self = o; return answer(null, {output: o}); }
       return answer(null, {output: {saved: true}});
     }
   };
@@ -139,7 +146,8 @@ describe('mcp-contract 26: module resources (M7)', function() {
       assert.deepStrictEqual(statics, [{uri: 'countinghouse://m/notes/all', name: 'all', description: 'Every note.'}]);
       const templates = await listAll('resources/templates/list', 'resourceTemplates', KEY_A, {modern});
       assert.deepStrictEqual(templates.map((t) => t.uriTemplate), ['countinghouse://m/notes/notes/{id}', 'countinghouse://m/notes/csv/{id}.csv',
-        'countinghouse://m/notes/cover/{id}', 'countinghouse://m/notes/broken/{id}', 'countinghouse://m/secret/secret/{k}', 'countinghouse://m/ch_pack_x/runs/{run}']);
+        'countinghouse://m/notes/cover/{id}', 'countinghouse://m/notes/broken/{id}', 'countinghouse://m/notes/loop/{id}', 'countinghouse://m/secret/secret/{k}',
+        'countinghouse://m/ch_pack_x/runs/{run}'], 'the twins, whose names slug alike, are not served');
       assert.deepStrictEqual(templates[0], {uriTemplate: 'countinghouse://m/notes/notes/{id}', name: 'note', title: 'Note', description: 'readNote it', mimeType: 'text/markdown'});
       const b = await listAll('resources/templates/list', 'resourceTemplates', KEY_B, {modern});
       assert.ok(b.every((t) => t.uriTemplate.startsWith('countinghouse://m/notes/')), 'B is granted notes only');
@@ -203,6 +211,27 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.deepStrictEqual(JSON.parse(answers[0]), {code: -32602, message: 'Resource not found'});
     assert.deepStrictEqual(invoked, [], 'no module reached');
     assert.ok((await read(KEY_A, 'countinghouse://m/secret/secret/a')).result != null, 'A is granted secret');
+  });
+
+  it('an output that cannot be made JSON is the read\'s error, never a hang', async () => {
+    const r = await read(KEY_A, 'countinghouse://m/notes/loop/1');
+    assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));
+  });
+
+  it('modules whose names slug alike are not read: their URI is no one\'s', async () => {
+    const r = await read(KEY_A, 'countinghouse://m/twin_a/x/1');
+    assert.deepStrictEqual(r.error, {code: -32602, message: 'Resource not found'});
+  });
+
+  it('a rate-limited caller\'s probe that reads nothing is limited too, with the refusal a limited read gets', async () => {
+    limited = true;
+    try {
+      const r = await read(KEY_A, 'countinghouse://m/nobody/x/1');
+      assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));
+      assert.strictEqual(r.error.data && r.error.data['countinghouse/code'], 'DENY_DEVICE_ACCESS');
+    } finally {
+      limited = false;
+    }
   });
 
   it('M6\'s stored results are their own path: a countinghouse://r/ URI never reaches a module', async () => {

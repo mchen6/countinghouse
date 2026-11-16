@@ -36,6 +36,15 @@ describe('mcp-contract 25: the module resource URI parser (M7)', () => {
     }
   });
 
+  // the review of M7: a variable named like an Object.prototype member is
+  // the input's own property, never lost on assignment
+  it('a variable named __proto__ is an own property of the input', () => {
+    const got = uri.match(uri.compile('files/{__proto__}'), ['files', 'abc']);
+    assert.ok(Object.prototype.hasOwnProperty.call(got, '__proto__'));
+    assert.strictEqual(Object.getOwnPropertyDescriptor(got, '__proto__').value, 'abc');
+    assert.strictEqual(JSON.stringify(got), '{"__proto__":"abc"}');
+  });
+
   it('a variable is percent-decoded as UTF-8', () => {
     assert.deepStrictEqual(uri.match(notes, ['notes', 'caf%C3%A9']), {id: 'café'});
     assert.deepStrictEqual(uri.match(notes, ['notes', 'a%20b~c.d_e-f']), {id: 'a b~c.d_e-f'});
