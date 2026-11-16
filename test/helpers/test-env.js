@@ -70,10 +70,19 @@ function redisArgsFor(args) {
 // read the private one.
 const redisUrlFor = (fallback = 'redis://127.0.0.1:6379') => (redisUrl() != null ? redisUrl() : fallback);
 // The same Redis as an object connection (BullMQ's), db `db`: the host
-// without an IPv6 address's brackets. run-local refuses a literal one.
+// without an IPv6 address's brackets, the URL's username and password, TLS
+// for rediss:. run-local refuses a literal one.
 const redisConnectionFor = (db) => {
-  const u = new URL(redisUrlFor());
-  return {host: u.hostname.replace(/^\[(.*)\]$/, '$1'), port: Number(u.port) || 6379, db};
+  let u;
+  try { u = new URL(redisUrlFor()); } catch (e) { u = null; }
+  if (u == null || (u.protocol !== 'redis:' && u.protocol !== 'rediss:') || u.hostname === '') {
+    throw new Error(`CH_TEST_REDIS_URL is not a redis:// or rediss:// URL with a host: ${redisUrlFor()}`);
+  }
+  const c = {host: u.hostname.replace(/^\[(.*)\]$/, '$1'), port: Number(u.port) || 6379, db};
+  if (u.username !== '') c.username = decodeURIComponent(u.username);
+  if (u.password !== '') c.password = decodeURIComponent(u.password);
+  if (u.protocol === 'rediss:') c.tls = {};
+  return c;
 };
 
 const started = [];
