@@ -306,6 +306,13 @@ says how to write a module for this.
   official MCP SDK client does) rejected every module tool. It is now the
   output itself, and `content[0].text` is the same object serialized. Read
   `structuredContent`, not `structuredContent.output`.
+- **Images and audio arrive as their own blocks.** An output field declared
+  `contentEncoding: "base64"` with an `image/*` or `audio/*`
+  `contentMediaType` is sent as an `image` or `audio` content block after the
+  text block, and `structuredContent` (and the text) hold a reference to it,
+  `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
+  knows only protocol revision 2024-11-05, which has no audio content type,
+  may not render an audio block.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their
