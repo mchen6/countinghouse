@@ -24,12 +24,29 @@ const ROOT = path.join(__dirname, '..', '..');
 // a line ending "// run-local: not the shared Redis" (a client on a dead port)
 // is let through.
 const CLIENT = /\b(createClient|createResilientClient|new\s+Redis|new\s+RedisMeteringProvider|new\s+IORedis)\s*\(/;
+// An object connection is the same mistake (the reviewer, 2026-11-16: auth
+// 25, 33, 34 and sandbox 32 put BullMQ jobs in the shared Redis's db 11
+// under run-local): on a client's line or a connection's, port 6379, or a
+// loopback host with no port (6379 is the default), or a BullMQ queue with
+// no connection at all (localhost:6379). 6379 as data -- a denied endpoint,
+// a sandbox's connect attempt -- is on no such line. redisConnectionFor()
+// (test/helpers/test-env.js) is the way.
+const BULLMQ = /\bnew\s+(Queue|QueueEvents|FlowProducer)\s*\(/;
+const CONNECTION = /\bconnection\s*[:=]/;
+const LOOPBACK_HOST = /\bhost\s*:\s*['"`](127\.0\.0\.1|localhost|::1|\[::1\])['"`]/;
+function objectConnection(code) {
+  if (!CLIENT.test(code) && !BULLMQ.test(code) && !CONNECTION.test(code)) return false;
+  if (/\bport\s*:\s*['"`]?6379\b/.test(code)) return true;
+  if (LOOPBACK_HOST.test(code) && !/\bport\s*:/.test(code)) return true;
+  return BULLMQ.test(code) && !CONNECTION.test(code);
+}
 function ownRedisClients(text) {
   return String(text).split('\n').filter((line) => {
     // A client deliberately on a port nobody answers says so.
     if (/\/\/ run-local: not the shared Redis/.test(line)) return false;
     // A comment starts at a // not preceded by ':' (so redis:// stays).
     const code = line.replace(/(^|[^:])\/\/.*$/, '$1');
+    if (objectConnection(code)) return true;
     if (!CLIENT.test(code)) return false;
     return /['"`]redis:\/\//.test(code) || /createClient\(\s*\)/.test(code);
   });
