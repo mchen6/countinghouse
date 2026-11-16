@@ -96,6 +96,7 @@ one) as well as the ports it binds.
 | `test/mcp-contract/06-output-schema-at-call-start.js` | 9612 |
 | `test/mcp-contract/07-error-shape.js` | 9656–9657 |
 | `test/mcp-contract/11-progress-e2e.js` | 9580 |
+| `test/mcp-contract/12-any-json-output.js` | 9581 |
 | `test/mcp-contract/14-handler-progress-e2e.js` | 9582 |
 | `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |

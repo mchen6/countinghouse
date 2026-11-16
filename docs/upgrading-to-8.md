@@ -40,6 +40,11 @@ you have to do. What the sandbox does and does not protect is in
     its `$ref`s expanded). Either refusal is `MODULE_ASSEMBLY_FAIL`, at stage
     `schemaCompile` or `schemaSafety`. Load modules with heavy schemas in a
     test run first.
+  - At load, what a module declares is checked too, at stage `declarations`.
+    Two things a 7.x module could carry are refused: a binary output field
+    (`contentEncoding: base64` with a `contentMediaType`) that is not under
+    `properties` or an array's `items`, and `x-mcp-header` anywhere in an
+    input schema. `countinghouse-validate` reports both before you upgrade.
 - **A module's load is bounded.** `--moduleLoadTimeout` (120 s by default,
   every sandbox mode) ends a worker that hasn't answered its load in time,
   and the load fails `MODULE_LOAD_TIMEOUT`.
@@ -335,6 +340,14 @@ says how to write a module for this.
   `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
   knows only protocol revision 2024-11-05, which has no audio content type,
   may not render an audio block.
+- **Output schemas of any JSON type, for 2026-07-28 requests.** A modern
+  `tools/list` advertises an output schema whatever its root type (an array,
+  a string, a number, null), and a modern result carries the output as
+  `structuredContent`, whatever its type; the text block is a string output
+  itself, else its JSON. A legacy request (`initialize`) is unchanged: only an
+  object schema is advertised, and other results are text only. A module's
+  output may now be any JSON value its schema allows, `null` included; before,
+  anything but an object was refused `OUTPUT_DATA_VALIDATION_FAIL`.
 - **Progress for composite calls.** A `tools/call` whose `params._meta`
   carries a `progressToken` (a string of at most 256 characters, or a safe
   integer) gets `notifications/progress` as its hops run: `progress` counts
