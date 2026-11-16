@@ -252,6 +252,15 @@ them is right when they are served:
   16 KiB, named by its path from the module's root. Never a URL, and never
   SVG.
 
+A tool's `title`, `annotations` and `icons` are served on `tools/list`
+(each only when the action declares it). The hints in `annotations`
+(`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are
+your claims: the runtime enforces none of them, and a client or an install
+review may show them. Icons are read and checked when the module loads: a
+missing, oversized or SVG icon refuses the load (stage `icons`), and a reload
+to such a version leaves the loaded one serving. Each is sent inline as a
+`data:` URI from what the load read; nothing is read at list time.
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
