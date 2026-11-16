@@ -89,11 +89,13 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       assert.deepStrictEqual(report.days[0].keptOut, oncePass.days[0].keptOut);
     });
 
-    // (the passes that asked as a count of their own in this report is a field its closed output schema
-    // does not have: that moves the tools/list golden, and waits for the reviewer's word. The CLI's
-    // aggregate counts them among its outcomes already.)
-    it('a call\'s time and its server calls per call are its final pass\'s', async () => {
+    // profile.asked is a field of the report's closed output schema: adding it moved the tools/list golden
+    // for countinghouse_usage_report, on purpose (the reviewer's ruling, 2026-11-15)
+    it('the passes that asked are a count of their own; a call\'s time and its server calls per call are its final pass\'s', async () => {
       const report = await reportOf(asking());
+      assert.strictEqual(report.profile.asked, 2);
+      assert.strictEqual((await reportOf(createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW}))).profile.asked, 0, 'there with none, too');
+      assert.match(require('../../lib/usage/report').reportText(report), /asked the user: 2 passes ended on a question/);
       assert.strictEqual(report.profile.callMs.count, 1, JSON.stringify(report.profile.callMs));
       assert.deepStrictEqual([report.profile.serverCallsPerCall.mean, report.profile.serverCallsPerCall.max], [1, 1]);
       assert.strictEqual(report.profile.serverCallMs.count, 3, 'every server call was made');

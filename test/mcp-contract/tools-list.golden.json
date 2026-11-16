@@ -525,6 +525,11 @@
               ],
               "additionalProperties": false
             },
+            "asked": {
+              "title": "passes of a call that ended on a question for the user (the retry with the answer is the call counted)",
+              "type": "integer",
+              "minimum": 0
+            },
             "serverCallsPerCall": {
               "type": "object",
               "properties": {
@@ -579,6 +584,7 @@
             "callMs",
             "serverCallMs",
             "errors",
+            "asked",
             "serverCallsPerCall"
           ],
           "additionalProperties": false
