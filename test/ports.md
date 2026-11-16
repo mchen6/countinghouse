@@ -48,7 +48,6 @@ one) as well as the ports it binds.
 | `test/auth/22-browser-origins.js` | 9665 |
 | `test/auth/24-job-ownership.js` | 9669 |
 | `test/auth/25-job-schedulers.js` | 9670 |
-| `test/auth/26-bson-preparse-auth.js` | 9662 |
 | `test/auth/30-no-keys-reach-modules.js` | 9631 |
 | `test/auth/31-identity.js` | 9646–9649 |
 | `test/auth/32-reload-auth.js` | 9628 |
@@ -154,6 +153,7 @@ one) as well as the ports it binds.
 | `test/sandbox/50-module-stdio.js` | 9790 |
 | `test/fixtures/server-left-behind/failing.js` (run by `test/validation/16-no-server-left.js`) | 9791 |
 | `test/sandbox/54-per-call-values.js` | 9792 |
+| `test/sandbox/57-session-caps.js` | none (a session socket in its home) |
 | `test/sandbox/58-settings-denied.js` | 9794, 9795 |
 | `test/sandbox/59-protected-paths-denied.js` | 9796, 9797, 9798 |
 | `test/sandbox/60-audit-writes.js` | 9799 (audit, enforce and off, one after another) |
@@ -195,9 +195,6 @@ one) as well as the ports it binds.
 | `test/unit/test014.js` | 9527 |
 | `test/unit/test015.js` | 9527 |
 | `test/unit/test016.js` | 9527 |
-| `test/unit/test017.js` | 9527 |
-| `test/unit/test018.js` | 9527 |
-| `test/unit/test019.js` | 9527 |
 | `test/unit/test020.js` | 9527 |
 | `test/unit/test021.js` | 9527 |
 | `test/unit/test022.js` | 9527 |

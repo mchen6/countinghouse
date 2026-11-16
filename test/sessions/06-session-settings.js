@@ -22,7 +22,8 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     defaults = {maxOutputBytes: 8 * MiB, requestTimeout: 30000};
     packs = {};
     live = new Set([A, B]);
-    settings.configure({ceiling: () => ceiling, defaultOf: (name) => defaults[name], globalPack: (name) => (name in packs ? packs[name] : null), isLive: (id) => live.has(id)});
+    settings.configure({ceiling: () => ceiling, defaultOf: (name) => defaults[name], globalPack: (name) => (name in packs ? packs[name] : null), isLive: (id) => live.has(id),
+      ceilingMemoMs: 0});   // every read asks: the cases change the ceiling between reads
   });
   const loosen = (id, name, value) => settings.set(id, name, value, {loosening: true, over: defaults[name]});
 
@@ -88,6 +89,35 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     settings.effective(A, 'maxOutputBytes');   // the same ceiling, seen again
     ceiling = {state: 'none'};
     assert.strictEqual(settings.effective(B, 'requestTimeout'), 30000, 'B was clamped too');
+  });
+
+  it('the ceiling is read once per memo window on the call path; one seen changed replaces it at once (#271 review, 5)', () => {
+    let reads = 0;
+    settings.configure({ceiling: () => { reads += 1; return ceiling; }, defaultOf: (name) => defaults[name], isLive: (id) => live.has(id), ceilingMemoMs: 60000});
+    loosen(A, 'maxOutputBytes', 16 * MiB);
+    reads = 0;
+    for (let i = 0; i < 100; i++) settings.limitsOf(A);
+    assert.strictEqual(reads, 0, 'within the window, no read');
+    const lower = {state: 'trusted', ceiling: {maxOutputBytes: 12 * MiB}};
+    settings.ceilingSeen(lower);   // the settings tool's re-read
+    assert.strictEqual(settings.limitsOf(A).maxOutputBytes, 12 * MiB, 'at once');
+    assert.strictEqual(reads, 0);
+  });
+
+  it('the memo\'s age is on a monotonic clock, and a negative one (a clock gone back) is expired (#271 re-check)', () => {
+    let reads = 0;
+    let t = 1000000;
+    settings.configure({ceiling: () => { reads += 1; return ceiling; }, defaultOf: (name) => defaults[name], isLive: (id) => live.has(id), ceilingMemoMs: 1000, nowMs: () => t});
+    loosen(A, 'maxOutputBytes', 16 * MiB);
+    reads = 0;
+    settings.limitsOf(A);
+    assert.strictEqual(reads, 0, 'within the window');
+    t += 1000;
+    settings.limitsOf(A);
+    assert.strictEqual(reads, 1, 'past it, read again');
+    t -= 60000;
+    settings.limitsOf(A);
+    assert.strictEqual(reads, 2, 'a clock gone back: read again, not served from the memo');
   });
 
   it('a ceiling that turns conversation off, or forbids the setting, bounds it at the default (#268 review 2)', () => {

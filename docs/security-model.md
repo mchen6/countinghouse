@@ -241,19 +241,58 @@ paths in results and errors. Ancestors of a root (`/`, `/var`) answer as
 read-only directories that list only the way to the root. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
-policy file) or an ancestor of one: such a declaration is refused in every
+policy file, the `--remoteCredentials` file) or an ancestor of one: such a declaration is refused in every
 mode and logged at spawn.
+
+Nor can a writable declared path hold a name on a path countinghouse runs
+through:
+
+- the install, as it is run (by a spelling that is not its real path, through
+  a symlink or a junction, only with `--preserve-symlinks`);
+- the file it was started from, as the command named it (npm's `bin` link, a
+  `current` link; the `countinghouse` launcher tells the runtime how it was
+  started);
+- every configured path: `--modulePath`, `--moduleDataPath`, the settings
+  home, the local store, the auth and device configuration, the policy file;
+- every module root (`--modulePath`, each `--loadModule`): its links and the
+  directories a link's target leaves with `..` only. A module may still be
+  given a writable path above another module's code; the broker refuses
+  writes in that code and renames of it and of the directories above it.
+
+Whoever can replace a link on such a path, or a directory one of their
+targets passes through, chooses what the next start runs, or where it keeps
+its modules and data. So a declaration with `rw` access is refused when it
+is the directory of such a name or a directory above it, however the
+declaration spells it; a read-only one is kept. Under `--hardened` the names
+are found before the server restricts itself; a server put under Node's
+permission model another way (`node --permission` by hand) cannot look for
+them, and refuses to start. Two things this does not see: a Linux bind mount
+of a directory that holds such a link (the mount is another name for it that
+no path comparison shows; the protected directories above share this), and a
+Windows mount point given by volume GUID.
 
 Beyond declarations, every path in those directories -- every module's code
 (`--modulePath` and each `--loadModule` directory) and data
 (`--moduleDataPath`, also while a module is being validated), the local
-store, the auth and device configuration, the policy file -- and in
+store, the auth and device configuration, the policy file, the
+`--remoteCredentials` file (which says where each credential may be sent) -- and in
 ch-local's home (the
 directory of `--settingsFile`: its settings, the daemon's session secret
 under `run/`, the launcher, the pack records) is refused to a module's reads
 and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
 named: directly, through `..`, a symlink or a hard link to the settings
-files. The one exception is the module's own `/app`, `/data` and `/tmp`, by
+files. The policy file and the `--remoteCredentials` file are refused by
+their paths, not by identity as the settings files and the auth
+configuration are: a hard link to one of them, under a name outside these
+directories, is another path and is not refused. A module cannot make one
+(a `link` with either end outside its roots is refused, and under
+`enforce` a module whose `/data` or `/tmp` holds one does not start); the
+limit is a link that an operator, or other software on the machine, left
+where a module may read. A pack loaded in place may come with a credentials
+file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+that file is no option of the runtime's, so it is not a protected path by
+itself; ch-local writes it under `run/` in its home, which is protected as
+a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
 their real paths at spawn. A listing never shows them, and neither they nor
 any directory above them can be renamed or removed. The install directory is
 the exception: it is countinghouse's public code and stays readable under
@@ -517,6 +556,40 @@ allowed: the permission model refuses the PowerShell the ACL check needs, the
 ceiling reads as one that cannot be trusted, and it fails closed. (The
 identity secret is checked by the `--hardened` parent before it relaunches
 under the permission model; the child takes that same file only, unchanged.)
+
+In a shared runtime, every call of a session is held to the tighter of the
+runtime's default and the ceiling, whether or not the session set a value of
+its own, and also under a ceiling that turns conversation off or forbids
+changing the setting. ch-local's `start` clamps the defaults it passes to the
+ceiling; a runtime started another way, with a default above it, still
+doesn't serve above it.
+
+A session's per-call checks don't read the ceiling each time:
+`lib/session-settings.js` takes its last read again for up to 1 s, on a
+monotonic clock. A ceiling the settings tool re-reads replaces it at once.
+
+The shared runtime reads the ceiling when it starts serving sessions, and
+checks it again on a timer:
+
+- **every 10 s on Linux and macOS**, where the check is a stat of the file
+  and of each directory above it, and the file is read again only when one
+  of them changed;
+- **every 5 minutes on Windows**, where a read spawns PowerShell (a Windows
+  read is taken as current for a little under those 5 minutes, so every
+  check reads the file again).
+
+So a ceiling lowered on disk bounds a session's calls within about 10 s on
+Linux and macOS and within about 5 minutes on Windows, without anyone calling
+the settings tool. Until it is read again the calls are held to the
+operator's previous ceiling: never beyond it, and never to the runtime's
+default alone.
+
+A `--stdio` runtime does not read the ceiling when it starts or watch it:
+its calls are bounded by the ceiling only once the settings tool or a control
+message from ch-local has read it. Under ch-local that changes nothing, since
+`start` has already clamped the flags it passes. The ceiling is a rule for a
+runtime ch-local installed and starts; a `--stdio` runtime started by hand
+with flags above it is not held to it before that first read.
 
 Two limits. `<home>/history.jsonl` is a record for the user, not a security
 boundary: the user can write it, so nothing the ceiling enforces rests on
@@ -1004,15 +1077,12 @@ these are the checks that predate them and still apply:
   runs (that's the worker-thread boundary described above). Four things
   worth being explicit about, in the spirit of this document's own rule
   against overstating guarantees:
-  - **Bodies are read before this check, except BSON.** JSON and XML bodies
-    are parsed on every route before any key is checked, so an
-    unauthenticated client can still make the server read up to
-    `--maxRequestBody` (8 MB) per request. A BSON body (up to
-    `--maxBsonRequestBody`, 64 MB, on `invoke-action` only)
-    is read only after the key and its grant for the URL's device pass
-    (`lib/route-manager.js`, `validateUser.beforeBody` in
-    `lib/routes/user.js`); keyless `--debug`, loopback-only, admits every
-    caller, so there it is read. A refused body is discarded unread; a client that
+  - **Bodies are read before this check.** JSON and XML bodies are parsed
+    on every route before any key is checked, so an unauthenticated client
+    can still make the server read up to `--maxRequestBody` (8 MB) per
+    request. A body that says it is BSON (`application/bson`) is answered
+    415 on every route and never parsed or kept (`lib/route-manager.js`):
+    BSON was retired in 8.0.0. A refused body is discarded as it arrives; a client that
     keeps sending it is cut off by the server's default request timeout
     (300 s).
   - **Between modules, the check runs when a channel opens, not on every

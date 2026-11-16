@@ -226,6 +226,16 @@ if (options.hardened === true && process.permission == null) {
 // The relaunched --hardened server: the parent's real paths, before anything
 // here resolves a path (lib/hardened-realpaths.js).
 if (process.permission != null) require('./lib/hardened-realpaths').receive();
+// Under the permission model without that hand-over (node --permission by
+// hand, not --hardened): the links the install is reached through cannot be
+// looked for, and the start is refused rather than served without them.
+if (process.permission != null) {
+  var startProblem = require('./lib/hardened-launch').startProblem();
+  if (startProblem != null) {
+    console.error(startProblem);
+    process.exit(2);
+  }
+}
 
 var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
