@@ -38,7 +38,8 @@ describe('mcp-contract 10: the progress notifier (M9)', () => {
     assert.strictEqual(tokenOf({_meta: {progressToken: 'abc'}}), 'abc');
     assert.strictEqual(tokenOf({_meta: {progressToken: 7}}), 7);
     assert.strictEqual(tokenOf({_meta: {progressToken: 'x'.repeat(256)}}), 'x'.repeat(256));
-    for (const bad of ['x'.repeat(257), 1.5, 2 ** 53, -(2 ** 53), NaN, null, true, {}, [], '']) {
+    assert.strictEqual(tokenOf({_meta: {progressToken: ''}}), '', 'the empty string is a string');
+    for (const bad of ['x'.repeat(257), 1.5, 2 ** 53, -(2 ** 53), NaN, null, true, {}, []]) {
       assert.strictEqual(tokenOf({_meta: {progressToken: bad}}), null, JSON.stringify(bad));
     }
     assert.strictEqual(tokenOf({arguments: {_meta: {progressToken: 'a'}}}), null, 'never from arguments');
@@ -105,6 +106,21 @@ describe('mcp-contract 10: the progress notifier (M9)', () => {
       c.advance(1000);
       assert.deepStrictEqual(values(), [1], end);
     }
+  });
+
+  it('every token of a chain carries the outer call\'s notifier, so a hop under a dropped one still ticks it', () => {
+    const callTokens = require('../../lib/call-tokens');
+    const p = {tick: () => {}};
+    const root = callTokens.issue({billingKey: 'k', workerId: 'w1', progress: p});
+    const mid = callTokens.issue({billingKey: 'k', workerId: 'w2', parent: root});
+    const leaf = callTokens.issue({billingKey: 'k', workerId: 'w3', parent: mid});
+    assert.strictEqual(callTokens.progressOf(leaf), p);
+    callTokens.drop(mid);
+    assert.strictEqual(callTokens.progressOf(root), p);
+    const other = callTokens.issue({billingKey: 'k', workerId: 'w4'});
+    assert.strictEqual(callTokens.progressOf(other), null, 'a call without a token\'s notifier has none');
+    callTokens.drop(root);
+    callTokens.drop(other);
   });
 
   it('a send that throws (the stream gone) ends the notifier, never the call', () => {
