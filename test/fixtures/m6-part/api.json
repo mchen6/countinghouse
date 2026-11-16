@@ -45,6 +45,16 @@
             "output": {
               "schema": "/partService/badtext/output"
             }
+          },
+          {
+            "name": "charsetnote",
+            "description": "Returns a note declared text/plain with a charset parameter.",
+            "input": {
+              "schema": "/partService/charsetnote/input"
+            },
+            "output": {
+              "schema": "/partService/charsetnote/output"
+            }
           }
         ]
       }

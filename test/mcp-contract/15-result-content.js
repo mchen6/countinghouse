@@ -83,10 +83,16 @@ describe('mcp-contract 15: a result\'s binary values placed (M6)', () => {
     assert.deepStrictEqual(blobs.removed, [blobs.puts[0].id]);
   });
 
-  it('no owner: nothing stored', async () => {
+  it('no owner, and a value that must be stored: RESULT_NOT_STORABLE, nothing stored (its reference could not hold)', async () => {
     const blobs = fakeBlobs();
-    assert.deepStrictEqual(await store(plan({report: b64(10)}, SCHEMA, WHO, {inlineBytes: 0}), {blobs, owner: null}), {});
+    await assert.rejects(store(plan({report: b64(10)}, SCHEMA, WHO, {inlineBytes: 0}), {blobs, owner: null}), (err) => err.code === 'RESULT_NOT_STORABLE');
     assert.deepStrictEqual(blobs.puts, []);
+    assert.deepStrictEqual(await store(plan({shot: b64(10)}, SCHEMA, WHO, {inlineBytes: 1024}), {blobs, owner: null}), {}, 'nothing to store: fine');
+  });
+
+  it('--inlineContentBytes 0 links every value, an empty one too', () => {
+    const e = plan({shot: '', report: ''}, SCHEMA, WHO, {inlineBytes: 0});
+    assert.deepStrictEqual(e.map((x) => [x.pointer, x.inline, x.store]), [['/shot', false, true], ['/report', false, true]]);
   });
 
   it('assemble: references in structuredContent, the blocks in schema order, each kind as the spec says', () => {

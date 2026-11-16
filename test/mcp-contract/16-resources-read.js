@@ -137,6 +137,13 @@ describe('mcp-contract 16: stored results, read back (M6)', function() {
     assert.deepStrictEqual([...Buffer.from(raw.result.contents[0].blob, 'base64')], [0xff, 0xfe, 0x41]);
   });
 
+  it('a media type with parameters is stored as declared and read back by its type (text/plain; charset=utf-8 as text)', async () => {
+    const r = await call(`${PART}charsetnote`);
+    const {uri} = r.structuredContent.note;
+    assert.match(uri, STORED);
+    assert.deepStrictEqual((await read(uri)).result.contents[0], {uri, mimeType: 'text/plain; charset=utf-8', text: 'caf\u00e9\n'});
+  });
+
   it('another key, an unknown id, a malformed or a foreign URI: all answered alike, Resource not found', async () => {
     const r = await call(`${PART}pdf`);
     const {uri} = r.structuredContent.doc;
