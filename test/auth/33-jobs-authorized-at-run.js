@@ -13,7 +13,7 @@ const path    = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const PORT    = testPort(9641);
@@ -50,7 +50,7 @@ describe('auth 33: a job is authorized when it runs', function() {
     // Every run costs 1, so "not billed" is a real check (the default cost is 0).
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});
+    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
   });
   after(async () => {
     for (const s of await schedulers()) await queue.removeJobScheduler(s.key || s.id);

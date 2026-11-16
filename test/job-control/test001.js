@@ -1,12 +1,12 @@
 const request = require('supertest');
 const waitForReady = require('../helpers/wait-for-ready');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const url = `http://127.0.0.1:${testPort(9527)}`;
 
 const Queue       = require('bullmq').Queue;
 const QueueEvents = require('bullmq').QueueEvents;
 
-const connection = {db: 11, port: 6379, host: '127.0.0.1', password: null};
+const connection = Object.assign(redisConnectionFor(11), {password: null});
 
 const jobQueue    = new Queue('job-queue', {prefix: '{cdifJob}', connection: connection});
 const queueEvents = new QueueEvents('job-queue', {prefix: '{cdifJob}', connection: connection});
