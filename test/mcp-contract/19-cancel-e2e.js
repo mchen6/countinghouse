@@ -15,6 +15,8 @@ const path = require('path');
 const {spawn} = require('child_process');
 const {testPort} = require('../helpers/test-env');
 const {startStdio} = require('../helpers/stdio-client');
+const handshake = require('../../lib/session-transport/handshake');
+const shim = require('../session-transport/helpers/shim');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FX = path.join(ROOT, 'test', 'fixtures');
@@ -205,6 +207,94 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
       io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 22}});
       await tick(200);
       assert.strictEqual(outsOf(h, LEAF)[0].outcome, 'ok');
+    });
+  });
+
+  // the shared runtime: notifications/cancelled names a request of the same
+  // session only; the cancelled call's seq gets the control op `cancelled`
+  // (the shim forgets it), and no answer
+  describe('the shared runtime (the session transport)', () => {
+    if (process.platform === 'win32') return;
+    let h;
+    let child;
+    let run;
+    beforeEach(async () => {
+      h = home();
+      run = path.join(h, 'run', 'daemon');
+      fs.mkdirSync(run, {recursive: true});
+      fs.chmodSync(path.join(h, 'run'), 0o700);
+      fs.chmodSync(run, 0o700);
+      // installed as a pack is: the scenario, its part under its node_modules
+      const nm = path.join(h, 'pack', 'node_modules');
+      for (const m of MODULES) fs.cpSync(path.join(FX, m), path.join(nm, m), {recursive: true});
+      const pkgFile = path.join(nm, 'm19-outer', 'package.json');
+      const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
+      pkg.countinghouse = Object.assign({}, pkg.countinghouse, {role: 'scenario'});
+      fs.writeFileSync(pkgFile, JSON.stringify(pkg));
+      child = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'),
+        '--usageDir', path.join(h, 'usage'), '--modulePath', path.join(h, 'modules'), '--moduleDataPath', path.join(h, 'module_data'),
+        '--controlChannel', 'ipc', '--sessionSocket', path.join(run, 's'), ...MODULES.flatMap((m) => ['--loadModule', path.join(nm, m)])],
+      {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: ''})});
+      let out = '';
+      child.stdout.on('data', (d) => { out = (out + d).slice(-20000); });
+      child.stderr.on('data', (d) => { out = (out + d).slice(-20000); });
+      child.on('message', (m) => { if (m != null && m.type === 'ready') child.send({id: 'r1', type: 'restore', sessions: [], declines: []}); });
+      for (let w = 0; !/countinghouse ready/.test(out) || !fs.existsSync(path.join(run, 's')); w += 100) {
+        if (w > 60000 || child.exitCode != null) throw new Error(`not ready: ${out.slice(-800)}`);
+        await tick(100);
+      }
+    });
+    afterEach(async () => {
+      await stop(child);
+      fs.rmSync(h, {recursive: true, force: true});
+    });
+
+    async function open() {
+      const secret = handshake.parseSecret(fs.readFileSync(path.join(run, 'secret'), 'utf8'));
+      const s = await shim.session(path.join(run, 's'), secret);
+      const answers = [];
+      (async () => {
+        for (;;) {
+          const m = await shim.readM(s.c, 60000);
+          if (m == null) return;
+          answers.push({seq: m.header != null ? m.header.seq : null, msg: JSON.parse(m.line.toString('utf8'))});
+        }
+      })();
+      return {s, answers};
+    }
+    const callChain = (sess, seq) => shim.message(sess.s.c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method: 'tools/call',
+      params: {_meta: META, name: 'chain', arguments: {}}}));
+    const cancelId = (sess, id) => shim.message(sess.s.c, null, JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: id}}));
+
+    it('a session cancels its own call: the shim is told `cancelled` on its seq, no answer comes, the chain stops at its next hop', async () => {
+      const a = await open();
+      callChain(a, 41);
+      await secondHopRunning(h);
+      cancelId(a, 41);
+      const op = await a.s.c.json('C', 5000);
+      assert.deepStrictEqual(op, {op: 'cancelled', seq: 41});
+      await tick(2000);
+      assert.strictEqual(runsOf(h).length, 2);
+      assert.deepStrictEqual(a.answers.filter((x) => x.seq === 41), [], 'no answer on its seq');
+      // a scenario's tool is its bare action name on the shared runtime
+      const [out] = outsOf(h, 'chain').concat(outsOf(h, CHAIN));
+      assert.strictEqual(out.outcome, 'cancelled', JSON.stringify(out));
+      a.s.c.end();
+    });
+
+    it('another session naming the same request id changes nothing: the call runs to its end and is answered', async () => {
+      const a = await open();
+      const b = await open();
+      callChain(a, 42);
+      await secondHopRunning(h);
+      cancelId(b, 42);
+      for (let w = 0; !a.answers.some((x) => x.seq === 42) && w < 10000; w += 50) await tick(50);
+      const answer = a.answers.find((x) => x.seq === 42);
+      assert.ok(answer != null, 'answered');
+      assert.strictEqual(answer.msg.result.isError, false, JSON.stringify(answer.msg).slice(0, 300));
+      assert.strictEqual(runsOf(h).length, 5);
+      a.s.c.end();
+      b.s.c.end();
     });
   });
 });
