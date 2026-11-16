@@ -30,8 +30,9 @@ describe('mcp-contract 13: a handler\'s own progress (M21)', () => {
   describe('in the worker: callProgressPoster', () => {
     const make = (c) => {
       const posts = [];
-      const p = callProgressPoster((n) => posts.push(n), {now: c.now, setTimer: c.setTimer, clearTimer: c.clearTimer});
-      return {p, posts};
+      const at = [];
+      const p = callProgressPoster((n) => { posts.push(n); at.push(c.now()); }, {now: c.now, setTimer: c.setTimer, clearTimer: c.clearTimer});
+      return {p, posts, at};
     };
 
     it('100,000 calls at once are 2 posts: the first at once, the latest 250 ms later', () => {
@@ -44,16 +45,33 @@ describe('mcp-contract 13: a handler\'s own progress (M21)', () => {
       assert.ok(Math.abs(posts[1] - 99.999) < 0.01, String(posts[1]));
     });
 
-    it('100,000 calls spread over 2 s are at most one post per 250 ms', () => {
+    it('100,000 calls spread over 2 s: every post at least 250 ms after the one before', () => {
       const c = clock();
-      const {p, posts} = make(c);
+      const {p, posts, at} = make(c);
       for (let i = 0; i < 100000; i++) {
         p.progress((i / 100000) * 100);
         if (i % 50 === 0) c.advance(1);
       }
       c.advance(250);
-      assert.ok(posts.length <= Math.ceil(2000 / 250) + 2, `${posts.length} posts`);
+      for (let i = 1; i < at.length; i++) assert.ok(at[i] - at[i - 1] >= 250, `posts ${i - 1} and ${i}: ${at[i] - at[i - 1]} ms apart`);
       assert.ok(posts.length >= 8, `${posts.length} posts`);
+    });
+
+    it('a lower value never replaces a higher pending one, and nothing at or below the last post is sent', () => {
+      const c = clock();
+      const {p, posts} = make(c);
+      p.progress(60);
+      c.advance(100);
+      p.progress(80);
+      c.advance(100);
+      p.progress(70);
+      c.advance(50);
+      assert.deepStrictEqual(posts, [60, 80], 'the highest pending value');
+      c.advance(300);
+      p.progress(75);
+      p.progress(80);
+      c.advance(300);
+      assert.deepStrictEqual(posts, [60, 80], 'at or below the last post');
     });
 
     it('drops what is not a number from 0 to 100', () => {
@@ -105,12 +123,75 @@ describe('mcp-contract 13: a handler\'s own progress (M21)', () => {
       assert.deepStrictEqual(reports, []);
     });
 
+    it('a task\'s token is dropped: a task\'s progress is its statusMessage, never notifications/progress', () => {
+      const task = callTokens.issue({billingKey: 'k', workerId: 'w-outer', jobID: 'job-1', progress: notifier});
+      try {
+        onCallProgress({data: {token: task, progress: 40}}, {workerId: 'w-outer'});
+        assert.deepStrictEqual(reports, []);
+      } finally {
+        callTokens.drop(task);
+      }
+    });
+
     it('a malformed message is dropped, never thrown', () => {
       for (const data of [null, {}, {token: root}, {token: root, progress: 101}, {token: root, progress: '40'}, {token: 7, progress: 40}]) {
         assert.doesNotThrow(() => onCallProgress({data}, {workerId: 'w-outer'}));
       }
       assert.doesNotThrow(() => onCallProgress(null, {workerId: 'w-outer'}));
       assert.deepStrictEqual(reports, []);
+    });
+  });
+
+  // what the worker posts, from a real ctx: the dispatcher (the lean worker's)
+  // and a handler-map module's invoker both end it with the answer
+  describe('in the worker: a call\'s ctx', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const util = require('../../lib/countinghouse-util');
+    const FIXTURE = path.join(__dirname, '..', 'fixtures', 'progress-part');
+    const SERVICE = 'urn:countinghouse-test:serviceID:partService';
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let posted;
+    let was;
+    beforeEach(() => {
+      posted = [];
+      was = util.callProgress;
+      util.callProgress = (token, n) => posted.push([token, n]);
+    });
+    afterEach(() => { util.callProgress = was; });
+    const dispatcher = () => require('../../lib/lean-dispatcher').createDispatcher({
+      modulePath: FIXTURE, moduleName: 'progress-part', spec: JSON.parse(fs.readFileSync(path.join(FIXTURE, 'api.json'), 'utf8'))});
+    const invoke = (d, action, args) => new Promise((resolve) => d.invoke(SERVICE, action, args, true, (err, data) => resolve({err, data})));
+
+    it('a call whose client asked for progress posts the handler\'s reports by its token', async () => {
+      const r = await invoke(dispatcher(), 'work', {input: {}, token: 't-1', wantsProgress: true});
+      assert.strictEqual(r.err, null);
+      assert.deepStrictEqual(posted, [['t-1', 10], ['t-1', 50], ['t-1', 90]]);
+    });
+
+    it('a call whose client did not ask posts nothing: no traffic for a report nobody hears', async () => {
+      await invoke(dispatcher(), 'work', {input: {}, token: 't-2'});
+      assert.deepStrictEqual(posted, []);
+    });
+
+    it('a report after the answer is never posted: the dispatcher ends the ctx', async () => {
+      const r = await invoke(dispatcher(), 'late', {input: {}, token: 't-3', wantsProgress: true});
+      assert.strictEqual(r.err, null);
+      await wait(300);
+      assert.deepStrictEqual(posted, []);
+    });
+
+    it('a handler-map module\'s invoker ends the ctx with the answer too, async or callback', async () => {
+      const {makeInvoker} = require('../../lib/handler-map-module');
+      let held = null;
+      const asyncInvoke = makeInvoker({}, async (input, ctx) => { held = ctx; return {output: {}}; }, SERVICE, 'a');
+      await asyncInvoke({input: {}, token: 't-4', wantsProgress: true});
+      held.job.progress(50);
+      const cbInvoke = makeInvoker({}, (input, ctx, cb) => { held = ctx; cb(null, {output: {}}); }, SERVICE, 'b');
+      await new Promise((resolve) => cbInvoke({input: {}, token: 't-5', wantsProgress: true}, resolve));
+      held.job.progress(50);
+      await wait(300);
+      assert.deepStrictEqual(posted, []);
     });
   });
 });
