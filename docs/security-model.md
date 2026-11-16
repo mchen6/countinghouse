@@ -517,8 +517,20 @@ history say, and installing another is refused; `"conversation": false` refuses 
 loosening asked for in conversation, so no dialog is ever shown and each
 ends at the terminal command (below). A value above it is
 `SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
-Tightening is never refused by it. It is read once per process, and again
-when the file changes.
+A tightening of the value the runtime runs with is never refused by it. A
+change that only lowers a stored value, and is still above both the ceiling
+and what the runtime runs with, is refused (`SETTING_ABOVE_CEILING`): it
+would put a value above the ceiling in `settings.json` for the next start.
+For the two caps the settings tool reports, and judges a change against,
+what the runtime runs with (with nothing stored, what it started with: the
+ceiling may have bounded the start), not the stored default. What it
+writes to `settings.json` without the user's confirmation never exceeds
+what the file yields already (its stored value, else the default), and is
+above the ceiling only when it lowers what the file yields: a
+runtime started above the default by a flag cannot have conversation raise
+the file toward its start value. A lower value than what runs that may not
+be written applies to this start only, and is recorded as that. It is read once
+per process, and again when the file changes.
 
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
