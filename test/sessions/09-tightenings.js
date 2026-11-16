@@ -198,12 +198,18 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     await tool.set('requestTimeout', '20s', 'settings tool', ctx(A));
     assert.deepStrictEqual(frames[A].slice(2), [['forget'], ['record', {maxOutputBytes: 2 * MiB, requestTimeout: 20000}]]);
     assert.deepStrictEqual(frames[B], [], 'B\'s shim hears nothing of A');
-    // a terminal tightening under A's value ends that override: the snapshot follows
+    // a terminal tightening under A's values ends neither: a session's own
+    // tightening is kept (held to the default while that is lower: #296's
+    // review), so its shim's record stands
     frames[A].length = 0;
     settings.dropLooser('maxOutputBytes', 1 * MiB);
+    settings.dropLooser('requestTimeout', 10000);
+    assert.deepStrictEqual(frames[A], []);
+    // a value of its own taken back (as a change it confirmed for all sessions does): the snapshot follows
+    settings.clear(A, 'maxOutputBytes');
     assert.deepStrictEqual(frames[A], [['forget'], ['record', {requestTimeout: 20000}]]);
     frames[A].length = 0;
-    settings.dropLooser('requestTimeout', 10000);
+    settings.clear(A, 'requestTimeout');
     assert.deepStrictEqual(frames[A], [['forget']], 'none left: the shim keeps none');
   });
 
@@ -226,8 +232,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.deepStrictEqual(frames[B], []);
     // an override ended while detached: the shim is told to forget at the attach
     sources[A].emit('detach');
-    settings.dropLooser('maxOutputBytes', 1 * MiB);
-    settings.dropLooser('requestTimeout', 10000);
+    settings.clear(A, 'maxOutputBytes');
+    settings.clear(A, 'requestTimeout');
     frames[A].length = 0;
     sources[A].emit('attach');
     assert.deepStrictEqual(frames[A], [['forget']]);
