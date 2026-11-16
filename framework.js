@@ -378,7 +378,8 @@ try {
 // prebuilt binary (ERR_DLOPEN_FAILED) -- gating the require itself,
 // not just the init() call, avoids that entirely for anyone who never
 // needed the registry DB in the first place.
-if (options.localModulePath == null) {
+// --moduleRegistry only: the registry is opt-in (lib/cli-options.js).
+if (options.localModulePath == null && options.moduleRegistry === true) {
   require('./lib/device-db').init(options.modulePath);
 }
 
@@ -419,7 +420,14 @@ function serve() {
   }
 
   // routeManager.startServer();
-  mm.loadAllModules();
+  // Over HTTP, discovery starts once the server takes connections: listen()
+  // with a host binds only after resolving it, and a start with nothing to
+  // load finishes discovery at once, so "countinghouse ready" (which every
+  // waiter waits for) would otherwise come before the port is bound. --stdio
+  // and a session socket open no HTTP port.
+  const server = routeManager.server;
+  if (options.stdio === true || options.sessionSocket != null || server == null || server.listening === true) mm.loadAllModules();
+  else server.once('listening', function() { mm.loadAllModules(); });
 }
 
 // The Redis host name a module worker is denied is resolved before any module
