@@ -693,6 +693,26 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(e.message, 'The change to maxOutputBytes for this session could not be applied (RESIZE_FAILED); nothing was changed.');
     });
 
+    // the reviewer's two notes on #292
+    it('with the user\'s window closed for the kind, the session\'s shim is not asked at all (its conditions cost a child process)', async () => {
+      const t0 = tool();
+      for (let i = 0; i < 3; i++) confirm.userWindow().note('maxOutputBytes');
+      const before = asked.length;
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.strictEqual(asked.length, before, 'no conditions? for a form that cannot be shown');
+      assert.ok(history().some((h) => h.session === A && /too many declined or unanswered forms/.test(h.change)), JSON.stringify(history()));
+      // another kind is asked as before
+      assert.ok((await t0.set('requestTimeout', '60s', 'settings tool', ctx(A))).inputRequired != null);
+      assert.strictEqual(asked.length, before + 1);
+    });
+
+    it('a client frame for a session that has ended latches nothing: no store is made for it', () => {
+      const s = sources[A];
+      s.emit('end');
+      s.emit('client', {status: 'ok', conditions: 'no', repo: null});
+      assert.strictEqual(confirm.held(), 0);
+    });
+
     it('the ceiling binds a session\'s loosening: above it, refused with no form; conversation off, no form', async () => {
       const above = tool({ceiling: () => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}})});
       await refused(above.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_ABOVE_CEILING');
