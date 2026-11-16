@@ -46,6 +46,7 @@ simulation).
 | `--resourceQuotaItems <n>` | `1024` | How many stored results one caller may hold. Past it, `RESULT_STORE_FULL`. A positive integer, else exit 2. |
 | `--inlineContentBytes <n>` | `1048576` (1 MiB) | The decoded bytes of binary values sent inline in one result. In schema order, each value that fits what is left is inlined (an image or audio block, or a resource block for any other media type); the rest are stored and sent as `resource_link`s, read back with `resources/read`. `0` links every one. A whole number, else exit 2. |
 | `--resourceReadCost <n>` | `0` | The metering cost of one `resources/read` of a stored result. A whole number, else exit 2. |
+| `--listPageSize <n>` | `250` | How many items one page of `tools/list` (and of the other MCP lists) holds; a longer list is answered in pages, each with a `nextCursor` but the last. From `10` to `1000`, else exit 2. A client can't choose the size. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |

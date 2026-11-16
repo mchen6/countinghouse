@@ -102,6 +102,12 @@ if (options.resourceLimitInvalid != null) {
     JSON.stringify(String(options.resourceLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// MCP completeness M1: the size of a list's page.
+if (options.listPageSizeInvalid != null) {
+  console.error('--' + options.listPageSizeInvalid.name + ' must be ' + options.listPageSizeInvalid.what + ' (got ' +
+    JSON.stringify(String(options.listPageSizeInvalid.value)) + ')');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
 // IPC fd. --hardened relaunches this process as a child, which the channel
