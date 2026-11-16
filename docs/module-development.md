@@ -61,7 +61,7 @@ name and the fix. A module never half-loads.
 | `ctx.log(entry)` | device log, already bound to this device |
 | `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
-| `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
+| `ctx.job` | `{id, progress(n), info(cb)}`. Inside a task: the job's id; `progress(n)` (0–100) updates the job; `info` reads it. Outside a task: `id` is `null`; `progress(n)` (0–100) is the call's own progress, sent to a client that asked for it (at most one every 250 ms, the latest winning, none after the answer; a composite's parts' reports are dropped); `info` calls back with an error. Ask `ctx.job.id == null`, not `ctx.job == null`, to tell a call that is not a task |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
 | `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
@@ -217,6 +217,41 @@ shows up as a load error rather than silently doing nothing. Directly under
 `device`, unknown fields are accepted; the retired CDIF-era `rateLimit` and
 `price` are among them, and `countinghouse-validate` warns about each.
 
+An action may also carry `title`, `annotations`, `icons`, `longRunning`,
+`questions` and `resource`, and the device a `promptList`: what the MCP
+layer serves to a client beyond a tool's name, description and schemas. Each
+is served as its part of that layer is released, and one that is not served
+yet changes nothing a client sees. All of them are checked already, by the
+meta-schema and at load (stage `declarations`), so a module written against
+them is right when they are served:
+
+- a `resource`'s `uriTemplate` is a relative path of literals and `{name}`
+  variables, at most 8 and at most one to a segment (`notes/{id}`,
+  `files/{name}.json`); each variable is a string property of the action's
+  input, and every required input is a variable. No two resources of a
+  module may match the same URI: `notes/{id}` and `notes/all` do;
+- a prompt's arguments are an object schema of string properties, at most
+  16, and every `{{name}}` in its messages is one of them. Other text in
+  double braces is sent as written, with a warning from
+  `countinghouse-validate`;
+- a string here may be declared through a `$ref` (a variable's property, a
+  prompt's argument); a question's form may not, it is flat;
+- a question's schema is a flat form: at most 8 properties, each a string,
+  number, integer, boolean or an enum of strings. It is shown to the user as
+  you declare it, so it holds only what a form field takes (`title`,
+  `description`, `default`; a string's `minLength`, `maxLength` and
+  `format`; a number's `minimum` and `maximum`; an enum's `enum` and
+  `enumNames`), within bounds (a title of 128 characters, a description of
+  500, 64 enum values of 256), and no text in it, the question's message
+  included, carries a control or bidi character. A form never asks for a
+  password, a token, a key or a card number (`countinghouse-validate` warns
+  about a property that reads like one);
+- an action named as a `completion` takes `{argument, value, context}` and
+  gives `{values: string[]}`;
+- an icon is a file inside your module, a PNG, JPEG or WebP of at most
+  16 KiB, named by its path from the module's root. Never a URL, and never
+  SVG.
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
@@ -253,18 +288,22 @@ validator workers, which all modules share:
   `{"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}`
   (your type in place of `image/png`), as `buf.toString('base64')`. Such a
   field is checked for canonical base64 (the standard alphabet, padded, no
-  whitespace), in an input as in an output. Declare it inline, under
-  `properties` or an array's `items`: one reached through `$ref`, `oneOf` or
-  the like isn't recognised as binary. An MCP client gets an `image/*` or
-  `audio/*` value as a block of its own (`{type: "image" | "audio", data,
-  mimeType}`), after the text block, in schema order; in
-  `structuredContent` and the text the value is a reference,
-  `{mimeType, bytes, block}` (`bytes` its decoded size, `block` its index
-  in `content`), and `tools/list` advertises that shape for the field. A
-  result can carry at most 16 such values (an array counts each item),
-  else `TOO_MANY_BINARY_VALUES`. Another media type is still sent as its
-  base64 string for now. `ctx.call` and HTTP `invoke-action` always get the
-  base64 string itself.
+  whitespace), in an input as in an output. Declare an output's binary
+  field inline, under `properties` or an array's `items`, at most 8 levels
+  down and 16 to an action, with a media type of the form `type/subtype`.
+  One anywhere else (under `oneOf` or the like) is refused at load, at stage
+  `declarations` (below), and so is a `$ref` under an output that leads to
+  one, also to one declared inline elsewhere: `schema.json` is dereferenced
+  before the fields are mapped, so the `$ref` would be a second field. An MCP client gets an
+  `image/*` or `audio/*` value as a block of its own
+  (`{type: "image" | "audio", data, mimeType}`), after the text block, in
+  schema order; in `structuredContent` and the text the value is a
+  reference, `{mimeType, bytes, block}` (`bytes` its decoded size, `block`
+  its index in `content`), and `tools/list` advertises that shape for the
+  field. A result can carry at most 16 such values (an array counts each
+  item), else `TOO_MANY_BINARY_VALUES`. Another media type is still sent as
+  its base64 string for now. `ctx.call` and HTTP `invoke-action` always get
+  the base64 string itself.
 - what you write to stdout and stderr (and `console`) reaches the
   operator's log line by line, prefixed with your module's name: each line
   cut at 8 KiB, control characters other than tab removed (and the line
@@ -286,6 +325,19 @@ Keep patterns simple, schemas small, and outputs modest: return a reference
   bounded group, instead;
 - actions whose schemas come to more than 100,000 nodes once their `$ref`s
   are expanded, or a `$ref` that refers to itself.
+
+What your module declares is checked at load as well, where the meta-schema
+cannot say it (`MODULE_ASSEMBLY_FAIL`, stage `declarations`, naming the
+action):
+
+- a binary output field that is not under `properties` or `items` (above);
+- `x-mcp-header` anywhere in an input schema. MCP 2026-07-28 lets a property
+  mirror itself into an HTTP header; this runtime does not serve that yet, so
+  a schema may not carry the keyword;
+- the rules of the fields [`api.json`](#apijson) takes for MCP clients.
+
+The load stops at the first such problem. `countinghouse-validate` prints
+them all.
 
 ## Loading your module
 
@@ -861,6 +913,15 @@ schema path; see [`schema.json`](#schemajson) for the limits. A call refused
 `VALIDATION_TIMEOUT` or `VALIDATION_QUARANTINED` means a schema that passed
 these checks still takes too long to compile or to validate a value.
 
+### 4b. The log says `MODULE_ASSEMBLY_FAIL` with `stage=declarations`
+
+Something your module declares breaks a rule a schema cannot express: a
+binary output field under `oneOf` or behind a `$ref`, `x-mcp-header` in an
+input schema, a resource whose variable is no input property, a prompt whose
+`{{name}}` is no argument. The message names the action (or the prompt) and
+says what to change. The load stops at the first one; run
+`npx countinghouse-validate ./my-module` to see every one, with the warnings.
+
 ### 5. The log says `LOAD_MODULE_FAIL`
 
 A handler file threw while being required — a syntax error, a missing
@@ -900,8 +961,10 @@ Then the device did come online, and the problem is downstream:
 npx countinghouse-validate ./my-module
 ```
 
-Checks `api.json`, `schema.json` and the handler map against each other and
-prints every problem it finds, each naming the stage and the way out. Exit
+Checks `api.json`, `schema.json` and the handler map against each other, what
+the module declares for MCP clients (stage `declarations`) and its icon
+files, and prints every problem it finds, each naming the stage and the way
+out. Exit
 codes: `0` clean, `1` problems found, `2` the path could not be read. No
 Redis and no server required.
 

@@ -28,7 +28,7 @@ const request = require('supertest');
 const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {toolOutput} = require('../helpers/tool-result');
 const {deviceIDForName} = require('../../lib/call-address');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 
 const hex = () => crypto.randomBytes(6).toString('hex');
 const VIA   = 'token_forge_forgeservice_viacall';
@@ -340,9 +340,8 @@ describe('composition 18: jobs, by their owner\'s identity', function() {
     write(true);
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath, '--mcpToolCallCost', '1',
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
-    // The server's Redis: CH_TEST_REDIS_URL's when set (test/helpers/test-env.js).
-    const redis = (process.env.CH_TEST_REDIS_URL != null && process.env.CH_TEST_REDIS_URL !== '') ? new globalThis.URL(process.env.CH_TEST_REDIS_URL) : null;
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: redis != null ? redis.hostname : '127.0.0.1', port: redis != null ? Number(redis.port) : 6379}});
+    // the server's Redis (test/helpers/test-env.js)
+    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
   });
   after(async () => {
     for (const s of await queue.getJobSchedulers(0, -1)) if (String(s.key || s.id).includes(NAME)) await queue.removeJobScheduler(s.key || s.id);

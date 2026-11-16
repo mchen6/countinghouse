@@ -85,25 +85,6 @@
           }
         }
       }
-    },
-    "charsetnote": {
-      "input": {
-        "type": "object",
-        "properties": {}
-      },
-      "output": {
-        "type": "object",
-        "required": [
-          "note"
-        ],
-        "properties": {
-          "note": {
-            "type": "string",
-            "contentEncoding": "base64",
-            "contentMediaType": "text/plain; charset=utf-8"
-          }
-        }
-      }
     }
   }
 }

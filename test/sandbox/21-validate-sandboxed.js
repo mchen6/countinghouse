@@ -106,6 +106,28 @@ describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', func
     assert.deepStrictEqual(left(), []);
   });
 
+  // MCP completeness M0: the declaration checks and the icon reader run in
+  // the sandboxed worker too, the icon's file read through the file broker
+  // (an open by flags, lstat, fstat, realpath), under enforce and audit.
+  it('a module that declares everything validates clean in the sandboxed worker, its icon read there', async () => {
+    const EVERYTHING = path.join(ROOT, 'test', 'fixtures', 'declares-everything');
+    for (const mode of ['enforce', 'audit']) {
+      await start(mode);
+      const r = seenBy(await validate(testPort(9666), EVERYTHING));
+      assert.strictEqual(r.out.ok, true, `${mode}: ${r.text.slice(0, 1500)}`);
+      assert.deepStrictEqual(r.out.problems, [], mode);
+      stopServer(server); server = null;
+    }
+    // and an icon that is not one is reported from there
+    const bad = path.join(base, 'bad-icon');
+    fs.cpSync(EVERYTHING, bad, {recursive: true});
+    fs.writeFileSync(path.join(bad, 'icons', 'note.png'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    await start('enforce');
+    const r = seenBy(await validate(testPort(9666), bad));
+    assert.strictEqual(r.out.ok, false, r.text.slice(0, 1500));
+    assert.ok(r.out.problems.some((p) => p.stage === 'declarations' && /SVG is refused/.test(p.message)), r.text.slice(0, 1500));
+  });
+
   it('off: a child process with a clean environment (no server secret)', async () => {
     await start('off');
     const r = seenBy(await validate(testPort(9666), PROBE));

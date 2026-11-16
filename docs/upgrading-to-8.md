@@ -40,6 +40,11 @@ you have to do. What the sandbox does and does not protect is in
     its `$ref`s expanded). Either refusal is `MODULE_ASSEMBLY_FAIL`, at stage
     `schemaCompile` or `schemaSafety`. Load modules with heavy schemas in a
     test run first.
+  - At load, what a module declares is checked too, at stage `declarations`.
+    Two things a 7.x module could carry are refused: a binary output field
+    (`contentEncoding: base64` with a `contentMediaType`) that is not under
+    `properties` or an array's `items`, and `x-mcp-header` anywhere in an
+    input schema. `countinghouse-validate` reports both before you upgrade.
 - **A module's load is bounded.** `--moduleLoadTimeout` (120 s by default,
   every sandbox mode) ends a worker that hasn't answered its load in time,
   and the load fails `MODULE_LOAD_TIMEOUT`.
@@ -151,6 +156,18 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `ctx.job` is never `null`.** Outside a task it is now
+  `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
+  is the call's own progress, sent to an MCP client that asked for it
+  (`_meta.progressToken`) as `notifications/progress` with `total: 100`, at
+  most one every 250 ms, the latest value winning, none after the answer.
+  Only the outer call's handler is heard: a composite's parts' reports are
+  dropped, and once the outer handler reports, its hops stop counting as
+  progress. `info` calls back with an error there. A module that asked
+  `ctx.job == null` to tell a call that is not a task must ask
+  `ctx.job.id == null`; a module that wrote `ctx.job.id` into its output
+  outside a task now gets `null` where it threw before. Inside a task
+  nothing changes.
 - **Breaking: `contentEncoding: "base64"` is an assertion.** A string whose
   schema says `contentEncoding: "base64"` must now be canonical RFC 4648
   base64 (the standard alphabet, padded, no whitespace, zero pad bits), in an
@@ -339,6 +356,17 @@ says how to write a module for this.
   object schema is advertised, and other results are text only. A module's
   output may now be any JSON value its schema allows, `null` included; before,
   anything but an object was refused `OUTPUT_DATA_VALIDATION_FAIL`.
+- **Progress for composite calls.** A `tools/call` whose `params._meta`
+  carries a `progressToken` (a string of at most 256 characters, or a safe
+  integer) gets `notifications/progress` as its hops run: `progress` counts
+  the hops and remote calls billed so far, with no `total` and no message.
+  They come at most every 250 ms (240 at most per call), always before the
+  answer and never after. Over HTTP the POST's response becomes an SSE stream
+  only when the first one is due and your `Accept` allows
+  `text/event-stream`; a call that answers first is plain JSON, as before. On
+  stdio they're lines before the answer's line; on the shared runtime,
+  frames on your own session. A runtime started with `--no-workerThread`
+  (single-thread mode) sends none: its hops carry no call tokens to count by.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their

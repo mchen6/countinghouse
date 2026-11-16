@@ -6,7 +6,7 @@ const info = (jobID) => new Promise((resolve) => CHUtil.jobInfo(jobID, (e, j) =>
 module.exports = {
   jobService: {
     whoami: async (input, ctx) => {
-      if (ctx.job == null) return {output: {own: 'not a job', apiKey: 'n/a', note: null}};
+      if (ctx.job.id == null) return {output: {own: 'not a job', apiKey: 'n/a', note: null}};
       const r = await new Promise((resolve) => ctx.job.info((e, j) => resolve({e: e, j: j})));
       if (r.e != null) return {output: {own: `error: ${r.e.message}`, apiKey: 'n/a', note: null}};
       const data = (r.j && r.j.job && r.j.job.data) || {};
