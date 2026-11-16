@@ -326,7 +326,9 @@ says how to write a module for this.
   result discarded, and is billed as before: the bill is what ran. A legacy
   HTTP request's disconnect changes nothing, and the call runs to its end.
   A task-augmented call cancelled before its task's id was sent has its job
-  removed.
+  removed if it hasn't started (one already running runs to its end). This
+  is with `--workerThread`, the default: in single-thread mode a cancel only
+  suppresses the answer.
 - **Results are the tool's output itself.** A module tool's
   `structuredContent` used to be `{output: …}`, one level above the
   `outputSchema` it advertised, so clients that validate results (the

@@ -1056,8 +1056,9 @@ HTTP request's disconnect changes nothing.
   scope only: stdio's one connection, or one session. One session can never
   cancel another's call, even with the same id. An unknown id costs one map
   lookup and is ignored.
-- **What stops.** The call's token is dropped at once, and with it every
-  hop's under it. A new hop, device query, remote call or channel open is
+- **What stops** (with `--workerThread`, the default; in single-thread
+  mode, which carries no call tokens, a cancel only suppresses the answer).
+  The call's token is dropped at once, and with it every hop's under it. A new hop, device query, remote call or channel open is
   then refused `CALL_TOKEN_INVALID`, in whatever worker makes it. No worker
   is interrupted, and no answer is written. A remote call already running
   for the call is aborted: it rejects at once, and the remote server is
@@ -1077,7 +1078,9 @@ HTTP request's disconnect changes nothing.
   The outer call is billed only if its handler returned a success, as
   always: a handler that ran to its end after the cancel is billed, and one
   stopped by a refused hop is not. Its usage record is written once, with
-  outcome `cancelled`.
+  outcome `cancelled`. A task-augmented call cancelled before its task's id
+  was sent has its job removed if it hasn't started; one a worker has
+  already started runs to its end and is billed, its result unread.
 
 ## Current mitigations inventory
 
