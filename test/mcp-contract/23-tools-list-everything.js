@@ -16,9 +16,16 @@ describe('mcp-contract 23: the second golden, the fixture that declares everythi
   const parsed = JSON.parse(golden);
 
   it('the golden holds what M2 adds: a title, annotations and an inlined icon, after the old keys', () => {
-    const read = parsed.legacy.find((t) => /readnote$/.test(t.name));
-    assert.deepStrictEqual(Object.keys(read).slice(-3), ['title', 'annotations', 'icons']);
-    assert.match(read.icons[0].src, /^data:image\/png;base64,/);
+    const save = parsed.legacy.find((t) => /savenote$/.test(t.name));
+    assert.deepStrictEqual(Object.keys(save).slice(-3), ['title', 'annotations', 'icons']);
+    assert.match(save.icons[0].src, /^data:image\/png;base64,/);
+  });
+
+  // M7: a resource action is not also a tool, so the fixture's two resource
+  // actions (readNote, listNotes) are not in it (the golden was regenerated
+  // for that, and saveNote given the icon readNote carried)
+  it('the fixture\'s resource actions are not tools', () => {
+    assert.ok(!parsed.legacy.concat(parsed.modern).some((t) => /readnote$|listnotes$/.test(t.name)));
   });
 
   for (const workerThread of [true, false]) {

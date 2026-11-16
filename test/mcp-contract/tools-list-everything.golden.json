@@ -1,79 +1,6 @@
 {
   "legacy": [
     {
-      "name": "declares_everything_notesservice_readnote",
-      "description": "Reads one saved note.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "text"
-        ]
-      },
-      "title": "Read a note",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "icons": [
-        {
-          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMwTpsJAAICATNWh+JUAAAAAElFTkSuQmCC",
-          "mimeType": "image/png",
-          "sizes": [
-            "1x1"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "declares_everything_notesservice_listnotes",
-      "description": "The ids of every saved note.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "ids"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": true
-      }
-    },
-    {
       "name": "declares_everything_notesservice_savenote",
       "description": "Saves a note. It asks before it replaces one.",
       "inputSchema": {
@@ -109,7 +36,16 @@
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": true
-      }
+      },
+      "icons": [
+        {
+          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMwTpsJAAICATNWh+JUAAAAAElFTkSuQmCC",
+          "mimeType": "image/png",
+          "sizes": [
+            "1x1"
+          ]
+        }
+      ]
     },
     {
       "name": "declares_everything_notesservice_completeid",
@@ -228,79 +164,6 @@
   ],
   "modern": [
     {
-      "name": "declares_everything_notesservice_readnote",
-      "description": "Reads one saved note.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "text"
-        ]
-      },
-      "title": "Read a note",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "icons": [
-        {
-          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMwTpsJAAICATNWh+JUAAAAAElFTkSuQmCC",
-          "mimeType": "image/png",
-          "sizes": [
-            "1x1"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "declares_everything_notesservice_listnotes",
-      "description": "The ids of every saved note.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "ids"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": true
-      }
-    },
-    {
       "name": "declares_everything_notesservice_savenote",
       "description": "Saves a note. It asks before it replaces one.",
       "inputSchema": {
@@ -336,7 +199,16 @@
       "annotations": {
         "destructiveHint": true,
         "idempotentHint": true
-      }
+      },
+      "icons": [
+        {
+          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMwTpsJAAICATNWh+JUAAAAAElFTkSuQmCC",
+          "mimeType": "image/png",
+          "sizes": [
+            "1x1"
+          ]
+        }
+      ]
     },
     {
       "name": "declares_everything_notesservice_completeid",
