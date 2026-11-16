@@ -123,6 +123,49 @@ describe('mcp-contract 14: a handler\'s own progress (M21), end to end', functio
       assert.match(out.infoError, /not a task/);
     });
 
+    it('wantsProgress in the arguments, top level or nested, reaches the handler as sent: tools/call and invoke-action', async () => {
+      const input = {wantsProgress: true, nested: {wantsProgress: true, deeper: [{wantsProgress: 1}]}};
+      const viaMcp = await new Promise((resolve, reject) => {
+        const payload = JSON.stringify({jsonrpc: '2.0', id: 8, method: 'tools/call', params: {name: `${PART}echo`, arguments: input}});
+        const req = http.request({host: '127.0.0.1', port: PORT, path: '/mcp', method: 'POST',
+          headers: {'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-CH-Key': KEY, 'Content-Length': Buffer.byteLength(payload)}}, (res) => {
+          let body = '';
+          res.on('data', (c) => { body += c; });
+          res.on('end', () => resolve({type: String(res.headers['content-type'] || ''), body: JSON.parse(body)}));
+        });
+        req.on('error', reject);
+        req.end(payload);
+      });
+      assert.match(viaMcp.type, /application\/json/, 'no token: plain JSON, whatever the input says');
+      assert.deepStrictEqual(viaMcp.body.result.structuredContent, input);
+      const device = require('../../lib/call-address').deviceIDForName('progress-part');
+      const viaHttp = await new Promise((resolve, reject) => {
+        const payload = JSON.stringify({serviceID: 'urn:countinghouse-test:serviceID:partService', actionName: 'echo', input, wantsProgress: true});
+        const req = http.request({host: '127.0.0.1', port: PORT, path: `/devices/${device}/invoke-action`, method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-CH-Key': KEY, 'Content-Length': Buffer.byteLength(payload)}}, (res) => {
+          let body = '';
+          res.on('data', (c) => { body += c; });
+          res.on('end', () => resolve({status: res.statusCode, body: JSON.parse(body)}));
+        });
+        req.on('error', reject);
+        req.end(payload);
+      });
+      assert.strictEqual(viaHttp.status, 200, JSON.stringify(viaHttp.body));
+      assert.deepStrictEqual(viaHttp.body.output != null ? viaHttp.body.output : viaHttp.body, input);
+    });
+
+    it('a composite that reports after its hops have ticked: ticks + n of ticks + 100, still increasing, not swallowed', async () => {
+      const r = await post(`${OUTER}hopsthenreport`, 'c-3');
+      const ticks = r.notes.filter((n) => !('total' in n.params));
+      const reports = r.notes.filter((n) => 'total' in n.params);
+      assert.ok(ticks.length >= 1, 'the hop ticks first');
+      assert.strictEqual(reports.length, 1, JSON.stringify(r.notes));
+      const [{params}] = reports;
+      assert.ok(params.total > 100, JSON.stringify(params));
+      assert.strictEqual(params.total - params.progress, 75, 'ticks + 25 of ticks + 100');
+      assert.ok(params.progress > ticks[ticks.length - 1].params.progress);
+    });
+
     it('a composite that reports nothing: its hops\' ticks only, never the part\'s own values', async () => {
       const r = await post(`${OUTER}wrap`, 'c-1');
       assert.ok(r.notes.length >= 1, 'the hop ticks');

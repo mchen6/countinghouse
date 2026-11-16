@@ -20,6 +20,15 @@
       "output": {
         "type": "object"
       }
+    },
+    "hopsThenReport": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

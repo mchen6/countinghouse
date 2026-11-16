@@ -25,6 +25,16 @@
             "output": {
               "schema": "/outerService/wrapReporting/output"
             }
+          },
+          {
+            "name": "hopsThenReport",
+            "description": "Calls progress-part work twice, then reports 25.",
+            "input": {
+              "schema": "/outerService/hopsThenReport/input"
+            },
+            "output": {
+              "schema": "/outerService/hopsThenReport/output"
+            }
           }
         ]
       }

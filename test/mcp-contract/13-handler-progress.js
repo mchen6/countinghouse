@@ -174,6 +174,14 @@ describe('mcp-contract 13: a handler\'s own progress (M21)', () => {
       assert.deepStrictEqual(posted, []);
     });
 
+    it('wantsProgress in the input, top level or nested, turns nothing on, and the handler sees the input as sent', async () => {
+      const input = {wantsProgress: true, nested: {wantsProgress: true, deeper: [{wantsProgress: 1}]}, token: 'not-a-token'};
+      const r = await invoke(dispatcher(), 'echo', {input: JSON.parse(JSON.stringify(input)), token: 't-6'});
+      assert.strictEqual(r.err, null);
+      assert.deepStrictEqual(r.data, {output: input});
+      assert.deepStrictEqual(posted, [], 'only the main thread\'s own key turns posting on');
+    });
+
     it('a report after the answer is never posted: the dispatcher ends the ctx', async () => {
       const r = await invoke(dispatcher(), 'late', {input: {}, token: 't-3', wantsProgress: true});
       assert.strictEqual(r.err, null);

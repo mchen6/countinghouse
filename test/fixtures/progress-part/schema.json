@@ -47,6 +47,15 @@
       "output": {
         "type": "object"
       }
+    },
+    "echo": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

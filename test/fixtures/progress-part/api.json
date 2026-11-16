@@ -55,6 +55,16 @@
             "output": {
               "schema": "/partService/jobshape/output"
             }
+          },
+          {
+            "name": "echo",
+            "description": "Reports 50, then returns its input as it got it.",
+            "input": {
+              "schema": "/partService/echo/input"
+            },
+            "output": {
+              "schema": "/partService/echo/output"
+            }
           }
         ]
       }
