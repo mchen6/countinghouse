@@ -50,6 +50,28 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
     });
   }
 
+  // a handler running as a task has no one to ask (the design's open
+  // question 5): its run's token carries no ask state
+  // (--store local: its own job runner, no Redis)
+  it('a task\'s ctx.ask has no one to ask, and the handler falls back', async () => {
+    io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
+      '--moduleDataPath', path.join(home, 'module_data'), '--loadModule', FIXTURE], {});
+    const init = await io.request({...INITIALIZE, id: 1});
+    assert.ok(init.result != null, JSON.stringify(init));
+    const tool = await listed();
+    const created = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: tool.name, arguments: {what: 'it'}, task: {}}});
+    assert.ok(created.result != null && created.result.task != null, JSON.stringify(created).slice(0, 500));
+    const taskId = created.result.task.taskId;
+    let status = null;
+    for (let i = 0; i < 100 && !['completed', 'failed'].includes(status); i++) {
+      status = (await io.request({jsonrpc: '2.0', id: 100 + i, method: 'tasks/get', params: {taskId}})).result.status;
+      if (!['completed', 'failed'].includes(status)) await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.strictEqual(status, 'completed');
+    const got = await io.request({jsonrpc: '2.0', id: 3, method: 'tasks/result', params: {taskId}});
+    assert.deepStrictEqual([got.result.structuredContent.asked, got.result.structuredContent.code], [false, 'ASK_UNAVAILABLE'], JSON.stringify(got).slice(0, 500));
+  });
+
   // A modern request that declares form elicitation: the handler's question
   // goes to the client as an InputRequiredResult, and the client's retry
   // runs the handler again, from the top, with the answer. --store local:

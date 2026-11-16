@@ -34,6 +34,28 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
 
+### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
+
+- **`ctx.ask(name, values)`** puts one of the action's declared questions
+  (`api.json`'s `questions`) to the user of a 2026-07-28 client that
+  declares form elicitation, and resolves with the form's content, or
+  `null` for a decline. The runtime composes what the user reads,
+  `<module name>: <message>`.
+- **The handler runs again.** With no answer yet `ctx.ask` rejects
+  `ASK_PENDING`, the call is answered with the question (an
+  `InputRequiredResult`), and the client's retry runs the handler from the
+  top. Module authors: ask first, act after
+  ([module development](docs/module-development.md#asking-the-user-ctxask)).
+- **The retry's `requestState`** is bound to the caller, the session, the
+  tool and the arguments, lasts five minutes and is used once, also across
+  a restart. New error codes: `ASK_PENDING`, `ASK_UNAVAILABLE`,
+  `ASK_NOT_DECLARED`, `ASK_STATE_INVALID`, `ASK_STATE_UNCHECKED`.
+- **`--moduleQuestions off`** turns every module's question off. Under
+  `--store redis` the used states' nonces are in Redis db 14, which must
+  not evict.
+- A module reached through another's `ctx.call` cannot ask yet
+  (`ASK_UNAVAILABLE`).
+
 ### Removed — BSON request bodies
 
 - **An `application/bson` body is no longer taken**, on any route: it is
