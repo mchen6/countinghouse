@@ -254,6 +254,103 @@ describe('module-validator: a schema.json the load refuses as unsafe', () => {
   it('a safe schema has no such problem, and its declarations are checked as before', async () => {
     const result = await validated(moduleWith({type: 'object', properties: {name: {type: 'string', pattern: '^[a-z]+$', 'x-mcp-header': 'X-Name'}}}));
     assert.deepStrictEqual(unsafe(result), []);
-    assert.strictEqual(result.problems.filter((p) => p.stage === 'declarations').length, 1);
+    const declared = result.problems.filter((p) => p.stage === 'declarations');
+    assert.strictEqual(declared.length, 1);
+    // /code-review of #312, 7: the load refuses it with this code too, so a caller matches it without the text
+    assert.strictEqual(declared[0].code, 'MODULE_ASSEMBLY_FAIL');
+  });
+
+  // /code-review of #312, 6 and 8: one sequence for the load and for validate, so every kind the load
+  // refuses is reported, once, in the load's own words, with a fix that covers it
+  describe('every kind the load refuses, in the load\'s words', () => {
+    const chain = (levels) => {
+      const defs = {l0: {type: 'string'}};
+      for (let i = 1; i <= levels; i++) defs[`l${i}`] = {anyOf: Array.from({length: 10}, () => ({$ref: `#/defs/l${i - 1}`}))};
+      return defs;
+    };
+    const named = (pattern) => ({type: 'object', properties: {name: {type: 'string', pattern}}});
+    // two actions' schemas at one place: each within the bound, over it together
+    const together = () => {
+      const dir = moduleWith({anyOf: Array.from({length: 15}, () => ({$ref: '#/defs/l3'}))}, {defs: chain(3)});
+      const api = JSON.parse(fs.readFileSync(path.join(dir, 'api.json'), 'utf8'));
+      for (const urn of Object.keys(api.device.serviceList)) for (const action of api.device.serviceList[urn].actionList) action.output = {schema: action.input.schema};
+      fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify(api));
+      return dir;
+    };
+    const PAD = 'x'.repeat(1024 * 1024 + 10);
+    const KINDS = [
+      ['a repetition inside a repeated group', () => moduleWith(named('^(a+)+$')), /a repetition inside a repeated group/],
+      ['a repeated group whose alternatives start alike', () => moduleWith(named('^(ab|ac)+$')), /a repeated group whose alternatives start alike/],
+      ['a pattern over 1000 characters', () => moduleWith(named('a'.repeat(1001))), /a pattern longer than 1000 characters/],
+      ['a patternProperties key', () => moduleWith({type: 'object', patternProperties: {'^(a+)+$': {type: 'string'}}}), /patternProperties \(its key number 1\)/],
+      ['more than 100,000 nodes with its $refs expanded', () => moduleWith({$ref: '#/defs/l12'}, {defs: chain(12)}), /more than 100000 schema nodes with its \$refs expanded/],
+      ['actions\' schemas over the bound together', together, /actions' schemas that come to more than 100000 schema nodes together/],
+      ['a $ref to itself', () => moduleWith({$ref: '#/greetService/hello/input'}), /refers to itself/],
+      ['a $ref that names no place', () => moduleWith({type: 'object', properties: {name: {$ref: '#/nowhere'}}}), /names no place in schema\.json/],
+      ['a schema.json over 1 MB', () => moduleWith(null, {}, JSON.stringify({$id: '#/', pad: PAD, greetService: {hello: {input: {type: 'object'}, output: {type: 'object'}}}})), /larger than 1 MB/],
+      // (written as text: nothing here recurses to build it)
+      ['a schema nested too deeply to check', () => moduleWith(null, {}, `{"$id":"#/","greetService":{"hello":{"input":${'{"properties":{"a":'.repeat(2000)}{}${'}}'.repeat(2000)},"output":{"type":"object"}}}}`), /a schema nested too deeply to check/],
+      // 2: the size is checked before the text is parsed, as the load checks it
+      ['a schema.json over 1 MB that is not JSON either', () => moduleWith(null, {}, `{"pad": "${PAD}`), /larger than 1 MB/]
+    ];
+    for (const [kind, make, says] of KINDS) {
+      it(kind, async () => {
+        const dir = make();
+        const result = await validated(dir);
+        const found = unsafe(result);
+        assert.strictEqual(found.length, 1, JSON.stringify(result.problems).slice(0, 600));
+        assert.match(found[0].message, says);
+        assert.deepStrictEqual([found[0].code, found[0].fix], ['MODULE_ASSEMBLY_FAIL', schemaSafety.SAFETY_FIX]);
+        const refusal = schemaSafety.schemaRefusal(dir, 'handler-map-convention');
+        assert.ok(refusal != null && refusal.message.includes(found[0].message), `the load: ${refusal && refusal.message.slice(0, 300)} / validate: ${found[0].message.slice(0, 300)}`);
+        // and nothing else is said of that schema
+        assert.deepStrictEqual(result.problems.filter((p) => p.stage === 'declarations' || p.stage === 'readRootSchema'), []);
+      });
+    }
+
+    // 3: the fix covers every bound, and takes them from the check's own constants
+    it('the fix names every bound the check has', () => {
+      for (const part of ['1 MB', String(schemaSafety.MAX_NODES), String(schemaSafety.MAX_PATTERN_LENGTH), 'alternatives', 'repetition', '$ref', 'nested']) {
+        assert.ok(schemaSafety.SAFETY_FIX.includes(part), `${part}: ${schemaSafety.SAFETY_FIX}`);
+      }
+    });
+  });
+
+  // 4: the path is made of the module's own property names, and reaches a reviewer's terminal and an operator's log
+  it('a property name in the path is cut and carries no control character, in validate and in the load\'s refusal', async () => {
+    const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+    const dir = moduleWith({type: 'object', properties: {'x\n  ok: module -- no problems found\u001b[2J\u202e': {type: 'string', pattern: '^(a+)+$'}}});
+    const found = unsafe(await validated(dir));
+    assert.strictEqual(found.length, 1);
+    assert.doesNotMatch(found[0].message, CONTROLS);
+    assert.match(found[0].message, /a repetition inside a repeated group/, 'the reason is still said');
+    assert.doesNotMatch(schemaSafety.schemaRefusal(dir, 'm').message, CONTROLS);
+    const long = unsafe(await validated(moduleWith({type: 'object', properties: {['k'.repeat(300000)]: {type: 'string', pattern: '^(a+)+$'}}})));
+    assert.strictEqual(long.length, 1);
+    assert.ok(long[0].message.length < 1024, String(long[0].message.length));
+    assert.match(long[0].message, /a repetition inside a repeated group/);
+  });
+
+  // 1 and 5: one read, by the path a module's own files are read by, of the text that is then checked and walked
+  it('schema.json is read once', async () => {
+    const dir = moduleWith({type: 'object', properties: {name: {type: 'string'}}});
+    const real = fs.readFileSync;
+    let reads = 0;
+    fs.readFileSync = function(file, ...rest) {
+      if (path.basename(String(file)) === 'schema.json') reads += 1;
+      return real.call(this, file, ...rest);
+    };
+    try { await validated(dir); } finally { fs.readFileSync = real; }
+    assert.strictEqual(reads, 1);
+  });
+
+  // 7: a schema.json that is not JSON is the load's own error, in its words and with its code
+  it('a schema.json that is not JSON is reported as the load reports it, once', async () => {
+    const result = await validated(moduleWith(null, {}, '{"greetService": '));
+    const unread = result.problems.filter((p) => p.stage === 'readRootSchema');
+    assert.strictEqual(unread.length, 1, JSON.stringify(result.problems).slice(0, 600));
+    assert.match(unread[0].message, /stage=readRootSchema -- .*schema\.json is not valid JSON/);
+    assert.strictEqual(unread[0].code, 'MODULE_ASSEMBLY_FAIL');
+    assert.deepStrictEqual(result.problems.filter((p) => p.stage === 'schemaSafety' || p.stage === 'declarations'), []);
   });
 });
