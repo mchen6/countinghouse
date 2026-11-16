@@ -22,7 +22,8 @@ const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
 // B's grant names the notes device by its ID, derived from its name
 const NOTES_ID = require('../../lib/call-address').deviceIDForName('notes');
-fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [NOTES_ID]}}));
+const Z_ID = require('../../lib/call-address').deviceIDForName('ch-pack-z');
+fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: [NOTES_ID, Z_ID]}}));
 
 const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
@@ -54,7 +55,11 @@ const MODULES = [
   }),
   moduleOf('secret', [{name: 'hidden', messages: [{role: 'user', text: 'secret'}]}], {}),
   moduleOf('ch-pack-x', [{name: 'triage', description: 'Triage a run.', arguments: {schema: '/prompts/triage'}, messages: [{role: 'user', text: 'Triage run {{run}}.'}]}],
-    {triage: {type: 'object', properties: {run: {type: 'string'}}, required: ['run']}}, {role: 'scenario'})
+    {triage: {type: 'object', properties: {run: {type: 'string'}}, required: ['run']}}, {role: 'scenario'}),
+  // two scenarios whose prompts share a bare name: deduped over every
+  // module, before a caller's grants (B is granted z only)
+  moduleOf('ch-pack-y', [{name: 'review', messages: [{role: 'user', text: 'y'}]}], {}, {role: 'scenario'}),
+  moduleOf('ch-pack-z', [{name: 'review', messages: [{role: 'user', text: 'z'}]}], {}, {role: 'scenario'})
 ];
 
 let ci = null;
@@ -133,13 +138,13 @@ describe('mcp-contract 24: prompts (M10)', function() {
     const era = modern ? '2026-07-28' : 'legacy';
     it(`${era}: a key's prompts, named <module>_<name> (a scenario's bare), each with what it declares and its arguments from its schema`, async () => {
       const a = await listAll(KEY_A, {modern});
-      assert.deepStrictEqual(a.map((p) => p.name), ['notes_summarise', 'notes_plain', 'notes_big', 'secret_hidden', 'triage']);
+      assert.deepStrictEqual(a.map((p) => p.name), ['notes_summarise', 'notes_plain', 'notes_big', 'secret_hidden', 'triage', 'review', 'review_2']);
       const s = a[0];
       assert.deepStrictEqual(s, {name: 'notes_summarise', title: 'Summarise a note', description: 'Asks for a summary.',
         arguments: [{name: 'id', description: 'the note\'s id', required: true}, {name: 'style', description: 'how', required: false}]});
       assert.deepStrictEqual(a[1], {name: 'notes_plain'}, 'no arguments declared: none listed');
       const b = await listAll(KEY_B, {modern});
-      assert.deepStrictEqual(b.map((p) => p.name), ['notes_summarise', 'notes_plain', 'notes_big'], 'B is granted notes only');
+      assert.deepStrictEqual(b.map((p) => p.name), ['notes_summarise', 'notes_plain', 'notes_big', 'review_2'], 'B is granted notes and z; z\'s prompt has the name A sees it by');
     });
   }
 
@@ -208,7 +213,41 @@ describe('mcp-contract 24: prompts (M10)', function() {
     assert.strictEqual(billed, 0, 'not billed');
     const begin = usageSeen.find((x) => x.begin != null);
     const out = usageSeen.find((x) => x.out != null);
-    assert.deepStrictEqual([begin.begin.tool, begin.begin.module, out.out.tool, out.out.outcome], ['prompts/get', 'ch-pack-x', 'prompts/get', 'ok']);
+    assert.deepStrictEqual([begin.begin.tool, begin.begin.module, begin.begin.pack, out.out.tool, out.out.outcome], ['prompts/get', 'ch-pack-x', 'ch-pack-x', 'prompts/get', 'ok'],
+      'a scenario\'s prompt under its pack, as a tool call');
+    usageSeen.length = 0;
+    await get(KEY_A, 'notes_summarise', {});
+    const refused = usageSeen.find((x) => x.out != null);
+    assert.deepStrictEqual([refused.out.outcome, refused.out.code], ['error', 'INPUT_DATA_VALIDATION_FAIL'], 'a refused get is counted too');
+  });
+
+  it('prompts/get\'s check is bounded as a call\'s: a quarantined module\'s is refused', async () => {
+    const validatorPool = require('../../lib/validator-pool').pool();
+    validatorPool.quarantined.add('notes');
+    try {
+      const r = await get(KEY_A, 'notes_summarise', {id: 'a'});
+      assert.match(r.error && r.error.message, /could not be checked now \(VALIDATION_QUARANTINED\)/, JSON.stringify(r));
+    } finally {
+      validatorPool.quarantined.delete('notes');
+    }
+  });
+
+  // single-thread mode (no worker spec record): derived on the main thread,
+  // in a schema validator of the device's own, so a schema's $id compiled
+  // again (a reload makes a new device) is no clash
+  it('single-thread mode: a reloaded device whose prompt schema has an $id still lists its arguments', async () => {
+    const CHDevice = require('../../lib/countinghouse-device');
+    const spec = {device: {friendlyName: 'single', serviceList: {}, promptList: [{name: 'ask', arguments: {schema: '/prompts/ask'}, messages: [{role: 'user', text: '{{q}}'}]}]}};
+    const schemaDoc = {$id: '#/', prompts: {ask: {$id: 'urn:countinghouse-test:ask', type: 'object', properties: {q: {type: 'string'}}, required: ['q']}}};
+    const listFor = async () => {
+      const device = {spec, schemaDoc, resolveSchemaFromPath: CHDevice.prototype.resolveSchemaFromPath, packageInfo: {name: 'single'}};
+      const single = {deviceManager: {deviceMap: {single: device}, getAllDeviceSpecs: () => ({single: spec})}, rateLimit: (key, cb) => cb(null, {limited: false})};
+      return new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'prompts/list', params: {}}, single, KEY_A, (err, r) => resolve(r)));
+    };
+    for (let n = 0; n < 2; n++) {
+      const r = await listFor();
+      assert.deepStrictEqual(r.result.prompts, [{name: 'single_ask', arguments: [{name: 'q', required: true}]}], `listing ${n + 1}: ${JSON.stringify(r)}`);
+    }
   });
 
   it('prompts/get is rate limited', async () => {
