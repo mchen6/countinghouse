@@ -11,12 +11,12 @@ you have to do. What the sandbox does and does not protect is in
 
 - **Most likely surprise: module outputs are capped, and checked out of a
   module's reach.**
-  - `--maxOutputBytes` (default 8 MiB, at most 256 MiB) caps a module's
+  - `--maxOutputBytes` (default 16 MiB, at most 256 MiB) caps a module's
     output on every call the main thread carries, measured by its bytes
     there: a client's call, a job's run, and a hop routed through the main
     thread (its result and its input). Past it the call is refused with
     `OUTPUT_TOO_LARGE` or `INPUT_TOO_LARGE`, naming the module and the
-    action. A module that returns more than 8 MiB stops working on upgrade:
+    action. A module that returns more than 16 MiB stops working on upgrade:
     raise the cap, or have it return a reference (a path in its data)
     instead.
   - A hop over a direct peer channel (the default; `--no-directPeerChannels`
@@ -40,6 +40,11 @@ you have to do. What the sandbox does and does not protect is in
     its `$ref`s expanded). Either refusal is `MODULE_ASSEMBLY_FAIL`, at stage
     `schemaCompile` or `schemaSafety`. Load modules with heavy schemas in a
     test run first.
+  - At load, what a module declares is checked too, at stage `declarations`.
+    Two things a 7.x module could carry are refused: a binary output field
+    (`contentEncoding: base64` with a `contentMediaType`) that is not under
+    `properties` or an array's `items`, and `x-mcp-header` anywhere in an
+    input schema. `countinghouse-validate` reports both before you upgrade.
 - **A module's load is bounded.** `--moduleLoadTimeout` (120 s by default,
   every sandbox mode) ends a worker that hasn't answered its load in time,
   and the load fails `MODULE_LOAD_TIMEOUT`.
@@ -116,11 +121,17 @@ you have to do. What the sandbox does and does not protect is in
 - **Browser-based clients need `--allowedOrigins`.** CORS is off by default
   (it allowed every origin), and every route refuses a request from a
   browser origin not listed there. Clients outside a browser are unaffected.
-- **Request bodies are bounded:** 8 MB for JSON, XML and forms
-  (`--maxRequestBody`), 64 MB for BSON on `invoke-action`
-  (`--maxBsonRequestBody`); they were 1 GB. A client that sends larger bodies
-  gets 413 until you raise the limit. `add-job` takes JSON only; a BSON job
-  never worked there (it failed with `SERVICEID_NOT_AVAILABLE`).
+- **Request bodies are bounded:** 8 MB for JSON and XML
+  (`--maxRequestBody`); they were 1 GB. A client that sends larger bodies
+  gets 413 until you raise the limit.
+- **BSON bodies are no longer taken.** A request with
+  `Content-Type: application/bson` is answered 415
+  (`REQUEST_UNSUPPORTED_MEDIA_TYPE`) on every route, where
+  `POST /devices/:deviceID/invoke-action` used to decode it. Send JSON, with
+  binary data as base64. (MCP was always JSON only.) The
+  `--maxBsonRequestBody` option is gone with it: a start that still passes
+  it is not refused (the flag is ignored, and bounds nothing), so take it
+  out of your start command.
 
 - **Jobs that run longer than an hour need `--jobTimeout`.** A job that
   sets no timeout of its own is now ended after `--jobTimeout` seconds
@@ -145,6 +156,36 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `ctx.job` is never `null`.** Outside a task it is now
+  `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
+  is the call's own progress, sent to an MCP client that asked for it
+  (`_meta.progressToken`) as `notifications/progress` with `total: 100`, at
+  most one every 250 ms, the latest value winning, none after the answer.
+  Only the outer call's handler is heard: a composite's parts' reports are
+  dropped, and once the outer handler reports, its hops stop counting as
+  progress. `info` calls back with an error there. A module that asked
+  `ctx.job == null` to tell a call that is not a task must ask
+  `ctx.job.id == null`; a module that wrote `ctx.job.id` into its output
+  outside a task now gets `null` where it threw before. Inside a task
+  nothing changes.
+- **Breaking: `contentEncoding: "base64"` is an assertion.** A string whose
+  schema says `contentEncoding: "base64"` must now be canonical RFC 4648
+  base64 (the standard alphabet, padded, no whitespace, zero pad bits), in an
+  input and in an output, on every path. Before, it was an annotation that
+  asserted nothing, so a schema that used it loosely could have passed values
+  that are now refused (`INPUT_DATA_VALIDATION_FAIL` or
+  `OUTPUT_DATA_VALIDATION_FAIL`, naming the field). No bundled module used it.
+  Any other `contentEncoding` stays an annotation.
+- **Breaking: a Buffer in an output is refused, `OUTPUT_NOT_JSON`.** An output
+  holding a Buffer, a typed array or a DataView is refused in the module's
+  worker (`--workerThread`, the default), naming the field: before, it was
+  mangled. Single-thread mode serializes no output, so there only a typed
+  field's own check refuses one.
+  Return `buf.toString('base64')` in a field its output schema declares
+  `{"type": "string", "contentEncoding": "base64", "contentMediaType": "<type>/<subtype>"}`.
+  The check costs a clean output nothing. A bare `ArrayBuffer` is not caught
+  by it: under a typed field the validator refuses it, and under an untyped
+  one it is sent as `{}`, so don't return one.
 - **Breaking: one module format.** A module is `api.json`, `schema.json` and
   `handlers/<service>/<action>.js`. A module with a main entry
   (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
@@ -276,12 +317,68 @@ says how to write a module for this.
 
 ## What MCP clients will notice
 
+- **A call can be cancelled while it runs.** For a 2026-07-28 request over
+  HTTP, closing the POST before its answer cancels it; on stdio and the
+  shared runtime, `notifications/cancelled` with the request's id does,
+  naming a request of your own connection or session only. A cancelled call
+  writes no answer. A composite stops at its next hop, which is refused, and
+  a remote call made for it is aborted. Work already running finishes, its
+  result discarded, and is billed as before: the bill is what ran. A legacy
+  HTTP request's disconnect changes nothing, and the call runs to its end.
+  A task-augmented call cancelled before its task's id was sent has its job
+  removed if it hasn't started (one already running runs to its end). This
+  is with `--workerThread`, the default: in single-thread mode a cancel only
+  suppresses the answer.
 - **Results are the tool's output itself.** A module tool's
   `structuredContent` used to be `{output: …}`, one level above the
   `outputSchema` it advertised, so clients that validate results (the
   official MCP SDK client does) rejected every module tool. It is now the
   output itself, and `content[0].text` is the same object serialized. Read
   `structuredContent`, not `structuredContent.output`.
+- **Images and audio arrive as their own blocks.** An output field declared
+  `contentEncoding: "base64"` with an `image/*` or `audio/*`
+  `contentMediaType` is sent as an `image` or `audio` content block after the
+  text block, and `structuredContent` (and the text) hold a reference to it,
+  `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
+  knows only protocol revision 2024-11-05, which has no audio content type,
+  may not render an audio block.
+- **Every binary field is a block, and a large one is a link.** Any other
+  media type (a PDF, a zip, `text/plain`) arrives as a `resource` block,
+  `{uri, mimeType, blob}`, whose `uri` (`countinghouse://r/<id>`) can be read
+  back; its reference in `structuredContent` carries the `uri` too. Before,
+  it stayed a base64 string there and in the `outputSchema`. Past
+  `--inlineContentBytes` (1 MiB of decoded bytes per result, in schema order)
+  a value is stored instead and sent as a `resource_link` with its `name`
+  (the field), `mimeType` and `size`; `structuredContent` holds
+  `{mimeType, bytes, uri}`. `resources/read` returns it to the caller who
+  made the call, in the same session, for `--resourceRetention` (24 h), as
+  `text` for valid UTF-8 `text/*`, else `blob`; anything else is "Resource
+  not found". The server now declares `resources: {}`; `resources/list` is
+  always empty. A result whose stored values would pass a store limit is
+  refused `RESULT_STORE_FULL`, with nothing stored. A client on protocol
+  revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
+  may not show a link; it can still read the `uri` from the text block.
+  `ctx.call` and `invoke-action` are unchanged: their output keeps the base64
+  in place.
+- **Output schemas of any JSON type, for 2026-07-28 requests.** A modern
+  `tools/list` advertises an output schema whatever its root type (an array,
+  a string, a number, null), and a modern result carries the output as
+  `structuredContent`, whatever its type; the text block is a string output
+  itself, else its JSON. A legacy request (`initialize`) is unchanged: only an
+  object schema is advertised, and other results are text only. A module's
+  output may now be any JSON value its schema allows, `null` included; before,
+  anything but an object was refused `OUTPUT_DATA_VALIDATION_FAIL`.
+- **Progress for composite calls.** A `tools/call` whose `params._meta`
+  carries a `progressToken` (a string of at most 256 characters, or a safe
+  integer) gets `notifications/progress` as its hops run: `progress` counts
+  the hops and remote calls billed so far, with no `total` and no message.
+  They come at most every 250 ms (240 at most per call), always before the
+  answer and never after. Over HTTP the POST's response becomes an SSE stream
+  only when the first one is due and your `Accept` allows
+  `text/event-stream`; a call that answers first is plain JSON, as before. On
+  stdio they're lines before the answer's line; on the shared runtime,
+  frames on your own session. A runtime started with `--no-workerThread`
+  (single-thread mode) sends none: its hops carry no call tokens to count by.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their
@@ -325,6 +422,12 @@ says how to write a module for this.
 
 ## What operators get
 
+- **The module registry is opt-in: `--moduleRegistry`.** A start with no
+  `--loadModule` no longer reads the CDIF-era registry database
+  (`lib/device-db`, `sqlite3`) or loads modules from it: it loads nothing,
+  and serves the platform tools. Pass `--moduleRegistry` to keep the old
+  behaviour. Under `--hardened`, such a start no longer gets
+  `--allow-addons` either ([reference](cli-and-api-reference.md)).
 - **`POST /reload-auth`** (admin key), and the authoring tool
   `countinghouse_reload_auth`, re-read the auth configuration without a
   restart. The file provider swaps a new file in only if it passes its

@@ -11,7 +11,7 @@ const path   = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer, post, waitFor} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const PORT    = testPort(9643);
@@ -39,7 +39,7 @@ describe('sandbox 32: a job\'s late answer, after its timeout', function() {
     server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--workerThread', '--mcpToolCallCost', '1', '--loadModule', FIXTURE]);
     await waitFor(async () => (await post(PORT, KEY, `/devices/${DEVICE}/invoke-action`, {serviceID: SERVICE, actionName: 'ping', input: {}})).status === 200,
       20000, 'worker-end to answer');
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});
+    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
   });
   after(async () => {
     await queue.close();

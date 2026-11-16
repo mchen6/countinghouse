@@ -36,6 +36,53 @@ describe('the receipt on a tools/call result', () => {
     assert.deepStrictEqual([out.bytesOut, out.linesOut], [Buffer.byteLength(text), 1]);
   });
 
+  // M4: an image or audio block's decoded bytes are counted as inlineBytesOut
+  // beside the text, and a record without one is written as before
+  it('the Out record counts an image or audio block\'s decoded bytes as inlineBytesOut', () => {
+    const u = usage();
+    const call = u.beginCall({pack: null, tool: 't', caller: 'u_a'});
+    const r = {isError: false, structuredContent: {img: {mimeType: 'image/png', bytes: 5, block: 1}},
+      content: [{type: 'text', text: '{"img":{}}'}, {type: 'image', data: Buffer.from('12345').toString('base64'), mimeType: 'image/png'},
+        {type: 'audio', data: Buffer.from('ab').toString('base64'), mimeType: 'audio/wav'}]};
+    finishToolCall({usage: u, call, result: r, role: 'part', tool: 't', startedMs: t, now: () => t});
+    const out = u.records().find((x) => x.server === undefined || x.server === null);
+    assert.strictEqual(out.inlineBytesOut, 7);
+    assert.strictEqual(out.bytesOut, Buffer.byteLength('{"img":{}}'), 'the text alone');
+    const plain = u.beginCall({pack: null, tool: 't', caller: 'u_a'});
+    finishToolCall({usage: u, call: plain, result: result({a: 1}), role: 'part', tool: 't', startedMs: t, now: () => t});
+    const second = u.records().filter((x) => x.server === undefined || x.server === null)[1];
+    assert.ok(!('inlineBytesOut' in second), JSON.stringify(second));
+  });
+
+  it('a scenario\'s receipt carries the inline bytes and its sentence says so', () => {
+    const u = usage();
+    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    const r = {isError: false, structuredContent: {img: {mimeType: 'image/png', bytes: 2048, block: 1}},
+      content: [{type: 'text', text: '{"img":1}'}, {type: 'image', data: Buffer.alloc(2048).toString('base64'), mimeType: 'image/png'}]};
+    const out = finishToolCall({usage: u, call, result: r, role: 'scenario', tool: 't', startedMs: t, now: () => t});
+    assert.strictEqual(out._meta['countinghouse/receipt'].inlineBytesOut, 2048);
+    assert.match(out.content[out.content.length - 1].text, / reached the model, and 2\.0 KB inline \(images, audio, files\)\.$/);
+  });
+
+  // M6: an inline resource block's bytes are inline too (they enter the
+  // model's context), and a resource link's size is linkedBytesOut
+  it('M6: an inline resource block counts as inline, a link\'s size as linkedBytesOut, and the sentence says both', () => {
+    const u = usage();
+    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    const r = {isError: false, structuredContent: {},
+      content: [{type: 'text', text: '{}'},
+        {type: 'resource', resource: {uri: 'countinghouse://r/R', mimeType: 'application/pdf', blob: Buffer.alloc(1024).toString('base64')}},
+        {type: 'resource_link', uri: 'countinghouse://r/L', name: 'big', mimeType: 'application/pdf', size: 3 * 1024 * 1024}]};
+    const out = finishToolCall({usage: u, call, result: r, role: 'scenario', tool: 't', startedMs: t, now: () => t});
+    const receipt = out._meta['countinghouse/receipt'];
+    assert.deepStrictEqual([receipt.inlineBytesOut, receipt.linkedBytesOut], [1024, 3 * 1024 * 1024]);
+    assert.match(out.content[out.content.length - 1].text, / reached the model, and 1\.0 KB inline \(images, audio, files\); 3\.0 MB stored behind links\.$/);
+    const rec = u.records().find((x) => x.bytesOut !== undefined);
+    assert.strictEqual(rec.linkedBytesOut, 3 * 1024 * 1024);
+  });
+
   it('a module that is not a scenario gets an Out record and no receipt', () => {
     const u = usage();
     const call = u.beginCall({pack: null, tool: 'plain_svc_go', caller: 'u_a'});

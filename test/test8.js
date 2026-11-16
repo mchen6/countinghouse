@@ -29,14 +29,12 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     // window open 2 s, whatever the boot time (lib/module-manager.js restartModule).
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MS = '2000';
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MODULE = 'echo-device-module';
-    // --maxOutputBytes 64 MiB: unit/test019 echoes 20 MB of BSON binary, past
-    // the 8 MiB default; the cap itself is tested in test/sandbox/41.
-    const server = exec(`"./bin/countinghouse" --workerThread --maxOutputBytes 67108864 --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 
   testFiles.forEach((file) => {
-    if (file !== 'input.bson' && file !== 'test018.js') require(`./unit/${file}`);
+    require(`./unit/${file}`);
   });
 
   // Files in this list need their own server config incompatible with the

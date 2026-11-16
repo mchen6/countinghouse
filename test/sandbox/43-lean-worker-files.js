@@ -94,9 +94,15 @@ function runtimeFiles(files) {
     .filter((rel) => !rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+// the local store's directory, this run's own, removed by its exact path
+const LOCAL_STORE = path.join(os.tmpdir(), `ch-s43-store-${process.pid}`);
+after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
+
 // One server per path, in turn on the same port: direct peer channels (the
-// default) and routed (--no-directPeerChannels).
-[['direct peer channels', []], ['routed', ['--no-directPeerChannels']]].forEach(([label, flags]) => {
+// default), routed (--no-directPeerChannels), and a local store (--store
+// local: the options a worker sets must load nothing new there either, #299).
+[['direct peer channels', []], ['routed', ['--no-directPeerChannels']],
+  ['a local store', ['--store', 'local', '--storePath', LOCAL_STORE]]].forEach(([label, flags]) => {
   describe(`sandbox 43: a lean worker loads only what it needs (lean worker step 3), ${label}`, function() {
     this.timeout(120000);
     let base = null;

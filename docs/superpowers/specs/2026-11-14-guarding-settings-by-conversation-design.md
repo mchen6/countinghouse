@@ -1,7 +1,7 @@
 # Guarding settings by conversation (first release, part 3)
 
-Status: APPROVED by the maintainer 2026-11-14 (rev 3; DECISIONS.md, ch-biz-plan
-ebc1e7b), after a security review against the MCP 2026-07-28 specification.
+Status: approved by the maintainer, 2026-11-14 (rev 3), after a security
+review against the MCP 2026-07-28 specification.
 Reviewer session.
 Builds on part 2 (#168): the `countinghouse_settings` tool, its allowlist and
 bounds, the control channel, the change history.

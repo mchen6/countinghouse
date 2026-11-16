@@ -39,7 +39,7 @@ const until = async(test, ms = 30000) => {
 // restore: send ch-local daemon's 'restore' (an empty table) once the
 // control channel says ready, as the daemon does
 // socketPath: a socket outside the run directory (C2's long-home fallback)
-function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', socketPath = null, restore = true} = {}) {
+function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', socketPath = null, restore = true, env = {}} = {}) {
   const run = path.join(home, 'run', 'daemon');
   fs.mkdirSync(run, {recursive: true});
   fs.chmodSync(path.join(home, 'run'), 0o700);
@@ -47,7 +47,7 @@ function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', socketPat
   const socket = socketPath != null ? socketPath : path.join(run, socketName);
   const child = spawn(process.execPath, [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
-    '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
+    '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''}, env)});
   const r = {child, socket, run, err: '', out: '', code: undefined};
   // ch-local's control requests over the IPC channel, as stdio's helper sends them
   const replies = new Map();
@@ -127,24 +127,59 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     a.c.end();
   });
 
-  it('until per-session settings land, a session reads settings but changes none, nor sets the log level, nor reaches tasks', async() => {
+  it('a session tightens the two caps for itself and reads its own settings; every other set is the terminal\'s; no tasks; its log level is its own (B2 Tasks 3 and 4)', async() => {
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile]);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
-    const call = (args, extra = {}) => request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
+    const b = await shim.session(r.socket, secret);
+    const callOf = (s) => (args, extra = {}) => request(s.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: args}, extra));
+    const call = callOf(a);
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
     const got = await call({action: 'get'});
     assert.ok(got.result != null && got.result.isError !== true, JSON.stringify(got));
-    // every set is the terminal's: a tightening, a loosening, a pack on or
-    // off, a confirmation's retry; nothing is written
-    for (const [args, extra] of [[{action: 'set', name: 'requestTimeout', value: '20s'}, {}], [{action: 'set', name: 'requestTimeout', value: '60s'}, {}],
-      [{action: 'set', name: 'requestTimeout', value: '60s'}, {requestState: 'x', inputResponses: {}}],
-      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}]]) {
+    assert.strictEqual(valueOf(got, 'requestTimeout'), 30000);
+    // a tightening of a cap is the session's own: applied for it, written nowhere
+    const tightened = await call({action: 'set', name: 'requestTimeout', value: '20s'});
+    assert.deepStrictEqual(tightened.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'this session'}, JSON.stringify(tightened));
+    assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000);
+    // its shim is told to forget what it kept, then given the one snapshot
+    assert.deepStrictEqual(await a.c.json('C'), {op: 'forget'});
+    assert.deepStrictEqual(await a.c.json('C'), {op: 'record', entry: {requestTimeout: 20000}});
+    // the other session: its value, its history and its shim hear nothing of it
+    const others = await callOf(b)({action: 'get'});
+    assert.strictEqual(valueOf(others, 'requestTimeout'), 30000);
+    assert.deepStrictEqual(others.result.structuredContent.history, []);
+    assert.strictEqual(await b.c.json('C', 300), null);
+    assert.deepStrictEqual((await call({action: 'get'})).result.structuredContent.history.map((h) => [h.setting, h.new, h.change]), [['requestTimeout', 20000, 'this session']]);
+    // a loosening of a cap (of the session's own value too) is its user's to
+    // confirm (Task 5, below): this client is not one a form is shown in,
+    // so it is told the terminal command
+    for (const value of ['60s', '25s']) {
+      const r2 = await call({action: 'set', name: 'requestTimeout', value});
+      assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
+      assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(r2));
+      assert.match(r2.result.content[0].text, /ch-local settings set requestTimeout/);
+    }
+    // a retry that names no form of this session's confirms nothing, a
+    // value that tightens included
+    for (const value of ['60s', '10s']) {
+      const r2 = await call({action: 'set', name: 'requestTimeout', value}, {requestState: 'x', inputResponses: {}});
+      assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
+      assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID', JSON.stringify(r2));
+    }
+    // everything else is the terminal's: a pack on or off, any other
+    // setting, and their retries; nothing is written
+    for (const [args, extra] of [[{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}],
+      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {requestState: 'x', inputResponses: {}}],
+      [{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
       assert.match(r2.result.content[0].text, /ch-local settings set/);
     }
+    assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000, 'as it was');
+    b.c.end();
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
       // a modern request: tasks/* are gone in 2026-07-28 (#243), method not found
@@ -155,10 +190,266 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       assert.ok(l.error != null, `${method}: ${JSON.stringify(l)}`);
       assert.match(l.error.message, /shared runtime/);
     }
-    // a modern request's logging/setLevel is gone in 2026-07-28; either way
-    // a session gets an error, never a changed level
+    // a modern request's logging/setLevel is gone in 2026-07-28; a legacy
+    // session's sets its own level (B2 Task 3: lib/notices.js, per session)
     const level = await request(a.c, 'logging/setLevel', {level: 'debug'});
-    assert.ok(level.error != null, JSON.stringify(level));
+    assert.ok(level.error != null && level.error.code === -32601, JSON.stringify(level));
+    const legacy = await requestLegacy(a.c, 'logging/setLevel', {level: 'warning'});
+    assert.deepStrictEqual(legacy.result, {}, JSON.stringify(legacy));
+    const bad = await requestLegacy(a.c, 'logging/setLevel', {level: 'loud'});
+    assert.ok(bad.error != null && bad.error.code === -32602, JSON.stringify(bad));
+    a.c.end();
+  });
+
+  // B2 Task 5, with real sessions over the listener and the shim's wire: the
+  // test's runtime preloads test/fixtures/session-elicitation-preload.js (a
+  // tested range for claude-code; production's is empty until the hand test)
+  it('a session\'s user confirms a loosening in that session\'s own form: it is that session\'s only; another session cannot answer it; a client that says no is never asked again (B2 Task 5)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile], {env: {NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`}});
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    const c = await shim.session(r.socket, secret);
+    const meta = {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.323'}})};
+    // a settings call; conditions: what the session's shim answers the
+    // runtime's conditions? with while the call runs (null: it must not ask)
+    const call = async(s, args, extra = {}, conditions = null) => {
+      const seq = nextSeq++;
+      shim.message(s.c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method: 'tools/call', params: Object.assign({name: 'countinghouse_settings', arguments: args}, meta, extra)}));
+      let asked = 0;
+      if (conditions != null) {
+        const q = await s.c.json('C', 20000);
+        assert.ok(q != null && q.op === 'conditions?', JSON.stringify(q));
+        asked += 1;
+        s.c.send('C', {op: 'client', seq: q.seq, status: 'ok', conditions, repo: null, token: null});
+      }
+      for (;;) {
+        const m = await shim.readM(s.c, 60000);
+        if (m == null) return null;
+        if (m.header != null && m.header.seq === seq) return Object.assign(JSON.parse(m.line.toString('utf8')), {asked});
+      }
+    };
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
+    const set60 = {action: 'set', name: 'requestTimeout', value: '60s'};
+    const accept = (ask) => ({requestState: ask.result.requestState, inputResponses: {approve: {action: 'accept', content: {approve: true}}}});
+
+    // A asks: its own shim is asked its conditions, and the form is A's
+    const ask = await call(a, set60, {}, 'yes');
+    assert.strictEqual(ask.result.resultType, 'input_required', JSON.stringify(ask));
+    assert.strictEqual(ask.result.inputRequests.approve.method, 'elicitation/create');
+    assert.match(ask.result.inputRequests.approve.params.message, /up to 60s in this session \(now 30s\)\? This applies to this session only, until it ends\./);
+    assert.strictEqual(valueOf(await call(a, {action: 'get'}), 'requestTimeout'), 30000, 'nothing yet');
+    // B cannot answer A's form: its state is good in A only, and B's shim is not even asked
+    const fromB = await call(b, set60, accept(ask));
+    assert.strictEqual(fromB.result.isError, true, JSON.stringify(fromB));
+    assert.strictEqual(fromB.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID');
+    assert.strictEqual(await b.c.json('C', 300), null);
+    // A's user accepts: A's conditions are asked again, then it is A's override
+    const done = await call(a, set60, accept(ask), 'yes');
+    assert.deepStrictEqual(done.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 60000, applies: 'this session'}, JSON.stringify(done));
+    assert.strictEqual(valueOf(await call(a, {action: 'get'}), 'requestTimeout'), 60000);
+    assert.strictEqual(valueOf(await call(b, {action: 'get'}), 'requestTimeout'), 30000, 'B runs as before');
+    assert.deepStrictEqual((await call(b, {action: 'get'})).result.structuredContent.history, [], 'and reads nothing of it');
+    // the same state again is used up
+    const again = await call(a, set60, accept(ask));
+    assert.strictEqual(again.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_USED', JSON.stringify(again));
+    // C's client says its configuration could answer for the user: no form,
+    // and none for the session's life, though it would now say yes (N1);
+    // its shim is not asked a second time
+    const no = await call(c, set60, {}, 'no');
+    assert.strictEqual(no.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(no));
+    const still = await call(c, {action: 'set', name: 'maxOutputBytes', value: '32MiB'});
+    assert.strictEqual(still.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(still));
+    assert.strictEqual(await c.c.json('C', 300), null, 'not asked again');
+    assert.match(still.result.content[0].text, /ch-local settings set maxOutputBytes 32MiB/);
+    // D's client says no in a frame nobody asked for, then yes in another:
+    // the first has latched it, though the session's own copy now says yes
+    const d = await shim.session(r.socket, secret);
+    d.c.send('C', {op: 'client', status: 'ok', conditions: 'no', repo: null, token: null});
+    d.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: null, token: null});
+    const overwritten = await call(d, set60);
+    assert.strictEqual(overwritten.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(overwritten));
+    assert.strictEqual(await d.c.json('C', 300), null, 'and its shim is not asked');
+    assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
+    for (const s of [a, b, c, d]) s.c.end();
+  });
+
+  // B2 Task 5b, with real sessions: the call says scope: 'all-sessions'
+  it('a session changes a cap for all sessions: a tightening at once, written and told to the others; a loosening by its own form, which names all; any other setting is still the terminal\'s (B2 Task 5b)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile, '--loadModule', scenario(home)], {env: {NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`}});
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    // the scenario's tool: a notice rides on a module tool's result
+    let hello = null;
+    await until(async() => {
+      const list = await request(b.c, 'tools/list');
+      hello = list != null && list.result != null ? list.result.tools.map((x) => x.name).find((n) => /hello/.test(n)) : null;
+      return hello != null;
+    });
+    assert.ok(hello, r.err.slice(-2000));
+    const meta = {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.323'}})};
+    const call = async(s, args, extra = {}, conditions = null) => {
+      const seq = nextSeq++;
+      shim.message(s.c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method: 'tools/call', params: Object.assign({name: 'countinghouse_settings', arguments: args}, meta, extra)}));
+      if (conditions != null) {
+        const q = await s.c.json('C', 20000);
+        assert.ok(q != null && q.op === 'conditions?', JSON.stringify(q));
+        s.c.send('C', {op: 'client', seq: q.seq, status: 'ok', conditions, repo: null, token: null});
+      }
+      for (;;) {
+        const m = await shim.readM(s.c, 60000);
+        if (m == null) return null;
+        if (m.header != null && m.header.seq === seq) return JSON.parse(m.line.toString('utf8'));
+      }
+    };
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
+    const storedNow = () => JSON.parse(fs.readFileSync(settingsFile, 'utf8')).values;
+    // the tool says it takes a scope
+    const listed = await request(a.c, 'tools/list');
+    const tool = listed.result.tools.find((t) => t.name === 'countinghouse_settings');
+    assert.deepStrictEqual(tool.inputSchema.properties.scope.enum, ['all-sessions']);
+
+    // a tightening for all: no form; B runs under it at once, and is told in its next result
+    const tightened = await call(a, {action: 'set', name: 'requestTimeout', value: '20s', scope: 'all-sessions'});
+    assert.deepStrictEqual(tightened.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'all sessions'}, JSON.stringify(tightened));
+    assert.strictEqual(storedNow().requestTimeout, 20000, 'settings.json, as a terminal change writes it');
+    const seenByB = await call(b, {action: 'get'});
+    assert.strictEqual(valueOf(seenByB, 'requestTimeout'), 20000);
+    // a change made for all sessions is every session's to read, with no session's id
+    assert.deepStrictEqual(seenByB.result.structuredContent.history.map((h) => [h.setting, h.old, h.new, h.change, h.session]), [['requestTimeout', 30000, 20000, 'all sessions', undefined]]);
+    const toldB = await request(b.c, 'tools/call', {name: hello, arguments: {name: 'b'}});
+    assert.ok(JSON.stringify(toldB.result).includes('requestTimeout changed to 20s for all sessions (changed from another session)'), JSON.stringify(toldB.result).slice(0, 600));
+    // A, who asked, is told nothing of another session
+    const toldA = await request(a.c, 'tools/call', {name: hello, arguments: {name: 'a'}});
+    assert.ok(!JSON.stringify(toldA.result).includes('another session'), JSON.stringify(toldA.result).slice(0, 600));
+
+    // a loosening for all: A's own form, which names all sessions; accepted, it is stored and B runs under it
+    const set60 = {action: 'set', name: 'requestTimeout', value: '60s', scope: 'all-sessions'};
+    const ask = await call(a, set60, {}, 'yes');
+    assert.strictEqual(ask.result.resultType, 'input_required', JSON.stringify(ask));
+    assert.match(ask.result.inputRequests.approve.params.message, /in all your sessions to run for up to 60s \(now 20s\)\? This changes the setting for every session, now and after a restart\./);
+    const accept = {requestState: ask.result.requestState, inputResponses: {approve: {action: 'accept', content: {approve: true}}}};
+    // the same state does not confirm a change for A alone: the form said all sessions
+    const asOwn = await call(a, {action: 'set', name: 'requestTimeout', value: '60s'}, accept);
+    assert.strictEqual(asOwn.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID', JSON.stringify(asOwn));
+    const done = await call(a, set60, accept, 'yes');
+    assert.deepStrictEqual(done.result.structuredContent, {name: 'requestTimeout', old: 20000, new: 60000, applies: 'all sessions'}, JSON.stringify(done));
+    assert.strictEqual(storedNow().requestTimeout, 60000);
+    assert.strictEqual(valueOf(await call(b, {action: 'get'}), 'requestTimeout'), 60000);
+
+    // every other setting is the terminal's, for all sessions too; a scope that is not one is refused
+    for (const args of [{action: 'set', name: 'moduleSandbox', value: 'audit', scope: 'all-sessions'}, {action: 'set', name: 'locale', value: 'zh', scope: 'all-sessions'},
+      {action: 'set', name: 'pack.ch-pack-x', value: 'on', scope: 'all-sessions'}]) {
+      const refusedAll = await call(a, args);
+      assert.strictEqual(refusedAll.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', JSON.stringify(refusedAll));
+    }
+    const odd = await call(a, {action: 'set', name: 'requestTimeout', value: '10s', scope: 'everyone'});
+    assert.strictEqual(odd.result._meta['countinghouse/code'], 'ARGUMENTS_INVALID', JSON.stringify(odd));
+    assert.deepStrictEqual(storedNow(), {requestTimeout: 60000}, 'nothing else was written');
+    for (const s of [a, b]) s.c.end();
+  });
+
+  // B2 Task 6, end to end, with the test as the daemon: it keeps what the
+  // runtime tells it and hands it back to the next runtime
+  it('a session\'s state crosses a runtime restart: told to the daemon as it changes, handed back in the restore, applied when its shim resumes it (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile]);
+    let secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const id = a.welcome.session;
+    const token = a.welcome.resumeToken;
+    const call = (s, args) => request(s.c, 'tools/call', {name: 'countinghouse_settings', arguments: args});
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
+    assert.strictEqual((await call(a, {action: 'set', name: 'requestTimeout', value: '20s'})).result.structuredContent.new, 20000);
+    // the daemon's row for it: its state as last told, and its resume hash
+    await until(() => r.told.some((m) => m.type === 'session-state' && m.session === id));
+    const state = r.told.filter((m) => m.type === 'session-state' && m.session === id).pop().state;
+    assert.deepStrictEqual(state, {overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}], locks: [], formsLeft: 3});
+    const resume = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    // nothing told carries a key or a nonce
+    assert.ok(!/nonce|mac|key|secret/i.test(JSON.stringify(r.told.filter((m) => m.type === 'session-state'))));
+    // the runtime is killed; the next one is handed the table before it listens
+    r.child.kill('SIGKILL');
+    await r.exited;
+    r = runtime(home, ['--settingsFile', settingsFile], {restore: false, socketName: 's2'});
+    // the table in the one shape a runtime takes (lib/session-transport/restore.js). Its answer is
+    // {ok, ...}: a refusal is ok: false with a code, never an "error" field.
+    const answer = await r.control({type: 'restore', sessions: [{session: id, resume, state}], declines: [], reset: []});
+    assert.deepStrictEqual([answer.ok, answer.sessions], [true, 1], JSON.stringify(answer));
+    const t0 = Date.now();
+    secret = await listening(r);
+    // on the restore, not on the 3 s net (which would serve an empty table, and refuse the resume below)
+    assert.ok(Date.now() - t0 < 2500, `it listened ${Date.now() - t0} ms after the restore`);
+    // its shim resumes it, by its token
+    const back = await shim.session(r.socket, secret, undefined, {resume: token});
+    assert.ok(back.welcome != null && back.welcome.session === id, JSON.stringify(back.refused || back.welcome));
+    const got = await call(back, {action: 'get'});
+    assert.strictEqual(valueOf(got, 'requestTimeout'), 20000, 'its own value, as before the restart');
+    // and a session that was not in the table is a new one
+    const fresh = await shim.session(r.socket, secret);
+    assert.strictEqual(valueOf(await call(fresh, {action: 'get'}), 'requestTimeout'), 30000);
+    back.c.end();
+    fresh.c.end();
+  });
+
+  // #300's follow-up: the restore's reset list reaches its session (the line in route-manager that passes it
+  // on), and a session's unanswered-form count crosses the restart in its state
+  it('a session in the daemon\'s reset list is told so at its resume, once; a kind it left one form unanswered of is still counted (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    const args = ['--settingsFile', settingsFile, '--loadModule', scenario(home)];
+    r = runtime(home, args);
+    let secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const id = a.welcome.session;
+    const token = a.welcome.resumeToken;
+    const hash = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+    // as the daemon hands it over after a re-exec: the row without its loosening, the session named in reset
+    r = runtime(home, args, {restore: {id: 'restore-1', type: 'restore',
+      sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['maxOutputBytes']}}], declines: [], reset: [id]}});
+    secret = await listening(r);
+    const back = await shim.session(r.socket, secret, undefined, {resume: token});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, JSON.stringify(back.refused));
+    let hello = null;
+    await until(async() => {
+      const list = await request(back.c, 'tools/list');
+      hello = list != null && list.result != null ? list.result.tools.map((x) => x.name).find((n) => /hello/.test(n)) : null;
+      return hello != null;
+    });
+    assert.ok(hello, r.err.slice(-2000));
+    const textOf = (got) => got.result.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    const first = await request(back.c, 'tools/call', {name: hello, arguments: {name: 'again'}});
+    assert.match(textOf(first), /your this-session loosenings were reset; ask again/, JSON.stringify(first).slice(0, 500));
+    const second = await request(back.c, 'tools/call', {name: hello, arguments: {name: 'again'}});
+    assert.doesNotMatch(textOf(second), /were reset/, 'said once');
+    // its next change tells its state whole: the unanswered kind is still in it
+    const set = await request(back.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '20s'}});
+    assert.strictEqual(set.result.structuredContent.new, 20000, JSON.stringify(set).slice(0, 400));
+    await until(() => r.told.some((m) => m.type === 'session-state' && m.session === id));
+    assert.deepStrictEqual(r.told.filter((m) => m.type === 'session-state' && m.session === id).pop().state,
+      {overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}], locks: [], formsLeft: 2, unanswered: ['maxOutputBytes']});
+    back.c.end();
+  });
+
+  it('with no restore from the daemon, no confirmation form is shown for 30 minutes: what was declined before is not known (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile], {restore: false, env: {NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`}});
+    const secret = await listening(r);
+    assert.match(r.out + r.err, /no session table from ch-local daemon/);
+    const a = await shim.session(r.socket, secret);
+    const meta = {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.323'}})};
+    const asked = await request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '60s'}}, meta));
+    assert.strictEqual(asked.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(asked));
+    assert.strictEqual(await a.c.json('C', 300), null, 'and its shim is not asked its conditions');
+    // a tightening needs no form, and is taken
+    const tightened = await request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '20s'}}, meta));
+    assert.strictEqual(tightened.result.structuredContent.new, 20000, JSON.stringify(tightened));
     a.c.end();
   });
 
@@ -422,6 +713,34 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.ok(ra.result != null && rb.result != null);
     a.c.end();
     b.c.end();
+  });
+
+  it('a notice from ch-local reaches each open legacy session once, as its notifications/message, at the level it set; a modern one, unasked, none (B2 Task 3)', async() => {
+    r = runtime(home);
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    const c = await shim.session(r.socket, secret);
+    // a and b are legacy sessions: they sent initialize; c never does
+    for (const x of [a, b]) {
+      const init = await requestLegacy(x.c, 'initialize', {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test-client', version: '1.0.0'}});
+      assert.ok(init != null && init.result != null && init.result.capabilities.logging != null, JSON.stringify(init));
+    }
+    // b asks for warning and above: no notification, the next result's line still
+    assert.deepStrictEqual((await requestLegacy(b.c, 'logging/setLevel', {level: 'warning'})).result, {});
+    const reply = await r.control({type: 'notice', module: null, text: 'ch-pack-x removed'});
+    assert.ok(reply != null && reply.error == null, JSON.stringify(reply));
+    const m = await shim.readM(a.c, 10000);
+    assert.ok(m != null && m.header == null, 'a notification has no header');
+    assert.deepStrictEqual(JSON.parse(m.line.toString('utf8')),
+      {jsonrpc: '2.0', method: 'notifications/message', params: {level: 'notice', logger: 'countinghouse', data: 'ch-pack-x removed'}});
+    // b asked for warning: nothing is sent to it
+    assert.strictEqual(await shim.readM(b.c, 1500), null, 'no notification for b');
+    assert.strictEqual(await shim.readM(a.c, 1500), null, 'a got it once');
+    assert.strictEqual(await shim.readM(c.c, 1500), null, 'nothing unasked for a modern session');
+    a.c.end();
+    b.c.end();
+    c.c.end();
   });
 
   it('keeps serving when its stdin ends (unlike --stdio)', async() => {

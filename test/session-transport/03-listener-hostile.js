@@ -14,7 +14,7 @@ const handshake = require('../../lib/session-transport/handshake');
 const {createRegistry} = require('../../lib/session-transport/registry');
 const {createListener} = require('../../lib/session-transport/listener');
 const shim = require('./helpers/shim');
-const V = require('../fixtures/shim-wire-vectors.json');
+const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json');
 
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 const until = async(test, ms = 3000) => {

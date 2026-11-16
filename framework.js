@@ -98,6 +98,18 @@ if (options.validatorLimitInvalid != null) {
     JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// MCP completeness M5: the result store's limits.
+if (options.resourceLimitInvalid != null) {
+  console.error('--' + options.resourceLimitInvalid.name + ' must be ' + options.resourceLimitInvalid.what + ' (got ' +
+    JSON.stringify(String(options.resourceLimitInvalid.value)) + ')');
+  process.exit(2);
+}
+// MCP completeness M1: the size of a list's page.
+if (options.listPageSizeInvalid != null) {
+  console.error('--' + options.listPageSizeInvalid.name + ' must be ' + options.listPageSizeInvalid.what + ' (got ' +
+    JSON.stringify(String(options.listPageSizeInvalid.value)) + ')');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
 // IPC fd. --hardened relaunches this process as a child, which the channel
@@ -228,6 +240,16 @@ if (options.hardened === true && process.permission == null) {
 // The relaunched --hardened server: the parent's real paths, before anything
 // here resolves a path (lib/hardened-realpaths.js).
 if (process.permission != null) require('./lib/hardened-realpaths').receive();
+// Under the permission model without that hand-over (node --permission by
+// hand, not --hardened): the links the install is reached through cannot be
+// looked for, and the start is refused rather than served without them.
+if (process.permission != null) {
+  var startProblem = require('./lib/hardened-launch').startProblem();
+  if (startProblem != null) {
+    console.error(startProblem);
+    process.exit(2);
+  }
+}
 
 var logger = require('./lib/logger');
 logger.createLogger(options.logStream);
@@ -276,6 +298,8 @@ if (options.workerThread === true) {
   logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
     ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
 }
+// MCP completeness M6: the result store's effective limits (spec section 2)
+logger.I(require('./lib/store/blobs').describeLimits(options));
 
 if (options.modulePolicy != null) {
   try {
@@ -352,17 +376,18 @@ try {
 }
 
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
-// ModuleManager.prototype.loadAllModules's registry-lookup branch, and
-// only when no --loadModule path was given (see that function's own
-// "in case loading local module, we won't read module info from DB"
-// early return) -- the --loadModule quickstart path never touches it.
+// ModuleManager.prototype.loadAllModules's registry-lookup branch, and only
+// under --moduleRegistry with no --loadModule path (options.usesModuleRegistry)
+// -- every other start, the --loadModule quickstart path and a start with no
+// module alike, never touches it.
 // Requiring sqlite3 unconditionally here loads its native binding on
 // every single startup regardless, which is unnecessary work for the
 // common case and the actual crash on a glibc too old for the current
 // prebuilt binary (ERR_DLOPEN_FAILED) -- gating the require itself,
 // not just the init() call, avoids that entirely for anyone who never
 // needed the registry DB in the first place.
-if (options.localModulePath == null) {
+// --moduleRegistry only: the registry is opt-in (lib/cli-options.js).
+if (options.usesModuleRegistry()) {
   require('./lib/device-db').init(options.modulePath);
 }
 
@@ -403,7 +428,12 @@ function serve() {
   }
 
   // routeManager.startServer();
-  mm.loadAllModules();
+  // Discovery starts once the server takes requests (RouteManager
+  // whenServing): over HTTP, listen() with a host binds only after resolving
+  // it, and a start with nothing to load finishes discovery at once, so
+  // "countinghouse ready" (which every waiter waits for) would otherwise come
+  // before the port is bound.
+  routeManager.whenServing(function() { mm.loadAllModules(); });
 }
 
 // The Redis host name a module worker is denied is resolved before any module

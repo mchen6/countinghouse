@@ -1,0 +1,4 @@
+{
+  "not-json-test-key": {"userName": "not-json-test", "devices": ["*"]},
+  "not-json-caller-internal": {"userName": "not-json-caller-internal", "devices": ["*"], "runsModules": ["not-json-caller"]}
+}

@@ -147,6 +147,37 @@ const out = {
       {why: 'env not an object', value: {node: '/opt/example/node/bin/node', chLocal: '/opt/example/ch-local/bin/ch-local.js', env: 'PATH=/usr/bin'}}
     ]
   },
+  // <home>/run/daemon/failed.json (section 6). `at` is given as an offset
+  // from the reader's now, in ms; a `text` case is raw bytes, its "<at>"
+  // replaced by now + atOffsetMs.
+  failedJson: {
+    rule: 'exactly {v, at, exit, signal, reason}: v 1; at a positive safe integer; exit a safe integer or null; signal ^SIG[A-Z0-9]+$ or null; reason "restarts-exhausted" or "never-listened"; no key extra, missing or twice; read with daemon.json\'s trust checks, at most 512 bytes; fresh when now - 600000 <= at <= now + 60000; a fresh valid file means no daemon is spawned and the session runs its own runtime; anything else is ignored',
+    freshPastMs: 600000,
+    freshFutureMs: 60000,
+    accepted: [
+      {why: 'now', atOffsetMs: 0, value: {v: 1, exit: 1, signal: null, reason: 'restarts-exhausted'}},
+      {why: 'the past edge', atOffsetMs: -600000, value: {v: 1, exit: null, signal: 'SIGKILL', reason: 'restarts-exhausted'}},
+      {why: 'the future edge', atOffsetMs: 60000, value: {v: 1, exit: null, signal: null, reason: 'never-listened'}}
+    ],
+    ignored: [
+      {why: 'stale', atOffsetMs: -600001, value: {v: 1, exit: 1, signal: null, reason: 'restarts-exhausted'}},
+      {why: 'from the future', atOffsetMs: 60001, value: {v: 1, exit: 1, signal: null, reason: 'restarts-exhausted'}},
+      {why: 'an extra key', atOffsetMs: 0, value: {v: 1, exit: 1, signal: null, reason: 'restarts-exhausted', path: '/tmp/x'}},
+      {why: 'a missing key (signal)', atOffsetMs: 0, value: {v: 1, exit: 1, reason: 'restarts-exhausted'}},
+      {why: 'at as a string', atOffsetMs: 0, text: '{"v":1,"at":"<at>","exit":1,"signal":null,"reason":"restarts-exhausted"}'},
+      {why: 'at as a float', atOffsetMs: 0, text: '{"v":1,"at":<at>.5,"exit":1,"signal":null,"reason":"restarts-exhausted"}'},
+      {why: 'a signal without SIG', atOffsetMs: 0, value: {v: 1, exit: null, signal: 'KILL', reason: 'restarts-exhausted'}},
+      {why: 'a duplicate key', atOffsetMs: 0, text: '{"v":1,"at":<at>,"exit":1,"signal":null,"reason":"restarts-exhausted","reason":"never-listened"}'},
+      {why: 'v 2', atOffsetMs: 0, value: {v: 2, exit: 1, signal: null, reason: 'restarts-exhausted'}},
+      {why: 'an unknown reason', atOffsetMs: 0, value: {v: 1, exit: 1, signal: null, reason: 'other'}}
+    ],
+    stderr: 'the shared runtime failed (<reason>); this session runs its own'
+  },
+  sessionCantFallBackAnswer: {
+    rule: 'exact apart from the id: a mid-session fallback refused because the shim holds a record (its session\'s tightenings would be lost); each held and later request gets it, then the shim exits non-zero',
+    json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"countinghouse\'s shared runtime failed, and this session\'s tightened settings can\'t move to a runtime of its own: restart the session","data":{"countinghouse/code":"SESSION_CANT_FALL_BACK","retryable":false}}}',
+    stderr: 'the shared runtime failed (<reason>), and this session\'s tightened settings can\'t move to a runtime of its own: restart the session'
+  },
   secretFiles: {
     accepted: [`${hex(secret)}`, `${hex(secret)}\n`],
     refused: [`${hex(secret).toUpperCase()}`, `${hex(secret)}\r\n`, `${hex(secret)}\n\n`, hex(secret).slice(2), ` ${hex(secret)}`, ''],
@@ -181,13 +212,21 @@ const out = {
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases
   restoreRows: {
-    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}; overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
+    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
     accepted: [
       {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}},
+      {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']}},
+      {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: []}},
       {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, {name: 'pack.ci-failure-triage', value: true, loosening: true, over: null, version: '1.2.3'}], locks: ['pack', 'requestTimeout'], formsLeft: 0}}
     ],
     refused: [
       // each with the reason it must be refused for: a substring of restore.js's message
+      {why: 'unanswered that is no list', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: 'pack'}}},
+      {why: 'an unanswered kind twice', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 1, unanswered: ['pack', 'pack']}}},
+      {why: 'an unanswered kind that is none', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale']}}},
+      {why: 'a kind both locked and unanswered', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['pack']}}},
+      {why: 'an unanswered form with no form spent', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, unanswered: ['pack']}}},
+      {why: 'a key beside unanswered', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: [], nonce: 'x'}}},
       {why: 'no resume', reason: 'not exactly {session, resume, state}', row: {session: 'a'.repeat(32), state: {overrides: [], locks: [], formsLeft: 3}}},
       {why: 'an uppercase resume', reason: 'resume hash', row: {session: 'a'.repeat(32), resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}},
       {why: 'a session id not 32 hex', reason: 'session id', row: {session: 'not-hex', resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}},
@@ -220,6 +259,8 @@ const out = {
     {name: 'a client line with a newline inside a string', given: 'the line is split only on the byte 0x0a, which JSON text never carries unescaped', expect: 'each line is one M frame'},
     {name: 'client lines before settled', given: 'WELCOME, then the client writes a request before settled arrives', expect: 'the shim holds it and forwards it after settled; on own-runtime it hands it to the per-session runtime'},
     {name: 'a wrong ms after a restart', given: 'PROVE fails, then daemon.json and the secret are rewritten', expect: 'the shim re-reads both and attaches within its 20 s'},
+    {name: 'a mid-session fallback holding a record', given: 'a live session with one record loses the daemon, reattaches and finds a fresh failed.json', expect: 'no per-session runtime is started; each held request is answered sessionCantFallBackAnswer, the stderr line is said, and the shim exits non-zero'},
+    {name: 'a mid-session fallback with no record', given: 'a live legacy session with no record loses the daemon and finds a fresh failed.json', expect: 'the shim starts own-runtime, replays its initialize and notifications/initialized first, drops that answer, then sends the held lines'},
     {name: 'conditions? unanswered', given: 'the shim sends no client frame for 12 s after conditions? (it gives the child 10 s)', expect: 'the runtime counts it as no for that form: no form'}
   ]
 };

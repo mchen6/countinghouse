@@ -48,7 +48,6 @@ one) as well as the ports it binds.
 | `test/auth/22-browser-origins.js` | 9665 |
 | `test/auth/24-job-ownership.js` | 9669 |
 | `test/auth/25-job-schedulers.js` | 9670 |
-| `test/auth/26-bson-preparse-auth.js` | 9662 |
 | `test/auth/30-no-keys-reach-modules.js` | 9631 |
 | `test/auth/31-identity.js` | 9646–9649 |
 | `test/auth/32-reload-auth.js` | 9628 |
@@ -96,6 +95,12 @@ one) as well as the ports it binds.
 | `test/mcp-contract/01-tools-list-unchanged.js` | 9531 |
 | `test/mcp-contract/06-output-schema-at-call-start.js` | 9612 |
 | `test/mcp-contract/07-error-shape.js` | 9656–9657 |
+| `test/mcp-contract/11-progress-e2e.js` | 9580 |
+| `test/mcp-contract/12-any-json-output.js` | 9581 |
+| `test/mcp-contract/14-handler-progress-e2e.js` | 9582 |
+| `test/mcp-contract/16-resources-read.js` | 9583, 9585 |
+| `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
+| `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |
@@ -122,7 +127,10 @@ one) as well as the ports it binds.
 | `test/remote/05-route.js` | 9688, 9720–9721 |
 | `test/remote/06-listing.js` | 9722–9723 |
 | `test/remote/07-counting.js` | 9728–9729 |
+| `test/remote/12-cancel-abort.js` | 9589 |
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
+| `test/module-loading/33-registry-opt-in.js` | 9594 |
+| `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
@@ -154,6 +162,10 @@ one) as well as the ports it binds.
 | `test/sandbox/50-module-stdio.js` | 9790 |
 | `test/fixtures/server-left-behind/failing.js` (run by `test/validation/16-no-server-left.js`) | 9791 |
 | `test/sandbox/54-per-call-values.js` | 9792 |
+| `test/sandbox/57-session-caps.js` | none (a session socket in its home) |
+| `test/sandbox/58-settings-denied.js` | 9794, 9795 |
+| `test/sandbox/59-protected-paths-denied.js` | 9796, 9797, 9798 |
+| `test/sandbox/60-audit-writes.js` | 9799 (audit, enforce and off, one after another) |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
@@ -169,6 +181,7 @@ one) as well as the ports it binds.
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
 | `test/stdio/03-module-data-dirs.js` | 9733 (a `--redisUrl` nothing listens on) |
+| `test/store/08-blob-options.js` | 9579 |
 | `test/test1.js` | 9527 |
 | `test/test2.js` | 9527 |
 | `test/test3.js` | 9527 |
@@ -192,9 +205,6 @@ one) as well as the ports it binds.
 | `test/unit/test014.js` | 9527 |
 | `test/unit/test015.js` | 9527 |
 | `test/unit/test016.js` | 9527 |
-| `test/unit/test017.js` | 9527 |
-| `test/unit/test018.js` | 9527 |
-| `test/unit/test019.js` | 9527 |
 | `test/unit/test020.js` | 9527 |
 | `test/unit/test021.js` | 9527 |
 | `test/unit/test022.js` | 9527 |
@@ -208,3 +218,6 @@ one) as well as the ports it binds.
 | `test/unit/test031.js` | 9527 |
 | `test/unit/test032.js` | 9527 |
 | `test/validation/02-stray-output-rejected.js` | 9575 |
+| `test/validation/19-output-not-json.js` | 9576 |
+| `test/validation/20-output-not-json-hop.js` | 9577 |
+| `test/validation/20-output-not-json-hop.js` | 9578 |

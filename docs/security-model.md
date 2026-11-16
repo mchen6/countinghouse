@@ -73,7 +73,8 @@ it.
 |---|---|---|---|
 | Virtual paths, file broker, bridge | yes | yes | yes |
 | Link rules, main-thread protection | yes | yes | yes |
-| Outside the namespace, writes to `/app` and to `r` paths | pass through | pass through, logged | refused |
+| Reads outside the namespace | pass through | pass through, logged | refused |
+| Writes outside the module's own area (outside the namespace, `/app`, `r` paths) | pass through | refused (`EACCES`), recorded | refused |
 | Disk quota | not counted | logged | enforced |
 | Lockdown, resource limits, clean environment | no | yes | yes |
 
@@ -93,11 +94,25 @@ drive-qualified path as outside the namespace. Under `enforce` such a path is
 refused (ENOENT): it fails closed. The module gets its own `/data` and
 `/tmp`.
 
-**Only `enforce` protects files.** Under `audit` and `off` access outside a
-module's namespace passes through to the host, so `auth.json` and other
-modules' files stay readable: those modes give modules virtual paths and give
-operators a report, not protection. In `audit` every check runs, a violation
-is logged once per (module, rule, target) and the operation goes ahead. In
+**Under `audit` a module changes nothing outside its own area** (Matt,
+2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
+declared `rw`. Every write-class operation aimed anywhere else is refused
+`EACCES` and recorded as a denial: an open for writing, a create or truncate,
+`writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
+`link` with either end outside (a hard link's source included), a symlink
+made outside, `chmod`, `chown`, `utimes`, `truncate`, and `copyFile` or `cp`
+to an outside destination; writes to `/app` and to a path declared `r` too.
+A symlink made inside the namespace that points outside it is refused
+`EPERM`, in every mode, as before.
+
+**Only `enforce` hides files.** Under `audit` and `off` reads outside a
+module's namespace pass through to the host, except the always-denied set
+and the protected paths above: under `audit` a module can read any other
+file the OS user can -- the operator's project directory, the current
+directory, `~/.npmrc`, `~/.ssh` -- and each read is logged. So don't run
+untrusted packs under `audit` on a machine that holds secrets: use
+`enforce`. In `audit` every check runs, a violation is logged once per
+(module, rule, target), and a read goes ahead. In
 `enforce` a violation is blocked with the error Node itself would throw
 (`ENOENT`, `EROFS`, `ENOSPC`, `ERR_ACCESS_DENIED`, `MODULE_NOT_FOUND`) and
 logged. Resource limits apply in `audit` as well, because logging a runaway
@@ -211,7 +226,7 @@ A module sees its own namespace, in every mode:
 
 | Virtual path | Host path | Access |
 |---|---|---|
-| `/app` | the module's install directory | read-only under `enforce` (`EROFS`); writes logged under `audit` |
+| `/app` | the module's install directory | read-only: `EROFS` under `enforce`, `EACCES` under `audit` |
 | `/data` | `<moduleDataPath>/<name>/data` | read-write, quota, kept across restarts |
 | `/tmp` | `<moduleDataPath>/<name>/tmp` | read-write, quota, emptied when the worker starts |
 | each declared path, e.g. `/var/log/app` | the same host path | `r` or `rw` as the operator's policy narrows it; no quota |
@@ -226,8 +241,65 @@ paths in results and errors. Ancestors of a root (`/`, `/var`) answer as
 read-only directories that list only the way to the root. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
-policy file) or an ancestor of one: such a declaration is refused in every
+policy file, the `--remoteCredentials` file) or an ancestor of one: such a declaration is refused in every
 mode and logged at spawn.
+
+Nor can a writable declared path hold a name on a path countinghouse runs
+through:
+
+- the install, as it is run (by a spelling that is not its real path, through
+  a symlink or a junction, only with `--preserve-symlinks`);
+- the file it was started from, as the command named it (npm's `bin` link, a
+  `current` link; the `countinghouse` launcher tells the runtime how it was
+  started);
+- every configured path: `--modulePath`, `--moduleDataPath`, the settings
+  home, the local store, the auth and device configuration, the policy file;
+- every module root (`--modulePath`, each `--loadModule`): its links and the
+  directories a link's target leaves with `..` only. A module may still be
+  given a writable path above another module's code; the broker refuses
+  writes in that code and renames of it and of the directories above it.
+
+Whoever can replace a link on such a path, or a directory one of their
+targets passes through, chooses what the next start runs, or where it keeps
+its modules and data. So a declaration with `rw` access is refused when it
+is the directory of such a name or a directory above it, however the
+declaration spells it; a read-only one is kept. Under `--hardened` the names
+are found before the server restricts itself; a server put under Node's
+permission model another way (`node --permission` by hand) cannot look for
+them, and refuses to start. Two things this does not see: a Linux bind mount
+of a directory that holds such a link (the mount is another name for it that
+no path comparison shows; the protected directories above share this), and a
+Windows mount point given by volume GUID.
+
+Beyond declarations, every path in those directories -- every module's code
+(`--modulePath` and each `--loadModule` directory) and data
+(`--moduleDataPath`, also while a module is being validated), the local
+store, the auth and device configuration, the policy file, the
+`--remoteCredentials` file (which says where each credential may be sent) -- and in
+ch-local's home (the
+directory of `--settingsFile`: its settings, the daemon's session secret
+under `run/`, the launcher, the pack records) is refused to a module's reads
+and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
+named: directly, through `..`, a symlink or a hard link to the settings
+files. The policy file and the `--remoteCredentials` file are refused by
+their paths, not by identity as the settings files and the auth
+configuration are: a hard link to one of them, under a name outside these
+directories, is another path and is not refused. A module cannot make one
+(a `link` with either end outside its roots is refused, and under
+`enforce` a module whose `/data` or `/tmp` holds one does not start); the
+limit is a link that an operator, or other software on the machine, left
+where a module may read. A pack loaded in place may come with a credentials
+file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+that file is no option of the runtime's, so it is not a protected path by
+itself; ch-local writes it under `run/` in its home, which is protected as
+a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
+their real paths at spawn. A listing never shows them, and neither they nor
+any directory above them can be renamed or removed. The install directory is
+the exception: it is countinghouse's public code and stays readable under
+`audit`, except its top-level dot entries (`.git`, `.env*`, `.npmrc`,
+`.claude`, any other) and a top-level `auth.json`, which are refused to reads
+and writes under `audit` and `enforce` as the rest is. Keep no other
+secrets in it.
 
 For each call the broker translates the virtual path, decides by mode, then
 checks the host: the real location must lie inside its root, compared with
@@ -445,8 +517,20 @@ history say, and installing another is refused; `"conversation": false` refuses 
 loosening asked for in conversation, so no dialog is ever shown and each
 ends at the terminal command (below). A value above it is
 `SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
-Tightening is never refused by it. It is read once per process, and again
-when the file changes.
+A tightening of the value the runtime runs with is never refused by it. A
+change that only lowers a stored value, and is still above both the ceiling
+and what the runtime runs with, is refused (`SETTING_ABOVE_CEILING`): it
+would put a value above the ceiling in `settings.json` for the next start.
+For the two caps the settings tool reports, and judges a change against,
+what the runtime runs with (with nothing stored, what it started with: the
+ceiling may have bounded the start), not the stored default. What it
+writes to `settings.json` without the user's confirmation never exceeds
+what the file yields already (its stored value, else the default), and is
+above the ceiling only when it lowers what the file yields: a
+runtime started above the default by a flag cannot have conversation raise
+the file toward its start value. A lower value than what runs that may not
+be written applies to this start only, and is recorded as that. It is read once
+per process, and again when the file changes.
 
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
@@ -472,6 +556,40 @@ allowed: the permission model refuses the PowerShell the ACL check needs, the
 ceiling reads as one that cannot be trusted, and it fails closed. (The
 identity secret is checked by the `--hardened` parent before it relaunches
 under the permission model; the child takes that same file only, unchanged.)
+
+In a shared runtime, every call of a session is held to the tighter of the
+runtime's default and the ceiling, whether or not the session set a value of
+its own, and also under a ceiling that turns conversation off or forbids
+changing the setting. ch-local's `start` clamps the defaults it passes to the
+ceiling; a runtime started another way, with a default above it, still
+doesn't serve above it.
+
+A session's per-call checks don't read the ceiling each time:
+`lib/session-settings.js` takes its last read again for up to 1 s, on a
+monotonic clock. A ceiling the settings tool re-reads replaces it at once.
+
+The shared runtime reads the ceiling when it starts serving sessions, and
+checks it again on a timer:
+
+- **every 10 s on Linux and macOS**, where the check is a stat of the file
+  and of each directory above it, and the file is read again only when one
+  of them changed;
+- **every 5 minutes on Windows**, where a read spawns PowerShell (a Windows
+  read is taken as current for a little under those 5 minutes, so every
+  check reads the file again).
+
+So a ceiling lowered on disk bounds a session's calls within about 10 s on
+Linux and macOS and within about 5 minutes on Windows, without anyone calling
+the settings tool. Until it is read again the calls are held to the
+operator's previous ceiling: never beyond it, and never to the runtime's
+default alone.
+
+A `--stdio` runtime does not read the ceiling when it starts or watch it:
+its calls are bounded by the ceiling only once the settings tool or a control
+message from ch-local has read it. Under ch-local that changes nothing, since
+`start` has already clamped the flags it passes. The ceiling is a rule for a
+runtime ch-local installed and starts; a `--stdio` runtime started by hand
+with flags above it is not held to it before that first read.
 
 Two limits. `<home>/history.jsonl` is a record for the user, not a security
 boundary: the user can write it, so nothing the ceiling enforces rests on
@@ -558,6 +676,134 @@ What this does not cover:
   loading at all. The scan does not rely on it: a project hook still means
   no dialog.
 
+In a shared runtime (one runtime serving several of a user's client
+sessions) all of this is each session's own, for the two caps:
+
+- **The change.** A confirmed raise of `maxOutputBytes` or `requestTimeout`
+  is that session's override, for its calls only, until the session ends.
+  It is judged against the value the session runs with. The options every
+  session shares, and `settings.json`, are not touched; every history line
+  names the session, and only that session reads it. Every other setting,
+  a pack included, is changed from a terminal.
+- **The dialog.** Each session has its own pending change, nonce, decline
+  locks and three dialogs. The key is one for the runtime and the session's
+  id, which comes from its connection and not from the request, is in the
+  HMAC: a state staged in one session confirms nothing in another. The
+  dialog says the change is for this session only.
+- **The client's conditions are the session's.** They are asked of that
+  session's own shim, before the dialog and again before the change is
+  applied; nothing process-wide is asked. Any frame from a session's client
+  that says its configuration could answer a dialog locks every setting for
+  that session's life, even when a later answer says otherwise (a hook the
+  client has loaded can be deleted from disk and still answer). Every frame
+  is seen as it arrives, also one that answers late or that nobody asked
+  for. A locked session is told `SETTING_DECLINED_THIS_SESSION`, with the
+  terminal command. A confirmed raise of the output cap waits for the
+  validators to grow; the session, its lock, the ceiling and its value are
+  checked again after that wait, and a change made meanwhile wins.
+- **One window for the user, across sessions.** Per setting (every pack
+  counting as one), three dialogs declined or left unanswered within 30
+  minutes stop that setting's dialogs in every session for the next 30. A
+  dialog open in any session counts toward the three, so an injected
+  prompt cannot spread dialogs over sessions; an accept that arrives once
+  the setting has locked is refused. A dialog counts as unanswered when its
+  own 120 s pass, or when its session ends, or when its session asks for
+  another (the second such dialog of a setting locks it for the session,
+  and no third is shown). An answer that comes after the 120 s is told the
+  dialog expired. Each one is told to ch-local's daemon (the setting and a
+  time, nothing else), which keeps it to hand back to a restarted runtime.
+  A lock runs 30 minutes from its third event, so a restarted runtime
+  needs the last 60 minutes of them to rebuild one still running (below).
+
+**A change for all sessions.** In one session the user may ask to change
+one of the two caps for every session; the model's call then says
+`scope: "all-sessions"`. It is a global change, as one made at a terminal
+is:
+
+- it is judged against the default in force, never the asking session's own
+  value;
+- it is written to `settings.json` and applied at once to every session, as
+  a terminal tightening is: a session's confirmed loosening above the new
+  value is dropped and that session told; a session's own tightening is
+  never dropped (it is held to the default while the default is lower,
+  and is in force again if the default rises);
+- the other sessions are told the setting was changed from another session;
+  the history line names the asking session and, unlike a session's own
+  lines, is every session's to read (no session's id is ever shown). A
+  request for all sessions that was not made is the asking session's line,
+  and says what it was for.
+
+A tightening needs no dialog. A loosening always needs one: the asking
+session's own (it spends one of that session's three and counts in the
+user's window), whose text names all sessions and says the change holds
+after a restart. Its state confirms that change only: a dialog that said
+"this session" confirms nothing for all sessions, and the other way round.
+It is held to the operator's ceiling as any loosening is. For a raised
+output cap the validators grow first, which changes nothing; then, under
+one lock and with no wait in it, everything is checked as it is then (the
+session, its lock, the ceiling, the default in force, the file as the
+dialog saw it), the file is written, and the value is put in force. So a
+change that cannot be stored is not in force, and a terminal change made
+meanwhile is never written over. The session that asked gets the value
+too: its own lower value for that setting goes, and it is told; another
+session's own tighter value stays. What is written without a dialog never
+raises what the file yields (a runtime started above it by a flag, or a
+tighter value stored for the next start): such a value holds for every
+session until the runtime restarts. Every other setting stays the
+terminal's.
+
+**Across a runtime restart.** The runtime keeps nothing of a session on
+disk. After every change it tells ch-local's daemon the session's whole
+state, which is its own values, its locks, its dialogs left and the kinds
+of which it has left one dialog unanswered (two of a kind lock that kind):
+no key, no user's name, no nonce, no pending dialog. A dialog open at a
+restart is lost: its state was under a key the new runtime does not have.
+It is counted for its session as one left unanswered, since a dialog open
+when the state is told is told as that (as a lock, when it is the second
+of its kind), and an answer corrects it. So a restart hands a session no
+dialog back. It is not counted in the user's window, which counts across
+sessions: after a restart with a dialog open that count is one short. The
+daemon keeps the
+table in memory and hands it to the next runtime before that one listens.
+Its shape is checked by the daemon when it is told and twice by the
+runtime when it comes back (the restore, then each row at its session's
+resume), and what it says is taken only this far:
+
+- a session's row waits for the session: its shim resumes it by a token
+  only it holds, and a row whose session never comes back is dropped;
+- its locks and dialogs left are restored as they were, which can only
+  make it tighter than a new session;
+- a tightening applies only if it is at least as tight as today's default
+  and the ceiling; one above today's default is not applied, and the
+  session is told;
+- a value the row calls a confirmed loosening, and that is above today's
+  default, applies only if the session's own client says now that nothing
+  in its configuration could answer a dialog, the ceiling allows it (it is
+  held to the ceiling), and the default has not been lowered under the one
+  it was confirmed over; the validators grow first for a raised output cap,
+  and anything the session changed, or any lock or latch that fell on it,
+  while that was checked wins. Otherwise it is reset and the session is
+  told. One at or under today's default (confirmed over the session's own
+  lower value) is restored as the tightening it now is, with no client
+  asked: reset, it would leave the session looser than before the restart.
+  A restored value is recorded in the history as restored;
+- what was declined before the restart loads into the user's window, so a
+  lock still running holds. A list that cannot be taken, a list longer than
+  the window holds, or no table at all (the daemon's did not arrive in
+  time) locks every setting's dialogs for 30 minutes: what cannot be shown
+  was declined is taken as declined. An empty table, which the daemon
+  sends at a runtime's first start, locks nothing.
+
+The row's word that a loosening was confirmed is the daemon's: no dialog
+is shown again for it. So whoever can speak as the daemon on the runtime's
+control channel can raise a session's cap as far as the ceiling, with that
+session's client agreeing, and no dialog. The channel is the pipe from the
+process that started the runtime, which is ch-local, the user's own; a
+module has no way to it.
+
+A `--stdio` runtime has the one store and the one start it always had, and
+is outside the window.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
@@ -634,9 +880,9 @@ and the short list of what the in-process sandbox cannot give.
   refuses `baseUrl`, `proxy`, `har` and the like, so that the host checked is
   the host contacted; redirects are checked hop by hop.
 - **Under `audit` and `off`, nothing outside the namespace is hidden.** A
-  module may read outside paths, the loader's lookups answer truthfully, and
-  a module may learn whether a host path exists, and its type. Under
-  `enforce` those lookups answer missing.
+  module may read outside paths (under `audit` it may not write them), the
+  loader's lookups answer truthfully, and a module may learn whether a host
+  path exists, and its type. Under `enforce` those lookups answer missing.
 - **Host processes can race the checks.** A process outside countinghouse
   writing inside a module's data directory or a declared path at the same
   moment can swap a path between the broker's check and the operation. Under
@@ -672,8 +918,9 @@ and the short list of what the in-process sandbox cannot give.
   symlink inside `--modulePath` that points elsewhere is readable, and write
   access covers all of `--modulePath` and `--moduleDataPath` (including other
   modules' directories and the module registry database). `--allow-addons`
-  is added for the SQLite auth provider, or whenever no `--loadModule` is
-  given (the module registry database uses `sqlite3`); it puts native code in
+  is added only for the SQLite auth provider, or for `--moduleRegistry` with
+  no `--loadModule` (the module registry database uses `sqlite3`); a start
+  with neither gets no native addons at all. It puts native code in
   the **main thread** outside the permission model. It does not cover
   Node 26's `node:ffi`: under `--permission`, `ffi.dlopen` needs its own
   `--allow-ffi`, which `--hardened` never passes, so on Node 26 FFI is refused
@@ -797,7 +1044,49 @@ the main thread's, not the module's (spec:
     taken for a real measurement.
 - **Not provided.** A remote's answer is the remote's data: the module
   treats it as untrusted input, as it would any answer. (A remote call is
-  billed by the call's token, as every hop is since R2-1.)
+  billed by the call's token, as every hop is since R2-1. A remote call
+  aborted because its call was cancelled never answers, so it is not
+  billed; see the next section.)
+
+### Cancelling a call in flight
+
+A client can cancel a call while it runs (MCP completeness section 13): on
+HTTP a 2026-07-28 request's POST closing before its answer, on stdio and a
+shared runtime's session `notifications/cancelled` by request id. A legacy
+HTTP request's disconnect changes nothing.
+
+- **Who can cancel what.** A cancel names a request of its own transport
+  scope only: stdio's one connection, or one session. One session can never
+  cancel another's call, even with the same id. An unknown id costs one map
+  lookup and is ignored.
+- **What stops** (with `--workerThread`, the default; in single-thread
+  mode, which carries no call tokens, a cancel only suppresses the answer).
+  The call's token is dropped at once, and with it every hop's under it. A new hop, device query, remote call or channel open is
+  then refused `CALL_TOKEN_INVALID`, in whatever worker makes it. No worker
+  is interrupted, and no answer is written. A remote call already running
+  for the call is aborted: it rejects at once, and the remote server is
+  sent `notifications/cancelled`.
+- **The bill is what ran.** Each path captures its billing key when the
+  work starts, never by resolving the token again when it bills:
+  - a routed hop at its start;
+  - a peer invoke in the broker's unbilled entry, taken at the match, which
+    outlives the token;
+  - a remote call at its token's resolve.
+
+  So work already running when the call is cancelled is billed once, and a
+  client can't cancel just before it ends to get it free. A hop or invoke
+  not yet started is refused, so it never runs and isn't billed. A remote
+  call aborted by the cancel never answers, so it isn't billed; the remote
+  server's own quota is the user's, and the abort stops it being spent.
+  The outer call is billed only if its handler returned a success, as
+  always: a handler that ran to its end after the cancel is billed, and one
+  stopped by a refused hop is not. Its usage record is written once, with
+  outcome `cancelled`. The client's slot is freed at the cancel, but the
+  process waits for a cancelled call still running, up to the request
+  timeout, before it exits or reports a drain done, so a shutdown never
+  loses that bill. A task-augmented call cancelled before its task's id
+  was sent has its job removed if it hasn't started; one a worker has
+  already started runs to its end and is billed, its result unread.
 
 ## Current mitigations inventory
 
@@ -959,15 +1248,12 @@ these are the checks that predate them and still apply:
   runs (that's the worker-thread boundary described above). Four things
   worth being explicit about, in the spirit of this document's own rule
   against overstating guarantees:
-  - **Bodies are read before this check, except BSON.** JSON and XML bodies
-    are parsed on every route before any key is checked, so an
-    unauthenticated client can still make the server read up to
-    `--maxRequestBody` (8 MB) per request. A BSON body (up to
-    `--maxBsonRequestBody`, 64 MB, on `invoke-action` only)
-    is read only after the key and its grant for the URL's device pass
-    (`lib/route-manager.js`, `validateUser.beforeBody` in
-    `lib/routes/user.js`); keyless `--debug`, loopback-only, admits every
-    caller, so there it is read. A refused body is discarded unread; a client that
+  - **Bodies are read before this check.** JSON and XML bodies are parsed
+    on every route before any key is checked, so an unauthenticated client
+    can still make the server read up to `--maxRequestBody` (8 MB) per
+    request. A body that says it is BSON (`application/bson`) is answered
+    415 on every route and never parsed or kept (`lib/route-manager.js`):
+    BSON was retired in 8.0.0. A refused body is discarded as it arrives; a client that
     keeps sending it is cut off by the server's default request timeout
     (300 s).
   - **Between modules, the check runs when a channel opens, not on every

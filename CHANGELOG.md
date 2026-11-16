@@ -18,6 +18,54 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — what a module declares for MCP clients is checked (MCP completeness, M0)
+
+- **`api.json` takes the fields the MCP layer serves**: an action's `title`,
+  `annotations`, `icons`, `longRunning`, `questions` and `resource`, and the
+  device's `promptList`. The meta-schema holds each one's shape and bounds,
+  and an action stays closed to anything else. Each field is served as its
+  part of the layer is released.
+- **The rules a schema cannot express are checked at load**, in a
+  validator, before any of the module's code runs: `MODULE_ASSEMBLY_FAIL` at
+  stage `declarations`, for the first problem. `countinghouse-validate`
+  reports every problem and warning, and checks the module's icon files.
+- **Two things a module could carry before are now refused at load:** a
+  binary output field that is not under `properties` or an array's `items`
+  (it was served as a plain string), and `x-mcp-header` anywhere in an input
+  schema (the server's side of it is not built).
+
+### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
+
+- **A module that passed validate and was then refused at load now fails
+  validate too.** `countinghouse-validate` (and the
+  `countinghouse_validate_module` tool) runs the load's own schema safety
+  check, in the load's order and words: a problem at stage `schemaSafety`,
+  code `MODULE_ASSEMBLY_FAIL`, for a `schema.json` over 1 MB, a pattern
+  that can backtrack catastrophically or is over 1000 characters, more than
+  100,000 schema nodes with `$ref`s expanded, a `$ref` to itself or to no
+  place, or a schema nested too deeply to check. Such a schema is not
+  walked for its declarations: one problem says why.
+- **Validate's problems at the stages `declarations` and `readRootSchema`
+  carry `code: "MODULE_ASSEMBLY_FAIL"`**, as the load refuses the module
+  with it.
+- **The schema path in a `schemaSafety` refusal is cut to 512 characters
+  and carries no control character**, at load and in validate: it is made
+  of the module's own property names.
+
+### Removed — BSON request bodies
+
+- **An `application/bson` body is no longer taken**, on any route: it is
+  answered 415 (`REQUEST_UNSUPPORTED_MEDIA_TYPE`), and not parsed or kept
+  (it is discarded as it arrives). MCP is
+  JSON only, and `POST /devices/:deviceID/invoke-action`, from the CDIF-era
+  HTTP API, was the last route that decoded BSON. Send JSON, with binary
+  data as base64.
+- **`--maxBsonRequestBody` is gone** (it bounded those bodies, and existed
+  only in this release's development). Given, it is ignored, as any flag
+  the runtime does not know is.
+- The `bson` package is no longer a dependency, and `INVALID_BSON_REQUEST`
+  is no longer an error code.
+
 ### Added — MCP 2026-07-28 discovery and versioning; `initialize` is the legacy path (#229)
 
 - **`server/discover`**, which 2026-07-28 requires of every server, on HTTP and
@@ -418,7 +466,7 @@ configuration). None of it is available to a hosted server.
   deadline 3 times in 5 minutes is refused `VALIDATION_QUARANTINED`, by
   name, until an operator loads it again. A slow input is not held against
   the module: any caller can send one.
-- **`--maxOutputBytes <n>`** (default 8 MiB, at most 256 MiB): a module's
+- **`--maxOutputBytes <n>`** (default 16 MiB, at most 256 MiB): a module's
   output, a hop's result to another module included, is measured in its own
   worker before it is posted, and refused `OUTPUT_TOO_LARGE` (naming the
   module and the action) past it.
@@ -1192,21 +1240,13 @@ configuration). None of it is available to a hosted server.
 
 ### Security — review round R1
 
-- **Request bodies are bounded.** JSON, XML and form bodies are limited to
-  `--maxRequestBody` MB (default 8) on every route, and BSON bodies are read
-  only on `invoke-action`, limited to `--maxBsonRequestBody` MB (default
-  64). Both were 1 GB on every route, read before any key was checked, so a
-  few concurrent large posts from an unauthenticated client could exhaust
-  the server's memory. An oversized body is answered 413.
-- **A BSON body is read only for a caller who may use the device.** On
-  `invoke-action` the key and its grant for the URL's device are checked
-  before the body, from the headers and the URL, so a client without one is
-  refused (the same 500 and code as before) without the server reading up
-  to 64 MB first.
-- **`add-job` takes no BSON.** It accepted and read an `application/bson`
-  body, but never decoded it, so every BSON job failed with
-  `SERVICEID_NOT_AVAILABLE`. A job is a JSON description of the task, so the
-  route no longer reads a BSON body at all.
+- **Request bodies are bounded.** JSON and XML bodies are limited to
+  `--maxRequestBody` MB (default 8) on every route. They were 1 GB, read
+  before any key was checked, so a few concurrent large posts from an
+  unauthenticated client could exhaust the server's memory. An oversized
+  body is answered 413. (BSON bodies, which this round first bounded and
+  read only for a caller who may use the device, are no longer taken at
+  all: see "Removed — BSON request bodies" above.)
 - **The server binds `127.0.0.1` by default.** Without `--bindAddr` it used
   to bind the first non-internal IPv4 address. Give `--bindAddr` (for
   example `0.0.0.0`) for remote clients.

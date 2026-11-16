@@ -204,6 +204,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
+| `cancelled` | runtime → shim | `seq`: the request's | The client cancelled that call, which will have no answer: forget its seq, so no crash answer is made for it, and a close waiting on it ends once nothing is left (MCP completeness section 13). Optional: an older shim ignores it, as it ignores any op it doesn't know. |
 | `drain` | runtime → shim | | Forward no new request; relay answers until the runtime closes, then reconnect. |
 | `own-runtime` | runtime → shim | `reason`: `"token"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
 
@@ -343,6 +344,56 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   The refusal is byte-identical to an unknown device's. Without this, a module visible to session B that calls into a pack only A turned on would reach that pack on B's call: a loosening B never confirmed. And a pack B hid would still be reachable from B's calls.
 - **tools/list and list_changed are per session.** Each session's listed fingerprint is its own, and a change that affects one session's list notifies only that session.
 
+## 4a. Modules with per-session state (the maintainer's rule 3)
+
+Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store and files partitioned by session.
+
+- **The declaration.** In the module's `package.json`: `"countinghouse": {"state": "per-session"}`. Absent, or `"shared"`, means shared. Any other value refuses the load, naming it.
+  - It sits beside `role` and `sessionDefaults`, so it's reviewed and pinned with the manifest like them (`manifestPins`). A reload that changes it is refused like any other pinned field.
+  - `ch-local`'s install review shows it: "keeps state per session".
+- **Where it applies.**
+  - **The shared runtime:** as below.
+  - **`--stdio` (one session):** unchanged. There's no session id and no partition. The module runs in its one worker on today's paths (`<name>/{data,tmp}`, `m:<name>:`), whatever it declares.
+  - **The HTTP hosting profile:** has no sessions, and serves many users, so "shared" would mean shared across users. A per-session module's load is **refused** there with `MODULE_NEEDS_SESSIONS`, naming the module.
+- **The worker pool.** A per-session module's workers are keyed by (module name, session id), where today's are keyed by module name.
+  - A worker starts on the session's first call into the module, a routed hop included.
+  - **When it stops (the maintainer's decision).** A stop drops the module's in-memory state, so a session's worker stops only:
+    - at the session's end (its `bye`, or its reconnect window expiring); or
+    - when the cap needs its slot (below). That session is then told "this module's in-memory state was reset; its files were kept".
+
+    There's no idle stop: a worker isn't stopped for being idle.
+  - Module code, the sandbox, the validators and the generation rule (`nextGeneration`) are the module's, shared by its session workers. Only the worker and the partition are per session.
+- **Hops and peers.** A hop is served by the worker of the call's own session, which the main thread knows from the call's token entry (section 2).
+  - A per-session module is never reached outside a session: a call with no session is refused like an unknown device.
+  - A peer channel or a hop token that outlives its session is refused the same way.
+  - A shared module serving two sessions holds both sessions' tokens, and can hop into either session's worker. That's section 9's residual 5, which covers state too (below).
+- **Jobs.** A per-session module's job carries its session, from the main thread; the module is never shown it. A job whose session has ended is refused like an unknown device, and isn't retried.
+- **What the module sees: nothing new.** No session id reaches it: not in `options`, `workerData`, its environment, its argv, an error's text or a job's data. Isolation comes from the worker and the partition, so it learns nothing about the user, or about other sessions, that it couldn't learn before.
+- **The partition.**
+  - **Store:** keys under their own prefix, `ms:<name>:<session id>:`, never inside the shared module's `m:<name>:`. `<name>` is URI-encoded as `prefixFor` encodes it, and each prefix keeps its trailing colon, so a purge of `ms:foo:` can't reach `ms:foobar:`. So `redis-namespace.js`'s rule that no prefix starts another holds, and a `--stdio` run of the same module can't reach a session's keys. A purge of the module covers both prefixes. `unprefixError` strips the session prefix as it strips `m:<name>:`.
+  - **Files (the maintainer's decision):** the partition covers `/data` as well as the store, with the same lifetime (below).
+    - the path is `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`, made 0700 by `lib/module-data.js`;
+    - the fs broker maps the worker's `/data` and `/tmp` there on the main thread, and the fs scrub strips that root from paths and error texts;
+    - the worker is given the root `moduleDataPath`, as today, never the session path.
+  - **Lifetime.**
+    - A session's partition, store and files alike, survives a runtime restart while the session resumes. It's removed only on the session's `bye`, or when its reconnect window expires. It's never removed on `Registry.close()` (a runtime stopping), which ends sessions without their leaving.
+    - A restarted runtime keeps the sessions' ids (**the restored ids**): a restored row's `session` is the old id, and the registry rebuilds each restored session with it, unconnected, with its resume hash (section 6). A rebuilt session's reconnect window **starts at the restore**, so a shim that never comes back has its session, and its partition, removed once that window expires, not at the next restart.
+    - **The sweep:** before the listener accepts, the runtime lists the partitions present (directories and `ms:` keys) and removes those whose ids weren't restored.
+    - After a daemon death, nothing is restored, so the sweep removes every partition. Each reconnecting session is told "per-session state was reset", as §6 tells loosenings.
+- **The limits.**
+  - At most `maxSessionWorkers` per-session workers in all (default 16). At the cap, the least recently used worker of a session with no call in flight gives up its slot (announced, as above). If none can, the call is refused with `SESSION_WORKERS_BUSY` (retryable). Nothing is queued.
+  - The listener's `maxSessions` (256) bounds the partitions, not the workers.
+  - **The fs quota** applies across all of a module's partitions together, not to each one, so a module can't multiply its disk by its sessions.
+- **The memory cost.** Each live session worker costs one lean worker's resident baseline: **to be measured** (a register row for A: one idle lean worker's RSS per extra worker, on the release's Node and platforms, with a small module loaded). So the cap bounds it at 16 times that, above today's shared workers. The cap is the operator's to lower, never a client's to raise.
+- **Tests** (R1):
+  - two sessions calling one per-session module see separate store keys and separate `/data`, and a shared module sees one;
+  - a hop runs in the calling session's worker, and a token past its session's end is refused;
+  - a restart with a restored table keeps those partitions and sweeps the rest;
+  - `close()` removes none, and the window's expiry removes that session's;
+  - the cap's slot hand-over is announced, and the cap refuses `SESSION_WORKERS_BUSY` when no slot can be freed;
+  - `--stdio` keeps today's paths, and the HTTP profile refuses the load;
+  - no session id reaches the module (options, workerData, env, argv, error texts, job data).
+
 ## 5. The daemon, the control channel and per-client inputs
 
 - **The control channel** stays one IPC channel between the daemon and the runtime: one per runtime, and so one per user. ch-local's requests arrive on it as now. A request about one session names it.
@@ -368,7 +419,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
   - its env is fixed: a PATH resolved and recorded by `ch-local install` (never the arriving shim's), the home, and the GitHub token by today's precedence. That's `COUNTINGHOUSE_GITHUB_TOKEN` from ch-local's own settings environment, else `gh auth token`, else `GITHUB_TOKEN`, held in memory only;
   - its cwd is `<home>`;
   - nothing from any client's environment reaches it.
-- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `node ch-local start --stdio --own-runtime` with its arguments, and says so on stderr and in the first result's notice. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
+- **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `<node> <chLocal> start --stdio --own-runtime --home <home> <its arguments>`, from `shim.json`, and says so on stderr and in the first result's notice. `--home` is the shim's own (absolute; `start` refuses a relative or missing one with exit 2), and it overrides `COUNTINGHOUSE_HOME`, so a client's environment can't pick another home. ch-local's options come before the pass-through flags, and neither reaches the runtime. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
   - a pass-through runtime flag (`--moduleSandbox`, `--maxOutputBytes`, `--requestTimeout`, `--locale` or any other `start` passes through);
   - a token the client's environment *chooses* under today's precedence, which differs from the daemon's. That's a `COUNTINGHOUSE_GITHUB_TOKEN`, or a `GITHUB_TOKEN` when `gh` has none. A shell-wide `GITHUB_TOKEN` beside a working `gh` login chooses nothing, so it doesn't push a session to its own runtime.
 
@@ -387,10 +438,16 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 ### Where session state lives: in memory, never on disk (finding 1)
 
 **The daemon holds the session table, in memory only.** For each session it holds:
+- its session id, the registry's 32 hex characters, which a restarted runtime keeps (the restored ids: below, and §4a);
 - the hash of its current resume token;
 - its overrides: loosenings and tightenings;
 - its this-session packs, and its packs turned off;
-- its decline locks, and the forms it has left.
+- its decline locks, and the forms it has left;
+- the kinds of which it has left one form unanswered (`unanswered`, since #308). Two of a kind lock that kind, so without it a restart would hand a form back.
+  - It is in a state only when there is one; a state with none is exactly `{overrides, locks, formsLeft}`.
+  - A form open when the state is told counts, so a kind with one unanswered and another open is told as locked. An answer's tell corrects it.
+  - A kind is in `locks` or in `unanswered`, never both, and `unanswered` is there only with a form spent (`formsLeft` under 3).
+  - **The pairing (the reviewer, 2026-11-15):** the runtime may tell `unanswered`, and a daemon must accept it. A daemon that does not (ch-local before 54858ea) drops the session's whole row when told it. No ch-local has been released without it, so there is no marker and no gate: the first release ships both.
 
 Nothing of a session is ever written to a file.
 
@@ -409,7 +466,12 @@ Nothing of a session is ever written to a file.
 **The resume token is single-use and rotated:**
 - Each `WELCOME` gives a new one, and the old one is void.
 - A resume is refused while the session still has a live connection, so a copied token can't take over a live session.
-- The daemon stores only a hash of the current token.
+- The daemon stores only a hash of the current token: **plain SHA-256**, as 64 lowercase hex characters, in memory only.
+  - **Why no key is needed.** The token is 256 random bits (`crypto.randomBytes(32)`), so a preimage of its hash is infeasible. No HMAC key has to outlive a runtime. The new runtime looks a presented token up by its SHA-256, a map lookup, which is fine for the hash of a 256-bit secret.
+  - **Told before it's sent.** The runtime tells the daemon `{type: 'session-resume', session, hash}` for each new token *before* it writes the `WELCOME` carrying it. The tell and the socket write go out on separate descriptors, though. If the runtime is SIGKILLed while the IPC pipe is backed up, the daemon can miss the newest hash while the shim has the token. The shim's resume is then `RESUME_REFUSED`, and it fails closed: it opens a new session and replays only its tightenings. A session's end is told as `{type: 'session-gone', session}`.
+  - **One hash, one session.** A restore with two rows sharing a hash is refused, and a session's end removes its hash only if that hash is still its own.
+  - **Handed back on a restart.** Each restored row is `{session, resume, state}`: `resume` is that hash, beside B's state and never inside it. The runtime validates it as exactly 64 lowercase hex characters, then waits for the session's resume within the reconnect window.
+  - **A hash alone resumes nothing.** The shim authenticates with the new runtime's secret (HELLO, PROVE, AUTH) before its RESUME, and the first resume rotates the token again.
 
 ### The shim's home and `shim.json`
 
@@ -436,6 +498,8 @@ Nothing of a session is ever written to a file.
 ### Starting
 
 1. A shim makes the directory and ownership checks (section 1). Then it reads `<home>/run/daemon/daemon.json`: `{pid, socket, runtimeVersion, daemonVersion, started}`. `socket` is the Unix socket path or the Windows pipe name.
+   - **`socket` may be null.** The daemon clears it when a runtime ends (a crash or an upgrade) and writes the successor's once that one listens, so nothing probes a name that's free for anyone to take.
+   - **A shim treats a null `socket` as not yet ready**, and retries within its 20 s, as for a `daemon.json` mid-write: it's malformed for now, never a stop (the shim's `config.rs` and `attach.rs`).
 2. If the pid is alive and the handshake completes, it's attached.
 3. Otherwise it takes `<home>/run/daemon/start.lock`, and checks again under the lock. **The lock is ch-local's `lib/lock.js` protocol, exactly**, so the Rust shim and Node take one lock and never two daemons start:
    - **The content.** The holder is `{"pid": <int>, "host": <string>, "at": <ISO-8601 UTC time>}` and a newline. `host` is the host name, plus on Linux `#` and the target of `/proc/self/ns/pid` (`pid:[…]`), so two containers sharing a host name don't take each other's live lock for dead.
@@ -494,7 +558,14 @@ Nothing of a session is ever written to a file.
 2. it starts the new daemon with the table on that pipe, under `start.lock`;
 3. it exits once the new daemon has written `daemon.json`.
 
-If the handoff fails, the new daemon starts empty: loosenings are reset, announced, and tightenings come back from the shims.
+**The handoff never carries a loosening.** Any process of this user can stop the daemon, or outwait it, and start `ch-local daemon --handoff` with a pipe of its own. A restored loosening needs no fresh confirmation (§11 answer 4). So, under the rule that nothing a same-user process could plant becomes a loosening:
+- the new daemon keeps, from the handoff, only each session's tightenings, its packs turned off, its decline locks and the forms it has left;
+- it drops every confirmed loosening, and every pack turned on in conversation;
+- each session that lost one is told, as after a daemon death: "your this-session loosenings were reset; ask again".
+
+A ch-local upgrade is therefore a daemon death for loosenings, and only a runtime upgrade (the daemon living on) keeps them.
+
+The handoff goes on the new daemon's fd 3, as a 4-byte length and `{v: 1, sessions, declines}`. It's never in argv or the environment, and the secret is never in it. If the handoff fails, the new daemon starts empty: loosenings are reset, announced, and tightenings come back from the shims.
 
 ### Reconnecting (finding 8)
 
@@ -514,8 +585,36 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 
 ### Crash of the runtime or the daemon
 
-- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. After 5 failures in 10 minutes it stops and logs why. It hands the table over each time.
+- **The runtime:** the daemon restarts it once immediately, then backs off at 1 s, 5 s and 30 s. It hands the table over each time. After 5 failures in 10 minutes it stops restarting: it writes `failed.json` (below), removes `daemon.json`, and exits.
 - **The daemon:** the next shim to reconnect finds the pid dead, and starts a new daemon under the lock.
+
+### `failed.json`: falling back without a loop
+
+A daemon that gave up says so in `<home>/run/daemon/failed.json`, so the shims fall back to the per-session mode instead of starting daemon after daemon.
+
+- **Written** by the daemon as `daemon.json` is: 0600, through an exclusive temporary file, `fchmod`, then a rename. Exactly:
+
+  ```json
+  {"v": 1, "at": <epoch ms>, "exit": <integer or null>, "signal": <"SIG…" or null>, "reason": "restarts-exhausted" | "never-listened"}
+  ```
+
+  - `v` is exactly 1; `at` is a positive safe integer; `exit` is a safe integer or null; `signal` matches `^SIG[A-Z0-9]+$` or is null; `reason` is one of the two strings.
+  - The key set is exact: none extra, none missing, none twice. It holds no path, environment or stderr text.
+- **Read** by the shim with `daemon.json`'s trust checks (the 0700 directory, 0600, the euid's, no links, at most 512 bytes; on Windows the owner and DACL equivalents). It's read at two points: after the `daemon.json` check fails, and again under the start lock, immediately before a spawn. So a daemon that gives up between the two never gets a fresh daemon started behind it.
+- **Fresh** means `now − 600 000 ≤ at ≤ now + 60 000` (ms). A fresh, valid file means no daemon is spawned, and the session runs its own runtime. Anything else (stale, from the future, unreadable or invalid) is ignored, and the shim goes on as before.
+- **Cleared** by the next daemon whose runtime listens. So the shared mode comes back after 10 minutes, or as soon as a new daemon succeeds.
+- **The fallback at startup:** before the shim has read anything from stdin, it runs `start --stdio --own-runtime --home <home> <its arguments>` with the shim's stdin, waits, and exits with its code. That's today's pass-through path (on Windows, a spawn, since there's no exec). It says on stderr only: `the shared runtime failed (<reason>); this session runs its own`, with `reason` the enum alone.
+- **The fallback mid-session:** a session that was live loses the daemon, reattaches, and finds a fresh `failed.json`. Its in-flight requests already had their crash answers (section 1).
+  - **Never looser.** A session's tightenings live only in the runtime's memory and the shim's records, never in `settings.json`. A per-session runtime starts at the file's values and takes no `replay` (it speaks MCP on stdio, with no `C` frames). So **a shim holding any record refuses the mid-session fallback**:
+    - it answers each held request, and each later one, with `sessionCantFallBackAnswer` (exact apart from the id);
+    - it says on stderr: `the shared runtime failed (<reason>), and this session's tightened settings can't move to a runtime of its own: restart the session`;
+    - then it exits non-zero.
+  - **With no record**, the per-session runtime it starts has never seen this client's `initialize`, so the shim:
+    1. replays its recorded `initialize` line, then `notifications/initialized`, and drops that `initialize`'s answer, since the client already has one;
+    2. then sends the lines it held, then relays stdin as it comes.
+
+    The per-session runtime needs nothing new. The replay, and dropping its answer, are the shim's.
+- **Vectors** (`failedJson` and `sessionCantFallBackAnswer` in `shared-runtime-wire/make-vectors.js`): valid at both edges (`at` = now − 600 000 and now + 60 000); stale (now − 600 001); future (now + 60 001); an extra key; a missing key; `at` as a string; `at` as a float; `signal` `"KILL"` without `SIG`; a duplicate key. Plus the cases: a mid-session fallback with a record is refused; one without replays `initialize` first.
 
 ## 7. Windows and macOS
 
@@ -524,7 +623,7 @@ If the handoff fails, the new daemon starts empty: loosenings are reset, announc
 - The daemon runs detached and hidden: no Windows service, no Task Scheduler.
 - The `conditions` child uses the existing PowerShell ancestry reader. The shim passes it its parent's pid.
 
-**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. The shim binary is signed and notarized with the release. The managed preferences and plist sources in the client conditions are unchanged.
+**macOS.** The 104-byte socket path limit and the `$TMPDIR` fallback. No launchd agent: the shim starts the daemon. Release 1 ships the shim unsigned (signing comes in a later release), as `shim.yml` and ch-local's README say; macOS notarization and Windows signing come in a later point release. The managed preferences and plist sources in the client conditions are unchanged.
 
 **Linux.** As described. `XDG_RUNTIME_DIR` isn't required.
 
@@ -544,7 +643,13 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 - *Any process of the same user, including the AI through a shell:* can read the secret and attach. **The same as today**, where it can start its own runtime.
 
 **What a session can do to others:**
-- It can't change another session's settings, or any global setting from conversation.
+- It can't change another session's settings.
+- **A global change from conversation is explicit, confirmed, and low-stakes only** (the maintainer's decision):
+  - in one session the user asks for a low-stakes setting to change for all sessions;
+  - after the confirmation it becomes a global change, and every session gets a notice of it;
+  - a heavy setting changes only from the terminal, as before.
+
+  B builds it in B2.
 - A self-answering fake session loosens only its own calls. A terminal tightening ends its loosening, as it does any session's.
 - It can't see another session's notices, staged confirmations, this-session packs, tasks, usage records or settings history.
 - It can't use another session's tools: they look like unknown tools.
@@ -561,7 +666,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 4. The secret is only as strong as the user's file permissions.
    - The `conditions` child runs as the user, from the paths in `shim.json`.
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
-5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout. The values stay within the ceiling, and a module already sees all of one user's data.
+5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout, and into the other session's worker of a per-session module (§4a), so with its state. The values stay within the ceiling, and a module already sees all of one user's data. A token or peer channel that outlives its session is refused like an unknown device.
 6. **On Windows, another user (local, or remote over SMB) can slow attaches, but can't lock them out. Availability only.**
    - **What it can do:** list the pipe's name, and open read-only instances. Each holds a pre-auth slot for 2 s. Past 64, the oldest is evicted, so a flood slows a real shim's attach without stopping it (the shim retries with jitter).
    - **What it can't do:**
@@ -575,6 +680,15 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - Rust's `std` `CreateProcessW` passes `bInheritHandles = TRUE` and offers no `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so closing the rest needs a hand-written `CreateProcessW`. That's post-release.
    - It's accepted for release 1 because Node module code can't use a raw inherited `HANDLE` value the way it can a POSIX descriptor number.
    - On POSIX there's no such residual: the shim marks every descriptor from 3 up `FD_CLOEXEC` at startup, and refuses to start a daemon if it can't.
+8. **On Windows, the daemon's readiness probe uses Node's connect.**
+   - **What's checked otherwise:** a `daemon.json` read from disk may be stale, so its pipe goes through PowerShell, as the shim opens one: Identification only, the pipe's owner this user, SYSTEM or Administrators, then the PROVE.
+   - **What isn't:** the probe of the daemon's own new runtime, after that runtime has told the daemon it listens, uses Node's `net.createConnection`. That allows impersonation and checks no owner.
+   - **Why that's narrow:** the name is fresh and random, and a bind by anyone else first would have failed our runtime's bind. So the only gap is that runtime dying within the probe's ~100 ms after its tell, and another user binding the freed name inside that window.
+   - **Accepted:** rather than a PowerShell run (1 to 10 s) at every runtime restart.
+9. **A restored row's claim of a confirmed loosening is the daemon's word.**
+   - No dialog is shown again for it (§6, §11 answer 4). So whoever can speak as the daemon on the runtime's control channel can raise a session's cap as far as the ceiling, with that session's client agreeing (`conditions?`), and no dialog.
+   - The channel is the pipe from the process that started the runtime, which is ch-local, the user's own. A module has no way to it.
+   - **What still bounds it:** the ceiling, the session's own client's answer now, and a default lowered since (the row's `over`, which is the row's claim too). A row can't lock less than a missing table does: a runtime that gets no table locks every setting's dialogs.
 
 ## 10. Migration and the per-session mode
 
@@ -651,7 +765,7 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
   - a `shim.json` with a key outside the allowlist, a relative path, or a non-string value is refused, naming it;
   - an arrival during the idle stop gets a new daemon;
   - the upgrade drain;
-  - the handoff keeps overrides;
+  - the handoff keeps overrides, and the sessions' ids;
   - the backoff.
 
 **C4. The shim's Node side** (ch-local). The Rust shim itself is A's: relay, handshake, reconnect and replay, against section 1 and the vectors.
@@ -667,6 +781,16 @@ B's read (countinghouse at b-part3-p2-t5, ch-local at b-part3-p2-loadpack), and 
 - A shim with pass-through flags or a differing token runs `--own-runtime`, and says so.
 - `runtime: own`.
 - Tests: `--moduleSandbox audit` doesn't reach the shared runtime, and a differing token runs its own runtime.
+
+**R1. Per-session modules** (countinghouse, §4a; needs the restored ids of §6 and B2):
+- the manifest field and its pin, and the HTTP refusal;
+- the pool keyed by session, and the hop and job checks;
+- the `ms:` prefix and its purge, and the fs partition;
+- the lifetime, the sweep and the announcements;
+- the cap and `SESSION_WORKERS_BUSY`.
+The tests are §4a's. The owner is assigned by the Reviewer.
+
+**R2. The install review line** (ch-local; after R1): "keeps state per session".
 
 **C6. Docs and migration.** The README, the client snippets and `ch-local install`; `docs/security-model.md` (section 9's residuals); `docs/upgrading-to-8.md`.
 

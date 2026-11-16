@@ -12,7 +12,7 @@ const path    = require('path');
 const request = require('supertest');
 const {Queue} = require('bullmq');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisConnectionFor} = require('../helpers/test-env');
 const {deviceIDForName} = require('../../lib/call-address');
 
 const PORT    = testPort(9642);
@@ -38,7 +38,7 @@ describe('auth 34: what one add-job may ask for is bounded', function() {
     fs.writeFileSync(authPath, JSON.stringify({[KEY]: {userName: 'bounds', devices: [DEVICE]}}));
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
       '--moduleDataPath', path.join(base, 'store'), '--loadModule', path.join(ROOT, 'test', 'fixtures', 'job-snoop')]);
-    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});
+    queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});
   });
   after(async () => {
     for (const s of await schedulers()) await queue.removeJobScheduler(s.key || s.id);
