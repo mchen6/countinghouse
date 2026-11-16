@@ -1080,7 +1080,10 @@ HTTP request's disconnect changes nothing.
   The outer call is billed only if its handler returned a success, as
   always: a handler that ran to its end after the cancel is billed, and one
   stopped by a refused hop is not. Its usage record is written once, with
-  outcome `cancelled`. A task-augmented call cancelled before its task's id
+  outcome `cancelled`. The client's slot is freed at the cancel, but the
+  process waits for a cancelled call still running, up to the request
+  timeout, before it exits or reports a drain done, so a shutdown never
+  loses that bill. A task-augmented call cancelled before its task's id
   was sent has its job removed if it hasn't started; one a worker has
   already started runs to its end and is billed, its result unread.
 
