@@ -82,7 +82,7 @@ describe('module-loading 33: the module registry is opt-in (--moduleRegistry)', 
   // connections (module-authoring 03's first request was refused).
   it('over HTTP: the first request right after the ready line is answered', (done) => {
     const ROOT = path.join(__dirname, '..', '..');
-    const PORT = testPort(9593);
+    const PORT = testPort(9594);
     const h = home();
     const server = spawn(process.execPath, ['-r', PRELOAD, path.join(ROOT, 'framework.js'), '--no-workerThread', '--debug', '--debugKey', 'aabbcc', '--bindAddr', '127.0.0.1',
       '--port', String(PORT), '--modulePath', path.join(h, 'modules'), '--moduleDataPath', path.join(h, 'module_data')].concat(redisArgs()),
@@ -102,6 +102,24 @@ describe('module-loading 33: the module registry is opt-in (--moduleRegistry)', 
       req.on('error', stop);
       req.end(body);
     });
+  });
+
+  // The review: the flag reads as every boolean flag does (#124): =true, and
+  // repeated, by its last value; and it means nothing beside --loadModule.
+  it('--moduleRegistry reads as a boolean flag: =true and repeated count; with --loadModule the registry is not used', () => {
+    const {spawnSync} = require('child_process');
+    const usesOf = (argv) => {
+      const script = `const o = require(${JSON.stringify(path.join(__dirname, '..', '..', 'lib', 'cli-options'))}); o.setOptions(${JSON.stringify(argv)});
+        process.stdout.write(JSON.stringify([o.moduleRegistry, o.usesModuleRegistry(), o.getOptions().moduleRegistry]));`;
+      const run = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000});
+      assert.strictEqual(run.status, 0, run.stderr);
+      return JSON.parse(run.stdout);
+    };
+    assert.deepStrictEqual(usesOf({}), [false, false, false]);
+    assert.deepStrictEqual(usesOf({moduleRegistry: true}), [true, true, true]);
+    assert.deepStrictEqual(usesOf({moduleRegistry: 'true'}), [true, true, true]);
+    assert.deepStrictEqual(usesOf({moduleRegistry: ['true', 'true']}), [true, true, true]);
+    assert.deepStrictEqual(usesOf({moduleRegistry: true, loadModule: '/m/x'}), [true, false, true]);
   });
 
   it('--hardened grants native addons only for --moduleRegistry or the sqlite auth provider', () => {

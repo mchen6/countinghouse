@@ -368,10 +368,10 @@ try {
 }
 
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
-// ModuleManager.prototype.loadAllModules's registry-lookup branch, and
-// only when no --loadModule path was given (see that function's own
-// "in case loading local module, we won't read module info from DB"
-// early return) -- the --loadModule quickstart path never touches it.
+// ModuleManager.prototype.loadAllModules's registry-lookup branch, and only
+// under --moduleRegistry with no --loadModule path (options.usesModuleRegistry)
+// -- every other start, the --loadModule quickstart path and a start with no
+// module alike, never touches it.
 // Requiring sqlite3 unconditionally here loads its native binding on
 // every single startup regardless, which is unnecessary work for the
 // common case and the actual crash on a glibc too old for the current
@@ -379,7 +379,7 @@ try {
 // not just the init() call, avoids that entirely for anyone who never
 // needed the registry DB in the first place.
 // --moduleRegistry only: the registry is opt-in (lib/cli-options.js).
-if (options.localModulePath == null && options.moduleRegistry === true) {
+if (options.usesModuleRegistry()) {
   require('./lib/device-db').init(options.modulePath);
 }
 
@@ -420,14 +420,12 @@ function serve() {
   }
 
   // routeManager.startServer();
-  // Over HTTP, discovery starts once the server takes connections: listen()
-  // with a host binds only after resolving it, and a start with nothing to
-  // load finishes discovery at once, so "countinghouse ready" (which every
-  // waiter waits for) would otherwise come before the port is bound. --stdio
-  // and a session socket open no HTTP port.
-  const server = routeManager.server;
-  if (options.stdio === true || options.sessionSocket != null || server == null || server.listening === true) mm.loadAllModules();
-  else server.once('listening', function() { mm.loadAllModules(); });
+  // Discovery starts once the server takes requests (RouteManager
+  // whenServing): over HTTP, listen() with a host binds only after resolving
+  // it, and a start with nothing to load finishes discovery at once, so
+  // "countinghouse ready" (which every waiter waits for) would otherwise come
+  // before the port is bound.
+  routeManager.whenServing(function() { mm.loadAllModules(); });
 }
 
 // The Redis host name a module worker is denied is resolved before any module

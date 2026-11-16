@@ -128,7 +128,7 @@ one) as well as the ports it binds.
 | `test/remote/07-counting.js` | 9728–9729 |
 | `test/remote/12-cancel-abort.js` | 9589 |
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
-| `test/module-loading/33-registry-opt-in.js` | 9593 |
+| `test/module-loading/33-registry-opt-in.js` | 9594 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
