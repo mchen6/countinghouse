@@ -227,6 +227,33 @@ describe('session-transport 02: the listener and the registry', function() {
       a.c.end();
     });
 
+    // B2 Task 5's latch (N1) must see every frame: s.client is updated in
+    // place, so a "no" overwritten by a later frame would otherwise be lost
+    it('every client frame after the first is announced: an answer, a late answer to an ask that timed out, an unasked one', async() => {
+      await start({registry: {askTimeoutMs: 200}});
+      const a = await shim.session(sock, secret);
+      const s = opened[0];
+      const seen = [];
+      s.on('client', (c) => seen.push(c));
+      // an answer in time
+      const asked = s.askConditions();
+      const q1 = await a.c.json('C');
+      a.c.send('C', {op: 'client', seq: q1.seq, status: 'ok', conditions: 'yes', repo: null, token: null});
+      await asked;
+      // an ask that times out, answered late with "no"; then an unasked "yes"
+      const late = s.askConditions();
+      const q2 = await a.c.json('C');
+      assert.strictEqual(await late, null);
+      a.c.send('C', {op: 'client', seq: q2.seq, status: 'ok', conditions: 'no', repo: null, token: null});
+      a.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
+      await until(() => seen.length >= 3);
+      assert.deepStrictEqual(seen, [{status: 'ok', conditions: 'yes', repo: null}, {status: 'ok', conditions: 'no', repo: null}, {status: 'ok', conditions: 'yes', repo: 'acme/widgets'}]);
+      // each is a copy: a listener cannot change the session's own
+      seen[2].conditions = 'no';
+      assert.strictEqual(s.client.conditions, 'yes');
+      a.c.end();
+    });
+
     it('the default wait for conditions? is 12 s, longer than the shim\'s 10 s for the child', () => {
       assert.strictEqual(require('../../lib/session-transport/registry').ASK_TIMEOUT_MS, 12000);
     });
