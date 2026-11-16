@@ -255,7 +255,16 @@ validator workers, which all modules share:
   field is checked for canonical base64 (the standard alphabet, padded, no
   whitespace), in an input as in an output. Declare it inline, under
   `properties` or an array's `items`: one reached through `$ref`, `oneOf` or
-  the like isn't recognised as binary.
+  the like isn't recognised as binary. An MCP client gets an `image/*` or
+  `audio/*` value as a block of its own (`{type: "image" | "audio", data,
+  mimeType}`), after the text block, in schema order; in
+  `structuredContent` and the text the value is a reference,
+  `{mimeType, bytes, block}` (`bytes` its decoded size, `block` its index
+  in `content`), and `tools/list` advertises that shape for the field. A
+  result can carry at most 16 such values (an array counts each item),
+  else `TOO_MANY_BINARY_VALUES`. Another media type is still sent as its
+  base64 string for now. `ctx.call` and HTTP `invoke-action` always get the
+  base64 string itself.
 - what you write to stdout and stderr (and `console`) reaches the
   operator's log line by line, prefixed with your module's name: each line
   cut at 8 KiB, control characters other than tab removed (and the line

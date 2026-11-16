@@ -66,6 +66,36 @@
             "output": {
               "schema": "/shapeService/strict_out/output"
             }
+          },
+          {
+            "name": "binary_out",
+            "description": "Returns a PNG chart, two WAV clips and a PDF, each declared contentEncoding: base64.",
+            "input": {
+              "schema": "/shapeService/binary_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/binary_out/output"
+            }
+          },
+          {
+            "name": "many_images_out",
+            "description": "Returns 17 PNG images: one more than a result may carry.",
+            "input": {
+              "schema": "/shapeService/many_images_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/many_images_out/output"
+            }
+          },
+          {
+            "name": "big_image_out",
+            "description": "Returns a 2 MiB PNG: inline until M6 adds the 1 MiB threshold.",
+            "input": {
+              "schema": "/shapeService/big_image_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/big_image_out/output"
+            }
           }
         ]
       }
