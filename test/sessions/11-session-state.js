@@ -88,6 +88,23 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: [], formsLeft: 3});
     });
 
+    // my /code-review: a ceiling under the tool's least value clamps a stored
+    // loosening below it (lib/session-settings.js ceilingSeen), and that
+    // value, told, would make the import refuse the row (C's refuses the
+    // whole table): every later restart would lose every session's state
+    it('never tells a state its own import would refuse: a value a ceiling clamped under the tool\'s bounds is left out', () => {
+      settings.set(A, 'requestTimeout', 20000);
+      settings.set(A, 'maxOutputBytes', 32 * MiB, {loosening: true, over: 16 * MiB});
+      // the operator lowers the ceiling under the tool's 1 MiB minimum, and it is seen
+      const low = {state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 524288, forbid: [], conversation: true}};
+      settings.configure({ceiling: () => low});
+      settings.ceilingSeen(low);
+      const state = sessionState.exportOf(A);
+      assert.strictEqual(sessionState.stateProblem(state), null, JSON.stringify(state));
+      assert.deepStrictEqual(state.overrides, [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}]);
+      for (const m of told.filter((x) => x.type === 'session-state')) assert.strictEqual(sessionState.stateProblem(m.state), null, JSON.stringify(m.state));
+    });
+
     it('a latched session\'s locks are the three kinds, as ordinary locks (N1)', () => {
       sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null});
       assert.deepStrictEqual(sessionState.exportOf(A).locks, ['maxOutputBytes', 'pack', 'requestTimeout']);
@@ -186,12 +203,14 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     const loosen = (name, value, over) => ({name, value, loosening: true, over, version: null});
     const row = (session, state = {}) => ({session, state: Object.assign({overrides: [], locks: [], formsLeft: 3}, state)});
     const table = (sessions, over = {}) => Object.assign({sessions, declines: [], reset: []}, over);
+    let grown;
     // a fresh runtime: no session yet; the table comes first, then the shims resume
     beforeEach(() => {
       reset();
       settings.configure({ceiling: () => ({state: 'none'})});
       told = [];
-      sessionState.configure({tell: (m) => { told.push(JSON.parse(JSON.stringify(m))); return true; }});
+      grown = [];
+      sessionState.configure({tell: (m) => { told.push(JSON.parse(JSON.stringify(m))); return true; }, growValidators: async (bytes) => { grown.push(bytes); }});
       confirm.configure({tell: () => {}});
       reg = new EventEmitter();
       sessions.attach(reg);
@@ -245,8 +264,8 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       await resumed(B, {status: 'ok', conditions: 'no', repo: null});
       assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 16 * MiB);
       assert.strictEqual(settings.effective(B, 'requestTimeout'), 20000);
-      assert.deepStrictEqual(notices.take(null, B), ['your this-session loosening of maxOutputBytes was reset after a runtime restart; ask again',
-        'this session\'s settings were restored after a runtime restart']);
+      assert.deepStrictEqual(notices.take(null, B), ['your this-session loosening of maxOutputBytes was reset after a runtime restart',
+        'this session\'s settings were restored after a runtime restart'], 'not "ask again": it is latched');
       assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
       // C: the default was lowered under what it was confirmed over
       options.requestTimeout = 20000;
@@ -270,7 +289,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       sessions.importTable(table([row(A, {overrides: [{name: 'pack.ci', value: true, loosening: true, over: null, version: '1.2.3'}]})]));
       await resumed(A);
       assert.deepStrictEqual(settings.overridesOf(A), []);
-      assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart; ask again']);
+      assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart']);
     });
 
     it('a session a re-exec took loosenings from (reset) is told so at its resume', async () => {
@@ -360,15 +379,152 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       const fat = row(B, {overrides: Array.from({length: 64}, (x, i) => ({name: `pack.${'p'.repeat(60)}${String(i).padStart(3, '0')}`, value: true, loosening: true, over: null, version: `1.2.3-${'x'.repeat(64)}`}))});
       assert.ok(Buffer.byteLength(JSON.stringify(fat.state)) <= 64 * 1024, 'the largest state a session can have is within it');
       assert.deepStrictEqual(sessions.importTable(table([fat, good])), {sessions: 2});
-      // a table that is no table imports nothing
-      sessionState.resetForTests();
-      for (const no of [null, {}, {sessions: 'x', declines: [], reset: []}, {sessions: [], declines: [], reset: 'x'}]) assert.deepStrictEqual(sessions.importTable(no), {sessions: 0}, JSON.stringify(no));
     });
 
-    it('a session named twice keeps its first row; a second table changes nothing', () => {
+    it('a session named twice keeps its first row; a second table changes nothing', async () => {
       assert.deepStrictEqual(sessions.importTable(table([row(A, {formsLeft: 1}), row(A, {formsLeft: 2})])), {sessions: 1});
       assert.deepStrictEqual(sessions.importTable(table([row(B)])), {sessions: 0}, 'the table was already taken');
       assert.strictEqual(sessionState.pending(), 1);
+      await resumed(A);
+      assert.strictEqual(confirm.confirmations(A).formsLeft(), 1, 'the first row');
+    });
+
+    // my /code-review of the import
+    it('a loosening is reset when its session\'s client gives no answer, a failed one, or the ask throws', async () => {
+      const D = 'd'.repeat(32);
+      sessions.importTable(table([A, B, C, D].map((id) => row(id, {overrides: [loosen('requestTimeout', 60000, 30000)]}))));
+      const answers = {[A]: async () => null, [B]: async () => ({status: 'failed', conditions: 'no', repo: null}),
+        [C]: async () => { throw new Error('the shim is gone'); }, [D]: async () => ({status: 'ok', conditions: null, repo: null})};
+      for (const id of [A, B, C, D]) {
+        const s = new EventEmitter();
+        Object.assign(s, {id, client: {status: 'ok', conditions: 'yes', repo: null}, connected: true, notify() {}, record() {}, forget() {}, askConditions: answers[id]});
+        sources[id] = s;
+        reg.emit('session', s);
+        await sessionState.whenApplied(id);
+        assert.strictEqual(settings.effective(id, 'requestTimeout'), 30000, id);
+        assert.deepStrictEqual(settings.overridesOf(id), [], id);
+      }
+    });
+
+    it('a raised output cap grows the validators before it is in force; a growth that fails resets it', async () => {
+      sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 64 * MiB, 16 * MiB)]}), row(B, {overrides: [loosen('maxOutputBytes', 64 * MiB, 16 * MiB)]})]));
+      await resumed(A);
+      assert.deepStrictEqual(grown, [64 * MiB]);
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 64 * MiB);
+      sessionState.configure({tell: () => true, growValidators: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
+      await resumed(B);
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 16 * MiB);
+      assert.deepStrictEqual(notices.take(null, B), ['your this-session loosening of maxOutputBytes was reset after a runtime restart; ask again']);
+    });
+
+    it('what the session does while its client is asked wins: its own change is not written over, and a client that says no meanwhile gets nothing', async () => {
+      sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB)]}), row(B, {overrides: [loosen('requestTimeout', 60000, 30000)]})]));
+      // A tightens for itself while its shim is asked
+      const a = new EventEmitter();
+      Object.assign(a, {id: A, client: {status: 'ok', conditions: 'yes', repo: null}, connected: true, notify() {}, record() {}, forget() {},
+        askConditions: async () => { settings.set(A, 'maxOutputBytes', 4 * MiB); return {status: 'ok', conditions: 'yes', repo: null}; }});
+      sources[A] = a;
+      reg.emit('session', a);
+      await sessionState.whenApplied(A);
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB, 'its own 4 MiB stands');
+      // B's client says no in a frame of its own while it is asked, then answers yes: N1's "no" is final
+      const b = new EventEmitter();
+      Object.assign(b, {id: B, client: {status: 'ok', conditions: 'yes', repo: null}, connected: true, notify() {}, record() {}, forget() {},
+        askConditions: async () => { b.emit('client', {status: 'ok', conditions: 'no', repo: null}); return {status: 'ok', conditions: 'yes', repo: null}; }});
+      sources[B] = b;
+      reg.emit('session', b);
+      await sessionState.whenApplied(B);
+      assert.strictEqual(settings.effective(B, 'requestTimeout'), 30000);
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+    });
+
+    it('a session latched at its settle (its client says no) keeps what it tightened across a second restart: the daemon is told its state as it stands', async () => {
+      // the row of a session whose client always said no, and whose user tightened a cap
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 2})]));
+      await resumed(A, {status: 'ok', conditions: 'no', repo: null});
+      assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000);
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 2},
+        'the last thing told is the whole state, not the latch alone');
+    });
+
+    it('while a row is applied nothing half-way is told: one state, at the end, when it differs from the row', async () => {
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000), loosen('maxOutputBytes', 32 * MiB, 16 * MiB)], locks: ['pack'], formsLeft: 2})]));
+      await resumed(A, {status: 'ok', conditions: null, repo: null});   // no answer worth a yes: the loosening is reset
+      assert.deepStrictEqual(statesOf(A), [{overrides: [tighten('requestTimeout', 20000)], locks: ['pack'], formsLeft: 2}]);
+    });
+
+    it('what is restored is recorded in the history as that, and a session is told only what is true of it', async () => {
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s11-'));
+      const was = options.settingsFile;
+      options.settingsFile = path.join(home, 'settings.json');
+      try {
+        sessions.importTable(table([
+          row(A, {overrides: [tighten('requestTimeout', 20000), loosen('maxOutputBytes', 32 * MiB, 16 * MiB)]}),
+          // only restrictions: nothing of its settings was restored
+          row(B, {locks: ['pack'], formsLeft: 1}),
+          // a loosening reset in a session that can ask no more
+          row(C, {overrides: [loosen('requestTimeout', 60000, 30000)], formsLeft: 0})]));
+        await resumed(A);
+        const lines = fs.readFileSync(path.join(home, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+        assert.deepStrictEqual(lines.map(({at, ...rest}) => rest), [
+          {by: 'restore', setting: 'requestTimeout', old: 30000, new: 20000, change: 'this session (restored after a restart)', session: A},
+          {by: 'restore', setting: 'maxOutputBytes', old: 16 * MiB, new: 32 * MiB, change: 'this session (restored after a restart)', session: A}]);
+        await resumed(B);
+        assert.deepStrictEqual(notices.take(null, B), [], 'no settings of B\'s were restored');
+        await resumed(C, {status: 'ok', conditions: null, repo: null});
+        assert.deepStrictEqual(notices.take(null, C), ['your this-session loosening of requestTimeout was reset after a runtime restart'], 'not "ask again": it has no forms left');
+      } finally {
+        options.settingsFile = was;
+        fs.rmSync(home, {recursive: true, force: true});
+      }
+    });
+
+    it('a tightening that no longer applies (the default is lower now) is said, once', async () => {
+      options.maxOutputBytes = 8 * MiB;
+      sessions.importTable(table([row(A, {overrides: [tighten('maxOutputBytes', 12 * MiB)]})]));
+      await resumed(A);
+      assert.deepStrictEqual(notices.take(null, A), ['your this-session maxOutputBytes of 12MiB was not restored after a runtime restart: the default is lower now']);
+    });
+
+    it('a pack\'s override reset is not said as something to ask again: packs are a terminal\'s', async () => {
+      sessions.importTable(table([row(A, {overrides: [{name: 'pack.ci', value: true, loosening: true, over: null, version: '1.2.3'}]})]));
+      await resumed(A);
+      assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart']);
+    });
+
+    it('a table that is no table is as no table: every kind is locked, and none is taken after it', () => {
+      for (const no of [null, 'x', {}, {sessions: 'x', declines: [], reset: []}, {sessions: [], declines: [], reset: 'x'}]) {
+        confirm.resetForTests();
+        sessionState.resetForTests();
+        assert.deepStrictEqual(sessions.importTable(no), {sessions: 0}, JSON.stringify(no));
+        for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().locked(kind), true, `${kind}: ${JSON.stringify(no)}`);
+        assert.deepStrictEqual(sessions.importTable(table([row(A)])), {sessions: 0});
+      }
+    });
+
+    // the reviewer's two sides of "no restore locks the forms"
+    it('an empty table (a daemon\'s first start of a runtime) locks nothing: a form may be shown at once', async () => {
+      assert.deepStrictEqual(sessions.importTable(table([])), {sessions: 0});
+      for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().locked(kind), false, kind);
+      await resumed(A);
+      assert.ok(confirm.confirmations(A).stage(change(A)) != null);
+    });
+
+    it('--stdio is outside all of it: its one store has no window, so even noRestore leaves its forms alone', () => {
+      sessionState.noRestore();
+      const stdio = confirm.confirmations();
+      assert.ok(stdio.stage(Object.assign(change('s1'), {session: 's1'})) != null, 'a form, as ever');
+      assert.strictEqual(sessionState.exportOf('s1'), null);
+    });
+
+    it('a decline up to a minute ahead of this clock is taken (C\'s restore allows it): it counts as now', () => {
+      const now = Date.now();
+      sessions.importTable(table([], {declines: [{kind: 'pack', at: now + 30 * 1000}, {kind: 'pack', at: now - 1000}, {kind: 'pack', at: now - 2000}]}));
+      assert.strictEqual(confirm.userWindow().locked('pack'), true, 'three within the window');
+      assert.strictEqual(confirm.userWindow().locked('maxOutputBytes'), false, 'and the list was not thrown away');
     });
 
     it('the declines load into the user\'s window: a lock still running holds across the restart', async () => {

@@ -743,29 +743,41 @@ terminal's.
 **Across a runtime restart.** The runtime keeps nothing of a session on
 disk. After every change it tells ch-local's daemon the session's whole
 state, which is exactly its own values, its locks and its dialogs left:
-no key, no user's name, no nonce, no pending dialog (a dialog open at a
-restart is lost: its state was under a key the new runtime does not have).
-The daemon keeps the table in memory and hands it to the next runtime
-before that one listens. Nothing in it is trusted further than its shape,
-which is checked twice:
+no key, no user's name, no nonce, no pending dialog. A dialog open at a
+restart is lost: its state was under a key the new runtime does not have.
+It is not counted as unanswered in the user's window either; only its
+session's dialogs left remember that it was shown. The daemon keeps the
+table in memory and hands it to the next runtime before that one listens.
+Its shape is checked twice, and what it says is taken only this far:
 
 - a session's row waits for the session: its shim resumes it by a token
   only it holds, and a row whose session never comes back is dropped;
 - its locks and dialogs left are restored as they were, which can only
   make it tighter than a new session;
 - a tightening applies only if it is at least as tight as today's default
-  and the ceiling; a value above today's default is not applied at all,
-  whatever the row calls it;
-- a loosening applies only as a new one would be let: the session's own
-  client says now that nothing in its configuration could answer a dialog,
-  the ceiling allows it, and the default has not been lowered under the one
-  it was confirmed over. Otherwise it is reset, and the session is told to
-  ask again;
+  and the ceiling; one above today's default is not applied, and the
+  session is told;
+- a value the row calls a confirmed loosening applies only if the
+  session's own client says now that nothing in its configuration could
+  answer a dialog, the ceiling allows it (it is held to the ceiling), and
+  the default has not been lowered under the one it was confirmed over; the
+  validators grow first for a raised output cap, and anything the session
+  changed, or any lock that fell on it, while that was checked wins.
+  Otherwise it is reset and the session is told. A restored value is
+  recorded in the history as restored;
 - what was declined before the restart loads into the user's window, so a
   lock still running holds. A list that cannot be taken, a list longer than
   the window holds, or no table at all (the daemon's did not arrive in
   time) locks every setting's dialogs for 30 minutes: what cannot be shown
-  was declined is taken as declined.
+  was declined is taken as declined. An empty table, which the daemon
+  sends at a runtime's first start, locks nothing.
+
+The row's word that a loosening was confirmed is the daemon's: no dialog
+is shown again for it. So whoever can speak as the daemon on the runtime's
+control channel can raise a session's cap as far as the ceiling, with that
+session's client agreeing, and no dialog. The channel is the pipe from the
+process that started the runtime, which is ch-local, the user's own; a
+module has no way to it.
 
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
