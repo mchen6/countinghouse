@@ -110,6 +110,25 @@ describe('validation 19 (unit): serializeOutput flags an ArrayBuffer view, and o
       assert.ok(e.message.startsWith('m/a: '), e.message);
     }
   });
+  it('a host object that is not a view stays what it was (a clone error), not OUTPUT_NOT_JSON', () => {
+    const {port1, port2} = new (require('worker_threads').MessageChannel)();
+    try {
+      assert.throws(() => serializeOutput({output: {p: port1}}), (e) => !(e instanceof NotJson));
+    } finally {
+      port1.close();
+      port2.close();
+    }
+  });
+  it('a refusal whose output throws when walked still answers, the field unnamed', () => {
+    let reads = 0;
+    // read once by the serializer, then it throws: the walk that names the
+    // field reads it again
+    const output = {get first() { if (reads++ > 0) throw new Error('boom'); return 1; }, data: Buffer.from('x')};
+    const reply = {output};
+    const e = flagged(reply);
+    assert.strictEqual(e.code, 'OUTPUT_NOT_JSON');
+    assert.ok(/ at \/data,| at \(a nested value\),/.test(e.message), e.message);
+  });
   it('a bare ArrayBuffer is not flagged: it is left to the validator\'s type check (the reviewer\'s ruling)', () => {
     assert.strictEqual(flagged({output: {ab: new ArrayBuffer(4)}}), null);
   });

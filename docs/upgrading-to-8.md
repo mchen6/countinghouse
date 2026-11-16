@@ -155,7 +155,9 @@ you have to do. What the sandbox does and does not protect is in
   Any other `contentEncoding` stays an annotation.
 - **Breaking: a Buffer in an output is refused, `OUTPUT_NOT_JSON`.** An output
   holding a Buffer, a typed array or a DataView is refused in the module's
-  worker, naming the field: before, it was mangled, differently in each mode.
+  worker (`--workerThread`, the default), naming the field: before, it was
+  mangled. Single-thread mode serializes no output, so there only a typed
+  field's own check refuses one.
   Return `buf.toString('base64')` in a field its output schema declares
   `{"type": "string", "contentEncoding": "base64", "contentMediaType": "<type>/<subtype>"}`.
   The check costs a clean output nothing. A bare `ArrayBuffer` is not caught

@@ -49,6 +49,12 @@ describe('validation 17: contentEncoding "base64" asserts canonical base64', () 
         const other = ajv.compile({type: 'string', contentEncoding: 'base32'});
         assert.strictEqual(other('not base32 at all!'), true);
       });
+      it('compiles without a strict-mode warning when the schema names no type', () => {
+        const said = [];
+        const quiet = validator.createSchemaValidator({logger: {log: (m) => said.push(m), warn: (m) => said.push(m), error: (m) => said.push(m)}});
+        quiet.compile({contentEncoding: 'base64'});
+        assert.deepStrictEqual(said, []);
+      });
       it('applies to strings only (a non-string is the type keyword\'s)', () => {
         const any = ajv.compile({contentEncoding: 'base64'});
         assert.strictEqual(any(12), true);
