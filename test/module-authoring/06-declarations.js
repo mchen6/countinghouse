@@ -11,6 +11,9 @@
 // nowhere in an input schema. countinghouse-validate reports them all; the
 // load makes the same checks, and is the one that decides.
 const assert = require('assert');
+const fs     = require('fs');
+const os     = require('os');
+const path   = require('path');
 
 require('../../lib/cli-options').setOptions({workerThread: false});
 const validator = require('../../lib/validator');
@@ -201,6 +204,34 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         one(checked({output: obj({}, {oneOf: [obj({default: PNG})]})}), /is under oneOf/, 'a field named default under oneOf');
       });
 
+      it('a $ref is followed as the runtime resolves one (lib/schema-safety.js): a $dynamicRef to an anchor, a pointer with an escaped token', () => {
+        one(checked({output: obj({image: {$dynamicRef: '#img'}}), schema: {shared: {anyImage: Object.assign({$dynamicAnchor: 'img'}, PNG)}}}), /\$ref.*declare it inline/, 'a $dynamicRef to a $dynamicAnchor');
+        one(checked({output: obj({image: {$ref: '#/shared/a~1b'}}), schema: {shared: {'a/b': PNG}}}), /\$ref.*declare it inline/, 'a ~1 token');
+        one(checked({output: obj({image: {$ref: '#/shared/a%20b'}}), schema: {shared: {'a b': PNG}}}), /\$ref.*declare it inline/, 'a percent-encoded token');
+        // an action's own pointer too: "#" + pointer, decoded per token
+        const spec = specOf({output: {schema: '/notesService/read%20note/output'}});
+        one(declarations.check(spec, {notesService: {'read note': {output: obj({}, {oneOf: [obj({image: PNG})]})}}}), /is under oneOf/, 'a percent-encoded action pointer');
+      });
+
+      it('the walk is bounded on its own: a schema.json whose actions come to more nodes than the load would ever let through is one problem', function() {
+        this.timeout(30000);
+        // each action's output is one schema of 20,000 nodes: MAX_VISITS is passed at some action, and the walks stop there
+        const big = obj(Object.fromEntries(Array.from({length: 20000}, (x, i) => [`p${i}`, {type: 'string'}])));
+        const spec = specOf();
+        const actions = Math.ceil(declarations.MAX_VISITS / 20000) + 2;
+        spec.device.serviceList[SERVICE].actionList = Array.from({length: actions}, (x, i) => ({name: `a${i}`, description: 'x', output: {schema: '/shared/big'}}));
+        const r = declarations.check(spec, {shared: {big: big}});
+        assert.strictEqual(r.problems.length, 1, JSON.stringify(messages(r).slice(0, 3)));
+        assert.match(r.problems[0].message, /schema\.json is too large for its declarations to be checked/);
+        // under it, the same schema is nothing
+        spec.device.serviceList[SERVICE].actionList.length = 3;
+        clean(declarations.check(spec, {shared: {big: big}}));
+        // a schema nested past the stack is the same problem, not a throw
+        let deep = {type: 'string'};
+        for (let i = 0; i < 200000; i++) deep = {not: deep};
+        one(checked({output: deep}), /too large for its declarations to be checked.*nested too deeply/, 'nested past the stack');
+      });
+
       it('more than 8 levels down, or with a union type, is elsewhere too', () => {
         let deep = PNG;
         for (let i = 0; i < 9; i++) deep = obj({d: deep});
@@ -212,8 +243,8 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         const many = (n) => obj(Object.fromEntries(Array.from({length: n}, (x, i) => [`f${i}`, PNG])));
         clean(checked({output: many(16)}));
         one(checked({output: many(17)}), /17 binary fields.*at most 16/, 'seventeen');
-        for (const bad of ['png', 'image/', '/png', 'image/png; charset=binary', 'image/p ng', '']) {
-          one(checked({output: obj({image: {type: 'string', contentEncoding: 'base64', contentMediaType: bad}})}), /media type/, JSON.stringify(bad));
+        for (const bad of ['png', 'image/', '/png', 'image/png; charset=binary', 'image/p ng', '', 7, null, ['image/png']]) {
+          one(checked({output: obj({image: {type: 'string', contentEncoding: 'base64', contentMediaType: bad}})}), /not a media type of the form type\/subtype/, JSON.stringify(bad));
         }
       });
 
@@ -417,6 +448,124 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         assert.match(r.warnings[0].message, /readOnlyHint and destructiveHint are both true/);
         assert.deepStrictEqual(withActions({action: {annotations: {readOnlyHint: true, destructiveHint: false}}}).warnings, []);
       });
+    });
+  });
+
+  // The same checks at the two places a module meets them: validate says
+  // every problem and every warning; the load refuses for the first problem,
+  // with MODULE_ASSEMBLY_FAIL at stage=declarations, before any of the
+  // module's code runs. (In a validator, as a spawn makes the check:
+  // test/module-loading/23.)
+  describe('where the checks are made', () => {
+    const declarations = require('../../lib/declarations');
+    const moduleValidator = require('../../lib/module-validator');
+    const schemaSafety = require('../../lib/schema-safety');
+    const GREET = 'urn:countinghouse-test:serviceID:greetService';
+    const PNG = {type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png'};
+    const dirs = [];
+    after(() => { for (const d of dirs) fs.rmSync(d, {recursive: true, force: true}); });
+    // the well-formed fixture, with `action` laid over its one action and
+    // `output` as that action's output schema (null: no schema.json at all)
+    function moduleWith(name, {action = {}, input, output, extra = {}} = {}) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), `ch-decl-${name}-`));
+      dirs.push(dir);
+      fs.cpSync(path.join(__dirname, '..', 'fixtures', 'handler-map-convention'), dir, {recursive: true});
+      const api = JSON.parse(fs.readFileSync(path.join(dir, 'api.json'), 'utf8'));
+      Object.assign(api.device.serviceList[GREET].actionList[0], action);
+      fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify(api));
+      if (output === null) {
+        fs.rmSync(path.join(dir, 'schema.json'));
+      } else {
+        const schema = JSON.parse(fs.readFileSync(path.join(dir, 'schema.json'), 'utf8'));
+        if (input !== undefined) schema.greetService.hello.input = input;
+        if (output !== undefined) schema.greetService.hello.output = output;
+        fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify(Object.assign(schema, extra)));
+      }
+      return dir;
+    }
+    const validated = (dir) => new Promise((resolve, reject) => moduleValidator.validateModule(dir, (err, result) => (err ? reject(err) : resolve(result))));
+    const declared = (result) => result.problems.filter((p) => p.stage === 'declarations');
+
+    it('validate: a module that declares nothing new is ok as before, with no declarations problem or warning', async () => {
+      const result = await validated(moduleWith('plain'));
+      assert.strictEqual(result.ok, true, JSON.stringify(result.problems));
+      assert.deepStrictEqual(result.warnings.filter((w) => w.stage === 'declarations'), []);
+      assert.strictEqual(schemaSafety.schemaRefusal(moduleWith('plain-load'), 'plain-load'), null);
+    });
+
+    it('validate: every problem is reported, at stage "declarations", each with what to do', async () => {
+      const result = await validated(moduleWith('several', {
+        action: {resource: {uriTemplate: 'greetings/{who}', name: 'greeting'}},
+        input: {type: 'object', properties: {name: {type: 'string', 'x-mcp-header': 'X-Name'}}, required: ['name']},
+        output: {type: 'object', properties: {card: {$ref: '#/shared/card'}}},
+        extra: {shared: {card: PNG}}
+      }));
+      assert.strictEqual(result.ok, false);
+      const messages = declared(result).map((p) => p.message);
+      assert.strictEqual(messages.length, 4, JSON.stringify(messages));
+      assert.ok(messages.some((m) => /binary field is reached through a \$ref/.test(m)));
+      assert.ok(messages.some((m) => /x-mcp-header is not served/.test(m)));
+      assert.ok(messages.some((m) => /variable \{who\} is not a property of its input/.test(m)));
+      assert.ok(messages.some((m) => /required input "name" is not a variable/.test(m)));
+      for (const p of declared(result)) {
+        assert.strictEqual(p.module, 'handler-map-convention');
+        assert.strictEqual(typeof(p.fix), 'string');
+      }
+    });
+
+    it('validate: a warning does not fail the module', async () => {
+      const result = await validated(moduleWith('warned', {action: {annotations: {readOnlyHint: true, destructiveHint: true}}}));
+      assert.strictEqual(result.ok, true, JSON.stringify(result.problems));
+      const warned = result.warnings.filter((w) => w.stage === 'declarations');
+      assert.strictEqual(warned.length, 1);
+      assert.match(warned[0].message, /readOnlyHint and destructiveHint are both true/);
+    });
+
+    it('the load: the first problem refuses the module, MODULE_ASSEMBLY_FAIL at stage=declarations, naming the module', () => {
+      const e = schemaSafety.schemaRefusal(moduleWith('ref-binary', {output: {type: 'object', properties: {card: {$ref: '#/shared/card'}}}, extra: {shared: {card: PNG}}}), 'ref-binary');
+      assert.strictEqual(e.code, 'MODULE_ASSEMBLY_FAIL');
+      assert.match(e.message, /ref-binary/);
+      assert.match(e.message, /stage=declarations -- greetService\.hello output .*declare it inline, under properties or items/);
+      assert.ok(!/would stall or exhaust/.test(e.message), 'not the safety check\'s words');
+      const header = schemaSafety.schemaRefusal(moduleWith('header', {input: {type: 'object', properties: {name: {type: 'string', 'x-mcp-header': 'X-Name'}}}}), 'header');
+      assert.match(header.message, /stage=declarations -- .*x-mcp-header is not served/);
+    });
+
+    it('the load: a module with no schema.json is checked too (a resource\'s template needs none)', () => {
+      const e = schemaSafety.schemaRefusal(moduleWith('no-schema', {action: {input: undefined, output: undefined, resource: {uriTemplate: '../greetings', name: 'greeting'}}, output: null}), 'no-schema');
+      assert.strictEqual(e.code, 'MODULE_ASSEMBLY_FAIL');
+      assert.match(e.message, /stage=declarations -- .*uriTemplate/);
+    });
+
+    it('the load: a warning refuses nothing, and the safety check\'s own refusal comes first, as it was', () => {
+      assert.strictEqual(schemaSafety.schemaRefusal(moduleWith('warned-load', {action: {annotations: {readOnlyHint: true, destructiveHint: true}}}), 'warned-load'), null);
+      const both = schemaSafety.schemaRefusal(moduleWith('both', {
+        input: {type: 'object', properties: {name: {type: 'string', pattern: '^(a+)+$', 'x-mcp-header': 'X-Name'}}}
+      }), 'both');
+      assert.match(both.message, /stage=schemaSafety -- .*would stall or exhaust its validators/);
+    });
+
+    it('the load\'s refusal is a log line a module cannot shape: what it names is cut, and carries no control character', () => {
+      // an action's name is not yet checked against the meta-schema when this runs: any string, any length
+      const spec = specOf({name: `read\nERROR forged line \u001b[31m${'x'.repeat(5000)}`, resource: {uriTemplate: 'a//b', name: 'n'}});
+      const problem = schemaSafety.schemaProblem(null, spec);
+      assert.strictEqual(problem.stage, 'declarations');
+      const message = schemaSafety.refusalFor('shaped', problem).message;
+      assert.ok(!/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(message), JSON.stringify(message.slice(0, 120)));
+      assert.ok(message.length < 700, String(message.length));
+      // validate, the author's own tool, says it whole
+      assert.ok(declarations.check(spec, null).problems[0].message.length > 5000);
+    });
+
+    it('schemaProblem (what a validator runs for a spawn) gives the problem its stage; refusalFor says it', () => {
+      const api = JSON.stringify(specOf({resource: {uriTemplate: 'notes/{id}/{id}', name: 'note'}}));
+      const problem = schemaSafety.schemaProblem(JSON.stringify({notesService: {readNote: {input: {type: 'object', properties: {id: {type: 'string'}}}, output: {type: 'object'}}}}), JSON.parse(api));
+      assert.strictEqual(problem.stage, 'declarations');
+      assert.match(schemaSafety.refusalFor('twice', problem).message, /twice.*stage=declarations -- readNote|stage=declarations -- notesService\.readNote resource: uriTemplate/);
+      // no schema.json: the text is null
+      assert.strictEqual(schemaSafety.schemaProblem(null, JSON.parse(api)).stage, 'declarations');
+      assert.strictEqual(schemaSafety.schemaProblem(null, specOf()), null);
+      assert.strictEqual(schemaSafety.schemaProblem(null, null), null);
     });
   });
 });
