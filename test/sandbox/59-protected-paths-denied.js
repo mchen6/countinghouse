@@ -5,7 +5,9 @@
 // protectedPaths() and every module root -- --modulePath and each
 // --loadModule (every module's code), --moduleDataPath (every module's
 // data), the local store, the auth configuration, the device configuration,
-// the module policy -- is EACCES to reads and writes, however the module
+// the module policy, the --remoteCredentials file (where each credential may
+// be sent: a module that rewrote it could send one to an origin of its own)
+// -- is EACCES to reads and writes, however the module
 // names it, but its own base roots (its code at /app, its /data and /tmp), by
 // their real paths at load; also while a module is being validated, whose
 // spawn swaps --moduleDataPath for a throwaway. The install directory stays
@@ -35,7 +37,7 @@ function world(tag) {
   const base = fs.mkdtempSync(path.join(os.homedir(), `.ch-protected-${tag}-`));
   const at = (...p) => path.join(base, ...p);
   const w = {base, modules: at('modules'), moduleData: at('module_data'), store: at('store'), devices: at('config', 'devices'),
-    authPath: at('auth.json'), policy: at('policy.json'), rw: at('rw')};
+    authPath: at('auth.json'), policy: at('policy.json'), rw: at('rw'), credentials: at('conf', 'remote-credentials.json')};
   w.otherCode = path.join(w.modules, 'other', 'index.js');
   w.otherData = path.join(w.moduleData, 'other', 'data', 'x.txt');
   w.kv = path.join(w.store, 'kv.json');
@@ -47,6 +49,8 @@ function world(tag) {
   fs.writeFileSync(path.join(w.rw, 'ok.txt'), 'declared');
   fs.writeFileSync(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
   fs.writeFileSync(w.policy, JSON.stringify({modules: {[NAME]: {approve: 'as-declared'}}}));
+  fs.mkdirSync(path.dirname(w.credentials));
+  fs.writeFileSync(w.credentials, JSON.stringify({'https://api.example.com': ['EXAMPLE_TOKEN']}));
   // the module and a sibling, each loaded from its own directory (--loadModule)
   w.fixture = at('srv', 'a');
   w.sibling = at('srv', 'b');
@@ -54,7 +58,9 @@ function world(tag) {
   fs.cpSync(SIBLING, w.sibling, {recursive: true});
   const pkgPath = path.join(w.fixture, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  pkg.countinghouse.permissions.fs = [{path: w.rw, access: 'rw'}];
+  // its own directory, and the directory the credentials file is in: that
+  // second declaration covers a protected path, and is refused
+  pkg.countinghouse.permissions.fs = [{path: w.rw, access: 'rw'}, {path: path.dirname(w.credentials), access: 'rw'}];
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
   w.moduleTmp = path.join(w.moduleData, NAME, 'tmp');
   return w;
@@ -72,7 +78,7 @@ describe('sandbox 59: countinghouse\'s protected paths are no module\'s', functi
       before(async () => {
         w = world(mode);
         server = await startServer(port, ['--workerThread', '--authConfigPath', w.authPath, '--modulePath', w.modules, '--moduleDataPath', w.moduleData,
-          '--store', 'local', '--storePath', w.store, '--deviceConfigPath', w.devices,
+          '--store', 'local', '--storePath', w.store, '--deviceConfigPath', w.devices, '--remoteCredentials', w.credentials,
           '--moduleSandbox', mode, '--modulePolicy', w.policy, '--loadModule', w.fixture, '--loadModule', w.sibling]);
       });
       after(() => {
@@ -87,12 +93,23 @@ describe('sandbox 59: countinghouse\'s protected paths are no module\'s', functi
         assert.deepStrictEqual(await call('read', {path: path.join(w.rw, 'ok.txt')}), {content: 'declared', code: null});
       });
 
-      it('another module\'s code and data, the store, the device config, the policy: EACCES to read and to write', async () => {
-        for (const p of [w.otherCode, w.otherData, w.kv, w.device, w.policy]) {
+      it('another module\'s code and data, the store, the device config, the policy, the remote credentials file: EACCES to read and to write', async () => {
+        for (const p of [w.otherCode, w.otherData, w.kv, w.device, w.policy, w.credentials]) {
           assert.deepStrictEqual(await call('read', {path: p}), {content: null, code: 'EACCES'}, `read ${p}`);
           assert.deepStrictEqual(await call('write', {path: p, content: 'planted'}), {ok: false, code: 'EACCES'}, `write ${p}`);
         }
         assert.strictEqual(fs.readFileSync(w.kv, 'utf8'), '{}', 'the store is untouched');
+        assert.strictEqual(fs.readFileSync(w.credentials, 'utf8'), JSON.stringify({'https://api.example.com': ['EXAMPLE_TOKEN']}), 'the credentials file is untouched');
+      });
+
+      it('a declaration that covers the credentials file is refused: the module declared its directory rw, and may write nothing there', async () => {
+        // approved as declared by the policy; refused all the same, as any
+        // declaration covering a protected path is. With the root kept, this write would succeed
+        const beside = path.join(path.dirname(w.credentials), 'beside.txt');
+        assert.strictEqual((await call('write', {path: beside, content: 'x'})).ok, false);
+        assert.ok(!fs.existsSync(beside));
+        // its other declaration, which covers nothing protected, is kept
+        assert.deepStrictEqual(await call('write', {path: path.join(w.rw, 'mine.txt'), content: 'x'}), {ok: true, code: null});
       });
 
       it('a sibling loaded with --loadModule from its own directory: its code is EACCES to read and to write (G2)', async () => {

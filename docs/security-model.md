@@ -241,7 +241,7 @@ paths in results and errors. Ancestors of a root (`/`, `/var`) answer as
 read-only directories that list only the way to the root. A declared path
 can never cover countinghouse's own directories (the install directory,
 `--modulePath`, `--moduleDataPath`, the auth and device-config paths, the
-policy file) or an ancestor of one: such a declaration is refused in every
+policy file, the `--remoteCredentials` file) or an ancestor of one: such a declaration is refused in every
 mode and logged at spawn.
 
 Nor can a writable declared path hold a name on a path countinghouse runs
@@ -274,13 +274,25 @@ Windows mount point given by volume GUID.
 Beyond declarations, every path in those directories -- every module's code
 (`--modulePath` and each `--loadModule` directory) and data
 (`--moduleDataPath`, also while a module is being validated), the local
-store, the auth and device configuration, the policy file -- and in
+store, the auth and device configuration, the policy file, the
+`--remoteCredentials` file (which says where each credential may be sent) -- and in
 ch-local's home (the
 directory of `--settingsFile`: its settings, the daemon's session secret
 under `run/`, the launcher, the pack records) is refused to a module's reads
 and writes under `audit` and `enforce` (`EACCES`, recorded), however it is
 named: directly, through `..`, a symlink or a hard link to the settings
-files. The one exception is the module's own `/app`, `/data` and `/tmp`, by
+files. The policy file and the `--remoteCredentials` file are refused by
+their paths, not by identity as the settings files and the auth
+configuration are: a hard link to one of them, under a name outside these
+directories, is another path and is not refused. A module cannot make one
+(a `link` with either end outside its roots is refused, and under
+`enforce` a module whose `/data` or `/tmp` holds one does not start); the
+limit is a link that an operator, or other software on the machine, left
+where a module may read. A pack loaded in place may come with a credentials
+file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+that file is no option of the runtime's, so it is not a protected path by
+itself; ch-local writes it under `run/` in its home, which is protected as
+a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
 their real paths at spawn. A listing never shows them, and neither they nor
 any directory above them can be renamed or removed. The install directory is
 the exception: it is countinghouse's public code and stays readable under
@@ -651,6 +663,49 @@ What this does not cover:
   `allowManagedHooksOnly`, which stops hooks outside managed settings from
   loading at all. The scan does not rely on it: a project hook still means
   no dialog.
+
+In a shared runtime (one runtime serving several of a user's client
+sessions) all of this is each session's own, for the two caps:
+
+- **The change.** A confirmed raise of `maxOutputBytes` or `requestTimeout`
+  is that session's override, for its calls only, until the session ends.
+  It is judged against the value the session runs with. The options every
+  session shares, and `settings.json`, are not touched; every history line
+  names the session, and only that session reads it. Every other setting,
+  a pack included, is changed from a terminal.
+- **The dialog.** Each session has its own pending change, nonce, decline
+  locks and three dialogs. The key is one for the runtime and the session's
+  id, which comes from its connection and not from the request, is in the
+  HMAC: a state staged in one session confirms nothing in another. The
+  dialog says the change is for this session only.
+- **The client's conditions are the session's.** They are asked of that
+  session's own shim, before the dialog and again before the change is
+  applied; nothing process-wide is asked. Any frame from a session's client
+  that says its configuration could answer a dialog locks every setting for
+  that session's life, even when a later answer says otherwise (a hook the
+  client has loaded can be deleted from disk and still answer). Every frame
+  is seen as it arrives, also one that answers late or that nobody asked
+  for. A locked session is told `SETTING_DECLINED_THIS_SESSION`, with the
+  terminal command. A confirmed raise of the output cap waits for the
+  validators to grow; the session, its lock, the ceiling and its value are
+  checked again after that wait, and a change made meanwhile wins.
+- **One window for the user, across sessions.** Per setting (every pack
+  counting as one), three dialogs declined or left unanswered within 30
+  minutes stop that setting's dialogs in every session for the next 30. A
+  dialog open in any session counts toward the three, so an injected
+  prompt cannot spread dialogs over sessions; an accept that arrives once
+  the setting has locked is refused. A dialog counts as unanswered when its
+  own 120 s pass, or when its session ends, or when its session asks for
+  another (the second such dialog of a setting locks it for the session,
+  and no third is shown). An answer that comes after the 120 s is told the
+  dialog expired. Each one is told to ch-local's daemon (the setting and a
+  time, nothing else), which keeps it to hand back to a restarted runtime.
+  A lock runs 30 minutes from its third event, so a restarted runtime
+  needs the last 60 minutes of them to rebuild one still running (reading
+  that list back at a restart is not built yet).
+
+A `--stdio` runtime has the one store and the one start it always had, and
+is outside the window.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
@@ -1053,15 +1108,12 @@ these are the checks that predate them and still apply:
   runs (that's the worker-thread boundary described above). Four things
   worth being explicit about, in the spirit of this document's own rule
   against overstating guarantees:
-  - **Bodies are read before this check, except BSON.** JSON and XML bodies
-    are parsed on every route before any key is checked, so an
-    unauthenticated client can still make the server read up to
-    `--maxRequestBody` (8 MB) per request. A BSON body (up to
-    `--maxBsonRequestBody`, 64 MB, on `invoke-action` only)
-    is read only after the key and its grant for the URL's device pass
-    (`lib/route-manager.js`, `validateUser.beforeBody` in
-    `lib/routes/user.js`); keyless `--debug`, loopback-only, admits every
-    caller, so there it is read. A refused body is discarded unread; a client that
+  - **Bodies are read before this check.** JSON and XML bodies are parsed
+    on every route before any key is checked, so an unauthenticated client
+    can still make the server read up to `--maxRequestBody` (8 MB) per
+    request. A body that says it is BSON (`application/bson`) is answered
+    415 on every route and never parsed or kept (`lib/route-manager.js`):
+    BSON was retired in 8.0.0. A refused body is discarded as it arrives; a client that
     keeps sending it is cut off by the server's default request timeout
     (300 s).
   - **Between modules, the check runs when a channel opens, not on every
