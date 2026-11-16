@@ -192,7 +192,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
     });
 
     it('what it is made from is checked: the question, its round, the call\'s round (never under its question\'s), the answers, the binding', () => {
-      for (const bad of [{question: ''}, {question: 'x'.repeat(129)}, {question: 7}, {round: 0}, {round: 1.5}, {round: 17}, {round: '1'}, {answers: null}, {answers: []}, {answers: 'x'},
+      for (const bad of [{question: ''}, {question: 'x'.repeat(1025)}, {question: 7}, {round: 0}, {round: 1.5}, {round: 17}, {round: '1'}, {answers: null}, {answers: []}, {answers: 'x'},
         {callRound: 0}, {callRound: 1.5}, {callRound: 17}, {callRound: '1'}, {callRound: undefined}, {round: 3, callRound: 2}]) {
         assert.throws(() => rs.mint(key, content(bad), binding(), {now}), /request-state/, JSON.stringify(bad));
       }
