@@ -41,11 +41,11 @@
 
 ## Review focus
 
-1. **A hop from B's call into a pack only A turned on.** It is reachable: `closureOf` (`lib/module-roles.js`) doesn't walk through a module with no role, so a role-less part of a pack B lists can declare a call into A's pack. It is also reachable over a peer channel already open (a channel is per worker pair, and one worker serves every session), from a job's run, and from a device query. Each must answer as a device never hosted, run no handler and bill nothing (Task 4).
+1. **A hop from B's call into a pack only A turned on.** It is reachable: `closureOf` (`lib/module-roles.js`) doesn't walk through a module with no role, so a role-less part of a pack B lists can declare a call into A's pack. It is also reachable over a peer channel already open (a channel is per worker pair, and one worker serves every session), from a job's run, and from a device query. Each must answer as a device never hosted, run no handler and bill nothing (Task 4). And on master a peer-channel deny fails every call queued for the device, whichever session each is from: a deny must fail only the denied session's calls (Task 3b).
 2. **Answers that say "it exists".** Three checks come before any session check on master: `target.unlisted` in `handleToolsCall` (`MODULE_NOT_LISTED`), `target.replacing` in the broker's `handleRequest` (`MODULE_RELOADING`), and the supervisor's state in `missingDeviceError` (`MODULE_RESTARTING`). The session check goes before each (Tasks 3 and 4).
 3. **A stale view.** The per-session answer is cached. It must be dropped on: a session's override changing, `ceilingSeen` dropping one, a pack loaded, reloaded (a reload can add a part) or unloaded, a session joining or leaving a set, and a session's end. A stale entry is either a leak or a tool that wrongly vanishes (Tasks 1 and 2).
-4. **B told about A's pack some other way.** On master the daemon's `load` notice is added for every session (`lib/route-manager.js:233`). The others: a `notice` with no module, a `list_changed` to B when only A's list changed, a load refused "already the tool of <A's pack>", a `get` row, and a usage report row naming A's tool, which is why Task 8 waits for B5's Task 1 (Tasks 5, 6 and 8).
-5. **The session set under races.** Two sessions confirming one pack while it loads (one load, both in or neither); the last session leaving while another's confirmation is in flight (no unload under a session that just joined); a session ending mid-load; ch-local unloading a pack sessions are in; an unload that fails; a pack turned on under a ceiling that then stops allowing it, which `ceilingSeen` must drop for good (Tasks 2 and 8).
+4. **B told about A's pack some other way.** On master the daemon's `load` notice is added for every session (`lib/route-manager.js:233`). The others: a `notice` with no module, a `list_changed` to B when only A's list changed, a load refused "already the tool of <A's pack>" (the fixed text hides which pack; that some pack is loaded stays visible, a residual the reviewer accepted: it is the same user's), a `get` row, and a usage report row naming A's tool, which is why Task 8 waits for B5's Task 1 (Tasks 5, 6 and 8).
+5. **The session set under races, and the terminal's off.** A terminal `pack off` must end every session's own "on" and keep every session's own "off" (Task 6). Two sessions confirming one pack while it loads (one load, both in or neither); the last session leaving while another's confirmation is in flight (no unload under a session that just joined); a session ending mid-load; ch-local unloading a pack sessions are in; an unload that fails; a pack turned on under a ceiling that then stops allowing it, which `ceilingSeen` must drop for good (Tasks 2 and 8).
 
 ---
 
@@ -69,6 +69,7 @@
   - `none()` → true while no pack has a session set and no session has a pack override;
   - `audienceOf(pack)` → null (every session) or a Set of session ids (a copy);
   - `packChanged(pack)`, called by the load, reload and unload handlers, and `packGone(pack)` → the ids that were in its set;
+  - `clear(pack)` → the ids that were in its set, which is then empty: the terminal turned the pack off for everyone (Task 6);
   - `onChange(fn)`, called with a session id, or null when every session's view may have changed.
 - Outside shared mode `lists`, `listsModule` and `listsDevice` return true and `none()` true, whatever was configured.
 
@@ -100,7 +101,7 @@
 **Interfaces:**
 - `globalPack` defaults to `(name) => sessionPacks.isGlobal(<n>)`, where it is `() => null` today.
 - `ceilingSeen(c)` also drops every stored `pack.<n>` override whose value is true and that `c` no longer allows (an allowlist that leaves the pack out, conversation off, or a ceiling that can't be trusted). It calls `onChange` for each session, and returns nothing new. Today it clamps cap loosenings only, and `effective` hides a disallowed pack at read time while the store keeps `true`, so a ceiling lowered and raised again would bring the pack back with no new confirmation.
-- `dropPack(name)` → the ids whose override (on or off) was dropped: ch-local unloaded the pack.
+- `dropPack(name)` → the ids whose "on" override was dropped: the terminal turned the pack off for everyone, or ch-local unloaded it. A session's own "off" stays.
 - `packsOf(id)` → `[{name, value, version}]`, for Task 1's `overrideOf` and for B2 Task 6's export.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -108,7 +109,7 @@
   - The ceiling raised again: A's effective value stays the global one (the reviewer's note).
   - An off override is never dropped by a ceiling.
   - A ceiling that is stale (undefined) drops nothing.
-  - `dropPack` drops on and off overrides of that pack only.
+  - `dropPack` drops the "on" overrides of that pack only, calls `onChange` for each, and leaves every "off" override.
   - With no override, `effective(A, 'pack.ci')` follows `sessionPacks.isGlobal`.
 - [ ] **Steps 2–5:** run `npx mocha --exit test/sessions/14-pack-overrides.js` (it fails), implement, run it and `npx mocha --exit test/sessions/06-session-settings.js` (they pass), commit.
 
@@ -142,12 +143,34 @@
 
 **Size:** 1 day. **Needs:** Task 1.
 
+### Task 3b: a peer-channel deny fails only the denied session's calls
+
+**Files:**
+- Modify: `lib/peer-worker.js`: `onPeerChannelDeny`
+- Modify: `lib/peer-channel-broker.js`: `handleRequest`'s denies
+- Test: `test/sessions/16-pack-hops.js` (its first cases; server-free, the worker's peer methods and the broker with stand-in workers)
+
+**Interfaces:**
+- **On master** a channel request carries the first queued call's token, and a deny fails every call queued for that device (`flushPendingPeerInvokes`), except for `CALL_TOKEN_INVALID`, which fails the head call and asks again with the next one's token. The queue holds calls of several sessions. Once a deny can depend on the token's session (Task 4), B's deny would fail A's call.
+- **The rule.** A deny that depends on the requesting call is for that call only. The broker marks it `headOnly: true`; `onPeerChannelDeny` fails the head call and asks again with the next queued call's token, as it does for `CALL_TOKEN_INVALID`. So each queued call is judged by its own token, a denied session's calls are each denied, and another session's are granted.
+- `headOnly` is on **every** `DEVICE_NOT_FOUND` deny, for a device never hosted too, so the message is the same bytes whether the callee is hidden or absent. It names no session, and the worker learns none.
+- A deny for any other reason (an access error, `PEER_SELF_TARGET`, `MODULE_RELOADING` for a target the session lists) fails every queued call, as today: those are the same for every session of the one user.
+
+- [ ] **Step 1: Write the failing tests.**
+  - With calls queued B1, A1, B2 for a device only A lists (Task 1's store, filled by the test): B1 and B2 fail `DEVICE_NOT_FOUND`, A1 is granted and served, and A1's result is A1's own.
+  - With three calls queued for a device never hosted: three denies, each with `headOnly: true`, and three equal errors.
+  - The two kinds of deny are equal as serialized messages, once the device's name is substituted.
+  - A `CALL_TOKEN_INVALID` deny behaves as on master, and so does an access error (every queued call fails).
+  - No deny names a session.
+- [ ] **Steps 2–5:** run `npx mocha --exit test/sessions/16-pack-hops.js` (it fails: A1 fails with B1's deny), implement, run it and `node test/helpers/run-local.js test/composition/18-call-tokens.js` (they pass), commit.
+
+**Size:** 0.5 day. **Needs:** Task 1.
+
 ### Task 4: the session check at every hop
 
 **Files:**
 - Modify: `lib/device-manager.js`: `sendInvokeActionMessageToWorker`, `queryDeviceForChild`, `invokeJobs`
 - Modify: `lib/peer-channel-broker.js`: `handleRequest`, `handleAnnouncement`, `serveMatched`
-- Modify: `lib/peer-worker.js`: `onPeerChannelDeny`
 - Modify: `lib/job-sessions.js` and `lib/sessions.js` `close` (an ended session's hidden packs, for its jobs)
 - Test: `test/sessions/16-pack-hops.js` (server-free: the broker and the device manager with stand-in workers, as sessions 07 does)
 - Test: `test/session-runtime/03-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port)
@@ -157,8 +180,7 @@
 - Consumes: `callTokens` entries' `session` (B1), and `sessionPacks.listsDevice(session, deviceID)`.
 - **The routed hop.** After `declaredTarget` and before the `deviceMap` lookup, a callee the token's session doesn't list takes the missing-device branch: the access check first, then `new CountinghouseError('DEVICE_NOT_FOUND')`, never `missingDeviceError`'s other states. It is asked again after the access check's round trip, where "the callee as it stands now" is read.
 - **The device query** answers a device the session doesn't list as it answers one never hosted, after its access check.
-- **The peer channel request.** A target the session doesn't list is treated as not hosted, before the `target.replacing` check: the access check, then a deny with `DEVICE_NOT_FOUND`.
-- **Every `DEVICE_NOT_FOUND` deny is for the head call only,** hidden or not: the deny carries `headOnly: true`, and `onPeerChannelDeny` fails the first queued call and asks again with the next one's token, as it does today for `CALL_TOKEN_INVALID`. Today a deny fails every call queued for that device, and the queue holds calls of several sessions, so B's deny would fail A's call. The flag is on both kinds of deny, so the worker's message is the same bytes either way.
+- **The peer channel request.** A target the session doesn't list is treated as not hosted, before the `target.replacing` check: the access check, then a deny with `DEVICE_NOT_FOUND`, for that call only (Task 3b's `headOnly`).
 - **The announcement and the match.** A channel already open is shared by every session, so the invoke is what's checked. `handleAnnouncement` refuses a target the announcing token's session doesn't list with `DEVICE_NOT_FOUND` (no ID), after `declaredTarget`. `serveMatched` asks again and refuses the callee's metering request, so no handler runs.
 - **A job's run.** `invokeJobs` refuses a device its run's session doesn't list as a missing device, and the job is not retried.
 - **An unloaded module.** In shared mode a hop to a module that was unloaded is answered `DEVICE_NOT_FOUND`, never `MODULE_UNLOADED`, for every session. Once a pack is unloaded its session set is gone, and the old answer would tell B that A's pack had been on.
@@ -175,7 +197,6 @@
   - After A leaves and `back` is unloaded: B's `relay` to `back` still equals its `relay` to `ghost`.
   - Server-free:
     - a request for a hidden target that is `replacing` is denied `DEVICE_NOT_FOUND`, and the deny has `headOnly: true`, as a never-hosted target's has;
-    - with B's and A's calls queued for one device, B's deny fails B's call only and A's is granted;
     - a device query for a hidden device equals one for a device never hosted;
     - an announcement on an open channel from B's token is refused and holds no bytes;
     - a match whose session left the pack since the announcement runs no handler.
@@ -186,7 +207,7 @@
 - [ ] **Step 4:** Run both again, then one file at a time: `node test/helpers/run-local.js test/composition/18-call-tokens.js`, `…/test/composition/21-declared-calls-enforced.js`, `npx mocha --exit test/module-loading/32-hop-path-requires.js`, `npx mocha --exit test/sessions/04-job-sessions.js`. They pass.
 - [ ] **Step 5:** Commit.
 
-**Size:** 2 days. **Needs:** Task 1. Do it before or after Task 7, not beside it: both change `lib/peer-channel-broker.js`.
+**Size:** 2 days. **Needs:** Tasks 1 and 3b. Do it before or after Task 7, not beside it: both change `lib/peer-channel-broker.js`.
 
 ### Task 5: `list_changed` per session
 
@@ -220,12 +241,17 @@
 **Interfaces:**
 - Consumes from ch-local, to be agreed with C: every `load`, `reload`, `unload` and `notice` message about a pack carries `pack: <n>`; and `{type: 'set', name: 'pack.<n>', value}` when the terminal turns a pack on or off for everyone. On ch-local's main (e916acd) the applier's `loadPack` tells its notice with no pack, and its text says "for this start".
 - A notice with a `pack` is added once for each session of `sessionPacks.audienceOf(pack)`, with `{session, sessionOnly: true}`, or for everyone when the audience is null. A notice with no `pack` goes to everyone, as today.
-- `load` for a pack with no session waiting on it (Task 8's in-flight map), and `set pack.<n> true`, make it global; `set pack.<n> false` makes it not global. `unload` calls `sessionPacks.packGone` and `sessionSettings.dropPack`, and tells each session that had it on: "the <n> tools were turned off".
+- `load` for a pack with no session waiting on it (Task 8's in-flight map), and `set pack.<n> true`, make it global.
+- **A terminal `pack off` ends every session's own "on"** (the reviewer's ruling: the operator's off is a tightening for all, and a tightening for all clears loosenings, as a terminal tightening of a cap drops every looser override, §3). `set pack.<n> false` makes the pack not global, empties its session set (`sessionPacks.clear`), and calls `sessionSettings.dropPack`. Each session whose "on" was dropped is told, alone: "your this-session pack <n> ended: it was turned off for all sessions". A session's own "off" stays, so the pack stays hidden from it if the terminal turns it on again. A session that wants the pack back asks again, with a form.
+- `unload` calls `sessionPacks.packGone` and `sessionSettings.dropPack`, and tells each session that had it on: "the <n> tools were turned off".
 
 - [ ] **Step 1: Write the failing tests.**
   - For each of `load` with a notice, `reload` with a notice, `unload` with a notice, and `notice` with a null module, about A's this-session pack: A's queue gets the text once and B's stays empty.
   - The same four about a global pack reach both.
   - `unload` of a pack A and B are in: both are told, both overrides are gone, and neither lists it.
+  - `set pack.ci false` with A's own "on", B's own "off" and C with no override, the pack global before: A's override is dropped and A alone is told; B's "off" is still stored; no session lists the pack; A's and C's listeners are told through Task 5, and B's isn't.
+  - Then `set pack.ci true`: A and C list it by the global value, B still doesn't, and A's `effective` has no override behind it.
+  - `set pack.ci false` for a pack only A had on (never global): A's "on" is dropped all the same, and A is told.
   - `set pack.ci true` makes a pack that only A listed listed to B, and tells B's listener (through Task 5).
   - Under `--stdio` the handlers behave as on master.
 - [ ] **Steps 2–5:** run `npx mocha --exit test/sessions/18-pack-notices.js` (it fails), implement, run it, `npx mocha --exit test/sessions/08-notices.js` and `npx mocha --exit test/stdio/12-control-channel-unit.js` (they pass), commit.
@@ -270,6 +296,7 @@ This is the task that makes session sets reachable in production. Until it merge
 - Test: `test/sessions/22-pack-settings.js` (server-free, a stand-in for the control channel's `ask`; 20 and 21 are B5's), and cases added to `test/session-runtime/01-spawned.js`, where the test answers `load-pack` as ch-local's daemon does
 
 **Interfaces:**
+- A terminal `pack off` ends the session's "on" (Task 6): after it the session's value is off, and turning the pack on again is a loosening with a new form.
 - **Off** (the session's value is on): a tightening, so no form. The override is `false`, the session leaves the pack's set, and the last session to leave a pack that isn't global asks `{type: 'unload-pack', name}`. The session's calls in flight finish; their next hop into the pack is refused (Task 4).
 - **On** (the session's value is off, a pack it hid included): a loosening, so the session's form, whose text names the pack, its version from `packs.json` and "for this session". The MAC binds session, name, value and version, as today's staged change does. On accept:
   - the ceiling is checked again;
@@ -293,6 +320,7 @@ This is the task that makes session sets reachable in production. Until it merge
   - A ends mid-load: an `unload-pack` follows the load.
   - A joining a pack loaded at another version is refused, and the text names no session.
   - A load refused over a pack A doesn't list has the fixed text.
+  - After the terminal's off (Task 6's `set pack.ci false`), A's next `set pack.ci on` gets a form, not a "no change".
   - `locale`, `moduleSandbox` and `scope: 'all-sessions'` with a pack stay refused, with the file unchanged.
   - A session whose `askConditions` isn't `ok` and `yes`, or that is latched, gets no form.
 - [ ] **Step 2:** Run `npx mocha --exit test/sessions/22-pack-settings.js`; it fails with `SETTING_TERMINAL_ONLY_SHARED`.
@@ -325,15 +353,16 @@ This is the task that makes session sets reachable in production. Until it merge
 | 1. `lib/session-packs.js` | 1 | – |
 | 2. Pack overrides under the ceiling | 0.5 | 1 |
 | 3. `tools/list` and `tools/call` | 1 | 1 |
-| 4. The session check at every hop | 2 | 1 |
+| 3b. A peer-channel deny for one call only | 0.5 | 1 |
+| 4. The session check at every hop | 2 | 1, 3b |
 | 5. `list_changed` per session | 0.5 | 1, 3 |
 | 6. Notices to the pack's audience | 0.5 | 1, 2, C's yes |
 | 7. Held hop input per session | 1 | – |
 | 8. Packs in conversation, the guard lifted | 2 | 1–6, B5's Task 1 |
 | 9. A restored session's packs | 0.5 | 8, B2's Task 6 |
-| **Total** | **9** | |
+| **Total** | **9.5** | |
 
-- **In parallel:** Task 7 with anything but Task 4. After Tasks 1 and 2: Tasks 3, 4 and 6 beside each other, then 5. Two implementers finish in about 6 days; one, 9.
+- **In parallel:** Task 7 with anything but Tasks 3b and 4 (all three change `lib/peer-channel-broker.js`). After Tasks 1 and 2: Task 3, Tasks 3b then 4, and Task 6 beside each other, then 5. Two implementers finish in about 6.5 days; one, 9.5.
 - **Beside B5:** all of B5 can run beside Tasks 1–7. Only Task 8 waits for B5's Task 1.
 - Each task is its own PR. A PR that touches a hop, the gateway's lookup or the settings tool is a trust-boundary PR.
 
@@ -349,8 +378,9 @@ M17 (`docs/superpowers/specs/2026-11-15-mcp-completeness-design.md`, section 10)
 
 ## Open, for the reviewer and the maintainer
 
-- **A terminal `pack off` while sessions have the pack on.** §3 says a terminal tightening of a cap drops every looser override. §4 says a pack is unloaded "once that set is empty and the global settings don't list it", so a session's own "on" outlives the terminal's off. This plan follows §4. If the terminal's off should end every session's on, Task 6's `set pack.<n> false` also calls `dropPack`.
-- **A load refused because of another session's pack** tells the asker that something else is loaded, whatever the text says. The fixed text hides which pack. The spec doesn't cover it.
+- **Decided (the reviewer, 2026-11-15): a terminal `pack off` ends every session's own "on",** as a terminal tightening of a cap drops looser overrides (§3). §4's "unloaded once that set is empty and the global settings don't list it" then describes a pack no terminal turned off: a this-session pack whose sessions have left. Task 6 builds it; the spec's §4 should say so.
+- **Decided, a residual accepted: a load refused because of another session's pack** tells the asker that something else is loaded. The fixed text hides which pack, and the sessions are one user's. It goes into `docs/security-model.md` with section 9's residuals (C6).
+- **Decided: a deny fails only the denied session's queued calls** (Task 3b).
 - **An ended session's job and the packs its session turned off.** §2's rule ("never its tightenings") is written for the caps. Task 4 applies it to packs as well.
 - **With C:** the `pack` field on the daemon's four messages, `set pack.<n>`, and ch-local's notice text ("for this start" becomes "for this session"; in shared mode the runtime tells the session itself, so the daemon's notice for a `load-pack` it answers can be dropped).
 - **Residual:** a hop into a pack the session doesn't list and a hop to a device never hosted may differ in time, since a channel may already be open. The module sees the same error either way.
