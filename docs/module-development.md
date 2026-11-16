@@ -226,11 +226,16 @@ meta-schema and at load (stage `declarations`), so a module written against
 them is right when they are served:
 
 - a `resource`'s `uriTemplate` is a relative path of literals and `{name}`
-  variables, at most 8; each variable is a string property of the action's
+  variables, at most 8 and at most one to a segment (`notes/{id}`,
+  `files/{name}.json`); each variable is a string property of the action's
   input, and every required input is a variable. No two resources of a
-  module match the same URIs;
+  module may match the same URI: `notes/{id}` and `notes/all` do;
 - a prompt's arguments are an object schema of string properties, at most
-  16, and every `{{name}}` in its messages is one of them;
+  16, and every `{{name}}` in its messages is one of them. Other text in
+  double braces is sent as written, with a warning from
+  `countinghouse-validate`;
+- a string here may be declared through a `$ref` (a variable's property, a
+  prompt's argument); a question's form may not, it is flat;
 - a question's schema is a flat form: at most 8 properties, each a string,
   number, integer, boolean or an enum of strings. A form never asks for a
   password, a token, a key or a card number (`countinghouse-validate` warns
@@ -280,8 +285,10 @@ validator workers, which all modules share:
   whitespace), in an input as in an output. Declare an output's binary
   field inline, under `properties` or an array's `items`, at most 8 levels
   down and 16 to an action, with a media type of the form `type/subtype`.
-  One anywhere else (reached through `$ref`, under `oneOf` or the like) is
-  refused at load, at stage `declarations` (below). An MCP client gets an
+  One anywhere else (under `oneOf` or the like) is refused at load, at stage
+  `declarations` (below), and so is a `$ref` under an output that leads to
+  one, also to one declared inline elsewhere: `schema.json` is dereferenced
+  before the fields are mapped, so the `$ref` would be a second field. An MCP client gets an
   `image/*` or `audio/*` value as a block of its own
   (`{type: "image" | "audio", data, mimeType}`), after the text block, in
   schema order; in `structuredContent` and the text the value is a

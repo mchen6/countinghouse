@@ -204,6 +204,34 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         one(checked({output: obj({}, {oneOf: [obj({default: PNG})]})}), /is under oneOf/, 'a field named default under oneOf');
       });
 
+      // /code-review of #302, 1: the runtime dereferences schema.json before the gateway maps the fields, so a
+      // $ref to a field that is ALSO declared inline would be mapped a second time
+      it('a $ref that leads to a binary field is a problem also when that field is declared inline elsewhere (an alias)', () => {
+        const alias = one(checked({output: obj({a: PNG, b: {$ref: '#/notesService/readNote/output/properties/a'}})}), /reached through a \$ref.*declare it inline/, 'an alias of an inline field');
+        assert.ok(alias.message.includes('/properties/b'), alias.message);
+        // an alias of an object that holds one
+        one(checked({output: obj({w: obj({img: PNG}), again: {$ref: '#/notesService/readNote/output/properties/w'}})}), /\/properties\/again.*reached through a \$ref/, 'an alias of its parent');
+        // two aliases: each $ref is said
+        const twice = checked({output: obj({a: PNG, b: {$ref: '#/notesService/readNote/output/properties/a'}, c: {$ref: '#/notesService/readNote/output/properties/a'}})});
+        assert.strictEqual(twice.problems.length, 2, JSON.stringify(messages(twice)));
+        // sixteen inline and one alias is not "sixteen": it is refused
+        const sixteen = Object.fromEntries(Array.from({length: 16}, (x, i) => [`f${i}`, PNG]));
+        one(checked({output: obj(Object.assign({}, sixteen, {more: {$ref: '#/notesService/readNote/output/properties/f0'}}))}), /reached through a \$ref/, 'sixteen and an alias');
+      });
+
+      it('an items that is a list of schemas is said as that, not as too deep (/code-review of #302, 6)', () => {
+        const p = one(checked({output: {type: 'array', items: [PNG]}}), /items that is a list of schemas/, 'a tuple-form items');
+        assert.ok(!/deeper than/.test(p.message), p.message);
+      });
+
+      it('the mapped nodes are the gateway\'s own (binary-fields\' binaryNodes): one walk, not a copy of it', () => {
+        const binary = require('../../lib/binary-fields');
+        const output = obj({image: PNG, pages: {type: 'array', items: PNG}, nested: obj({thumb: PNG}), under: {oneOf: [PNG]}});
+        const nodes = binary.binaryNodes(output);
+        assert.deepStrictEqual(nodes, [output.properties.image, output.properties.pages.items, output.properties.nested.properties.thumb]);
+        assert.strictEqual(nodes.length, binary.binaryFields(output).length);
+      });
+
       it('a $ref is followed as the runtime resolves one (lib/schema-safety.js): a $dynamicRef to an anchor, a pointer with an escaped token', () => {
         one(checked({output: obj({image: {$dynamicRef: '#img'}}), schema: {shared: {anyImage: Object.assign({$dynamicAnchor: 'img'}, PNG)}}}), /\$ref.*declare it inline/, 'a $dynamicRef to a $dynamicAnchor');
         one(checked({output: obj({image: {$ref: '#/shared/a~1b'}}), schema: {shared: {'a/b': PNG}}}), /\$ref.*declare it inline/, 'a ~1 token');
@@ -326,6 +354,45 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         clean(withActions({action: {resource: RESOURCE}, input: {$ref: '#/shared/byId'}, schema: {shared: {byId: obj({id: STR}, {required: ['id']})}}}));
       });
 
+      // /code-review of #302, 2 and 3: the runtime dereferences, so a variable's schema may be a $ref, alone or
+      // beside other keywords, and so may the input's root
+      it('a variable, and the input itself, may be declared through a $ref, with or without keywords beside it', () => {
+        const shared = {shared: {noteId: {type: 'string', maxLength: 64}, byId: obj({id: STR}, {required: ['id']}), count: {type: 'integer'}, chain: {$ref: '#/shared/noteId'}}};
+        clean(withActions({action: {resource: RESOURCE}, input: obj({id: {$ref: '#/shared/noteId'}}, {required: ['id']}), schema: shared}), 'a $ref alone');
+        clean(withActions({action: {resource: RESOURCE}, input: obj({id: {$ref: '#/shared/noteId', description: 'The id.'}}, {required: ['id']}), schema: shared}), 'a $ref with a description');
+        clean(withActions({action: {resource: RESOURCE}, input: obj({id: {$ref: '#/shared/chain'}}, {required: ['id']}), schema: shared}), 'a chain of two');
+        clean(withActions({action: {resource: RESOURCE}, input: {$ref: '#/shared/byId', description: 'By id.'}, schema: shared}), 'the root, with a keyword beside it');
+        // properties on both sides of a root $ref are all the input's
+        clean(withActions({action: {resource: {uriTemplate: 'notes/{id}/{lang}', name: 'note'}}, input: {$ref: '#/shared/byId', properties: {lang: STR}, required: ['lang']}, schema: shared}), 'properties beside the $ref');
+        one(withActions({action: {resource: RESOURCE}, input: {$ref: '#/shared/byId', properties: {lang: STR}, required: ['lang']}, schema: shared}), /required input "lang" is not a variable/, 'a required input beside the $ref');
+        one(withActions({action: {resource: RESOURCE}, input: obj({id: {$ref: '#/shared/count'}}, {required: ['id']}), schema: shared}), /variable \{id\}.*type "string"/, 'a $ref to an integer');
+        one(withActions({action: {resource: RESOURCE}, input: obj({id: {$ref: '#/shared/nowhere'}}, {required: ['id']}), schema: shared}), /variable \{id\}.*type "string"/, 'a $ref to nothing');
+      });
+
+      // /code-review of #302, 4: a variable matches one segment's characters, so templates are compared segment by segment
+      it('two templates that some URI matches both are a problem, whatever their shapes; a segment holds at most one variable', () => {
+        const pair = (a, b) => {
+          const spec = specOf({resource: {uriTemplate: a, name: 'first'}});
+          spec.device.serviceList[SERVICE].actionList.push({name: 'second', description: 'x', resource: {uriTemplate: b, name: 'second'}});
+          return declarations.check(spec, {notesService: {readNote: {input: obj({id: STR, x: STR, y: STR}), output: obj({})}}})
+            .problems.filter((p) => /same URIs/.test(p.message));
+        };
+        for (const [a, b] of [['notes/{id}', 'notes/all'], ['notes/all', 'notes/{id}'], ['files/{x}.json', 'files/{y}'], ['files/{x}.json', 'files/a{y}'], ['v{x}/n', '{y}/n'], ['notes/{id}', 'notes/{x}']]) {
+          assert.strictEqual(pair(a, b).length, 1, `${a} and ${b}`);
+        }
+        for (const [a, b] of [['notes/{id}', 'tags/{id}'], ['notes/{id}', 'notes/{id}/raw'], ['files/{x}.json', 'files/{y}.md'], ['a{x}', 'b{y}'], ['notes/all', 'notes/none']]) {
+          assert.deepStrictEqual(pair(a, b), [], `${a} and ${b}`);
+        }
+        // a segment that would be . or .. with its variable empty
+        for (const bad of ['notes/.{x}', 'notes/{x}.', 'notes/..{x}', '{x}../n']) {
+          one(withActions({action: {resource: {uriTemplate: bad, name: 'n'}}, input: obj({x: STR}, {required: ['x']})}), /uriTemplate.*\. or \.\./, bad);
+        }
+        // two variables in one segment cannot be read back from a URI
+        for (const bad of ['{x}-{y}', '{x}{y}', 'notes/{x}.{y}']) {
+          one(withActions({action: {resource: {uriTemplate: bad, name: 'n'}}, input: obj({x: STR, y: STR}, {required: ['x', 'y']})}), /uriTemplate.*at most one variable in a segment/, bad);
+        }
+      });
+
       it('no two resources of a module match the same URIs', () => {
         const other = {name: 'readOther', description: 'Another.', resource: {uriTemplate: 'notes/{key}', name: 'other'}, input: {schema: '/notesService/readOther/input'}};
         const r = withActions({action: {resource: RESOURCE}, extra: [other], schema: {notesService2: {}}, device: {}});
@@ -386,6 +453,31 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         clean(prompts([Object.assign({}, PROMPT, {messages: [{role: 'user', text: 'A single {brace}, a {{ spaced }} one and an }} are text.'}]})]));
         // 8 KiB is bytes: 3000 three-byte characters are within the schema's 8192 characters and over it
         one(prompts([Object.assign({}, PROMPT, {messages: [{role: 'user', text: '\u4e2d'.repeat(3000)}]})]), /text is 9000 bytes.*at most 8192/, 'bytes, not characters');
+      });
+
+      it('an argument may be declared through a $ref; so may the arguments schema, and a completion action\'s fields', () => {
+        const shared = {shared: {name: {type: 'string', maxLength: 64}, args: obj({run: STR, repo: STR}, {required: ['run']})}};
+        clean(withActions({device: {promptList: [PROMPT]}, schema: Object.assign({prompts: {triage: {arguments: obj({run: {$ref: '#/shared/name'}, repo: {$ref: '#/shared/name', description: 'The repository.'}})}}}, shared)}));
+        clean(withActions({device: {promptList: [PROMPT]}, schema: Object.assign({prompts: {triage: {arguments: {$ref: '#/shared/args', description: 'x'}}}}, shared)}));
+        clean(withActions({action: {resource: Object.assign({completion: {id: 'notesService.completeId'}}, RESOURCE)},
+          schema: Object.assign({notesService: {readNote: {input: obj({id: STR}, {required: ['id']}), output: obj({})},
+            completeId: {input: obj({argument: {$ref: '#/shared/name'}, value: {$ref: '#/shared/name'}}), output: obj({values: {type: 'array', items: {$ref: '#/shared/name'}}})}}}, shared)}));
+      });
+
+      // /code-review of #302, 5: text in double braces that is no placeholder is sent as written; said, since it is likely a slip
+      it('double braces that are not a placeholder, and an argument no placeholder can name, are warnings', () => {
+        const warned = (text, args = ARGS) => prompts([Object.assign({}, PROMPT, {messages: [{role: 'user', text}]})], args);
+        for (const text of ['Triage {{ run }}.', 'Triage {{run name}}.', 'Triage {{}}.', 'Triage {{run}} and {{r\u00e9}}.']) {
+          const r = warned(text);
+          clean(r, text);
+          assert.strictEqual(r.warnings.length, 1, `${text}: ${JSON.stringify(r.warnings)}`);
+          assert.match(r.warnings[0].message, /is not a placeholder.*sent as written/);
+        }
+        assert.strictEqual(warned('Triage {{run}} of {{repo}}; a ${{ secrets.X }} is one such too.').warnings.length, 1);
+        assert.deepStrictEqual(warned('Triage {{run}} of {{repo}}. A {single} brace and a lone }} are text.').warnings, []);
+        const odd = warned('Triage {{run}}.', obj({run: STR, 'run name': STR}));
+        clean(odd);
+        assert.match(odd.warnings[0].message, /argument "run name" can never be named in a message/);
       });
 
       it('names are not used twice; a completion is for one of its arguments, by an action of this module', () => {
@@ -633,6 +725,20 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
       assert.match(problemOf(dir, 'icons/out.png'), /is outside the module/);
       assert.ok(!problemOf(dir, 'icons/out.png').includes(outside), 'the path it leads to is not said');
       assert.strictEqual(icons.read(dir, 'icons/in.png').mimeType, 'image/png');
+    });
+
+    // /code-review of #302, 7: what is opened is the file that was checked, and nothing that could hold the reader
+    it('a FIFO where an icon should be is refused at once, never read', function() {
+      if (process.platform === 'win32') return this.skip();
+      this.timeout(5000);
+      const dir = dirWith({'icons/a.png': PNG_BYTES});
+      require('child_process').execFileSync('mkfifo', [path.join(dir, 'icons', 'pipe.png')]);
+      assert.match(problemOf(dir, 'icons/pipe.png'), /is not a file/);
+    });
+
+    it('the path pattern is the meta-schema\'s own, not a copy of it', () => {
+      const meta = require('../../spec/schema.json');
+      assert.strictEqual(icons.FILE.source, new RegExp(meta.$defs.icons.items.properties.file.pattern).source);
     });
 
     it('problems(): every icons list of the module, an action\'s, a resource\'s and a prompt\'s, each said with whose it is; a file is read once', () => {
