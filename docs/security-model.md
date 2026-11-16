@@ -692,6 +692,30 @@ sessions) all of this is each session's own, for the two caps:
   needs the last 60 minutes of them to rebuild one still running (reading
   that list back at a restart is not built yet).
 
+**A change for all sessions.** In one session the user may ask to change
+one of the two caps for every session; the model's call then says
+`scope: "all-sessions"`. It is a global change, as one made at a terminal
+is:
+
+- it is judged against the default in force, never the asking session's own
+  value;
+- it is written to `settings.json` and applied at once to every session: a
+  session whose own value is tighter keeps it, and a looser one of its own
+  is dropped and that session told, as after a terminal tightening;
+- the other sessions are told the setting was changed from another session,
+  and the history line names the asking session.
+
+A tightening needs no dialog. A loosening always needs one: the asking
+session's own (it spends one of that session's three and counts in the
+user's window), whose text names all sessions and says the change holds
+after a restart. Its state confirms that change only: a dialog that said
+"this session" confirms nothing for all sessions, and the other way round.
+It is held to the operator's ceiling as any loosening is, and applied
+before it is stored, so a change that cannot be applied changes nothing.
+What is written without a dialog never raises what the file yields (a
+runtime started above it by a flag): such a value holds for every session
+until the runtime restarts. Every other setting stays the terminal's.
+
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
 

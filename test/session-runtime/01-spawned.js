@@ -274,6 +274,82 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     for (const s of [a, b, c, d]) s.c.end();
   });
 
+  // B2 Task 5b, with real sessions: the call says scope: 'all-sessions'
+  it('a session changes a cap for all sessions: a tightening at once, written and told to the others; a loosening by its own form, which names all; any other setting is still the terminal\'s (B2 Task 5b)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile, '--loadModule', scenario(home)], {env: {NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`}});
+    const secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    // the scenario's tool: a notice rides on a module tool's result
+    let hello = null;
+    await until(async() => {
+      const list = await request(b.c, 'tools/list');
+      hello = list != null && list.result != null ? list.result.tools.map((x) => x.name).find((n) => /hello/.test(n)) : null;
+      return hello != null;
+    });
+    assert.ok(hello, r.err.slice(-2000));
+    const meta = {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.323'}})};
+    const call = async(s, args, extra = {}, conditions = null) => {
+      const seq = nextSeq++;
+      shim.message(s.c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method: 'tools/call', params: Object.assign({name: 'countinghouse_settings', arguments: args}, meta, extra)}));
+      if (conditions != null) {
+        const q = await s.c.json('C', 20000);
+        assert.ok(q != null && q.op === 'conditions?', JSON.stringify(q));
+        s.c.send('C', {op: 'client', seq: q.seq, status: 'ok', conditions, repo: null, token: null});
+      }
+      for (;;) {
+        const m = await shim.readM(s.c, 60000);
+        if (m == null) return null;
+        if (m.header != null && m.header.seq === seq) return JSON.parse(m.line.toString('utf8'));
+      }
+    };
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
+    const storedNow = () => JSON.parse(fs.readFileSync(settingsFile, 'utf8')).values;
+    // the tool says it takes a scope
+    const listed = await request(a.c, 'tools/list');
+    const tool = listed.result.tools.find((t) => t.name === 'countinghouse_settings');
+    assert.deepStrictEqual(tool.inputSchema.properties.scope.enum, ['all-sessions']);
+
+    // a tightening for all: no form; B runs under it at once, and is told in its next result
+    const tightened = await call(a, {action: 'set', name: 'requestTimeout', value: '20s', scope: 'all-sessions'});
+    assert.deepStrictEqual(tightened.result.structuredContent, {name: 'requestTimeout', old: 30000, new: 20000, applies: 'all sessions'}, JSON.stringify(tightened));
+    assert.strictEqual(storedNow().requestTimeout, 20000, 'settings.json, as a terminal change writes it');
+    const seenByB = await call(b, {action: 'get'});
+    assert.strictEqual(valueOf(seenByB, 'requestTimeout'), 20000);
+    assert.deepStrictEqual(seenByB.result.structuredContent.history, [], 'B reads no line of A\'s');
+    const toldB = await request(b.c, 'tools/call', {name: hello, arguments: {name: 'b'}});
+    assert.ok(JSON.stringify(toldB.result).includes('requestTimeout changed to 20s for all sessions (changed from another session)'), JSON.stringify(toldB.result).slice(0, 600));
+    // A, who asked, is told nothing of another session
+    const toldA = await request(a.c, 'tools/call', {name: hello, arguments: {name: 'a'}});
+    assert.ok(!JSON.stringify(toldA.result).includes('another session'), JSON.stringify(toldA.result).slice(0, 600));
+
+    // a loosening for all: A's own form, which names all sessions; accepted, it is stored and B runs under it
+    const set60 = {action: 'set', name: 'requestTimeout', value: '60s', scope: 'all-sessions'};
+    const ask = await call(a, set60, {}, 'yes');
+    assert.strictEqual(ask.result.resultType, 'input_required', JSON.stringify(ask));
+    assert.match(ask.result.inputRequests.approve.params.message, /in all your sessions to run for up to 60s \(now 20s\)\? This changes the setting for every session, now and after a restart\./);
+    const accept = {requestState: ask.result.requestState, inputResponses: {approve: {action: 'accept', content: {approve: true}}}};
+    // the same state does not confirm a change for A alone: the form said all sessions
+    const asOwn = await call(a, {action: 'set', name: 'requestTimeout', value: '60s'}, accept);
+    assert.strictEqual(asOwn.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID', JSON.stringify(asOwn));
+    const done = await call(a, set60, accept, 'yes');
+    assert.deepStrictEqual(done.result.structuredContent, {name: 'requestTimeout', old: 20000, new: 60000, applies: 'all sessions'}, JSON.stringify(done));
+    assert.strictEqual(storedNow().requestTimeout, 60000);
+    assert.strictEqual(valueOf(await call(b, {action: 'get'}), 'requestTimeout'), 60000);
+
+    // every other setting is the terminal's, for all sessions too; a scope that is not one is refused
+    for (const args of [{action: 'set', name: 'moduleSandbox', value: 'audit', scope: 'all-sessions'}, {action: 'set', name: 'locale', value: 'zh', scope: 'all-sessions'},
+      {action: 'set', name: 'pack.ch-pack-x', value: 'on', scope: 'all-sessions'}]) {
+      const refusedAll = await call(a, args);
+      assert.strictEqual(refusedAll.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', JSON.stringify(refusedAll));
+    }
+    const odd = await call(a, {action: 'set', name: 'requestTimeout', value: '10s', scope: 'everyone'});
+    assert.strictEqual(odd.result._meta['countinghouse/code'], 'ARGUMENTS_INVALID', JSON.stringify(odd));
+    assert.deepStrictEqual(storedNow(), {requestTimeout: 60000}, 'nothing else was written');
+    for (const s of [a, b]) s.c.end();
+  });
+
   it('takes ch-local\'s control requests: a pack loaded in place is listed to a session', async() => {
     const packs = path.join(home, 'packs');
     const dir = scenario(home, {dir: path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), name: 'ch-pack-two'});
