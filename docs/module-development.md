@@ -237,7 +237,13 @@ them is right when they are served:
 - a string here may be declared through a `$ref` (a variable's property, a
   prompt's argument); a question's form may not, it is flat;
 - a question's schema is a flat form: at most 8 properties, each a string,
-  number, integer, boolean or an enum of strings. A form never asks for a
+  number, integer, boolean or an enum of strings. It is shown to the user as
+  you declare it, so it holds only what a form field takes (`title`,
+  `description`, `default`; a string's `minLength`, `maxLength` and
+  `format`; a number's `minimum` and `maximum`; an enum's `enum` and
+  `enumNames`), within bounds (a title of 128 characters, a description of
+  500, 64 enum values of 256), and no text in it, the question's message
+  included, carries a control or bidi character. A form never asks for a
   password, a token, a key or a card number (`countinghouse-validate` warns
   about a property that reads like one);
 - an action named as a `completion` takes `{argument, value, context}` and
