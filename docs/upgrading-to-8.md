@@ -312,6 +312,16 @@ says how to write a module for this.
 
 ## What MCP clients will notice
 
+- **A call can be cancelled while it runs.** For a 2026-07-28 request over
+  HTTP, closing the POST before its answer cancels it; on stdio and the
+  shared runtime, `notifications/cancelled` with the request's id does,
+  naming a request of your own connection or session only. A cancelled call
+  writes no answer. A composite stops at its next hop, which is refused, and
+  a remote call made for it is aborted. Work already running finishes, its
+  result discarded, and is billed as before: the bill is what ran. A legacy
+  HTTP request's disconnect changes nothing, and the call runs to its end.
+  A task-augmented call cancelled before its task's id was sent has its job
+  removed.
 - **Results are the tool's output itself.** A module tool's
   `structuredContent` used to be `{output: …}`, one level above the
   `outputSchema` it advertised, so clients that validate results (the
