@@ -181,7 +181,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     it('a list that is not exactly kinds and past times is dropped whole, and every kind is locked for 30 minutes (as when no list came: lockAll)', () => {
       const wall = WALL0;
       const good = {kind: 'pack', at: wall - MIN};
-      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'pack', at: wall + 1}], [good, {kind: 'pack', at: 1.5}], [good, {kind: 'pack', at: -1}],
+      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'pack', at: wall + 61 * 1000}], [good, {kind: 'pack', at: 1.5}], [good, {kind: 'pack', at: -1}],
         [good, {kind: 'pack', at: wall, session: A}], [good, null], Array.from({length: 65}, () => good)];
       for (const list of bad) {
         confirm.resetForTests();
@@ -195,6 +195,11 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         assert.strictEqual(confirm.confirmations(A).stage(change(A)), null);
         assert.deepStrictEqual(told, []);
       }
+      // a time up to a minute ahead of this clock is taken, as the daemon's restore allows it, and counts as now
+      confirm.resetForTests();
+      confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
+      assert.strictEqual(confirm.userWindow().load([good, {kind: 'pack', at: wall + 59 * 1000}]), true);
+      assert.strictEqual(confirm.userWindow().count('pack'), 2);
       // 64 is the most a list holds, and an empty one is a fresh start
       confirm.resetForTests();
       confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
@@ -691,6 +696,26 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       const r = await failing.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
       const e = await refused(failing.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_NOT_APPLIED_THIS_SESSION');
       assert.strictEqual(e.message, 'The change to maxOutputBytes for this session could not be applied (RESIZE_FAILED); nothing was changed.');
+    });
+
+    // the reviewer's two notes on #292
+    it('with the user\'s window closed for the kind, the session\'s shim is not asked at all (its conditions cost a child process)', async () => {
+      const t0 = tool();
+      for (let i = 0; i < 3; i++) confirm.userWindow().note('maxOutputBytes');
+      const before = asked.length;
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_NEEDS_CONFIRMATION');
+      assert.strictEqual(asked.length, before, 'no conditions? for a form that cannot be shown');
+      assert.ok(history().some((h) => h.session === A && /too many declined or unanswered forms/.test(h.change)), JSON.stringify(history()));
+      // another kind is asked as before
+      assert.ok((await t0.set('requestTimeout', '60s', 'settings tool', ctx(A))).inputRequired != null);
+      assert.strictEqual(asked.length, before + 1);
+    });
+
+    it('a client frame for a session that has ended latches nothing: no store is made for it', () => {
+      const s = sources[A];
+      s.emit('end');
+      s.emit('client', {status: 'ok', conditions: 'no', repo: null});
+      assert.strictEqual(confirm.held(), 0);
     });
 
     it('the ceiling binds a session\'s loosening: above it, refused with no form; conversation off, no form', async () => {
