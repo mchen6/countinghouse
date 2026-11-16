@@ -162,7 +162,8 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 's'}, 'd', 's', 'act', {});
     assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
     assert.deepStrictEqual(ci.calls[0].extraArgs, {usageCall: 7, name: 'act'});
-    assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}}]);
+    // and the run's session (M6: a task stores in its job's), none here
+    assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}, session: null}]);
     runner.close();
   });
 

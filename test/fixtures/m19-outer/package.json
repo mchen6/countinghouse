@@ -1,0 +1,10 @@
+{
+  "name": "m19-outer",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "calls": [
+      "m19-part/partService.slow"
+    ]
+  }
+}

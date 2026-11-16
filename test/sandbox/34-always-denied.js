@@ -24,7 +24,10 @@ const SECRET_ENV = 'should-never-arrive';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'deny-probe');
 const NAME    = 'deny-probe';
 const tool    = (a) => `deny_probe_probeservice_${a.toLowerCase()}`;
-const REDIS   = {host: '127.0.0.1', port: 6379};
+// the Redis the server uses (run-local's private one, or the system's in
+// CI): its endpoint is the one the sandbox always denies
+const REDIS   = (() => { const u = new URL(require('../helpers/test-env').redisUrlFor()); return {host: u.hostname, port: Number(u.port) || 6379}; })();
+const REDIS_AT = `${REDIS.host}:${REDIS.port}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // A copy of the fixture whose declared rw directory is one the test owns
 // (the fixture's /opt path stands for "somewhere outside the namespace").
@@ -142,7 +145,7 @@ describe('sandbox 34: the always-denied set', function() {
           const r = await mcpCall(port, ADMIN, tool(a), REDIS);
           assert.deepStrictEqual(toolOutput(r), {code: 'EACCES'}, `${a}: ${JSON.stringify(r)}`);
         }
-        await waitFor(() => /module sandbox: deny-probe violation [a-z-]+ 127\.0\.0\.1:6379/.test(server.output), 5000, 'a denial line for the Redis endpoint');
+        await waitFor(() => new RegExp(`module sandbox: deny-probe violation [a-z-]+ ${REDIS_AT}`).test(server.output), 5000, 'a denial line for the Redis endpoint');
         // The server's own port: not Redis, so audit lets it through.
         const own = await mcpCall(port, ADMIN, tool('connect'), {host: '127.0.0.1', port: port});
         assert.deepStrictEqual(toolOutput(own), {code: 'connected'}, JSON.stringify(own));

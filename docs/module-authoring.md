@@ -165,7 +165,8 @@ a module is listed as it always was.
 Every `tools/call` on a listed module is counted at the runtime's boundary.
 - **In:** each call to a declared server, as lines and bytes read.
 - **Out:** the lines and bytes of the tool's own text result, and the
-  decoded bytes of its image and audio blocks (`inlineBytesOut`).
+  decoded bytes of its image, audio and inline resource blocks (`inlineBytesOut`),
+  and the bytes behind its resource links (`linkedBytesOut`).
 
 A scenario's result also carries a receipt. `_meta['countinghouse/receipt']`
 holds `{calls, linesIn, bytesIn, linesOut, bytesOut, servers}`, and a second

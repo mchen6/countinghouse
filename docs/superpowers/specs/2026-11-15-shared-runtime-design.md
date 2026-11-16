@@ -202,6 +202,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
+| `cancelled` | runtime → shim | `seq`: the request's | The client cancelled that call, which will have no answer: forget its seq, so no crash answer is made for it, and a close waiting on it ends once nothing is left (MCP completeness section 13). Optional: an older shim ignores it, as it ignores any op it doesn't know. |
 | `drain` | runtime → shim | | Forward no new request; relay answers until the runtime closes, then reconnect. |
 | `own-runtime` | runtime → shim | `reason`: `"token"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
 
@@ -439,7 +440,12 @@ Modules are shared by default: one worker per module, as today. A module that **
 - the hash of its current resume token;
 - its overrides: loosenings and tightenings;
 - its this-session packs, and its packs turned off;
-- its decline locks, and the forms it has left.
+- its decline locks, and the forms it has left;
+- the kinds of which it has left one form unanswered (`unanswered`, since #308). Two of a kind lock that kind, so without it a restart would hand a form back.
+  - It is in a state only when there is one; a state with none is exactly `{overrides, locks, formsLeft}`.
+  - A form open when the state is told counts, so a kind with one unanswered and another open is told as locked. An answer's tell corrects it.
+  - A kind is in `locks` or in `unanswered`, never both, and `unanswered` is there only with a form spent (`formsLeft` under 3).
+  - **The pairing (the reviewer, 2026-11-15):** the runtime may tell `unanswered`, and a daemon must accept it. A daemon that does not (ch-local before 54858ea) drops the session's whole row when told it. No ch-local has been released without it, so there is no marker and no gate: the first release ships both.
 
 Nothing of a session is ever written to a file.
 
