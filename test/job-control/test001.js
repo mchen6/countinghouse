@@ -6,7 +6,7 @@ const url = `http://127.0.0.1:${testPort(9527)}`;
 const Queue       = require('bullmq').Queue;
 const QueueEvents = require('bullmq').QueueEvents;
 
-const connection = Object.assign(redisConnectionFor(11), {password: null});
+const connection = redisConnectionFor(11);
 
 const jobQueue    = new Queue('job-queue', {prefix: '{cdifJob}', connection: connection});
 const queueEvents = new QueueEvents('job-queue', {prefix: '{cdifJob}', connection: connection});
