@@ -78,11 +78,17 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(b.verify(inB.requestState, retry(B)).ok, true, 'B\'s own is still good');
     });
 
-    it('one key for the runtime, the session in the MAC: the same change staged in two sessions gives two states', () => {
+    it('one key for the runtime, the session in the MAC', () => {
+      const nonce = 'N'.repeat(22);
+      // one key: any session's store makes the same MAC of the same nonce and change
+      assert.strictEqual(confirm.confirmations(A).macOf(nonce, retry(A)), confirm.confirmations(B).macOf(nonce, retry(A)));
+      // the session is in it: the same nonce and change, in another session, is another MAC
+      assert.notStrictEqual(confirm.confirmations(A).macOf(nonce, retry(A)), confirm.confirmations(A).macOf(nonce, retry(B)));
+      // --stdio's store has a key of its own
+      assert.notStrictEqual(confirm.confirmations().macOf(nonce, retry(A)), confirm.confirmations(A).macOf(nonce, retry(A)));
+      // B's nonce with A's MAC, in either store
       const inA = confirm.confirmations(A).stage(change(A));
       const inB = confirm.confirmations(B).stage(change(B));
-      assert.notStrictEqual(inA.requestState.split('.')[1], inB.requestState.split('.')[1]);
-      // B's nonce with A's MAC, in either store
       const mixed = `${inB.requestState.split('.')[0]}.${inA.requestState.split('.')[1]}`;
       assert.strictEqual(confirm.confirmations(B).verify(mixed, retry(B)).ok, false);
     });
@@ -149,6 +155,27 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(w.locked('pack'), true);
       advance(2 * MIN);
       assert.strictEqual(w.locked('pack'), false);
+    });
+
+    it('a lock still running is rebuilt: it runs 30 minutes from its third event, so events up to 60 minutes old count for it', () => {
+      const w = confirm.userWindow();
+      // declined 35, 25 and 10 minutes ago: locked since the third, for 20 minutes more
+      assert.strictEqual(w.load([{kind: 'maxOutputBytes', at: WALL0 - 35 * MIN}, {kind: 'maxOutputBytes', at: WALL0 - 25 * MIN}, {kind: 'maxOutputBytes', at: WALL0 - 10 * MIN},
+        // three, but never within one 30 minutes: no lock
+        {kind: 'requestTimeout', at: WALL0 - 50 * MIN}, {kind: 'requestTimeout', at: WALL0 - 19 * MIN}, {kind: 'requestTimeout', at: WALL0 - 2 * MIN},
+        // locked 61 minutes ago: over
+        {kind: 'pack', at: WALL0 - 65 * MIN}, {kind: 'pack', at: WALL0 - 63 * MIN}, {kind: 'pack', at: WALL0 - 61 * MIN}]), true);
+      assert.strictEqual(w.locked('maxOutputBytes'), true);
+      assert.strictEqual(w.count('maxOutputBytes'), 2, 'the two still inside the 30 minutes');
+      assert.strictEqual(confirm.confirmations(A).stage(change(A)), null);
+      assert.strictEqual(w.locked('requestTimeout'), false);
+      assert.strictEqual(w.count('requestTimeout'), 2);
+      assert.strictEqual(w.locked('pack'), false);
+      advance(19 * MIN);
+      assert.strictEqual(w.locked('maxOutputBytes'), true);
+      advance(2 * MIN);
+      assert.strictEqual(w.locked('maxOutputBytes'), false);
+      assert.strictEqual(confirm.LOAD_KEEP_MS, 60 * MIN, 'what the daemon must keep each decline for');
     });
 
     it('a list that is not exactly kinds and past times is dropped whole, and every kind is locked for 30 minutes (as when no list came: lockAll)', () => {
@@ -221,7 +248,10 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       const inA = confirm.confirmations(A).stage(change(A));
       confirm.forget(A);
       assert.strictEqual(confirm.userWindow().locked('maxOutputBytes'), true, 'two declines and the ended session\'s form');
-      // a new store for the same id (it cannot be: the id ended) knows nothing of it
+      // its store is gone: none is held for it, and one made for the same id
+      // (it cannot be: the id ended) is new, with its three forms
+      assert.strictEqual(confirm.held(), 2, 'B\'s and C\'s');
+      assert.strictEqual(confirm.confirmations(A).formsLeft(), 3);
       assert.strictEqual(confirm.confirmations(A).verify(inA.requestState, retry(A)).ok, false);
       assert.strictEqual(confirm.confirmations(B).verify(inA.requestState, retry(A)).ok, false);
       // a session that ends with nothing staged counts nothing
@@ -242,6 +272,44 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       a.stage(change(A, {name: 'requestTimeout', old: 30000, next: 60000}));
       assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 2);
       assert.strictEqual(confirm.userWindow().count('requestTimeout'), 0);
+    });
+
+    it('the form that locks the kind is the last: a second form left for another gets no third (review: the count comes before the next form)', () => {
+      const a = confirm.confirmations(A);
+      assert.ok(a.stage(change(A, {next: 16 * MiB})) != null);
+      const second = a.stage(change(A, {next: 32 * MiB}));
+      assert.ok(second != null, 'one form left unanswered is not a lock');
+      assert.deepStrictEqual(a.takeExpired(), [], 'a replaced form is said by the stage that replaced it');
+      // the second, left for a third: two unanswered, so the kind is locked, and no form is staged that could never be accepted
+      assert.strictEqual(a.stage(change(A, {next: 64 * MiB})), null);
+      assert.strictEqual(a.declined('maxOutputBytes'), true);
+      assert.strictEqual(a.formsLeft(), 1, 'no form was spent on it');
+      assert.strictEqual(a.verify(second.requestState, retry(A, {next: 32 * MiB})).ok, false, 'the second is gone');
+      // the form it dropped, for the history
+      assert.deepStrictEqual(a.takeExpired().map((s) => [s.next, s.ended]), [[32 * MiB, 'replaced']]);
+      assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 2);
+    });
+
+    it('an answer that comes after the form\'s time is told it expired, not that it is no state of ours', () => {
+      const a = confirm.confirmations(A);
+      const inA = a.stage(change(A));
+      advance(confirm.TTL_MS + 1000);   // the timer has swept it
+      assert.deepStrictEqual(a.verify(inA.requestState, retry(A)), {ok: false, code: 'SETTING_CONFIRMATION_EXPIRED'});
+      assert.deepStrictEqual(a.check(inA.requestState, retry(A)), {ok: false, code: 'SETTING_CONFIRMATION_EXPIRED'});
+      assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 1, 'counted once');
+      assert.deepStrictEqual(a.takeExpired().map((s) => [s.next, s.ended]), [[16 * MiB, 'expired']], 'and said once');
+      // a state that never was is still no state
+      assert.strictEqual(a.verify(`${'x'.repeat(22)}.${inA.requestState.split('.')[1]}`, retry(A)).code, 'SETTING_CONFIRMATION_INVALID');
+    });
+
+    it('a session\'s end hands back the forms nobody was told of: the one pending, and any its timer expired', () => {
+      const a = confirm.confirmations(A);
+      a.stage(change(A, {next: 16 * MiB}));
+      advance(confirm.TTL_MS + 5);
+      a.stage(change(A, {name: 'requestTimeout', old: 30000, next: 60000}));
+      assert.deepStrictEqual(confirm.forget(A).map((s) => [s.name, s.next]), [['maxOutputBytes', 16 * MiB], ['requestTimeout', 60000]]);
+      assert.deepStrictEqual(confirm.forget(A), [], 'nothing of it is left');
+      assert.deepStrictEqual(confirm.forget('z'.repeat(32)), [], 'nor of a session that had no store');
     });
 
     it('each decline and each expiry is told to the daemon, with its kind and a time (Task 6\'s message)', () => {
@@ -384,7 +452,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // B asks the same; the validators cannot be grown
       const failing = tool({growValidators: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
       const rb = await failing.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
-      await refused(failing.confirm('maxOutputBytes', '16MiB', {requestState: rb.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B)), 'SETTING_NOT_APPLIED');
+      await refused(failing.confirm('maxOutputBytes', '16MiB', {requestState: rb.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B)), 'SETTING_NOT_APPLIED_THIS_SESSION');
       assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 8 * MiB);
       assert.deepStrictEqual(history().filter((h) => h.session === B).map((h) => h.change), ['this session', 'not applied']);
     });
@@ -477,6 +545,21 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(confirm.confirmations(B).declined('requestTimeout'), true);
     });
 
+    it('every client frame is seen as it comes: a "no" that a later frame overwrites has latched all the same (a late answer to an ask that timed out, then a yes)', async () => {
+      const t0 = tool();
+      // as C1's registry announces each frame; the session's own copy is then overwritten
+      sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null});
+      sources[A].emit('client', {status: 'ok', conditions: 'yes', repo: null});
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      const before = asked.length;
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      assert.strictEqual(asked.length, before, 'a latched session\'s shim is not asked');
+      // a frame that is not "ok, no" latches nothing
+      sources[B].emit('client', {status: 'failed', conditions: 'no', repo: null});
+      sources[B].emit('client', {status: 'ok', conditions: 'yes', repo: null});
+      assert.strictEqual(confirm.held(), 1, 'no store for B');
+    });
+
     it('a client frame that said no since the last ask latches at the next one, before the shim is asked again', async () => {
       const t0 = tool();
       // C1 updates s.client in place at each frame; this one came unasked
@@ -500,6 +583,114 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'MODULE_NOT_LISTED');
       assert.strictEqual(timers.filter((x) => !x.cleared).length, 0, 'no form was staged for it');
       assert.strictEqual(confirm.userWindow().count('requestTimeout'), 0);
+      assert.strictEqual(confirm.held(), 0, 'no store was made again for A (B never asked, and has none)');
+    });
+
+    it('a session that ends while its client is asked at the confirmation: nothing is applied, and nothing of it is recorded or kept', async () => {
+      const t0 = tool();
+      const r = await t0.set('requestTimeout', '60s', 'settings tool', ctx(A));
+      const lines = history().length;
+      sources[A].askConditions = async () => { sources[A].emit('end'); return null; };
+      await refused(t0.confirm('requestTimeout', '60s', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'MODULE_NOT_LISTED');
+      assert.strictEqual(history().length, lines, 'no line for a session that is gone');
+      // its end left nothing to count later either
+      t0.writeCounts();
+      assert.strictEqual(history().length, lines);
+    });
+
+    // my /code-review: the validators' growth is awaited, and can take
+    // seconds. What was checked before it is checked again after it, with
+    // no wait between the checks and the override.
+    describe('after the validators have grown, everything is checked again', () => {
+      const confirming = async (during, code) => {
+        const t0 = tool({growValidators: async (bytes) => { grown.push(bytes); await during(t0); }});
+        const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+        const e = await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), code);
+        assert.deepStrictEqual(grown, [16 * MiB], 'the growth ran');
+        assert.ok(!settings.overridesOf(A).some((o) => o.loosening === true), 'no loosening was stored');
+        return e;
+      };
+
+      it('the default tightened meanwhile (a terminal change): not applied, changed meanwhile', async () => {
+        await confirming(async () => { options.maxOutputBytes = 4 * MiB; }, 'SETTING_CHANGED_MEANWHILE');
+        assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB, 'the terminal\'s tightening binds A');
+        assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => h.change), ['this session', 'not applied (changed meanwhile)']);
+      });
+
+      it('the session\'s own tightening meanwhile is not overwritten', async () => {
+        await confirming(async (t0) => { await t0.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A)); }, 'SETTING_CHANGED_MEANWHILE');
+        assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB);
+      });
+
+      it('the session latched meanwhile (its client reattached saying no): not applied', async () => {
+        await confirming(async () => { sources[A].client.conditions = 'no'; sources[A].emit('attach'); }, 'SETTING_DECLINED_THIS_SESSION');
+        assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 8 * MiB);
+      });
+
+      it('the session ended meanwhile: nothing is set for it', async () => {
+        await confirming(async () => { sources[A].emit('end'); }, 'MODULE_NOT_LISTED');
+      });
+
+      it('the ceiling changed meanwhile: not applied, and the user may ask again', async () => {
+        let c = {state: 'none'};
+        const t0 = tool({ceiling: () => c, growValidators: async () => { c = {state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {maxOutputBytes: 12 * MiB, forbid: [], conversation: true}}; }});
+        const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+        await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_CEILING_CHANGED_MEANWHILE');
+        assert.strictEqual(settings.limitsOf(A), null);
+      });
+    });
+
+    it('two forms left unanswered for another: the third ask gets no form, and is told the session is locked (not handed a form it could never accept)', async () => {
+      const t0 = tool();
+      await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      const second = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
+      assert.ok(second.inputRequired != null);
+      await refused(t0.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => [h.asked, h.change]),
+        [[16 * MiB, 'replaced'], [32 * MiB, 'replaced'], [64 * MiB, 'not confirmed (locked in this session)']]);
+      // the second form's answer comes too late: it was left for another request
+      await refused(t0.confirm('maxOutputBytes', '32MiB', {requestState: second.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_CONFIRMATION_INVALID');
+      assert.strictEqual(settings.limitsOf(A), null);
+    });
+
+    it('an answer after the form\'s 120 s: told it expired, with one history line; a form pending at its session\'s end has its line too', async () => {
+      const was = options.settingsFile;
+      options.settingsFile = file;
+      try {
+        const t0 = tool();
+        const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+        advance(121 * 1000);
+        await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_CONFIRMATION_EXPIRED');
+        await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_CONFIRMATION_EXPIRED');
+        assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => [h.asked, h.change]), [[16 * MiB, 'expired']]);
+        // B ends with a form up, and with one its timer expired that nobody asked about since
+        await t0.set('requestTimeout', '60s', 'settings tool', ctx(B));
+        advance(121 * 1000);
+        await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+        const before = history().filter((h) => h.session === B).length;
+        sources[B].emit('end');
+        assert.deepStrictEqual(history().filter((h) => h.session === B).slice(before).map((h) => [h.setting, h.asked, h.change]), [['maxOutputBytes', 16 * MiB, 'expired']]);
+        assert.deepStrictEqual(history().filter((h) => h.session === B && h.change === 'expired').map((h) => h.setting), ['requestTimeout', 'maxOutputBytes']);
+      } finally {
+        options.settingsFile = was;
+      }
+    });
+
+    it('a confirmed loosening is one of a session\'s 32 recorded changes: with 32 made while its form was up, it is not applied', async () => {
+      const t0 = tool();
+      for (let i = 0; i < 31; i++) await t0.set('requestTimeout', String(30000 - 1 - i), 'settings tool', ctx(A));
+      const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      await t0.set('requestTimeout', '20s', 'settings tool', ctx(A));   // the 32nd
+      await refused(t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 8 * MiB);
+      assert.strictEqual(history().filter((h) => h.session === A && h.new !== undefined && String(h.change).startsWith('this session')).length, 32);
+    });
+
+    it('a session\'s confirmed change that cannot be applied is said as the session\'s, not "this start"', async () => {
+      const failing = tool({growValidators: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
+      const r = await failing.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      const e = await refused(failing.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_NOT_APPLIED_THIS_SESSION');
+      assert.strictEqual(e.message, 'The change to maxOutputBytes for this session could not be applied (RESIZE_FAILED); nothing was changed.');
     });
 
     it('the ceiling binds a session\'s loosening: above it, refused with no form; conversation off, no form', async () => {
