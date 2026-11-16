@@ -134,9 +134,9 @@ describe('mcp-contract 24: prompts (M10)', function() {
   });
   after(() => {
     // the validator pool this file started (lib/validator-pool.js): closed,
-    // or a run without --exit (the pre-commit hook's) never ends
-    const validatorPool = require('../../lib/validator-pool');
-    if (validatorPool.started() != null) validatorPool.started().close();
+    // or a run without --exit (the pre-commit hook's) never ends; and
+    // forgotten, so a later file in the same mocha run starts its own
+    require('../../lib/validator-pool').closeShared();
     if (provider != null) Object.assign(provider, real);
     if (usageReal != null) Object.assign(require('../../lib/usage/runtime').usage(), usageReal);
     fs.rmSync(home, {recursive: true, force: true});
