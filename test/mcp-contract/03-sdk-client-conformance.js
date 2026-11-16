@@ -74,7 +74,18 @@ function argsTable(scanDir) {
     [`${SHAPE}no_schema_empty`]:                                {args: {}, expect: 'ok'},
     [`${SHAPE}prefix_items_out`]:                               {args: {}, expect: 'ok'},
     [`${SHAPE}coded_error`]:                                    {args: {}, expect: 'error'},
-    [`${SHAPE}strict_out`]:                                     {args: {}, expect: 'error'}
+    [`${SHAPE}strict_out`]:                                     {args: {}, expect: 'error'},
+    [`${SHAPE}binary_out`]:                                     {args: {}, expect: 'ok'},
+    [`${SHAPE}many_images_out`]:                                {args: {}, expect: 'error'},
+    [`${SHAPE}big_image_out`]:                                  {args: {}, expect: 'ok'},
+    // M20: non-object output schemas; this legacy-era SDK client lists them
+    // without one and gets text only, the whole binary output as its block
+    [`${SHAPE}array_out`]:                                      {args: {}, expect: 'ok'},
+    [`${SHAPE}string_out`]:                                     {args: {}, expect: 'ok'},
+    [`${SHAPE}number_out`]:                                     {args: {}, expect: 'ok'},
+    [`${SHAPE}null_out`]:                                       {args: {}, expect: 'ok'},
+    [`${SHAPE}binary_whole_out`]:                               {args: {}, expect: 'block'},
+    [`${SHAPE}images_array_out`]:                               {args: {}, expect: 'ok'}
   };
 }
 
@@ -201,6 +212,12 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
         failures.push(`${tool.name}: SDK threw ${e.code} ${e.message}`);
         continue;
       }
+      if (entry.expect === 'block') {
+        if (r.isError === true || r.structuredContent !== undefined || !Array.isArray(r.content) || r.content.length !== 1 || r.content[0].type !== 'image') {
+          failures.push(`${tool.name}: expected its one image block, no text and no structuredContent: ${JSON.stringify(r).slice(0, 200)}`);
+        }
+        continue;
+      }
       if (entry.expect === 'error') {
         if (r.isError !== true) failures.push(`${tool.name}: expected an error result`);
         if (r.structuredContent !== undefined) failures.push(`${tool.name}: an error result carries structuredContent`);
@@ -252,6 +269,55 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
     assert.strictEqual(r._meta['countinghouse/code'], 'CONFORMANCE_CODED');
   });
 
+  // M4 (spec section 1): an image or audio value is a block of its own; in
+  // structuredContent (and so in the text block) it is a reference, as the
+  // advertised outputSchema says. Any other media type stays base64 until M6.
+  const b64 = (t) => Buffer.from(t).toString('base64');
+  const ref = (mimeType, text, block) => ({mimeType, bytes: Buffer.byteLength(text), block});
+  const BINARY_STRUCTURED = {caption: 'a chart', chart: ref('image/png', 'png bytes', 1),
+    clips: [ref('audio/wav', 'wav one', 2), ref('audio/wav', 'wav two!', 3)], doc: b64('%PDF-1.7')};
+
+  it('binary fields: the advertised schema has references for image and audio, keeping title and description; a PDF stays a string', () => {
+    const s = byName(`${SHAPE}binary_out`).outputSchema;
+    assert.strictEqual(s.properties.chart.type, 'object');
+    assert.deepStrictEqual(s.properties.chart.required, ['mimeType', 'bytes']);
+    assert.strictEqual(s.properties.chart.title, 'Chart');
+    assert.strictEqual(s.properties.chart.description, 'The rendered chart');
+    assert.strictEqual(s.properties.clips.items.type, 'object');
+    assert.strictEqual(s.properties.doc.type, 'string');
+    assert.strictEqual(s.properties.doc.contentMediaType, 'application/pdf');
+  });
+
+  it('binary fields: a text block of the references, then one block per image and audio value, in schema order', async () => {
+    const r = await client.callTool({name: `${SHAPE}binary_out`, arguments: {}});
+    assert.strictEqual(r.isError, false);
+    assert.deepStrictEqual(r.structuredContent, BINARY_STRUCTURED);
+    assert.deepStrictEqual(JSON.parse(r.content[0].text), BINARY_STRUCTURED, 'the text block carries no base64 of a block');
+    assert.deepStrictEqual(r.content.slice(1, 4), [
+      {type: 'image', data: b64('png bytes'), mimeType: 'image/png'},
+      {type: 'audio', data: b64('wav one'), mimeType: 'audio/wav'},
+      {type: 'audio', data: b64('wav two!'), mimeType: 'audio/wav'}
+    ]);
+    const validate = ajv.compile(byName(`${SHAPE}binary_out`).outputSchema);
+    assert.ok(validate(r.structuredContent), ajv.errorsText(validate.errors));
+  });
+
+  it('binary fields: more than 16 values in one result is TOO_MANY_BINARY_VALUES', async () => {
+    const r = await client.callTool({name: `${SHAPE}many_images_out`, arguments: {}});
+    assert.strictEqual(r.isError, true);
+    assert.strictEqual(r._meta['countinghouse/code'], 'TOO_MANY_BINARY_VALUES');
+  });
+
+  // M6 flips this one: past --inlineContentBytes (1 MiB by default) the image
+  // is stored and linked instead
+  it('binary fields: until M6, an image is inline however large (2 MiB here)', async () => {
+    const r = await client.callTool({name: `${SHAPE}big_image_out`, arguments: {}});
+    assert.strictEqual(r.isError, false);
+    assert.deepStrictEqual(r.structuredContent, {img: {mimeType: 'image/png', bytes: 2 * 1024 * 1024, block: 1}});
+    assert.strictEqual(r.content[1].type, 'image');
+    assert.strictEqual(r.content[1].data.length, Math.ceil(2 * 1024 * 1024 / 3) * 4);
+  });
+
   describe('tasks/result', () => {
     async function runTask(name) {
       const created = await rpc(port, 'tools/call', {name, arguments: {}, task: {}});
@@ -270,6 +336,12 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
       assert.deepStrictEqual(r.structuredContent, {text: 'ok'});
       const validate = ajv.compile(byName(`${SHAPE}object_out`).outputSchema);
       assert.ok(validate(r.structuredContent), ajv.errorsText(validate.errors));
+    });
+
+    it('a task with binary fields returns the same references and blocks as a call', async () => {
+      const r = await runTask(`${SHAPE}binary_out`);
+      assert.deepStrictEqual(r.structuredContent, BINARY_STRUCTURED);
+      assert.deepStrictEqual(r.content.slice(1, 4).map((c) => c.type), ['image', 'audio', 'audio']);
     });
 
     it('a task without an output schema returns text only', async () => {

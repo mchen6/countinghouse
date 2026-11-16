@@ -713,8 +713,91 @@ sessions) all of this is each session's own, for the two caps:
   dialog expired. Each one is told to ch-local's daemon (the setting and a
   time, nothing else), which keeps it to hand back to a restarted runtime.
   A lock runs 30 minutes from its third event, so a restarted runtime
-  needs the last 60 minutes of them to rebuild one still running (reading
-  that list back at a restart is not built yet).
+  needs the last 60 minutes of them to rebuild one still running (below).
+
+**A change for all sessions.** In one session the user may ask to change
+one of the two caps for every session; the model's call then says
+`scope: "all-sessions"`. It is a global change, as one made at a terminal
+is:
+
+- it is judged against the default in force, never the asking session's own
+  value;
+- it is written to `settings.json` and applied at once to every session, as
+  a terminal tightening is: a session's confirmed loosening above the new
+  value is dropped and that session told; a session's own tightening is
+  never dropped (it is held to the default while the default is lower,
+  and is in force again if the default rises);
+- the other sessions are told the setting was changed from another session;
+  the history line names the asking session and, unlike a session's own
+  lines, is every session's to read (no session's id is ever shown). A
+  request for all sessions that was not made is the asking session's line,
+  and says what it was for.
+
+A tightening needs no dialog. A loosening always needs one: the asking
+session's own (it spends one of that session's three and counts in the
+user's window), whose text names all sessions and says the change holds
+after a restart. Its state confirms that change only: a dialog that said
+"this session" confirms nothing for all sessions, and the other way round.
+It is held to the operator's ceiling as any loosening is. For a raised
+output cap the validators grow first, which changes nothing; then, under
+one lock and with no wait in it, everything is checked as it is then (the
+session, its lock, the ceiling, the default in force, the file as the
+dialog saw it), the file is written, and the value is put in force. So a
+change that cannot be stored is not in force, and a terminal change made
+meanwhile is never written over. The session that asked gets the value
+too: its own lower value for that setting goes, and it is told; another
+session's own tighter value stays. What is written without a dialog never
+raises what the file yields (a runtime started above it by a flag, or a
+tighter value stored for the next start): such a value holds for every
+session until the runtime restarts. Every other setting stays the
+terminal's.
+
+**Across a runtime restart.** The runtime keeps nothing of a session on
+disk. After every change it tells ch-local's daemon the session's whole
+state, which is exactly its own values, its locks and its dialogs left:
+no key, no user's name, no nonce, no pending dialog. A dialog open at a
+restart is lost: its state was under a key the new runtime does not have.
+It is not counted as unanswered in the user's window either; only its
+session's dialogs left remember that it was shown. Nor is a session's own
+count of the dialogs it left unanswered kept (two of a kind lock that kind
+for the session): after a restart it starts again from none. The session's
+three dialogs hold across the restart, and each unanswered one is in the
+user's window, so at most one more dialog of one kind is shown than
+without the restart. The daemon keeps the
+table in memory and hands it to the next runtime before that one listens.
+Its shape is checked twice, and what it says is taken only this far:
+
+- a session's row waits for the session: its shim resumes it by a token
+  only it holds, and a row whose session never comes back is dropped;
+- its locks and dialogs left are restored as they were, which can only
+  make it tighter than a new session;
+- a tightening applies only if it is at least as tight as today's default
+  and the ceiling; one above today's default is not applied, and the
+  session is told;
+- a value the row calls a confirmed loosening, and that is above today's
+  default, applies only if the session's own client says now that nothing
+  in its configuration could answer a dialog, the ceiling allows it (it is
+  held to the ceiling), and the default has not been lowered under the one
+  it was confirmed over; the validators grow first for a raised output cap,
+  and anything the session changed, or any lock or latch that fell on it,
+  while that was checked wins. Otherwise it is reset and the session is
+  told. One at or under today's default (confirmed over the session's own
+  lower value) is restored as the tightening it now is, with no client
+  asked: reset, it would leave the session looser than before the restart.
+  A restored value is recorded in the history as restored;
+- what was declined before the restart loads into the user's window, so a
+  lock still running holds. A list that cannot be taken, a list longer than
+  the window holds, or no table at all (the daemon's did not arrive in
+  time) locks every setting's dialogs for 30 minutes: what cannot be shown
+  was declined is taken as declined. An empty table, which the daemon
+  sends at a runtime's first start, locks nothing.
+
+The row's word that a loosening was confirmed is the daemon's: no dialog
+is shown again for it. So whoever can speak as the daemon on the runtime's
+control channel can raise a session's cap as far as the ceiling, with that
+session's client agreeing, and no dialog. The channel is the pipe from the
+process that started the runtime, which is ch-local, the user's own; a
+module has no way to it.
 
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
