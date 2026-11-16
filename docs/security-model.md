@@ -758,7 +758,12 @@ state, which is exactly its own values, its locks and its dialogs left:
 no key, no user's name, no nonce, no pending dialog. A dialog open at a
 restart is lost: its state was under a key the new runtime does not have.
 It is not counted as unanswered in the user's window either; only its
-session's dialogs left remember that it was shown. The daemon keeps the
+session's dialogs left remember that it was shown. Nor is a session's own
+count of the dialogs it left unanswered kept (two of a kind lock that kind
+for the session): after a restart it starts again from none. The session's
+three dialogs hold across the restart, and each unanswered one is in the
+user's window, so at most one more dialog of one kind is shown than
+without the restart. The daemon keeps the
 table in memory and hands it to the next runtime before that one listens.
 Its shape is checked twice, and what it says is taken only this far:
 
