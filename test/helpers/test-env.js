@@ -69,6 +69,21 @@ function redisArgsFor(args) {
 // test run through run-local.js would seed the shared Redis while its server
 // read the private one.
 const redisUrlFor = (fallback = 'redis://127.0.0.1:6379') => (redisUrl() != null ? redisUrl() : fallback);
+// The same Redis as an object connection (BullMQ's), db `db`: the host
+// without an IPv6 address's brackets, the URL's username and password, TLS
+// for rediss:. run-local refuses a literal one.
+const redisConnectionFor = (db) => {
+  let u;
+  try { u = new URL(redisUrlFor()); } catch (e) { u = null; }
+  if (u == null || (u.protocol !== 'redis:' && u.protocol !== 'rediss:') || u.hostname === '') {
+    throw new Error(`CH_TEST_REDIS_URL is not a redis:// or rediss:// URL with a host: ${redisUrlFor()}`);
+  }
+  const c = {host: u.hostname.replace(/^\[(.*)\]$/, '$1'), port: Number(u.port) || 6379, db};
+  if (u.username !== '') c.username = decodeURIComponent(u.username);
+  if (u.password !== '') c.password = decodeURIComponent(u.password);
+  if (u.protocol === 'rediss:') c.tls = {};
+  return c;
+};
 
 const started = [];
 
@@ -130,4 +145,4 @@ function startPrivateRedis({port = 9749, readyMs = 5000} = {}) {
 // test/helpers/port-guard.js).
 const handedOut = (port) => [...assigned.values()].includes(Number(port));
 
-module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, startShell, stopAll, startPrivateRedis};
+module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, redisConnectionFor, startShell, stopAll, startPrivateRedis};
