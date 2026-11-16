@@ -200,6 +200,18 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
       assert.strictEqual(outsOf(h, CHAIN)[0].outcome, 'cancelled');
     });
 
+    // spec section 13, "Not covered": a call that became a task, cancelled
+    // before its CreateTaskResult is written, has its job removed (the
+    // client never learned its id); nothing is answered
+    it('a legacy task-augmented call cancelled before its answer: no answer, and no job left', async () => {
+      io.notify({jsonrpc: '2.0', id: 23, method: 'tools/call', params: {name: LEAF, arguments: {}, task: {}}});
+      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 23}});
+      await tick(2000);
+      assert.deepStrictEqual(io.lines.map((l) => JSON.parse(l)).filter((m) => m.id === 23), [], 'no answer');
+      const list = await io.request({jsonrpc: '2.0', id: 24, method: 'tasks/list', params: {}}, 10000);
+      assert.deepStrictEqual(list.result.tasks, [], JSON.stringify(list.result));
+    });
+
     it('an unknown id, and a cancel for a call already answered, are ignored', async () => {
       io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 'never-sent'}});
       const answer = await io.request({jsonrpc: '2.0', id: 22, method: 'tools/call', params: {name: LEAF, arguments: {}}}, 10000);
