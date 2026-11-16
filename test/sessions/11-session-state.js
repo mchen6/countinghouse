@@ -136,12 +136,38 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(statesOf(A).pop(), {
         overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}, {name: 'maxOutputBytes', value: 32 * MiB, loosening: true, over: 16 * MiB, version: null}],
         locks: ['pack'], formsLeft: 2});
-      // every message is exactly {type, session, state}, the state exactly its three keys
+      // every message is exactly {type, session, state}, the state exactly its three keys, or those and
+      // unanswered while a form was open
       for (const m of told) {
         assert.deepStrictEqual(Object.keys(m).sort(), ['session', 'state', 'type']);
-        assert.deepStrictEqual(Object.keys(m.state).sort(), ['formsLeft', 'locks', 'overrides']);
+        assert.deepStrictEqual(Object.keys(m.state).filter((k) => k !== 'unanswered').sort(), ['formsLeft', 'locks', 'overrides']);
       }
       assert.deepStrictEqual(statesOf(B), [], 'nothing of B changed');
+    });
+
+    // #300's review, (3): a session's own count of the forms it left unanswered (two of a kind lock that
+    // kind) is part of its state, so a restart does not hand a form back
+    it('a form left unanswered is told as its kind; one open now counts too, until it is answered', () => {
+      const a = confirm.confirmations(A);
+      a.stage(change(A, {name: 'requestTimeout', old: 30000, next: 60000}));
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: [], formsLeft: 2, unanswered: ['requestTimeout']}, 'open: if the runtime dies now it is never answered');
+      // left for another: it is unanswered for good, and the new one is open
+      const form = a.stage(change(A));
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: [], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']});
+      // the open one answered: its kind is no longer listed
+      assert.strictEqual(a.verify(form.requestState, {name: 'maxOutputBytes', next: 32 * MiB, session: A}).ok, true);
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: [], formsLeft: 1, unanswered: ['requestTimeout']});
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 1, unanswered: ['requestTimeout']});
+      // a session with none has exactly its three keys
+      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: [], formsLeft: 3});
+    });
+
+    it('a kind that is locked is not also listed as unanswered', () => {
+      const a = confirm.confirmations(A);
+      a.stage(change(A, {next: 32 * MiB}));
+      a.stage(change(A, {next: 48 * MiB}));
+      a.stage(change(A, {next: 64 * MiB}));
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: ['maxOutputBytes'], formsLeft: 1});
     });
 
     it('a lock that falls without an answer is told too: two forms left unanswered, and the latch', () => {
@@ -534,6 +560,48 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       sessions.importTable(table([row(A, {overrides: [{name: 'pack.ci', value: true, loosening: true, over: null, version: '1.2.3'}]})]));
       await resumed(A);
       assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart']);
+    });
+
+    // #300's review, (3)
+    it('a restored unanswered kind counts as one: the next form of that kind left unanswered locks it', async () => {
+      sessions.importTable(table([row(A, {formsLeft: 2, unanswered: ['requestTimeout']}), row(B, {formsLeft: 2})]));
+      await resumed(A);
+      await resumed(B);
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 2, unanswered: ['requestTimeout']});
+      assert.deepStrictEqual(statesOf(A), [], 'as the daemon has it: nothing is told again');
+      for (const id of [A, B]) {
+        const c = confirm.confirmations(id);
+        assert.ok(c.stage(change(id, {name: 'requestTimeout', old: 30000, next: 60000})) != null, 'a form of the kind is shown');
+        c.end();   // and left unanswered
+      }
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['requestTimeout'], 'the second of its kind: locked');
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), [], 'the first of its kind for a session that had none');
+    });
+
+    it('a restored unanswered kind never undoes a lock, and one that is locked in the row is only locked', async () => {
+      sessions.importTable(table([row(A, {locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes']})]));
+      await resumed(A);
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes']});
+    });
+
+    it('the shared vectors\' restoreRows: B2 takes each accepted state and refuses each refused one\'s, as restore.js and the daemon do', () => {
+      const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
+      for (const row of V.accepted) assert.strictEqual(sessionState.stateProblem(row.state), null, JSON.stringify(row.state).slice(0, 120));
+      // (a refused row may be refused for its session or its resume, which are not B2's: only a state's own faults are)
+      const ofState = V.refused.filter((c) => !/session id|resume|\{session, resume, state\}/.test(c.reason));
+      assert.ok(ofState.length >= 8, String(ofState.length));
+      for (const c of ofState) assert.notStrictEqual(sessionState.stateProblem(c.row.state), null, c.why);
+    });
+
+    it('a state\'s unanswered is distinct known kinds, three at most, or not there at all', () => {
+      const base = {overrides: [], locks: [], formsLeft: 2};
+      for (const ok of [undefined, [], ['pack'], ['maxOutputBytes', 'pack', 'requestTimeout']]) {
+        assert.strictEqual(sessionState.stateProblem(ok === undefined ? base : Object.assign({}, base, {unanswered: ok})), null, JSON.stringify(ok));
+      }
+      for (const bad of ['pack', ['pack', 'pack'], ['other'], [7], null, {pack: 1}, ['maxOutputBytes', 'pack', 'requestTimeout', 'pack']]) {
+        assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {unanswered: bad})), null, JSON.stringify(bad));
+      }
+      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {unanswered: [], nonce: 'x'})), null, 'no other key beside it');
     });
 
     it('a table that is no table is as no table: every kind is locked, and none is taken after it', () => {
