@@ -96,6 +96,12 @@ if (options.validatorLimitInvalid != null) {
     JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// MCP completeness M5: the result store's limits.
+if (options.resourceLimitInvalid != null) {
+  console.error('--' + options.resourceLimitInvalid.name + ' must be ' + options.resourceLimitInvalid.what + ' (got ' +
+    JSON.stringify(String(options.resourceLimitInvalid.value)) + ')');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
 // IPC fd. --hardened relaunches this process as a child, which the channel
