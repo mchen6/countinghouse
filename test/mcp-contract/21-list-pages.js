@@ -25,7 +25,12 @@ const KEY_B = `test-b-${'b'.repeat(24)}`;
 fs.writeFileSync(AUTH, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['alpha', 'beta'], admin: true}, [KEY_B]: {userName: 'b', devices: ['beta']}}));
 
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10});
+// Set again before this file's tests, with the auth provider routed to this
+// file's keys (as mcp-contract 09 does): a folder run (CI, the pre-commit
+// hook) requires every file first, and the process's one provider is built
+// from whichever file asked first.
+const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
+options.setOptions(OPTIONS);
 require('../../lib/logger').createLogger(false);
 const gateway = require('../../lib/mcp/gateway');
 const toolRegistry = require('../../lib/mcp/tool-registry');
@@ -83,7 +88,21 @@ const PLATFORM = names(toolRegistry.platformTools());
 
 describe('mcp-contract 21: tools/list in pages (M1)', function() {
   this.timeout(30000);
-  after(() => fs.rmSync(home, {recursive: true, force: true}));
+  let provider = null;
+  let real = null;
+  before(() => {
+    options.setOptions(OPTIONS);
+    const FileAuthProvider = require('../../lib/auth/file-provider');
+    const own = new FileAuthProvider({configPath: AUTH});
+    provider = require('../../lib/auth').getAuthProvider();
+    real = {authenticate: provider.authenticate, listDevices: provider.listDevices};
+    provider.authenticate = (...args) => own.authenticate(...args);
+    provider.listDevices = (...args) => own.listDevices(...args);
+  });
+  after(() => {
+    if (provider != null) Object.assign(provider, real);
+    fs.rmSync(home, {recursive: true, force: true});
+  });
   afterEach(() => { options.authoringTools = false; });
 
   for (const modern of [false, true]) {
