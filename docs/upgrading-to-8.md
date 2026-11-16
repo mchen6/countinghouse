@@ -40,6 +40,11 @@ you have to do. What the sandbox does and does not protect is in
     its `$ref`s expanded). Either refusal is `MODULE_ASSEMBLY_FAIL`, at stage
     `schemaCompile` or `schemaSafety`. Load modules with heavy schemas in a
     test run first.
+  - At load, what a module declares is checked too, at stage `declarations`.
+    Two things a 7.x module could carry are refused: a binary output field
+    (`contentEncoding: base64` with a `contentMediaType`) that is not under
+    `properties` or an array's `items`, and `x-mcp-header` anywhere in an
+    input schema. `countinghouse-validate` reports both before you upgrade.
 - **A module's load is bounded.** `--moduleLoadTimeout` (120 s by default,
   every sandbox mode) ends a worker that hasn't answered its load in time,
   and the load fails `MODULE_LOAD_TIMEOUT`.
