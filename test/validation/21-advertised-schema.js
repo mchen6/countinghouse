@@ -15,7 +15,7 @@ describe('validation 21: the advertised output schema (M4)', () => {
     caption: {type: 'string'},
     chart: bin('image/png', {title: 'Chart', description: 'The rendered chart'}),
     clips: {type: 'array', items: bin('audio/wav')},
-    doc: bin('application/pdf', {description: 'stays base64 until M6'})
+    doc: bin('application/pdf', {description: 'a resource block or a link (M6)'})
   }};
 
   it('the reference shape is the spec\'s', () => {
@@ -23,11 +23,13 @@ describe('validation 21: the advertised output schema (M4)', () => {
       properties: {mimeType: {type: 'string'}, bytes: {type: 'integer', minimum: 0}, block: {type: 'integer', minimum: 0}, uri: {type: 'string'}}});
   });
 
-  it('image and audio fields become the reference shape, keeping title and description; any other stays as declared', () => {
+  // M6: every binary field, whatever its media type (a resource block or a
+  // link for any but image/audio)
+  it('every binary field becomes the reference shape, keeping title and description; anything else stays as declared', () => {
     const a = advertisedSchema(schema);
     assert.deepStrictEqual(a.properties.chart, Object.assign({title: 'Chart', description: 'The rendered chart'}, REFERENCE_SHAPE));
     assert.deepStrictEqual(a.properties.clips, {type: 'array', items: REFERENCE_SHAPE});
-    assert.deepStrictEqual(a.properties.doc, schema.properties.doc);
+    assert.deepStrictEqual(a.properties.doc, Object.assign({description: 'a resource block or a link (M6)'}, REFERENCE_SHAPE));
     assert.deepStrictEqual(a.properties.caption, schema.properties.caption);
     assert.deepStrictEqual(a.required, ['caption']);
   });
@@ -39,18 +41,19 @@ describe('validation 21: the advertised output schema (M4)', () => {
   });
 
   it('a schema with no block fields is advertised as the same object', () => {
-    const plain = {type: 'object', properties: {doc: bin('application/pdf'), n: {type: 'integer'}}};
+    const plain = {type: 'object', properties: {n: {type: 'integer'}, s: {type: 'string', contentEncoding: 'base64'}}};
     assert.strictEqual(advertisedSchema(plain), plain);
     assert.strictEqual(advertisedSchema(null), null);
   });
 
   it('a property named __proto__ is copied as data, never as the prototype', () => {
-    const {reshape} = require('../../lib/binary-fields');
+    const {plan, assemble} = require('../../lib/mcp/result-content');
     const s = JSON.parse('{"type": "object", "properties": {"__proto__": {"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}}}');
     const a = advertisedSchema(s);
     assert.ok(Object.hasOwn(a.properties, '__proto__'));
     assert.strictEqual(a.properties.__proto__.type, 'object');
-    const out = reshape(JSON.parse('{"__proto__": "AA=="}'), s, {module: 'm', action: 'a'});
+    const output = JSON.parse('{"__proto__": "AA=="}');
+    const out = assemble(output, plan(output, s, {module: 'm', action: 'a'}), {});
     assert.ok(Object.hasOwn(out.structured, '__proto__'));
     assert.deepStrictEqual(JSON.parse(JSON.stringify(out.structured)), JSON.parse('{"__proto__": {"mimeType": "image/png", "bytes": 1, "block": 1}}'));
   });
@@ -59,8 +62,10 @@ describe('validation 21: the advertised output schema (M4)', () => {
     assert.strictEqual(advertisedSchema(schema), advertisedSchema(schema));
   });
 
-  it('blockFields: the image and audio fields only, in schema order', () => {
-    assert.deepStrictEqual(blockFields(schema), [{path: ['chart'], mediaType: 'image/png'}, {path: ['clips', '*'], mediaType: 'audio/wav'}]);
+  it('blockFields: every binary field, in schema order (M6)', () => {
+    assert.deepStrictEqual(blockFields(schema).map((f) => f.mediaType).sort(), ['application/pdf', 'audio/wav', 'image/png']);
+    assert.deepStrictEqual(blockFields(schema).filter((f) => f.mediaType !== 'application/pdf'),
+      [{path: ['chart'], mediaType: 'image/png'}, {path: ['clips', '*'], mediaType: 'audio/wav'}]);
   });
 
   it('a task\'s schema hash is taken over the advertised schema; a schema with no block fields hashes as before', () => {

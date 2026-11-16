@@ -43,6 +43,8 @@ simulation).
 | `--resourceStoreBytes <n>` | `536870912` (512 MiB) under `--store redis`; `4294967296` (4 GiB) under `--store local` | The bytes every owner's stored results may take in all. Past it a result that would be stored is refused `RESULT_STORE_FULL`; nothing is evicted early. Redis keeps them in db 13, local files under `<storePath>/resources/`. A positive integer, else exit 2. |
 | `--resourceQuotaBytes <n>` | `134217728` (128 MiB) under redis; `268435456` (256 MiB) under local | The bytes one caller's stored results may take. Past it, `RESULT_STORE_FULL`. A positive integer, else exit 2. |
 | `--resourceQuotaItems <n>` | `1024` | How many stored results one caller may hold. Past it, `RESULT_STORE_FULL`. A positive integer, else exit 2. |
+| `--inlineContentBytes <n>` | `1048576` (1 MiB) | The decoded bytes of binary values sent inline in one result. In schema order, each value that fits what is left is inlined (an image or audio block, or a resource block for any other media type); the rest are stored and sent as `resource_link`s, read back with `resources/read`. `0` links every one. A whole number, else exit 2. |
+| `--resourceReadCost <n>` | `0` | The metering cost of one `resources/read` of a stored result. A whole number, else exit 2. |
 | `--apiKeyRateLimit <n>` | unlimited | Per-apiKey calls/second cap. |
 | `--globalRateLimit <n>` | unlimited | Combined calls/second cap across every caller. |
 | `--requestTimeout <seconds>` | `30` | Per-call timeout before a device is considered unresponsive. |

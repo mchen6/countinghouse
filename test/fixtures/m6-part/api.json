@@ -1,0 +1,53 @@
+{
+  "device": {
+    "friendlyName": "m6-part",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "returns binary values of several media types (MCP completeness M6)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:partService": {
+        "actionList": [
+          {
+            "name": "pdf",
+            "description": "Returns a small PDF.",
+            "input": {
+              "schema": "/partService/pdf/input"
+            },
+            "output": {
+              "schema": "/partService/pdf/output"
+            }
+          },
+          {
+            "name": "two",
+            "description": "Returns two small PDFs.",
+            "input": {
+              "schema": "/partService/two/input"
+            },
+            "output": {
+              "schema": "/partService/two/output"
+            }
+          },
+          {
+            "name": "note",
+            "description": "Returns a UTF-8 text note.",
+            "input": {
+              "schema": "/partService/note/input"
+            },
+            "output": {
+              "schema": "/partService/note/output"
+            }
+          },
+          {
+            "name": "badtext",
+            "description": "Returns text/plain bytes that are not UTF-8.",
+            "input": {
+              "schema": "/partService/badtext/input"
+            },
+            "output": {
+              "schema": "/partService/badtext/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

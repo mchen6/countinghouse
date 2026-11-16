@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "m6-outer",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a composite returning its part's PDF (MCP completeness M6)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:outerService": {
+        "actionList": [
+          {
+            "name": "wrap",
+            "description": "Calls m6-part pdf and returns its document.",
+            "input": {
+              "schema": "/outerService/wrap/input"
+            },
+            "output": {
+              "schema": "/outerService/wrap/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
