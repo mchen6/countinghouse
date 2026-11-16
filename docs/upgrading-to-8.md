@@ -313,6 +313,14 @@ says how to write a module for this.
   `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
   knows only protocol revision 2024-11-05, which has no audio content type,
   may not render an audio block.
+- **Output schemas of any JSON type, for 2026-07-28 requests.** A modern
+  `tools/list` advertises an output schema whatever its root type (an array,
+  a string, a number, null), and a modern result carries the output as
+  `structuredContent`, whatever its type; the text block is a string output
+  itself, else its JSON. A legacy request (`initialize`) is unchanged: only an
+  object schema is advertised, and other results are text only. A module's
+  output may now be any JSON value its schema allows, `null` included; before,
+  anything but an object was refused `OUTPUT_DATA_VALIDATION_FAIL`.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their

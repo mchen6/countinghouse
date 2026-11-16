@@ -96,6 +96,56 @@
             "output": {
               "schema": "/shapeService/big_image_out/output"
             }
+          },
+          {
+            "name": "array_out",
+            "description": "Returns [\"a\", \"b\"]; declares an array output schema.",
+            "input": {
+              "schema": "/shapeService/array_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/array_out/output"
+            }
+          },
+          {
+            "name": "string_out",
+            "description": "Returns the string \"plain\"; declares a string output schema.",
+            "input": {
+              "schema": "/shapeService/string_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/string_out/output"
+            }
+          },
+          {
+            "name": "number_out",
+            "description": "Returns 3; declares a number output schema.",
+            "input": {
+              "schema": "/shapeService/number_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/number_out/output"
+            }
+          },
+          {
+            "name": "null_out",
+            "description": "Returns null; declares a null output schema.",
+            "input": {
+              "schema": "/shapeService/null_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/null_out/output"
+            }
+          },
+          {
+            "name": "binary_whole_out",
+            "description": "Returns a PNG as its whole output, declared contentEncoding: base64.",
+            "input": {
+              "schema": "/shapeService/binary_whole_out/input"
+            },
+            "output": {
+              "schema": "/shapeService/binary_whole_out/output"
+            }
           }
         ]
       }
