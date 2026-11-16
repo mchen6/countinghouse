@@ -439,7 +439,12 @@ Modules are shared by default: one worker per module, as today. A module that **
 - the hash of its current resume token;
 - its overrides: loosenings and tightenings;
 - its this-session packs, and its packs turned off;
-- its decline locks, and the forms it has left.
+- its decline locks, and the forms it has left;
+- the kinds of which it has left one form unanswered (`unanswered`, since #308). Two of a kind lock that kind, so without it a restart would hand a form back.
+  - It is in a state only when there is one; a state with none is exactly `{overrides, locks, formsLeft}`.
+  - A form open when the state is told counts, so a kind with one unanswered and another open is told as locked. An answer's tell corrects it.
+  - A kind is in `locks` or in `unanswered`, never both, and `unanswered` is there only with a form spent (`formsLeft` under 3).
+  - **The pairing (the reviewer, 2026-11-15):** the runtime may tell `unanswered`, and a daemon must accept it. A daemon that does not (ch-local before 54858ea) drops the session's whole row when told it. No ch-local has been released without it, so there is no marker and no gate: the first release ships both.
 
 Nothing of a session is ever written to a file.
 
