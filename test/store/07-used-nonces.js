@@ -69,6 +69,19 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
       assert.deepStrictEqual(out, {first: true, again: false, other: true, past: false, created: 0, files: []});
     });
 
+    it('a nonce is one here too, and is remembered 15 minutes at most: anything else is no first use', async () => {
+      dir = mkdtemp('ch-store07-');
+      const out = await inChild(`
+        const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
+        const soon = Date.now() + 5000;
+        const answers = [];
+        for (const bad of ['', 'a b', 'x'.repeat(65), 'a:b', null, 7]) answers.push(await used.use(bad, soon));
+        for (const when of [NaN, null, Date.now() + 3600 * 1000]) answers.push(await used.use('t-shape', when));
+        // within the bound it is a first use, once
+        return {answers, good: [await used.use('t-shape', Date.now() + 14 * 60 * 1000), await used.use('t-shape', Date.now() + 14 * 60 * 1000)]};`, {STORE_DIR: dir});
+      assert.deepStrictEqual(out, {answers: new Array(9).fill(false), good: [true, false]});
+    });
+
     it('it works with request-state\'s consume: a verified state is good once', async () => {
       dir = mkdtemp('ch-store07-');
       const out = await inChild(`
@@ -146,7 +159,7 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
       assert.strictEqual(out.quick, true);
     });
 
-    it('a Redis that accepts and never answers rejects within the part\'s deadline', async () => {
+    it('a Redis that accepts and never answers rejects, promptly', async () => {
       const silent = net.createServer(() => {});
       await new Promise((resolve) => silent.listen(0, '127.0.0.1', resolve));
       try {
@@ -160,6 +173,65 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
         assert.deepStrictEqual(out, {rejected: true, quick: true});
       } finally {
         silent.close();
+      }
+    });
+
+    // my /code-review: the case above ends by the client's own first-connect
+    // bound, with no deadline of the part's at all. The deadline is for a
+    // Redis that was there (its client ready) and stops answering a command
+    // it was sent: without it that use() would never settle.
+    it('a Redis that was ready and then answers no more: the part\'s own deadline rejects it, USED_NONCE_TIMEOUT', async () => {
+      // a stand-in that speaks enough RESP to make a client ready (INFO,
+      // SELECT, anything else +OK), and never answers a SET
+      const sockets = new Set();
+      const standIn = net.createServer((socket) => {
+        sockets.add(socket);
+        let pending = Buffer.alloc(0);
+        socket.on('data', (chunk) => {
+          pending = Buffer.concat([pending, chunk]);
+          for (;;) {
+            // one command: *<n>\r\n then n times $<len>\r\n<bytes>\r\n
+            const text = pending.toString('latin1');
+            const head = /^\*(\d+)\r\n/.exec(text);
+            if (head == null) return;
+            let at = head[0].length;
+            const parts = [];
+            for (let i = 0; i < Number(head[1]); i++) {
+              const len = /^\$(\d+)\r\n/.exec(text.slice(at));
+              if (len == null || text.length < at + len[0].length + Number(len[1]) + 2) return;
+              parts.push(text.slice(at + len[0].length, at + len[0].length + Number(len[1])));
+              at += len[0].length + Number(len[1]) + 2;
+            }
+            pending = pending.subarray(at);
+            const name = String(parts[0]).toLowerCase();
+            if (name === 'set') continue;   // never answered
+            if (name === 'info') {
+              const body = '# Server\r\nredis_version:6.2.0\r\nloading:0\r\nrole:master\r\n';
+              socket.write(`$${Buffer.byteLength(body)}\r\n${body}\r\n`);
+            } else {
+              socket.write('+OK\r\n');
+            }
+          }
+        });
+        socket.on('error', () => {});
+        socket.on('close', () => sockets.delete(socket));
+      });
+      await new Promise((resolve) => standIn.listen(0, '127.0.0.1', resolve));
+      try {
+        const out = await inChild(`
+          const used = lib('store').createStore({store: 'redis', redisUrl: 'redis://127.0.0.1:${standIn.address().port}'}).usedNonces;
+          // let the client become ready first: past redis-resilient's first-connect bound, its queue is off
+          await new Promise((r) => setTimeout(r, 2500));
+          const t0 = Date.now();
+          let answer;
+          try { answer = {resolved: await used.use('t-silent', Date.now() + 60000)}; } catch (e) { answer = {rejected: true, code: e.code || null}; }
+          return Object.assign(answer, {after: Date.now() - t0});`);
+        assert.strictEqual(out.rejected, true, JSON.stringify(out));
+        assert.strictEqual(out.code, 'USED_NONCE_TIMEOUT', JSON.stringify(out));
+        assert.ok(out.after >= 1900 && out.after < 4000, `its 2 s deadline: ${out.after} ms`);
+      } finally {
+        for (const s of sockets) s.destroy();
+        standIn.close();
       }
     });
   });

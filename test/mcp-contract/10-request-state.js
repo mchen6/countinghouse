@@ -77,6 +77,39 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       assert.strictEqual(rs.argumentsHash(null), rs.argumentsHash({}));
     });
 
+    // my /code-review: JSON.stringify spells -0 as 0 and Infinity as null,
+    // and JSON.parse gives both ("-0", "1e999"): a state must not verify
+    // for arguments other than the ones it was made for
+    it('no two argument values a request can carry are one to the MAC: -0 is not 0, and a number that is not finite binds nothing', () => {
+      const of = (text) => JSON.parse(text);
+      assert.notStrictEqual(rs.argumentsHash(of('{"n":0}')), rs.argumentsHash(of('{"n":-0}')));
+      const state = rs.mint(key, content(), binding({arguments: of('{"n":0}')}), {now});
+      refused(state, binding({arguments: of('{"n":-0}')}));
+      const withNull = rs.mint(key, content(), binding({arguments: of('{"n":null}')}), {now});
+      for (const text of ['{"n":1e999}', '{"n":-1e999}', '{"n":[1e999]}']) {
+        assert.throws(() => rs.argumentsHash(of(text)), /request-state/, text);
+        refused(withNull, binding({arguments: of(text)}));
+        assert.throws(() => rs.mint(key, content(), binding({arguments: of(text)}), {now}), /request-state/);
+      }
+      // what is not JSON at all binds nothing either
+      for (const bad of [{d: new Date(0)}, {m: new Map()}, {b: 1n}, {f: () => 1}, {u: [undefined]}, {n: NaN}]) {
+        assert.throws(() => rs.argumentsHash(bad), /request-state/);
+      }
+      // a key with no value is no key, as JSON has it; strings and nesting are bound exactly
+      assert.strictEqual(rs.argumentsHash({a: 1, b: undefined}), rs.argumentsHash({a: 1}));
+      assert.notStrictEqual(rs.argumentsHash({a: '1'}), rs.argumentsHash({a: 1}));
+      assert.notStrictEqual(rs.argumentsHash({a: [[1], 2]}), rs.argumentsHash({a: [1, [2]]}));
+      assert.notStrictEqual(rs.argumentsHash({a: {}}), rs.argumentsHash({a: []}));
+      assert.notStrictEqual(rs.argumentsHash(JSON.parse('{"__proto__":{"x":1}}')), rs.argumentsHash({}));
+      // arguments nested past any use are refused outright, never by the stack running out
+      let deep = {};
+      for (let i = 0; i < 200; i++) deep = {d: deep};
+      assert.throws(() => rs.argumentsHash(deep), /request-state.*nested/);
+      let fine = {};
+      for (let i = 0; i < 100; i++) fine = {d: fine};
+      assert.match(rs.argumentsHash(fine), /^[0-9a-f]{64}$/);
+    });
+
     it('is good only for its caller, its session, its method and its tool', () => {
       const state = rs.mint(key, content(), binding({session: 'a'.repeat(32)}), {now});
       assert.strictEqual(rs.verify(key, state, binding({session: 'a'.repeat(32)}), {now}).ok, true);
@@ -100,6 +133,30 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       refused(state, binding(), now + 60 * MIN);
     });
 
+    // my /code-review: two servers that share the secret and the store do
+    // not share a clock. A state made on one whose clock runs ahead is good
+    // on the other within a minute's difference, and a used nonce is
+    // remembered that minute past its expiry, so the server that is behind
+    // refuses a replay for as long as it still takes the state.
+    it('a minute between two servers\' clocks is allowed for: a state from the one ahead verifies; its nonce is remembered a minute past its expiry', async () => {
+      assert.strictEqual(rs.CLOCK_SKEW_MS, 60 * 1000);
+      const state = rs.mint(key, content(), binding(), {now});
+      // verified by a server whose clock is behind the minter's
+      assert.strictEqual(rs.verify(key, state, binding(), {now: now - 59 * 1000}).ok, true);
+      refused(state, binding(), now - 61 * 1000);
+      // consumed: remembered until a minute after it expires, so a server
+      // a little behind (it still takes the state at its own 4m59s...) finds it used
+      const used = new rs.UsedNonces();
+      const v = rs.verify(key, state, binding(), {now});
+      assert.strictEqual(await rs.consume(used, v, {now}), true);
+      assert.strictEqual(await rs.consume(used, v, {now: now + 5 * MIN + 30 * 1000}), false, 'still remembered past its expiry');
+      assert.strictEqual(used.use(v.nonce, v.expiresAt + rs.CLOCK_SKEW_MS, now + 5 * MIN + 59 * 1000), false);
+      // and the store is asked to keep it that long
+      const asked = [];
+      await rs.consume({use: async (n, until) => { asked.push(until); return true; }}, v, {now});
+      assert.deepStrictEqual(asked, [v.expiresAt + 60 * 1000]);
+    });
+
     it('anything changed in it is refused, and so is anything that is not one', () => {
       const state = rs.mint(key, content(), binding(), {now});
       const [v, p, m] = state.split('.');
@@ -119,6 +176,15 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
     it('a state over 16 KiB is refused before any work, and none is made', () => {
       const big = `v1.${'A'.repeat(17 * 1024)}.${'A'.repeat(43)}`;
       refused(big);
+      // one over the bound under a right MAC (only the key's holder could
+      // make it) is refused for its size all the same
+      const padded = forged({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, a: {pad: 'x'.repeat(12 * 1024)}});
+      assert.ok(padded.length > rs.MAX_STATE_BYTES && padded.length < 22000, String(padded.length));
+      refused(padded);
+      // and earlier answers over their 8 KiB, in a state within the 16
+      const fat = forged({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, a: {pad: 'x'.repeat(9 * 1024)}});
+      assert.ok(fat.length <= rs.MAX_STATE_BYTES, String(fat.length));
+      refused(fat);
       assert.strictEqual(rs.MAX_STATE_BYTES, 16 * 1024);
       // the earlier answers are at most 8 KiB
       assert.throws(() => rs.mint(key, content({answers: {x: {text: 'y'.repeat(8 * 1024)}}}), binding(), {now}), /answers/);
@@ -135,13 +201,23 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
         refused(rs.mint(key, content(), binding(), {now}), binding(bad));
       }
       assert.throws(() => rs.mint(Buffer.alloc(8), content(), binding(), {now}), /request-state/, 'a short key');
+      // each bound of the binding
+      for (const bad of [{caller: 'c'.repeat(257)}, {session: 's'.repeat(257)}, {method: 'm'.repeat(129)}, {tool: 't'.repeat(513)}]) {
+        assert.throws(() => rs.mint(key, content(), binding(bad), {now}), /request-state/, Object.keys(bad)[0]);
+      }
+      for (const good of [{caller: 'c'.repeat(256)}, {session: 's'.repeat(256)}, {method: 'm'.repeat(128)}, {tool: 't'.repeat(512)}]) {
+        assert.match(rs.mint(key, content(), binding(good), {now}), /^v1\./, Object.keys(good)[0]);
+      }
     });
 
     it('a payload of any other shape is refused, though its MAC is right', () => {
       const good = {n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, a: {}};
       assert.strictEqual(rs.verify(key, forged(good), binding(), {now}).ok, true, 'the control');
+      assert.strictEqual(rs.verify(key, forged(Object.assign({}, good, {e: now + 6 * MIN})), binding(), {now}).ok, true, 'the furthest one from a clock a minute ahead');
       for (const bad of [Object.assign({}, good, {x: 1}), (({a, ...rest}) => rest)(good), Object.assign({}, good, {n: 'short'}), Object.assign({}, good, {n: 7}),
-        Object.assign({}, good, {e: String(now + MIN)}), Object.assign({}, good, {e: now + MIN + 0.5}), Object.assign({}, good, {e: now + 6 * MIN}),
+        Object.assign({}, good, {e: String(now + MIN)}), Object.assign({}, good, {e: now + MIN + 0.5}),
+        // further out than any state is given, the minute between clocks allowed for
+        Object.assign({}, good, {e: now + 6 * MIN + 1}),
         Object.assign({}, good, {q: ''}), Object.assign({}, good, {r: 0}), Object.assign({}, good, {r: 17}), Object.assign({}, good, {a: []}), Object.assign({}, good, {a: null}),
         [good], 'not json', '"a string"', 'null']) {
         refused(forged(bad));
@@ -153,18 +229,29 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
     it('a verified state is consumed once: its nonce is remembered until it expires', async () => {
       const used = new rs.UsedNonces();
       const v = rs.verify(key, rs.mint(key, content(), binding(), {now}), binding(), {now});
-      assert.strictEqual(await rs.consume(used, v), true);
-      assert.strictEqual(await rs.consume(used, v), false, 'a replay');
-      assert.strictEqual(await rs.consume(used, v), false);
+      assert.strictEqual(await rs.consume(used, v, {now}), true);
+      assert.strictEqual(await rs.consume(used, v, {now}), false, 'a replay');
+      assert.strictEqual(await rs.consume(used, v, {now: now + MIN}), false);
       // another state of the same request is its own
       const w = rs.verify(key, rs.mint(key, content(), binding(), {now}), binding(), {now});
-      assert.strictEqual(await rs.consume(used, w), true);
+      assert.strictEqual(await rs.consume(used, w, {now}), true);
+    });
+
+    it('a store that cannot say is never taken as a first use: its rejection is the caller\'s, and only its plain true counts', async () => {
+      const v = rs.verify(key, rs.mint(key, content(), binding(), {now}), binding(), {now});
+      await assert.rejects(rs.consume({use: async () => { throw Object.assign(new Error('down'), {code: 'NR_CLOSED'}); }}, v, {now}), {code: 'NR_CLOSED'});
+      for (const said of ['OK', 1, {}, [], 'true', null, undefined, false]) {
+        assert.strictEqual(await rs.consume({use: async () => said}, v, {now}), false, String(said));
+      }
+      assert.strictEqual(await rs.consume({use: () => true}, v, {now}), true, 'a store that answers at once');
     });
 
     it('nothing but a verified state is consumed', async () => {
       const used = new rs.UsedNonces();
-      for (const bad of [null, undefined, {ok: false, why: 'x'}, {ok: true}, {ok: true, nonce: 'short', expiresAt: now + MIN}, {ok: true, nonce: 'A'.repeat(22), expiresAt: 'soon'}]) {
-        assert.strictEqual(await rs.consume(used, bad), false, JSON.stringify(bad));
+      for (const bad of [null, undefined, {ok: false, why: 'x'}, {ok: true}, {ok: true, nonce: 'short', expiresAt: now + MIN}, {ok: true, nonce: 'A'.repeat(22), expiresAt: 'soon'},
+        // refused by verify, though it names a nonce and a time
+        {ok: false, nonce: 'A'.repeat(22), expiresAt: now + MIN}]) {
+        assert.strictEqual(await rs.consume(used, bad, {now}), false, JSON.stringify(bad));
       }
       assert.strictEqual(used.size, 0);
     });
@@ -191,6 +278,12 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       // room again once some expire
       assert.strictEqual(used.use('e', now + 3 * MIN, now + MIN), true);
       assert.strictEqual(used.size, 1);
+      // an expired one behind a longer-lived one makes room too (they are not always used in the order they expire)
+      const two = new rs.UsedNonces({max: 2});
+      assert.strictEqual(two.use('long', now + 5 * MIN, now), true);
+      assert.strictEqual(two.use('short', now + MIN, now), true);
+      assert.strictEqual(two.use('next', now + 5 * MIN, now + 2 * MIN), true, 'short has expired');
+      assert.strictEqual(two.use('long', now + 5 * MIN, now + 2 * MIN), false, 'long is still remembered');
     });
   });
 
@@ -225,6 +318,17 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       assert.notStrictEqual(got.key, SECRET, 'never the secret itself');
       const elsewhere = inChild('out({key: rs.key().toString("hex")});', {secret: crypto.randomBytes(32).toString('hex')});
       assert.notStrictEqual(elsewhere.key, want);
+    });
+
+    it('each caller has its own copy of the key: one that wipes it after use changes nobody else\'s', () => {
+      const got = inChild(`
+        const first = rs.key();
+        const before = first.toString('hex');
+        first.fill(0);
+        out({same: rs.key() === first, after: rs.key().toString('hex'), before});`);
+      assert.strictEqual(got.same, false);
+      assert.strictEqual(got.after, got.before);
+      assert.notStrictEqual(got.after, '0'.repeat(64));
     });
 
     it('follows the secret: loaded again as another one (a test, or the --hardened parent\'s check), the key is that one\'s', () => {
