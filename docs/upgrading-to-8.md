@@ -322,7 +322,8 @@ says how to write a module for this.
   only when the first one is due and your `Accept` allows
   `text/event-stream`; a call that answers first is plain JSON, as before. On
   stdio they're lines before the answer's line; on the shared runtime,
-  frames on your own session.
+  frames on your own session. A runtime started with `--no-workerThread`
+  (single-thread mode) sends none: its hops carry no call tokens to count by.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their
