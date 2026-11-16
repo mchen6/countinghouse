@@ -394,6 +394,48 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     fresh.c.end();
   });
 
+  // #300's follow-up: the restore's reset list reaches its session (the line in route-manager that passes it
+  // on), and a session's unanswered-form count crosses the restart in its state
+  it('a session in the daemon\'s reset list is told so at its resume, once; a kind it left one form unanswered of is still counted (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    const args = ['--settingsFile', settingsFile, '--loadModule', scenario(home)];
+    r = runtime(home, args);
+    let secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const id = a.welcome.session;
+    const token = a.welcome.resumeToken;
+    const hash = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+    // as the daemon hands it over after a re-exec: the row without its loosening, the session named in reset
+    r = runtime(home, args, {restore: {id: 'restore-1', type: 'restore',
+      sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['maxOutputBytes']}}], declines: [], reset: [id]}});
+    secret = await listening(r);
+    const back = await shim.session(r.socket, secret, undefined, {resume: token});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, JSON.stringify(back.refused));
+    let hello = null;
+    await until(async() => {
+      const list = await request(back.c, 'tools/list');
+      hello = list != null && list.result != null ? list.result.tools.map((x) => x.name).find((n) => /hello/.test(n)) : null;
+      return hello != null;
+    });
+    assert.ok(hello, r.err.slice(-2000));
+    const textOf = (got) => got.result.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    const first = await request(back.c, 'tools/call', {name: hello, arguments: {name: 'again'}});
+    assert.match(textOf(first), /your this-session loosenings were reset; ask again/, JSON.stringify(first).slice(0, 500));
+    const second = await request(back.c, 'tools/call', {name: hello, arguments: {name: 'again'}});
+    assert.doesNotMatch(textOf(second), /were reset/, 'said once');
+    // its next change tells its state whole: the unanswered kind is still in it
+    const set = await request(back.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '20s'}});
+    assert.strictEqual(set.result.structuredContent.new, 20000, JSON.stringify(set).slice(0, 400));
+    await until(() => r.told.some((m) => m.type === 'session-state' && m.session === id));
+    assert.deepStrictEqual(r.told.filter((m) => m.type === 'session-state' && m.session === id).pop().state,
+      {overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}], locks: [], formsLeft: 2, unanswered: ['maxOutputBytes']});
+    back.c.end();
+  });
+
   it('with no restore from the daemon, no confirmation form is shown for 30 minutes: what was declined before is not known (B2 Task 6)', async() => {
     const settingsFile = path.join(home, 'settings.json');
     r = runtime(home, ['--settingsFile', settingsFile], {restore: false, env: {NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`}});

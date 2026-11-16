@@ -177,6 +177,7 @@ one) as well as the ports it binds.
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
 | `test/stdio/03-module-data-dirs.js` | 9733 (a `--redisUrl` nothing listens on) |
+| `test/store/08-blob-options.js` | 9579 |
 | `test/test1.js` | 9527 |
 | `test/test2.js` | 9527 |
 | `test/test3.js` | 9527 |
