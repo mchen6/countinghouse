@@ -290,6 +290,8 @@ if (options.workerThread === true) {
   logger.I('file broker: up to ' + require('./lib/fs-broker/scheduler').FsScheduler.capFor(process.env.UV_THREADPOOL_SIZE) +
     ' module file operations in flight (UV_THREADPOOL_SIZE ' + process.env.UV_THREADPOOL_SIZE + ')');
 }
+// MCP completeness M6: the result store's effective limits (spec section 2)
+logger.I(require('./lib/store/blobs').describeLimits(options));
 
 if (options.modulePolicy != null) {
   try {

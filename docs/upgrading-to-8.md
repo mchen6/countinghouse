@@ -330,6 +330,24 @@ says how to write a module for this.
   `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
   knows only protocol revision 2024-11-05, which has no audio content type,
   may not render an audio block.
+- **Every binary field is a block, and a large one is a link.** Any other
+  media type (a PDF, a zip, `text/plain`) arrives as a `resource` block,
+  `{uri, mimeType, blob}`, whose `uri` (`countinghouse://r/<id>`) can be read
+  back; its reference in `structuredContent` carries the `uri` too. Before,
+  it stayed a base64 string there and in the `outputSchema`. Past
+  `--inlineContentBytes` (1 MiB of decoded bytes per result, in schema order)
+  a value is stored instead and sent as a `resource_link` with its `name`
+  (the field), `mimeType` and `size`; `structuredContent` holds
+  `{mimeType, bytes, uri}`. `resources/read` returns it to the caller who
+  made the call, in the same session, for `--resourceRetention` (24 h), as
+  `text` for valid UTF-8 `text/*`, else `blob`; anything else is "Resource
+  not found". The server now declares `resources: {}`; `resources/list` is
+  always empty. A result whose stored values would pass a store limit is
+  refused `RESULT_STORE_FULL`, with nothing stored. A client on protocol
+  revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
+  may not show a link; it can still read the `uri` from the text block.
+  `ctx.call` and `invoke-action` are unchanged: their output keeps the base64
+  in place.
 - **Output schemas of any JSON type, for 2026-07-28 requests.** A modern
   `tools/list` advertises an output schema whatever its root type (an array,
   a string, a number, null), and a modern result carries the output as

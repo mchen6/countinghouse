@@ -98,6 +98,7 @@ one) as well as the ports it binds.
 | `test/mcp-contract/11-progress-e2e.js` | 9580 |
 | `test/mcp-contract/12-any-json-output.js` | 9581 |
 | `test/mcp-contract/14-handler-progress-e2e.js` | 9582 |
+| `test/mcp-contract/16-resources-read.js` | 9583, 9585 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |

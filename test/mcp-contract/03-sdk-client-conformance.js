@@ -269,34 +269,40 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
     assert.strictEqual(r._meta['countinghouse/code'], 'CONFORMANCE_CODED');
   });
 
-  // M4 (spec section 1): an image or audio value is a block of its own; in
-  // structuredContent (and so in the text block) it is a reference, as the
-  // advertised outputSchema says. Any other media type stays base64 until M6.
+  // M4 and M6 (spec sections 1 and 2): every binary value is a block of its
+  // own; in structuredContent (and so in the text block) it is a reference,
+  // as the advertised outputSchema says. An image or audio value inline is
+  // its block; any other media type is a resource block, stored so its uri
+  // can be read; past --inlineContentBytes, a resource link.
   const b64 = (t) => Buffer.from(t).toString('base64');
   const ref = (mimeType, text, block) => ({mimeType, bytes: Buffer.byteLength(text), block});
-  const BINARY_STRUCTURED = {caption: 'a chart', chart: ref('image/png', 'png bytes', 1),
-    clips: [ref('audio/wav', 'wav one', 2), ref('audio/wav', 'wav two!', 3)], doc: b64('%PDF-1.7')};
+  const STORED = /^countinghouse:\/\/r\/[A-Za-z0-9_-]{43}$/;
+  const binaryStructured = (docUri) => ({caption: 'a chart', chart: ref('image/png', 'png bytes', 1),
+    clips: [ref('audio/wav', 'wav one', 2), ref('audio/wav', 'wav two!', 3)], doc: {...ref('application/pdf', '%PDF-1.7', 4), uri: docUri}});
 
-  it('binary fields: the advertised schema has references for image and audio, keeping title and description; a PDF stays a string', () => {
+  it('binary fields: the advertised schema has a reference for every binary field, keeping title and description', () => {
     const s = byName(`${SHAPE}binary_out`).outputSchema;
     assert.strictEqual(s.properties.chart.type, 'object');
     assert.deepStrictEqual(s.properties.chart.required, ['mimeType', 'bytes']);
     assert.strictEqual(s.properties.chart.title, 'Chart');
     assert.strictEqual(s.properties.chart.description, 'The rendered chart');
     assert.strictEqual(s.properties.clips.items.type, 'object');
-    assert.strictEqual(s.properties.doc.type, 'string');
-    assert.strictEqual(s.properties.doc.contentMediaType, 'application/pdf');
+    assert.strictEqual(s.properties.doc.type, 'object');
+    assert.strictEqual(s.properties.doc.contentMediaType, undefined);
   });
 
-  it('binary fields: a text block of the references, then one block per image and audio value, in schema order', async () => {
+  it('binary fields: a text block of the references, then one block per binary value, in schema order', async () => {
     const r = await client.callTool({name: `${SHAPE}binary_out`, arguments: {}});
     assert.strictEqual(r.isError, false);
-    assert.deepStrictEqual(r.structuredContent, BINARY_STRUCTURED);
-    assert.deepStrictEqual(JSON.parse(r.content[0].text), BINARY_STRUCTURED, 'the text block carries no base64 of a block');
-    assert.deepStrictEqual(r.content.slice(1, 4), [
+    const docUri = r.structuredContent.doc.uri;
+    assert.match(docUri, STORED);
+    assert.deepStrictEqual(r.structuredContent, binaryStructured(docUri));
+    assert.deepStrictEqual(JSON.parse(r.content[0].text), binaryStructured(docUri), 'the text block carries no base64 of a block');
+    assert.deepStrictEqual(r.content.slice(1, 5), [
       {type: 'image', data: b64('png bytes'), mimeType: 'image/png'},
       {type: 'audio', data: b64('wav one'), mimeType: 'audio/wav'},
-      {type: 'audio', data: b64('wav two!'), mimeType: 'audio/wav'}
+      {type: 'audio', data: b64('wav two!'), mimeType: 'audio/wav'},
+      {type: 'resource', resource: {uri: docUri, mimeType: 'application/pdf', blob: b64('%PDF-1.7')}}
     ]);
     const validate = ajv.compile(byName(`${SHAPE}binary_out`).outputSchema);
     assert.ok(validate(r.structuredContent), ajv.errorsText(validate.errors));
@@ -308,14 +314,16 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
     assert.strictEqual(r._meta['countinghouse/code'], 'TOO_MANY_BINARY_VALUES');
   });
 
-  // M6 flips this one: past --inlineContentBytes (1 MiB by default) the image
-  // is stored and linked instead
-  it('binary fields: until M6, an image is inline however large (2 MiB here)', async () => {
+  // M6: past --inlineContentBytes (1 MiB by default) the image is stored and
+  // linked instead
+  it('binary fields: an image past the inline budget (2 MiB here) is stored and linked', async () => {
     const r = await client.callTool({name: `${SHAPE}big_image_out`, arguments: {}});
     assert.strictEqual(r.isError, false);
-    assert.deepStrictEqual(r.structuredContent, {img: {mimeType: 'image/png', bytes: 2 * 1024 * 1024, block: 1}});
-    assert.strictEqual(r.content[1].type, 'image');
-    assert.strictEqual(r.content[1].data.length, Math.ceil(2 * 1024 * 1024 / 3) * 4);
+    const uri = r.structuredContent.img.uri;
+    assert.match(uri, STORED);
+    assert.deepStrictEqual(r.structuredContent, {img: {mimeType: 'image/png', bytes: 2 * 1024 * 1024, uri}});
+    assert.deepStrictEqual(r.content[1], {type: 'resource_link', uri, name: 'img', mimeType: 'image/png', size: 2 * 1024 * 1024});
+    assert.ok(!r.content.some((c) => c.type === 'image'), 'no inline copy');
   });
 
   describe('tasks/result', () => {
@@ -338,10 +346,12 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
       assert.ok(validate(r.structuredContent), ajv.errorsText(validate.errors));
     });
 
-    it('a task with binary fields returns the same references and blocks as a call', async () => {
+    it('a task with binary fields returns the same references and blocks as a call, stored once at completion', async () => {
       const r = await runTask(`${SHAPE}binary_out`);
-      assert.deepStrictEqual(r.structuredContent, BINARY_STRUCTURED);
-      assert.deepStrictEqual(r.content.slice(1, 4).map((c) => c.type), ['image', 'audio', 'audio']);
+      const docUri = r.structuredContent.doc.uri;
+      assert.match(docUri, STORED);
+      assert.deepStrictEqual(r.structuredContent, binaryStructured(docUri));
+      assert.deepStrictEqual(r.content.slice(1, 5).map((c) => c.type), ['image', 'audio', 'audio', 'resource']);
     });
 
     it('a task without an output schema returns text only', async () => {
