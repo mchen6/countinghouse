@@ -701,8 +701,7 @@ sessions) all of this is each session's own, for the two caps:
   dialog expired. Each one is told to ch-local's daemon (the setting and a
   time, nothing else), which keeps it to hand back to a restarted runtime.
   A lock runs 30 minutes from its third event, so a restarted runtime
-  needs the last 60 minutes of them to rebuild one still running (reading
-  that list back at a restart is not built yet).
+  needs the last 60 minutes of them to rebuild one still running (below).
 
 **A change for all sessions.** In one session the user may ask to change
 one of the two caps for every session; the model's call then says
@@ -740,6 +739,33 @@ raises what the file yields (a runtime started above it by a flag, or a
 tighter value stored for the next start): such a value holds for every
 session until the runtime restarts. Every other setting stays the
 terminal's.
+
+**Across a runtime restart.** The runtime keeps nothing of a session on
+disk. After every change it tells ch-local's daemon the session's whole
+state, which is exactly its own values, its locks and its dialogs left:
+no key, no user's name, no nonce, no pending dialog (a dialog open at a
+restart is lost: its state was under a key the new runtime does not have).
+The daemon keeps the table in memory and hands it to the next runtime
+before that one listens. Nothing in it is trusted further than its shape,
+which is checked twice:
+
+- a session's row waits for the session: its shim resumes it by a token
+  only it holds, and a row whose session never comes back is dropped;
+- its locks and dialogs left are restored as they were, which can only
+  make it tighter than a new session;
+- a tightening applies only if it is at least as tight as today's default
+  and the ceiling; a value above today's default is not applied at all,
+  whatever the row calls it;
+- a loosening applies only as a new one would be let: the session's own
+  client says now that nothing in its configuration could answer a dialog,
+  the ceiling allows it, and the default has not been lowered under the one
+  it was confirmed over. Otherwise it is reset, and the session is told to
+  ask again;
+- what was declined before the restart loads into the user's window, so a
+  lock still running holds. A list that cannot be taken, a list longer than
+  the window holds, or no table at all (the daemon's did not arrive in
+  time) locks every setting's dialogs for 30 minutes: what cannot be shown
+  was declined is taken as declined.
 
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
