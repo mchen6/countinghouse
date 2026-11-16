@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "hopService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "hops": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          }
+        },
+        "required": [
+          "hops"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "asked": {
+            "type": "boolean"
+          },
+          "answer": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "sum": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asked"
+        ]
+      },
+      "questions": {
+        "go": {
+          "type": "object",
+          "properties": {
+            "yes": {
+              "type": "boolean",
+              "title": "Yes"
+            }
+          },
+          "required": [
+            "yes"
+          ]
+        }
+      }
+    }
+  }
+}
