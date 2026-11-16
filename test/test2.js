@@ -16,7 +16,7 @@ describe("Test started in COUNTINGHOUSE single-thread mode", () => {
   });
 
   testFiles.forEach((file) => {
-    if (file !== 'input.bson' && file !== 'test018.js') require(`./unit/${file}`);
+    require(`./unit/${file}`);
   });
 
   after((done) => {
