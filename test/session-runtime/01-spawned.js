@@ -716,6 +716,10 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.deepStrictEqual(other.settled, {op: 'own-runtime', reason: 'credential'});
     const lacking = await shim.session(r.socket, secret, frame('CH_EXAMPLE_OTHER_TOKEN', value));
     assert.deepStrictEqual(lacking.settled, {op: 'own-runtime', reason: 'credential'});
+    // the daemon's own variables are never a pack credential: its HOME,
+    // named with its real value, still gets a runtime of its own
+    const home_ = await shim.session(r.socket, secret, frame('HOME', process.env.HOME || ''));
+    assert.deepStrictEqual(home_.settled, {op: 'own-runtime', reason: 'credential'});
     assert.ok(!r.err.includes(value) && !r.out.includes(value), 'the value is never printed');
     same.c.end();
   });
