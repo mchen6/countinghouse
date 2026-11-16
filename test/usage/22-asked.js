@@ -1,0 +1,49 @@
+'use strict';
+// MCP completeness M13 (the design, section 8): the usage record of a call
+// that asked its user a question. Each pass of such a call is a tools/call
+// of its own; the pass that ends on a question is recorded with outcome
+// "asked" and its round, so an operator can see a module that asks, and one
+// that asks late (work done before the ask is done again on the next pass).
+// It is no error and no result: the report's errors do not count it.
+const assert = require('assert');
+const {createUsage} = require('../../lib/usage');
+const {usageReport} = require('../../lib/usage/report');
+
+const NOW = Date.parse('2026-11-15T12:00:00Z');
+const ADMIN = {caller: 'c1', isAdmin: true};
+
+describe('usage 22: the record of a call that asked (MCP completeness M13)', () => {
+  const asked = (u, round) => {
+    const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round});
+    return c;
+  };
+
+  it('the pass that ends on a question is recorded "asked" with its round; no other record has a round', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+    const first = asked(u, 1);
+    const second = asked(u, 2);
+    const done = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    u.recordOut(done, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'ok', round: 3});
+    const failed = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    u.recordOut(failed, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
+    const by = (call) => u.records().find((r) => r.call === call);
+    assert.deepStrictEqual([by(first).outcome, by(first).round, by(second).round], ['asked', 1, 2]);
+    assert.ok(!('round' in by(done)) && !('round' in by(failed)), 'a round is an asked record\'s only');
+    assert.ok(!('code' in by(first)));
+    // a round that is no round is not recorded
+    for (const bad of [0, -1, 1.5, '2', null, undefined, 99]) assert.ok(!('round' in by(asked(u, bad))), String(bad));
+  });
+
+  it('the report counts it among the outcomes and never among the errors', async () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+    asked(u, 1);
+    asked(u, 2);
+    const done = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    u.recordOut(done, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'ok'});
+    const failed = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+    u.recordOut(failed, {tool: 't', bytes: 10, lines: 1, ms: 7, outcome: 'error', code: 'ASK_STATE_INVALID'});
+    const report = await usageReport({since: 'all'}, ADMIN, {usage: u, usageDir: null, now: () => NOW});
+    assert.deepStrictEqual(report.profile.errors.calls, {ASK_STATE_INVALID: 1});
+  });
+});

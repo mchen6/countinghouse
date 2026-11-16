@@ -76,6 +76,8 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     it('is one elicitation, a form: the composed text and the question\'s schema, with a state bound to this call', async () => {
       const made = await firstForm();
       assert.deepStrictEqual(made.inputRequests, {answer: {method: 'elicitation/create', params: {mode: 'form', message: textOf('first'), requestedSchema: FORM}}});
+      // and its round, for the call's usage record
+      assert.strictEqual(made.round, 1);
       const verified = requestState.verify(key, made.requestState, binding());
       assert.strictEqual(verified.ok, true);
       assert.deepStrictEqual([verified.question, verified.round, verified.answers], [`${keyOf('first')}:overwrite`, 1, {}]);

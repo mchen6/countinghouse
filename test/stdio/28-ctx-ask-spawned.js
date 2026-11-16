@@ -118,6 +118,12 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
       assert.deepStrictEqual([retry.result.structuredContent.asked, retry.result.structuredContent.answer], [true, {yes: true, note: 'go'}]);
       // the handler ran once for the first pass and once for the retry (and once for the readiness probe)
       assert.strictEqual(retry.result.structuredContent.runs, 3);
+      // the usage records say the first pass asked, in round 1, and the retry's pass answered
+      const records = [];
+      const walk = (dir) => { for (const e of fs.readdirSync(dir, {withFileTypes: true})) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (p.endsWith('.jsonl')) records.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))); } };
+      walk(home);
+      const passes = records.filter((x) => x.tool === TOOL && x.outcome !== undefined && x.server === undefined).map((x) => [x.outcome, x.round]);
+      assert.deepStrictEqual(passes.slice(-2), [['asked', 1], ['ok', undefined]], JSON.stringify(records.slice(-4)).slice(0, 600));
       const again = await call(3, {what: 'it'}, accept(first.result.requestState, {yes: true, note: 'go'}));
       assert.strictEqual(codeOf(again), 'ASK_STATE_INVALID', JSON.stringify(again).slice(0, 400));
       // and nothing ran for it
