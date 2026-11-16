@@ -142,6 +142,75 @@ describe('questions 07: a part\'s ctx.ask, through composition (MCP completeness
     });
   });
 
+  // The reviewer's ruling (2026-11-16): whether a call can end on a question is the called action's own
+  // declaration, or that of an action it can reach through the modules' verified declared calls. A
+  // module's calls are its own, whichever of its actions makes them.
+  describe('whether a call can end on a question', () => {
+    const at = (who, actionName = who.actionName) => ({deviceID: who.deviceID, serviceID: who.serviceID, actionName});
+    const same = (a, b) => a.deviceID === b.deviceID && a.serviceID === b.serviceID && a.actionName === b.actionName;
+    // who declares a question, and what each module calls
+    const world = (askers, calls) => ({
+      asksAt: (target) => askers.some((a) => same(a, target)),
+      callsOf: (deviceID) => calls[deviceID] || []
+    });
+
+    it('the called action declares one: yes, and nothing it calls is looked at', () => {
+      let looked = 0;
+      assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => true, callsOf: () => { looked += 1; return []; }}), true);
+      assert.strictEqual(looked, 0);
+    });
+
+    it('it declares none and calls nothing, or nothing it can reach declares one: no', () => {
+      assert.strictEqual(ask.canAsk(at(OUTER), world([], {})), false);
+      assert.strictEqual(ask.canAsk(at(OUTER), world([], {[OUTER.deviceID]: [at(PART)], [PART.deviceID]: [at(OTHER)]})), false);
+    });
+
+    it('an action it calls declares one, or one that action\'s module calls does: yes', () => {
+      assert.strictEqual(ask.canAsk(at(OUTER), world([at(PART)], {[OUTER.deviceID]: [at(PART)]})), true);
+      assert.strictEqual(ask.canAsk(at(OUTER), world([at(OTHER)], {[OUTER.deviceID]: [at(PART)], [PART.deviceID]: [at(OTHER)]})), true, 'two hops down');
+    });
+
+    it('only an action that is called counts: another action of a part, with a question, is not reached', () => {
+      assert.strictEqual(ask.canAsk(at(OUTER), world([at(PART, 'another')], {[OUTER.deviceID]: [at(PART)]})), false);
+      // nor the called module's own other action: the call is of one action
+      assert.strictEqual(ask.canAsk(at(OUTER), world([at(OUTER, 'another')], {})), false);
+    });
+
+    it('modules that call each other are walked once each', () => {
+      const seen = [];
+      const calls = {[OUTER.deviceID]: [at(PART)], [PART.deviceID]: [at(OTHER), at(OUTER)], [OTHER.deviceID]: [at(PART)]};
+      const w = world([], calls);
+      assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: w.asksAt, callsOf: (d) => { seen.push(d); return w.callsOf(d); }}), false);
+      assert.deepStrictEqual(seen.sort(), [OTHER.deviceID, OUTER.deviceID, PART.deviceID].sort());
+    });
+
+    it('the walk is bounded: past its bound, or when a lookup fails, the call is taken as one that can', () => {
+      // a chain of modules longer than the bound, none of which asks
+      const chain = {};
+      for (let i = 0; i <= ask.MAX_REACH + 1; i++) chain[`d${i}`] = [{deviceID: `d${i + 1}`, serviceID: 's', actionName: 'a'}];
+      assert.strictEqual(ask.canAsk({deviceID: 'd0', serviceID: 's', actionName: 'a'}, world([], chain)), true);
+      const within = {};
+      for (let i = 0; i < 5; i++) within[`d${i}`] = [{deviceID: `d${i + 1}`, serviceID: 's', actionName: 'a'}];
+      assert.strictEqual(ask.canAsk({deviceID: 'd0', serviceID: 's', actionName: 'a'}, world([], within)), false);
+      assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => { throw new Error('gone'); }, callsOf: () => []}), true);
+      assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => false, callsOf: () => { throw new Error('gone'); }}), true);
+      assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => false, callsOf: () => 'not a list'}), false, 'no calls it can read are no calls');
+    });
+
+    it('begin and the arguments\' copy take it as a value or as a function, asked only where someone can be asked', async () => {
+      let asked = 0;
+      const lazy = () => { asked += 1; return true; };
+      const base = {modern: true, capabilities: {elicitation: {}}, questionsOn: true, binding: {caller: 'c', session: '', method: 'tools/call', tool: 't', arguments: {requestState: 'x'}}};
+      assert.strictEqual((await ask.begin(Object.assign({}, base, {modern: false, asks: lazy}))).askable, false);
+      assert.strictEqual(asked, 0, 'a call no one can be asked does not walk');
+      await assert.rejects(ask.begin(Object.assign({}, base, {asks: lazy})), (e) => e.code === 'ARGUMENTS_INVALID');
+      assert.strictEqual(asked, 1);
+      const args = {id: 'a'};
+      assert.ok(ask.bindingArguments({state: begun(), asks: () => true, arguments: args}) !== args);
+      assert.strictEqual(ask.bindingArguments({state: begun(), asks: () => false, arguments: args}), args);
+    });
+  });
+
   describe('the state names who asked', () => {
     const key = crypto.randomBytes(32);
     const FORM = {type: 'object', properties: {replace: {type: 'boolean'}}, required: ['replace']};

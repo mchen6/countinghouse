@@ -106,6 +106,16 @@ describe('sandbox 62: a part\'s question reaches the outer call\'s user, over HT
     });
   }
 
+  // The scenario declares no question, and can still end on one: its part's. So it takes no answer from
+  // its arguments either (the reviewer's ruling: the precise walk over the verified declared calls).
+  it('a scenario whose part asks takes no answer from its arguments, though its own action declares no question', async () => {
+    await start();
+    for (const smuggled of [{requestState: 'v1.x.y'}, {inputResponses: {answer: {action: 'accept', content: {replace: true}}}}]) {
+      const got = await call(Object.assign({id: 'a.txt'}, smuggled));
+      assert.strictEqual(got.result && got.result._meta && got.result._meta['countinghouse/code'], 'ARGUMENTS_INVALID', JSON.stringify(got).slice(0, 400));
+    }
+  });
+
   // the reviewer's addition: an outer call that came by HTTP invoke-action has no one to ask, and so has its part
   it('under an outer call made by HTTP invoke-action, a part has no one to ask', async () => {
     await start();
