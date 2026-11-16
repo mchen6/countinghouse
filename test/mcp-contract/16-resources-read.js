@@ -54,11 +54,11 @@ async function startServer(port, h, extra = []) {
   return server;
 }
 
-function rpc(port, method, params, key = KEY) {
+function rpc(port, method, params, key = KEY, extraHeaders = {}) {
   const payload = JSON.stringify({jsonrpc: '2.0', id: 1, method, params});
   return new Promise((resolve, reject) => {
     const req = http.request({host: '127.0.0.1', port, path: '/mcp', method: 'POST',
-      headers: {'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-CH-Key': key, 'Content-Length': Buffer.byteLength(payload)}}, (res) => {
+      headers: {'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'X-CH-Key': key, 'Content-Length': Buffer.byteLength(payload), ...extraHeaders}}, (res) => {
       let body = '';
       res.on('data', (c) => { body += c; });
       res.on('end', () => resolve(JSON.parse(body)));
@@ -153,6 +153,18 @@ describe('mcp-contract 16: stored results, read back (M6)', function() {
       notFound(await read(bad), `malformed: ${JSON.stringify(bad)}`);
     }
     assert.ok((await read(uri)).result != null, 'its owner still reads it');
+  });
+
+  // the owner is the resolved caller (session.appKey), never another key the
+  // request carries: a regression guard (the two are equal on every path
+  // today, so it could not fail before the fix)
+  it('the owner is the caller the call was authenticated as, whatever other key the request carries', async () => {
+    const r = await rpc(PORT, 'tools/call', {name: `${PART}pdf`, arguments: {apiKey: OTHER, key: OTHER}}, KEY, {Authorization: `Bearer ${OTHER}`});
+    assert.ok(r.result != null && r.result.isError === false, JSON.stringify(r).slice(0, 300));
+    const {uri} = r.result.structuredContent.doc;
+    assert.ok((await read(uri)).result != null, 'the authenticated caller reads it');
+    notFound(await read(uri, OTHER), 'the other key in the request');
+    notFound(await rpc(PORT, 'resources/read', {uri}, OTHER, {Authorization: `Bearer ${KEY}`}), 'the other key, with the owner\'s as a bearer token');
   });
 
   it('a composite\'s result is its outer caller\'s: the part\'s runsModules identity reads nothing', async () => {
