@@ -3,7 +3,7 @@
 // told its tool list changed.
 //
 // That last part is the point of countinghouse_call_tool. The server is
-// already correct (buildToolList recomputes per request), but no
+// already correct (the gateway lists afresh per request), but no
 // notifications/tools/list_changed is ever sent, so a client holding a cached
 // list would not know to re-ask. The agent calls by name instead.
 const assert  = require('assert');

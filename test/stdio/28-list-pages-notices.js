@@ -96,6 +96,42 @@ describe('stdio 28: a change past the first page is still announced (M1)', funct
     await listedPastPageOne(params);
   });
 
+  // The review of M1: what a client was shown is the list as it was when it
+  // began paging. A page-1 tool that goes while it pages is announced, even
+  // when the next page is read before the change has settled.
+  it('a legacy session paging on is sent list_changed for a tool gone from page 1 it already read', async() => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-28-'));
+    homes.push(home);
+    const zero = pack(home, 'ch-pack-zero', ['zero_tool']);
+    io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
+      '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc', '--packsRoot', path.join(home, 'packs'),
+      '--listPageSize', '10', '--loadModule', zero], {ipc: true});
+    const init = await io.request({jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'stdio-28', version: '1.0.0'}}}, 60000);
+    assert.ok(init.result != null, `${JSON.stringify(init)}\n${io.err.slice(-1500)}`);
+    for (const [name, tools] of [['ch-pack-a', ['a_1', 'a_2', 'a_3']], ['ch-pack-big', Array.from({length: 12}, (_, i) => `big_${String(i).padStart(2, '0')}`)]]) {
+      const r = await io.control({type: 'load', name, scenario: pack(home, name, tools)});
+      assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-2000)}`);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+    const one = await io.request({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}}, 60000);
+    assert.ok(one.result.tools.some((t) => t.name === 'a_1') && typeof one.result.nextCursor === 'string', JSON.stringify(one.result.tools.map((t) => t.name)));
+    await new Promise((r) => setTimeout(r, 1000));
+    const changes = () => messages().filter((m) => m.method === 'notifications/tools/list_changed').length;
+    const before = changes();
+    // the next page read while the unload happens, inside its settling
+    const unloading = io.control({type: 'unload', name: 'ch-pack-a'});
+    const pages = [];
+    for (let i = 0; i < 6; i++) {
+      pages.push(io.request({jsonrpc: '2.0', id: 10 + i, method: 'tools/list', params: {cursor: one.result.nextCursor}}, 30000));
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    const gone = await unloading;
+    assert.strictEqual(gone.ok, true, JSON.stringify(gone));
+    for (const two of await Promise.all(pages)) assert.ok(two.result != null, JSON.stringify(two));
+    assert.ok(await until(() => changes() > before), `no list_changed\n${io.err.slice(-1500)}`);
+  });
+
   it('a 2026-07-28 listen opened after reading page 1 hears of a tool added on page 2', async() => {
     const {home, params} = await started(MODERN_META);
     io.notify({jsonrpc: '2.0', id: 2, method: 'subscriptions/listen', params: {_meta: MODERN_META, notifications: {toolsListChanged: true}}});

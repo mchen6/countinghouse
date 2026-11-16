@@ -19,6 +19,17 @@ describe('mcp-contract 20: the page helper (M1)', () => {
     assert.strictEqual(MAX_CURSOR_BYTES, 512);
   });
 
+  // The review of M1: a tool name is <device>_<service>_<action>, up to 64 +
+  // 128 + 64 characters and a _<n> suffix, so the server must take back any
+  // cursor it gives
+  it('the longest name a module can give a tool round-trips, within 512 bytes', () => {
+    const longest = `${'d'.repeat(64)}_${'s'.repeat(128)}_${'a'.repeat(64)}_9999`;
+    const c = encodeCursor('tools', longest);
+    assert.ok(c.length <= MAX_CURSOR_BYTES, `${c.length} bytes`);
+    assert.strictEqual(decodeCursor('tools', c), longest);
+    assert.ok(MAX_ANCHOR_CHARS >= longest.length);
+  });
+
   it('anything that is no cursor of this kind is null', () => {
     const good = {v: 1, k: 'tools', a: 'x'};
     for (const [why, cursor] of [
