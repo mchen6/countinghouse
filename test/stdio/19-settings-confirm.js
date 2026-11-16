@@ -27,6 +27,17 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     assert.deepStrictEqual(c.verify(requestState, retry), {ok: false, code: 'SETTING_CONFIRMATION_USED'});
   });
 
+  // M12 moved the nonce-and-HMAC mechanics to lib/request-state.js, which a
+  // module's question shares; the dialog's state is, byte for byte, what it was
+  it('the state is nonce.mac as before: 16 random bytes, and HMAC-SHA256 under the start\'s key over [label, nonce, session, name, next], base64url', () => {
+    const crypto = require('crypto');
+    const {requestState} = c.stage(change);
+    assert.match(requestState, /^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
+    const [nonce, mac] = requestState.split('.');
+    assert.strictEqual(mac, crypto.createHmac('sha256', c.key).update(JSON.stringify(['countinghouse-confirm/1', nonce, 's1', 'maxOutputBytes', 16 * MiB])).digest('base64url'));
+    assert.strictEqual(c.macOf(nonce, retry), mac);
+  });
+
   it('the same state twice in one tick: exactly one applies', () => {
     const {requestState} = c.stage(change);
     const results = [c.verify(requestState, retry), c.verify(requestState, retry)];

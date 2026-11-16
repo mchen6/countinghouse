@@ -220,6 +220,25 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
       assert.match(problem.reason, /more than 100000 schema nodes/);
     });
 
+    it('what a module declares is checked in the validator too (lib/declarations.js): a problem with its stage, with or without a schema.json', async () => {
+      const PNG = {type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png'};
+      const dir = made(moduleWith('decl', {type: 'object'}));
+      fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$id: '#/', s: {ping: {input: {type: 'object'}, output: {type: 'object', oneOf: [{type: 'object', properties: {image: PNG}}]}}}}));
+      const problem = await moduleSpec.safety(await moduleSpec.build(dir, 'decl'));
+      assert.strictEqual(problem.stage, 'declarations');
+      assert.match(safety().refusalFor('decl', problem).message, /stage=declarations -- s\.ping output .*is under oneOf; declare it inline/);
+      // no schema.json at all: the spec's own declarations are still checked
+      const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-safety-bare-'));
+      dirs.push(bare);
+      fs.writeFileSync(path.join(bare, 'api.json'), JSON.stringify({device: {friendlyName: 'bare', serviceList: {'urn:countinghouse-test:serviceID:s': {
+        actionList: [{name: 'ping', resource: {uriTemplate: 'a//b', name: 'ab'}}]}}}}));
+      const bareProblem = await moduleSpec.safety(await moduleSpec.build(bare, 'bare'));
+      assert.strictEqual(bareProblem.stage, 'declarations');
+      assert.match(bareProblem.reason, /uriTemplate/);
+      // and a module that declares nothing has none
+      assert.strictEqual(await moduleSpec.safety(await moduleSpec.build(made(moduleWith('decl-none', {type: 'object'})), 'decl-none')), null);
+    });
+
     it('a percent-encoded action pointer resolves as before ("#" + pointer, decoded per token), in the validator', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-safety-pct-'));
       dirs.push(dir);
