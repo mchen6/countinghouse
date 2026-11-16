@@ -1071,6 +1071,9 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
     // share per caller, as the bytes have. One caller holding 4096 small
     // live hops kept every other caller refused until its deadlines passed.
     describe('(#288 follow-up) the count held by one caller', () => {
+      // a sixteenth of the 4096: honest use is 16 hops in flight a channel, so
+      // sixteen channels' worth, and sixteen caller workers to fill the count
+      const SHARE = 256;
       let small;
       const hop = (w, channel, invokeId, token) => broker.handleAnnouncement(Object.assign({channel, invokeId, token, epoch: EPOCH, inputBytes: small}, TARGET), w);
       const another = (id) => {
@@ -1085,18 +1088,18 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         small = bytes({input: {v: 1}});
       });
 
-      it('a caller at its share (a quarter of the count) is refused RATE_LIMITED; another caller is not; its own ended hops make room', () => {
+      it('a caller at its share (a sixteenth of the count) is refused RATE_LIMITED; another caller is not; its own ended hops make room', () => {
         let at = 5000;
         broker.monotonicMs = () => at;
         const token = tokens().issue(ENTRY(caller.workerId));
-        for (let i = 0; i < 1024; i++) hop(caller, pair(), 1000 + i, token);
-        assert.deepStrictEqual(caller.refusals, [], '1024 small hops are within its share');
+        for (let i = 0; i < SHARE; i++) hop(caller, pair(), 1000 + i, token);
+        assert.deepStrictEqual(caller.refusals, [], '256 small hops are within its share');
         const walked = [];
         const releaseEnded = broker.releaseEnded.bind(broker);
         broker.releaseEnded = (workerId) => { walked.push(workerId); return releaseEnded(workerId); };
         hop(caller, pair(), 3000, token);
         assert.deepStrictEqual(caller.refusals.map((r) => [r.invokeId, r.errCode]), [[3000, 'RATE_LIMITED']]);
-        assert.strictEqual(broker.announced.size, 1024, 'nothing live was released');
+        assert.strictEqual(broker.announced.size, SHARE, 'nothing live was released');
         assert.deepStrictEqual(walked, [caller.workerId], 'over its own share it has its own hops looked at, not every caller\'s');
         // another caller worker, on its own channel: not refused by the first one's count
         const other = another(17);
@@ -1118,14 +1121,14 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       it('the share is the caller worker\'s, over all its channels: half on each of two, and the next is refused on either', () => {
         broker.channelRegistry.second = {callerWM: caller, calleeWM: callee, grants: {}};
         const token = tokens().issue(ENTRY(caller.workerId));
-        for (let i = 0; i < 512; i++) { hop(caller, pair(), 1000 + i, token); hop(caller, 'second', 1000 + i, token); }
+        for (let i = 0; i < SHARE / 2; i++) { hop(caller, pair(), 1000 + i, token); hop(caller, 'second', 1000 + i, token); }
         assert.deepStrictEqual(caller.refusals, []);
         hop(caller, 'second', 4000, token);
         hop(caller, pair(), 4001, token);
         assert.deepStrictEqual(caller.refusals.map((r) => [r.channel, r.errCode]), [['second', 'RATE_LIMITED'], [pair(), 'RATE_LIMITED']]);
       });
 
-      // my /code-review: a caller parked at its count share (1024 small live
+      // my /code-review: a caller parked at its count share (256 small live
       // hops are enough) made the broker walk every held hop at each further
       // announcement, at the message rate. A walk that released nothing is
       // not repeated for that caller within 100 ms.
@@ -1133,7 +1136,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         let at = 5000;
         broker.monotonicMs = () => at;
         const token = tokens().issue(ENTRY(caller.workerId));
-        for (let i = 0; i < 1024; i++) hop(caller, pair(), 1000 + i, token);
+        for (let i = 0; i < SHARE; i++) hop(caller, pair(), 1000 + i, token);
         let walks = 0;
         const releaseEnded = broker.releaseEnded.bind(broker);
         broker.releaseEnded = (workerId) => { walks += 1; return releaseEnded(workerId); };
@@ -1155,35 +1158,35 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
         assert.ok(broker.announced.has(`${pair()}/3007`), 'held: the walk released its ended hops');
         assert.strictEqual(broker.announced.size, 1);
         // that walk released something, so the caller is not held off: at its share again, the next walk runs at once
-        for (let i = 0; i < 1023; i++) hop(caller, pair(), 6000 + i, fresh);
+        for (let i = 0; i < SHARE - 1; i++) hop(caller, pair(), 6000 + i, fresh);
         hop(caller, pair(), 8000, fresh);
         assert.strictEqual(walks, 4, 'no wait after a walk that released hops');
         // another caller's walks are its own
         const other = another(18);
         const theirs = tokens().issue(ENTRY(other.workerId));
-        for (let i = 0; i < 1024; i++) hop(other, `${other.workerId}:${callee.workerId}`, 1 + i, theirs);
+        for (let i = 0; i < SHARE; i++) hop(other, `${other.workerId}:${callee.workerId}`, 1 + i, theirs);
         hop(other, `${other.workerId}:${callee.workerId}`, 5000, theirs);
         assert.strictEqual(walks, 5);
       });
 
-      it('one caller can no longer fill the count: with its share held live, three more callers each hold theirs', () => {
-        const callers = [caller, another(41), another(42), another(43)];
+      it('one caller can no longer fill the count: with its share held live, fifteen more callers each hold theirs', () => {
+        const callers = [caller].concat(Array.from({length: 15}, (x, i) => another(41 + i)));
         for (const w of callers) {
           const token = tokens().issue(ENTRY(w.workerId));
           const channel = w === caller ? pair() : `${w.workerId}:${callee.workerId}`;
-          for (let i = 0; i < 1024; i++) hop(w, channel, 5000 + i, token);
+          for (let i = 0; i < SHARE; i++) hop(w, channel, 5000 + i, token);
         }
         assert.deepStrictEqual(callers.flatMap((w) => w.refusals), [], 'each within its own share');
         assert.strictEqual(broker.announced.size, 4096);
-        // the total still bounds them all: a fifth caller is refused while all are live
-        const fifth = another(44);
-        hop(fifth, `${fifth.workerId}:${callee.workerId}`, 1, tokens().issue(ENTRY(fifth.workerId)));
-        assert.deepStrictEqual(fifth.refusals.map((r) => r.errCode), ['RATE_LIMITED']);
+        // the total still bounds them all: a seventeenth caller is refused while all are live
+        const last = another(60);
+        hop(last, `${last.workerId}:${callee.workerId}`, 1, tokens().issue(ENTRY(last.workerId)));
+        assert.deepStrictEqual(last.refusals.map((r) => r.errCode), ['RATE_LIMITED']);
       });
 
       it('the count per caller is given back as its hops leave: one announced again under its id, one forgotten', () => {
         const token = tokens().issue(ENTRY(caller.workerId));
-        for (let i = 0; i < 1024; i++) hop(caller, pair(), 7000 + i, token);
+        for (let i = 0; i < SHARE; i++) hop(caller, pair(), 7000 + i, token);
         // one is announced again under its id (the earlier one is dropped), and one is forgotten
         hop(caller, pair(), 7000, token);
         assert.deepStrictEqual(caller.refusals, [], 'a hop announced again does not count twice');
