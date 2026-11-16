@@ -374,12 +374,14 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     r.child.kill('SIGKILL');
     await r.exited;
     r = runtime(home, ['--settingsFile', settingsFile], {restore: false, socketName: 's2'});
-    const restore = {type: 'restore', sessions: [{session: id, resume, state}], declines: []};
-    let answer = await r.control(restore);
-    // (C's #270 adds a required reset list to the restore; either shape of master is served)
-    if (answer != null && answer.error != null) answer = await r.control(Object.assign({reset: []}, restore));
-    assert.ok(answer != null && answer.error == null, JSON.stringify(answer));
+    // the table in the one shape a runtime takes (lib/session-transport/restore.js). Its answer is
+    // {ok, ...}: a refusal is ok: false with a code, never an "error" field.
+    const answer = await r.control({type: 'restore', sessions: [{session: id, resume, state}], declines: [], reset: []});
+    assert.deepStrictEqual([answer.ok, answer.sessions], [true, 1], JSON.stringify(answer));
+    const t0 = Date.now();
     secret = await listening(r);
+    // on the restore, not on the 3 s net (which would serve an empty table, and refuse the resume below)
+    assert.ok(Date.now() - t0 < 2500, `it listened ${Date.now() - t0} ms after the restore`);
     // its shim resumes it, by its token
     const back = await shim.session(r.socket, secret, undefined, {resume: token});
     assert.ok(back.welcome != null && back.welcome.session === id, JSON.stringify(back.refused || back.welcome));
