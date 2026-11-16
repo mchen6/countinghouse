@@ -568,4 +568,111 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
       assert.strictEqual(schemaSafety.schemaProblem(null, null), null);
     });
   });
+
+  // Icons are files inside the module (section 4): never a URL. validate
+  // checks each one; the load reads them with the same read (M2, which
+  // inlines them), and is the one that decides.
+  describe('icon files (lib/declared-icons.js)', () => {
+    const icons = require('../../lib/declared-icons');
+    const moduleValidator = require('../../lib/module-validator');
+    // bytes that begin as each type does
+    const PNG_BYTES = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
+    const JPEG_BYTES = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40)]);
+    const WEBP_BYTES = Buffer.concat([Buffer.from('RIFF'), Buffer.from([44, 0, 0, 0]), Buffer.from('WEBP'), Buffer.alloc(40)]);
+    const dirs = [];
+    after(() => { for (const d of dirs) fs.rmSync(d, {recursive: true, force: true}); });
+    // a directory holding `files` ({relative path: bytes})
+    function dirWith(files) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-icons-'));
+      dirs.push(dir);
+      for (const [rel, bytes] of Object.entries(files)) {
+        fs.mkdirSync(path.dirname(path.join(dir, rel)), {recursive: true});
+        fs.writeFileSync(path.join(dir, rel), bytes);
+      }
+      return dir;
+    }
+    const problemOf = (dir, file) => icons.read(dir, file).problem;
+
+    it('a PNG, a JPEG and a WebP are taken by their first bytes, whatever the file is called', () => {
+      const dir = dirWith({'icons/a.png': PNG_BYTES, 'icons/b.jpg': JPEG_BYTES, 'icons/c.webp': WEBP_BYTES, 'icons/chart.bin': PNG_BYTES, 'top.png': PNG_BYTES});
+      assert.deepStrictEqual(icons.read(dir, 'icons/a.png'), {mimeType: 'image/png', bytes: PNG_BYTES});
+      assert.strictEqual(icons.read(dir, 'icons/b.jpg').mimeType, 'image/jpeg');
+      assert.strictEqual(icons.read(dir, 'icons/c.webp').mimeType, 'image/webp');
+      assert.strictEqual(icons.read(dir, 'icons/chart.bin').mimeType, 'image/png', 'the bytes decide, not the name');
+      assert.strictEqual(icons.read(dir, 'top.png').mimeType, 'image/png');
+    });
+
+    it('SVG is refused, and says why; anything else is not an image this takes', () => {
+      const dir = dirWith({'a.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>', 'b.png': '<?xml version="1.0"?>\n<svg/>', 'c.png': '  <!DOCTYPE svg><svg/>',
+        'named.svg': PNG_BYTES, 'd.gif': `GIF89a${'x'.repeat(40)}`, 'e.png': '', 'f.png': 'just text', 'g.webp': Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), Buffer.alloc(20)])});
+      for (const file of ['a.svg', 'b.png', 'c.png', 'named.svg']) assert.match(problemOf(dir, file), /SVG is refused: it can carry script/, file);
+      for (const file of ['d.gif', 'e.png', 'f.png', 'g.webp']) assert.match(problemOf(dir, file), /is not a PNG, JPEG or WebP/, file);
+    });
+
+    it('at most 16 KiB', () => {
+      const dir = dirWith({'at.png': Buffer.concat([PNG_BYTES, Buffer.alloc(16384 - PNG_BYTES.length)]), 'over.png': Buffer.concat([PNG_BYTES, Buffer.alloc(16385 - PNG_BYTES.length)])});
+      assert.strictEqual(icons.read(dir, 'at.png').bytes.length, 16384);
+      assert.match(problemOf(dir, 'over.png'), /is 16385 bytes; an icon is at most 16384/);
+    });
+
+    it('a file that is not there, a directory, and a path that is not one inside the module', () => {
+      const dir = dirWith({'icons/a.png': PNG_BYTES});
+      assert.match(problemOf(dir, 'icons/none.png'), /does not exist/);
+      assert.match(problemOf(dir, 'icons'), /is not a file/);
+      for (const bad of ['../a.png', '/etc/a.png', 'icons/../../a.png', 'icons/..', 'https://example.com/a.png', 'data:image/png;base64,AAAA', 'icons\\a.png', '', 'a'.repeat(257), 7, null]) {
+        assert.match(problemOf(dir, bad), /is not a path inside the module/, JSON.stringify(bad));
+      }
+    });
+
+    it('a symlink that leaves the module is refused; one inside it is the file it names', function() {
+      if (process.platform === 'win32') return this.skip();   // a symlink needs a privilege there
+      const outside = dirWith({'secret.png': PNG_BYTES});
+      const dir = dirWith({'icons/a.png': PNG_BYTES});
+      fs.symlinkSync(path.join(outside, 'secret.png'), path.join(dir, 'icons', 'out.png'));
+      fs.symlinkSync(path.join(dir, 'icons', 'a.png'), path.join(dir, 'icons', 'in.png'));
+      assert.match(problemOf(dir, 'icons/out.png'), /is outside the module/);
+      assert.ok(!problemOf(dir, 'icons/out.png').includes(outside), 'the path it leads to is not said');
+      assert.strictEqual(icons.read(dir, 'icons/in.png').mimeType, 'image/png');
+    });
+
+    it('problems(): every icons list of the module, an action\'s, a resource\'s and a prompt\'s, each said with whose it is; a file is read once', () => {
+      const dir = dirWith({'icons/a.png': PNG_BYTES, 'icons/bad.png': 'text'});
+      const spec = specOf({icons: [{file: 'icons/a.png', sizes: ['48x48']}, {file: 'icons/bad.png'}], resource: {uriTemplate: 'notes/{id}', name: 'note', icons: [{file: 'icons/none.png'}]}},
+        {promptList: [{name: 'triage', icons: [{file: 'icons/bad.png'}, {file: 'icons/a.png'}], messages: [{role: 'user', text: 'x'}]}]});
+      const found = icons.problems(dir, spec);
+      assert.deepStrictEqual(found.map((p) => p.path), ['notesService.readNote icons', 'notesService.readNote resource icons', 'prompt triage icons']);
+      assert.match(found[0].message, /notesService\.readNote icons: "icons\/bad\.png" is not a PNG, JPEG or WebP/);
+      assert.match(found[1].message, /resource icons: "icons\/none\.png" does not exist/);
+      assert.match(found[2].message, /prompt triage icons: "icons\/bad\.png" is not a PNG/);
+      // nothing declared, and a spec that is not one: nothing
+      assert.deepStrictEqual(icons.problems(dir, specOf()), []);
+      for (const junk of [null, 7, {}, {device: {serviceList: 7, promptList: 'x'}}, specOf({icons: 'x', resource: {icons: 7}})]) assert.deepStrictEqual(icons.problems(dir, junk), [], JSON.stringify(junk));
+    });
+
+    it('problems() reads at most 256 declared icons: more is one problem, and no more files are read', () => {
+      const dir = dirWith({});
+      const spec = specOf();
+      spec.device.serviceList[SERVICE].actionList = Array.from({length: 70}, (x, i) => ({name: `a${i}`, icons: [0, 1, 2, 3].map((n) => ({file: `icons/${i}-${n}.png`}))}));
+      const found = icons.problems(dir, spec);
+      assert.strictEqual(found.length, 257);
+      assert.match(found[256].message, /more than 256 icons are declared/);
+    });
+
+    it('validate reports an icon\'s problem at stage "declarations"', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-decl-icons-'));
+      dirs.push(dir);
+      fs.cpSync(path.join(__dirname, '..', 'fixtures', 'handler-map-convention'), dir, {recursive: true});
+      const api = JSON.parse(fs.readFileSync(path.join(dir, 'api.json'), 'utf8'));
+      api.device.serviceList['urn:countinghouse-test:serviceID:greetService'].actionList[0].icons = [{file: 'icons/a.png'}, {file: 'icons/logo.svg'}];
+      fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify(api));
+      fs.mkdirSync(path.join(dir, 'icons'));
+      fs.writeFileSync(path.join(dir, 'icons', 'a.png'), PNG_BYTES);
+      fs.writeFileSync(path.join(dir, 'icons', 'logo.svg'), '<svg/>');
+      const result = await new Promise((resolve, reject) => moduleValidator.validateModule(dir, (err, r) => (err ? reject(err) : resolve(r))));
+      assert.strictEqual(result.ok, false);
+      const declared = result.problems.filter((p) => p.stage === 'declarations');
+      assert.strictEqual(declared.length, 1, JSON.stringify(result.problems));
+      assert.match(declared[0].message, /greetService\.hello icons: "icons\/logo\.svg" SVG is refused/);
+    });
+  });
 });
