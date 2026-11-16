@@ -769,14 +769,17 @@ Its shape is checked twice, and what it says is taken only this far:
 - a tightening applies only if it is at least as tight as today's default
   and the ceiling; one above today's default is not applied, and the
   session is told;
-- a value the row calls a confirmed loosening applies only if the
-  session's own client says now that nothing in its configuration could
-  answer a dialog, the ceiling allows it (it is held to the ceiling), and
-  the default has not been lowered under the one it was confirmed over; the
-  validators grow first for a raised output cap, and anything the session
-  changed, or any lock that fell on it, while that was checked wins.
-  Otherwise it is reset and the session is told. A restored value is
-  recorded in the history as restored;
+- a value the row calls a confirmed loosening, and that is above today's
+  default, applies only if the session's own client says now that nothing
+  in its configuration could answer a dialog, the ceiling allows it (it is
+  held to the ceiling), and the default has not been lowered under the one
+  it was confirmed over; the validators grow first for a raised output cap,
+  and anything the session changed, or any lock or latch that fell on it,
+  while that was checked wins. Otherwise it is reset and the session is
+  told. One at or under today's default (confirmed over the session's own
+  lower value) is restored as the tightening it now is, with no client
+  asked: reset, it would leave the session looser than before the restart.
+  A restored value is recorded in the history as restored;
 - what was declined before the restart loads into the user's window, so a
   lock still running holds. A list that cannot be taken, a list longer than
   the window holds, or no table at all (the daemon's did not arrive in

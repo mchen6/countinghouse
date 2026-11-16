@@ -438,6 +438,47 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
     });
 
+    // the reviewer's high review of #300, (1)
+    it('a marked loosening at or under today\'s default needs no client: it is restored as the tightening it now is, never reset up to the default', async () => {
+      // raised by form from 2 to 5 MiB under a default of 16: a loosening of the session's own value then, under the default all along
+      sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 5 * MiB, 16 * MiB), loosen('requestTimeout', 60000, 30000)]}),
+        row(B, {overrides: [loosen('maxOutputBytes', 5 * MiB, 16 * MiB)]})]));
+      // A's client says no: it is latched, and what is above the default is reset
+      await resumed(A, {status: 'ok', conditions: 'no', repo: null});
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 5 * MiB, 'not 16 MiB: the session is no looser than before the restart');
+      assert.strictEqual(settings.effective(A, 'requestTimeout'), 30000, 'what was above the default is reset to it');
+      assert.deepStrictEqual(statesOf(A).pop().overrides, [tighten('maxOutputBytes', 5 * MiB)], 'told as what it is now');
+      assert.deepStrictEqual(grown, [], 'under the default: the validators have room already');
+      assert.deepStrictEqual(notices.take(null, A), ['your this-session loosening of requestTimeout was reset after a runtime restart',
+        'this session\'s settings were restored after a runtime restart']);
+      // B's client gives no answer at all
+      const b = new EventEmitter();
+      Object.assign(b, {id: B, client: {status: 'ok', conditions: 'yes', repo: null}, connected: true, notify() {}, record() {}, forget() {},
+        askConditions: async () => { throw new Error('no answer'); }});
+      sources[B] = b;
+      reg.emit('session', b);
+      await sessionState.whenApplied(B);
+      assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 5 * MiB);
+      assert.deepStrictEqual(notices.take(null, B), ['this session\'s settings were restored after a runtime restart']);
+    });
+
+    // the reviewer's high review of #300, (2)
+    it('a latch that falls while a loosening waits is seen on a session whose every kind was locked already', async () => {
+      // every kind locked by the user's own declines before the restart; its client could still be asked
+      sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 1})]));
+      // its client answers yes, then says no in a frame of its own while the validators grow
+      const a = new EventEmitter();
+      Object.assign(a, {id: A, client: {status: 'ok', conditions: 'yes', repo: null}, connected: true, notify() {}, record() {}, forget() {},
+        askConditions: async () => ({status: 'ok', conditions: 'yes', repo: null})});
+      sessionState.configure({tell: (m) => { told.push(JSON.parse(JSON.stringify(m))); return true; },
+        growValidators: async () => { a.emit('client', {status: 'ok', conditions: 'no', repo: null}); }});
+      sources[A] = a;
+      reg.emit('session', a);
+      await sessionState.whenApplied(A);
+      assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 16 * MiB, 'N1\'s "no" is final: nothing is loosened');
+      assert.deepStrictEqual(notices.take(null, A), ['your this-session loosening of maxOutputBytes was reset after a runtime restart']);
+    });
+
     it('a session latched at its settle (its client says no) keeps what it tightened across a second restart: the daemon is told its state as it stands', async () => {
       // the row of a session whose client always said no, and whose user tightened a cap
       sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 2})]));
