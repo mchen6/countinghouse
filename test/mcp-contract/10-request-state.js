@@ -10,7 +10,12 @@
 // fails any check is refused, with nothing that tells which.
 const assert = require('assert');
 const crypto = require('crypto');
+const os = require('os');
+const path = require('path');
+const {spawnSync} = require('child_process');
 const rs = require('../../lib/request-state');
+
+const LIB = path.join(__dirname, '..', '..', 'lib');
 
 const MIN = 60 * 1000;
 
@@ -186,6 +191,72 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       // room again once some expire
       assert.strictEqual(used.use('e', now + 3 * MIN, now + MIN), true);
       assert.strictEqual(used.size, 1);
+    });
+  });
+
+  // The key is derived from the identity secret, so every process that
+  // shares the secret verifies a state, and a restart strands no dialog.
+  // Each case is a child process with its own secret: identity keeps one
+  // per process.
+  describe('the key, derived from the identity secret', () => {
+    const SECRET = crypto.randomBytes(32).toString('hex');
+    const inChild = (body, {secret = SECRET, init = true} = {}) => {
+      const script = `
+        const identity = require(${JSON.stringify(path.join(LIB, 'identity'))});
+        const rs = require(${JSON.stringify(path.join(LIB, 'request-state'))});
+        const out = (v) => process.stdout.write('OUT ' + JSON.stringify(v) + '\\n');
+        const run = () => { try { ${body} } catch (e) { out({threw: e.message}); } };
+        ${init ? `identity.init({moduleDataPath: ${JSON.stringify(path.join(os.tmpdir(), 'ch-identity-unused'))}}).then(run, (e) => { process.stderr.write(e.message); process.exit(1); });` : 'run();'}`;
+      const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 20000,
+        env: Object.assign({}, process.env, {COUNTINGHOUSE_IDENTITY_SECRET: secret})});
+      const line = (r.stdout || '').split('\n').find((l) => l.startsWith('OUT '));
+      assert.ok(line != null, `no output: ${r.stdout} ${r.stderr}`);
+      return JSON.parse(line.slice(4));
+    };
+    const B = {caller: 'u_AbCdEfGhIjKlMnOpQrStUv', session: '', method: 'tools/call', tool: 't', arguments: {a: 1}};
+
+    it('is HKDF-SHA256 of the secret under a label of its own, 32 bytes: another label, or another secret, another key', () => {
+      const got = inChild('out({key: identity.derivedKey("countinghouse-request-state-key/1").toString("hex"), other: identity.derivedKey("some-other-use/1").toString("hex"), mine: rs.key().toString("hex")});');
+      const want = Buffer.from(crypto.hkdfSync('sha256', Buffer.from(SECRET, 'hex'), Buffer.alloc(0), 'countinghouse-request-state-key/1', 32)).toString('hex');
+      assert.strictEqual(got.key, want);
+      assert.strictEqual(got.mine, want, 'request-state\'s own');
+      assert.match(got.other, /^[0-9a-f]{64}$/);
+      assert.notStrictEqual(got.other, want);
+      assert.notStrictEqual(got.key, SECRET, 'never the secret itself');
+      const elsewhere = inChild('out({key: rs.key().toString("hex")});', {secret: crypto.randomBytes(32).toString('hex')});
+      assert.notStrictEqual(elsewhere.key, want);
+    });
+
+    it('follows the secret: loaded again as another one (a test, or the --hardened parent\'s check), the key is that one\'s', () => {
+      const OTHER = crypto.randomBytes(32).toString('hex');
+      const got = inChild(`
+        const first = rs.key().toString('hex');
+        process.env.COUNTINGHOUSE_IDENTITY_SECRET = ${JSON.stringify(OTHER)};
+        identity.initSync({moduleDataPath: ${JSON.stringify(path.join(os.tmpdir(), 'ch-identity-unused'))}});
+        out({first, second: rs.key().toString('hex')});`);
+      const of = (secret) => Buffer.from(crypto.hkdfSync('sha256', Buffer.from(secret, 'hex'), Buffer.alloc(0), rs.KEY_LABEL, 32)).toString('hex');
+      assert.deepStrictEqual(got, {first: of(SECRET), second: of(OTHER)});
+    });
+
+    it('a state made by one process verifies in another that shares the secret, and in none that does not', () => {
+      const made = inChild(`out({state: rs.mint(rs.key(), {question: 'q', round: 1, answers: {}}, ${JSON.stringify(B)})});`);
+      assert.match(made.state, /^v1\./);
+      const check = `out(rs.verify(rs.key(), ${JSON.stringify(made.state)}, ${JSON.stringify(B)}));`;
+      assert.strictEqual(inChild(check).ok, true, 'after a restart, or on another server of the same deployment');
+      assert.strictEqual(inChild(check, {secret: crypto.randomBytes(32).toString('hex')}).ok, false);
+    });
+
+    it('there is no key before the secret is loaded, none for a label that is not one, and none in a worker', () => {
+      assert.match(inChild('out({key: rs.key().toString("hex")});', {init: false}).threw, /not initialized/);
+      for (const label of ['""', 'null', '7', '"x".repeat(200)']) assert.match(inChild(`out({key: identity.derivedKey(${label}).toString("hex")});`).threw, /label/);
+      const worker = inChild(`
+        const {Worker} = require('worker_threads');
+        const w = new Worker(${JSON.stringify(`
+          const {parentPort} = require('worker_threads');
+          try { require(${JSON.stringify(path.join(LIB, 'identity'))}).derivedKey('countinghouse-request-state-key/1'); parentPort.postMessage('a key'); }
+          catch (e) { parentPort.postMessage(e.message); }`)}, {eval: true});
+        w.on('message', (m) => { out({said: m}); w.terminate(); });`);
+      assert.match(worker.said, /main thread only/);
     });
   });
 
