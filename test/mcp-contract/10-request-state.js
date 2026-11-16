@@ -278,6 +278,23 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       for (const bad of [null, undefined, 7, {}, Buffer.from(m)]) assert.strictEqual(rs.sameMac(m, bad), false);
     });
 
+    // The dialog's single use is its server-held staging (a form answered is
+    // gone); what it remembers of nonces only makes an answer's text exact:
+    // a replay is told "used", a late answer "expired", not "no state of
+    // ours". So this memory may forget, oldest first, where UsedNonces never does.
+    it('RecentNonces is a short memory: the last ones added, oldest out; it is not what makes anything single use', () => {
+      const recent = new rs.RecentNonces(3);
+      for (const n of ['a', 'b', 'c']) recent.add(n);
+      assert.deepStrictEqual(['a', 'b', 'c', 'd'].map((n) => recent.has(n)), [true, true, true, false]);
+      recent.add('d');
+      assert.deepStrictEqual(['a', 'b', 'c', 'd'].map((n) => recent.has(n)), [false, true, true, true]);
+      assert.strictEqual(recent.size, 3);
+      // the same one again takes no second place
+      recent.add('d');
+      assert.deepStrictEqual(['b', 'c', 'd'].map((n) => recent.has(n)), [true, true, true]);
+      assert.strictEqual(new rs.RecentNonces().max, 64);
+    });
+
     it('newNonce is 16 random bytes, base64url', () => {
       const n = rs.newNonce();
       assert.match(n, /^[A-Za-z0-9_-]{22}$/);
