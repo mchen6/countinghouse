@@ -11,9 +11,9 @@ const {MAX_SESSIONS} = require('../../lib/session-transport/listener');
 const ID = 'a'.repeat(32);
 const HASH = 'f'.repeat(64);
 const plan = (over = {}) => Object.assign({id: 'd1', type: 'restore',
-  sessions: [{session: ID, resume: HASH, state: {overrides: [{name: 'maxOutputBytes', value: 1024, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}],
-  declines: [{kind: 'maxOutputBytes', at: 1700000000000}]}, over);
-const ov = (over = {}) => Object.assign({name: 'maxOutputBytes', value: 1024, loosening: false, over: null, version: null}, over);
+  sessions: [{session: ID, resume: HASH, state: {overrides: [{name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}],
+  declines: [{kind: 'maxOutputBytes', at: 1700000000000}], reset: []}, over);
+const ov = (over = {}) => Object.assign({name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, over);
 const st = (state) => plan({sessions: [{session: ID, resume: HASH, state}]});
 const code = (fn) => { try { fn(); } catch (e) { return e.code; } return null; };
 
@@ -22,7 +22,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
-    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines}], 'resume included: the runtime splits it from B\'s state');
+    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: []}], 'resume included: the runtime splits it from B\'s state');
     assert.strictEqual(r.done(), true);
   });
 
@@ -112,5 +112,30 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const r = createRestore({});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
     assert.strictEqual(r.done(), true);
+  });
+
+  it('the shared vectors\' restoreRows: each accepted row is taken, each refused one refuses the restore (one shape for restore.js, the daemon and B2)', () => {
+    const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
+    const r = createRestore({});
+    assert.deepStrictEqual(r.handle(plan({sessions: V.accepted, reset: []})), {sessions: V.accepted.length});
+    for (const c of V.refused) {
+      // refused, and for the reason the case names, never by another rule
+      let message = null;
+      try { createRestore({}).handle(plan({sessions: [c.row], reset: []})); } catch (e) { assert.strictEqual(e.code, 'CONTROL_BAD_RESTORE', c.why); message = e.message; }
+      assert.ok(message != null, `${c.why}: refused`);
+      assert.ok(typeof(c.reason) === 'string' && message.includes(c.reason), `${c.why}: for its own reason (${c.reason}), not "${message}"`);
+    }
+  });
+
+  it('reset lists restored sessions that lost loosenings: each a row\'s id, once; passed to importTable; required', () => {
+    const got = [];
+    const r = createRestore({importTable: (t) => got.push(t)});
+    r.handle(plan({reset: [ID]}));
+    assert.deepStrictEqual(got[0].reset, [ID]);
+    for (const reset of [['b'.repeat(32)], [ID, ID], 'x', [7], undefined]) {
+      const m = plan({reset});
+      if (reset === undefined) delete m.reset;
+      assert.strictEqual(code(() => createRestore({}).handle(m)), 'CONTROL_BAD_RESTORE', JSON.stringify(reset));
+    }
   });
 });

@@ -517,8 +517,20 @@ history say, and installing another is refused; `"conversation": false` refuses 
 loosening asked for in conversation, so no dialog is ever shown and each
 ends at the terminal command (below). A value above it is
 `SETTING_ABOVE_CEILING`, a loosening it forbids `SETTING_FORBIDDEN_BY_CEILING`.
-Tightening is never refused by it. It is read once per process, and again
-when the file changes.
+A tightening of the value the runtime runs with is never refused by it. A
+change that only lowers a stored value, and is still above both the ceiling
+and what the runtime runs with, is refused (`SETTING_ABOVE_CEILING`): it
+would put a value above the ceiling in `settings.json` for the next start.
+For the two caps the settings tool reports, and judges a change against,
+what the runtime runs with (with nothing stored, what it started with: the
+ceiling may have bounded the start), not the stored default. What it
+writes to `settings.json` without the user's confirmation never exceeds
+what the file yields already (its stored value, else the default), and is
+above the ceiling only when it lowers what the file yields: a
+runtime started above the default by a flag cannot have conversation raise
+the file toward its start value. A lower value than what runs that may not
+be written applies to this start only, and is recorded as that. It is read once
+per process, and again when the file changes.
 
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
@@ -703,6 +715,43 @@ sessions) all of this is each session's own, for the two caps:
   A lock runs 30 minutes from its third event, so a restarted runtime
   needs the last 60 minutes of them to rebuild one still running (reading
   that list back at a restart is not built yet).
+
+**A change for all sessions.** In one session the user may ask to change
+one of the two caps for every session; the model's call then says
+`scope: "all-sessions"`. It is a global change, as one made at a terminal
+is:
+
+- it is judged against the default in force, never the asking session's own
+  value;
+- it is written to `settings.json` and applied at once to every session, as
+  a terminal tightening is: a session's confirmed loosening above the new
+  value is dropped and that session told; a session's own tightening is
+  never dropped (it is held to the default while the default is lower,
+  and is in force again if the default rises);
+- the other sessions are told the setting was changed from another session;
+  the history line names the asking session and, unlike a session's own
+  lines, is every session's to read (no session's id is ever shown). A
+  request for all sessions that was not made is the asking session's line,
+  and says what it was for.
+
+A tightening needs no dialog. A loosening always needs one: the asking
+session's own (it spends one of that session's three and counts in the
+user's window), whose text names all sessions and says the change holds
+after a restart. Its state confirms that change only: a dialog that said
+"this session" confirms nothing for all sessions, and the other way round.
+It is held to the operator's ceiling as any loosening is. For a raised
+output cap the validators grow first, which changes nothing; then, under
+one lock and with no wait in it, everything is checked as it is then (the
+session, its lock, the ceiling, the default in force, the file as the
+dialog saw it), the file is written, and the value is put in force. So a
+change that cannot be stored is not in force, and a terminal change made
+meanwhile is never written over. The session that asked gets the value
+too: its own lower value for that setting goes, and it is told; another
+session's own tighter value stays. What is written without a dialog never
+raises what the file yields (a runtime started above it by a flag, or a
+tighter value stored for the next start): such a value holds for every
+session until the runtime restarts. Every other setting stays the
+terminal's.
 
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.

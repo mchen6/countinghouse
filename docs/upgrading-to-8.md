@@ -151,6 +151,24 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `contentEncoding: "base64"` is an assertion.** A string whose
+  schema says `contentEncoding: "base64"` must now be canonical RFC 4648
+  base64 (the standard alphabet, padded, no whitespace, zero pad bits), in an
+  input and in an output, on every path. Before, it was an annotation that
+  asserted nothing, so a schema that used it loosely could have passed values
+  that are now refused (`INPUT_DATA_VALIDATION_FAIL` or
+  `OUTPUT_DATA_VALIDATION_FAIL`, naming the field). No bundled module used it.
+  Any other `contentEncoding` stays an annotation.
+- **Breaking: a Buffer in an output is refused, `OUTPUT_NOT_JSON`.** An output
+  holding a Buffer, a typed array or a DataView is refused in the module's
+  worker (`--workerThread`, the default), naming the field: before, it was
+  mangled. Single-thread mode serializes no output, so there only a typed
+  field's own check refuses one.
+  Return `buf.toString('base64')` in a field its output schema declares
+  `{"type": "string", "contentEncoding": "base64", "contentMediaType": "<type>/<subtype>"}`.
+  The check costs a clean output nothing. A bare `ArrayBuffer` is not caught
+  by it: under a typed field the validator refuses it, and under an untyped
+  one it is sent as `{}`, so don't return one.
 - **Breaking: one module format.** A module is `api.json`, `schema.json` and
   `handlers/<service>/<action>.js`. A module with a main entry
   (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
@@ -288,6 +306,13 @@ says how to write a module for this.
   official MCP SDK client does) rejected every module tool. It is now the
   output itself, and `content[0].text` is the same object serialized. Read
   `structuredContent`, not `structuredContent.output`.
+- **Images and audio arrive as their own blocks.** An output field declared
+  `contentEncoding: "base64"` with an `image/*` or `audio/*`
+  `contentMediaType` is sent as an `image` or `audio` content block after the
+  text block, and `structuredContent` (and the text) hold a reference to it,
+  `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
+  knows only protocol revision 2024-11-05, which has no audio content type,
+  may not render an audio block.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their
