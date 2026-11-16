@@ -19,14 +19,42 @@ describe('questions 04: a question\'s form and its answer, in a validator (MCP c
   this.timeout(30000);
   let moduleSpec = null;
   let own = null;
+  // The pool's own lines, held as module-loading 24 holds them: this file
+  // makes no logger, so a line the pool logged (a deadline missed on a
+  // loaded machine) would otherwise end the run as a TypeError of the
+  // logger's, with nothing of what was missed.
+  const LOG = require('../../lib/logger');
+  const logged = [];
+  let logE = null;
+  let logW = null;
+  // A spec as a load leaves it: built, then compiled in the validators
+  // (lib/module-spec.js warm), so a question finds a validator ready. A
+  // question has a call's budget (1 s), which a pool still starting can miss.
+  const loaded = async (dir, name) => {
+    const spec = await moduleSpec.build(dir, name);
+    assert.strictEqual(spec.error, undefined, String(spec.error));
+    assert.strictEqual(await moduleSpec.warm(spec), null, `${name} compiles; the pool said: ${logged.join(' | ')}`);
+    return spec;
+  };
   before(async () => {
+    logE = LOG.E;
+    logW = LOG.W;
+    LOG.E = (e) => { logged.push(String(e && e.message)); return e; };
+    LOG.W = (m) => { logged.push(String(m)); return m; };
     require('../../lib/cli-options').setOptions({workerThread: true});
     moduleSpec = require('../../lib/module-spec');
-    own = await moduleSpec.build(FIXTURE, 'declares-everything');
+    own = await loaded(FIXTURE, 'declares-everything');
   });
   after(() => {
     require('../../lib/validator-pool').pool().close();
     require('../../lib/cli-options').setOptions({workerThread: false});
+    LOG.E = logE;
+    LOG.W = logW;
+  });
+  // what the pool said while a case ran is in that case's failure
+  afterEach(function() {
+    if (this.currentTest.state === 'failed' && logged.length > 0) this.currentTest.err.message += `\n  the pool logged: ${logged.join(' | ')}`;
+    logged.length = 0;
   });
 
   it('the form is the schema the question points to, as schema.json has it', async () => {
@@ -53,7 +81,7 @@ describe('questions 04: a question\'s form and its answer, in a validator (MCP c
   // /code-review of M13, 1: a form may carry what a client shows and a validator does not know (enumNames):
   // the answer is checked against the form's rules alone
   it('a form with enumNames is answered: what only a client reads is no part of the check', async () => {
-    const asks = await moduleSpec.build(path.join(__dirname, '..', 'fixtures', 'asks-questions'), 'asks-questions');
+    const asks = await loaded(path.join(__dirname, '..', 'fixtures', 'asks-questions'), 'asks-questions');
     const pointer = '/askService/probe/questions/confirm';
     const shown = await moduleSpec.question(asks, pointer);
     assert.deepStrictEqual(shown.schema.properties.when.enumNames, ['Now', 'Later'], 'the client still gets it');
