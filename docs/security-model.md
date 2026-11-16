@@ -840,7 +840,9 @@ bounds it:
   it was is in the runtime's own log line only. A store that cannot say
   whether a state was used is a different, retryable refusal
   (`ASK_STATE_UNCHECKED`): nothing runs, and it is never taken for a
-  replay or for a first use.
+  replay or for a first use. A store that timed out may still have
+  recorded the state as used; the same retry is then refused, and the
+  caller calls again to be asked again.
 - **Single use rests on the store.** A used state's nonce is kept until a
   minute past its expiry: in Redis db 14 under `--store redis` (a
   `SET NX` with an expiry), in `<storePath>/used-nonces.json` under
@@ -851,9 +853,14 @@ bounds it:
   six minutes, which makes a state from those minutes usable once more by
   whoever holds it and the caller's key. Run Redis with AOF or RDB
   persistence if that matters to you.
-- **A call settles at most eight questions**, and one that three rounds
-  left unanswered stays so for the call: both ride in the state, so a
-  module cannot ask a user without end by changing its question's text.
+- **A call is asked at most eight rounds in all**, any mix of questions,
+  and three at most of one question; one that three rounds left
+  unanswered stays so for the call. The call's round count rides in the
+  state with what the call has settled, so a module cannot ask a user
+  without end by changing its question's text: each new text is a new
+  question in its first round, and the call's count is what stops it. A
+  pass that ends on a question is not billed, which is why the count is
+  the call's and not only the question's.
 - **A state is used up when its retry is taken**, before the call's own
   checks: a retry that is then refused (a rate limit, a busy worker) has
   spent the user's answer, and the next call asks again. Single use is

@@ -21,6 +21,17 @@ describe('questions 06: --moduleQuestions (MCP completeness M13)', () => {
     }
   });
 
+  // #311's CI (stdio 02): --hardened's relaunch gives every flag twice, so its value arrives as a list.
+  // Unread, a list is "a value it does not know": --hardened --moduleQuestions off did not start.
+  it('given twice, as --hardened\'s relaunch gives it, it counts by its last value', () => {
+    for (const [given, on] of [[['off', 'off'], false], [['on', 'on'], true], [['on', 'off'], false], [['off', 'on'], true], [['false', 'false'], false]]) {
+      cli.setOptions({workerThread: false, moduleQuestions: given});
+      assert.deepStrictEqual([cli.moduleQuestions, cli.moduleQuestionsInvalid], [on, null], JSON.stringify(given));
+    }
+    cli.setOptions({workerThread: false, moduleQuestions: ['off', 'no']});
+    assert.deepStrictEqual(cli.moduleQuestionsInvalid, {name: 'moduleQuestions', value: 'no', what: 'on or off'}, 'the last value is the one read, and refused if it is none');
+  });
+
   it('any other value is refused, and until it is the questions are off: never on by a value it could not read', () => {
     for (const v of ['no', '0', 0, 'OFF', 'Off', 'disabled', '', 'yes', 1]) {
       cli.setOptions({workerThread: false, moduleQuestions: v});

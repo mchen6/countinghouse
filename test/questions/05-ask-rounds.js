@@ -156,12 +156,36 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
         const e = await retryWith(made, {action: 'accept', content: {replace: true}}, {used: broken}).then(() => null, (err) => err);
         assert.ok(e instanceof CountinghouseError && e.code === 'ASK_STATE_UNCHECKED', String(e && e.code));
         assert.strictEqual(e.retryable, true);
+        // The reviewer's (c) on #311: a store that timed out may still have recorded the state as used,
+        // so the text does not promise the same retry will be taken
+        assert.match(e.message, /may no longer be usable/);
+        assert.doesNotMatch(e.message, /send the same retry again\.$/);
       }
-      // nothing was used up: the same retry, with the store back, is taken
+      // here the store recorded nothing, so the same retry, with the store back, is taken
       assert.deepStrictEqual(asks(await retryWith(made, {action: 'accept', content: {replace: true}})), {answer: {replace: true}});
+      // and where a store that timed out did record it, the retry is refused as used: the caller asks again
+      const late = await firstForm();
+      const real = used;
+      const lands = {use: async (...a) => { await real.use(...a); throw Object.assign(new Error('late'), {code: 'USED_NONCE_TIMEOUT'}); }};
+      await rejectedWith('ASK_STATE_UNCHECKED', retryWith(late, {action: 'accept', content: {replace: true}}, {used: lands}));
+      await rejectedWith('ASK_STATE_INVALID', retryWith(late, {action: 'accept', content: {replace: true}}));
       // and a store that answers anything but a plain true is "used"
       const made2 = await firstForm();
       await rejectedWith('ASK_STATE_INVALID', retryWith(made2, {action: 'accept', content: {replace: true}}, {used: {use: async () => 'yes'}}));
+    });
+
+    // The reviewer's (a) on #311: what a made state is bound to is a copy of the arguments, kept apart from
+    // the object a handler is given; only a call that can end on a question needs one
+    it('the arguments a state is bound to are a copy, made only for a call that can be asked and whose action declares a question', async () => {
+      const args = {id: 'first', nested: {text: 'x'}};
+      const askable = ask.newState({askable: true});
+      const copy = ask.bindingArguments({state: askable, asks: true, arguments: args});
+      assert.deepStrictEqual(copy, args);
+      assert.ok(copy !== args && copy.nested !== args.nested, 'a copy all the way down');
+      // nothing to bind: the same object, no copy made
+      assert.strictEqual(ask.bindingArguments({state: askable, asks: false, arguments: args}), args, 'the action declares no question');
+      assert.strictEqual(ask.bindingArguments({state: ask.newState({askable: false}), asks: true, arguments: args}), args, 'no one to ask');
+      assert.strictEqual(ask.bindingArguments({state: null, asks: true, arguments: args}), args);
     });
 
     it('an answer is read from params only: a call of an action that asks, whose arguments carry a state or responses, is refused', async () => {
@@ -218,7 +242,8 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
         const state = await retryWith(made, response);
         assert.deepStrictEqual(asks(state), {code: 'ASK_PENDING'}, String(JSON.stringify(response)).slice(0, 60));
         const again = await ask.formOf(state, deps());
-        assert.strictEqual(requestState.verify(key, again.requestState, binding()).round, 2);
+        const carried = requestState.verify(key, again.requestState, binding());
+        assert.deepStrictEqual([carried.round, carried.callRound, again.round], [2, 2, 2], 'its question\'s second round, and the call\'s');
         await rejectedWith('ASK_STATE_INVALID', retryWith(made, {action: 'accept', content: {replace: true}}));
       }
     });
@@ -249,6 +274,43 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       assert.deepStrictEqual(asks(next), {code: 'ASK_UNAVAILABLE'}, 'the first is not asked again');
       assert.deepStrictEqual(asks(next, 'second'), {answer: {replace: true}});
       assert.strictEqual(next.pending, null);
+    });
+
+    // The reviewer's I1 on #311: a call's rounds are every question's together. A handler whose question
+    // reads differently on every pass (a time in its values) asked a "new" first round each time, for
+    // ever, and a pass that asks is not billed.
+    it('a handler whose question reads differently on every pass is asked eight rounds in all, then has no one to ask', async () => {
+      let state = await ask.begin(deps());
+      for (let i = 1; i <= 8; i++) {
+        assert.deepStrictEqual(asks(state, `at-${i}`), {code: 'ASK_PENDING'}, String(i));
+        const made = await ask.formOf(state, deps());
+        const carried = requestState.verify(key, made.requestState, binding());
+        // (made.round is the usage record's: how late in the call the module asked)
+        assert.deepStrictEqual([carried.round, carried.callRound, made.round], [1, i, i], `a first round of its own question, and the call's round ${i}`);
+        state = await retryWith(made, {action: 'accept', content: {replace: 'no'}});
+      }
+      assert.deepStrictEqual(asks(state, 'at-9'), {code: 'ASK_UNAVAILABLE'});
+      assert.strictEqual(state.pending, null);
+      // and no form is made past the eighth, whatever is pending
+      const forced = Object.assign(ask.newState({askable: true}), {callRounds: 8, pending: {key: keyOf('x'), question: 'overwrite', text: textOf('x'), schema: DECLARED.schema}});
+      await rejectedWith('ASK_UNAVAILABLE', ask.formOf(forced, deps()));
+    });
+
+    it('the eight are any mix of questions, three at most of one; what was answered on the way stays answered', async () => {
+      // rounds 1 to 3: the first note, never answered
+      let made = await firstForm();
+      for (let round = 1; round <= 2; round++) made = await ask.formOf(asksThen(await retryWith(made, {action: 'accept', content: {replace: 'no'}})), deps());
+      let state = await retryWith(made, {action: 'accept', content: {replace: 'no'}});
+      assert.deepStrictEqual(asks(state), {code: 'ASK_UNAVAILABLE'});
+      // round 4: answered; rounds 5 to 8: declined
+      for (let i = 4; i <= 8; i++) {
+        assert.deepStrictEqual(asks(state, `note-${i}`), {code: 'ASK_PENDING'}, String(i));
+        made = await ask.formOf(state, deps());
+        assert.strictEqual(requestState.verify(key, made.requestState, binding()).callRound, i);
+        state = await retryWith(made, i === 4 ? {action: 'accept', content: {replace: true}} : {action: 'decline'});
+      }
+      assert.deepStrictEqual(asks(state, 'note-9'), {code: 'ASK_UNAVAILABLE'}, 'a ninth round has no one to ask');
+      assert.deepStrictEqual([asks(state, 'note-4'), asks(state, 'note-8'), asks(state)], [{answer: {replace: true}}, {answer: null}, {code: 'ASK_UNAVAILABLE'}]);
     });
 
     it('a call settles at most eight questions: a ninth has no one to ask', async () => {
@@ -285,7 +347,7 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     it('what a state carries as earlier answers is taken entry by entry: only a question\'s key, only an object or null', async () => {
       // a state of this runtime's own making, holding what begin never puts there
       const odd = {[keyOf('first')]: {replace: true}, short: {x: 1}, [keyOf('second')]: 'text', ['x'.repeat(43)]: [1], constructor: {x: 1}};
-      const state = requestState.mint(key, {question: `${keyOf('third')}:overwrite`, round: 1, answers: odd}, binding());
+      const state = requestState.mint(key, {question: `${keyOf('third')}:overwrite`, round: 1, callRound: 1, answers: odd}, binding());
       const got = await ask.begin(deps({params: {requestState: state, inputResponses: {answer: {action: 'decline'}}}}));
       assert.deepStrictEqual([...got.answers.keys()].sort(), [keyOf('first'), keyOf('third')].sort());
       assert.strictEqual(Object.getPrototypeOf(got.answers), Map.prototype);
@@ -293,7 +355,7 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
 
     it('a state whose question is not a key and a name is refused as any other', async () => {
       for (const q of ['overwrite', `${keyOf('first')}`, `${keyOf('first')}:`, `short:overwrite`, `${keyOf('first')}:bad name`]) {
-        const state = requestState.mint(key, {question: q, round: 1, answers: {}}, binding());
+        const state = requestState.mint(key, {question: q, round: 1, callRound: 1, answers: {}}, binding());
         await rejectedWith('ASK_STATE_INVALID', ask.begin(deps({params: {requestState: state, inputResponses: {answer: {action: 'decline'}}}})));
       }
     });

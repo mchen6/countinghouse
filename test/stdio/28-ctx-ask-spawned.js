@@ -131,6 +131,44 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
       assert.strictEqual(after.result.structuredContent.runs, 4);
     });
 
+    // M13 with M9's progress: the question is the pass's answer, and nothing is sent after an answer
+    // (lib/mcp/progress.js). The scenario's hops tick its progress, more than one inside the notifier's
+    // interval, so one is still waiting to be sent when the handler asks.
+    it('a call with a progress token that ends on a question sends no progress after it', async () => {
+      // a scenario's part is found beside it, as npm installs it (lib/module-roles.js resolvePart)
+      const installed = path.join(home, 'packs', 'node_modules');
+      for (const name of ['asks-after-hops', 'compose-callee']) fs.cpSync(path.join(__dirname, '..', 'fixtures', name), path.join(installed, name), {recursive: true});
+      io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
+        '--moduleDataPath', path.join(home, 'module_data'), '--loadModule', path.join(installed, 'asks-after-hops')], {});
+      let tool = null;
+      for (let i = 0; i < 120 && tool == null; i++) {
+        const list = await io.request({jsonrpc: '2.0', id: 8000 + i, method: 'tools/list', params: {_meta: META}});
+        const found = ((list.result && list.result.tools) || []).find((x) => /probe$/.test(x.name));
+        if (found != null) tool = found.name;
+        else await new Promise((r) => setTimeout(r, 500));
+      }
+      assert.ok(tool != null, `the scenario never listed; stderr without the Redis noise:\n${withoutRedisNoise(io.err)}`);
+      const progressAfter = (id) => {
+        const msgs = io.lines.map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((m) => m != null);
+        const at = msgs.findIndex((m) => m.id === id);
+        return {before: msgs.slice(0, at).filter((m) => m.method === 'notifications/progress' && m.params.progressToken === `p-${id}`).length,
+          after: msgs.slice(at + 1).filter((m) => m.method === 'notifications/progress' && m.params.progressToken === `p-${id}`).length};
+      };
+      const first = await io.request({jsonrpc: '2.0', id: 31, method: 'tools/call', params: {name: tool, arguments: {hops: 6}, _meta: Object.assign({progressToken: 'p-31'}, META)}});
+      assert.strictEqual(first.result.resultType, 'input_required', JSON.stringify(first).slice(0, 500));
+      // longer than the notifier's interval: what was waiting would have been sent by now
+      await new Promise((r) => setTimeout(r, 3 * require('../../lib/mcp/progress').MIN_INTERVAL_MS));
+      const asked = progressAfter(31);
+      assert.ok(asked.before >= 1, 'its hops ticked: the case has something that could be late');
+      assert.strictEqual(asked.after, 0, 'nothing after the question');
+      // the retry is a call of its own: its progress is its own, and ends with its answer
+      const retry = await io.request({jsonrpc: '2.0', id: 32, method: 'tools/call', params: Object.assign({name: tool, arguments: {hops: 6}, _meta: Object.assign({progressToken: 'p-32'}, META)},
+        accept(first.result.requestState, {yes: true}))});
+      assert.deepStrictEqual([retry.result.structuredContent.asked, retry.result.structuredContent.answer, retry.result.structuredContent.sum], [true, {yes: true}, 42], JSON.stringify(retry).slice(0, 500));
+      await new Promise((r) => setTimeout(r, 3 * require('../../lib/mcp/progress').MIN_INTERVAL_MS));
+      assert.strictEqual(progressAfter(32).after, 0, 'nor after the result');
+    });
+
     it('a decline is null to the handler; an answer that does not fit the form gets the question again; a state is for its own arguments', async () => {
       local();
       await loaded();
