@@ -96,9 +96,18 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
     assert.deepStrictEqual(b.body.output, expected(10 * 1024 * 1024));
   });
 
-  it('a Date, Map, Set, typed array, BigInt and nested undefined cross a hop as they did', async () => {
+  it('a Date, Map, Set, BigInt and nested undefined cross a hop as they did', async () => {
     const r = await odd('odd', {});
-    assert.deepStrictEqual(r.body.output.types, {date: true, map: true, set: true, typed: true, bigint: true, undef: true}, JSON.stringify(r.body));
+    assert.deepStrictEqual(r.body.output.types, {date: true, map: true, set: true, bigint: true, undef: true}, JSON.stringify(r.body));
+  });
+
+  // MCP completeness M3: a typed array crossed a hop until then; an output
+  // holding one is now refused in the callee's worker, naming the field
+  it('a typed array in a hop\'s output is refused OUTPUT_NOT_JSON, naming the callee and the field', async () => {
+    const r = await odd('odd', {kind: 'typed'});
+    assert.strictEqual(r.body.output.code, 'OUTPUT_NOT_JSON', JSON.stringify(r.body));
+    assert.match(r.body.output.message, /^main-checked\/odd: .* at \/t,/);
+    assert.strictEqual((await ping()).status, 200);
   });
 
   it('an output v8 cannot serialize (a function inside) answers DEVICE_INVOKE_EXCEPTION, as before', async () => {

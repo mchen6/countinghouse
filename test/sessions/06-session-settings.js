@@ -188,6 +188,19 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 2 * MiB);
   });
 
+  // #296's review: only a confirmed loosening is dropped. A session's own
+  // tightening above the new default is its own choice: kept, held to the
+  // default while that is lower, and in force again when the default rises.
+  it('a tightening of a default drops no session\'s own tightening, though it is above the new default', () => {
+    settings.set(A, 'maxOutputBytes', 6 * MiB);
+    defaults.maxOutputBytes = 4 * MiB;
+    assert.deepStrictEqual(settings.dropLooser('maxOutputBytes', 4 * MiB), []);
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 4 * MiB, 'held to the default');
+    assert.deepStrictEqual(settings.overridesOf(A).map((o) => [o.value, o.loosening]), [[6 * MiB, false]]);
+    defaults.maxOutputBytes = 8 * MiB;
+    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 6 * MiB, 'its own again');
+  });
+
   it('values within the settings tool\'s own bounds only; bad input throws (#268 review 4, 7)', () => {
     for (const bad of [1e308, 2 ** 60, 0, -1, MiB / 2, 257 * MiB, MiB + 0.5, '2000', NaN, Infinity, null]) {
       assert.throws(() => settings.set(A, 'maxOutputBytes', bad), (e) => e.code === 'SETTING_OUT_OF_BOUNDS', String(bad));

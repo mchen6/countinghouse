@@ -208,3 +208,6 @@ one) as well as the ports it binds.
 | `test/unit/test031.js` | 9527 |
 | `test/unit/test032.js` | 9527 |
 | `test/validation/02-stray-output-rejected.js` | 9575 |
+| `test/validation/19-output-not-json.js` | 9576 |
+| `test/validation/20-output-not-json-hop.js` | 9577 |
+| `test/validation/20-output-not-json-hop.js` | 9578 |

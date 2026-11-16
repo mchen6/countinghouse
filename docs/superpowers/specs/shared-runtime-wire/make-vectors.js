@@ -208,6 +208,33 @@ const out = {
     rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}'
   },
+  // ch-local daemon's restore rows (#236 section 6): one shape for
+  // countinghouse's restore.js, ch-local's session-table.js and B2's export,
+  // which all read these cases
+  restoreRows: {
+    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}; overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
+    accepted: [
+      {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}},
+      {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120000, loosening: true, over: 30000, version: null}, {name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, {name: 'pack.ci-failure-triage', value: true, loosening: true, over: null, version: '1.2.3'}], locks: ['pack', 'requestTimeout'], formsLeft: 0}}
+    ],
+    refused: [
+      // each with the reason it must be refused for: a substring of restore.js's message
+      {why: 'no resume', reason: 'not exactly {session, resume, state}', row: {session: 'a'.repeat(32), state: {overrides: [], locks: [], formsLeft: 3}}},
+      {why: 'an uppercase resume', reason: 'resume hash', row: {session: 'a'.repeat(32), resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}},
+      {why: 'a session id not 32 hex', reason: 'session id', row: {session: 'not-hex', resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}},
+      {why: 'an extra row key', reason: 'not exactly {session, resume, state}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}, mac: 'x'}},
+      {why: 'an extra state key', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, nonce: 'x'}}},
+      {why: 'formsLeft 4', reason: 'formsLeft', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 4}}},
+      {why: 'a lock twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack', 'pack'], formsLeft: 3}}},
+      {why: 'a pack override with no version', reason: 'version is not a semver', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.one', value: true, loosening: true, over: null, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'a cap loosening with no over', reason: 'over does not fit', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 16777216, loosening: true, over: null, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'an unknown override name', reason: 'neither a cap nor pack', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'secret', value: 1, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'maxOutputBytes under its bound', reason: 'not within', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 1048575, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'requestTimeout over its bound', reason: 'not within', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'requestTimeout', value: 120001, loosening: true, over: 30000, version: null}], locks: [], formsLeft: 3}}},
+      {why: 'a pack version that is not a semver', reason: 'version is not a semver', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.one', value: true, loosening: true, over: null, version: 'latest'}], locks: [], formsLeft: 3}}},
+      {why: 'a setting overridden twice', reason: 'a setting twice', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 1048576, loosening: false, over: null, version: null}, {name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}}
+    ]
+  },
   seqRule: 'the shim counts seq from 1 for its whole life; it never restarts on a reconnect or a resume',
   crashAnswer: {
     rule: 'exact apart from the id, which is the request\'s own',

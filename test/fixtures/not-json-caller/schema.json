@@ -1,0 +1,8 @@
+{
+  "hopService": {
+    "viaHop": {
+      "input": {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"code": {"type": ["string", "null"]}, "message": {"type": "string"}}}
+    }
+  }
+}
