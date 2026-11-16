@@ -675,4 +675,63 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
       assert.match(declared[0].message, /greetService\.hello icons: "icons\/logo\.svg" SVG is refused/);
     });
   });
+
+  // One module that declares all of it, for the tasks that serve each part
+  // (M2 and on) to load. It is held complete by the meta-schema itself: a
+  // field added there fails here until the fixture declares it.
+  describe('the fixture that declares everything (test/fixtures/declares-everything)', () => {
+    const declarations = require('../../lib/declarations');
+    const icons = require('../../lib/declared-icons');
+    const FIXTURE = path.join(__dirname, '..', 'fixtures', 'declares-everything');
+    const read = (name) => JSON.parse(fs.readFileSync(path.join(FIXTURE, name), 'utf8'));
+    const actionsOf = (api) => Object.values(api.device.serviceList).flatMap((s) => s.actionList);
+
+    it('is accepted by the meta-schema, by every declaration check, by validate and by the load\'s refusal check', async () => {
+      const api = read('api.json');
+      await accepted(api, 'the meta-schema');
+      assert.deepStrictEqual(declarations.check(api, read('schema.json')), {problems: [], warnings: []});
+      assert.deepStrictEqual(icons.problems(FIXTURE, api), []);
+      const result = await new Promise((resolve, reject) => require('../../lib/module-validator').validateModule(FIXTURE, (err, r) => (err ? reject(err) : resolve(r))));
+      assert.deepStrictEqual(result.problems, []);
+      assert.deepStrictEqual(result.warnings, []);
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(require('../../lib/schema-safety').schemaRefusal(FIXTURE, 'declares-everything'), null);
+    });
+
+    it('declares every field the meta-schema gives an action, a resource, annotations, an icon and a prompt', () => {
+      const meta = require('../../spec/schema.json');
+      const services = meta.properties.device.properties.serviceList.patternProperties;
+      const action = services[Object.keys(services)[0]].properties.actionList.items.properties;
+      const prompt = meta.properties.device.properties.promptList.items.properties;
+      const api = read('api.json');
+      const actions = actionsOf(api);
+      const prompts = api.device.promptList;
+      const unused = (declared, things) => Object.keys(declared).filter((k) => !things.some((t) => t != null && Object.prototype.hasOwnProperty.call(t, k)));
+      assert.deepStrictEqual(unused(action, actions), [], 'an action\'s fields');
+      assert.deepStrictEqual(unused(action.resource.properties, actions.map((a) => a.resource)), [], 'a resource\'s fields');
+      assert.deepStrictEqual(unused(action.annotations.properties, actions.map((a) => a.annotations)), [], 'the annotations');
+      assert.deepStrictEqual(unused(prompt, prompts), [], 'a prompt\'s fields');
+      const everyIcon = actions.flatMap((a) => (a.icons || []).concat((a.resource && a.resource.icons) || [])).concat(prompts.flatMap((p) => p.icons || []));
+      assert.deepStrictEqual(unused(meta.$defs.icons.items.properties, everyIcon), [], 'an icon\'s fields');
+      assert.deepStrictEqual([...new Set(prompts.flatMap((p) => p.messages.map((m) => m.role)))].sort(), ['assistant', 'user'], 'both roles');
+    });
+
+    it('and has one of each kind of thing: a template and a static resource, binary fields under properties and under items, each form type in a question, a completion for a variable and for an argument', () => {
+      const api = read('api.json');
+      const schema = read('schema.json');
+      const actions = actionsOf(api);
+      const templates = actions.filter((a) => a.resource != null).map((a) => a.resource.uriTemplate);
+      assert.ok(templates.some((x) => x.includes('{')) && templates.some((x) => !x.includes('{')), JSON.stringify(templates));
+      assert.ok(actions.some((a) => a.longRunning === true && a.resource == null));
+      const binary = require('../../lib/binary-fields');
+      const fields = actions.flatMap((a) => (a.output != null ? binary.binaryFields(declarations.pointed(schema, a.output.schema)) : []));
+      assert.ok(fields.some((x) => !x.path.includes('*')) && fields.some((x) => x.path.includes('*')), JSON.stringify(fields));
+      assert.ok(new Set(fields.map((x) => x.mediaType)).size >= 2, 'more than one media type');
+      const forms = actions.flatMap((a) => Object.values(a.questions || {})).map((q) => declarations.pointed(schema, q.schema));
+      const kinds = new Set(forms.flatMap((form) => Object.values(form.properties).map((p) => (p.enum != null ? 'enum' : p.type))));
+      assert.deepStrictEqual([...kinds].sort(), ['boolean', 'enum', 'integer', 'number', 'string']);
+      assert.ok(actions.some((a) => a.resource != null && a.resource.completion != null) && api.device.promptList.some((p) => p.completion != null));
+      assert.ok(actions.some((a) => a.resource != null && Array.isArray(a.resource.changesWith)));
+    });
+  });
 });
