@@ -156,6 +156,18 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `ctx.job` is never `null`.** Outside a task it is now
+  `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
+  is the call's own progress, sent to an MCP client that asked for it
+  (`_meta.progressToken`) as `notifications/progress` with `total: 100`, at
+  most one every 250 ms, the latest value winning, none after the answer.
+  Only the outer call's handler is heard: a composite's parts' reports are
+  dropped, and once the outer handler reports, its hops stop counting as
+  progress. `info` calls back with an error there. A module that asked
+  `ctx.job == null` to tell a call that is not a task must ask
+  `ctx.job.id == null`; a module that wrote `ctx.job.id` into its output
+  outside a task now gets `null` where it threw before. Inside a task
+  nothing changes.
 - **Breaking: `contentEncoding: "base64"` is an assertion.** A string whose
   schema says `contentEncoding: "base64"` must now be canonical RFC 4648
   base64 (the standard alphabet, padded, no whitespace, zero pad bits), in an
