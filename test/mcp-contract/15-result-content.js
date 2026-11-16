@@ -62,13 +62,15 @@ describe('mcp-contract 15: a result\'s binary values placed (M6)', () => {
     assert.strictEqual(whole[0].name, 'm_svc_a');
   });
 
-  it('store: each value to store, as the outer caller\'s, with no session, decoded, its source the field\'s pointer', async () => {
+  it('store: each value to store, as the outer caller\'s in the call\'s session, decoded, its source the field\'s pointer', async () => {
     const blobs = fakeBlobs();
     const output = {report: Buffer.from('%PDF').toString('base64'), shot: b64(10)};
     const e = plan(output, SCHEMA, WHO, {inlineBytes: 1024});
-    const uris = await store(e, {blobs, owner: OWNER, source: {module: 'm', tool: 'm_svc_a'}});
+    const uris = await store(e, {blobs, owner: OWNER, session: 's-1', source: {module: 'm', tool: 'm_svc_a'}});
     assert.deepStrictEqual(blobs.puts.map((p) => [p.owner, p.session, p.mimeType, p.bytes.toString(), p.source]),
-      [[OWNER, null, 'application/pdf', '%PDF', {module: 'm', tool: 'm_svc_a', field: '/report'}]]);
+      [[OWNER, 's-1', 'application/pdf', '%PDF', {module: 'm', tool: 'm_svc_a', field: '/report'}]]);
+    await store(e, {blobs, owner: OWNER, source: {}});
+    assert.strictEqual(blobs.puts[1].session, null, 'no session: null');
     assert.deepStrictEqual(Object.keys(uris), ['/report']);
     assert.match(uris['/report'], /^countinghouse:\/\/r\/[A-Za-z0-9_-]{43}$/);
     assert.strictEqual(idOfUri(uris['/report']), blobs.puts[0].id);

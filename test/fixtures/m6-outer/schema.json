@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "outerService": {
+    "wrap": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "required": [
+          "doc"
+        ],
+        "properties": {
+          "doc": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "application/pdf",
+            "description": "the part's document"
+          }
+        }
+      }
+    }
+  }
+}
