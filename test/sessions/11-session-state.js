@@ -154,12 +154,42 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       // left for another: it is unanswered for good, and the new one is open
       const form = a.stage(change(A));
       assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: [], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']});
-      // the open one answered: its kind is no longer listed
+      // the open one answered: its kind is no longer listed, and its outcome's tell says so
       assert.strictEqual(a.verify(form.requestState, {name: 'maxOutputBytes', next: 32 * MiB, session: A}).ok, true);
-      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: [], formsLeft: 1, unanswered: ['requestTimeout']});
       assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 1, unanswered: ['requestTimeout']});
+      settings.set(A, 'maxOutputBytes', 32 * MiB, {loosening: true, over: 16 * MiB});
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [{name: 'maxOutputBytes', value: 32 * MiB, loosening: true, over: 16 * MiB, version: null}], locks: [], formsLeft: 1,
+        unanswered: ['requestTimeout']});
+      settings.clear(A, 'maxOutputBytes');
       // a session with none has exactly its three keys
       assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: [], formsLeft: 3});
+    });
+
+    // /code-review of #308, 1: one form of a kind left unanswered and another of that kind open now are two,
+    // if the runtime dies now: told as the lock it would be
+    it('an open form of a kind already left unanswered once is told as a lock, until it is answered', () => {
+      const a = confirm.confirmations(A);
+      a.stage(change(A, {name: 'requestTimeout', old: 30000, next: 60000}));
+      a.end();   // left unanswered
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 2, unanswered: ['requestTimeout']});
+      const second = a.stage(change(A, {name: 'requestTimeout', old: 30000, next: 90000}));
+      assert.ok(second != null, 'the kind is not locked: a second form is shown');
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: ['requestTimeout'], formsLeft: 1}, 'as it would stand were it never answered');
+      assert.deepStrictEqual(a.locks(), [], 'not locked here: it may still be answered');
+      assert.strictEqual(a.verify(second.requestState, {name: 'requestTimeout', next: 90000, session: A}).ok, true);
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 1, unanswered: ['requestTimeout']}, 'answered: one unanswered, as before it');
+    });
+
+    // /code-review of #308, 4: a form used up says nothing by itself; what its answer left is told, once
+    it('a form used up tells nothing by itself: its outcome does, once', () => {
+      const a = confirm.confirmations(A);
+      const form = a.stage(change(A));
+      const before = statesOf(A).length;
+      assert.strictEqual(a.verify(form.requestState, {name: 'maxOutputBytes', next: 32 * MiB, session: A}).ok, true);
+      assert.strictEqual(statesOf(A).length, before, 'no state between the form used up and its outcome');
+      a.decline('maxOutputBytes');
+      assert.strictEqual(statesOf(A).length, before + 1);
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: ['maxOutputBytes'], formsLeft: 2});
     });
 
     it('a kind that is locked is not also listed as unanswered', () => {
@@ -578,10 +608,26 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(confirm.confirmations(B).locks(), [], 'the first of its kind for a session that had none');
     });
 
-    it('a restored unanswered kind never undoes a lock, and one that is locked in the row is only locked', async () => {
+    it('a restored unanswered kind never undoes a lock', async () => {
       sessions.importTable(table([row(A, {locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes']})]));
       await resumed(A);
       assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes']});
+    });
+
+    // /code-review of #308, 5 and 6: a state says one thing of a kind, and what it says of its forms adds up
+    it('a kind both locked and unanswered, and an unanswered form with no form spent, are no state: the row is dropped', async () => {
+      const base = {overrides: [], locks: [], formsLeft: 2};
+      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {locks: ['pack'], unanswered: ['pack']})), null, 'locked is not also unanswered');
+      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {formsLeft: 3, unanswered: ['pack']})), null, 'a form left unanswered was a form spent');
+      sessions.importTable(table([row(A, {locks: ['pack'], formsLeft: 1, unanswered: ['pack']}), row(B, {formsLeft: 2, unanswered: ['pack']})]));
+      await resumed(A);
+      await resumed(B);
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 3}, 'dropped: a new session');
+      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: [], formsLeft: 2, unanswered: ['pack']});
+      // and the store itself: restoring a kind as both leaves it locked, and listed once, as that
+      const c = confirm.confirmations(B);
+      c.restore({locks: ['requestTimeout'], formsLeft: 1, unanswered: ['requestTimeout']});
+      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: ['requestTimeout'], formsLeft: 1, unanswered: ['pack']});
     });
 
     it('the shared vectors\' restoreRows: B2 takes each accepted state and refuses each refused one\'s, as restore.js and the daemon do', () => {

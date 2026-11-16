@@ -759,11 +759,15 @@ of which it has left one dialog unanswered (two of a kind lock that kind):
 no key, no user's name, no nonce, no pending dialog. A dialog open at a
 restart is lost: its state was under a key the new runtime does not have.
 It is counted for its session as one left unanswered, since a dialog open
-when the state is told is told as that, and an answer corrects it; it is
-not counted in the user's window. So a restart hands no dialog back. The
+when the state is told is told as that (as a lock, when it is the second
+of its kind), and an answer corrects it. So a restart hands a session no
+dialog back. It is not counted in the user's window, which counts across
+sessions: after a restart with a dialog open that count is one short. The
 daemon keeps the
 table in memory and hands it to the next runtime before that one listens.
-Its shape is checked twice, and what it says is taken only this far:
+Its shape is checked by the daemon when it is told and twice by the
+runtime when it comes back (the restore, then each row at its session's
+resume), and what it says is taken only this far:
 
 - a session's row waits for the session: its shim resumes it by a token
   only it holds, and a row whose session never comes back is dropped;
