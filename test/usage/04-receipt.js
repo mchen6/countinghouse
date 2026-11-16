@@ -54,6 +54,17 @@ describe('the receipt on a tools/call result', () => {
     assert.ok(!('inlineBytesOut' in second), JSON.stringify(second));
   });
 
+  it('a scenario\'s receipt carries the inline bytes and its sentence says so', () => {
+    const u = usage();
+    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    const r = {isError: false, structuredContent: {img: {mimeType: 'image/png', bytes: 2048, block: 1}},
+      content: [{type: 'text', text: '{"img":1}'}, {type: 'image', data: Buffer.alloc(2048).toString('base64'), mimeType: 'image/png'}]};
+    const out = finishToolCall({usage: u, call, result: r, role: 'scenario', tool: 't', startedMs: t, now: () => t});
+    assert.strictEqual(out._meta['countinghouse/receipt'].inlineBytesOut, 2048);
+    assert.match(out.content[out.content.length - 1].text, / reached the model, and 2\.0 KB of images and audio\.$/);
+  });
+
   it('a module that is not a scenario gets an Out record and no receipt', () => {
     const u = usage();
     const call = u.beginCall({pack: null, tool: 'plain_svc_go', caller: 'u_a'});
