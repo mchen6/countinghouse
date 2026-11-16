@@ -81,7 +81,8 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
     });
 
     it('a modern unknown method: -32601, and HTTP would answer it 404', async() => {
-      const {res, info} = await viaGateway(modern('resources/list', {}, 8));
+      // roots/list is a client's method: no server here serves it (resources/list is, since M6)
+      const {res, info} = await viaGateway(modern('roots/list', {}, 8));
       assert.strictEqual(res.error.code, -32601);
       assert.strictEqual(info && info.status, 404);
     });
@@ -219,10 +220,10 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
     });
 
     it('a modern unknown method: 404, -32601; a legacy one stays 200', async() => {
-      const now = await post(modern('resources/list'), H('resources/list'));
+      const now = await post(modern('roots/list'), H('roots/list'));
       assert.strictEqual(now.status, 404);
       assert.strictEqual(now.body.error.code, -32601);
-      const legacy = await post({jsonrpc: '2.0', id: 1, method: 'resources/list'});
+      const legacy = await post({jsonrpc: '2.0', id: 1, method: 'roots/list'});
       assert.strictEqual(legacy.status, 200);
       assert.strictEqual(legacy.body.error.code, -32601);
     });

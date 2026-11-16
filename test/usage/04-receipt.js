@@ -62,7 +62,25 @@ describe('the receipt on a tools/call result', () => {
       content: [{type: 'text', text: '{"img":1}'}, {type: 'image', data: Buffer.alloc(2048).toString('base64'), mimeType: 'image/png'}]};
     const out = finishToolCall({usage: u, call, result: r, role: 'scenario', tool: 't', startedMs: t, now: () => t});
     assert.strictEqual(out._meta['countinghouse/receipt'].inlineBytesOut, 2048);
-    assert.match(out.content[out.content.length - 1].text, / reached the model, and 2\.0 KB of images and audio\.$/);
+    assert.match(out.content[out.content.length - 1].text, / reached the model, and 2\.0 KB inline \(images, audio, files\)\.$/);
+  });
+
+  // M6: an inline resource block's bytes are inline too (they enter the
+  // model's context), and a resource link's size is linkedBytesOut
+  it('M6: an inline resource block counts as inline, a link\'s size as linkedBytesOut, and the sentence says both', () => {
+    const u = usage();
+    const call = u.beginCall({pack: 'p', tool: 't', caller: 'u_a'});
+    u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 1000, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+    const r = {isError: false, structuredContent: {},
+      content: [{type: 'text', text: '{}'},
+        {type: 'resource', resource: {uri: 'countinghouse://r/R', mimeType: 'application/pdf', blob: Buffer.alloc(1024).toString('base64')}},
+        {type: 'resource_link', uri: 'countinghouse://r/L', name: 'big', mimeType: 'application/pdf', size: 3 * 1024 * 1024}]};
+    const out = finishToolCall({usage: u, call, result: r, role: 'scenario', tool: 't', startedMs: t, now: () => t});
+    const receipt = out._meta['countinghouse/receipt'];
+    assert.deepStrictEqual([receipt.inlineBytesOut, receipt.linkedBytesOut], [1024, 3 * 1024 * 1024]);
+    assert.match(out.content[out.content.length - 1].text, / reached the model, and 1\.0 KB inline \(images, audio, files\); 3\.0 MB stored behind links\.$/);
+    const rec = u.records().find((x) => x.bytesOut !== undefined);
+    assert.strictEqual(rec.linkedBytesOut, 3 * 1024 * 1024);
   });
 
   it('a module that is not a scenario gets an Out record and no receipt', () => {

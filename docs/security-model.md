@@ -754,18 +754,20 @@ terminal's.
 
 **Across a runtime restart.** The runtime keeps nothing of a session on
 disk. After every change it tells ch-local's daemon the session's whole
-state, which is exactly its own values, its locks and its dialogs left:
+state, which is its own values, its locks, its dialogs left and the kinds
+of which it has left one dialog unanswered (two of a kind lock that kind):
 no key, no user's name, no nonce, no pending dialog. A dialog open at a
 restart is lost: its state was under a key the new runtime does not have.
-It is not counted as unanswered in the user's window either; only its
-session's dialogs left remember that it was shown. Nor is a session's own
-count of the dialogs it left unanswered kept (two of a kind lock that kind
-for the session): after a restart it starts again from none. The session's
-three dialogs hold across the restart, and each unanswered one is in the
-user's window, so at most one more dialog of one kind is shown than
-without the restart. The daemon keeps the
+It is counted for its session as one left unanswered, since a dialog open
+when the state is told is told as that (as a lock, when it is the second
+of its kind), and an answer corrects it. So a restart hands a session no
+dialog back. It is not counted in the user's window, which counts across
+sessions: after a restart with a dialog open that count is one short. The
+daemon keeps the
 table in memory and hands it to the next runtime before that one listens.
-Its shape is checked twice, and what it says is taken only this far:
+Its shape is checked by the daemon when it is told and twice by the
+runtime when it comes back (the restore, then each row at its session's
+resume), and what it says is taken only this far:
 
 - a session's row waits for the session: its shim resumes it by a token
   only it holds, and a row whose session never comes back is dropped;
@@ -993,8 +995,9 @@ and the short list of what the in-process sandbox cannot give.
   symlink inside `--modulePath` that points elsewhere is readable, and write
   access covers all of `--modulePath` and `--moduleDataPath` (including other
   modules' directories and the module registry database). `--allow-addons`
-  is added for the SQLite auth provider, or whenever no `--loadModule` is
-  given (the module registry database uses `sqlite3`); it puts native code in
+  is added only for the SQLite auth provider, or for `--moduleRegistry` with
+  no `--loadModule` (the module registry database uses `sqlite3`); a start
+  with neither gets no native addons at all. It puts native code in
   the **main thread** outside the permission model. It does not cover
   Node 26's `node:ffi`: under `--permission`, `ffi.dlopen` needs its own
   `--allow-ffi`, which `--hardened` never passes, so on Node 26 FFI is refused
@@ -1118,7 +1121,49 @@ the main thread's, not the module's (spec:
     taken for a real measurement.
 - **Not provided.** A remote's answer is the remote's data: the module
   treats it as untrusted input, as it would any answer. (A remote call is
-  billed by the call's token, as every hop is since R2-1.)
+  billed by the call's token, as every hop is since R2-1. A remote call
+  aborted because its call was cancelled never answers, so it is not
+  billed; see the next section.)
+
+### Cancelling a call in flight
+
+A client can cancel a call while it runs (MCP completeness section 13): on
+HTTP a 2026-07-28 request's POST closing before its answer, on stdio and a
+shared runtime's session `notifications/cancelled` by request id. A legacy
+HTTP request's disconnect changes nothing.
+
+- **Who can cancel what.** A cancel names a request of its own transport
+  scope only: stdio's one connection, or one session. One session can never
+  cancel another's call, even with the same id. An unknown id costs one map
+  lookup and is ignored.
+- **What stops** (with `--workerThread`, the default; in single-thread
+  mode, which carries no call tokens, a cancel only suppresses the answer).
+  The call's token is dropped at once, and with it every hop's under it. A new hop, device query, remote call or channel open is
+  then refused `CALL_TOKEN_INVALID`, in whatever worker makes it. No worker
+  is interrupted, and no answer is written. A remote call already running
+  for the call is aborted: it rejects at once, and the remote server is
+  sent `notifications/cancelled`.
+- **The bill is what ran.** Each path captures its billing key when the
+  work starts, never by resolving the token again when it bills:
+  - a routed hop at its start;
+  - a peer invoke in the broker's unbilled entry, taken at the match, which
+    outlives the token;
+  - a remote call at its token's resolve.
+
+  So work already running when the call is cancelled is billed once, and a
+  client can't cancel just before it ends to get it free. A hop or invoke
+  not yet started is refused, so it never runs and isn't billed. A remote
+  call aborted by the cancel never answers, so it isn't billed; the remote
+  server's own quota is the user's, and the abort stops it being spent.
+  The outer call is billed only if its handler returned a success, as
+  always: a handler that ran to its end after the cancel is billed, and one
+  stopped by a refused hop is not. Its usage record is written once, with
+  outcome `cancelled`. The client's slot is freed at the cancel, but the
+  process waits for a cancelled call still running, up to the request
+  timeout, before it exits or reports a drain done, so a shutdown never
+  loses that bill. A task-augmented call cancelled before its task's id
+  was sent has its job removed if it hasn't started; one a worker has
+  already started runs to its end and is billed, its result unread.
 
 ## Current mitigations inventory
 
