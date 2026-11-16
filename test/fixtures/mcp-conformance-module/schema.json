@@ -180,6 +180,70 @@
           }
         }
       }
+    },
+    "array_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "string_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "string"
+      }
+    },
+    "number_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "number"
+      }
+    },
+    "null_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "null"
+      }
+    },
+    "binary_whole_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "string",
+        "contentEncoding": "base64",
+        "contentMediaType": "image/png"
+      }
+    },
+    "images_array_out": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "contentMediaType": "image/png"
+        }
+      }
     }
   }
 }

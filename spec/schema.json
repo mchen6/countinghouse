@@ -182,6 +182,116 @@
                         "required": [
                           "schema"
                         ]
+                      },
+                      "title": {
+                        "description": "The tool's title, as a client shows it.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "annotations": {
+                        "description": "The author's claims about the action. The runtime enforces none of them.",
+                        "type": "object",
+                        "properties": {
+                          "readOnlyHint": {
+                            "type": "boolean"
+                          },
+                          "destructiveHint": {
+                            "type": "boolean"
+                          },
+                          "idempotentHint": {
+                            "type": "boolean"
+                          },
+                          "openWorldHint": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "icons": {
+                        "$ref": "#/$defs/icons"
+                      },
+                      "longRunning": {
+                        "description": "The action is run as a task for a client that declares the tasks extension.",
+                        "type": "boolean"
+                      },
+                      "questions": {
+                        "description": "The questions the action's handler may ask its user with ctx.ask(name, values), by name. Each is declared: the message (with {name} placeholders for the values ctx.ask supplies) and a pointer to the schema of its answer, a flat form.",
+                        "type": "object",
+                        "maxProperties": 4,
+                        "propertyNames": {
+                          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "message": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500
+                            },
+                            "schema": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "message",
+                            "schema"
+                          ]
+                        }
+                      },
+                      "resource": {
+                        "description": "The action is a resource, read by its URI, and is not listed as a tool. uriTemplate is a relative path in RFC 6570 level 1 (literals and {name}); the gateway forms the full URI.",
+                        "type": "object",
+                        "properties": {
+                          "uriTemplate": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "name": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+                          },
+                          "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "mimeType": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,62}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,62}$"
+                          },
+                          "changesWith": {
+                            "description": "The actions of this module whose success may change this resource.",
+                            "type": "array",
+                            "maxItems": 32,
+                            "uniqueItems": true,
+                            "items": {
+                              "$ref": "#/$defs/actionRef"
+                            }
+                          },
+                          "icons": {
+                            "$ref": "#/$defs/icons"
+                          },
+                          "completion": {
+                            "$ref": "#/$defs/completion"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "uriTemplate",
+                          "name"
+                        ]
                       }
                     },
                     "additionalProperties": false,
@@ -197,6 +307,82 @@
             }
           },
           "additionalProperties": false
+        },
+        "promptList": {
+          "description": "The module's prompts: declared text, with {{name}} placeholders for their arguments. prompts/get runs no module code.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "icons": {
+                "$ref": "#/$defs/icons"
+              },
+              "arguments": {
+                "type": "object",
+                "description": "Pointer to the prompt's arguments: an object schema whose properties are all strings in the module's schema.json.",
+                "properties": {
+                  "schema": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "schema"
+                ]
+              },
+              "messages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ]
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 8192
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "role",
+                    "text"
+                  ]
+                }
+              },
+              "completion": {
+                "$ref": "#/$defs/completion"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "messages"
+            ]
+          }
         },
         "deviceList": {
           "type": "array",
@@ -218,5 +404,52 @@
   "additionalProperties": false,
   "required": [
     "device"
-  ]
+  ],
+  "$defs": {
+    "icons": {
+      "description": "Icons, as files inside the module: a PNG, JPEG or WebP of at most 16 KiB each, read at load and sent inline. Never a URL: a client that fetched one would tell the author the user's address. SVG is refused, since it can carry script.",
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "description": "A path inside the module, with forward slashes; no leading slash, no .. segment, no scheme.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._ /-]+$"
+          },
+          "sizes": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:any|[1-9][0-9]{0,4}x[1-9][0-9]{0,4})$"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "file"
+        ]
+      }
+    },
+    "actionRef": {
+      "description": "An action of this same module, as <service>.<action> (the service by the name its handlers/ directory has).",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}\\.[\\S]{1,128}$"
+    },
+    "completion": {
+      "description": "Per argument (a prompt's) or variable (a resource's): the action of this module that completes it. Its input is {argument, value, context} and its output {values: string[]}.",
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/actionRef"
+      }
+    }
+  }
 }
