@@ -543,7 +543,7 @@
     "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"the answer is larger than this connection carries\",\"data\":{\"countinghouse/code\":\"OUTPUT_TOO_LARGE\",\"retryable\":false}}}"
   },
   "restoreRows": {
-    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}; overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
+    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
     "accepted": [
       {
         "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -552,6 +552,31 @@
           "overrides": [],
           "locks": [],
           "formsLeft": 3
+        }
+      },
+      {
+        "session": "cccccccccccccccccccccccccccccccc",
+        "resume": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "state": {
+          "overrides": [],
+          "locks": [
+            "pack"
+          ],
+          "formsLeft": 1,
+          "unanswered": [
+            "maxOutputBytes",
+            "requestTimeout"
+          ]
+        }
+      },
+      {
+        "session": "dddddddddddddddddddddddddddddddd",
+        "resume": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "state": {
+          "overrides": [],
+          "locks": [],
+          "formsLeft": 2,
+          "unanswered": []
         }
       },
       {
@@ -590,6 +615,102 @@
       }
     ],
     "refused": [
+      {
+        "why": "unanswered that is no list",
+        "reason": "unanswered",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 2,
+            "unanswered": "pack"
+          }
+        }
+      },
+      {
+        "why": "an unanswered kind twice",
+        "reason": "unanswered",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 1,
+            "unanswered": [
+              "pack",
+              "pack"
+            ]
+          }
+        }
+      },
+      {
+        "why": "an unanswered kind that is none",
+        "reason": "unanswered",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 2,
+            "unanswered": [
+              "locale"
+            ]
+          }
+        }
+      },
+      {
+        "why": "a kind both locked and unanswered",
+        "reason": "unanswered",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [
+              "pack"
+            ],
+            "formsLeft": 1,
+            "unanswered": [
+              "pack"
+            ]
+          }
+        }
+      },
+      {
+        "why": "an unanswered form with no form spent",
+        "reason": "unanswered",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 3,
+            "unanswered": [
+              "pack"
+            ]
+          }
+        }
+      },
+      {
+        "why": "a key beside unanswered",
+        "reason": "not exactly {overrides, locks, formsLeft}",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 2,
+            "unanswered": [],
+            "nonce": "x"
+          }
+        }
+      },
       {
         "why": "no resume",
         "reason": "not exactly {session, resume, state}",
