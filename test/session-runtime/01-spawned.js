@@ -305,7 +305,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.deepStrictEqual(r.told.find((m) => m.type === 'listening'), {type: 'listening', socket: r.socket});
   });
 
-  it('ends, within its drain bound, once ch-local daemon is SIGKILLed, even with a session still attached (C3)', async() => {
+  it('ends, within its drain bound, once ch-local daemon is SIGKILLed, with a session still attached (C3)', async() => {
     // a parent standing in for the daemon: it forks the runtime in its own
     // group, with the IPC channel, sends the restore, and prints the pid
     const run = path.join(home, 'run', 'daemon');
@@ -335,13 +335,15 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       const t0 = Date.now();
       parent.kill('SIGKILL');
       assert.deepStrictEqual(await a.c.json('C', 10000), {op: 'drain'}, 'the attached shim is told to drain');
-      // the shim stays attached: the bound (--requestTimeout 2 s), not it, ends the drain
+      // the attached session has nothing in flight, so the drain closes its
+      // connection at once (#35 review) and the runtime ends well within its
+      // bound (--requestTimeout 2 s); a call still running would hold it to
+      // the bound, never past it
       until = Date.now() + 10000;
       while (alive() && Date.now() < until) await tick(50);
       const took = Date.now() - t0;
       assert.strictEqual(alive(), false, 'the runtime ended');
-      assert.ok(took >= 1800, `it waited for the attached session (${took} ms)`);
-      assert.ok(took <= 5000, `and no longer than its bound, with slack (${took} ms)`);
+      assert.ok(took <= 5000, `within its bound, with slack (${took} ms)`);
       assert.ok(!fs.existsSync(socket), 'and its socket went with it');
       a.c.end();
     } finally {
@@ -514,7 +516,12 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.deepStrictEqual(await a.c.json('C', 10000), {op: 'drain'});
     const b = await shim.attach(r.socket, secret);
     assert.strictEqual(b.refused != null && b.refused.code, 'SHUTTING_DOWN', JSON.stringify(b));
-    a.c.end();
+    // nothing in flight: the runtime closes the session's connection, and
+    // tells ch-local daemon the drain is done (#35 review)
+    const until0 = Date.now() + 5000;
+    while (!r.told.some((m) => m.type === 'drained') && Date.now() < until0) await tick(50);
+    assert.ok(r.told.some((m) => m.type === 'drained'), JSON.stringify(r.told));
+    assert.strictEqual(a.c.sock.destroyed, true, 'its connection closed by the runtime');
   });
 
   it('two sessions each get their own answers', async() => {
