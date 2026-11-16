@@ -127,8 +127,9 @@ describe('sandbox 17: POST /uninstall-module', function() {
     base = mkdtemp('uninstall-');
     const modulesDir = path.join(base, 'modules');
     fs.mkdirSync(modulesDir);
+    // the registry is opt-in (--moduleRegistry): this case tests it on purpose
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleSandbox', 'audit',
-      '--modulePath', modulesDir, '--moduleDataPath', store()]);
+      '--modulePath', modulesDir, '--moduleDataPath', store(), '--moduleRegistry']);
     const db = new sqlite3.Database(path.join(modulesDir, 'countinghouse-modules.db'));
     await new Promise((resolve, reject) => db.run("CREATE TABLE IF NOT EXISTS module_info(name TEXT PRIMARY KEY, version TEXT, path TEXT, deviceList TEXT)",
       (e) => (e ? reject(e) : db.run("INSERT INTO module_info(name, version, path, deviceList) VALUES ('ghost-mod', '1.0.0', '/nonexistent', '[]')",
