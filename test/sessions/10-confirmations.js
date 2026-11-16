@@ -181,7 +181,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     it('a list that is not exactly kinds and past times is dropped whole, and every kind is locked for 30 minutes (as when no list came: lockAll)', () => {
       const wall = WALL0;
       const good = {kind: 'pack', at: wall - MIN};
-      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'pack', at: wall + 1}], [good, {kind: 'pack', at: 1.5}], [good, {kind: 'pack', at: -1}],
+      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'pack', at: wall + 61 * 1000}], [good, {kind: 'pack', at: 1.5}], [good, {kind: 'pack', at: -1}],
         [good, {kind: 'pack', at: wall, session: A}], [good, null], Array.from({length: 65}, () => good)];
       for (const list of bad) {
         confirm.resetForTests();
@@ -195,6 +195,11 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         assert.strictEqual(confirm.confirmations(A).stage(change(A)), null);
         assert.deepStrictEqual(told, []);
       }
+      // a time up to a minute ahead of this clock is taken, as the daemon's restore allows it, and counts as now
+      confirm.resetForTests();
+      confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
+      assert.strictEqual(confirm.userWindow().load([good, {kind: 'pack', at: wall + 59 * 1000}]), true);
+      assert.strictEqual(confirm.userWindow().count('pack'), 2);
       // 64 is the most a list holds, and an empty one is a fresh start
       confirm.resetForTests();
       confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});

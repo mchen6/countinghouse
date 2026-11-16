@@ -351,6 +351,65 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     for (const s of [a, b]) s.c.end();
   });
 
+  // B2 Task 6, end to end, with the test as the daemon: it keeps what the
+  // runtime tells it and hands it back to the next runtime
+  it('a session\'s state crosses a runtime restart: told to the daemon as it changes, handed back in the restore, applied when its shim resumes it (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile]);
+    let secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const id = a.welcome.session;
+    const token = a.welcome.resumeToken;
+    const call = (s, args) => request(s.c, 'tools/call', {name: 'countinghouse_settings', arguments: args});
+    const valueOf = (got, name) => got.result.structuredContent.settings.find((s) => s.name === name).value;
+    assert.strictEqual((await call(a, {action: 'set', name: 'requestTimeout', value: '20s'})).result.structuredContent.new, 20000);
+    // the daemon's row for it: its state as last told, and its resume hash
+    await until(() => r.told.some((m) => m.type === 'session-state' && m.session === id));
+    const state = r.told.filter((m) => m.type === 'session-state' && m.session === id).pop().state;
+    assert.deepStrictEqual(state, {overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}], locks: [], formsLeft: 3});
+    const resume = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    // nothing told carries a key or a nonce
+    assert.ok(!/nonce|mac|key|secret/i.test(JSON.stringify(r.told.filter((m) => m.type === 'session-state'))));
+    // the runtime is killed; the next one is handed the table before it listens
+    r.child.kill('SIGKILL');
+    await r.exited;
+    r = runtime(home, ['--settingsFile', settingsFile], {restore: false, socketName: 's2'});
+    // the table in the one shape a runtime takes (lib/session-transport/restore.js). Its answer is
+    // {ok, ...}: a refusal is ok: false with a code, never an "error" field.
+    const answer = await r.control({type: 'restore', sessions: [{session: id, resume, state}], declines: [], reset: []});
+    assert.deepStrictEqual([answer.ok, answer.sessions], [true, 1], JSON.stringify(answer));
+    const t0 = Date.now();
+    secret = await listening(r);
+    // on the restore, not on the 3 s net (which would serve an empty table, and refuse the resume below)
+    assert.ok(Date.now() - t0 < 2500, `it listened ${Date.now() - t0} ms after the restore`);
+    // its shim resumes it, by its token
+    const back = await shim.session(r.socket, secret, undefined, {resume: token});
+    assert.ok(back.welcome != null && back.welcome.session === id, JSON.stringify(back.refused || back.welcome));
+    const got = await call(back, {action: 'get'});
+    assert.strictEqual(valueOf(got, 'requestTimeout'), 20000, 'its own value, as before the restart');
+    // and a session that was not in the table is a new one
+    const fresh = await shim.session(r.socket, secret);
+    assert.strictEqual(valueOf(await call(fresh, {action: 'get'}), 'requestTimeout'), 30000);
+    back.c.end();
+    fresh.c.end();
+  });
+
+  it('with no restore from the daemon, no confirmation form is shown for 30 minutes: what was declined before is not known (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    r = runtime(home, ['--settingsFile', settingsFile], {restore: false, env: {NODE_OPTIONS: `--require ${path.join(__dirname, '..', 'fixtures', 'session-elicitation-preload.js')}`}});
+    const secret = await listening(r);
+    assert.match(r.out + r.err, /no session table from ch-local daemon/);
+    const a = await shim.session(r.socket, secret);
+    const meta = {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}, 'io.modelcontextprotocol/clientInfo': {name: 'claude-code', version: '2.1.323'}})};
+    const asked = await request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '60s'}}, meta));
+    assert.strictEqual(asked.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(asked));
+    assert.strictEqual(await a.c.json('C', 300), null, 'and its shim is not asked its conditions');
+    // a tightening needs no form, and is taken
+    const tightened = await request(a.c, 'tools/call', Object.assign({name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '20s'}}, meta));
+    assert.strictEqual(tightened.result.structuredContent.new, 20000, JSON.stringify(tightened));
+    a.c.end();
+  });
+
   it('takes ch-local\'s control requests: a pack loaded in place is listed to a session', async() => {
     const packs = path.join(home, 'packs');
     const dir = scenario(home, {dir: path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), name: 'ch-pack-two'});
