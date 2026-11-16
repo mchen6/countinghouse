@@ -422,6 +422,12 @@ says how to write a module for this.
 
 ## What operators get
 
+- **The module registry is opt-in: `--moduleRegistry`.** A start with no
+  `--loadModule` no longer reads the CDIF-era registry database
+  (`lib/device-db`, `sqlite3`) or loads modules from it: it loads nothing,
+  and serves the platform tools. Pass `--moduleRegistry` to keep the old
+  behaviour. Under `--hardened`, such a start no longer gets
+  `--allow-addons` either ([reference](cli-and-api-reference.md)).
 - **`POST /reload-auth`** (admin key), and the authoring tool
   `countinghouse_reload_auth`, re-read the auth configuration without a
   restart. The file provider swaps a new file in only if it passes its

@@ -918,8 +918,9 @@ and the short list of what the in-process sandbox cannot give.
   symlink inside `--modulePath` that points elsewhere is readable, and write
   access covers all of `--modulePath` and `--moduleDataPath` (including other
   modules' directories and the module registry database). `--allow-addons`
-  is added for the SQLite auth provider, or whenever no `--loadModule` is
-  given (the module registry database uses `sqlite3`); it puts native code in
+  is added only for the SQLite auth provider, or for `--moduleRegistry` with
+  no `--loadModule` (the module registry database uses `sqlite3`); a start
+  with neither gets no native addons at all. It puts native code in
   the **main thread** outside the permission model. It does not cover
   Node 26's `node:ffi`: under `--permission`, `ffi.dlopen` needs its own
   `--allow-ffi`, which `--hardened` never passes, so on Node 26 FFI is refused

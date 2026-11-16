@@ -47,8 +47,9 @@ describe('module-loading 13: a mismatched registry entry at startup', function()
         db.run('INSERT INTO module_info VALUES (?, ?, ?, ?)', ['weather', '1.0.0', PROBE, '{}'], (e) => (e ? reject(e) : db.close(resolve)));
       });
     });
-    // startServer resolves only on the ready line, so getting here proves startup was not hung
-    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--modulePath', dir]);
+    // startServer resolves only on the ready line, so getting here proves startup was not hung.
+    // The registry is opt-in (--moduleRegistry): this case tests it on purpose.
+    server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--modulePath', dir, '--moduleRegistry']);
     assert.ok(/names a module differently from its package\.json/.test(server.output), server.output.slice(-3000));
   });
 });
