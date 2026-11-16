@@ -670,6 +670,10 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - **What isn't:** the probe of the daemon's own new runtime, after that runtime has told the daemon it listens, uses Node's `net.createConnection`. That allows impersonation and checks no owner.
    - **Why that's narrow:** the name is fresh and random, and a bind by anyone else first would have failed our runtime's bind. So the only gap is that runtime dying within the probe's ~100 ms after its tell, and another user binding the freed name inside that window.
    - **Accepted:** rather than a PowerShell run (1 to 10 s) at every runtime restart.
+9. **A restored row's claim of a confirmed loosening is the daemon's word.**
+   - No dialog is shown again for it (§6, §11 answer 4). So whoever can speak as the daemon on the runtime's control channel can raise a session's cap as far as the ceiling, with that session's client agreeing (`conditions?`), and no dialog.
+   - The channel is the pipe from the process that started the runtime, which is ch-local, the user's own. A module has no way to it.
+   - **What still bounds it:** the ceiling, the session's own client's answer now, and a default lowered since (the row's `over`, which is the row's claim too). A row can't lock less than a missing table does: a runtime that gets no table locks every setting's dialogs.
 
 ## 10. Migration and the per-session mode
 
