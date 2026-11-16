@@ -313,6 +313,17 @@ says how to write a module for this.
   `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
   knows only protocol revision 2024-11-05, which has no audio content type,
   may not render an audio block.
+- **Progress for composite calls.** A `tools/call` whose `params._meta`
+  carries a `progressToken` (a string of at most 256 characters, or a safe
+  integer) gets `notifications/progress` as its hops run: `progress` counts
+  the hops and remote calls billed so far, with no `total` and no message.
+  They come at most every 250 ms (240 at most per call), always before the
+  answer and never after. Over HTTP the POST's response becomes an SSE stream
+  only when the first one is due and your `Accept` allows
+  `text/event-stream`; a call that answers first is plain JSON, as before. On
+  stdio they're lines before the answer's line; on the shared runtime,
+  frames on your own session. A runtime started with `--no-workerThread`
+  (single-thread mode) sends none: its hops carry no call tokens to count by.
 - **A tool whose module declares no output schema advertises none** and
   returns text only: a string as-is, anything else as JSON, no output as one
   empty text block. The bundled modules all declare one, so their
