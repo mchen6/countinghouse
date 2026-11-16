@@ -18,6 +18,48 @@ describe('validation 09: run-local refuses a test with its own Redis client on a
     assert.deepStrictEqual(ownRedisClients("const c = createClient(`redis://127.0.0.1:${port}`); // run-local: not the shared Redis"), [], 'a dead port says so');
   });
 
+  it('flags an object connection on 6379, any loopback host form, and a BullMQ queue with none (its default)', () => {
+    for (const line of [
+      "queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: {db: 11, host: '127.0.0.1', port: 6379}});",
+      "const connection = {db: 11, port: 6379, host: '127.0.0.1'};",
+      "q = new QueueEvents('job-queue', {connection: {host: 'localhost', port: 6379}});",
+      "q = new Queue('job-queue', {connection: {host: '::1', port: '6379'}});",
+      "q = new Queue('job-queue', {connection: {host: '127.0.0.1', db: 11}});",
+      "q = new Queue('job-queue', {connection: {host: 'localhost'}});",
+      "q = new Queue('job-queue', {connection: {port: 6379}});",
+      "const r = new IORedis({host: '::1', port: 6379});",
+      "const c = redis.createClient({host: '127.0.0.1', port: 6379});",
+      "q = new Queue('job-queue');",
+      "q = new Queue('job-queue', {prefix: '{cdifJob}'});"
+    ]) assert.deepStrictEqual(ownRedisClients(line).length, 1, line);
+  });
+
+  it('passes a connection from the helper, and 6379 as data that is not a client', () => {
+    for (const line of [
+      "queue = new Queue('job-queue', {prefix: '{cdifJob}', connection: redisConnectionFor(11)});",
+      "const connection = redisConnectionFor(11);",
+      "const REDIS = {endpoints: [{host: '127.0.0.1', port: 6379}], socketPaths: []};",
+      "const debug = {debug: true, port: 6379, redisEndpoint: {host: '127.0.0.1', port: 6379}};",
+      "['net.connect', () => net.connect({host: '127.0.0.1', port: 6379})],",
+      "q = new Queue('job-queue', {connection: {host: '127.0.0.1', port: deadPort}}); // run-local: not the shared Redis"
+    ]) assert.deepStrictEqual(ownRedisClients(line), [], line);
+  });
+
+  it('redisConnectionFor: the host, port and db of the Redis the servers use', () => {
+    const {redisConnectionFor} = require('../helpers/test-env');
+    const was = process.env.CH_TEST_REDIS_URL;
+    try {
+      process.env.CH_TEST_REDIS_URL = 'redis://127.0.0.1:9749';
+      assert.deepStrictEqual(redisConnectionFor(11), {host: '127.0.0.1', port: 9749, db: 11});
+      process.env.CH_TEST_REDIS_URL = 'redis://[::1]:9749';
+      assert.deepStrictEqual(redisConnectionFor(11), {host: '::1', port: 9749, db: 11}, 'brackets off an IPv6 host');
+      delete process.env.CH_TEST_REDIS_URL;
+      assert.deepStrictEqual(redisConnectionFor(11), {host: '127.0.0.1', port: 6379, db: 11}, 'CI: the system Redis');
+    } finally {
+      if (was == null) delete process.env.CH_TEST_REDIS_URL; else process.env.CH_TEST_REDIS_URL = was;
+    }
+  });
+
   it('no test in the tree opens its own client on a literal URL any more', () => {
     const fs = require('fs');
     const path = require('path');
