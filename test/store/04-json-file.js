@@ -196,8 +196,14 @@ describe('store 04: the review of B2', function() {
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1});
   });
 
-  it('takes over an empty lock, and a live pid\'s lock, older than a write can take', () => {
-    for (const content of ['', JSON.stringify({pid: process.ppid, startMs: 1, at: Date.now() - 60000})]) {
+  // A lock is stale when its holder's process is gone, or when no holder is
+  // readable after STALE_MS (one still being written): never by its age
+  // alone, so a live writer held up past it (a slow fsync on a loaded
+  // machine, a debugger, a long GC pause) never has its lock taken while it
+  // writes, and two processes never write the file at once.
+  it('takes over an empty lock older than a write can take, and a dead pid\'s lock', () => {
+    const dead = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], {encoding: 'utf8'});
+    for (const content of ['', JSON.stringify({pid: Number(dead.stdout), startMs: 1, at: Date.now()})]) {
       const dir = tmpStore();
       const lock = path.join(dir, '.lock');
       fs.writeFileSync(lock, content);
@@ -208,6 +214,30 @@ describe('store 04: the review of B2', function() {
       f.flush();
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1}, `lock ${JSON.stringify(content)}`);
     }
+  });
+
+  it('never takes over a live process\'s lock, however old it is; once its holder is gone, it is taken', async () => {
+    const live = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {stdio: 'ignore'});
+    const exited = new Promise((resolve) => live.once('exit', resolve));
+    const dir = tmpStore();
+    const lock = path.join(dir, '.lock');
+    const held = JSON.stringify({pid: live.pid, startMs: 1, at: Date.now() - 3600 * 1000});
+    fs.writeFileSync(lock, held);
+    const old = (Date.now() - 3600 * 1000) / 1000;
+    fs.utimesSync(lock, old, old);
+    const f = openJsonFile(path.join(dir, 'm.json'));
+    try {
+      f.set('k', 1);
+      f.flush(); // waits LOCK_WAIT_MS, then warns and reschedules: never writes past a live holder
+      assert.strictEqual(fs.readFileSync(lock, 'utf8'), held, 'the live holder\'s lock is still its own');
+      assert.ok(!fs.existsSync(path.join(dir, 'm.json')), 'nothing was written while it held the lock');
+    } finally {
+      live.kill('SIGKILL');
+    }
+    await exited;
+    f.flush();
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'm.json'), 'utf8')), {k: 1}, 'its holder gone, the lock is taken');
+    f.close();
   });
 
   function holdLock(dir, ms) {
