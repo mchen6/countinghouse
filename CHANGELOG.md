@@ -18,6 +18,22 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — what a module declares for MCP clients is checked (MCP completeness, M0)
+
+- **`api.json` takes the fields the MCP layer serves**: an action's `title`,
+  `annotations`, `icons`, `longRunning`, `questions` and `resource`, and the
+  device's `promptList`. The meta-schema holds each one's shape and bounds,
+  and an action stays closed to anything else. Each field is served as its
+  part of the layer is released.
+- **The rules a schema cannot express are checked at load**, in a
+  validator, before any of the module's code runs: `MODULE_ASSEMBLY_FAIL` at
+  stage `declarations`, for the first problem. `countinghouse-validate`
+  reports every problem and warning, and checks the module's icon files.
+- **Two things a module could carry before are now refused at load:** a
+  binary output field that is not under `properties` or an array's `items`
+  (it was served as a plain string), and `x-mcp-header` anywhere in an input
+  schema (the server's side of it is not built).
+
 ### Removed — BSON request bodies
 
 - **An `application/bson` body is no longer taken**, on any route: it is

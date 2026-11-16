@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "notesService": {
+    "readNote": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      }
+    },
+    "listNotes": {
+      "output": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      }
+    },
+    "saveNote": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved"
+        ]
+      },
+      "fault": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "questions": {
+        "overwrite": {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "boolean",
+              "title": "Replace it"
+            },
+            "note": {
+              "type": "string",
+              "title": "A note for the history",
+              "maxLength": 200
+            },
+            "copies": {
+              "type": "integer",
+              "title": "Copies of the old one to keep",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "weight": {
+              "type": "number",
+              "title": "Weight",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "mode": {
+              "type": "string",
+              "title": "How",
+              "enum": [
+                "replace",
+                "append"
+              ]
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      }
+    },
+    "completeId": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "argument": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "argument",
+          "value"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "values"
+        ]
+      }
+    },
+    "renderNote": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "cover": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "image/png"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "contentEncoding": "base64",
+              "contentMediaType": "image/jpeg"
+            }
+          }
+        },
+        "required": [
+          "cover",
+          "pages"
+        ]
+      }
+    }
+  },
+  "prompts": {
+    "summarise": {
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "style": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  }
+}

@@ -77,7 +77,15 @@ function argsTable(scanDir) {
     [`${SHAPE}strict_out`]:                                     {args: {}, expect: 'error'},
     [`${SHAPE}binary_out`]:                                     {args: {}, expect: 'ok'},
     [`${SHAPE}many_images_out`]:                                {args: {}, expect: 'error'},
-    [`${SHAPE}big_image_out`]:                                  {args: {}, expect: 'ok'}
+    [`${SHAPE}big_image_out`]:                                  {args: {}, expect: 'ok'},
+    // M20: non-object output schemas; this legacy-era SDK client lists them
+    // without one and gets text only, the whole binary output as its block
+    [`${SHAPE}array_out`]:                                      {args: {}, expect: 'ok'},
+    [`${SHAPE}string_out`]:                                     {args: {}, expect: 'ok'},
+    [`${SHAPE}number_out`]:                                     {args: {}, expect: 'ok'},
+    [`${SHAPE}null_out`]:                                       {args: {}, expect: 'ok'},
+    [`${SHAPE}binary_whole_out`]:                               {args: {}, expect: 'block'},
+    [`${SHAPE}images_array_out`]:                               {args: {}, expect: 'ok'}
   };
 }
 
@@ -202,6 +210,12 @@ describe('mcp-contract 03: the official SDK client accepts every tool result', f
         r = await client.callTool({name: tool.name, arguments: entry.args});
       } catch (e) {
         failures.push(`${tool.name}: SDK threw ${e.code} ${e.message}`);
+        continue;
+      }
+      if (entry.expect === 'block') {
+        if (r.isError === true || r.structuredContent !== undefined || !Array.isArray(r.content) || r.content.length !== 1 || r.content[0].type !== 'image') {
+          failures.push(`${tool.name}: expected its one image block, no text and no structuredContent: ${JSON.stringify(r).slice(0, 200)}`);
+        }
         continue;
       }
       if (entry.expect === 'error') {
