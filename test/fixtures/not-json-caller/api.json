@@ -1,0 +1,15 @@
+{
+  "device": {
+    "friendlyName": "not-json-caller",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Calls not-json-callee and reports the error its hop gets.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:hopService": {
+        "actionList": [
+          {"name": "viaHop", "description": "Calls not-json-callee's bytes action and reports the refusal's code and text.",
+           "input": {"schema": "/hopService/viaHop/input"}, "output": {"schema": "/hopService/viaHop/output"}}
+        ]
+      }
+    }
+  }
+}

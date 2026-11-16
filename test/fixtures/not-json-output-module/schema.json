@@ -1,0 +1,18 @@
+{
+  "svc": {
+    "any": {
+      "input": {"type": "object", "properties": {}}
+    },
+    "returnsBuffer": {
+      "output": {"type": "object", "required": ["data"],
+        "properties": {"data": {"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}}}
+    },
+    "returnsNestedView": {
+      "output": {"type": "object", "properties": {"items": {"type": "array",
+        "items": {"type": "object", "properties": {"u": {"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}}}}}}
+    },
+    "returnsUntypedView": {
+      "output": {"type": "object", "properties": {"blob": {}}}
+    }
+  }
+}

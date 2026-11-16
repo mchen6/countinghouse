@@ -1,0 +1,8 @@
+{
+  "bytesService": {
+    "bytes": {
+      "input": {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"data": {"type": "string", "contentEncoding": "base64", "contentMediaType": "image/png"}}}
+    }
+  }
+}
