@@ -82,8 +82,9 @@ describe('mcp-contract 10: the progress notifier (M9)', () => {
     p.tick();
     c.advance(300);
     p.report(60, 100);
-    assert.deepStrictEqual(values(), [1, 50, 60]);
-    assert.strictEqual(sent[1].params.total, 100);
+    // offset by the one tick before the first report (the ruling on #306)
+    assert.deepStrictEqual(values(), [1, 51, 61]);
+    assert.strictEqual(sent[1].params.total, 101);
   });
 
   it('at most 240 per call', () => {
@@ -128,5 +129,27 @@ describe('mcp-contract 10: the progress notifier (M9)', () => {
     const p = createProgress({token: 't', send: () => { throw new Error('gone'); }, now: c.now, setTimer: c.setTimer, clearTimer: c.clearTimer});
     assert.doesNotThrow(() => p.tick());
     assert.doesNotThrow(() => { c.advance(300); p.tick(); });
+  });
+
+  it('a report after hop ticks is offset by them, so it still increases and is not swallowed (the reviewer\'s ruling)', () => {
+    const c = clock();
+    const {p, sent} = make(c);
+    for (let i = 0; i < 30; i++) { p.tick(); c.advance(300); }
+    const ticks = sent.length;
+    assert.strictEqual(sent[ticks - 1].params.progress, 30);
+    p.report(25, 100);
+    c.advance(300);
+    p.report(60, 100);
+    c.advance(300);
+    p.tick();
+    c.advance(300);
+    assert.deepStrictEqual(sent.slice(ticks).map((m) => [m.params.progress, m.params.total]), [[55, 130], [90, 130]], 'ticks + n of ticks + 100; no tick after');
+  });
+
+  it('a report with no ticks before it is not offset: n of 100', () => {
+    const c = clock();
+    const {p, sent} = make(c);
+    p.report(25, 100);
+    assert.deepStrictEqual(sent.map((m) => [m.params.progress, m.params.total]), [[25, 100]]);
   });
 });

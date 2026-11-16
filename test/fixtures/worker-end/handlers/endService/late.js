@@ -7,7 +7,7 @@ const seen = new Set();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = async (input, ctx) => {
-  const id = ctx != null && ctx.job != null ? String(ctx.job.id) : null;
+  const id = ctx != null && ctx.job != null && ctx.job.id != null ? String(ctx.job.id) : null;
   if (id != null && !seen.has(id)) {
     seen.add(id);
     await sleep(input != null && input.ms != null ? input.ms : 6000);
