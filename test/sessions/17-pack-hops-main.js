@@ -162,9 +162,20 @@ describe('sessions 17: the session check at every hop (shared runtime B3, Task 4
       DeviceManager.prototype.invokeJobsNow.call(dm, 'd-hidden', 'svc', 'act', {}, 'j3', (err) => got.push(err), null, {session: A});
       assert.strictEqual(ran, 1, 'A\'s run only');
       assert.deepStrictEqual(got.map((e) => [e.code, e.message.replace('d-never', 'd-hidden')]), [['DEVICE_NOT_FOUND', got[0].message], ['DEVICE_NOT_FOUND', got[0].message]]);
-      assert.strictEqual(require('../../lib/job-control-common').notRetried('DEVICE_NOT_FOUND'), true, 'in shared mode');
+      // the reviewer's ruling (6)(b) on #341: after discovery neither retries; before it, both retry alike
+      const {notRetried} = require('../../lib/job-control-common');
+      const seen = (e) => JSON.stringify({code: e.code, message: e.message.replace('d-never', 'd-hidden')});
+      assert.deepStrictEqual([notRetried(got[0].code, got[0]), notRetried(got[1].code, got[1])], [true, true], 'after discovery, in shared mode');
+      assert.strictEqual(seen(got[0]), seen(got[1]));
+      const early = [];
+      dm.allDevicesLoaded = false;
+      DeviceManager.prototype.invokeJobsNow.call(dm, 'd-hidden', 'svc', 'act', {}, 'j4', (err) => early.push(err), null, {session: B});
+      DeviceManager.prototype.invokeJobsNow.call(dm, 'd-never', 'svc', 'act', {}, 'j5', (err) => early.push(err), null, {session: B});
+      assert.deepStrictEqual([notRetried(early[0].code, early[0]), notRetried(early[1].code, early[1])], [false, false], 'before discovery: both retried');
+      assert.strictEqual(seen(early[0]), seen(early[1]));
+      assert.strictEqual(JSON.stringify(early[0]), JSON.stringify(got[0]), 'the tag (true and false here) is not serialized');
       sessions.resetForTests();
-      assert.strictEqual(require('../../lib/job-control-common').notRetried('DEVICE_NOT_FOUND'), false, 'outside it, as before');
+      assert.strictEqual(notRetried('DEVICE_NOT_FOUND', got[0]), false, 'outside shared mode, as before');
     });
   });
 
