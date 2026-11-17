@@ -36,7 +36,8 @@ describe('--stdio, spawned: the module that declares everything loads and serves
     assert.ok(save != null, `the module never listed; stderr without the Redis noise:\n${withoutRedisNoise(io.err)}`);
     const list = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/list'});
     const names = list.result.tools.map((t) => t.name).filter((n) => /notesservice_/.test(n)).map((n) => n.replace(/^.*notesservice_/, '')).sort();
-    assert.deepStrictEqual(names, ['completeid', 'listnotes', 'readnote', 'rendernote', 'savenote']);
+    // its two resource actions (readNote, listNotes) are not tools (M7): they are read as resources
+    assert.deepStrictEqual(names, ['completeid', 'rendernote', 'savenote']);
     const call = async (action, args, id) => {
       const tool = list.result.tools.find((t) => t.name.endsWith(`notesservice_${action.toLowerCase()}`));
       const got = await io.request({jsonrpc: '2.0', id: id, method: 'tools/call', params: {name: tool.name, arguments: args}});
@@ -45,8 +46,15 @@ describe('--stdio, spawned: the module that declares everything loads and serves
     };
     const answer = async (action, args, id) => (await call(action, args, id)).structuredContent;
     assert.deepStrictEqual(await answer('saveNote', {id: 'first', text: 'A first note.'}, 3), {saved: true});
-    assert.deepStrictEqual(await answer('readNote', {id: 'first'}, 4), {id: 'first', text: 'A first note.'});
-    assert.deepStrictEqual(await answer('listNotes', {}, 5), {ids: ['first']});
+    const readResource = async (uri, id) => {
+      const got = await io.request({jsonrpc: '2.0', id: id, method: 'resources/read', params: {uri}});
+      assert.ok(got.result != null, `${uri}: ${JSON.stringify(got)}`);
+      return got.result.contents;
+    };
+    const note = await readResource('countinghouse://m/declares_everything/notes/first', 4);
+    assert.deepStrictEqual(note.map((c) => [c.uri, c.mimeType]), [['countinghouse://m/declares_everything/notes/first', 'application/json']]);
+    assert.deepStrictEqual(JSON.parse(note[0].text), {id: 'first', text: 'A first note.'});
+    assert.deepStrictEqual(JSON.parse((await readResource('countinghouse://m/declares_everything/notes', 5))[0].text), {ids: ['first']});
     assert.deepStrictEqual(await answer('completeId', {argument: 'id', value: 'fi'}, 6), {values: ['first']});
     // its binary fields are served as M4 serves any: an image block each, and a reference in their place
     const rendered = await call('renderNote', {id: 'first'}, 7);

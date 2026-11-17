@@ -344,6 +344,31 @@ missing, oversized or SVG icon refuses the load (stage `icons`), and a reload
 to such a version leaves the loaded one serving. Each is sent inline as a
 `data:` URI from what the load read; nothing is read at list time.
 
+An action that declares a `resource` is served on `resources/list` (a
+`uriTemplate` with no variable) or `resources/templates/list` (one with
+variables), as `countinghouse://m/<module>/<path>`, where `<module>` is your
+module's name as tool names spell it. It is not also a tool: declare a
+second action over the same function if you want both. `resources/read`
+runs your action exactly as a `tools/call` does, with the URI's variables as
+its input (validated against your input schema, rate limited, billed as
+that action): a string output is the resource's text (your output schema's
+`contentMediaType`, else the declared `mimeType`, else `text/plain`), a
+binary string output its blob, anything else its JSON. A variable is
+percent-decoded as UTF-8; a value with a control character, a `/` or a
+`\`, or that is exactly `.` or `..`, never reaches you, but anything else
+is yours to guard, as any input is. Two things to keep it that way:
+
+- The variable reaches you decoded exactly once. Never decode it again:
+  `%252E%252E` arrives as `%2E%2E`, and a second decode makes it `..`.
+- Don't normalise it (NFKC, NFKD) before you use it as a path or a key.
+  Compatibility forms pass the checks above as the characters they are
+  (`．．`, two U+FF0E fullwidth full stops, is not `..`), and NFKC turns
+  them back into `..` and `/`.
+
+If two of the modules a runtime lists have names that spell the same
+`<module>` (`twin-a` and `twin_a`), neither one's resources are served, and
+the operator is warned; rename one.
+
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
 the keys that may reach the module, with its `title`, `description` and

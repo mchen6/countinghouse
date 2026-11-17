@@ -1,4 +1,5 @@
-// Declared as a tool and as the resource notes/{id}.
+// Declared as the resource notes/{id}: read with resources/read, and not
+// also a tool (MCP completeness M7).
 const notes = require('../../store');
 
 module.exports = async (input) => {

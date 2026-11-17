@@ -35,6 +35,21 @@
             "output": {
               "schema": "/stateService/crash/output"
             }
+          },
+          {
+            "name": "readCount",
+            "description": "Its /data counter, as a resource.",
+            "input": {
+              "schema": "/stateService/readCount/input"
+            },
+            "output": {
+              "schema": "/stateService/readCount/output"
+            },
+            "resource": {
+              "uriTemplate": "count",
+              "name": "count",
+              "mimeType": "text/plain"
+            }
           }
         ]
       }

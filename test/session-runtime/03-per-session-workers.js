@@ -143,6 +143,21 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
 
   // A hop into it: test/session-runtime/10-per-session-routing.js (Task 5).
 
+  it('its resource (M7): resources/read goes the call path\'s way, to the reading session\'s own worker and files', async() => {
+    const s = await twoSessions();
+    outOf(await s.call('A', 'touch'));
+    outOf(await s.call('A', 'touch'));
+    outOf(await s.call('B', 'touch'));
+    const list = await request(s.A.c, 'resources/list');
+    const res = (list.result.resources || []).find((x) => /\/count$/.test(x.uri));
+    assert.ok(res != null, JSON.stringify(list).slice(0, 800));
+    const readA = await request(s.A.c, 'resources/read', {uri: res.uri});
+    const readB = await request(s.B.c, 'resources/read', {uri: res.uri});
+    assert.strictEqual(readA.result.contents[0].text, '2', JSON.stringify(readA));
+    assert.strictEqual(readB.result.contents[0].text, '1', JSON.stringify(readB));
+    assert.deepStrictEqual(counts(r), {up: 2, ended: 0}, 'no worker of its own for a read');
+  });
+
   it('its prompt: listed, rendered and completed from the main thread\'s copy of its spec, with no worker; never a TypeError', async() => {
     const s = await twoSessions();
     const list = await request(s.A.c, 'prompts/list');
