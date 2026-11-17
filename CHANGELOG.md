@@ -53,6 +53,21 @@ space. A prompt's message keeps its line breaks and tabs, and an emoji
 keeps its joiner and VS-16. A completion candidate with a hidden character
 is no longer offered. Nothing is refused or changed at load.
 
+### Added — completion for resource templates, and completion actions (MCP completeness, M11)
+
+- **`completion/complete` takes `ref/resource`**: one of the caller's listed
+  resource templates, by its URI template; the variable's candidates are
+  the input property's `enum`, then its `examples`, derived at load and
+  matched as a prompt argument's are.
+- **A prompt or a resource may name a completion action**
+  (`"completion": {"<argument>": "<service>.<action>"}`): called with
+  `{argument, value, context}`, it answers `{values: string[]}` (100 kept,
+  of at most 256 characters). It runs as a call of that action, authorized
+  and rate limited, is not billed and is recorded in usage as
+  `completion/complete`; it is not listed as a tool. If it fails, answers
+  no values or takes more than 2 s, the schema's candidates are offered,
+  and a run past 2 s is cancelled as a cancelled call is.
+
 ### Fixed — a 2026-07-28 task's status mirrors the inline answer
 
 - **A task whose module was unloaded, reloaded or suspended while it ran**

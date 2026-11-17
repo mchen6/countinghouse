@@ -106,6 +106,8 @@ one) as well as the ports it binds.
 | `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/27-tasks-modern.js` | 9637, 9639, 9660 |
 | `test/mcp-contract/34-declared-text-cleaned.js` | 9755 |
+| `test/mcp-contract/35-modern-schema-conformance.js` | 9756 (a Redis URL nothing answers on, as stdio 27's) |
+| `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |
