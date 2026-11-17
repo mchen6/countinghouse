@@ -10,6 +10,30 @@ the auth config.
 
 ## Unreleased
 
+### Added — resource and prompt change notices on a listen (MCP completeness, M8)
+
+- **`subscriptions/listen` agrees to `resourcesListChanged`,
+  `promptsListChanged` and `resourceSubscriptions`**, on HTTP (the SSE
+  stream), stdio and a shared runtime's session, beside `toolsListChanged`.
+  A settled change that moves the resources (or templates) or the prompts a
+  listener is shown sends one `notifications/resources/list_changed` or
+  `notifications/prompts/list_changed`; a reload that lists the same says
+  nothing. `server/discover` declares `resources: {listChanged: true,
+  subscribe: true}` and `prompts: {listChanged: true}` where a listen is
+  served.
+- **`resourceSubscriptions`**: of the URIs asked, the acknowledgement agrees
+  to those the caller can read (a module resource its key, and its session,
+  are listed), in order, at most 64, each at most 2048 bytes; the rest are
+  left out. After a call to an action a subscribed resource names in
+  `changesWith` succeeds, by any entry path, each of the calling key's
+  subscriptions naming one of its URIs is sent
+  `notifications/resources/updated`, once per URI per quarter second. On a
+  shared runtime a per-session module's change reaches only the calling
+  session. A call with no key (`--debug` without `--debugKey`) is not
+  recorded, so it announces nothing. An HTTP listen whose client leaves
+  more than 1 MiB unread is closed (the listen is cancelled). A resource's
+  `changesWith` naming its own read action refuses the load.
+
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
 groups everything below by what an operator has to do. Measured cost of the
 file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
@@ -32,6 +56,19 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   `completion/complete`; it is not listed as a tool. If it fails, answers
   no values or takes more than 2 s, the schema's candidates are offered,
   and a run past 2 s is cancelled as a cancelled call is.
+
+### Fixed — a 2026-07-28 task's status mirrors the inline answer
+
+- **A task whose module was unloaded, reloaded or suspended while it ran**
+  is now `completed`, its result the isError result the same `tools/call`
+  gets inline, with the code in `_meta["countinghouse/code"]`
+  (`MODULE_UNLOADED`, `MODULE_RELOADING`, `MODULE_SUSPENDED`). It was
+  `failed`. The tasks extension uses `failed` only for a request that fails
+  with a JSON-RPC error, and a tool result with `isError` is `completed`
+  (`tasks.md` l.157-158, l.835-837). A task is still `failed`, with its
+  JSON-RPC `error`, when its run left no answer: the runner's
+  `--jobTimeout`, or the owner's access refused when the run starts.
+  Legacy-era tasks are unchanged.
 
 ### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
 
