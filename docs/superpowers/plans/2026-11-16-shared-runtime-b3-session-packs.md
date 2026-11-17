@@ -183,7 +183,7 @@
 - Modify: `lib/peer-channel-broker.js`: `handleRequest`, `handleAnnouncement`, `serveMatched`
 - Modify: `lib/job-sessions.js` and `lib/sessions.js` `close` (an ended session's hidden packs, for its jobs)
 - Test: `test/sessions/16-pack-hops.js` (server-free: the broker and the device manager with stand-in workers, as sessions 07 does)
-- Test: `test/session-runtime/03-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port)
+- Test: `test/session-runtime/03-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port). **Moved to Task 6's commit** (the reviewer, on #340's follow-up): no pack can be on in a real runtime until Task 6 wires `configure()`. Task 4's commit has the server-free cases (`test/sessions/17-pack-hops-main.js`).
 - Fixtures, written by the test into its home: a global pack `front` (a scenario with one tool, `relay`, and a role-less part `relay-core` that declares calls on `back`'s `echo` and on a module `ghost` that is never installed), and a pack `back` (a scenario whose `echo` counts its runs). `relay` returns the caught error's own fields as JSON.
 
 **Interfaces:**
@@ -266,6 +266,7 @@
 
 - [ ] **Step 1: Write the failing tests.**
   - **Required (the reviewer's #340 review, obligation 1):** the per-session view must not fail open while a this-session pack loads. Today its devices register and `toolschanged` fires before `packChanged`, so for a moment its module is owned by no pack and listed to everyone. Either `records()` holds the pack and `packChanged` runs before any of its devices is visible, or the view's cache is keyed on `toolGeneration.current()` too. Test: B can't see A's pack mid-load (its tools/list, tools/call and prompts, between the devices' registration and the load's answer).
+  - Task 4's spawned file, `test/session-runtime/03-session-pack-hops-spawned.js`, with Task 4's Step 1 "Spawned" cases and its fixtures, lands in this commit (moved from Task 4: it needs the wiring below).
   - Task 6's commit wires `session-packs.configure()` in production, with the globals (the reviewer's ruling (1) on #340): `allowsOn`, `ceilingNow` and `ceilingKey` from lib/session-settings.js, `isOpen` and `endedPacksOff` (Task 4). Test: a runtime started in shared mode answers through the wired store (no default left in place).
   - `load {pack, global: false}` while A's `load-pack` waits: the pack isn't global. `load {pack, global: true}` while A's `load-pack` waits: it is global, and B lists it.
   - `load {pack, global: false}` with no session waiting (a restart's reload): not global, and no session lists it.
