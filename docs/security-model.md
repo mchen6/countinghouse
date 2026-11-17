@@ -973,6 +973,20 @@ it and frees its slot, so a client that never reads holds nothing of a
 key's notices. The runtime's own reads of a listener's lists never spend
 its rate limit.
 
+A 2026-07-28 client that declares the tasks extension can name its tasks on
+a listen (`notifications.taskIds`, at most 64). Each id is agreed only if
+`tasks/get` would answer it for that caller right then: the same lookup, by
+key and, on a shared runtime, by session. Any other id is left out of the
+acknowledgement without an error. That covers another caller's task, an
+unknown id, a malformed id, a legacy task and an expired one, and they
+can't be told apart, so a listen can't be used to learn that another
+tenant's task exists. A change is announced by its id alone. Every
+`notifications/tasks` is built by that same lookup again when it is sent,
+and it is the task exactly as `tasks/get` would answer it. A task the
+caller can no longer read (its job gone, its session ended) is dropped
+silently. A working task's notices are coalesced to at most one a second
+per listener and task, and a closed listen frees its timers.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
