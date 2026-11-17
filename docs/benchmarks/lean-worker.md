@@ -99,3 +99,31 @@ enough to compare across commits.
 
 Each row is `--runs 3`. The final "before" for step 5 will be re-run with
 `--runs 5` or more, in several sessions, at the "after" stage.
+
+## Per-session workers (shared runtime R1)
+
+What one idle per-session lean worker adds to the shared runtime, measured
+by `perf/session-worker-rss.js`. A per-session worker is a worker_thread in
+the runtime's process, so its cost is the process's VmRSS and Pss after N
+sessions' first calls started N workers, minus before: the same N sessions
+open and the module listed, but no worker. Each reading is taken at steady
+state (RSS moved under 1% over 6 one-second samples). Every N is measured in
+a fresh runtime (`--workerThread --store local --sessionSocket`, as ch-local's
+daemon starts it, default sandbox) with `test/fixtures/per-session-module`
+loaded, 3 times, with at least 3 GB of memory available.
+
+2026-11-17, master `6814ad06`, Node 24.21.0, 2 CPUs (load average 1.6–3.3):
+
+| N workers | added RSS (median of 3) | per worker | range per worker | threads added |
+|---|---|---|---|---|
+| 1 | 39.4 MB | 39.4 MB | 38.1–40.5 MB | 17 |
+| 4 | 108.7 MB | 27.2 MB | 27.1–29.5 MB | 20 |
+| 8 | 208.9 MB | 26.1 MB | 25.8–26.6 MB | 24 |
+
+- **The fit:** the least-squares fit over the 9 runs gives **24.3 MB per worker, plus about 14.8 MB once**, with the first worker. The first worker adds 17 threads and each later one adds 1, so the first also starts shared machinery. The bound is therefore about 14.8 MB + 24.3 MB × workers. At the default `--maxSessionWorkers 16` that is about 404 MB, on top of the runtime's own ≈190 MB.
+- **PSS equals RSS** to within 0.01 MB in every run: the workers are threads of one process, so nothing is shared with another process.
+- **The earlier "14.5 MB" was not RSS.** It is the #177 row of the per-thread table above, a V8 heap size per thread, not what a worker adds to the process.
+
+**Caveats:**
+- These figures are for Node 24.21. RSS differs between Node majors (CI runs 22, 24 and 26), so re-measure on the release's Node.
+- The fixture is a small module: a few handlers using fs and `ctx.redis`. A heavier module adds its own heap and code on top.

@@ -6,8 +6,9 @@
 //   node test/helpers/run-local.js <test file> [mocha options]
 //
 // It sets CH_TEST_PORT_BASE (9740 unless given), starts a throwaway
-// redis-server of its own on 127.0.0.1:9749 in a temp directory with no
-// persistence (unless CH_TEST_REDIS_URL is already given), runs
+// redis-server of its own on 127.0.0.1, on a free port the OS picks
+// (CH_TEST_REDIS_PORT fixes one), in a temp directory with no persistence
+// (unless CH_TEST_REDIS_URL is already given), runs
 // `mocha --exit <file>` with both, and stops that Redis by PID when mocha ends,
 // whatever the outcome, Ctrl-C included. One file at a time.
 const path = require('path');

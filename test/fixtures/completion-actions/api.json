@@ -1,0 +1,22 @@
+{
+  "device": {
+    "friendlyName": "completion-actions",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a prompt and a resource whose completions a module action answers (MCP completeness M11)",
+    "promptList": [
+      {"name": "pick", "description": "Picks a colour.", "arguments": {"schema": "/prompts/pick"}, "messages": [{"role": "user", "text": "Pick {{colour}}."}],
+        "completion": {"colour": "pickService.completeColour"}}
+    ],
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:pickService": {
+        "actionList": [
+          {"name": "readItem", "description": "One item.", "input": {"schema": "/pickService/readItem/input"}, "output": {"schema": "/pickService/readItem/output"},
+            "resource": {"uriTemplate": "items/{id}", "name": "item", "completion": {"id": "pickService.completeId"}}},
+          {"name": "completeColour", "description": "Completes a colour.", "input": {"schema": "/pickService/completeColour/input"}, "output": {"schema": "/pickService/completeColour/output"}},
+          {"name": "completeId", "description": "Completes an item's id.", "input": {"schema": "/pickService/completeId/input"}, "output": {"schema": "/pickService/completeId/output"}},
+          {"name": "lastLate", "description": "What a cancelled completion's late request got.", "input": {"schema": "/pickService/lastLate/input"}, "output": {"schema": "/pickService/lastLate/output"}}
+        ]
+      }
+    }
+  }
+}

@@ -139,7 +139,9 @@ the answer at once. So:
   its own answer.
 - **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
   to fall back: the client offered no form, the call came by HTTP
-  `invoke-action` or as a task, the operator turned questions off
+  `invoke-action`, it runs as a task whose request declared no form
+  elicitation or while too many tasks already wait on questions, the
+  operator turned questions off
   (`--moduleQuestions off`), the outer call (when your action is a part)
   has no one to ask for any of these reasons, three rounds brought no valid
   answer, or the call has had eight rounds in all already (every
@@ -302,11 +304,9 @@ shows up as a load error rather than silently doing nothing. Directly under
 
 An action may also carry `title`, `annotations`, `icons`, `longRunning`,
 `questions` and `resource`, and the device a `promptList`: what the MCP
-layer serves to a client beyond a tool's name, description and schemas. Each
-is served as its part of that layer is released, and one that is not served
-yet changes nothing a client sees. All of them are checked already, by the
-meta-schema and at load (stage `declarations`), so a module written against
-them is right when they are served:
+layer serves to a client beyond a tool's name, description and schemas
+([every declaration, at a glance](#declarations-at-a-glance)). Each is
+checked by the meta-schema and at load (stage `declarations`):
 
 - a `resource`'s `uriTemplate` is a relative path of literals and `{name}`
   variables, at most 8 and at most one to a segment (`notes/{id}`,
@@ -369,12 +369,46 @@ If two of the modules a runtime lists have names that spell the same
 `<module>` (`twin-a` and `twin_a`), neither one's resources are served, and
 the operator is warned; rename one.
 
+A client can subscribe to your resources' URIs on its `subscriptions/listen`
+stream. You have no API to say your data changed: your resource's
+`changesWith` says which of your module's actions may change it
+(`"changesWith": ["notesService.save", "notesService.remove"]`). After a call
+to one of them succeeds, by any path (a `tools/call`, an `invoke-action`, a
+hop from another module, a job), every subscription of the calling key that
+names a URI of that resource is sent `notifications/resources/updated`,
+once per URI within a quarter second. It is coarse on purpose: it says only
+"read again", whatever the call changed. A call that fails, or is refused
+before your handler runs, sends nothing. On a shared runtime, a module that
+keeps its state per session tells only the calling session's subscriptions.
+A resource's `changesWith` may not name its own read action (the load is
+refused): every read would announce a change, and a client that reads again
+on each would loop.
+
 An action that declares `longRunning: true` runs as a task for a 2026-07-28
 client that declares the `io.modelcontextprotocol/tasks` extension (with
 `--workerThread`): the call is answered at once with a `taskId`, and the
 client polls `tasks/get` for the result your action returns. Anyone else's
 call to it runs inline, as any action's does. Your handler is the same
 either way.
+
+A task may ask, as a call does (see [Asking the user](#asking-the-user-ctxask)), when the request
+that made it declared form elicitation: the pass that asks ends, the task
+reads `input_required` with the form, and once the client answers it with
+`tasks/update` your handler runs again from the top under the same
+`taskId`, where `ctx.ask` returns the answer. The same rules hold: ask
+first, act after; three rounds of a question, eight in all. The pass that
+asks is not billed and spends none of the task's attempts. A question waits
+at most an hour; after that the task fails (`ASK_EXPIRED`) and nothing
+more of it runs. At most 64 of a key's tasks wait on a question at once
+(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once.
+
+Text you declare for the client (titles, descriptions, a prompt's messages, a
+question's message) reaches it with any hidden character as a space: a
+control, bidi, zero-width, tag, variation-selector or filler character
+(see [the security model](security-model.md)). A prompt's message keeps its
+line breaks and tabs, and an emoji keeps its joiner and VS-16. A completion
+candidate (an `enum` or `examples` value, or one your completion action
+answers) with a hidden character is not offered.
 
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
@@ -385,10 +419,71 @@ against that schema, replaces each `{{name}}` once with the argument's value
 (an absent optional one is the empty string; substituted text is never
 scanned again) and returns your messages, at most 64 KiB in all.
 
+`completion/complete` offers values for a prompt's argument, or for a
+resource template's variable (`ref/resource`, the template as listed): the
+argument's schema's `enum`, then its `examples` (a template's: the input
+property behind the variable), matched to what the user has typed. A
+prompt or a resource may instead name an action of your module to answer:
+`"completion": {"<argument>": "<service>.<action>"}`. That action is called
+with `{argument, value, context}` (`context.arguments`: the other
+arguments' values so far, strings only) and answers `{values: string[]}`;
+at most 100 values of at most 256 characters are kept. It runs as a call of
+that action (authorized, rate limited, your input and output schemas
+checked), but it is not billed and is not listed as a tool; it is counted
+in usage as `completion/complete`. Keep it cheap: a client may ask on every
+keystroke. If it fails, answers no values, or takes more than 2 seconds,
+the schema's candidates are offered instead, and a run past 2 seconds is
+cancelled as a cancelled call is (what it asks afterwards is refused).
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
 [`MIGRATION.md`](../MIGRATION.md).
+
+### Declarations at a glance
+
+Every key an action, its `resource` and a prompt may carry, with where the
+meta-schema ([`spec/schema.json`](../spec/schema.json)) defines it. Two
+prefixes keep the pointers short:
+
+- `ACTION` is
+  `#/properties/device/properties/serviceList/patternProperties/^urn:[\S]{1,64}:serviceID:[\S]{1,64}$/properties/actionList/items`
+- `PROMPT` is `#/properties/device/properties/promptList/items`
+
+An action, a resource and a prompt refuse any other key.
+
+| Declaration | In `spec/schema.json` | What it is |
+|---|---|---|
+| `name` | `ACTION/properties/name` | Required. The action's name, unique within its service. |
+| `description` | `ACTION/properties/description` | What a client, and an LLM, reads as the tool's description. An action without one is skipped. |
+| `input` | `ACTION/properties/input` | `{schema}`: a pointer into your `schema.json`. Without it, the action takes no input. |
+| `output` | `ACTION/properties/output` | `{schema}`. Without it, the result is not validated on the way back. |
+| `fault` | `ACTION/properties/fault` | `{schema}`: the shape of what a failure of this action carries ([Failing a call](#failing-a-call)), of any root type. It describes; no fault is checked against it. |
+| `title` | `ACTION/properties/title` | The tool's title, served on `tools/list`. |
+| `annotations` | `ACTION/properties/annotations` | `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`: your claims, served on `tools/list`, enforced by nothing. |
+| `icons` | `ACTION/properties/icons` | At most 4 files inside your module (PNG, JPEG or WebP, at most 16 KiB each), read at load and served inline. |
+| `longRunning` | `ACTION/properties/longRunning` | Runs as a task for a client that declares the tasks extension (with `--workerThread`). Every other caller runs it inline. |
+| `questions` | `ACTION/properties/questions` | At most 4 named questions your handler may ask with `ctx.ask`, each a message and a flat form ([Asking the user](#asking-the-user-ctxask)). |
+| `resource` | `ACTION/properties/resource` | The action is a resource, read by its URI, and is not listed as a tool. |
+| `resource.uriTemplate` | `ACTION/properties/resource/properties/uriTemplate` | Required. A relative path of literals and `{name}` variables, each one a string property of the input. |
+| `resource.name` | `ACTION/properties/resource/properties/name` | Required. The resource's name, as `resources/list` shows it. |
+| `resource.title` | `ACTION/properties/resource/properties/title` | Its title. |
+| `resource.description` | `ACTION/properties/resource/properties/description` | Its description. |
+| `resource.mimeType` | `ACTION/properties/resource/properties/mimeType` | What a string output is served as, when the output schema's `contentMediaType` does not say. |
+| `resource.changesWith` | `ACTION/properties/resource/properties/changesWith` | Up to 32 actions of this module (`<service>.<action>`) whose success tells subscribers to read again. Never its own read action. |
+| `resource.icons` | `ACTION/properties/resource/properties/icons` | As an action's `icons`. |
+| `resource.completion` | `ACTION/properties/resource/properties/completion` | Per variable, the action of this module that offers values for it. |
+| `promptList` | `#/properties/device/properties/promptList` | On the device: at most 32 prompts, served on `prompts/list` and `prompts/get`. |
+| `prompt.name` | `PROMPT/properties/name` | Required. Listed as `<module>_<name>`, or a scenario's under the bare name. |
+| `prompt.title` | `PROMPT/properties/title` | Its title. |
+| `prompt.description` | `PROMPT/properties/description` | Its description. |
+| `prompt.icons` | `PROMPT/properties/icons` | As an action's `icons`. |
+| `prompt.arguments` | `PROMPT/properties/arguments` | `{schema}`: an object schema of at most 16 string properties. |
+| `prompt.messages` | `PROMPT/properties/messages` | Required. 1 to 8 `{role, text}` messages, `role` being `user` or `assistant`, with `{{name}}` placeholders. |
+| `prompt.completion` | `PROMPT/properties/completion` | Per argument, the action of this module that offers values for it. |
+
+The declarations in your `package.json`'s `countinghouse` object are listed
+under [`package.json`: the `countinghouse` keys](#packagejson-the-countinghouse-keys).
 
 ## `schema.json`
 
@@ -481,6 +576,20 @@ action):
 
 The load stops at the first such problem. `countinghouse-validate` prints
 them all.
+
+## `package.json`: the `countinghouse` keys
+
+What your module declares outside its spec goes in one object in its
+`package.json`, `"countinghouse": {...}`. The runtime reads these keys and
+ignores any other one.
+
+| Key | Value | What it is |
+|---|---|---|
+| `calls` | `["<module>/<service>.<action>", ...]` | The actions of other modules this one may `ctx.call`. An address that is not here is refused ([Calling other modules](#calling-other-modules)). A scenario's parts are the modules it names. |
+| `permissions` | `{fs, net, env, limits}` | What its worker may reach under the sandbox: paths, hosts, environment variables, and memory, blocking and disk limits ([Declaring permissions](#declaring-permissions)). |
+| `remotes` | `[{name, transport, url, headers, credential}]` | The remote MCP server it calls, one per module in this version ([Calling a remote MCP server](#calling-a-remote-mcp-server)). |
+| `role` | `"scenario"` or `"part"` | A scenario is listed and loads its parts. A part loaded by a scenario is not listed ([Roles](module-authoring.md#roles-scenarios-and-parts)). Any other value counts as no role. In the single-identity profile (`--stdio`, the shared runtime) only scenarios are listed; on a hosted server a module with no role is listed as any module is. |
+| `state` | `"shared"` (the default) or `"per-session"` | Whether the module keeps state per user session. `per-session` gives it, on the shared runtime, a worker, `ctx.redis` keys and `/data` and `/tmp` of its own per session. It is refused on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`); under `--stdio`, one session, it runs as a shared module. Any other value refuses the load (`MODULE_STATE_INVALID`); a reload that changes it is refused (`MODULE_STATE_CHANGED`). |
 
 ## Loading your module
 
@@ -1073,7 +1182,7 @@ rejects, with a code:
 
 | Code | When | Retryable |
 |---|---|---|
-| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect (refused, never followed), a 502 or 503, or the module was reloaded during the call | yes |
+| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect to another origin (refused; one within the same origin is followed, at most 5), a 502 or 503, or the module was reloaded during the call | yes |
 | `REMOTE_TIMEOUT` | no answer within `--remoteTimeout`, or a 504 | yes |
 | `REMOTE_AUTH_FAILED` | the server answered 401 or 403; the message names the variable, never its value | no |
 | `REMOTE_PROTOCOL` | an answer that is not valid MCP | no |
@@ -1195,13 +1304,11 @@ out. Exit
 codes: `0` clean, `1` problems found, `2` the path could not be read. No
 Redis and no server required.
 
-`--verifyModule` remains available for checking a module in the context of a
-running framework: it makes the framework continue past validation failures
-and report everything it finds, rather than stopping at the first one.
-
-```sh
-node ./framework.js --verifyModule --loadModule ./path/to/my-module
-```
+`countinghouse-validate` is the way to check a module: it reports every
+problem in one pass. A running framework never loads a module that fails a
+check (8.0.0 removed `--verifyModule`, which made it continue past one); start
+it with `--loadModule ./path/to/my-module` to see the module load, and read
+the log's stage when it is refused.
 
 ### Letting an agent write the module
 

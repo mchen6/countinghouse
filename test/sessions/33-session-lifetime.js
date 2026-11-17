@@ -27,7 +27,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
   let mm;
   let order;
   let releaseStop;
-  before(() => require('../../lib/logger').createLogger(false));
+  before(() => require('../../lib/logger').createLogger());
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-life-'));
     fs.mkdirSync(path.join(dir, 'data'));

@@ -1,9 +1,10 @@
 // The start line's options (framework.js "start with options:"), reviewer,
 // 2026-11-13, from a dogfooding log: it showed CDIF-era settings a local
 // install never uses, and the default --dbUrl with its password. The line is
-// getOptionsForLog(): no setting read nowhere (--wetty), --centralPortalUrl only
-// where it is used (--debug with --verifyModule), --dbUrl only under
-// --authProvider couchdb, and no credential in any URL.
+// getOptionsForLog(): --dbUrl only under --authProvider couchdb, and no
+// credential in any URL. The settings read nowhere (--wetty,
+// --centralPortalUrl, --verifyModule, --apiMonitor) are gone altogether, as is
+// --logStream, which changed nothing (both of the logger's branches were one).
 // Server-free, except one spawned stdio start that checks the line itself.
 const assert = require('assert');
 const path = require('path');
@@ -14,19 +15,25 @@ const cli = require('../../lib/cli-options');
 describe('validation 13: the start line\'s options', () => {
   afterEach(() => cli.setOptions({workerThread: false}));
 
-  it('leaves out --wetty, --centralPortalUrl and --dbUrl where nothing reads them', () => {
+  it('leaves out --dbUrl where nothing reads it, and has none of the retired settings', () => {
     cli.setOptions({workerThread: false});
     const o = cli.getOptionsForLog();
-    for (const k of ['wetty', 'centralPortalUrl', 'dbUrl']) assert.ok(!(k in o), k);
+    for (const k of ['wetty', 'centralPortalUrl', 'verifyModule', 'apiMonitor', 'logStream', 'dbUrl']) assert.ok(!(k in o), k);
     assert.strictEqual(o.workerThread, false, 'the rest is there');
   });
 
-  it('keeps --centralPortalUrl with --debug and --verifyModule, and --dbUrl under couchdb, without credentials', () => {
+  it('takes --logStream as no option at all (it changed nothing), and no boolean flag of that name', () => {
+    cli.setOptions({workerThread: false, logStream: true});
+    assert.ok(!('logStream' in cli), 'not an option');
+    assert.ok(!('logStream' in cli.getOptions()), 'not passed to a worker');
+    assert.ok(!cli.BOOLEAN_FLAGS.includes('logStream'));
+  });
+
+  it('keeps --dbUrl under couchdb, without credentials', () => {
     const secret = `pw${'X'.repeat(8)}`;
-    cli.setOptions({workerThread: false, debug: true, verifyModule: true, authProvider: 'couchdb', dbUrl: `http://admin:${secret}@127.0.0.1:5984`,
+    cli.setOptions({workerThread: false, debug: true, authProvider: 'couchdb', dbUrl: `http://admin:${secret}@127.0.0.1:5984`,
       redisUrl: `redis://user:${secret}@127.0.0.1:9749`});
     const o = cli.getOptionsForLog();
-    assert.ok('centralPortalUrl' in o);
     assert.ok('dbUrl' in o);
     assert.ok(!JSON.stringify(o).includes(secret), JSON.stringify({dbUrl: o.dbUrl, redisUrl: o.redisUrl}));
     assert.match(o.dbUrl, /127\.0\.0\.1:5984/);

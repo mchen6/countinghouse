@@ -1,4 +1,4 @@
-# Matt's latency gate for the shared runtime, measured on idle GitHub-hosted
+# The maintainer's latency gate for the shared runtime, measured on idle GitHub-hosted
 # runners (4 cores; perf/latency-gate/README.md). A one-off measurement
 # started by hand only, approved by the maintainer on 2026-11-15:
 #   gh workflow run latency-gate.yml -f runs=3

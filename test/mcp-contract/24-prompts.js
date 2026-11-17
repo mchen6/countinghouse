@@ -29,7 +29,7 @@ const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
 options.setOptions(OPTIONS);
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const moduleSpec = require('../../lib/module-spec');
 const callAddress = require('../../lib/call-address');
@@ -223,6 +223,15 @@ describe('mcp-contract 24: prompts (M10)', function() {
     const big = await get(KEY_A, 'notes_big', {x: 'y'.repeat(9 * 1024)});
     assert.strictEqual(big.error && big.error.code, -32602, JSON.stringify(big).slice(0, 300));
     assert.match(big.error.message, /64 KiB/);
+  });
+
+  // M18's bounds audit: the bound again on the answer as sent. Arguments
+  // within 64 KiB by their own bytes (8 placeholders of 7000 quotes: 56000)
+  // whose answer is not, once JSON escapes each quote (112000)
+  it('prompts/get: a result within 64 KiB by its arguments but over it as sent (escaping) is -32602', async () => {
+    const quoted = await get(KEY_A, 'notes_big', {x: '"'.repeat(7000)});
+    assert.strictEqual(quoted.error && quoted.error.code, -32602, JSON.stringify(quoted).slice(0, 300));
+    assert.match(quoted.error.message, /is \d+ bytes; a prompt's result is at most 64 KiB/);
   });
 
   // the review of #321: the size is known from the arguments' lengths, so

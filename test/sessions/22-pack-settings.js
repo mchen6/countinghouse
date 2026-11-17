@@ -17,7 +17,7 @@ const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const notices = require('../../lib/notices');
 const sessions = require('../../lib/sessions');
 const settings = require('../../lib/session-settings');

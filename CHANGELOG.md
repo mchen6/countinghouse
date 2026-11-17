@@ -10,6 +10,211 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — modules load on Windows when the install is run by an 8.3 short name
+
+An install run by a short-name spelling (`C:\Users\RUNNER~1\...`, as
+under GitHub's Windows runner's temporary directory), with no
+`--preserve-symlinks`, listed none of its modules under the sandbox: each
+failed with `Cannot find module '/app/handlers/...'`. A module's worker
+loaded the runtime's files by the short spelling until its file broker was
+installed and by the long one after, so one of them was loaded twice. The
+worker is now started by its real path, and each file is loaded once.
+
+### Fixed — the settings ceiling is found on Windows with no SystemDrive in the environment
+
+A runtime started with no `SystemDrive` in its environment (ch-local's
+daemon is) could not find ProgramData. Every setting that loosens a default
+was then refused with `SETTING_CEILING_UNTRUSTED`. The lookup now sets
+`SystemDrive` itself, from the system's Windows directory, before asking for
+the folder.
+
+### Removed — flags that did nothing, or let a failing module load
+
+- **`--verifyModule`** is gone. With it, the loader carried on past a
+  module's failed interface check, `DEVICE_SPEC_VALIDATION_FAIL`,
+  `INVALID_MODULE_INSTANCE` and even `DEVICE_OBJECT_CONFLICT`, and
+  registered the device anyway. A module that fails a check is now refused
+  whatever the options (`test/module-loading/37`). `countinghouse-validate`
+  is the way to check a module.
+- **`--apiMonitor`** is gone, with the Redis client it opened: it wrote a
+  per-call API log that nothing read.
+- **`--centralPortalUrl`**, **`--wetty`** and **`--validateData`** are gone:
+  nothing read them.
+- **`--logStream`** is gone: it chose between the logger's two
+  configurations, which had become one (the log goes to the same place with
+  it or without).
+- **`--heapDump`** stays (a dev aid), and no longer throws every minute when
+  Node runs without `--expose-gc`: it says once that it needs it
+  (`bin/countinghouse` and `npm run start-heap-dump` pass it) and does
+  nothing.
+
+### Added — the shared runtime: one runtime for a user's client sessions (#245–#371)
+
+- **`--sessionSocket <path>`** serves MCP sessions on a Unix socket, or on
+  Windows a named pipe with `--sessionDir` (#245, #248, #275). It is
+  `ch-local daemon`'s, one runtime per user, which each client session
+  reaches through ch-local's native shim. It needs `--store local`,
+  `--controlChannel ipc` and the single-identity profile.
+- **Each session is its own:**
+  - its `server/discover` and `subscriptions/listen` (#249);
+  - its settings within the operator's ceiling, a loosening confirmed in
+    its own form (B2: #268, #271, #292, #296);
+  - its packs (B3: #340, #341, #359);
+  - its tasks, which another session cannot see and which its end cancels
+    (B5: #334, #366, #371);
+  - its usage in the report and its settings history (#352, #360).
+- **A session resumes across a runtime restart** with its state (#262, #300,
+  #308). A drain lets calls in flight answer before the runtime stops (#255,
+  #267).
+
+### Added — modules that keep state per session (R1, #350–#356)
+
+- **`"countinghouse": {"state": "per-session"}`** in a module's
+  `package.json` gives it, on the shared runtime, a worker of its own per
+  session, started on that session's first call, with its own `ctx.redis`
+  keys, `/data` and `/tmp`, removed when the session ends (#350, #351, #353,
+  #356).
+  - A hosted server refuses such a module (`MODULE_NEEDS_SESSIONS`); under
+    `--stdio` it runs as a shared one.
+  - Any other value refuses the load (`MODULE_STATE_INVALID`), and a reload
+    that changes it is refused (`MODULE_STATE_CHANGED`).
+- **`--maxSessionWorkers`** (16 by default) caps how many such workers run
+  at once, in all. At the cap the least recently used idle one gives up its
+  slot, and with none idle a call is `SESSION_WORKERS_BUSY`. Each costs
+  about 24 MB, plus about 15 MB once: about 400 MB at the default cap
+  ([measured](docs/benchmarks/lean-worker.md#per-session-workers-shared-runtime-r1),
+  #377).
+
+### Changed — a job past its timeout fails `JOB_TIMEOUT` (#375)
+
+- A job run past its own `opts.timeout`, else `--jobTimeout`, fails with
+  the catalogued `JOB_TIMEOUT` (retryable, HTTP 504), not a library's text,
+  in both job runners. An answer that comes later is dropped. A 2026-07-28
+  task that times out is `failed` with that code.
+
+### Added — the tasks extension for 2026-07-28 clients (MCP completeness, M15, #329)
+
+- **A call to an action that declares `longRunning`**, from a client that
+  declares `io.modelcontextprotocol/tasks`, is answered at once with a task
+  (with `--workerThread`). The client polls `tasks/get`, and may
+  `tasks/update` and `tasks/cancel`. Anyone else's call runs inline.
+- **A request to those methods without the extension is `-32021`.** Over
+  HTTP they, `tools/call`, `resources/read` and `prompts/get` carry an
+  `Mcp-Name` header that must agree with the body. A task is its caller's,
+  and on a shared runtime its session's. Another's, an unknown id or a
+  legacy task is one `-32602` that echoes no id. Legacy-era tasks are
+  unchanged.
+
+### Added — prompts (MCP completeness, M10, #321)
+
+- **A device's `promptList`** is served on `prompts/list` and `prompts/get`,
+  as `<module>_<name>` (a scenario's under the bare name), to the keys that
+  may reach the module. `prompts/get` runs no module code: it checks the
+  arguments against the prompt's schema, puts each `{{name}}` in once and
+  returns the messages, at most 64 KiB.
+
+### Added — module resources (MCP completeness, M7, #327)
+
+- **An action may be declared a resource** (`resource` in `api.json`), not
+  a tool. It is listed on `resources/list` (no variables) or
+  `resources/templates/list`, as `countinghouse://m/<module>/<path>`, to the
+  keys that may reach its module. `resources/read` runs the action as a
+  `tools/call` would: authorized, validated, rate limited and billed, with
+  the URI's variables as its input, decoded once. A value with a control
+  character, a `/` or a `\`, or that is exactly `.` or `..`, never reaches
+  the module.
+
+### Added — a tool's title, annotations and icons (MCP completeness, M2, #319)
+
+- **`tools/list` carries an action's `title`, `annotations` and `icons`**
+  when it declares them. The hints are the author's claims; the runtime
+  enforces none. Icons, files in the module (PNG, JPEG or WebP, at most
+  16 KiB, never SVG or a URL), are read at load and sent inline as `data:`
+  URIs. A missing or bad one refuses the load (stage `icons`).
+
+### Added — `tools/list` in pages (MCP completeness, M1, #317)
+
+- **A list longer than `--listPageSize`** (250 by default, 10 to 1000) is
+  answered in pages, each but the last with a `nextCursor`. The resource,
+  template and prompt lists page the same way. A client can't choose the
+  size. A modern list result carries `ttlMs` and `cacheScope` (#379).
+
+### Added — cancelling a call in flight (MCP completeness, M19, #314, #316)
+
+- **A 2026-07-28 request over HTTP is cancelled** when its POST closes
+  before the answer. On stdio and a shared runtime's session,
+  `notifications/cancelled` cancels a call of the same connection or
+  session. A cancelled call writes no answer. A composite stops at its next
+  hop, and a remote call made for it is aborted. Work already running
+  finishes, its result discarded, and is billed. With `--workerThread`; in
+  single-thread mode a cancel only suppresses the answer.
+
+### Changed — output schemas of any JSON value (MCP completeness, M20, #304)
+
+- **A 2026-07-28 `tools/list` advertises an output schema of any root
+  type**, and a modern result carries the output, whatever its type, as
+  `structuredContent`. A module's output may be any JSON value its schema
+  allows, `null` included (before, anything but an object was refused). A
+  legacy request is unchanged.
+
+### Added — progress (MCP completeness, M9, #303; M21, #306)
+
+- **A `tools/call` with a `progressToken`** gets `notifications/progress` as
+  its hops and remote calls run, at most every 250 ms, before the answer,
+  on HTTP (the POST becomes an SSE stream when the first one is due), stdio
+  and a session.
+- **Breaking: `ctx.job` is never `null`.** Outside a task it is
+  `{id: null, progress(n), info(cb)}`: `progress(n)` (0 to 100) is the
+  call's own progress, sent with `total: 100`. A module that asked
+  `ctx.job == null` asks `ctx.job.id == null`.
+
+### Added — stored results and resource links (MCP completeness, M5, #299; M6, #313)
+
+- **A result's binary values past `--inlineContentBytes`** (1 MiB of decoded
+  bytes per result, in schema order) are stored and sent as `resource_link`s.
+  `resources/read` returns them to the caller who made the call, in the same
+  session, for `--resourceRetention` (24 h).
+- **The store is bounded:** `--resourceStoreBytes` in all, and per caller
+  `--resourceQuotaBytes` and `--resourceQuotaItems`. A result that would pass
+  a limit is refused `RESULT_STORE_FULL`, with nothing stored. It lives in
+  Redis db 13, or local files under `<storePath>/resources/`.
+  `--resourceReadCost` meters a read. Stored results are never listed.
+
+### Changed — binary values: base64 asserted, and sent as blocks (MCP completeness, M3, #293; M4, #297)
+
+- **Breaking: `contentEncoding: "base64"` is an assertion**, on input and
+  output: canonical RFC 4648 base64, or `INPUT_DATA_VALIDATION_FAIL` /
+  `OUTPUT_DATA_VALIDATION_FAIL` naming the field.
+- **Breaking: a Buffer, typed array or DataView in an output is refused**,
+  `OUTPUT_NOT_JSON`, in the module's worker (it was mangled).
+- **An `image/*` or `audio/*` base64 field is sent as its own content
+  block**, and any other media type as a `resource` block. Each is referenced
+  in `structuredContent` as the advertised `outputSchema` says.
+
+### Added — resource and prompt change notices on a listen (MCP completeness, M8)
+
+- **`subscriptions/listen` agrees to `resourcesListChanged`,
+  `promptsListChanged` and `resourceSubscriptions`**, on HTTP (the SSE
+  stream), stdio and a shared runtime's session, beside `toolsListChanged`.
+  A settled change that moves the resources (or templates) or the prompts a
+  listener is shown sends one `notifications/resources/list_changed` or
+  `notifications/prompts/list_changed`; a reload that lists the same says
+  nothing. `server/discover` declares `resources: {listChanged: true,
+  subscribe: true}` and `prompts: {listChanged: true}` where a listen is
+  served.
+- **`resourceSubscriptions`**: of the URIs asked, the acknowledgement agrees
+  to those the caller can read (a module resource its key, and its session,
+  are listed), in order, at most 64, each at most 2048 bytes; the rest are
+  left out. After a call to an action a subscribed resource names in
+  `changesWith` succeeds, by any entry path, each of the calling key's
+  subscriptions naming one of its URIs is sent
+  `notifications/resources/updated`, once per URI per quarter second. On a
+  shared runtime a per-session module's change reaches only the calling
+  session. A call with no key (`--debug` without `--debugKey`) is not
+  recorded, so it announces nothing. An HTTP listen whose client leaves
+  more than 1 MiB unread is closed (the listen is cancelled). A resource's
+  `changesWith` naming its own read action refuses the load.
+
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
 groups everything below by what an operator has to do. Measured cost of the
 file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
@@ -18,13 +223,53 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — declared text reaches the client with no hidden characters (MCP completeness, M18)
+
+What a module declares for the client is cleaned as it leaves: a tool's
+title and description, a prompt's title, description, arguments'
+descriptions and messages, a resource's title and description, and a
+question's dialog. Each hidden character (a control, line separator, bidi
+control, zero-width character, tag, variation selector or filler) becomes a
+space. A prompt's message keeps its line breaks and tabs, and an emoji
+keeps its joiner and VS-16. A completion candidate with a hidden character
+is no longer offered. Nothing is refused or changed at load.
+
+### Added — completion for resource templates, and completion actions (MCP completeness, M11)
+
+- **`completion/complete` takes `ref/resource`**: one of the caller's listed
+  resource templates, by its URI template; the variable's candidates are
+  the input property's `enum`, then its `examples`, derived at load and
+  matched as a prompt argument's are.
+- **A prompt or a resource may name a completion action**
+  (`"completion": {"<argument>": "<service>.<action>"}`): called with
+  `{argument, value, context}`, it answers `{values: string[]}` (100 kept,
+  of at most 256 characters). It runs as a call of that action, authorized
+  and rate limited, is not billed and is recorded in usage as
+  `completion/complete`; it is not listed as a tool. If it fails, answers
+  no values or takes more than 2 s, the schema's candidates are offered,
+  and a run past 2 s is cancelled as a cancelled call is.
+
+### Fixed — a 2026-07-28 task's status mirrors the inline answer
+
+- **A task whose module was unloaded, reloaded or suspended while it ran**
+  is now `completed`, its result the isError result the same `tools/call`
+  gets inline, with the code in `_meta["countinghouse/code"]`
+  (`MODULE_UNLOADED`, `MODULE_RELOADING`, `MODULE_SUSPENDED`). It was
+  `failed`. The tasks extension uses `failed` only for a request that fails
+  with a JSON-RPC error, and a tool result with `isError` is `completed`
+  (`tasks.md` l.157-158, l.835-837). A task is still `failed`, with its
+  JSON-RPC `error`, when its run left no answer: the runner's
+  `--jobTimeout`, or the owner's access refused when the run starts.
+  Legacy-era tasks are unchanged.
+
 ### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
 
 - **The lockdown's checks** (the allowed built-ins, a path given to
   `CHUtil.loadFile` or the reduced `module.createRequire`, a granted host
   for `CHUtil.request`) call only functions taken before module code loads,
-  and each guard hands a call on through a `Reflect.apply` taken then; the
-  file broker's checks follow in the next change. The allowed built-ins and
+  and each guard hands a call on through a `Reflect.apply` taken then; so
+  do the file broker's routing, grants and loader hook, and the resolve
+  shim. The allowed built-ins and
   the loopback names are no longer exported as live sets
   (`ALLOWED_BUILTIN_IDS`, a frozen array, takes the place of the first).
 - **A module can no longer patch `path`, `url` or `URL`** under audit or
@@ -48,6 +293,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   binary output field that is not under `properties` or an array's `items`
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
+
+### Added — a task may ask its user a module's question (MCP completeness, M22)
+
+A long-running action run as a 2026-07-28 task may now use `ctx.ask`, when
+the request that made the task declared form elicitation. The pass that
+asks ends; the task reads `input_required`, with the form in
+`inputRequests` and the status message "waiting for an answer"; the client
+answers with `tasks/update`, and the handler runs again under the same
+`taskId`. The question is held on the server, outside every module's
+reach, never in a requestState. The pass that asks is not billed and
+spends no attempt. A question waits at most an hour, then the task fails
+with the new code `ASK_EXPIRED`; at most 64 of a key's tasks (10,000 in
+all) wait on a question at once, past which `ctx.ask` is
+`ASK_UNAVAILABLE`.
 
 ### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
 
@@ -417,8 +676,8 @@ configuration). None of it is available to a hosted server.
 ### Removed — SOAP support: `CHUtil.createSOAPClient` (breaking)
 
 - **`CHUtil.createSOAPClient` is gone**, with the `soap` dependency and its
-  lockdown host check (Matt, 2026-11-13). Nothing in the repository, the
-  bundled modules or the packs used it. A module that still needs SOAP
+  lockdown host check (maintainer's decision, 2026-11-13). Nothing in the
+  repository, the bundled modules or the packs used it. A module that still needs SOAP
   depends on a SOAP library itself and declares its hosts under
   `countinghouse.permissions.net`. The ONVIF WSDL files under `spec/tools`
   stay, as data.
@@ -460,8 +719,9 @@ configuration). None of it is available to a hosted server.
 ### Removed — CDIF-style modules: one module format (breaking)
 
 - **A module is `api.json`, `schema.json` and `handlers/<service>/<action>.js`**
-  (lean worker, step 1; Matt, 2026-11-13). A module with a main entry
-  (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
+  (lean worker, step 1; maintainer's decision, 2026-11-13). A module with a
+  main entry (`package.json` `"main"`, or an `index.js`) and no `handlers/`
+  directory is
   refused before any of its code runs, at every way in (start, load, reload,
   restart) and by `countinghouse-validate` (stage `layout`), with the new code
   `MODULE_LAYOUT_UNSUPPORTED`, whose text names the file. That retires a
@@ -631,8 +891,9 @@ configuration). None of it is available to a hosted server.
   where a credential goes.
 - `--remoteTimeout` (default 60 s, one deadline for connecting and calling)
   and `--remoteMaxBytes` (default 16 MiB, an answer cut off as it streams).
-  Redirects are refused, and a loopback, private or Redis-endpoint address
-  is refused by URL at load and by resolved address before the socket
+  A redirect is followed only within the declared URL's origin (at most 5,
+  its Authorization kept) and refused to another, and a loopback, private
+  or Redis-endpoint address is refused by URL at load and by resolved address before the socket
   opens.
 - Each remote call is metered to the outer caller as an inner hop. The
   server's tools/list is recorded at load with a hash in the log; it
