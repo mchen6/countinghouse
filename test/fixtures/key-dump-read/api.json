@@ -1,0 +1,25 @@
+{
+  "device": {
+    "friendlyName": "key-dump-read",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "scans what a resource read's handler can reach (MCP completeness M18)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:readService": {
+        "actionList": [
+          {
+            "name": "peek",
+            "description": "Scans what this read can reach.",
+            "annotations": {"readOnlyHint": true},
+            "output": {"schema": "/readService/peek/output"},
+            "resource": {"uriTemplate": "peek", "name": "peek", "mimeType": "application/json"}
+          },
+          {
+            "name": "who",
+            "description": "Says who called, as a call sees it.",
+            "output": {"schema": "/readService/who/output"}
+          }
+        ]
+      }
+    }
+  }
+}

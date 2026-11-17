@@ -1,0 +1,6 @@
+{
+  "name": "m22-task-ask",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "description": "MCP completeness M22's test module: a long-running action that asks its user a declared question from inside a task."
+}
