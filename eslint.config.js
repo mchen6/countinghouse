@@ -77,9 +77,9 @@ module.exports = [
   // The runtime's own files have no implicit globals, so a free name there is
   // a bug, never a convention: no-undef is on for lib/ (not for the tests,
   // whose few intentional implicit globals are the reason it is off above).
-  // #327's merge left `name` unbound in runModuleTarget (lib/mcp/gateway.js),
-  // and with no-undef off, `name` passed as the browser's window.name: every
-  // 2026-07-28 ask was ASK_UNAVAILABLE on master (#355). Node's globals are
+  // #327's merge left `name` unbound in runModuleTarget (lib/mcp/gateway.js):
+  // lint never checked free names, so the ReferenceError reached master, where
+  // it was swallowed into ASK_UNAVAILABLE for every 2026-07-28 ask (#355). Node's globals are
   // listed here, the ones lib/ uses and a few it plausibly will, rather than
   // read from the transitive `globals` package (no new dependency). A file
   // that truly means a name it doesn't define says so with /* global */
