@@ -24,6 +24,29 @@
 - **D2. The listing record.** A per-session module has no worker until a session calls it, so its `deviceMap` entry is the main thread's spec record, not a `WorkerMessage`. **Every site that sends to `deviceMap[id]` must go through `workerFor`.** On master there are 18 `deviceMap[` sites in `device-manager.js`, 5 in `peer-channel-broker.js` and 2 in `route-manager.js`; Task 5 lists each one and what it does. The alternative, a router object that impersonates a `WorkerMessage`, hides an async spawn behind sync-looking sends, so it's rejected. **Ruled:** yes, with two conditions. (a) In shared mode a per-session module reached at a dispatch site with no session id fails CLOSED: `DEVICE_NOT_FOUND`, the same bytes as an unknown device, never "use any worker". (b) Task 5's PR lists every converted site (18 + 5 + 2), and a test shows a per-session module is reached by the right session's worker through each of the call, the routed hop, the query, the job run and the peer broker.
 - **D3. Daemon-death notice.** §4a: after a daemon death "each reconnecting session is told 'per-session state was reset', as §6 tells loosenings". I'll hook the same place §6's loosening reset uses (`lib/session-state.js` and the restore's `reset` rows). If that path only covers restored sessions, a daemon death (nothing restored) needs a runtime-wide "reset at start" flag that the next new session's first result carries. Proposal: that flag, set when the sweep removed anything and no row was restored. **Ruled:** yes, both. The wording goes to the Reviewer with the en/zh review.
 
+## Rulings and findings while building (after revision 2's approval)
+
+Each was the Reviewer's ruling, given while the task was built.
+- **Task 4, #356's deep review**, all fixed and each with a test that fails on revert:
+  - session workers are held to `--moduleMessageRate`;
+  - a session spawn registers no remote, and reuses the record's sandbox config. Re-registering closed every session's remote clients, and a failed spawn unregistered them for all (shown live: REMOTE_UNREACHABLE);
+  - a stopping or spawning worker keeps its cap slot until it has ended, every stop settles only then, and an uninstall waits for every `name\0sid`;
+  - a given-up spawn answers `MODULE_UNLOADED`.
+  New codes, wording approved: `MODULE_SESSION_PAUSED` (paused for that session alone, back after the supervisor's window) and `SESSION_WORKER_ENDED` (retry; the fresh worker's in-memory state starts empty). The P2 reader table in #356 lists every module-map reader, including the readers the review found safe.
+- **Task 5:**
+  - no direct peer channel to a per-session module, **under any profile**. The shared runtime is the single-identity profile, where peer channels are off anyway, but the guarantee is kept structural rather than resting on that profile rule. In-process tests: sessions 32;
+  - the hop and the device query each check that the session is live, and each check is tested alone (sessions 31);
+  - `lib/` calls `this.workerFor`, and tests' stand-in device managers are given `workerFor` from the real class;
+  - the job run's session path is untested end to end until B5 Task 2 offers tasks on the shared runtime. A session-runtime case for it goes in B5 Task 2's follow-up.
+- **Task 6:**
+  - the reset notice is in the Reviewer's wording, en (notices are English-only, as session-state's restore notices are), with the reviewed zh kept in a comment;
+  - only the next session is told, because a swept session's user reconnects as a new session the runtime can't link to the old one;
+  - the local store's 5 s write-back (a runtime killed without a clean stop can lose the last 5 s of `ctx.redis` writes) is documented, with a register row.
+- **Task 7:**
+  - the docs quote the code's figures, and a test holds them to it (sessions 33): the crash window (`SUSPEND_AFTER` exits within `WINDOW_MS`, three within ten minutes) and the cap's default (16);
+  - the P3 proposal's "60 s" was wrong; the supervisor's window is ten minutes.
+- **B3's ceiling (#359):** once it merges, a session-packs case: a ceiling change that drops a pack stops that pack's per-session workers in every session that listed it only through the ceiling. The notice fires on the next ceiling read that finds a different key (the first read only sets it), so the test reads, changes the ceiling, and reads again.
+
 ## Global constraints
 
 - **No session id reaches a module** (§4a): not in `options`, `workerData`, env, argv, an error's text, a log line the module sees, or a job's data. `hostSession` is a main-thread field on the `WorkerMessage`, like `hostModuleName`.
