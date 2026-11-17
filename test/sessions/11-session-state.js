@@ -592,6 +592,49 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart']);
     });
 
+    // the reviewer, on #341: a session's "off" of a global pack survives the export, a restart and the
+    // restore, and the pack stays unlisted to that session (an "off" that named no version was left out of the
+    // export, and the pack listed to it again after a restart: fail open)
+    it('an "off" of a global pack survives export, restart and restore, and the pack stays unlisted to that session', async () => {
+      const sessionPacks = require('../../lib/session-packs');
+      const settingsFile = require('path').join(require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'ch-s11-off-')), 'settings.json');
+      const wire = () => {
+        sessionPacks.resetForTests();
+        sessionPacks.configure({records: () => [{pack: 'docs', modules: ['m-docs']}], moduleOf: (d) => d.replace(/^d-/, 'm-'),
+          overridesOf: settings.packOverridesOf, onOverrideChange: settings.onChange, openSessions: () => sessions.ids(), isOpen: (id) => sessions.get(id) != null,
+          shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey,
+          versionOf: () => '2.0.0'});
+        sessionPacks.setGlobal('docs', true);
+      };
+      try {
+        // before the restart: A turns the global docs off through the settings tool
+        wire();
+        await resumed(A);
+        await resumed(B);
+        const tool = settingsTool.create({file: settingsFile, lockWaitMs: 200, ceiling: () => ({state: 'none'})});
+        const off = await tool.set('pack.docs', 'off', 'settings tool', {shared: true, session: A, clientInfo: CLIENT, capabilities: null});
+        assert.strictEqual(off.applies, 'this session');
+        const exported = sessionState.exportOf(A);
+        assert.deepStrictEqual(exported.overrides, [{name: 'pack.docs', value: false, loosening: false, over: null, version: '2.0.0'}], 'in the export, its version with it');
+        // the restart: a fresh runtime, the daemon's table, A resumes
+        reset();
+        settings.configure({ceiling: () => ({state: 'none'})});
+        sessionState.configure({tell: () => true});
+        confirm.configure({tell: () => {}});
+        reg = new EventEmitter();
+        sessions.attach(reg);
+        sources = {};
+        wire();
+        sessions.importTable(table([row(A, exported)]));
+        await resumed(A);
+        await resumed(B);
+        assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd-docs'), sessionPacks.listsDevice(B, 'd-docs')], [false, true], 'still hidden from A only');
+      } finally {
+        sessionPacks.resetForTests();
+        require('fs').rmSync(require('path').dirname(settingsFile), {recursive: true, force: true});
+      }
+    });
+
     // #300's review, (3)
     it('a restored unanswered kind counts as one: the next form of that kind left unanswered locks it', async () => {
       sessions.importTable(table([row(A, {formsLeft: 2, unanswered: ['requestTimeout']}), row(B, {formsLeft: 2})]));

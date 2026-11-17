@@ -30,6 +30,8 @@ function mPayload(header, message) {
   return Buffer.concat([len, h, Buffer.isBuffer(message) ? message : Buffer.from(message, 'utf8')]);
 }
 const json = (o) => JSON.stringify(o);
+// a hidden character: one a reader doesn't see (see conditionsWhy.hiddenClass)
+const HIDDEN_CLASS = '\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2069\\u2800\\u3164\\ud800-\\udfff\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff9-\\ufffb\\u{1d173}-\\u{1d17a}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}';
 
 // Plainly made-up inputs (repeated bytes, example names), so no value here
 // reads as a credential to a secret scanner. Each MAC is derived from them.
@@ -40,6 +42,11 @@ const P = Buffer.from([1]);   // HELLO's protocol, one byte
 const ms = hmac(secret, 'ch-server', P, nc, ns);
 const mc = hmac(secret, 'ch-client', P, ns, nc);
 const token = 'example-token-not-a-real-one';
+// a pack credential the client's environment chooses (ch-local's conditions
+// child names it from the installed packs, never from the environment)
+const credName = 'PACK_VAR_ALPHA';
+const credValue = 'example-value-not-a-real-one';
+const credMac = hmac(secret, 'ch-cred', Buffer.from(credName, 'utf8'), Buffer.from([0]), Buffer.from(credValue, 'utf8'));
 
 const hello = json({protocol: 1, nc: b64(nc)});
 const prove = json({ns: b64(ns), ms: b64(ms)});
@@ -56,6 +63,7 @@ const notification = '{"jsonrpc":"2.0","method":"notifications/tools/list_change
 const client = json({op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
 const clientNoToken = json({op: 'client', status: 'ok', conditions: 'no', repo: null, token: null});
 const clientFailed = json({op: 'client', status: 'failed', why: 'the conditions check timed out after 10 s'});
+const clientCredentials = json({op: 'client', status: 'ok', conditions: 'no', repo: null, token: null, credentials: {[credName]: b64(credMac)}});
 const clientAnswer = json({op: 'client', seq: 3, status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
 const batch = '[{"jsonrpc":"2.0","id":1,"method":"tools/list"},{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":0}},{"jsonrpc":"2.0","id":"b","method":"tools/list"}]';
 const odd = '{"jsonrpc":"2.0","id":1e2,"method":"tools/list"}';
@@ -88,6 +96,13 @@ const out = {
     }
   },
   tokenMac: {token, rule: 'HMAC-SHA256(secret, "ch-token" || the token\'s UTF-8 bytes), sent base64', macB64: b64(hmac(secret, 'ch-token', token))},
+  credentialMac: {name: credName, value: credValue, rule: 'HMAC-SHA256(secret, "ch-cred" || the variable\'s name || 0x00 || the value\'s UTF-8 bytes), sent standard base64 as credentials[name]', macB64: b64(credMac)},
+  credentialsMalformed: {
+    rule: 'on the first client frame, any of these as credentials is own-runtime (conditions-failed), never shared: not an object, over 32 entries, a name not ^[A-Za-z_][A-Za-z0-9_]{0,127}$, a value not the standard base64 of exactly 32 bytes',
+    cases: [null, [], 'PACK_VAR_ALPHA', 7, {'1BAD': b64(Buffer.alloc(32, 1))}, {'A-B': b64(Buffer.alloc(32, 1))}, {'': b64(Buffer.alloc(32, 1))}, {PACK_VAR_ALPHA: null}, {PACK_VAR_ALPHA: 'not base64!'},
+      {PACK_VAR_ALPHA: b64(Buffer.alloc(31, 1))}, {PACK_VAR_ALPHA: b64(Buffer.alloc(33, 1))}, {[`V${'x'.repeat(128)}`]: b64(Buffer.alloc(32, 1))}, {PACK_VAR_ALPHA: b64(Buffer.alloc(32, 1)).replace(/=$/, '')}, {PACK_VAR_ALPHA: Buffer.alloc(32, 0xfb).toString('base64url')},
+      Object.fromEntries(Array.from({length: 33}, (_, i) => [`V${i}`, b64(Buffer.alloc(32, 1))]))]
+  },
   messages: {
     requestToRuntime: {header: {seq: 1}, line: request, rule: 'exact: header {"seq": n}, then the client line\'s bytes without its newline', keep: {seq: 1, idBytes: '7', method: 'tools/call'}, hex: hex(frame('M', mPayload({seq: 1}, request)))},
     oddIdToRuntime: {header: {seq: 2}, line: odd, rule: 'the id 1e2 is kept as its bytes, 1e2; matching is by seq only', keep: {seq: 2, idBytes: '1e2', method: 'tools/list'}, hex: hex(frame('M', mPayload({seq: 2}, odd)))},
@@ -115,6 +130,8 @@ const out = {
     clientFailed: {json: clientFailed, hex: hex(frame('C', clientFailed)), rule: 'as the first client frame: the runtime answers own-runtime (conditions-failed); as an answer to conditions?: no'},
     conditionsAsk: C({op: 'conditions?', seq: 3}),
     clientAnswer: {json: clientAnswer, hex: hex(frame('C', clientAnswer))},
+    clientCredentials: {json: clientCredentials, hex: hex(frame('C', clientCredentials)),
+      rule: 'credentials: the pack credentials the client environment chooses, by the installed packs\' declared names (never the GitHub ones, which token covers), each credentialMac; absent or {}: none chosen. On the first client frame only: one whose hash is unlike the runtime\'s own for that name, or that the runtime has no value for, is own-runtime (credential)'},
     settled: C({op: 'settled'}),
     bye: C({op: 'bye'}),
     drain: C({op: 'drain'}),
@@ -123,6 +140,7 @@ const out = {
     replay: C({op: 'replay', entries: [{kind: 'value', name: 'maxOutputBytes', value: 1048576}]}),
     ownRuntimeToken: C({op: 'own-runtime', reason: 'token'}),
     ownRuntimeConditions: C({op: 'own-runtime', reason: 'conditions-failed'}),
+    ownRuntimeCredential: C({op: 'own-runtime', reason: 'credential'}),
     unknownOp: {json: json({op: 'later-op', x: 1}), hex: hex(frame('C', json({op: 'later-op', x: 1}))), rule: 'ignored'}
   },
   startLock: {
@@ -207,6 +225,64 @@ const out = {
   tooLargeAnswer: {
     rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}'
+  },
+  // The client line's why when its conditions is "no" (ch-local's
+  // conditions child): what made the client unable to take a form from the
+  // runtime, for the latch's refusal text (B2). Text that reaches the agent,
+  // so a closed reason and, at most, a path under the user's home.
+  conditionsWhy: {
+    rule: 'on a status-ok client line whose conditions is "no", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is "~/" and a path under the user\'s home, its segments split on "/" with none empty and none "..", no backslash anywhere (a separator on Windows), at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown',
+    // the one definition of a hidden character (a RegExp class body, with
+    // the u flag): ch-local's cleaner and each rule check use it
+    hiddenClass: HIDDEN_CLASS,
+    reasons: ['client hook present', 'project plugin or marketplace', 'plugin hook present', 'client settings unreadable', 'no conditions known', 'not an interactive session', 'project directory unknown'],
+    accepted: [
+      {why: 'a hook in the user\'s settings', value: {reason: 'client hook present', at: '~/.claude/settings.json'}},
+      {why: 'a plugin with a hook', value: {reason: 'plugin hook present', at: '~/.claude/plugins/cache/example-market/example-plugin/1.0.0'}},
+      {why: 'a directory whose name starts with two dots is still under the home', value: {reason: 'client hook present', at: '~/..dotfiles/.claude/settings.json'}},
+      {why: 'a reason with no place', value: {reason: 'not an interactive session'}}
+    ],
+    refused: [
+      {why: 'not an object', value: 'client hook present'},
+      {why: 'a reason outside the set', value: {reason: 'something else'}},
+      {why: 'an absolute path', value: {reason: 'client hook present', at: '/home/example/.claude/settings.json'}},
+      {why: 'a path not under ~/', value: {reason: 'client hook present', at: '../example/.claude/settings.json'}},
+      {why: 'a path that leaves the home by ..', value: {reason: 'client hook present', at: '~/../example/.claude/settings.json'}},
+      {why: 'a path that leaves the home by a later ..', value: {reason: 'client hook present', at: '~/a/../../example/.claude/settings.json'}},
+      {why: 'a variation selector in the path', value: {reason: 'client hook present', at: '~/.claude/x\ufe0fy'}},
+      {why: 'a Hangul filler in the path', value: {reason: 'client hook present', at: '~/.claude/x\u3164y'}},
+      {why: 'a path over 200 characters', value: {reason: 'client hook present', at: `~/${'x'.repeat(199)}`}},
+      {why: 'a bidi override in the path', value: {reason: 'client hook present', at: '~/.claude/set\u202etings.json'}},
+      {why: 'a tag character in the path', value: {reason: 'client hook present', at: '~/.claude/settings\u{e0041}.json'}},
+      {why: 'a path that is not a string', value: {reason: 'client hook present', at: 7}},
+      {why: 'a key beside reason and at', value: {reason: 'client hook present', at: '~/.claude/settings.json', path: '/home/example'}},
+      {why: 'a backslash, a separator on Windows, where split on "/" sees no ..', value: {reason: 'client hook present', at: '~/..\\..\\Users\\example\\.claude\\settings.json'}},
+      {why: 'an empty segment after ~/, which some path joins read as absolute', value: {reason: 'client hook present', at: '~//home/example/x'}},
+      {why: 'an empty segment inside the path', value: {reason: 'client hook present', at: '~/a//b'}}
+    ]
+  },
+  // ch-local's one order for a GitHub token (lib/github-token.js
+  // chooseGitHubToken), in start, the daemon's shared runtime and the
+  // conditions check. Inputs: what the client's environment sets
+  // (COUNTINGHOUSE_GITHUB_TOKEN, GITHUB_TOKEN), whether a token is stored
+  // with `ch-local credentials add github` and passes its checks, whether gh
+  // is logged in, and what the running daemon's runtime holds (it takes the
+  // token at its start: after a credential is added it holds the old one
+  // until it restarts). Each value names a source, never a token.
+  githubTokenPrecedence: {
+    rule: 'start (a per-session runtime) takes the first of: the client\'s COUNTINGHOUSE_GITHUB_TOKEN, the stored token, gh auth token, the client\'s GITHUB_TOKEN. The daemon\'s runtime, which no client environment reaches, takes the stored token, else gh\'s, at its start. The conditions check sends the keyed hash of the token start would choose, except that a gh login is sent as null (the daemon has it too): so token is mac(env), mac(stored), null or mac(GITHUB_TOKEN). The session shares when token is null (the daemon\'s, whatever it holds), or when token is the hash of the token the daemon holds; otherwise own-runtime (token). A stored token that fails its file checks counts as none',
+    cases: [
+      {why: 'nothing anywhere', input: {env: [], stored: false, ghLogin: false, daemonHolds: null}, start: null, daemon: null, conditions: null, outcome: 'shares'},
+      {why: 'gh only', input: {env: [], stored: false, ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'a stored token, the daemon started on it', input: {env: [], stored: true, ghLogin: true, daemonHolds: 'stored'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'shares'},
+      {why: 'a stored token added while the daemon runs on gh\'s: its own runtime until the daemon restarts', input: {env: [], stored: true, ghLogin: true, daemonHolds: 'gh'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'own-runtime (token)'},
+      {why: 'the client sets COUNTINGHOUSE_GITHUB_TOKEN beside a stored one', input: {env: ['COUNTINGHOUSE_GITHUB_TOKEN'], stored: true, ghLogin: true, daemonHolds: 'stored'}, start: 'environment', daemon: 'stored', conditions: 'mac(env)', outcome: 'own-runtime (token)'},
+      {why: 'GITHUB_TOKEN beside a gh login chooses nothing', input: {env: ['GITHUB_TOKEN'], stored: false, ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'GITHUB_TOKEN beside a stored token chooses nothing', input: {env: ['GITHUB_TOKEN'], stored: true, ghLogin: false, daemonHolds: 'stored'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'shares'},
+      {why: 'GITHUB_TOKEN with neither a stored token nor gh', input: {env: ['GITHUB_TOKEN'], stored: false, ghLogin: false, daemonHolds: null}, start: 'GITHUB_TOKEN', daemon: null, conditions: 'mac(GITHUB_TOKEN)', outcome: 'own-runtime (token)'},
+      {why: 'a stored token removed while the daemon still runs on it: null is the daemon\'s, until its restart (the restart request)', input: {env: [], stored: false, ghLogin: true, daemonHolds: 'stored'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'a stored token whose file fails its checks counts as none', input: {env: [], stored: 'refused', ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'}
+    ]
   },
   // ch-local's pack messages on the control channel (B3, "For C" in
   // docs/superpowers/plans/2026-11-16-shared-runtime-b3-session-packs.md):
@@ -300,4 +376,11 @@ const out = {
     {name: 'conditions? unanswered', given: 'the shim sends no client frame for 12 s after conditions? (it gives the child 10 s)', expect: 'the runtime counts it as no for that form: no form'}
   ]
 };
-fs.writeFileSync(path.join(__dirname, 'vectors.json'), `${JSON.stringify(out, null, 2)}\n`);
+// hidden characters a vector carries on purpose (bidi, tag, zero-width...)
+// are written as \u escapes, so the file itself holds none (a reader, or a
+// diff, sees them for what they are)
+// (C0 controls aside: JSON.stringify already escapes them inside strings,
+// and outside them they are the file's own newlines)
+const HIDDEN_IN_FILE = new RegExp(`[${HIDDEN_CLASS.replace('\\u0000-\\u001f', '')}]`, 'gu');
+const escapeHidden = (text) => text.replace(HIDDEN_IN_FILE, (c) => c.split('').map((u) => `\\u${u.charCodeAt(0).toString(16).padStart(4, '0')}`).join(''));
+fs.writeFileSync(path.join(__dirname, 'vectors.json'), `${escapeHidden(JSON.stringify(out, null, 2))}\n`);

@@ -2,9 +2,14 @@
 // MCP completeness M12 (the design, section 8): the store's usedNonces
 // part, which makes a requestState single use. A state's nonce is
 // remembered until the state expires: in Redis (SET NX with an expiry, on
-// a db of its own) so that every server of a deployment refuses a replay,
-// in memory under --store local. A store that cannot say whether a nonce
-// was used rejects, and the retry is refused: never "first use" by default.
+// a db of its own) so that every server of a deployment refuses a replay;
+// under --store local in a file of the store (<storePath>/used-nonces.json),
+// written before the answer, so a runtime restarted inside a state's five
+// minutes, or another process on the same store, refuses it too (the
+// reviewer's condition on M12: the state's key is derived from the secret on
+// disk and survives the restart, so its nonce must). A store that cannot
+// say whether a nonce was used rejects, and the retry is refused: never
+// "first use" by default.
 //
 // Each case is a child process (a store's clients live as long as their
 // process); the Redis cases use the harness's Redis (CH_TEST_REDIS_URL, or
@@ -51,8 +56,8 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
   let dir = null;
   afterEach(() => { if (dir != null) fs.rmSync(dir, {recursive: true, force: true}); dir = null; });
 
-  describe('--store local: memory', () => {
-    it('a nonce is first used once; no Redis client is made, and nothing is written', async () => {
+  describe('--store local: a file of the store', () => {
+    it('a nonce is first used once; no Redis client is made; it is written to used-nonces.json, the owner\'s only, before the answer', async () => {
       dir = mkdtemp('ch-store07-');
       const out = await inChild(`
         const redis = require(${JSON.stringify(path.join(ROOT, 'node_modules', 'redis'))});
@@ -65,8 +70,63 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
         const again = await used.use('n-one', soon);
         const other = await used.use('n-two', soon);
         const past = await used.use('n-late', Date.now() - 1);
-        return {first, again, other, past, created: created.length, files: require('fs').readdirSync(process.env.STORE_DIR)};`, {STORE_DIR: dir});
-      assert.deepStrictEqual(out, {first: true, again: false, other: true, past: false, created: 0, files: []});
+        const fs = require('fs');
+        const file = require('path').join(process.env.STORE_DIR, 'used-nonces.json');
+        // on disk already: nothing waits for a debounced write
+        const onDisk = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).sort();
+        return {first, again, other, past, created: created.length, onDisk, mode: (fs.statSync(file).mode & 0o777).toString(8),
+          files: fs.readdirSync(process.env.STORE_DIR).filter((n) => !n.startsWith('.')).sort()};`, {STORE_DIR: dir});
+      assert.deepStrictEqual(out, {first: true, again: false, other: true, past: false, created: 0, onDisk: ['n-one', 'n-two'],
+        mode: process.platform === 'win32' ? out.mode : '600', files: ['used-nonces.json']});
+    });
+
+    // the reviewer's condition: the replay §8 names, across a restart
+    it('a runtime restarted inside a state\'s five minutes still refuses its nonce; so does another process on the same store', async () => {
+      dir = mkdtemp('ch-store07-');
+      const use = `
+        const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
+        return await used.use('n-restart', Number(process.env.UNTIL));`;
+      const until = String(Date.now() + 5 * 60 * 1000);
+      assert.strictEqual(await inChild(use, {STORE_DIR: dir, UNTIL: until}), true, 'the first runtime');
+      assert.strictEqual(await inChild(use, {STORE_DIR: dir, UNTIL: until}), false, 'the next one, after a restart');
+      // two at once on one store: exactly one first use
+      const race = await Promise.all([1, 2, 3].map(() => inChild(`
+        const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
+        return await used.use('n-race', Number(process.env.UNTIL));`, {STORE_DIR: dir, UNTIL: until})));
+      assert.deepStrictEqual(race.slice().sort(), [false, false, true]);
+    });
+
+    it('a nonce is kept until its own expiry, then dropped from the file; it never grows without bound', async () => {
+      dir = mkdtemp('ch-store07-');
+      const out = await inChild(`
+        const fs = require('fs');
+        const file = require('path').join(process.env.STORE_DIR, 'used-nonces.json');
+        const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
+        const keys = () => Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).sort();
+        await used.use('n-short', Date.now() + 300);
+        await used.use('n-long', Date.now() + 60000);
+        const before = keys();
+        await new Promise((r) => setTimeout(r, 450));
+        // past its expiry its state is refused as expired; the name is free, and the next use sweeps it out
+        const again = await used.use('n-short', Date.now() + 60000);
+        await used.use('n-third', Date.now() + 60000);
+        return {before, again, after: keys()};`, {STORE_DIR: dir});
+      assert.deepStrictEqual(out, {before: ['n-long', 'n-short'], again: true, after: ['n-long', 'n-short', 'n-third']});
+    });
+
+    it('a store it cannot write rejects: never a first use by default', async function() {
+      if (process.platform === 'win32' || (typeof(process.getuid) === 'function' && process.getuid() === 0)) return this.skip();
+      dir = mkdtemp('ch-store07-');
+      const out = await inChild(`
+        const fs = require('fs');
+        const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
+        await used.use('n-ok', Date.now() + 60000);
+        fs.chmodSync(process.env.STORE_DIR, 0o500);
+        let answer;
+        try { answer = {resolved: await used.use('n-ro', Date.now() + 60000)}; } catch (e) { answer = {rejected: true}; }
+        fs.chmodSync(process.env.STORE_DIR, 0o700);
+        return answer;`, {STORE_DIR: dir});
+      assert.deepStrictEqual(out, {rejected: true});
     });
 
     it('a nonce is one here too, and is remembered 15 minutes at most: anything else is no first use', async () => {
@@ -89,7 +149,7 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
         const key = require('crypto').randomBytes(32);
         const b = {caller: 'u_x', session: '', method: 'tools/call', tool: 't', arguments: {}};
         const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
-        const v = rs.verify(key, rs.mint(key, {question: 'q', round: 1, answers: {}}, b), b);
+        const v = rs.verify(key, rs.mint(key, {question: 'q', round: 1, callRound: 1, answers: {}}, b), b);
         return [await rs.consume(used, v), await rs.consume(used, v)];`, {STORE_DIR: dir});
       assert.deepStrictEqual(out, [true, false]);
     });

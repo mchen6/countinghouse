@@ -39,9 +39,29 @@ function home() {
 const serverArgs = (h, extra = []) => ['--workerThread', '--store', 'local', '--storePath', path.join(h, 'store'), '--meter', '--mcpToolCallCost', '1',
   '--usageDir', path.join(h, 'usage'), '--authProvider', 'file', '--authConfigPath', path.join(h, 'auth.json'),
   '--moduleDataPath', path.join(h, 'module_data'), ...MODULES.flatMap((m) => ['--loadModule', path.join(FX, m)]), ...extra];
-const runsOf = (h) => {
-  try { return fs.readFileSync(path.join(h, 'module_data', 'm19-part', 'data', 'runs'), 'utf8').split('\n').filter(Boolean); } catch (e) { return []; }
+// the part's own /data: a line per run's start ('start', 'start-leaf') and
+// end ('slow', 'leaf'), and the hold file a test names a run in
+const dataOf = (h) => path.join(h, 'module_data', 'm19-part', 'data');
+const linesOf = (h) => {
+  try { return fs.readFileSync(path.join(dataOf(h), 'runs'), 'utf8').split('\n').filter(Boolean); } catch (e) { return []; }
 };
+const runsOf = (h) => linesOf(h).filter((l) => !l.startsWith('start'));
+const startsOf = (h) => linesOf(h).filter((l) => l === 'start');
+// #335: every case acts on what it sees, never on timing. A run named in
+// /data/hold (a hop's number, or `leaf`) waits there until it's released,
+// so a cancel always lands while that run is known to be running.
+const hold = (h, at) => { fs.mkdirSync(dataOf(h), {recursive: true}); fs.writeFileSync(path.join(dataOf(h), 'hold'), String(at)); };
+const release = (h) => fs.rmSync(path.join(dataOf(h), 'hold'), {force: true});
+async function until(ok, what, ms = 30000) {
+  for (let w = 0; !(await ok()); w += 20) {
+    if (w > ms) throw new Error(`never: ${what}`);
+    await tick(20);
+  }
+}
+// The cancel's way to the server (a socket's close, a stdin line) has no
+// signal of its own here, so the held run is released only after this long:
+// generous, and never a race, as nothing can finish while it's held.
+const CANCEL_LANDS_MS = 1000;
 // the Out records of the usage files (B: assert on the records, not the report)
 const outsOf = (h, tool) => {
   const dir = path.join(h, 'usage');
@@ -95,16 +115,10 @@ function post(port, name, {modern = true, abortAfterMs = null, abortWhen = null}
     if (abortWhen != null) abortWhen.then(() => { req.destroy(); resolve({aborted: true}); });
   });
 }
-// once the first hop has run, and the second is inside its 300 ms: the
-// moment to cancel, whatever the path's own latency (a peer channel's
-// opening makes its first hop slower than a routed one)
-async function secondHopRunning(h) {
-  for (let w = 0; runsOf(h).length < 1; w += 20) {
-    if (w > 20000) throw new Error('the first hop never ran');
-    await tick(20);
-  }
-  await tick(100);
-}
+// the second hop has started, and is held (hold(h, 2) first): the moment to
+// cancel, whatever the path's own latency
+const secondHopHeld = (h) => until(() => startsOf(h).length >= 2 && runsOf(h).length === 1, 'the second hop started');
+const leafHeld = (h) => until(() => linesOf(h).includes('start-leaf'), 'the leaf started');
 function balance(port) {
   return new Promise((resolve, reject) => {
     http.get({host: '127.0.0.1', port, path: '/balance', headers: {'X-CH-Key': KEY}}, (res) => {
@@ -132,32 +146,42 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
       });
 
       it('a modern composite cancelled mid-hop: that hop is billed once, the next never runs, the outer call is not billed', async () => {
-        const r = await post(PORT, CHAIN, {abortWhen: secondHopRunning(h)});
+        hold(h, 2);
+        const r = await post(PORT, CHAIN, {abortWhen: secondHopHeld(h)});
         assert.strictEqual(r.aborted, true);
-        await tick(2000);   // longer than the rest of the chain would take
-        const runs = runsOf(h).length;
-        assert.strictEqual(runs, 2, `the hop running at the cancel finishes; none after it (${runs} runs)`);
-        assert.strictEqual(await balance(PORT), -2, 'two hops billed, once each; the outer call not');
+        await tick(CANCEL_LANDS_MS);
+        release(h);
+        // the outer call's end writes its Out record: the chain has stopped
+        await until(() => outsOf(h, CHAIN).length === 1, 'the outer call ended');
+        assert.strictEqual(runsOf(h).length, 2, `the hop running at the cancel finishes (${linesOf(h)})`);
+        assert.strictEqual(startsOf(h).length, 2, `none after it (${linesOf(h)})`);
+        await until(async () => (await balance(PORT)) === -2, 'two hops billed, once each; the outer call not', 10000);
         const [out] = outsOf(h, CHAIN);
         assert.strictEqual(out.outcome, 'cancelled', JSON.stringify(out));
         assert.strictEqual(outsOf(h, CHAIN).length, 1, 'one Out record');
       });
 
       it('a modern leaf cancelled while it runs: it finishes and is billed; its record says cancelled', async () => {
-        const r = await post(PORT, LEAF, {abortAfterMs: 200});
+        hold(h, 'leaf');
+        const r = await post(PORT, LEAF, {abortWhen: leafHeld(h)});
         assert.strictEqual(r.aborted, true);
-        await tick(1200);
+        await tick(CANCEL_LANDS_MS);
+        release(h);
+        await until(() => outsOf(h, LEAF).length === 1, 'the leaf call ended');
         assert.deepStrictEqual(runsOf(h), ['leaf']);
-        assert.strictEqual(await balance(PORT), -1);
+        await until(async () => (await balance(PORT)) === -1, 'the leaf billed', 10000);
         assert.strictEqual(outsOf(h, LEAF)[0].outcome, 'cancelled');
       });
 
       it('a legacy request\'s disconnect changes nothing: the chain runs to its end and is billed', async () => {
-        const r = await post(PORT, CHAIN, {modern: false, abortWhen: secondHopRunning(h)});
+        hold(h, 2);
+        const r = await post(PORT, CHAIN, {modern: false, abortWhen: secondHopHeld(h)});
         assert.strictEqual(r.aborted, true);
-        await tick(2500);
+        await tick(CANCEL_LANDS_MS);
+        release(h);
+        await until(() => outsOf(h, CHAIN).length === 1, 'the outer call ended');
         assert.strictEqual(runsOf(h).length, 5);
-        assert.strictEqual(await balance(PORT), -6, 'five hops and the outer call');
+        await until(async () => (await balance(PORT)) === -6, 'five hops and the outer call billed', 10000);
         assert.strictEqual(outsOf(h, CHAIN)[0].outcome, 'ok');
       });
 
@@ -190,11 +214,15 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
     });
 
     it('notifications/cancelled by id: no answer line, the chain stops at its next hop', async () => {
+      hold(h, 2);
       io.notify({jsonrpc: '2.0', id: 21, method: 'tools/call', params: {name: CHAIN, arguments: {}}});
-      await secondHopRunning(h);
+      await secondHopHeld(h);
       io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 21}});
-      await tick(2000);
-      assert.strictEqual(runsOf(h).length, 2);
+      await tick(CANCEL_LANDS_MS);
+      release(h);
+      await until(() => outsOf(h, CHAIN).length === 1, 'the outer call ended');
+      assert.strictEqual(runsOf(h).length, 2, `the hop running at the cancel finishes (${linesOf(h)})`);
+      assert.strictEqual(startsOf(h).length, 2, `none after it (${linesOf(h)})`);
       assert.deepStrictEqual(io.lines.map((l) => JSON.parse(l)).filter((m) => m.id === 21), [], 'no answer');
       assert.strictEqual(outsOf(h, CHAIN)[0].outcome, 'cancelled');
     });
@@ -235,14 +263,21 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
     // process waits for a cancelled call still running (up to the request
     // timeout), so its bill is never lost to a shutdown
     it('stdin closed right after a cancel: the process waits for the cancelled leaf, and its record lands', async () => {
+      // the leaf held, so it can't end before the process is asked to; it is
+      // released well after stdin closes, and the process must wait for it
+      hold(h, 'leaf');
       io.notify({jsonrpc: '2.0', id: 25, method: 'tools/call', params: {name: LEAF, arguments: {}}});
-      await tick(200);
+      await leafHeld(h);
       io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 25}});
       await tick(50);
       const closedAt = Date.now();
       io.child.stdin.end();
-      await new Promise((r) => (io.child.exitCode != null ? r() : io.child.once('exit', r)));
-      assert.ok(Date.now() - closedAt >= 400, `the process waited for the leaf (${Date.now() - closedAt} ms)`);
+      const exited = new Promise((r) => (io.child.exitCode != null ? r() : io.child.once('exit', r)));
+      await tick(CANCEL_LANDS_MS);
+      assert.strictEqual(io.child.exitCode, null, 'still waiting for the held leaf');
+      release(h);
+      await exited;
+      assert.ok(Date.now() - closedAt >= CANCEL_LANDS_MS, `the process waited for the leaf (${Date.now() - closedAt} ms)`);
       assert.deepStrictEqual(runsOf(h), ['leaf']);
       assert.strictEqual(outsOf(h, LEAF)[0].outcome, 'cancelled', 'its Out record was written before the exit');
     });
@@ -315,13 +350,17 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
 
     it('a session cancels its own call: the shim is told `cancelled` on its seq, no answer comes, the chain stops at its next hop', async () => {
       const a = await open();
+      hold(h, 2);
       callChain(a, 41);
-      await secondHopRunning(h);
+      await secondHopHeld(h);
       cancelId(a, 41);
+      // the runtime's own word that the cancel landed: only then is the hop let go
       const op = await a.s.c.json('C', 5000);
       assert.deepStrictEqual(op, {op: 'cancelled', seq: 41});
-      await tick(2000);
-      assert.strictEqual(runsOf(h).length, 2);
+      release(h);
+      await until(() => outsOf(h, 'chain').concat(outsOf(h, CHAIN)).length === 1, 'the outer call ended');
+      assert.strictEqual(runsOf(h).length, 2, `the hop running at the cancel finishes (${linesOf(h)})`);
+      assert.strictEqual(startsOf(h).length, 2, `none after it (${linesOf(h)})`);
       assert.deepStrictEqual(a.answers.filter((x) => x.seq === 41), [], 'no answer on its seq');
       // a scenario's tool is its bare action name on the shared runtime
       const [out] = outsOf(h, 'chain').concat(outsOf(h, CHAIN));
@@ -332,10 +371,13 @@ describe('mcp-contract 19: cancelling a call in flight (M19), end to end', funct
     it('another session naming the same request id changes nothing: the call runs to its end and is answered', async () => {
       const a = await open();
       const b = await open();
+      hold(h, 2);
       callChain(a, 42);
-      await secondHopRunning(h);
+      await secondHopHeld(h);
       cancelId(b, 42);
-      for (let w = 0; !a.answers.some((x) => x.seq === 42) && w < 10000; w += 50) await tick(50);
+      await tick(CANCEL_LANDS_MS);
+      release(h);
+      await until(() => a.answers.some((x) => x.seq === 42), 'answered', 15000);
       const answer = a.answers.find((x) => x.seq === 42);
       assert.ok(answer != null, 'answered');
       assert.strictEqual(answer.msg.result.isError, false, JSON.stringify(answer.msg).slice(0, 300));

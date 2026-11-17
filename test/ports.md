@@ -19,6 +19,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9740–9749 | C |
 | 9750–9754 | A: lean worker step 3 |
 | 9790–9799 | B (2026-11-14) |
+| 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
 
@@ -132,6 +133,7 @@ one) as well as the ports it binds.
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
 | `test/module-loading/33-registry-opt-in.js` | 9594 |
 | `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
+| `test/module-loading/36-per-session-declaration.js` | 9729 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |

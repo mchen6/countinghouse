@@ -106,7 +106,7 @@
 
 **Interfaces:**
 - `globalPack` defaults to `(name) => sessionPacks.isGlobal(<n>)`, where it is `() => null` today.
-- `ceilingSeen(c)` also drops every stored `pack.<n>` override whose value is true and that `c` no longer allows (an allowlist that leaves the pack out, conversation off, or a ceiling that can't be trusted). It calls `onChange` for each session, and returns nothing new. Today it clamps cap loosenings only, and `effective` hides a disallowed pack at read time while the store keeps `true`, so a ceiling lowered and raised again would bring the pack back with no new confirmation.
+- `ceilingSeen(c)` also drops every stored `pack.<n>` override whose value is true and that `c` no longer allows (a trusted ceiling: an allowlist that leaves the pack out, or conversation off). A ceiling that can't be trusted drops nothing (the reviewer's ruling (4) on #340): while it lasts, `packOnAllowed` is false, so every surface (listing, tools/call, prompts/get, completion, later resources/read) counts the "on" as off, through `lib/session-packs.js`'s view, keyed by `ceilingKey()`. Fail closed on exposure, without losing state. It calls `onChange` for each session, and returns nothing new. Today it clamps cap loosenings only, and `effective` hides a disallowed pack at read time while the store keeps `true`, so a ceiling lowered and raised again would bring the pack back with no new confirmation.
 - `dropPack(name)` → the ids whose "on" override was dropped: ch-local unloaded the pack (a terminal off included, Task 6). A session's own "off" stays.
 - `packOverridesOf(id)` → a Map of pack → true or false, for Task 1. (Not `packsOf`: that is `lib/packs-in-place.js`'s name for another thing. #300's export reads `overridesOf` and needs nothing new.)
 - Every path that changes or drops a stored pack override calls `onChange(id)`: `set`, `clear` (#296), `ceilingSeen` and `dropPack`. `forget` calls none; `lib/sessions.js` `close` tells Task 1's store itself.
@@ -183,7 +183,7 @@
 - Modify: `lib/peer-channel-broker.js`: `handleRequest`, `handleAnnouncement`, `serveMatched`
 - Modify: `lib/job-sessions.js` and `lib/sessions.js` `close` (an ended session's hidden packs, for its jobs)
 - Test: `test/sessions/16-pack-hops.js` (server-free: the broker and the device manager with stand-in workers, as sessions 07 does)
-- Test: `test/session-runtime/03-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port)
+- Test: `test/session-runtime/03-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port). **Moved to Task 8** (first to Task 6, then on to Task 8; the reviewer both times): no pack can be on in a real runtime until Task 6 wires `configure()`, and nothing gives a session its own pack "on" or "off" until Task 8. Task 4's commit has the server-free cases (`test/sessions/17-pack-hops-main.js`).
 - Fixtures, written by the test into its home: a global pack `front` (a scenario with one tool, `relay`, and a role-less part `relay-core` that declares calls on `back`'s `echo` and on a module `ghost` that is never installed), and a pack `back` (a scenario whose `echo` counts its runs). `relay` returns the caught error's own fields as JSON.
 
 **Interfaces:**
@@ -197,6 +197,7 @@
 - **An ended session's job** lists the global packs, minus the packs its session had turned off, and none of its this-session packs. `lib/sessions.js` `close` reads `sessionPacks.packsOffOf(id)` before it forgets the session, and `job-sessions.sessionEnded(id, limits, {packsOff})` keeps the set with the session's last caps, for as long as it keeps those (#251). `forRun` hands it back, and a run of an ended session asks `sessionPacks.listsDeviceFor({packsOff}, deviceID)`.
 
 - [ ] **Step 1: Write the failing tests.**
+  - **Required (the reviewer's #340 review, obligation 2):** `flushPendingPeerInvokes` sends every call queued for a device over its granted channel, other sessions' included (B1, A1, B2 queued; A1's grant flushes B2). The per-invoke check (the announcement, then the match) must refuse B2 while A1 and B1's own answers stand. Test that case, and that the two deny kinds (the request's headOnly deny and the announcement's refusal) serialize the same for a hidden device as for one never hosted.
   - Spawned, routed, then again with `--directPeerChannels`:
     - A's `relay` to `back` returns the echo.
     - B's `relay` to `back` and B's `relay` to `ghost` return the same error fields, equal as serialized text.
@@ -264,6 +265,9 @@
 - A session that wants a pack back after the terminal's off asks again, with a form (Task 8).
 
 - [ ] **Step 1: Write the failing tests.**
+  - **Required (the reviewer's #340 review, obligation 1):** the per-session view must not fail open while a this-session pack loads. Today its devices register and `toolschanged` fires before `packChanged`, so for a moment its module is owned by no pack and listed to everyone. Either `records()` holds the pack and `packChanged` runs before any of its devices is visible, or the view's cache is keyed on `toolGeneration.current()` too. Test: B can't see A's pack mid-load (its tools/list, tools/call and prompts, between the devices' registration and the load's answer).
+  - Task 4's spawned file, `test/session-runtime/03-session-pack-hops-spawned.js`, does **not** land here after all: it moved on to Task 8 (the reviewer), since before Task 8 nothing in a real runtime gives a session its own pack "on" or "off".
+  - Task 6's commit wires `session-packs.configure()` in production, with the globals (the reviewer's ruling (1) on #340): `allowsOn`, `ceilingNow` and `ceilingKey` from lib/session-settings.js, `isOpen` and `endedPacksOff` (Task 4). Test: a runtime started in shared mode answers through the wired store (no default left in place).
   - `load {pack, global: false}` while A's `load-pack` waits: the pack isn't global. `load {pack, global: true}` while A's `load-pack` waits: it is global, and B lists it.
   - `load {pack, global: false}` with no session waiting (a restart's reload): not global, and no session lists it.
   - In shared mode a `load` about a pack with no `global` is refused and loads nothing.
@@ -339,6 +343,7 @@ This is the task that makes session sets reachable in production. Until it merge
 - Decline locks, forms left and the per-user window use the kind `pack`, as B2's Task 5 built them.
 
 - [ ] **Step 1: Write the failing tests.**
+  - **Lands here:** Task 4's spawned file, `test/session-runtime/03-session-pack-hops-spawned.js` (moved from Task 4 to Task 6, then to here: the reviewer), with Task 4's Step 1 "Spawned" cases and fixtures. Its packs are turned on and off through this task's conversation.
   - A turns `pack.ci` on: a form saying "for this session" in both languages. After the accept: exactly one `load-pack`; A lists the tool and B doesn't; `settings.json`'s bytes and mtime are unchanged; the history line has A's id; B's `get` shows the pack off and no line of A's.
   - The `requestState`'s MAC for a pack equals the one master's `macOf` gives for the same nonce, session, name and value. A retry whose pack is now installed at another version is refused from the staged change.
   - B turns it on too: its own form, no second `load-pack`, and both list it.
