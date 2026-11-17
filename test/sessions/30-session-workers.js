@@ -40,7 +40,7 @@ function harness({max = 2, delay = 0} = {}) {
   return {sw, get, spawned, ended, told, busySet, pendingSpawns, tick: (ms) => { clock += ms; }};
 }
 
-describe('sessions 21: per-session workers (lib/session-workers.js)', () => {
+describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
   it('one worker per (module, session), spawned once for calls that arrive together', async () => {
     const h = harness({max: 4});
     const [x, y] = await Promise.all([h.get('m', A), h.get('m', A)]);
@@ -146,7 +146,7 @@ describe('sessions 21: per-session workers (lib/session-workers.js)', () => {
 // B3 x R1 (the hook agreed with B): a session's view changing stops that
 // session's workers of the modules it no longer lists; the other session's
 // run on. The stores wired as test/sessions/14 wires them.
-describe('sessions 21: a session\'s packs and its per-session workers', () => {
+describe('sessions 30: a session\'s packs and its per-session workers', () => {
   const settings = require('../../lib/session-settings');
   const sessionPacks = require('../../lib/session-packs');
   const ModuleManager = require('../../lib/module-manager');
@@ -181,7 +181,7 @@ describe('sessions 21: a session\'s packs and its per-session workers', () => {
 
 // The live options (lib/settings-tool.js broadcastLiveOptions) reach every
 // running worker: a session's too, which the module map doesn't hold.
-describe('sessions 21: every running worker is told the live options', () => {
+describe('sessions 30: every running worker is told the live options', () => {
   it('liveWorkers: the module map\'s workers and every session worker, never a record', async () => {
     const {SessionModuleRecord} = require('../../lib/session-module-record');
     const ModuleManager = require('../../lib/module-manager');
