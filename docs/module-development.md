@@ -376,6 +376,14 @@ client polls `tasks/get` for the result your action returns. Anyone else's
 call to it runs inline, as any action's does. Your handler is the same
 either way.
 
+Text you declare for the client (titles, descriptions, a prompt's messages, a
+question's message) reaches it with any hidden character as a space: a
+control, bidi, zero-width, tag, variation-selector or filler character
+(see [the security model](security-model.md)). A prompt's message keeps its
+line breaks and tabs, and an emoji keeps its joiner and VS-16. A completion
+candidate (an `enum` or `examples` value, or one your completion action
+answers) with a hidden character is not offered.
+
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
 the keys that may reach the module, with its `title`, `description` and
