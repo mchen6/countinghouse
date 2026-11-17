@@ -33,7 +33,7 @@ describe('sandbox 62: a part\'s question reaches the outer call\'s user, over HT
     const installed = path.join(base, 'packs', 'node_modules');
     for (const name of ['asks-through-part', 'asks-part']) fs.cpSync(path.join(FIXTURES, name), path.join(installed, name), {recursive: true});
     server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', KEY, '--store', 'local', '--storePath', path.join(base, 'store'),
-      '--moduleDataPath', path.join(base, 'module_data'), '--loadModule', path.join(installed, 'asks-through-part'), ...extra]);
+      '--moduleDataPath', path.join(base, 'module_data'), '--usageDir', path.join(base, 'usage'), '--loadModule', path.join(installed, 'asks-through-part'), ...extra]);
     tool = null;
     let list = null;
     for (let i = 0; i < 120 && tool == null; i++) {
@@ -73,6 +73,12 @@ describe('sandbox 62: a part\'s question reaches the outer call\'s user, over HT
         // the part's declared sentence and form, under the listed module's name: the part is never named
         assert.deepStrictEqual(first.result.inputRequests, {answer: {method: 'elicitation/create', params: {mode: 'form', message: 'asks-through-part: Replace a.txt?', requestedSchema: PART_FORM}}});
         assert.ok(!JSON.stringify(first).includes('asks-part'), 'an unlisted part is not named to the client');
+        // who really asked is the runtime's own to know: its usage record and its log name the part
+        const records = [];
+        const walk = (dir) => { for (const e of fs.readdirSync(dir, {withFileTypes: true})) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (p.endsWith('.jsonl')) records.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))); } };
+        for (let i = 0; i < 20 && !records.some((r) => r.outcome === 'asked'); i++) { records.length = 0; if (fs.existsSync(path.join(base, 'usage'))) walk(path.join(base, 'usage')); if (!records.some((r) => r.outcome === 'asked')) await new Promise((r) => setTimeout(r, 250)); }
+        assert.deepStrictEqual(records.filter((r) => r.outcome === 'asked').map((r) => r.askedBy), [{module: 'asks-part', action: 'store', question: 'overwrite'}], JSON.stringify(records).slice(0, 800));
+        assert.match(server.output, /asks-part\/store asked the user its question overwrite \(round 1\)/);
         const retry = await call({id: 'a.txt'}, accept(first.result.requestState, {replace: true}));
         assert.deepStrictEqual(retry.result && retry.result.structuredContent, {part: {asked: true, answer: {replace: true}}}, JSON.stringify(retry).slice(0, 500));
         // the answer was for that text: the same call about another thing is asked anew, and a used state is refused

@@ -35,6 +35,27 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
     for (const bad of [0, -1, 1.5, '2', null, undefined, 99]) assert.ok(!('round' in by(asked(u, bad))), String(bad));
   });
 
+  // M14 (the reviewer's ruling): the dialog carries the listed module's name, and the record names who
+  // really asked: a part's module, action and question
+  it('an asked pass names who asked: a module, an action, a question, each a bounded clean string', () => {
+    const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+    const c = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: 'asks-part', action: 'store', question: 'overwrite'}});
+    const by = (call) => u.records().find((r) => r.call === call);
+    assert.deepStrictEqual(by(c).askedBy, {module: 'asks-part', action: 'store', question: 'overwrite'});
+    // only on an asked pass, and only as three strings: cut to 128 characters, controls taken out
+    const ok = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    u.recordOut(ok, {tool: 't', bytes: 1, lines: 1, ms: 5, outcome: 'ok', askedBy: {module: 'x', action: 'y', question: 'z'}});
+    assert.ok(!('askedBy' in by(ok)));
+    const odd = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    u.recordOut(odd, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\n${'x'.repeat(300)}`, action: 7, question: 'q'}});
+    assert.ok(!('askedBy' in by(odd)), 'not three strings: not recorded');
+    const long = u.beginCall({pack: 'p', module: 'pack', tool: 't', caller: 'c1'});
+    u.recordOut(long, {tool: 't', bytes: 0, lines: 0, ms: 5, outcome: 'asked', round: 1, askedBy: {module: `m\u001b[2J${'x'.repeat(300)}`, action: 'a', question: 'q'}});
+    assert.strictEqual(by(long).askedBy.module.length, 128);
+    assert.doesNotMatch(by(long).askedBy.module, /[\u0000-\u001f]/);
+  });
+
   it('the report counts it among the outcomes and never among the errors', async () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
     asked(u, 1);
