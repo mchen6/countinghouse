@@ -96,22 +96,33 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
       assert.deepStrictEqual(race.slice().sort(), [false, false, true]);
     });
 
+    // Independent of the runner's speed (#385: on a loaded runner the first
+    // use's write took past a 300 ms expiry, so the next use swept it before
+    // the file was read). A use writes before it answers, so any wall-clock
+    // margin can be spent by the writes before it: the child's clock is the
+    // case's own instead (Date.now, which the part and the file read), held
+    // still while it writes and moved past the short expiry after.
     it('a nonce is kept until its own expiry, then dropped from the file; it never grows without bound', async () => {
       dir = mkdtemp('ch-store07-');
       const out = await inChild(`
+        const real = Date.now;
+        let now = real();
+        Date.now = () => now;
         const fs = require('fs');
         const file = require('path').join(process.env.STORE_DIR, 'used-nonces.json');
         const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
         const keys = () => Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).sort();
-        await used.use('n-short', Date.now() + 300);
-        await used.use('n-long', Date.now() + 60000);
+        const short = now + 300;
+        const firsts = [await used.use('n-long', now + 60000), await used.use('n-short', short), await used.use('n-gone', short)];
         const before = keys();
-        await new Promise((r) => setTimeout(r, 450));
-        // past its expiry its state is refused as expired; the name is free, and the next use sweeps it out
-        const again = await used.use('n-short', Date.now() + 60000);
-        await used.use('n-third', Date.now() + 60000);
-        return {before, again, after: keys()};`, {STORE_DIR: dir});
-      assert.deepStrictEqual(out, {before: ['n-long', 'n-short'], again: true, after: ['n-long', 'n-short', 'n-third']});
+        now = short + 1;
+        // past its expiry its state is refused as expired; the name is free,
+        // and the next use sweeps out every other expired one (n-gone)
+        const again = await used.use('n-short', now + 60000);
+        await used.use('n-third', now + 60000);
+        Date.now = real;
+        return {firsts, before, again, after: keys()};`, {STORE_DIR: dir});
+      assert.deepStrictEqual(out, {firsts: [true, true, true], before: ['n-gone', 'n-long', 'n-short'], again: true, after: ['n-long', 'n-short', 'n-third']});
     });
 
     it('a store it cannot write rejects: never a first use by default', async function() {
