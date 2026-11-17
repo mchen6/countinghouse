@@ -18,7 +18,7 @@ const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), debug: true, listPageSize: 250};
 options.setOptions(OPTIONS);
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const icons = require('../../lib/declared-icons');
 const pages = require('../../lib/mcp/pages');

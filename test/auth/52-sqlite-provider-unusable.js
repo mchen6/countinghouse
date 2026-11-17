@@ -32,7 +32,7 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
   // only if it is still alive then.
   const probe = (dbPath) => {
     const script = `
-      require(${JSON.stringify(path.join(ROOT, 'lib/logger'))}).createLogger(false);
+      require(${JSON.stringify(path.join(ROOT, 'lib/logger'))}).createLogger();
       const P = require(${JSON.stringify(path.join(ROOT, 'lib/auth/sqlite-provider'))});
       const p = new P({dbPath: ${JSON.stringify(dbPath)}});
       const out = {};
@@ -79,7 +79,7 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
   });
 
   it('a usable database answers as before (the wait costs a usable one nothing)', async () => {
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     const file = path.join(dir, 'auth.sqlite3');
     const p = new SqliteAuthProvider({dbPath: file});
@@ -95,7 +95,7 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
 
   it('an already-migrated database mounted read-only (0444) still serves: the schema\'s no-ops need no write', async function() {
     if (typeof(process.getuid) === 'function' && process.getuid() === 0) this.skip();   // root writes a read-only file
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     const file = path.join(dir, 'auth.sqlite3');
     const call = (fn) => new Promise((resolve) => fn((err, r) => resolve({err, r})));
@@ -120,7 +120,7 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
   });
 
   it('a database error after it was ready marks the provider failed and is logged, never thrown', async () => {
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     const p = new SqliteAuthProvider({dbPath: path.join(dir, 'auth.sqlite3')});
     await p.ready;
