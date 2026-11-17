@@ -1,6 +1,6 @@
 'use strict';
 // Under --moduleSandbox audit a module reads outside its namespace (allowed,
-// logged) but writes nothing there (Matt, 2026-11-15: audit means "watch
+// logged) but writes nothing there (maintainer's decision, 2026-11-15: audit means "watch
 // what it reads, never let it change the user's files"). Every write-class
 // operation whose target is outside the module's own area -- its /data, its
 // /tmp and what it declared rw -- is EACCES and recorded as a denial: a write,

@@ -139,7 +139,7 @@ drive-qualified path as outside the namespace. Under `enforce` such a path is
 refused (ENOENT): it fails closed. The module gets its own `/data` and
 `/tmp`.
 
-**Under `audit` a module changes nothing outside its own area** (Matt,
+**Under `audit` a module changes nothing outside its own area** (maintainer's decision,
 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
 declared `rw`. Every write-class operation aimed anywhere else is refused
 `EACCES` and recorded as a denial: an open for writing, a create or truncate,

@@ -1,6 +1,6 @@
 // --maxOutputBytes (lean worker step 2, the reviewer's ruling (b) of
 // 2026-11-13): one cap on every module output, a hop's result included. The
-// default is 16 MiB (Matt, 2026-11-15; it was 8 MiB); 256 MiB is the most it
+// default is 16 MiB (maintainer's decision, 2026-11-15; it was 8 MiB); 256 MiB is the most it
 // may be set to, since every hop result is a buffer the size of the cap.
 const assert = require('assert');
 

@@ -51,7 +51,7 @@ describe('fs-broker 09: module workers use the broker', function() {
   // The log is JSON: a Windows path's backslashes are doubled in it.
   const logged = (p) => `module sandbox: fs-probe file outside ${JSON.stringify(p).slice(1, -1)}`;
 
-  // Matt, 2026-11-15: under audit a module reads outside its namespace
+  // maintainer's decision, 2026-11-15: under audit a module reads outside its namespace
   // (logged) but writes nothing there
   it('audit: a read outside the namespace passes through and is logged; a write there is refused EACCES', async () => {
     server = await start('audit');
