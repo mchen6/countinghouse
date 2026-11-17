@@ -123,8 +123,16 @@ describe(`auth 30: no API key, user name or Redis URL reaches a module (${label}
     const out = r.result.structuredContent || JSON.parse(r.result.content[0].text);
     assert.strictEqual(out.callee.inputArrived, true, `the invoke never arrived: ${JSON.stringify(out.callee).slice(0, 300)}`);
     const seen = {heard: out.callee.portMessages, posted: out.self.portPosted};
-    if (port === 'locked') assert.deepStrictEqual(seen, {heard: 0, posted: 0}, 'a part\'s hook saw the runtime\'s port');
-    else assert.ok(seen.posted > 0, `the composite's hook saw no invoke posted: ${JSON.stringify(seen)}`);
+    if (port === 'locked') {
+      // the hooks never took (fixed at boot): the zeros are no hook's
+      assert.deepStrictEqual([out.callee.hooksTook, out.self.hooksTook], [{on: false, post: false}, {on: false, post: false}], JSON.stringify(seen));
+      assert.deepStrictEqual(seen, {heard: 0, posted: 0}, 'a part\'s hook saw the runtime\'s port');
+    } else {
+      // installed, and the runtime posts with the method as the port has it
+      // now: what crosses is seen, and scanned below
+      assert.strictEqual(out.self.hooksTook.post, true, JSON.stringify(out.self.hooksTook));
+      assert.ok(seen.posted > 0, `the composite's hook saw no invoke posted: ${JSON.stringify(seen)}`);
+    }
     assertClean(out.callee, 'peer port (the callee)');
     assertClean(out.self, 'peer port (the composite, with what it posted)');
   });

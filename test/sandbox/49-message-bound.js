@@ -1,8 +1,10 @@
 // #170: a module's worker cannot make the main thread decode an arbitrary
 // size. Every message to the main thread is an envelope of bounded bytes
 // (lib/message-envelope.js); over --maxOutputBytes plus 64 KiB it is refused
-// in the worker; the lockdown pins the worker's port, so a patched
-// MessagePort.prototype.postMessage is never handed it; a violation's long
+// in the worker; the lockdown fixes MessagePort's methods at boot (PR-c), so
+// MessagePort.prototype.postMessage cannot be replaced, and pins the
+// worker's port besides (a pinned port is deaf to a patched prototype:
+// module-loading 28, server-free); a violation's long
 // target is cut, not lost; a file larger than one bridge call still writes
 // (the patch splits it).
 const assert = require('assert');
@@ -39,8 +41,9 @@ describe('sandbox 49: messages to the main thread are bounded (#170)', function(
     assert.strictEqual((await call('big', {bytes: 1000})).error, null, 'a small one still goes');
   });
 
-  it('a patched MessagePort.prototype.postMessage is never handed the worker\'s port, and posting still works', async () => {
+  it('MessagePort.prototype.postMessage cannot be replaced (fixed at boot), and posting still works', async () => {
     const r = await call('patch');
+    assert.deepStrictEqual([r.took, r.writable], [false, false], JSON.stringify(r));
     assert.strictEqual(r.captured, false, JSON.stringify(r));
     assert.strictEqual(r.after, 'ok');
   });

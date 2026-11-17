@@ -220,12 +220,13 @@ function runFailureAndBillingAssertions(getBase, getStdoutBuf) {
         // comment) -- assert null if that's what was observed, otherwise
         // assert the real value.
         assert.ok(observed != null, 'expected a CTX_CALL_FAULT log line from viaBoom.js');
-        if (observed.fault == null) {
-          assert.strictEqual(observed.fault, null);
-        } else {
-          assert.strictEqual(observed.fault.message, 'boom from the callee',
-            `expected the callee's own error message in .fault, got ${JSON.stringify(observed.fault)}`);
-        }
+        // the callee's fault, on both flag states (the refusal ctx.call issues
+        // keeps the error's own fields: a null here hid that PR-c had lost it)
+        assert.ok(observed.fault != null, `the callee's fault was lost: ${JSON.stringify(observed)}`);
+        assert.strictEqual(observed.fault.message, 'boom from the callee',
+          `expected the callee's own error message in .fault, got ${JSON.stringify(observed.fault)}`);
+        // as structured clone made it, never re-made without its prototype
+        assert.strictEqual(observed.faultPlain, true, JSON.stringify(observed));
 
         // Was a genuine divergence (null off / 'DEVICE_INVOKE_EXCEPTION' on)
         // before lib/device-manager.js's sendInvokeActionMessageToWorker and
