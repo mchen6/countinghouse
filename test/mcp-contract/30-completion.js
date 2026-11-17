@@ -33,11 +33,25 @@ const callAddress = require('../../lib/call-address');
 
 const SVC = 'urn:x:serviceID:svc';
 const SCHEMA = '$schema';
-function moduleOf(friendlyName, prompts, argumentSchemas) {
-  const spec = {device: {friendlyName, serviceList: {[SVC]: {actionList: [{name: 'go', description: 'go it', input: {schema: '/svc/go/input'}}]}}, promptList: prompts}};
-  const schemaDoc = {[SCHEMA]: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', svc: {go: {input: {type: 'object'}}}, prompts: argumentSchemas};
+// extra: more actions, each [declaration, its schemas]
+function moduleOf(friendlyName, prompts, argumentSchemas, extra = []) {
+  const spec = {device: {friendlyName, serviceList: {[SVC]: {actionList: [{name: 'go', description: 'go it', input: {schema: '/svc/go/input'}}].concat(extra.map((e) => e[0]))}}, promptList: prompts}};
+  const svc = {go: {input: {type: 'object'}}};
+  for (const [action, schemas] of extra) svc[action.name] = schemas;
+  const schemaDoc = {[SCHEMA]: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', svc, prompts: argumentSchemas};
   return {spec, schemaDoc};
 }
+// resources (M7): a template whose variable's input property declares an
+// enum, one whose variable declares nothing, and a static one
+const RESOURCES = [
+  [{name: 'readShade', description: 'one shade', input: {schema: '/svc/readShade/input'}, output: {schema: '/svc/readShade/output'},
+    resource: {uriTemplate: 'shades/{shade}', name: 'shade'}},
+  {input: {type: 'object', properties: {shade: {type: 'string', enum: ['Red', 'reddish', 'blue', 'Dark Red']}}, required: ['shade']}, output: {type: 'object'}}],
+  [{name: 'readNote', description: 'one note', input: {schema: '/svc/readNote/input'}, output: {schema: '/svc/readNote/output'},
+    resource: {uriTemplate: 'notes/{id}', name: 'note'}},
+  {input: {type: 'object', properties: {id: {type: 'string'}}, required: ['id']}, output: {type: 'object'}}],
+  [{name: 'about', description: 'about', output: {schema: '/svc/about/output'}, resource: {uriTemplate: 'about', name: 'about'}}, {output: {type: 'object'}}]
+];
 const MANY = Array.from({length: 150}, (_, i) => `shade-${String(i).padStart(3, '0')}`);
 const MODULES = [
   moduleOf('colours', [
@@ -51,9 +65,14 @@ const MODULES = [
       both: {type: 'string', enum: ['alpha', 'beta'], examples: ['beta', 'gamma', 7, 'x'.repeat(300)]}
     }, required: ['colour']},
     shades: {type: 'object', properties: {shade: {type: 'string', enum: MANY}}}
-  }),
+  }, RESOURCES),
+  moduleOf('tints', [{name: 'tint', arguments: {schema: '/prompts/tint'}, messages: [{role: 'user', text: '{{shade}}'}], completion: {shade: 'svc.completeTint'}}],
+    {tint: {type: 'object', properties: {shade: {type: 'string', enum: ['teal', 'tan']}}}},
+    [[{name: 'completeTint', description: 'completes a tint', input: {schema: '/svc/completeTint/input'}, output: {schema: '/svc/completeTint/output'}},
+      {input: {type: 'object', properties: {argument: {type: 'string'}, value: {type: 'string'}, context: {type: 'object'}}, required: ['argument', 'value']},
+        output: {type: 'object', properties: {values: {type: 'array', items: {type: 'string'}}}, required: ['values']}}]]),
   moduleOf('secret', [{name: 'hidden', arguments: {schema: '/prompts/hidden'}, messages: [{role: 'user', text: '{{code}}'}]}],
-    {hidden: {type: 'object', properties: {code: {type: 'string', enum: ['alpha', 'omega']}}}})
+    {hidden: {type: 'object', properties: {code: {type: 'string', enum: ['alpha', 'omega']}}}}, [RESOURCES[0]])
 ];
 
 let ci = null;
@@ -154,14 +173,53 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     assert.deepStrictEqual(other.error, unknown.error, 'the same answer as an unknown one');
   });
 
-  it('a resource template is unknown until module resources come (M7); a malformed ref or argument is invalid', async () => {
-    const res = await ask('completion/complete', KEY_A, {ref: {type: 'ref/resource', uri: 'countinghouse://m/colours/x/{id}'}, argument: {name: 'id', value: ''}});
-    assert.deepStrictEqual([res.error && res.error.code, res.error && res.error.message], [-32602, 'unknown resource template']);
+  it('a resource template: its variable\'s candidates, from the input property behind it, matched as a prompt argument\'s are', async () => {
+    const res = await ask('completion/complete', KEY_A, {ref: {type: 'ref/resource', uri: 'countinghouse://m/colours/shades/{shade}'}, argument: {name: 'shade', value: 're'}});
+    assert.deepStrictEqual(res.result, {completion: {values: ['Red', 'reddish', 'Dark Red'], total: 3, hasMore: false}}, JSON.stringify(res));
+    const none = await ask('completion/complete', KEY_A, {ref: {type: 'ref/resource', uri: 'countinghouse://m/colours/notes/{id}'}, argument: {name: 'id', value: ''}});
+    assert.deepStrictEqual(none.result, {completion: {values: [], total: 0, hasMore: false}});
+  });
+
+  it('a template the caller is not listed, a static resource, an unknown one, or a name that is not its variable: -32602; a malformed ref or argument is invalid', async () => {
+    for (const [key, uri, name, message] of [[KEY_A, 'countinghouse://m/colours/x/{id}', 'id', 'unknown resource template'],
+      [KEY_A, 'countinghouse://m/colours/about', 'id', 'unknown resource template'],
+      [KEY_B, 'countinghouse://m/secret/shades/{shade}', 'shade', 'unknown resource template'],
+      [KEY_A, 'countinghouse://m/colours/shades/{shade}', 'colour', 'unknown argument']]) {
+      const res = await ask('completion/complete', key, {ref: {type: 'ref/resource', uri}, argument: {name, value: ''}});
+      assert.deepStrictEqual([res.error && res.error.code, res.error && res.error.message], [-32602, message], uri);
+    }
+    for (const params of [{ref: {type: 'ref/resource'}, argument: {name: 'shade', value: ''}}, {ref: {type: 'ref/resource', uri: 5}, argument: {name: 'shade', value: ''}}]) {
+      const r = await ask('completion/complete', KEY_A, params);
+      assert.strictEqual(r.error && r.error.code, -32602, JSON.stringify(params));
+    }
     for (const params of [{}, {ref: 'colours_paint', argument: {name: 'colour', value: ''}}, {ref: {type: 'ref/other', name: 'colours_paint'}, argument: {name: 'colour', value: ''}},
       {ref: {type: 'ref/prompt', name: 'colours_paint'}}, {ref: {type: 'ref/prompt', name: 'colours_paint'}, argument: {name: 'colour', value: 5}},
       {ref: {type: 'ref/prompt', name: 'colours_paint'}, argument: {name: 'colour'}}]) {
       const r = await ask('completion/complete', KEY_A, params);
       assert.strictEqual(r.error && r.error.code, -32602, JSON.stringify(params));
+    }
+  });
+
+  // The per-key rate limit is what bounds a completion action (it is not
+  // billed): the completion request itself is gated (resolveGatedIdentity's
+  // rateLimitGate.check, which takes the key's token) before anything is
+  // looked up, so a key at its limit is refused and no module code runs.
+  it('a completion that would run an action, at the key\'s rate limit: refused, and the action never runs', async () => {
+    const ran = [];
+    // the module's action, as the call path reaches it, answering at once
+    ci.invokeDeviceAction = (deviceID, serviceID, actionName, args, session) => { ran.push(actionName); session.callbackWithoutTimer(null, {output: {values: ['teal-blue']}}); };
+    try {
+      limited = true;
+      const refused = await complete(KEY_A, 'tints_tint', 'shade', 't');
+      assert.match(refused.error && refused.error.message, /rate limit/, JSON.stringify(refused));
+      assert.deepStrictEqual(ran, [], 'the action ran at the limit');
+      // and under it, the action is what answers
+      limited = false;
+      const answered = await complete(KEY_A, 'tints_tint', 'shade', 't');
+      assert.deepStrictEqual(ran, ['completeTint']);
+      assert.deepStrictEqual(answered.result && answered.result.completion, {values: ['teal-blue'], total: 1, hasMore: false}, JSON.stringify(answered));
+    } finally {
+      delete ci.invokeDeviceAction;
     }
   });
 
@@ -179,6 +237,17 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     const single = {deviceManager: {deviceMap: {single: device}, getAllDeviceSpecs: () => ({single: spec})}, rateLimit: (key, cb) => cb(null, {limited: false})};
     const r = await complete(KEY_A, 'single_ask', 'q', 'y', {iface: single});
     assert.deepStrictEqual(r.result.completion, {values: ['yes', 'maybe'], total: 2, hasMore: false}, JSON.stringify(r));
+  });
+
+  it('single-thread mode: a template\'s candidates are derived on the main thread too', async () => {
+    const CHDevice = require('../../lib/countinghouse-device');
+    const spec = {device: {friendlyName: 'single', serviceList: {[SVC]: {actionList: [{name: 'readShade', description: 'one shade',
+      input: {schema: '/svc/readShade/input'}, output: {schema: '/svc/readShade/output'}, resource: {uriTemplate: 'shades/{shade}', name: 'shade'}}]}}}};
+    const schemaDoc = {$id: '#/', svc: {readShade: {input: {type: 'object', properties: {shade: {type: 'string', examples: ['teal', 'tan']}}, required: ['shade']}, output: {type: 'object'}}}};
+    const device = {spec, schemaDoc, resolveSchemaFromPath: CHDevice.prototype.resolveSchemaFromPath, packageInfo: {name: 'single'}};
+    const single = {deviceManager: {deviceMap: {single: device}, getAllDeviceSpecs: () => ({single: spec})}, rateLimit: (key, cb) => cb(null, {limited: false})};
+    const r = await ask('completion/complete', KEY_A, {ref: {type: 'ref/resource', uri: 'countinghouse://m/single/shades/{shade}'}, argument: {name: 'shade', value: 't'}}, {iface: single});
+    assert.deepStrictEqual(r.result && r.result.completion, {values: ['teal', 'tan'], total: 2, hasMore: false}, JSON.stringify(r));
   });
 
   it('a value that only matches lowercased (U+0130 lowercases to two code units) is still matched past 256 characters', () => {

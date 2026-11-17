@@ -39,8 +39,10 @@ the way out — rather than stopping at the first. No Redis, no server.
 Exit codes are the contract: `0` clean, `1` problems found, `2` path unusable.
 `--json` emits the result as one JSON document for machine consumers.
 
-`--verifyModule` still exists for checking a module inside a running
-framework; it needs Redis and a booted server, which is why the CLI leads.
+To see a module load in a running framework, start it with `--loadModule`:
+a module that fails any check is refused and the log names the stage. No
+flag loads a module that fails its checks (8.0.0 removed `--verifyModule`,
+which did).
 
 ## From an agent
 

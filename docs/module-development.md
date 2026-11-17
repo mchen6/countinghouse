@@ -139,7 +139,9 @@ the answer at once. So:
   its own answer.
 - **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
   to fall back: the client offered no form, the call came by HTTP
-  `invoke-action` or as a task, the operator turned questions off
+  `invoke-action`, it runs as a task whose request declared no form
+  elicitation or while too many tasks already wait on questions, the
+  operator turned questions off
   (`--moduleQuestions off`), the outer call (when your action is a part)
   has no one to ask for any of these reasons, three rounds brought no valid
   answer, or the call has had eight rounds in all already (every
@@ -395,6 +397,17 @@ none, since every task starts at 0. A task that failed without an answer
 shows its code (`JOB_TIMEOUT` when it ran past `--jobTimeout`), never your
 handler's text.
 
+A task may ask, as a call does (see [Asking the user](#asking-the-user-ctxask)), when the request
+that made it declared form elicitation: the pass that asks ends, the task
+reads `input_required` with the form, and once the client answers it with
+`tasks/update` your handler runs again from the top under the same
+`taskId`, where `ctx.ask` returns the answer. The same rules hold: ask
+first, act after; three rounds of a question, eight in all. The pass that
+asks is not billed and spends none of the task's attempts. A question waits
+at most an hour; after that the task fails (`ASK_EXPIRED`) and nothing
+more of it runs. At most 64 of a key's tasks wait on a question at once
+(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once.
+
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
 the keys that may reach the module, with its `title`, `description` and
@@ -403,6 +416,22 @@ required). `prompts/get` runs none of your code: it checks the arguments
 against that schema, replaces each `{{name}}` once with the argument's value
 (an absent optional one is the empty string; substituted text is never
 scanned again) and returns your messages, at most 64 KiB in all.
+
+`completion/complete` offers values for a prompt's argument, or for a
+resource template's variable (`ref/resource`, the template as listed): the
+argument's schema's `enum`, then its `examples` (a template's: the input
+property behind the variable), matched to what the user has typed. A
+prompt or a resource may instead name an action of your module to answer:
+`"completion": {"<argument>": "<service>.<action>"}`. That action is called
+with `{argument, value, context}` (`context.arguments`: the other
+arguments' values so far, strings only) and answers `{values: string[]}`;
+at most 100 values of at most 256 characters are kept. It runs as a call of
+that action (authorized, rate limited, your input and output schemas
+checked), but it is not billed and is not listed as a tool; it is counted
+in usage as `completion/complete`. Keep it cheap: a client may ask on every
+keystroke. If it fails, answers no values, or takes more than 2 seconds,
+the schema's candidates are offered instead, and a run past 2 seconds is
+cancelled as a cancelled call is (what it asks afterwards is refused).
 
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
@@ -1130,13 +1159,11 @@ out. Exit
 codes: `0` clean, `1` problems found, `2` the path could not be read. No
 Redis and no server required.
 
-`--verifyModule` remains available for checking a module in the context of a
-running framework: it makes the framework continue past validation failures
-and report everything it finds, rather than stopping at the first one.
-
-```sh
-node ./framework.js --verifyModule --loadModule ./path/to/my-module
-```
+`countinghouse-validate` is the way to check a module: it reports every
+problem in one pass. A running framework never loads a module that fails a
+check (8.0.0 removed `--verifyModule`, which made it continue past one); start
+it with `--loadModule ./path/to/my-module` to see the module load, and read
+the log's stage when it is refused.
 
 ### Letting an agent write the module
 

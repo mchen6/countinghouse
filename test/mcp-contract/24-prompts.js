@@ -225,6 +225,15 @@ describe('mcp-contract 24: prompts (M10)', function() {
     assert.match(big.error.message, /64 KiB/);
   });
 
+  // M18's bounds audit: the bound again on the answer as sent. Arguments
+  // within 64 KiB by their own bytes (8 placeholders of 7000 quotes: 56000)
+  // whose answer is not, once JSON escapes each quote (112000)
+  it('prompts/get: a result within 64 KiB by its arguments but over it as sent (escaping) is -32602', async () => {
+    const quoted = await get(KEY_A, 'notes_big', {x: '"'.repeat(7000)});
+    assert.strictEqual(quoted.error && quoted.error.code, -32602, JSON.stringify(quoted).slice(0, 300));
+    assert.match(quoted.error.message, /is \d+ bytes; a prompt's result is at most 64 KiB/);
+  });
+
   // the review of #321: the size is known from the arguments' lengths, so
   // nothing is checked or built for a request over it. Before, 100
   // placeholders of a 6 MB argument built ~600 MB on the main thread, past

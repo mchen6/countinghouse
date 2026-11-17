@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "askService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "afterMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "asked": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "answer": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "runs": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asked"
+        ]
+      },
+      "questions": {
+        "confirm": {
+          "type": "object",
+          "properties": {
+            "yes": {
+              "type": "boolean",
+              "title": "Yes"
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "when": {
+              "type": "string",
+              "enum": [
+                "now",
+                "later"
+              ],
+              "enumNames": [
+                "Now",
+                "Later"
+              ]
+            }
+          },
+          "required": [
+            "yes"
+          ]
+        }
+      }
+    },
+    "peek": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "seen": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wrote": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "wrote"
+        ]
+      }
+    }
+  }
+}

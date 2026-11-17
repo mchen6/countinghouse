@@ -13,7 +13,7 @@ const assert = require('assert');
 const http = require('http');
 const path = require('path');
 const express = require('express');
-const {createHub, SUBSCRIPTION_ID_KEY} = require('../../lib/mcp/subscriptions');
+const {createHub, SUBSCRIPTION_ID_KEY, MAX_PER_KEY, MAX_PER_SESSION, MAX_TOTAL} = require('../../lib/mcp/subscriptions');
 
 const V = '2026-07-28';
 const META = {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {}};
@@ -76,6 +76,23 @@ describe('subscriptions/listen (#231)', () => {
       for (let i = 0; i < 8; i++) assert.strictEqual(listener(i, {toolsListChanged: true}).opened.ok, true);
       assert.strictEqual(listener(99, {toolsListChanged: true}).opened.ok, false);
       assert.strictEqual(listener(100, {toolsListChanged: true}, 'other').opened.ok, true);
+    });
+
+    // M18's bounds audit: the values themselves, each refusal by its own
+    // case (the total by an override below; the unread buffer by an
+    // override in the HTTP cases)
+    it('the bounds: 8 per key, 2 per session, 512 in all, 1 MiB unread on an HTTP listen', () => {
+      assert.deepStrictEqual([MAX_PER_KEY, MAX_PER_SESSION, MAX_TOTAL], [8, 2, 512]);
+      assert.strictEqual(require('../../lib/routes/mcp').MAX_LISTEN_BUFFERED, 1024 * 1024);
+    });
+
+    it('at most 2 open per session on a shared runtime; another session is counted apart', () => {
+      const open = (id, session) => hub.open({id, appKey: 'k', session, filter: {toolsListChanged: true}, write: () => {}, finish: () => {}});
+      assert.strictEqual(open(1, 's1').ok, true);
+      assert.strictEqual(open(2, 's1').ok, true);
+      const third = open(3, 's1');
+      assert.deepStrictEqual([third.ok, third.reason], [false, 'key']);
+      assert.strictEqual(open(4, 's2').ok, true);
     });
 
     it('at most maxTotal open across every key', () => {

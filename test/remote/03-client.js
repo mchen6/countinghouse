@@ -91,7 +91,20 @@ describe('remote 03: the client', function() {
     assert.strictEqual(await codeOf(c.call('echo_text', {})), 'REMOTE_PROTOCOL');
   });
 
-  it('a redirect rejects REMOTE_UNREACHABLE and the target sees no connection', async () => {
+  // The SDK's transport (1.32.2) follows a 3xx within the same origin only
+  // (the exact scheme, host and port; at most 5), its Authorization kept;
+  // this fetch returns every 3xx as it is, so nothing else is followed
+  // (the security assessment's finding: the docs said "no redirect").
+  it('a redirect within the same origin is followed, with the credential', async () => {
+    server.setMode('redirect-same');
+    c = client();
+    await c.call('echo_text', {a: 1});
+    const at = server.paths.lastIndexOf('/moved');
+    assert.ok(at >= 0, `never followed: ${JSON.stringify(server.paths)}`);
+    assert.strictEqual(server.headers[at].authorization, `Bearer ${TOKEN}`);
+  });
+
+  it('a redirect to another origin is not followed: REMOTE_UNREACHABLE, and the other host sees no connection', async () => {
     let reached = 0;
     const target = net.createServer((s) => { reached += 1; s.destroy(); });
     await new Promise((resolve) => target.listen(REDIRECT_PORT, '127.0.0.1', resolve));

@@ -1,0 +1,6 @@
+{
+  "name": "key-dump-read",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "description": "test/auth/53's module: a resource read, and a plain call, each scanning what module code can reach for keys, user names and the Redis URL."
+}
