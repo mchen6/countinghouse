@@ -37,6 +37,16 @@ const replace = (obj, key, descriptor) => {
   changed = true;
   return () => (before !== undefined ? ObjectDefineProperty(obj, key, before) : delete obj[key]);
 };
+// what a setter put on a prototype is handed: ports it saw, counted
+let portsSeen = 0;
+const MessagePortProto = MessagePort.prototype;
+const ObjectIsPrototypeOf = Function.prototype.call.bind(Object.prototype.isPrototypeOf);
+const setterOn = (proto, key) => replace(proto, key, {configurable: true, enumerable: false,
+  get() { return undefined; },
+  set(v) {
+    if (v != null && typeof(v) === 'object' && ObjectIsPrototypeOf(MessagePortProto, v)) portsSeen++;
+    ObjectDefineProperty(this, key, {value: v, writable: true, enumerable: true, configurable: true});
+  }});
 const swap = (obj, key, value) => replace(obj, key, {value, writable: true, configurable: true, enumerable: false});
 const getter = (obj, key, get) => replace(obj, key, {get, configurable: true, enumerable: false});
 const reflectApply = Reflect.apply;
@@ -96,6 +106,20 @@ const CHANGES = {
     const b = swap(WeakSet.prototype, 'add', function() { return this; });
     return () => { b(); a(); };
   },
+  // a setter on each of Array.prototype's first indexes, and on keys the
+  // runtime's containers use on Object.prototype: each records a port it is
+  // handed and passes the value on as an own property
+  'Array.prototype index setters': () => {
+    const undo = [];
+    for (let k = 0; k < 8; k++) undo[k] = setterOn(Array.prototype, StringCtor(k));
+    return () => { for (let k = 0; k < 8; k++) undo[k](); };
+  },
+  'Object.prototype setters': () => {
+    const keys = ['code', 'message', 'origin', 'uri', 'proxy', 'followRedirect', 'roots', 'files', 'data', 'id'];
+    const undo = [];
+    for (let k = 0; k < keys.length; k++) undo[k] = setterOn(Object.prototype, keys[k]);
+    return () => { for (let k = 0; k < keys.length; k++) undo[k](); };
+  },
 };
 
 const outcome = (fn) => {
@@ -129,6 +153,7 @@ module.exports = async (input, ctx) => {
   let host = null;
   handed = [];
   changed = false;
+  portsSeen = 0;
   const undo = CHANGES[input.change]();
   let undone = false;
   try {
@@ -150,6 +175,8 @@ module.exports = async (input, ctx) => {
     // allowed: the guard hands these on to the original
     result.ownFile = outcome(() => CHUtil.loadFile(OWN_FILE));
     result.allowedBuiltin = outcome(() => process.getBuiltinModule('path'));
+    // the runtime's handle listing, ports filtered out: never handed to a setter
+    result.activeHandles = outcome(() => process._getActiveHandles());
     host = new PromiseCtor((resolve) => {
       try {
         CHUtil.request({uri: `http://${input.host}/`, method: 'GET', timeout: 3000}, (err) => resolve(err != null ? {outcome: 'refused', code: err.code != null ? StringCtor(err.code) : null} : {outcome: 'reached'}));
@@ -165,5 +192,8 @@ module.exports = async (input, ctx) => {
   result.handed = handed;
   result.undone = undone;
   result.changed = changed;
+  result.portsSeen = portsSeen;
   return {output: result};
 };
+// the changes' names, for test/sandbox/62 (it requires this file to read them)
+module.exports.CHANGE_NAMES = Object.freeze(Object.keys(CHANGES));
