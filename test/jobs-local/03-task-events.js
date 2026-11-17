@@ -1,8 +1,9 @@
 'use strict';
 // MCP completeness M16, Task 1: the local runner tells lib/task-events.js a
 // 2026-07-28 task's changes (its run started, its progress, completed,
-// failed for good), and nothing for any other job. A removal is not one:
-// the gateway tells a cancel. Server-free,
+// failed for good, waiting on its question), and nothing for any other job.
+// A removal is not one: the gateway tells a cancel. A question's wait that
+// ends is told by task-events itself. Server-free,
 // as jobs-local 01: the runner's surface with a stub cdifInterface and the
 // owner check stubbed.
 const assert = require('assert');
@@ -98,6 +99,79 @@ describe('jobs-local 03: the local runner tells a 2026-07-28 task\'s changes (M1
       offBad();
       LOG.E = realE;
     }
+  });
+
+  // M22's question (lib/task-asks.js), its hooks stood in for: a pass that
+  // ends ASK_PENDING with a question pending waits; an answer runs it again
+  describe('a task that asks its user (M22)', () => {
+    const taskAsks = require('../../lib/task-asks');
+    const records = new Map();
+    before(() => taskAsks.configure({kv: () => ({get: (k, cb) => setImmediate(cb, null, records.has(k) ? JSON.stringify(records.get(k)) : null)})}));
+    after(() => taskAsks.configure({kv: () => require('../../lib/store').getStore().kv}));
+    afterEach(() => records.clear());
+    const pending = {state: {pending: {qKey: 'q'}}};
+    function asking(passes) {
+      const runner = runnerWith((i, cb) => setImmediate(cb, i === 0 ? Object.assign(new Error('asked'), {code: 'ASK_PENDING'}) : null, {}));
+      let n = 0;
+      runner.setAskHooks({before: () => Promise.resolve(passes[n++] || null), asked: () => Promise.resolve({asked: {}}),
+        settled: () => Promise.resolve(), holdMs: () => 60000});
+      return runner;
+    }
+
+    it('its pass that asked is told input_required (never completed); answered, it runs again: active, completed', async () => {
+      const runner = asking([pending, {state: {pending: null}}]);
+      await add(runner, {name: 'n', taskId: tid('f'), era: 'modern', asks: true});
+      assert.ok(await until(() => seen.includes('t-f input_required')), JSON.stringify(seen));
+      await wait(50);
+      assert.deepStrictEqual(seen, ['t-f active', 't-f input_required']);
+      assert.strictEqual(await runner.rerunTask(tid('f')), true);
+      assert.ok(await until(() => seen.includes('t-f completed')), JSON.stringify(seen));
+      assert.deepStrictEqual(seen, ['t-f active', 't-f input_required', 't-f active', 't-f completed']);
+      assert.strictEqual(taskEvents.pendingWaits(), 0, 'no record: no wait timed; and done, none left');
+      runner.close();
+    });
+
+    it('run again with its question unanswered (skip): back to input_required, nothing run', async () => {
+      const runner = asking([pending, {skip: true}]);
+      await add(runner, {name: 'n', taskId: tid('1'), era: 'modern', asks: true});
+      assert.ok(await until(() => seen.includes('t-1 input_required')), JSON.stringify(seen));
+      await runner.rerunTask(tid('1'));
+      assert.ok(await until(() => seen.length === 4), JSON.stringify(seen));
+      await wait(50);
+      assert.deepStrictEqual(seen, ['t-1 active', 't-1 input_required', 't-1 active', 't-1 input_required']);
+      runner.close();
+    });
+
+    it('its question\'s wait ends unseen (ASK_EXPIRED is read, never written): told failed at the record\'s expiresAt, once', async () => {
+      records.set(`task-ask:${tid('2')}`, {owner: 'o', expiresAt: Date.now() + 80});
+      taskEvents.emit(tid('2'), 'input_required');
+      assert.ok(await until(() => taskEvents.pendingWaits() === 1));
+      await wait(30);
+      assert.deepStrictEqual(seen, ['t-2 input_required'], 'not before its wait ends');
+      assert.ok(await until(() => seen.includes('t-2 failed')), JSON.stringify(seen));
+      await wait(100);
+      assert.deepStrictEqual(seen, ['t-2 input_required', 't-2 failed']);
+      assert.strictEqual(taskEvents.pendingWaits(), 0);
+    });
+
+    it('any later kind clears the wait: answered (active), cancelled; a gone record times nothing', async () => {
+      for (const [c, later] of [['3', 'active'], ['4', 'cancelled']]) {
+        records.set(`task-ask:${tid(c)}`, {owner: 'o', expiresAt: Date.now() + 80});
+        taskEvents.emit(tid(c), 'input_required');
+        assert.ok(await until(() => taskEvents.pendingWaits() === 1));
+        taskEvents.emit(tid(c), later);
+        assert.strictEqual(taskEvents.pendingWaits(), 0);
+      }
+      // cleared before its record was read: the read that lands after times nothing
+      records.set(`task-ask:${tid('5')}`, {owner: 'o', expiresAt: Date.now() + 80});
+      taskEvents.emit(tid('5'), 'input_required');
+      taskEvents.emit(tid('5'), 'active');
+      taskEvents.emit(tid('6'), 'input_required');   // no record
+      await wait(200);
+      assert.deepStrictEqual(seen, ['t-3 input_required', 't-3 active', 't-4 input_required', 't-4 cancelled',
+        't-5 input_required', 't-5 active', 't-6 input_required']);
+      assert.strictEqual(taskEvents.pendingWaits(), 0);
+    });
   });
 
   it('an unknown kind is a programming error, thrown at once', () => {

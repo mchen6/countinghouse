@@ -71,7 +71,7 @@
 - Test: `test/mcp-contract/27-tasks-modern.js` (statusMessage cases); `test/jobs-local/03-task-events.js` (server-free, local runner)
 
 **Interfaces:**
-- Produces: `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'cancelled'}`. `cancelled` is the gateway's, told once tasks/cancel has written the tombstone; a runner's removal tells nothing (a listener's send-time lookup could otherwise find neither the job nor the tombstone).
+- Produces: `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'cancelled', 'input_required'}`. `input_required` (added after #374, M22; the Reviewer, 2026-11-17): a pass that ended on its question, the local runner's hold and skip branches and the Redis runner's `completed` event when `job.data.asking` is set. The hub is unchanged: terminal is read from the view, so it is coalesced as `working` is and the id is kept. A question's wait ends unseen (tasks/get reads `ASK_EXPIRED` once the record's `expiresAt` has passed; no runner changes the job then), so task-events itself tells `failed` at that time: one unref'd timer per waiting task, cleared by any later kind for it. `cancelled` is the gateway's, told once tasks/cancel has written the tombstone; a runner's removal tells nothing (a listener's send-time lookup could otherwise find neither the job nor the tombstone).
 - Consumes: nothing from B5 Task 2 yet; Task 2 does.
 
 - [ ] Failing tests:
@@ -121,5 +121,5 @@
 
 ## Out of scope
 
-- `input_required` (M22, C's), which will add `inputRequests` to the same `modernTaskView`.
+- ~~`input_required` (M22, C's)~~: in scope since #374 merged (see Task 1's Produces); its `inputRequests` come in the same `modernTaskView`.
 - Per-session tasks on the shared runtime (B5).

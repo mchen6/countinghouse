@@ -406,7 +406,11 @@ first, act after; three rounds of a question, eight in all. The pass that
 asks is not billed and spends none of the task's attempts. A question waits
 at most an hour; after that the task fails (`ASK_EXPIRED`) and nothing
 more of it runs. At most 64 of a key's tasks wait on a question at once
-(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once.
+(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once. While
+it waits its `statusMessage` is `waiting for an answer`, and a client that
+listens for the task is told each change as for a working one: waiting,
+working again once answered, then its end (or `ASK_EXPIRED` when the hour
+is up).
 
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
