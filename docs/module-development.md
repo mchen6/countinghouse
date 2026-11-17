@@ -1126,13 +1126,11 @@ out. Exit
 codes: `0` clean, `1` problems found, `2` the path could not be read. No
 Redis and no server required.
 
-`--verifyModule` remains available for checking a module in the context of a
-running framework: it makes the framework continue past validation failures
-and report everything it finds, rather than stopping at the first one.
-
-```sh
-node ./framework.js --verifyModule --loadModule ./path/to/my-module
-```
+`countinghouse-validate` is the way to check a module: it reports every
+problem in one pass. A running framework never loads a module that fails a
+check (8.0.0 removed `--verifyModule`, which made it continue past one); start
+it with `--loadModule ./path/to/my-module` to see the module load, and read
+the log's stage when it is refused.
 
 ### Letting an agent write the module
 
