@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revision 1, for the Reviewer's OK before any code. Written against master at 7d8af977. Three points need a ruling first (Decisions D1–D3 below).
+**Status:** revision 2, APPROVED by the Reviewer (#349) with rulings D1–D3 as proposed, plus conditions D2(a)/(b) and three additions (marked "Reviewer, #349" below). Written against master at 7d8af977. Build order: Tasks 1–3, then M16's plan while CI runs, then Tasks 4–7.
 
 **Goal:** A module that declares `"countinghouse": {"state": "per-session"}` gets, on the shared runtime, a worker of its own per session, and its store and files partitioned by session. Those partitions live as long as the session (they survive a runtime restart that restores it). Everything else stays as it is: shared modules, `--stdio`, and every listing and golden.
 
@@ -18,11 +18,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-15-shared-runtime-design.md` (#236), §4a (all of it), §6 (the restored ids, the sweep's place), §9 residual 5, and its plan's R1.
 
-## Decisions for the Reviewer (before Task 1)
+## Decisions (ruled on #349: all three as proposed)
 
-- **D1. The pin (spec correction).** §4a says the field is "pinned with the manifest like `role` and `sessionDefaults` (`manifestPins`)", and "a reload that changes it is refused like any other pinned field". On master, **`manifestPins` pins `countinghouse.calls` only** (its header says so). `role` isn't pinned, `sessionDefaults` exists nowhere in `lib/`, and no reload is refused for a manifest change. **Proposal:** `manifestPins` also keeps `countinghouse.state` (the operator's load takes the file; a supervised restart keeps the pin, as for `calls`). `reloadModule` refuses a load whose state differs from the loaded one, with a new code `MODULE_STATE_CHANGED` ("unload it first"), because a running module's workers and partitions can't change shape in place. `role` stays as it is (out of scope).
-- **D2. The listing record.** A per-session module has no worker until a session calls it, so its `deviceMap` entry is the main thread's spec record, not a `WorkerMessage`. **Every site that sends to `deviceMap[id]` must go through `workerFor`.** On master there are 18 `deviceMap[` sites in `device-manager.js`, 5 in `peer-channel-broker.js` and 2 in `route-manager.js`; Task 5 lists each one and what it does. The alternative, a router object that impersonates a `WorkerMessage`, hides an async spawn behind sync-looking sends, so it's rejected.
-- **D3. Daemon-death notice.** §4a: after a daemon death "each reconnecting session is told 'per-session state was reset', as §6 tells loosenings". I'll hook the same place §6's loosening reset uses (`lib/session-state.js` and the restore's `reset` rows). If that path only covers restored sessions, a daemon death (nothing restored) needs a runtime-wide "reset at start" flag that the next new session's first result carries. Proposal: that flag, set when the sweep removed anything and no row was restored.
+- **D1. The pin (spec correction).** §4a says the field is "pinned with the manifest like `role` and `sessionDefaults` (`manifestPins`)", and "a reload that changes it is refused like any other pinned field". On master, **`manifestPins` pins `countinghouse.calls` only** (its header says so). `role` isn't pinned, `sessionDefaults` exists nowhere in `lib/`, and no reload is refused for a manifest change. **Proposal:** `manifestPins` also keeps `countinghouse.state` (the operator's load takes the file; a supervised restart keeps the pin, as for `calls`). `reloadModule` refuses a load whose state differs from the loaded one, with a new code `MODULE_STATE_CHANGED` ("unload it first"), because a running module's workers and partitions can't change shape in place. `role` stays as it is (out of scope). **Ruled:** yes, and §4a's text is corrected in this PR so the spec matches the source.
+- **D2. The listing record.** A per-session module has no worker until a session calls it, so its `deviceMap` entry is the main thread's spec record, not a `WorkerMessage`. **Every site that sends to `deviceMap[id]` must go through `workerFor`.** On master there are 18 `deviceMap[` sites in `device-manager.js`, 5 in `peer-channel-broker.js` and 2 in `route-manager.js`; Task 5 lists each one and what it does. The alternative, a router object that impersonates a `WorkerMessage`, hides an async spawn behind sync-looking sends, so it's rejected. **Ruled:** yes, with two conditions. (a) In shared mode a per-session module reached at a dispatch site with no session id fails CLOSED: `DEVICE_NOT_FOUND`, the same bytes as an unknown device, never "use any worker". (b) Task 5's PR lists every converted site (18 + 5 + 2), and a test shows a per-session module is reached by the right session's worker through each of the call, the routed hop, the query, the job run and the peer broker.
+- **D3. Daemon-death notice.** §4a: after a daemon death "each reconnecting session is told 'per-session state was reset', as §6 tells loosenings". I'll hook the same place §6's loosening reset uses (`lib/session-state.js` and the restore's `reset` rows). If that path only covers restored sessions, a daemon death (nothing restored) needs a runtime-wide "reset at start" flag that the next new session's first result carries. Proposal: that flag, set when the sweep removed anything and no row was restored. **Ruled:** yes, both. The wording goes to the Reviewer with the en/zh review.
 
 ## Global constraints
 
@@ -33,6 +33,9 @@
 - **Data paths:** `<moduleDataPath>/<name>/sessions/<sid>/{data,tmp}`, made 0700 by `lib/module-data.js`. The worker sees `/data` and `/tmp` as today. The broker maps them on the main thread, and the scrub strips the session root from paths and error texts.
 - **Lifetime:** removed on the session's `bye` or window expiry only, never on `Registry.close()`. The restored ids keep their partitions; the sweep (before the listener accepts) removes partitions whose id wasn't restored.
 - **Limits:** `--maxSessionWorkers` (default 16, operator only; a session can't raise it). At the cap, the least recently used session worker with no call in flight gives up its slot, and its session is told "<module>'s in-memory state was reset; its files were kept". If none can, the call is refused `SESSION_WORKERS_BUSY` (retryable). Nothing is queued. The fs quota counts all of a module's partitions together.
+- **The cap never kills mid-call** (Reviewer, #349). LRU eviction takes only a worker with no call in flight and no live token issued to it (a hop's, a job's, a peer channel's). When every slot is busy, the call is `SESSION_WORKERS_BUSY` (retryable). Tested in Task 4.
+- **The memory cost is stated, and the cap is the operator's** (Reviewer, #349). The docs state the per-session cost as one lean worker (~14.5 MB measured on #177) × `--maxSessionWorkers` (16 by default: ~232 MB at the cap) above today's shared workers. The cap is a CLI flag only: never a setting a session can change in conversation, and not in the settings tool's allowlist.
+- **B3's session packs** (Reviewer, #349). A per-session module inside a this-session pack: its workers and partitions follow the pack's session membership (`lib/session-packs.js`). A pack turned off or unloaded for a session stops that session's worker of it (its partition is kept until the session ends, as a crash's is). The hook is agreed with B. B3's Task 9 restore of packs and this plan's sweep keep the order: `_restore`, then B3's pack restore, then the sweep, then `listener.listen()`.
 - **No idle stop.** A session worker stops only at its session's end, at the cap, on its module's reload or unload, or by crashing.
 - New error codes (`MODULE_NEEDS_SESSIONS`, `MODULE_STATE_INVALID`, `MODULE_STATE_CHANGED`, `SESSION_WORKERS_BUSY`) go into `lib/error-catalogue.js` with `en` and `zh` texts, and get their own wording review.
 - **Running tests:** one file at a time, under the suite lock, each in the 2 GB no-swap cap with MemAvailable ≥ 3 GB (the user's rule). Server files go through `node test/helpers/run-local.js`. No folder runs locally: the PR's CI is the gate. The memory baseline (§4a "to be measured") is a CI-only perf run, a register row, not part of these tasks.
@@ -124,7 +127,9 @@
   - with `--maxSessionWorkers 1`, session B's call evicts A's idle worker, and A's next result carries "per-session-module's in-memory state was reset; its files were kept" with A's file still there;
   - with A's call held in flight, B's call is `SESSION_WORKERS_BUSY`;
   - killing A's worker restarts only A's (B's counter is intact, the listing unchanged);
-  - a reload stops both, and the next calls run the new code with the files kept.
+  - a reload stops both, and the next calls run the new code with the files kept;
+  - **never mid-call** (Reviewer, #349): with `--maxSessionWorkers 1`, A's worker holding a live hop token (a call in flight in the shared caller) isn't evicted for B, and B gets `SESSION_WORKERS_BUSY`;
+  - **B3:** turning off a this-session pack that holds the per-session fixture stops that session's worker of it, and the other session's runs on.
 - [ ] Implement. Run: PASS. Commit.
 
 ### Task 5: Routing every dispatch through `workerFor`
@@ -168,7 +173,7 @@
 
 ### Task 7: Docs
 
-- [ ] Update `docs/module-development.md` (the declaration, what a module sees: nothing new; files and store per session; no idle stop; the cap), `docs/cli-and-api-reference.md` (`--maxSessionWorkers`), `docs/security-model.md` (§9 residual 5 with state; the partitions' lifetime). One commit, in the same PR as Task 6.
+- [ ] Update `docs/module-development.md` (the declaration, what a module sees: nothing new; files and store per session; no idle stop; the cap and its memory cost, ~14.5 MB × the cap, operator-only), `docs/cli-and-api-reference.md` (`--maxSessionWorkers`), `docs/security-model.md` (§9 residual 5 with state; the partitions' lifetime). One commit, in the same PR as Task 6.
 
 ## Out of scope
 
