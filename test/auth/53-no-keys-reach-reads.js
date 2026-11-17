@@ -73,6 +73,12 @@ describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s
     if (base != null) fs.rmSync(base, {recursive: true, force: true});
   });
 
+  // what a plain call sees: {caller, ctxKeys}
+  const whoCalled = async () => {
+    const name = (await legacy('tools/list', {})).result.tools.find((t) => /readservice_who$/.test(t.name)).name;
+    return (await modern('tools/call', {name, arguments: {}}, name)).result.structuredContent;
+  };
+
   const readView = (got) => {
     assert.ok(got.result != null && Array.isArray(got.result.contents), JSON.stringify(got).slice(0, 600));
     return JSON.parse(got.result.contents[0].text);
@@ -81,9 +87,7 @@ describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s
   it('a 2026-07-28 resources/read: nothing found, and the caller a call sees', async () => {
     const view = readView(await modern('resources/read', {uri: URI}, URI));
     assertClean(view, 'a modern read');
-    const name = (await legacy('tools/list', {})).result.tools.find((t) => /readservice_who$/.test(t.name)).name;
-    const called = await modern('tools/call', {name, arguments: {}}, name);
-    const who = called.result.structuredContent;
+    const who = await whoCalled();
     assert.deepStrictEqual(view.caller, who.caller, 'a read and a call see the same caller');
     assert.deepStrictEqual(view.ctxKeys, who.ctxKeys, 'and the same ctx');
   });
@@ -92,10 +96,6 @@ describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s
     assertClean(readView(await legacy('resources/read', {uri: URI})), 'a legacy read');
   });
 
-  const whoCalled = async () => {
-    const name = (await legacy('tools/list', {})).result.tools.find((t) => /readservice_who$/.test(t.name)).name;
-    return (await modern('tools/call', {name, arguments: {}}, name)).result.structuredContent.caller;
-  };
 
   it('a task\'s run after its answer (M22): nothing found, and the caller a call sees', async () => {
     const name = (await legacy('tools/list', {})).result.tools.find((t) => /readservice_askthenpeek$/.test(t.name)).name;
@@ -118,18 +118,24 @@ describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s
     const view = done.result.structuredContent;
     assert.deepStrictEqual(view.answer, {yes: true}, 'the run after the answer');
     assertClean(view, 'a task\'s run after its answer');
-    assert.deepStrictEqual(view.caller, await whoCalled(), 'a task and a call see the same caller');
+    const who = await whoCalled();
+    assert.deepStrictEqual(view.caller, who.caller, 'a task and a call see the same caller');
+    assert.deepStrictEqual(view.ctxKeys, who.ctxKeys, 'and the same ctx');
   });
 
   it('a completion action (M11): nothing found, and the caller a call sees', async () => {
     const got = await modern('completion/complete', {ref: {type: 'ref/prompt', name: 'key_dump_read_pick'}, argument: {name: 'thing', value: ''}});
     assert.ok(got.result != null && got.result.completion != null, JSON.stringify(got).slice(0, 600));
     const values = Object.fromEntries(got.result.completion.values.map((v) => [v.slice(0, v.indexOf(':')), v.slice(v.indexOf(':') + 1)]));
+    // the action answered (not the schema's fallback, which has none)
+    assert.deepStrictEqual(Object.keys(values).sort(), ['admin', 'budget', 'callerKeys', 'ctxKeys', 'first', 'hits', 'id'], JSON.stringify(got.result));
     assert.strictEqual(values.budget, 'false', `the walk ran out of budget, so it proves nothing: ${JSON.stringify(values)}`);
     assert.strictEqual(values.hits, '0', `found: ${values.first}`);
     assert.strictEqual(values.callerKeys, 'id,isAdmin', JSON.stringify(values));
     assert.match(values.id, ID_SHAPE);
     assert.strictEqual(values.admin, 'false');
-    assert.strictEqual(values.id, (await whoCalled()).id, 'a completion action and a call see the same caller');
+    const who = await whoCalled();
+    assert.strictEqual(values.id, who.caller.id, 'a completion action and a call see the same caller');
+    assert.strictEqual(values.ctxKeys, who.ctxKeys.join(','), 'and the same ctx');
   });
 });

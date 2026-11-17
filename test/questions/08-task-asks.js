@@ -128,7 +128,8 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   // security model's table): the caps, the wait, and the answers' bytes
   it('the bounds, by value: 64 of an owner\'s waiting tasks, 10,000 in all, an hour\'s wait, 8 KiB of answers', () => {
     assert.deepStrictEqual([taskAsks.MAX_PER_OWNER, taskAsks.MAX_TOTAL, taskAsks.WAIT_MS], [64, 10000, 60 * 60 * 1000]);
-    assert.strictEqual(require('../../lib/request-state').MAX_ANSWERS_BYTES, 8 * 1024);
+    // the bound the record enforces, and the call's request state's, one value
+    assert.deepStrictEqual([taskAsks.MAX_ANSWERS_BYTES, require('../../lib/request-state').MAX_ANSWERS_BYTES], [8 * 1024, 8 * 1024]);
   });
 
   it('answers of 8 KiB run the task again; a byte more is no answer: the same question under a new key, a round on', async () => {
@@ -144,12 +145,11 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     assert.strictEqual(await taskAsks.answer(over, {q1: {action: 'accept', content: sized(8 * 1024 + 1)}}, {session: SESSION, ofAsker}), 'asked');
     const r = await taskAsks.get(over);
     assert.deepStrictEqual([r.pending.reqKey, r.pending.round, r.answers], ['q2', 2, {}]);
-    await taskAsks.remove(over);
     const within = id();
     await ask(within);
     assert.strictEqual(await taskAsks.answer(within, {q1: {action: 'accept', content: sized(8 * 1024)}}, {session: SESSION, ofAsker}), 'rerun');
-    assert.strictEqual((await taskAsks.get(within)).answers[KEY].pad.length > 8000, true);
-    await taskAsks.remove(within);
+    // the answers kept are exactly the bound
+    assert.strictEqual(Buffer.byteLength(JSON.stringify((await taskAsks.get(within)).answers), 'utf8'), 8 * 1024);
   });
 
   it('content its schema refuses: the same question under a new key, a round on; after the third, unavailable and run again', async () => {
