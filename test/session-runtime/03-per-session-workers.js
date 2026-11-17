@@ -92,6 +92,47 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     assert.strictEqual(counts(r).ended, 0, 'A\'s worker was never taken');
   });
 
+  // The security pass of 11-17: a call that never answers pinned its worker's
+  // slot for good (busy counted every request still in msgQueue). Past its
+  // own timeout and the margin (STALE_CALL_MARGIN_MS, 5 s), it doesn't: B gets
+  // a worker by evicting A's, A is told, and A's call is answered once, by its
+  // timeout, never again by the eviction, and counted once.
+  it('a call that never answers stops pinning its slot past its timeout and the margin: B gets a worker, A is told, A\'s call answered and counted once', async() => {
+    const s = await twoSessions(['--maxSessionWorkers', '1', '--requestTimeout', '2']);
+    outOf(await s.call('A', 'touch'));
+    const META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
+    const seq = 900001;
+    const sent = Date.now();
+    shim.message(s.A.c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method: 'tools/call', params: {_meta: META, name: s.tool('hold'), arguments: {ms: 60000}}}));   // (its schema's most: past this case's end)
+    const answersTo = async(ms) => {
+      const got = [];
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        const m = await shim.readM(s.A.c, Math.max(50, end - Date.now()));
+        if (m != null && m.header != null && m.header.seq === seq) got.push(JSON.parse(m.line.toString('utf8')));
+      }
+      return got;
+    };
+    const first = await answersTo(4000);
+    assert.strictEqual(first.length, 1, JSON.stringify(first).slice(0, 600));
+    assert.ok(/DEVICE_NOT_RESPONDING|did not respond|not responding/i.test(JSON.stringify(first[0])), JSON.stringify(first[0]).slice(0, 600));
+    // B, before the margin has passed: still busy
+    const early = await s.call('B', 'touch');
+    assert.ok(/SESSION_WORKERS_BUSY|per-session module workers are busy/.test(JSON.stringify(early)), JSON.stringify(early).slice(0, 600));
+    await tick(Math.max(0, sent + 2000 + 5000 + 500 - Date.now()));
+    assert.deepStrictEqual(outOf(await s.call('B', 'touch')), {file: 1, store: 1, memory: 1}, 'B got a worker');
+    await until(async() => counts(r).ended === 1, 10000);
+    assert.deepStrictEqual(counts(r), {up: 2, ended: 1}, 'A\'s worker was evicted for it');
+    assert.deepStrictEqual(await answersTo(1500), [], 'no second answer to A\'s call from the eviction');
+    const a = await s.call('A', 'touch');
+    assert.deepStrictEqual(outOf(a), {file: 2, store: 2, memory: 1});
+    assert.ok(texts(a).includes(RESET), texts(a));
+    // counted once: A's own usage holds one error, the timeout
+    const report = await request(s.A.c, 'tools/call', {name: 'countinghouse_usage_report', arguments: {}});
+    const errors = report.result.structuredContent.profile.errors.calls;
+    assert.strictEqual(Object.values(errors).reduce((x, y) => x + y, 0), 1, JSON.stringify(errors));
+  });
+
   it('a crash of A\'s worker: A\'s next call starts a fresh one and is told; B\'s worker, state and the listing are untouched', async() => {
     const s = await twoSessions();
     outOf(await s.call('A', 'touch'));

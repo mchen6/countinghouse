@@ -339,3 +339,22 @@ describe('sessions 30: an uninstall sees every session worker of the module', ()
     await waiting;
   });
 });
+
+// The security pass of 11-17: what counts as a session worker's work in
+// flight (lib/worker-message.js inFlight, read by the pool's busy)
+describe('sessions 30: a request past its deadline is no longer in flight', () => {
+  const WorkerMessage = require('../../lib/worker-message');
+  const wm = (queue, deadlines) => ({msgQueue: queue, requestDeadlines: deadlines});
+  const f = () => {};
+  const inFlight = (w, now) => WorkerMessage.prototype.inFlight.call(w, now, 5000);
+  it('a request with no deadline (a load, a job run with no timeout) is always in flight', () => {
+    assert.strictEqual(inFlight(wm({1: f}, {}), 1e12), true);
+  });
+  it('a call is in flight until its deadline and the margin have passed; then not', () => {
+    assert.strictEqual(inFlight(wm({1: f}, {1: 10000}), 9000), true, 'before its deadline');
+    assert.strictEqual(inFlight(wm({1: f}, {1: 10000}), 15000), true, 'within the margin');
+    assert.strictEqual(inFlight(wm({1: f}, {1: 10000}), 15001), false, 'past it');
+    assert.strictEqual(inFlight(wm({1: f, 2: f}, {1: 10000, 2: 20000}), 15001), true, 'another still in flight');
+    assert.strictEqual(inFlight(wm({}, {1: 10000}), 0), false, 'nothing queued');
+  });
+});
