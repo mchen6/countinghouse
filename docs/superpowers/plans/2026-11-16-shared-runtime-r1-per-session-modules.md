@@ -105,6 +105,13 @@
 
 ### Task 4: Session workers: spawn, cap, crash, reload
 
+**Rulings at build time (Reviewer, 2026-11-16, P1–P5; they amend this task and Task 5):**
+- **P1. The Task 4/5 boundary.** Task 4 builds the listing record: a shared-runtime load runs every spec check as today and starts no worker. It converts only the call path (`invokeDeviceActionNow`) to `workerFor`; Task 5 converts the rest. **Condition:** Task 4 tests that each path not yet converted to a per-session module fails CLOSED with a clean error (`DEVICE_NOT_FOUND` or similar), never a TypeError or a hang: a ctx.call hop, a peer channel, a job, resources/read, prompts/get, completion. Task 5 flips those cases to positive ones.
+- **P2. The record in `modules[name]`.** It's a `SessionModuleRecord`, not a WorkerMessage. Unload and reload branch on it: `stopModule(name)` (it awaits every session worker's exit), the devices marked ended, then today's purge. The module supervisor never tracks it. **Condition:** every reader of `modules[` / the module map is listed in the PR body as branched or shown fail-closed: packs-in-place, the supervisor, the peer broker, the settings and admin listings, tools/list and the resource caches, metrics, restartModule, uninstall.
+- **P3. Crashes.** No eager restart. A crash drops the (name, session) worker and frees its cap slot at once; the call in flight gets the crash's error, never a hang. That session's next call spawns a fresh worker and carries "in-memory state was reset". Repeated exits suspend that (name, session) only, by the supervisor's rule (3 exits in its window). **Test:** another session's worker is untouched by a neighbour's crash loop.
+- **P4. Spawn cost and lifecycle.** A session spawn reuses the record's `moduleSpec`; a session worker's exit doesn't release it, the record does at unload. The lifecycle lock is keyed `name\0sid`. **Race closed:** the record has a `closing` flag. A spawn checks it before it starts and again once its worker is ready (and stops the worker if set), so no worker outlives its module. **Test:** a call that starts during an unload ends refused or completed, and then there are zero session workers.
+- **P5. The fs quota.** One Quota per module, measured at its first session spawn over `<name>/sessions`, shared by its session workers (`createForWorker`'s `cfg.quota`), dropped with its last worker. The measure walks with lstat (never through a link), asynchronously and bounded, so a huge tree can't stall the main thread; its cost is noted in the PR. `ensureSessionDirs` refuses when `<name>` or `<name>/sessions` is a link.
+
 **Files:**
 - Create: `lib/session-workers.js`
 - Modify:
