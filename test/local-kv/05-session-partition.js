@@ -119,12 +119,13 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       await setKv(kv, `${ns.sessionPrefixFor('other', C)}k`);        // keys only
       fs.mkdirSync(path.join(data, '.validate', 'sessions', A), {recursive: true});   // no module's
       fs.mkdirSync(path.join(data, 'mod', 'sessions', 'not-an-id'), {recursive: true});
-      assert.deepStrictEqual(sorted(await partition.list(data, kv)), ['@scope/pkg/b', 'mod/a', 'other/0']);
-      const removed = await partition.sweep(data, kv, new Set([A]));
-      assert.deepStrictEqual(sorted(removed), ['@scope/pkg/b', 'other/0']);
-      assert.deepStrictEqual(sorted(await partition.list(data, kv)), ['mod/a'], 'the restored one kept');
+      assert.deepStrictEqual(sorted((await partition.list(data, kv)).partitions), ['@scope/pkg/b', 'mod/a', 'other/0']);
+      const swept = await partition.sweep(data, kv, new Set([A]));
+      assert.deepStrictEqual(sorted(swept.removed), ['@scope/pkg/b', 'other/0']);
+      assert.deepStrictEqual([swept.failed, swept.skipped], [[], []]);
+      assert.deepStrictEqual(sorted((await partition.list(data, kv)).partitions), ['mod/a'], 'the restored one kept');
       assert.ok(fs.existsSync(path.join(data, '.validate', 'sessions', A)), 'a dot-led directory is no module\'s: untouched');
-      assert.deepStrictEqual(sorted(await partition.sweep(data, kv, new Set())), ['mod/a'], 'nothing restored: all swept');
+      assert.deepStrictEqual(sorted((await partition.sweep(data, kv, new Set())).removed), ['mod/a'], 'nothing restored: all swept');
     });
 
     it('a sessions/<id> that is a link is unlinked, never walked', async function() {
@@ -134,10 +135,92 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       fs.writeFileSync(path.join(outside, 'keep'), '1');
       fs.mkdirSync(path.join(data, 'mod', 'sessions'), {recursive: true});
       fs.symlinkSync(outside, path.join(data, 'mod', 'sessions', A));
-      assert.deepStrictEqual(sorted(await partition.list(data, kv)), ['mod/a']);
+      assert.deepStrictEqual(sorted((await partition.list(data, kv)).partitions), ['mod/a']);
       await partition.sweep(data, kv, new Set());
       assert.ok(!fs.existsSync(path.join(data, 'mod', 'sessions', A)), 'the link is gone');
       assert.ok(fs.existsSync(path.join(outside, 'keep')), 'what it led to is untouched');
+    });
+  });
+
+  // the review of #353
+  describe('never outside the data path, never fatal, never by default', () => {
+    let dir;
+    let data;
+    let kv;
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-kv-part2-'));
+      data = path.join(dir, 'data');
+      fs.mkdirSync(data);
+      kv = new LocalKv({storePath: path.join(dir, 'store')});
+    });
+    afterEach(() => {
+      if (kv != null && typeof(kv.close) === 'function') kv.close();
+      fs.rmSync(dir, {recursive: true, force: true});
+    });
+
+    it('a link at <name>/sessions, or at <name>: the sweep skips and reports it, remove refuses it, and what it leads to survives', async function() {
+      if (process.platform === 'win32') return this.skip();   // a junction is lstat'ed as a link too; not run here (a recorded gap)
+      const outside = path.join(dir, 'outside');
+      fs.mkdirSync(path.join(outside, A), {recursive: true});
+      fs.writeFileSync(path.join(outside, A, 'victim'), '1');
+      fs.mkdirSync(path.join(data, 'm2'));
+      fs.symlinkSync(outside, path.join(data, 'm2', 'sessions'));
+      fs.symlinkSync(path.join(outside), path.join(data, 'm3'));
+      await setKv(kv, `${ns.sessionPrefixFor('m2', A)}k`);
+      const swept = await partition.sweep(data, kv, new Set());
+      assert.deepStrictEqual(swept.skipped.map((x) => x.path).sort(), [path.join('m2', 'sessions'), 'm3']);
+      assert.ok(fs.existsSync(path.join(outside, A, 'victim')), 'nothing outside the data path is removed');
+      assert.deepStrictEqual(swept.failed.map((x) => x.name), ['m2'], 'its keys-only partition is reported, not removed through the link');
+      await assert.rejects(partition.remove(data, kv, 'm2', A), /m2.sessions is not a directory/);
+      assert.deepStrictEqual(kv.keysWithPrefix('ms:'), [`${ns.sessionPrefixFor('m2', A)}k`], 'a refused removal touches no key');
+    });
+
+    it('sweep needs a Set of ids to keep: undefined, null or an array throw, and nothing is removed', async () => {
+      await partition.ensure(data, 'mod', A);
+      for (const keep of [undefined, null, [A]]) {
+        await assert.rejects(partition.sweep(data, kv, keep), /as a Set/, String(keep));
+      }
+      assert.ok(fs.existsSync(path.join(data, 'mod', 'sessions', A)));
+    });
+
+    it('one partition that can\'t be removed is reported and the sweep goes on; a 0500 directory inside one doesn\'t stop it', async () => {
+      const x = await partition.ensure(data, 'modx', A);
+      fs.mkdirSync(path.join(x.data, 'locked', 'deep'), {recursive: true});
+      fs.writeFileSync(path.join(x.data, 'locked', 'deep', 'f'), '1');
+      fs.chmodSync(path.join(x.data, 'locked'), 0o500);
+      await partition.ensure(data, 'mody', B);
+      await partition.ensure(data, 'modz', C);
+      // a store that refuses modz's purge
+      const failing = Object.create(kv);
+      failing.deletePrefix = (prefix) => { if (prefix.startsWith('ms:modz:')) throw new Error('the store refused'); return kv.deletePrefix(prefix); };
+      failing.keysWithPrefix = (prefix) => kv.keysWithPrefix(prefix);
+      const swept = await partition.sweep(data, failing, new Set());
+      assert.deepStrictEqual(sorted(swept.removed), ['modx/a', 'mody/b'], 'the 0500 directory put back to u+rwx and removed');
+      assert.deepStrictEqual(swept.failed.map((f) => [f.name, f.why]), [['modz', 'the store refused']]);
+      assert.ok(fs.existsSync(path.join(data, 'modz', 'sessions', C)), 'the failed one is left as it was');
+    });
+
+    it('a name no directory can have is refused before any key is touched', async () => {
+      await setKv(kv, `${ns.sessionPrefixFor('../x', A)}k`);
+      await assert.rejects(partition.remove(data, kv, '../x', A));
+      assert.strictEqual(kv.keysWithPrefix('ms:').length, 1, 'its keys are left');
+    });
+
+    it('a file at sessions/<id> is a partition: listed and swept', async () => {
+      fs.mkdirSync(path.join(data, 'modf', 'sessions'), {recursive: true});
+      fs.writeFileSync(path.join(data, 'modf', 'sessions', A), 'a file');
+      assert.deepStrictEqual(sorted((await partition.list(data, kv)).partitions), ['modf/a']);
+      assert.deepStrictEqual(sorted((await partition.sweep(data, kv, new Set())).removed), ['modf/a']);
+      assert.ok(!fs.existsSync(path.join(data, 'modf', 'sessions', A)));
+    });
+
+    it('foo\'s removal leaves foobar\'s keys and files', async () => {
+      await partition.ensure(data, 'foo', A);
+      await partition.ensure(data, 'foobar', A);
+      for (const n of ['foo', 'foobar']) await setKv(kv, `${ns.sessionPrefixFor(n, A)}k`);
+      await partition.remove(data, kv, 'foo', A);
+      assert.deepStrictEqual(kv.keysWithPrefix('ms:'), [`${ns.sessionPrefixFor('foobar', A)}k`]);
+      assert.ok(fs.existsSync(path.join(data, 'foobar', 'sessions', A)));
     });
   });
 
@@ -152,9 +235,13 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       assert.strictEqual(seen.length, 10);
       const data = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-kv-part-r-'));
       try {
-        assert.deepStrictEqual(sorted(await partition.list(data, r)), ['mod/a', 'mod/b']);
+        assert.deepStrictEqual(sorted((await partition.list(data, r)).partitions), ['mod/a', 'mod/b']);
         assert.deepStrictEqual(await partition.remove(data, r, 'mod', A), {keys: 9, dirs: false});
         assert.deepStrictEqual(r.keys(), ['jobinfo:1', 'm:mod:k', `${ns.sessionPrefixFor('mod', B)}k`]);
+        // a glob character in a name is escaped in MATCH: a* never reaches axb
+        const g = fakeRedis([`${ns.sessionPrefixFor('a*', A)}k`, `${ns.sessionPrefixFor('axb', A)}k`]);
+        assert.deepStrictEqual((await partition.remove(data, g, 'a*', A)).keys, 1);
+        assert.deepStrictEqual(g.keys(), [`${ns.sessionPrefixFor('axb', A)}k`]);
       } finally {
         fs.rmSync(data, {recursive: true, force: true});
       }
