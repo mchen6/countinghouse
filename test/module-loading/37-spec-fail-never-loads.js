@@ -9,7 +9,7 @@ const assert = require('assert');
 const options = require('../../lib/cli-options');
 options.setOptions({workerThread: false});
 const LOG = require('../../lib/logger');
-LOG.createLogger(false);
+LOG.createLogger();
 const DeviceManager = require('../../lib/device-manager');
 const CHDevice = require('../../lib/countinghouse-device');
 

@@ -10,7 +10,7 @@ const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sa
 const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
 const REMOTE = testPort(9722);
 const SERVER = testPort(9723);

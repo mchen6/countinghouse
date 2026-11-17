@@ -33,10 +33,10 @@ require('../../lib/cli-options').setOptions({workerThread: false});
 // Likewise, the conflict branch under test logs via LOG.E(), which calls
 // into a bunyan logger that only exists after LOG.createLogger() runs --
 // normally done once by framework.js at startup. lib/lean-worker.js hits this
-// same gap and fixes it the same way (LOG.createLogger(false) at require
+// same gap and fixes it the same way (LOG.createLogger() at require
 // time), so this mirrors an existing pattern rather than inventing one.
 const LOG = require('../../lib/logger');
-LOG.createLogger(false);
+LOG.createLogger();
 
 const DeviceManager = require('../../lib/device-manager');
 const WorkerMessage = require('../../lib/worker-message');

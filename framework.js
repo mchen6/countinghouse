@@ -265,7 +265,7 @@ if (process.permission != null) {
 }
 
 var logger = require('./lib/logger');
-logger.createLogger(options.logStream);
+logger.createLogger();
 
 // Module sandbox mode checks. An explicit mode that cannot work is a startup
 // error; the default quietly downgrades (lib/cli-options.js).
