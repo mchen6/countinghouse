@@ -62,6 +62,15 @@
           }
         }
       }
+    },
+    "readCount": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "string"
+      }
     }
   },
   "prompts": {
