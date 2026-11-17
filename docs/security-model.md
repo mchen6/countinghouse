@@ -929,8 +929,8 @@ bounds it:
   authorization for what the caller's key could not do without it.
 - **`--moduleQuestions off`** turns every module's question off: each
   `ctx.ask` is then `ASK_UNAVAILABLE`. So is one from a legacy client, a
-  request that declares no form elicitation, HTTP `invoke-action` and a
-  task, and so is a part's under any of these.
+  request that declares no form elicitation (a task's: the request that
+  made it), HTTP `invoke-action`, and so is a part's under any of these.
 - **A part asks only its own action's questions, and only the outer
   call's user (M14).** Who asks is the hop's token entry (its device and
   action, written by the main thread when it issued the hop) and the
@@ -946,6 +946,22 @@ bounds it:
   under the scenario's name.
 - **A call cancelled while its form is made gets no state.** None is
   minted, so none can be presented later.
+- **A task's question is held on the server (M22).** A task has no
+  requestState: its pending question, its answers and its rounds are a
+  record in the store's kv (`task-ask:<taskId>`), outside every module's
+  namespace, so no module's `ctx.redis` reads or writes it; no worker sees
+  it. The record keeps the task's owner and its session's hash, never the
+  session's id. `tasks/update` finds the task as `tasks/get` does (the
+  caller's own, in its session: anyone else's is the one unknown-task
+  error), and the record's own session is checked again. Only the waiting
+  question's key is read; its answer is taken once (a compare-and-set, a
+  script on Redis), checked against the asker's own form, and the handler
+  runs again under the same `taskId`. A cancel removes the job and the
+  record together, and a cancel racing the answer wins: the run again is
+  never started, or, already running, it goes to its end unread. A
+  question waits at most an hour (the task then fails `ASK_EXPIRED`), and
+  at most 64 of a key's tasks (10,000 in all) wait at once, so the records
+  a client can make are bounded.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
