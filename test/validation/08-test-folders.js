@@ -41,7 +41,9 @@ describe('validation 08: the test folders are listed once', () => {
     assert.strictEqual(pkg.scripts.test, 'node scripts/run-tests.js');
     const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
     const step = ci.slice(ci.indexOf('- name: Run functional tests'), ci.indexOf('- name: npm audit'));
-    assert.match(step, /run: node scripts\/run-tests\.js --ci\n/);
+    // the plain one-line step, or the same command inside the temporary memory
+    // watchdog's script (#320; this goes back to the one-line form with it)
+    assert.match(step, /(?:run: |\n {10})node scripts\/run-tests\.js --ci(?:\n|; rc=\$\?\n)/);
     assert.doesNotMatch(step, /npx mocha/);
   });
 });
