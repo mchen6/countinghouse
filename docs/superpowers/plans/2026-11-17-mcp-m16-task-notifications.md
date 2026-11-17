@@ -43,7 +43,7 @@
 
 ## Global constraints
 
-- **Identical to `tasks/get`.** The notification's task is built by the same function M15's `tasks/get` uses, extracted as `modernTaskView(record, cdifInterface, authCtx) -> Promise<task>`. One code path, never two.
+- **Identical to `tasks/get`.** The notification's task is built by `detailedTask`, the function `tasks/get` itself answers with (B5 Task 2). One code path, never two.
 - **Owner-bound at send time too.** A listener receives an event only for an id in its agreed set, and its owner check is re-run when the task is built (the same `JobControl.getJob(authCtx, id)`), so a set built at listen can never leak.
 - **Nothing new on a module's path.** The runners' hooks are a function call on the main thread; a module never sees a listener, a subscription id or another task.
 - **On the stream, only:** `notifications/subscriptions/acknowledged` and `notifications/tasks` (plus the list types already served). Never `notifications/progress` or `notifications/message` for a task.
