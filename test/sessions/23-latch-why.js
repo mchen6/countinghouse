@@ -23,6 +23,15 @@ describe('sessions 23: the latch says why (conditionsWhy)', () => {
     assert.deepStrictEqual(conditionsWhy.REASONS, V.conditionsWhy.reasons);
   });
 
+  // /code-review of #337, 4: a kind the user declined before the latch fell stays the user's decline
+  it('the latch is the cause only of the kinds it locked: a kind declined before it stays declined', () => {
+    const a = confirm.confirmations(A);
+    a.decline('maxOutputBytes');
+    confirm.latch(A, {reason: 'client hook present'});
+    assert.deepStrictEqual([a.latchedFor('maxOutputBytes'), a.latchedFor('requestTimeout'), a.latchedFor('pack.x')], [false, true, true]);
+    assert.deepStrictEqual([a.declined('maxOutputBytes'), a.declined('requestTimeout')], [true, true], 'every kind is locked all the same');
+  });
+
   it('what it takes is a copy, and only its two keys', () => {
     const given = {reason: 'client hook present', at: '~/.claude/settings.json'};
     const taken = conditionsWhy.check(given);
@@ -31,11 +40,27 @@ describe('sessions 23: the latch says why (conditionsWhy)', () => {
     assert.strictEqual(conditionsWhy.check(undefined), null);
   });
 
-  it('as a sentence: the reason, and its place when there is one', () => {
-    assert.strictEqual(conditionsWhy.said({reason: 'project plugin or marketplace', at: '~/.claude/settings.json'}),
-      'this client\'s configuration could answer forms by itself (project plugin or marketplace: ~/.claude/settings.json)');
-    assert.strictEqual(conditionsWhy.said({reason: 'not an interactive session'}), 'this client\'s configuration could answer forms by itself (not an interactive session)');
-    assert.strictEqual(conditionsWhy.said(null), 'this client could not be confirmed');
+  it('as a sentence, in each language: the reason, and its place when there is one', () => {
+    assert.deepStrictEqual(conditionsWhy.said({reason: 'project plugin or marketplace', at: '~/.claude/settings.json'}), {
+      en: 'this client\'s configuration could answer forms by itself (project plugin or marketplace: ~/.claude/settings.json)',
+      zh: '此客户端的配置可能代你作答（project plugin or marketplace：~/.claude/settings.json）'});
+    assert.deepStrictEqual(conditionsWhy.said({reason: 'not an interactive session'}).zh, '此客户端的配置可能代你作答（not an interactive session）');
+    assert.deepStrictEqual(conditionsWhy.said(null), {en: 'this client could not be confirmed', zh: '无法确认此客户端'});
+  });
+
+  // /code-review of #337, 1: the rule the runtime holds is in lib/ (docs/ is not in the package), and it is
+  // the shared vectors' rule
+  it('the rule the runtime ships with is the shared vectors\' rule', () => {
+    const rule = require('../../lib/conditions-why.json');
+    assert.deepStrictEqual([rule.reasons, rule.hiddenClass, rule.maxAt], [V.conditionsWhy.reasons, V.conditionsWhy.hiddenClass, 200]);
+    assert.ok(!/docs\//.test(require('fs').readFileSync(require.resolve('../../lib/conditions-why'), 'utf8').split('\n').filter((l) => /require\(/.test(l)).join('\n')), 'no require of docs/');
+  });
+
+  // /code-review of #337, 3: a place that leaves the home another way is no place
+  it('a place with a backslash, or an empty segment, is refused (so no Windows .. and no // absolute path)', () => {
+    for (const at of ['~/..\\..\\Users\\bob\\.claude\\settings.json', '~//home/bob/x', '~/a//b', '~/a\\b']) {
+      assert.strictEqual(conditionsWhy.check({reason: 'client hook present', at}), null, at);
+    }
   });
 
   it('a latch keeps its why; a session latched with none, or a refused one, has none', () => {
@@ -54,6 +79,11 @@ describe('sessions 23: the latch says why (conditionsWhy)', () => {
     confirm.latch(A, {reason: 'plugin hook present'});
     confirm.latch(A, {reason: 'client hook present'});
     assert.deepStrictEqual(confirm.confirmations(A).latchedWhy(), {reason: 'plugin hook present'});
+    // /code-review of #337, 5: but a latch with no why (or a refused one) takes a later valid one
+    confirm.resetForTests();
+    confirm.latch(A);
+    confirm.latch(A, {reason: 'client hook present', at: '~/.claude/settings.json'});
+    assert.deepStrictEqual(confirm.confirmations(A).latchedWhy(), {reason: 'client hook present', at: '~/.claude/settings.json'});
     // a session not latched
     assert.strictEqual(confirm.confirmations('b'.repeat(32)).latched(), false);
   });

@@ -551,6 +551,23 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.doesNotMatch(none.message, /\/home\/x/);
     });
 
+    // The reviewer's ruling (c) on #337: a lock restored from the daemon's row has an unknown origin (a
+    // decline or a latch before the restart), so its refusal claims neither. A fresh "no" re-latches with its why.
+    it('a lock restored across a restart is told neutrally, never "declined"; a fresh "no" then gives the latch\'s text with its why', async () => {
+      const t0 = tool();
+      confirm.confirmations(A).restore({locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 3});
+      const restored = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
+      assert.doesNotMatch(restored.message, /declined|configuration/);
+      assert.match(restored.message, /ch-local settings set requestTimeout 60s/);
+      sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client hook present', at: '~/.claude/settings.json'}});
+      const latched = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+      assert.match(latched.message, /client hook present: ~\/\.claude\/settings\.json/);
+      // a lock made in this runtime's life keeps its own text: a decline in B is a decline
+      const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      await t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(B));
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B)), 'SETTING_DECLINED_THIS_SESSION');
+    });
+
     it('one "conditions: no" from a session\'s client latches it: no form of any kind for its life, though a later answer says yes (N1)', async () => {
       const t0 = tool();
       sources[A].answer = {status: 'ok', conditions: 'no', repo: null};
