@@ -85,8 +85,11 @@ describe('session-runtime 10: a hop reaches its own session\'s worker (R1 Task 5
     await tick(400);
     s.A.c.send('C', {op: 'bye'});
     const log = path.join(home, 'module_data', 'ps-caller', 'data', 'hops.log');
-    await until(async() => fs.existsSync(log), 15000);
-    const lines = fs.readFileSync(log, 'utf8').trim().split('\n').filter((l) => l !== '').map((l) => JSON.parse(l));
+    // a whole line, not the file alone: the broker's append can create the
+    // file before its bytes land, and a slow leg read it empty (#367's CI)
+    const read = () => { try { return fs.readFileSync(log, 'utf8'); } catch (e) { return ''; } };
+    assert.ok(await until(async() => read().endsWith('\n'), 15000), `no hop line: ${JSON.stringify(read())}\n${r.log().slice(-2000)}`);
+    const lines = read().trim().split('\n').filter((l) => l !== '').map((l) => JSON.parse(l));
     assert.strictEqual(lines.length, 1, JSON.stringify(lines));
     for (const got of lines) {
       assert.strictEqual(got.code, 'DEVICE_NOT_FOUND', JSON.stringify(got));
