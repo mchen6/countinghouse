@@ -1,6 +1,7 @@
 {
   "//": "Every test run, in order: `npm test` (scripts/run-tests.js) and ci.yml's functional step (`--ci`) both read this list. Adding a folder is one line here. exit: true runs mocha with --exit. ci: false is npm test only (stdio has its own CI job; test7 is a multi-thread benchmark, not a gate).",
   "runs": [
+    {"files": ["./test/module-loading/24-validator-pool.js"], "exit": true},
     {"files": ["./test/test1.js"]},
     {"files": ["./test/test2.js"]},
     {"files": ["./test/test3.js"]},
