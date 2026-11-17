@@ -11,7 +11,7 @@ describe("Test started in COUNTINGHOUSE multi-thread mode", () => {
   before(function (done) {
     this.timeout(0);
     console.log('starting countinghouse...');
-    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --no-directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --no-directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 

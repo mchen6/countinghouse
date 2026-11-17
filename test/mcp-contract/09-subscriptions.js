@@ -13,7 +13,7 @@ const assert = require('assert');
 const http = require('http');
 const path = require('path');
 const express = require('express');
-const {createHub, SUBSCRIPTION_ID_KEY} = require('../../lib/mcp/subscriptions');
+const {createHub, SUBSCRIPTION_ID_KEY, MAX_PER_KEY, MAX_PER_SESSION, MAX_TOTAL} = require('../../lib/mcp/subscriptions');
 
 const V = '2026-07-28';
 const META = {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {}};
@@ -76,6 +76,23 @@ describe('subscriptions/listen (#231)', () => {
       for (let i = 0; i < 8; i++) assert.strictEqual(listener(i, {toolsListChanged: true}).opened.ok, true);
       assert.strictEqual(listener(99, {toolsListChanged: true}).opened.ok, false);
       assert.strictEqual(listener(100, {toolsListChanged: true}, 'other').opened.ok, true);
+    });
+
+    // M18's bounds audit: the values themselves, each refusal by its own
+    // case (the total by an override below; the unread buffer by an
+    // override in the HTTP cases)
+    it('the bounds: 8 per key, 2 per session, 512 in all, 1 MiB unread on an HTTP listen', () => {
+      assert.deepStrictEqual([MAX_PER_KEY, MAX_PER_SESSION, MAX_TOTAL], [8, 2, 512]);
+      assert.strictEqual(require('../../lib/routes/mcp').MAX_LISTEN_BUFFERED, 1024 * 1024);
+    });
+
+    it('at most 2 open per session on a shared runtime; another session is counted apart', () => {
+      const open = (id, session) => hub.open({id, appKey: 'k', session, filter: {toolsListChanged: true}, write: () => {}, finish: () => {}});
+      assert.strictEqual(open(1, 's1').ok, true);
+      assert.strictEqual(open(2, 's1').ok, true);
+      const third = open(3, 's1');
+      assert.deepStrictEqual([third.ok, third.reason], [false, 'key']);
+      assert.strictEqual(open(4, 's2').ok, true);
     });
 
     it('at most maxTotal open across every key', () => {
@@ -155,13 +172,14 @@ describe('subscriptions/listen (#231)', () => {
     const body = (id, notifications = {toolsListChanged: true}) => ({jsonrpc: '2.0', id, method: 'subscriptions/listen', params: {_meta: META, notifications}});
 
     it('answers text/event-stream: the acknowledgement first, then a list_changed with the id, then the graceful end', async() => {
-      const s = await listen(body(41, {toolsListChanged: true, promptsListChanged: true}));
+      // (prompts' list notices are served since M8; a kind that is not, is left out)
+      const s = await listen(body(41, {toolsListChanged: true, promptsListChanged: true, elicitationsListChanged: true}));
       assert.strictEqual(s.res.statusCode, 200);
       assert.match(String(s.res.headers['content-type']), /^text\/event-stream/);
       assert.strictEqual(s.res.headers['x-accel-buffering'], 'no');
       assert.ok(await until(() => s.events.length >= 1));
       assert.deepStrictEqual(s.events[0], {jsonrpc: '2.0', method: 'notifications/subscriptions/acknowledged',
-        params: {notifications: {toolsListChanged: true}, _meta: {[SUBSCRIPTION_ID_KEY]: 41}}}, 'only what is served is acknowledged');
+        params: {notifications: {toolsListChanged: true, promptsListChanged: true}, _meta: {[SUBSCRIPTION_ID_KEY]: 41}}}, 'only what is served is acknowledged');
       await tick();
       tools = [{name: 'a'}, {name: 'b'}];
       hub.changed();
@@ -300,11 +318,66 @@ describe('subscriptions/listen (#231)', () => {
     });
 
     it('a listen that agrees to nothing ends right after its acknowledgement', async() => {
-      const s = await listen(body(71, {promptsListChanged: true}));
+      const s = await listen(body(71, {elicitationsListChanged: true, resourceSubscriptions: []}));
       assert.ok(await until(() => s.ended));
       assert.deepStrictEqual(s.events[0].params.notifications, {});
       assert.strictEqual(s.events[1].result.resultType, 'complete');
       assert.strictEqual(hub.count(KEY), 0);
+    });
+  });
+
+  // M8: notices now follow a key's own calls, so a listen whose client
+  // never reads would hold every one of them. Past what a stream may hold
+  // unread, it is closed: the listen is cancelled and its slot freed.
+  describe('the /mcp route: a client that never reads', () => {
+    const options = require('../../lib/cli-options');
+    const KEY = 'listen-unread-key';
+    let saved;
+    let server;
+    let port;
+    let opened = null;
+    let closed = 0;
+    // a hub that hands the test the listen's writer
+    const hub = {
+      open(o) { opened = o; return {ok: true, close: () => { closed += 1; }}; },
+      count: () => 0, endAll() {}, changed() {}, callSucceeded() {}, closeSession() {}
+    };
+    before((done) => {
+      saved = {debug: options.debug, debugKey: options.debugKey};
+      options.debug = true;
+      options.debugKey = KEY;
+      const app = express();
+      app.use(express.json());
+      app.use('/mcp', require('../../lib/routes/mcp')(null, null, hub, {maxListenBuffered: 64 * 1024}));
+      server = app.listen(0, '127.0.0.1', () => { port = server.address().port; done(); });
+    });
+    after((done) => {
+      options.debug = saved.debug;
+      options.debugKey = saved.debugKey;
+      server.closeAllConnections();
+      server.close(() => done());
+    });
+
+    it('its stream is closed once it holds more than it may unread, cancelling the listen', async() => {
+      let clientRes = null;
+      const data = JSON.stringify({jsonrpc: '2.0', id: 90, method: 'subscriptions/listen', params: {_meta: META, notifications: {toolsListChanged: true}}});
+      const req = http.request({host: '127.0.0.1', port, path: '/mcp', method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Content-Length': Buffer.byteLength(data),
+          'MCP-Protocol-Version': V, 'Mcp-Method': 'subscriptions/listen', 'X-CH-Key': KEY}}, (res) => {
+        clientRes = res;
+        res.pause();   // and never read
+      });
+      req.on('error', () => {});
+      req.end(data);
+      assert.ok(await until(() => opened != null && clientRes != null));
+      // far more than the sockets between them can hold, in notices of 64 KiB
+      const big = {jsonrpc: '2.0', method: 'notifications/resources/updated', params: {uri: `countinghouse://m/x/${'y'.repeat(64 * 1024)}`}};
+      for (let i = 0; i < 400 && closed === 0; i++) {
+        opened.write(big);
+        await tick(1);
+      }
+      assert.ok(await until(() => closed === 1), 'the stream was never closed');
+      req.destroy();
     });
   });
 });

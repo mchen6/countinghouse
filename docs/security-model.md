@@ -969,8 +969,8 @@ bounds it:
   authorization for what the caller's key could not do without it.
 - **`--moduleQuestions off`** turns every module's question off: each
   `ctx.ask` is then `ASK_UNAVAILABLE`. So is one from a legacy client, a
-  request that declares no form elicitation, HTTP `invoke-action` and a
-  task, and so is a part's under any of these.
+  request that declares no form elicitation (a task's: the request that
+  made it), HTTP `invoke-action`, and so is a part's under any of these.
 - **A part asks only its own action's questions, and only the outer
   call's user (M14).** Who asks is the hop's token entry (its device and
   action, written by the main thread when it issued the hop) and the
@@ -986,6 +986,145 @@ bounds it:
   under the scenario's name.
 - **A call cancelled while its form is made gets no state.** None is
   minted, so none can be presented later.
+- **A task's question is held on the server (M22).** A task has no
+  requestState: its pending question, its answers and its rounds are a
+  record in the store's kv (`task-ask:<taskId>`), outside every module's
+  namespace, so no module's `ctx.redis` reads or writes it; no worker sees
+  it. The record keeps the task's owner and its session's hash, never the
+  session's id. `tasks/update` finds the task as `tasks/get` does (the
+  caller's own, in its session: anyone else's is the one unknown-task
+  error), and the record's own session is checked again. Outside shared
+  mode the owner key decides, so a key that may read another owner's task
+  (an admin, as M15 rules for `tasks/get` and `tasks/cancel`) may also
+  answer its question. Only the waiting
+  question's key is read; its answer is taken once (a compare-and-set, a
+  script on Redis), checked against the asker's own form, and the handler
+  runs again under the same `taskId`. A cancel removes the job and the
+  record together, and a cancel racing the answer wins: the run again is
+  never started, or, already running, it goes to its end unread. A
+  question waits at most an hour (the task then fails `ASK_EXPIRED`), and
+  at most 64 of a key's tasks (10,000 in all) wait at once, so the records
+  a client can make are bounded.
+
+### Completion actions
+
+Completion actions run module code per request: they are rate-limited (the
+per-key limit every request counts against) but not billed, so a module's
+completion action should be cheap. Each is authorized as a call of its
+action, runs in the caller's session's worker for a per-session module,
+answers within 2 seconds or is cancelled as a cancelled call is, and has
+its values bounded (100 of 256 characters). A prompt or template the caller
+is not listed is answered as an unknown one.
+
+### Change notices on a listen (`subscriptions/listen`)
+
+A listen is opened by a key (on a shared runtime, by a session), counted
+against that key's or session's limit, and sent only what it agreed to.
+Each list it follows is the list its own key and session are shown, so a
+notice never tells a caller about a module it cannot reach. A
+`resources/updated` notice goes only to the subscriptions of the key whose
+call succeeded: a module that keeps data per caller would otherwise tell one
+tenant when another was active. Each subscription's URIs are resolved in its
+own view (a pack a session doesn't list resolves nothing for it), and on a
+shared runtime a per-session module's change reaches only the calling
+session. A URI the caller can't read is left out of what is agreed, so a
+listen can't be used to learn that another tenant's resource exists. A call
+is announced where it is recorded, on the main thread, by every entry path;
+module code in a worker can't record one. A call with no key (`--debug`
+without `--debugKey`) is not recorded, and announces nothing.
+
+What a listen costs is bounded. Calls are held for a quarter second in a
+batch of their own key and session, each with its own timer, so a notice's
+timing says nothing about another key's or session's calls; a batch holds
+each call once and never starts a round while its last one runs. An HTTP
+listen whose client leaves more than 1 MiB unread is closed, which cancels
+it and frees its slot, so a client that never reads holds nothing of a
+key's notices. The runtime's own reads of a listener's lists never spend
+its rate limit.
+
+### What the MCP layer serves, and its bounds (MCP completeness)
+
+The 2026-07-28 surfaces (stored results, module resources, prompts,
+completion, questions, listens, tasks, cancelling) are a layer over the
+schema contract. They add no way for module code to learn who is calling,
+and every one is bounded.
+
+- **Identity never reaches a module.** A resource read and a completion
+  action get the same `ctx.caller` as a call, `{id, isAdmin}`: the opaque
+  id, never the key or the user's name. `ctx.ask` returns the answer's
+  content only. No URI, cursor, progress token, task id, session id or
+  `requestState` is passed to a worker; each is resolved on the main
+  thread. Error texts and log lines name the module and the action, never
+  a key or a user name. An icon is inlined at load, so a client never
+  fetches a module author's URL.
+- **Stored results** (a value past the inline budget, linked as
+  `countinghouse://r/<id>`). The id is 256 random bits, and every read
+  checks the owner and the session as well, so knowing a URI isn't enough
+  to read it. One answer serves an unknown, an expired and another
+  caller's result alike. The files are owner-only, in a directory of the
+  runtime's, never under a module's data path, so no module reaches them
+  through the file broker.
+- **Module resource URIs** (`countinghouse://m/<module>/<path>`) are parsed
+  by one strict function. Anything that doesn't match a loaded template
+  exactly is "not found". A variable holds no raw `/`, and is decoded
+  strictly. The decoded value is only ever an input to the action,
+  validated by its schema; the runtime never uses it as a path, a key or a
+  log field. A module that reads files from a variable must guard it, as
+  for any input. No other scheme is read, and the runtime never fetches a
+  URL.
+- **Prompt text** is declared and reviewed. An argument is substituted
+  once, as text, and bounded.
+
+**Bounds.** Each is enforced on the main thread, and each has a test that
+fails if it is removed:
+
+| Surface | Bound | Pinned by |
+|---|---|---|
+| A list page | `--listPageSize` items (250; 10 to 1000); a cursor of at most 512 bytes | mcp-contract 21, 20 |
+| Declarations per module | 32 prompts; 8 messages of at most 8 KiB each; 16 arguments; 4 questions per action; 16 binary fields per action; 4 icons of at most 16 KiB; `api.json` at most 256 KB | module-authoring 06, module-loading 23 |
+| A result's binary values | at most 16; inline up to `--inlineContentBytes` (1 MiB), linked past it | validation 18, mcp-contract 15 and 03, store 08 |
+| The result store | per owner 128 MiB under Redis, 256 MiB under the local store (`--resourceQuotaBytes`) and 1024 items; `--resourceStoreBytes` in all; `--resourceRetention` | store 07, 08 |
+| A resource URI | at most 2048 bytes; at most 8 variables | mcp-contract 25, module-authoring 06 |
+| A listen | 64 URIs; 8 listens per key, 2 per session, 512 in all; an HTTP listen closed past 1 MiB unread | stdio 32, mcp-contract 09 |
+| Completion | 100 values of at most 256 characters; a completion action answers within 2 s or is cancelled; the per-key rate limit | mcp-contract 30, stdio 33 |
+| A prompt's answer | at most 64 KiB, measured before it is built and again as sent | mcp-contract 24 |
+| A question | a dialog of 1000 characters; 8 form properties; 8 rounds per call, 3 per question; a `requestState` of at most 16 KiB; answers of at most 8 KiB | questions 01, 05, module-authoring 06, mcp-contract 10 |
+| A task's question | at most 64 of an owner's tasks waiting, 10,000 in all; a wait of an hour, then `ASK_EXPIRED` | questions 08 |
+| Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
+| Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
+| Every read, get, completion and task method | the per-key rate limit, before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+
+A module resource read takes its token from the call path, after the
+listing lookup that finds its action: a probe of a URI that reads nothing
+is limited too, and no module code runs before the limit.
+
+**What is recorded, and what is not yet.** There is no audit log in this
+release; it comes with the planned audit work (structured records,
+bounded retention, an administrator's readback). Until then, these events
+are a usage record or a log line, and none carries a key, a user's name,
+a module's text or an answer:
+- a call's result (`ok`, `error` with its catalogued code, `cancelled`),
+  with what was stored past the inline budget counted in its bytes;
+- a stored result refused (`RESULT_STORE_FULL`), and a stored result read;
+- a module resource read, recorded under its action's tool;
+- a question asked (its module, action, question name and round); a retry's
+  answer refused (`ASK_STATE_INVALID` or `ASK_STATE_UNCHECKED`, the log
+  line naming why: expired, used, and so on);
+- a task's question asked, and a task cancelled while it ran.
+
+These events are **not recorded in this release**:
+- a stored result's id and size per item, a read of one refused or
+  cancelled, and one expired;
+- a module resource read that found nothing, or was limited (and a read is
+  not marked apart from a call of its action);
+- a question answered, declined or left unanswered for three rounds (a
+  task's question too), and, for a retry refused, its module, action,
+  question and round; a task's question expired, or answered under a key
+  that is no longer waiting;
+- a task created, cancelled before it ran (2026-07-28 or legacy), or
+  expired;
+- how far a cancelled call had run (only its time and bytes);
+- a list cursor refused.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
@@ -1214,8 +1353,9 @@ the main thread's, not the module's (spec:
   its allowlist, so for the single local user the user is the operator.
 - **What a remote can reach.**
   - https only (http only to a loopback host under `--debug`, for tests);
-  - redirects refused, never followed, so a credential never goes to a
-    second location;
+  - a redirect followed only within the same origin (the exact scheme,
+    host and port; at most 5, its Authorization kept), never to another
+    origin, so a credential never goes to another origin;
   - outside `--debug`, a URL whose host is a loopback or non-public
     address is refused at load: private, link-local, CGNAT, multicast and
     reserved ranges, and IPv6 forms that carry such an IPv4 address;

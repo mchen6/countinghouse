@@ -19,7 +19,6 @@ describe("Start load module test in multi thread mode", function () {
     "--debugKey",
     "aabbcc",
     "--workerThread",
-    "--apiMonitor",
     "--loadModule",
     "./pre-installed-packages/echo-device-module",
     "--loadModule",

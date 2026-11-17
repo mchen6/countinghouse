@@ -29,7 +29,7 @@ describe("Test started in COUNTINGHOUSE multi-thread mode with --directPeerChann
     // window open 2 s, whatever the boot time (lib/module-manager.js restartModule).
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MS = '2000';
     process.env.COUNTINGHOUSE_TEST_RESTART_HOLD_MODULE = 'echo-device-module';
-    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --apiMonitor --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
+    const server = exec(`"./bin/countinghouse" --workerThread --debug --bindAddr 127.0.0.1 --port ${testPort(9527)}${redisFlag()} --debugKey aabbcc --directPeerChannels --loadModule ./pre-installed-packages/echo-device-module --loadModule ./pre-installed-packages/echo-device-client-module`, (err, stdout, stderr) =>{console.log(err)});
     waitForReady(server, done);
   });
 

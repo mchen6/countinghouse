@@ -90,7 +90,6 @@ describe('validation 07: the debug API log line names a module code as the modul
     const script = `
       const options = require(${JSON.stringify(`${lib}/cli-options`)});
       options.debug = true;
-      options.apiMonitor = false;
       const LOG = require(${JSON.stringify(`${lib}/logger`)});
       const {CountinghouseError, issue} = require(${JSON.stringify(`${lib}/countinghouse-error`)});
       const Session = require(${JSON.stringify(`${lib}/session`)});

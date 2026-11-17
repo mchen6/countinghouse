@@ -177,6 +177,42 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     });
   });
 
+  // M18's bounds audit: the 2026-07-28 task methods (M15's handleModernTask)
+  // and a stored result's read (M6, countinghouse://r/) are limited before
+  // any lookup too
+  const MODERN_V = '2026-07-28';
+  const modernReq = (method, params, name) => (cb) => {
+    const body = {jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': MODERN_V,
+      'io.modelcontextprotocol/clientCapabilities': {extensions: {'io.modelcontextprotocol/tasks': {}}}}}, params)};
+    request(url).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream').set('X-CH-Key', ALICE)
+      .set('MCP-Protocol-Version', MODERN_V).set('Mcp-Method', method).set('Mcp-Name', name).send(body).end(cb);
+  };
+  const NEVER = `t-${'0'.repeat(32)}`;
+  [['tasks/get', {taskId: NEVER}], ['tasks/update', {taskId: NEVER, inputResponses: {}}], ['tasks/cancel', {taskId: NEVER}]].forEach(([method, params]) => {
+    it(`2026-07-28 ${method}: a burst is denied before the task lookup`, (done) => {
+      drain(() => {
+        burst(BURST, modernReq(method, params, NEVER), (responses) => {
+          if (mcpDenials(responses).length === 0) {
+            return done(new Error(`no ${method} call in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body))}`));
+          }
+          return done();
+        });
+      });
+    });
+  });
+
+  it('resources/read of a stored result (countinghouse://r/): a burst is denied before the store is read', (done) => {
+    drain(() => {
+      const body = {jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri: `countinghouse://r/${'A'.repeat(43)}`}};
+      burst(BURST, (cb) => mcpReq(url, ALICE, body, cb), (responses) => {
+        if (mcpDenials(responses).length === 0) {
+          return done(new Error(`no read in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body.error))}`));
+        }
+        return done();
+      });
+    });
+  });
+
   it('tasks/list: a burst is denied', (done) => {
     drain(() => {
       const body = {jsonrpc: '2.0', id: 1, method: 'tasks/list', params: {}};
