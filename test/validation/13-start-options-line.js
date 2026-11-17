@@ -3,7 +3,8 @@
 // install never uses, and the default --dbUrl with its password. The line is
 // getOptionsForLog(): --dbUrl only under --authProvider couchdb, and no
 // credential in any URL. The settings read nowhere (--wetty,
-// --centralPortalUrl, --verifyModule, --apiMonitor) are gone altogether.
+// --centralPortalUrl, --verifyModule, --apiMonitor) are gone altogether, as is
+// --logStream, which changed nothing (both of the logger's branches were one).
 // Server-free, except one spawned stdio start that checks the line itself.
 const assert = require('assert');
 const path = require('path');
@@ -17,8 +18,15 @@ describe('validation 13: the start line\'s options', () => {
   it('leaves out --dbUrl where nothing reads it, and has none of the retired settings', () => {
     cli.setOptions({workerThread: false});
     const o = cli.getOptionsForLog();
-    for (const k of ['wetty', 'centralPortalUrl', 'verifyModule', 'apiMonitor', 'dbUrl']) assert.ok(!(k in o), k);
+    for (const k of ['wetty', 'centralPortalUrl', 'verifyModule', 'apiMonitor', 'logStream', 'dbUrl']) assert.ok(!(k in o), k);
     assert.strictEqual(o.workerThread, false, 'the rest is there');
+  });
+
+  it('takes --logStream as no option at all (it changed nothing), and no boolean flag of that name', () => {
+    cli.setOptions({workerThread: false, logStream: true});
+    assert.ok(!('logStream' in cli), 'not an option');
+    assert.ok(!('logStream' in cli.getOptions()), 'not passed to a worker');
+    assert.ok(!cli.BOOLEAN_FLAGS.includes('logStream'));
   });
 
   it('keeps --dbUrl under couchdb, without credentials', () => {

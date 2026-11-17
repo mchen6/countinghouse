@@ -206,7 +206,7 @@ describe('sessions 30: a session\'s packs and its per-session workers', () => {
   const settings = require('../../lib/session-settings');
   const sessionPacks = require('../../lib/session-packs');
   const ModuleManager = require('../../lib/module-manager');
-  before(() => require('../../lib/logger').createLogger(false));
+  before(() => require('../../lib/logger').createLogger());
   // the packs and the shared mode configured here end with this file: the
   // next file in the same process starts from the defaults
   after(() => { settings.resetForTests(); sessionPacks.resetForTests(); });

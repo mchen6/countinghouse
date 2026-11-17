@@ -26,7 +26,7 @@ const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {testPort} = require('../helpers/test-env');
 const {createUsage, receiptSentence} = require('../../lib/usage');
 const {aggregate} = require('../../lib/usage/aggregate');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
 const STAND_IN = testPort(9745);
 // A plain HTTP server that only counts requests: what an unmapped remote must never reach.

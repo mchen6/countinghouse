@@ -22,6 +22,9 @@ the auth config.
   per-call API log that nothing read.
 - **`--centralPortalUrl`**, **`--wetty`** and **`--validateData`** are gone:
   nothing read them.
+- **`--logStream`** is gone: it chose between the logger's two
+  configurations, which had become one (the log goes to the same place with
+  it or without).
 - **`--heapDump`** stays (a dev aid), and no longer throws every minute when
   Node runs without `--expose-gc`: it says once that it needs it
   (`bin/countinghouse` and `npm run start-heap-dump` pass it) and does

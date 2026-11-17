@@ -27,7 +27,7 @@ describe('sessions 32: no direct peer channel to a per-session module (R1 Task 5
   const issued = [];
   const issue = (o) => { const t = callTokens.issue(o); issued.push(t); return t; };
   afterEach(() => { for (const t of issued.splice(0)) callTokens.drop(t); });
-  before(() => require('../../lib/logger').createLogger(false));
+  before(() => require('../../lib/logger').createLogger());
 
   it('the broker: a request for a per-session module is answered route: main, after the access check, with no grant', async () => {
     const told = [];

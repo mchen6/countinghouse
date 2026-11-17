@@ -26,7 +26,7 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
   let dm;
   let record;
   before(() => {
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     // not shared mode, and no pack view: whatever a file before this one in
     // the same process configured (sessions 30 leaves its packs and shared
     // mode), every device is listed here, so what's tested is the record's
