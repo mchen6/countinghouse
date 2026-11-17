@@ -165,8 +165,8 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
 
   // (ctx.job.progress drops anything but a number from 0 to 100 in the
   // worker; the gateway's own check is the second guard for the record)
-  it('a progress that isn\'t a number from 1 to 100 gives no statusMessage: "half", {}, 0, -5, 150', async () => {
-    for (const v of ['half', {}, 0, -5, 150]) {
+  it('a progress that isn\'t a number from 1 to 100 gives no statusMessage: "half", {}, 0, 0.4 (it rounds to 0), -5, 150', async () => {
+    for (const v of ['half', {}, 0, 0.4, -5, 150]) {
       const t = await created('progress', {values: [v], holdMs: 600});
       const seen = new Set();
       const done = await until(KEY_A, t.taskId, (x) => { seen.add(x.statusMessage); return x.status !== 'working'; });

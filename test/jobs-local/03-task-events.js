@@ -159,7 +159,7 @@ describe('jobs-local 03: the local runner tells a 2026-07-28 task\'s changes (M1
     // server-free: its QueueEvents and queue stood in for. Only here is the
     // split seen: the hub builds the view whatever the kind, but the wait's
     // end is timed only for a task told input_required.
-    it('the Redis runner\'s completed event: a job marked asking is told input_required (its wait timed); unmarked, completed', async () => {
+    it('the Redis runner\'s events: completed marked asking is told input_required (its wait timed), unmarked completed; waiting marked asking (its run again) active', async () => {
       const {EventEmitter} = require('events');
       const JobControl = require('../../lib/job-control');
       const held = {[tid('7')]: {id: tid('7'), data: {era: 'modern', asks: true, asking: 1}}, [tid('8')]: {id: tid('8'), data: {era: 'modern', asks: true}}};
@@ -172,8 +172,14 @@ describe('jobs-local 03: the local runner tells a 2026-07-28 task\'s changes (M1
       assert.ok(await until(() => seen.length === 2), JSON.stringify(seen));
       assert.deepStrictEqual(seen, ['t-7 input_required', 't-8 completed']);
       assert.strictEqual(taskEvents.pendingWaits(), 1, 'a completed task times nothing');
-      taskEvents.emit(tid('7'), 'cancelled');
-      assert.strictEqual(taskEvents.pendingWaits(), 0);
+      // answered: its run again queued (rerunTask's retry, 'waiting') is told
+      // active at once, which ends the wait; a new job's 'waiting' is not told
+      stub.queueEvents.emit('waiting', {jobId: tid('7')});
+      assert.ok(await until(() => seen.length === 3), JSON.stringify(seen));
+      assert.strictEqual(taskEvents.pendingWaits(), 0, 'the answer ended the wait');
+      stub.queueEvents.emit('waiting', {jobId: tid('8')});
+      await wait(50);
+      assert.deepStrictEqual(seen, ['t-7 input_required', 't-8 completed', 't-7 active']);
     });
 
     it('any later kind clears the wait: answered (active), cancelled; a gone record times nothing', async () => {
