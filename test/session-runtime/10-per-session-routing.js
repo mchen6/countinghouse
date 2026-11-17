@@ -95,4 +95,43 @@ describe('session-runtime 10: a hop reaches its own session\'s worker (R1 Task 5
     assert.ok(!fs.existsSync(path.join(partition(s.A.id), 'count')), 'nothing ran for A');
     assert.deepStrictEqual(outOf(await s.call('B', 'hop')), {file: 2, store: 2, memory: 2}, 'B runs on');
   });
+  // The review of #367, with B5 Task 2 (#366: a session makes 2026-07-28
+  // tasks): a per-session module's task whose worker ends mid-run reads as
+  // the same call answered inline does (ext-tasks: `failed` only for a
+  // JSON-RPC error; an isError result is `completed`): completed, isError,
+  // SESSION_WORKER_ENDED.
+  it('a per-session module\'s task whose worker ends mid-run is completed with the inline answer: isError, SESSION_WORKER_ENDED', async() => {
+    r = runtime(home, ['--loadModule', perSession(home)]);
+    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    const a = await shim.session(r.socket, secretOf(r));
+    assert.ok(a.welcome != null, JSON.stringify(a.refused));
+    const TASKS = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {extensions: {'io.modelcontextprotocol/tasks': {}}}};
+    let die = null;
+    let listed = null;
+    await until(async() => {
+      listed = await request(a.c, 'tools/list');
+      die = (listed != null && listed.result != null) ? listed.result.tools.map((t) => t.name).find((t) => t === 'die' || /_die$/.test(t)) : null;
+      return die != null;
+    });
+    assert.ok(die != null, JSON.stringify(listed.result.tools.map((t) => t.name)));
+    const codeOf = (result) => (result != null && result._meta != null) ? result._meta['countinghouse/code'] : undefined;
+    // inline: the extension not declared
+    const inline = await request(a.c, 'tools/call', {name: die, arguments: {ms: 300}});
+    assert.strictEqual(inline.error, undefined, `a result, not a JSON-RPC error: ${JSON.stringify(inline)}`);
+    assert.strictEqual(inline.result.isError, true, JSON.stringify(inline.result));
+    assert.strictEqual(codeOf(inline.result), 'SESSION_WORKER_ENDED');
+    // a task: the extension declared
+    const made = await request(a.c, 'tools/call', {_meta: TASKS, name: die, arguments: {ms: 300}});
+    assert.strictEqual(made.result && made.result.resultType, 'task', JSON.stringify(made));
+    let task = null;
+    assert.ok(await until(async() => {
+      task = (await request(a.c, 'tasks/get', {_meta: TASKS, taskId: made.result.taskId})).result;
+      return task != null && task.status !== 'working';
+    }), JSON.stringify(task));
+    assert.strictEqual(task.status, 'completed', JSON.stringify(task));
+    assert.strictEqual(task.error, undefined);
+    assert.deepStrictEqual({isError: task.result.isError, code: codeOf(task.result)}, {isError: true, code: 'SESSION_WORKER_ENDED'}, JSON.stringify(task.result));
+    assert.strictEqual(counts(r).ended, 2, 'each run\'s worker ended under it');
+  });
 });
