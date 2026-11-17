@@ -46,5 +46,19 @@ describe('fs-broker 28: a lean worker is started by the spelling its loader give
     assert.strictEqual(preservesSymlinks([], {NODE_OPTIONS: '--preserve-symlinks-main'}), false);
     assert.strictEqual(preservesSymlinks([], {NODE_PRESERVE_SYMLINKS: '1'}), true);
     assert.strictEqual(preservesSymlinks([], {NODE_PRESERVE_SYMLINKS: '0'}), false);
+    // as Node reads them: the first character of the variable, a quoted word,
+    // and the last flag deciding (the variable, then NODE_OPTIONS, then the flags)
+    assert.strictEqual(preservesSymlinks([], {NODE_PRESERVE_SYMLINKS: '1 '}), true);
+    assert.strictEqual(preservesSymlinks([], {NODE_OPTIONS: '"--preserve-symlinks"'}), true);
+    assert.strictEqual(preservesSymlinks(['--preserve-symlinks', '--no-preserve-symlinks'], {}), false);
+    assert.strictEqual(preservesSymlinks(['--no-preserve-symlinks'], {NODE_PRESERVE_SYMLINKS: '1'}), false);
+    assert.strictEqual(preservesSymlinks(['--preserve-symlinks'], {NODE_OPTIONS: '--no-preserve-symlinks'}), true);
+  });
+
+  it('a path whose real path can\'t be read: as given, and the caller is told', () => {
+    let told = null;
+    const given = path.join(base, 'nowhere', 'lean-worker.js');
+    assert.strictEqual(entryFor(path.join(base, 'nowhere'), 'lean-worker.js', {preserve: false, onFallback: (e) => { told = e.code; }}), given);
+    assert.strictEqual(told, 'ENOENT');
   });
 });

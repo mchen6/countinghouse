@@ -79,7 +79,9 @@ describe('stdio 26: an install run by a spelling that isn\'t its real path (#272
   // of a file required before and after (fs-broker/identity.js), and every
   // module failed: Cannot find module '/app/handlers/...'. The worker is
   // started by its native real path (lib/fs-broker/worker-entry.js).
-  it('a copy run by its plain spelling (on Windows the short name), with no symlink flags: a module under enforce loads and answers', async () => {
+  // Windows only: elsewhere a plain spelling is its real path, and the copy
+  // (node_modules whole) would prove nothing at its cost
+  (WIN ? it : it.skip)('a copy run by its plain spelling (the short name), with no symlink flags: a module under enforce loads and answers', async () => {
     if (io != null) { await io.stop(); io = null; }
     const plain = WIN ? fs.mkdtempSync(path.join(os.tmpdir(), 'ch-plain-')) : tmp.mkdtemp('ch-plain-');
     try {

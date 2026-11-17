@@ -51,7 +51,8 @@ module.exports = async () => {
   await check('runtime files loaded twice', () => {
     const seen = new Map();
     for (const k of Object.keys(require.cache)) {
-      if (k.startsWith('/app/') || /[\\/]node_modules[\\/]/.test(k)) continue;
+      // the module's own files (/app, or C:\app on Windows) and dependencies
+      if (/^([A-Za-z]:)?[\\/]app[\\/]/.test(k) || /[\\/]node_modules[\\/]/.test(k)) continue;
       const m = /^.*[\\/]lib[\\/](.+\.js)$/.exec(k);
       if (m == null) continue;
       const rel = m[1].replace(/\\/g, '/').toLowerCase();
