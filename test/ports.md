@@ -18,6 +18,8 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9730–9739 | B |
 | 9740–9749 | C |
 | 9750–9754 | A: lean worker step 3 |
+| 9755–9759 | C (2026-11-17) |
+| 9770–9779 | C (2026-11-17) |
 | 9790–9799 | B (2026-11-14) |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
@@ -104,6 +106,8 @@ one) as well as the ports it binds.
 | `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/27-tasks-modern.js` | 9637, 9639, 9660 |
 | `test/mcp-contract/28-task-ask.js` | 9690–9692 |
+| `test/mcp-contract/35-modern-schema-conformance.js` | 9756 (a Redis URL nothing answers on, as stdio 27's) |
+| `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |
