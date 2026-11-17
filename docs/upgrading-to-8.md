@@ -133,13 +133,26 @@ you have to do. What the sandbox does and does not protect is in
   it is not refused (the flag is ignored, and bounds nothing), so take it
   out of your start command.
 
+- **Six flags are gone:**
+  - `--verifyModule`, which let a module that failed its spec or interface
+    check load anyway. Such a module is now refused whatever the options:
+    check a module with `countinghouse-validate`.
+  - `--apiMonitor`, a per-call API log in Redis that nothing read.
+  - `--centralPortalUrl`, `--wetty` and `--validateData`, which nothing read.
+  - `--logStream`, which changed nothing: the log went to the same place with
+    it or without.
+
+  A start that still passes one is not refused, and the flag does nothing.
+  Take it out of your start command.
+
 - **Jobs that run longer than an hour need `--jobTimeout`.** A job that
   sets no timeout of its own is now ended after `--jobTimeout` seconds
   (default `3600`; `0` for none), so a handler that never answers cannot
   hold a job worker slot forever. It applies when a job runs, so jobs queued
   before the upgrade and schedulers stored earlier are bounded too. A job's
   own `opts.timeout` still wins; either is capped at about 24 days
-  (setTimeout's maximum).
+  (setTimeout's maximum). A run past it fails `JOB_TIMEOUT` (retryable, HTTP
+  504), and an answer that comes later is dropped.
 
 - **`add-job`'s `opts.timeout` must be a whole number of milliseconds, at
   least 1.** A string (`"5000"`), a fraction, zero or a negative value used
@@ -353,8 +366,8 @@ says how to write a module for this.
   `{mimeType, bytes, uri}`. `resources/read` returns it to the caller who
   made the call, in the same session, for `--resourceRetention` (24 h), as
   `text` for valid UTF-8 `text/*`, else `blob`; anything else is "Resource
-  not found". The server now declares `resources: {}`; `resources/list` is
-  always empty. A result whose stored values would pass a store limit is
+  not found". Stored results are never listed in `resources/list`. A
+  result whose stored values would pass a store limit is
   refused `RESULT_STORE_FULL`, with nothing stored. A client on protocol
   revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
   may not show a link; it can still read the `uri` from the text block.
@@ -368,6 +381,71 @@ says how to write a module for this.
   object schema is advertised, and other results are text only. A module's
   output may now be any JSON value its schema allows, `null` included; before,
   anything but an object was refused `OUTPUT_DATA_VALIDATION_FAIL`.
+- **`tools/list` comes in pages.** A list longer than `--listPageSize`
+  (250 by default) is answered in pages, each but the last with a
+  `nextCursor`; the resource, template and prompt lists page the same way. A
+  client that reads only the first page of a long list misses the rest. A
+  modern list result carries `ttlMs` and `cacheScope`.
+- **A tool may carry `title`, `annotations` and `icons`** on `tools/list`,
+  when its module declares them. The annotations' hints are the module
+  author's claims, and the runtime enforces none of them. Icons are inline
+  `data:` URIs, PNG, JPEG or WebP, never a URL.
+- **Module resources.** An action may be declared a resource instead of a
+  tool. It is listed on `resources/list` (a URI with no variables) or
+  `resources/templates/list` (one with variables), as
+  `countinghouse://m/<module>/<path>`, to the keys that may reach its module.
+  `resources/read` runs the action as a `tools/call` would: authorized,
+  validated, rate limited and billed.
+- **Change notices on a listen.** `subscriptions/listen` also agrees to
+  `resourcesListChanged`, `promptsListChanged` and `resourceSubscriptions`,
+  on HTTP, stdio and a shared runtime's session.
+  - A change that moves the resources or prompts you are shown sends one
+    `notifications/resources/list_changed` or
+    `notifications/prompts/list_changed`.
+  - Of the URIs you subscribe to, the ones you can read are agreed to: at
+    most 64, each at most 2048 bytes. After an action that a resource's
+    `changesWith` names succeeds, each URI gets
+    `notifications/resources/updated`, at most once a quarter second.
+- **Prompts and completion.** `prompts/list` and `prompts/get` serve the
+  prompts modules declare, as `<module>_<name>`. `prompts/get` runs no module
+  code. `completion/complete` offers values for a prompt's argument or a
+  resource template's variable, from the schema or from an action the module
+  names (not billed, and recorded in usage as `completion/complete`).
+- **A module may ask the user a question.** For a 2026-07-28 client that
+  declares form elicitation, a call can be answered with a declared
+  question (an `InputRequiredResult`), and the client's retry carries the
+  answer.
+  - The retry's `requestState` is bound to the caller, the session, the tool
+    and the arguments. It lasts five minutes and can be used once.
+  - A call is asked at most eight rounds.
+  - Other clients are never asked: the module gets `ASK_UNAVAILABLE`, and may
+    fall back.
+  - Inside a 2026-07-28 task too, when the request that made it declared
+    form elicitation. The task reads `input_required`, with the form in
+    `inputRequests` and the status message "waiting for an answer". The
+    client answers with `tasks/update`, and the run starts again under the
+    same `taskId`.
+    - A question waits at most an hour; then the task fails `ASK_EXPIRED`.
+    - At most 64 of a key's tasks, and 10,000 in all, wait on a question at
+      once. Past either, a new task's question is `ASK_UNAVAILABLE`.
+  - `--moduleQuestions off` turns every question off.
+- **Tasks for 2026-07-28 clients.** A client that declares the
+  `io.modelcontextprotocol/tasks` extension gets a task, answered at once,
+  for a call to an action that declares `longRunning` (with
+  `--workerThread`). It polls `tasks/get`, and may `tasks/update` and
+  `tasks/cancel`.
+  - A request to those methods that doesn't declare the extension is refused
+    `-32021`.
+  - Over HTTP, those three, `tools/call`, `resources/read` and `prompts/get`
+    carry an `Mcp-Name` header that must agree with the body.
+  - A task is the caller's own, and on a shared runtime its session's.
+  - A task whose module was unloaded, reloaded or suspended while it ran is
+    `completed`, with the isError result the inline call gets. It is
+    `failed`, with a JSON-RPC error, only when its run left no answer: past
+    its timeout (`JOB_TIMEOUT`), with the owner's access refused at the
+    start, or with its question unanswered for an hour (`ASK_EXPIRED`).
+
+  The legacy era's tasks (`params.task`) are unchanged.
 - **Progress for composite calls.** A `tools/call` whose `params._meta`
   carries a `progressToken` (a string of at most 256 characters, or a safe
   integer) gets `notifications/progress` as its hops run: `progress` counts
@@ -412,6 +490,18 @@ says how to write a module for this.
   the callee's code; it was `DEVICE_INVOKE_EXCEPTION`. 23 catalogue codes
   that nothing raised are gone (the CHANGELOG lists them).
 - ctx.call and HTTP `invoke-action` are unchanged: they keep `{output: …}`.
+- **What a module declares reaches the client with no hidden characters**
+  (#378). A tool's title and description, a prompt's text and its
+  arguments' descriptions, a resource's title and description, and a
+  question's dialog are cleaned as they leave. Each control, bidi, zero-width
+  or other invisible character becomes a space, though a prompt message keeps
+  its `\n` and `\t`, and emoji sequences stay whole. Nothing is refused or
+  changed at load. A completion candidate carrying one is left out
+  ([security-model.md](security-model.md#declared-text-as-it-reaches-the-client)).
+- **Checked against the official schemas.** The results above are tested
+  against the official 2026-07-28 schema and the tasks extension's
+  (`test/mcp-contract/35`), and the legacy era's through the official SDK
+  client (`36`), in CI. Only the list caching hints changed with it.
 
 ## What HTTP API clients will notice
 
@@ -484,7 +574,27 @@ says how to write a module for this.
     to the pack wait until the new version is up. That wait is at most
     `--requestTimeout` plus the new worker's start, the cost of upgrading
     without a restart.
-  - Neither is for a hosted server.
+  - **The shared runtime:** `ch-local daemon` starts one runtime per user
+    with `--sessionSocket` (a Unix socket, or a named pipe on Windows), and
+    each client session reaches it through ch-local's native shim, `ch-shim`. A stored
+    result, a task and the lists are the session's own. See
+    [the reference](cli-and-api-reference.md#cli-flags-reference).
+  - **Per-session modules:** a module whose `package.json` declares
+    `"countinghouse": {"state": "per-session"}` gets, on the shared runtime,
+    a worker of its own per session, with its own `ctx.redis` keys, `/data`
+    and `/tmp`.
+    - `--maxSessionWorkers` (16 by default) caps how many such workers run
+      at once, in all.
+    - Each costs about 24 MB, plus about 15 MB once: about 400 MB at the
+      default cap ([the measurement](benchmarks/lean-worker.md#per-session-workers-shared-runtime-r1)).
+    - A hosted server refuses such a module (`MODULE_NEEDS_SESSIONS`); under
+      `--stdio` it runs as a shared one.
+  - **A pack a ch-local release withdraws** (no longer lists) is not
+    started, at `ch-local start` or after an upgrade. The client is told once
+    per session: "pack X was withdrawn in this release and was not started;
+    `ch-local remove-pack X` removes it". Nothing of the pack is deleted. An
+    upgrade to such a release still installs (ch-local #74).
+  - None of these is for a hosted server.
 - **Disk limits in the policy:** `diskMb` and `diskEntries` take the same
   ceilings and per-module entries as the other limits.
 - **A link check at start:** under `enforce`, a module whose data holds a
@@ -504,7 +614,11 @@ says how to write a module for this.
   credential is sent only where your `--remoteCredentials <file>` allows
   that variable for the declared URL's exact origin; a remote whose
   credential is not allowed is not contacted. `--remoteTimeout` and
-  `--remoteMaxBytes` bound each call
+  `--remoteMaxBytes` bound each call. A redirect is followed only within the
+  declared URL's origin (the same scheme, host and port, at most 5); one to
+  another origin is refused (`REMOTE_UNREACHABLE`), so a credential never
+  leaves its origin. Earlier documentation said no redirect was followed;
+  it has been corrected
   ([module-development.md](module-development.md#calling-a-remote-mcp-server),
   [security-model.md](security-model.md#remote-mcp-servers-a-module-cannot-choose-where-a-credential-goes)).
 
