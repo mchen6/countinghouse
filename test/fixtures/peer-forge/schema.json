@@ -4,9 +4,42 @@
   "type": "object",
   "forgeService": {
     "forge": {
-      "input": {"type": "object", "properties": {"appKey": {"type": "string"}, "granted": {"type": "string"}, "other": {"type": "string"}},
-        "required": ["appKey", "granted", "other"]},
-      "output": {"type": "object", "properties": {"granted": {"type": "string"}, "other": {"type": "string"}}}
+      "input": {
+        "type": "object",
+        "properties": {
+          "appKey": {
+            "type": "string"
+          },
+          "granted": {
+            "type": "string"
+          },
+          "other": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "appKey",
+          "granted",
+          "other"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "granted": {
+            "type": "string"
+          },
+          "other": {
+            "type": "string"
+          },
+          "hooked": {
+            "type": "boolean"
+          },
+          "otherByHop": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }
