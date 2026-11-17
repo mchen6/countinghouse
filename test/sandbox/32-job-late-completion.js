@@ -51,7 +51,7 @@ describe('sandbox 32: a job\'s late answer, after its timeout', function() {
     const added = await addLate({timeout: 2000, attempts: 1}, {ms: 6000});
     assert.strictEqual(added.status, 200, JSON.stringify(added.body));
     const job = await failed(added.body.id);
-    assert.match(job.job.failedReason, /timed out after 2000 milliseconds/);
+    assert.match(job.job.failedReason, /^JOB_TIMEOUT: The job did not finish within its timeout \(2 s\), so it failed/);
     await sleep(6500);   // the handler has answered by now
     assert.strictEqual(await balance(), before, 'the late answer was billed');
     const raw = await queue.getJob(added.body.id);

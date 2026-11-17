@@ -7,8 +7,11 @@
 //   CH_TEST_PORT_BASE=9740   each distinct default port this process asks
 //                            for becomes base, base+1, ... in the order asked
 //                            (local runs are one file at a time)
-//   CH_TEST_REDIS_URL=redis://127.0.0.1:9749
+//   CH_TEST_REDIS_URL=redis://127.0.0.1:<port>
 //                            passed to every server as --redisUrl
+//   CH_TEST_REDIS_PORT=<port>
+//                            run-local's private Redis on this port, not a
+//                            free one the OS picks
 //
 // Servers are started in their own process group and stopped by PID, never
 // by pkill -f: a pattern can match another session's server running the same
@@ -32,7 +35,7 @@ const assigned = new Map();
 // (sandbox-server.js, remote-mcp-server.js) take ports as given, so the one
 // mapping is the test's own and its URLs, Host headers and --port agree
 // (validation 14 checks every server test for an unmapped port). The port
-// of CH_TEST_REDIS_URL (run-local's private Redis, 9749 by default) is never
+// of CH_TEST_REDIS_URL (run-local's private Redis, on a free port) is never
 // handed out.
 const reservedPort = (() => {
   try { return Number(new URL(process.env.CH_TEST_REDIS_URL).port) || null; } catch (e) { return null; }
@@ -114,7 +117,21 @@ function stopAll(done, delayMs = 0) {
 
 // -> Promise<{url, pid, stop()}>. Refuses a port something already answers on:
 // that is someone else's.
-function startPrivateRedis({port = 9749, readyMs = 5000} = {}) {
+// Its port: CH_TEST_REDIS_PORT when given, else a free one the OS picks, so
+// each run's Redis is on a port of its own. A fixed port let a runtime
+// leaked by an earlier run (its ioredis/BullMQ clients retry for ever)
+// reconnect to the next run's fresh Redis and take its jobs (A and B,
+// 2026-11-17: auth 25/33/34 and sandbox 32, "jobs never run").
+const freePort = () => new Promise((resolve, reject) => {
+  const srv = net.createServer();
+  srv.once('error', reject);
+  srv.listen(0, '127.0.0.1', () => { const {port} = srv.address(); srv.close(() => resolve(port)); });
+});
+function startPrivateRedis({port, readyMs = 5000} = {}) {
+  const fixed = port != null ? port : (process.env.CH_TEST_REDIS_PORT != null && process.env.CH_TEST_REDIS_PORT !== '' ? Number(process.env.CH_TEST_REDIS_PORT) : null);
+  return (fixed != null ? Promise.resolve(fixed) : freePort()).then((p) => startOn(p, readyMs));
+}
+function startOn(port, readyMs) {
   const answers = () => new Promise((resolve) => {
     const s = net.connect({host: '127.0.0.1', port});
     s.once('connect', () => { s.destroy(); resolve(true); });
