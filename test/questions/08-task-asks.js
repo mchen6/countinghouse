@@ -161,7 +161,7 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       // and as tasks/get answers it: failed, -32603, ASK_EXPIRED
       const gateway = require('../../lib/mcp/gateway');
       const view = await gateway.modernTaskView({state: 'completed', job: {id: t, timestamp: now - 1000, finishedOn: now - 500, data: {era: 'modern', asks: true, asking: 1}}}, null, {session: SESSION});
-      assert.deepStrictEqual([view.status, view.error.code, view.error.data['countinghouse/code']], ['failed', -32603, 'ASK_EXPIRED'], JSON.stringify(view));
+      assert.deepStrictEqual([view.status, view.error.code, view.error.data['countinghouse/code'], view.statusMessage], ['failed', -32603, 'ASK_EXPIRED', 'ASK_EXPIRED'], JSON.stringify(view));
       assert.ok(view.result === undefined);
     } finally {
       now -= taskAsks.WAIT_MS + 1;
