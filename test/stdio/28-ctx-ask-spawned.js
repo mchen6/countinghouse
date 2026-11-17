@@ -169,6 +169,25 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
       assert.strictEqual(progressAfter(32).after, 0, 'nor after the result');
     });
 
+    // M14 with M19 (the reviewer's ruling): a call cancelled while its handler works, which then asks, is
+    // a cancelled call: no answer is written, and its record says cancelled. (Here the cancel drops the
+    // call's token, so the handler's ask fails before any form; a cancel that lands while the form is
+    // being made is questions 05's case.)
+    it('a call cancelled before its handler asks: no answer, no state made, and its record says cancelled, not asked', async () => {
+      local();
+      await loaded();
+      io.notify({jsonrpc: '2.0', id: 41, method: 'tools/call', params: {name: TOOL, arguments: {what: 'late', wait: 1500}, _meta: META}});
+      await new Promise((r) => setTimeout(r, 400));
+      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 41}});
+      await new Promise((r) => setTimeout(r, 3000));
+      assert.deepStrictEqual(io.lines.map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((m) => m != null && m.id === 41), [], 'no answer');
+      const records = [];
+      const walk = (dir) => { for (const e of fs.readdirSync(dir, {withFileTypes: true})) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (p.endsWith('.jsonl')) records.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))); } };
+      walk(home);
+      const outs = records.filter((x) => x.tool === TOOL && x.outcome !== undefined && x.server === undefined);
+      assert.deepStrictEqual(outs.slice(-1).map((x) => [x.outcome, x.round]), [['cancelled', undefined]], JSON.stringify(outs.slice(-3)).slice(0, 600));
+    });
+
     it('a decline is null to the handler; an answer that does not fit the form gets the question again; a state is for its own arguments', async () => {
       local();
       await loaded();

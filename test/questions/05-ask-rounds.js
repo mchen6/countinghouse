@@ -238,6 +238,28 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     });
   });
 
+  // M14 with M19: a call cancelled after its handler asked, while the form is being made, gets no form
+  // and no state: none is minted, so none can be presented or replayed
+  describe('a call cancelled while its form is made', () => {
+    it('no state is made for it: the form is refused as no one to ask, which the gateway answers as the cancel it is', async () => {
+      let cancelled = false;
+      let minted = 0;
+      const state = await ask.begin(deps());
+      assert.deepStrictEqual(asks(state), {code: 'ASK_PENDING'});
+      // the cancel lands while the asker's validators answer for the form
+      const slowForm = async (pointer, content) => { cancelled = true; return form(pointer, content); };
+      const counting = () => { minted += 1; return key; };
+      await rejectedWith('ASK_UNAVAILABLE', ask.formOf(state, deps({form: slowForm, key: counting, cancelled: () => cancelled})));
+      assert.strictEqual(minted, 0, 'the key was never reached: no state was made');
+      // cancelled before the form is asked for: nothing is looked up either
+      formCalls.length = 0;
+      await rejectedWith('ASK_UNAVAILABLE', ask.formOf(state, deps({key: counting, cancelled: () => true})));
+      assert.deepStrictEqual([formCalls.length, minted], [0, 0]);
+      // and a call not cancelled is asked as before
+      assert.ok((await ask.formOf(state, deps({cancelled: () => false}))).requestState.startsWith('v1.'));
+    });
+  });
+
   describe('an answer that is none', () => {
     const NONE = [undefined, null, 'yes', {}, {action: 'accept'}, {action: 'accept', content: null}, {action: 'accept', content: 'yes'}, {action: 'accept', content: []},
       {action: 'accept', content: {replace: 'yes'}}, {action: 'accept', content: {replace: true, extra: 1}}, {action: 'approve', content: {replace: true}},
