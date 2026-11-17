@@ -132,6 +132,7 @@ one) as well as the ports it binds.
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
 | `test/module-loading/33-registry-opt-in.js` | 9594 |
 | `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
+| `test/module-loading/36-per-session-declaration.js` | 9729 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
