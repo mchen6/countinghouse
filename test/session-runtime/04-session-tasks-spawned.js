@@ -38,10 +38,13 @@ function scenario(home) {
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: 'ch-session-tasks', version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
   fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'ch-session-tasks', manufacturer: 'countinghouse-test', modelDescription: 'tasks',
     serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: 'slow', description: 'runs a while', longRunning: true,
-      input: {schema: `/${svc}/slow/input`}, output: {schema: `/${svc}/slow/output`}}]}}}}));
+      input: {schema: `/${svc}/slow/input`}, output: {schema: `/${svc}/slow/output`}},
+    {name: 'finished', description: 'how many slow runs have finished', input: {schema: `/${svc}/finished/input`}, output: {schema: `/${svc}/finished/output`}}]}}}}));
   fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
-    [svc]: {slow: {input: {type: 'object'}, output: {type: 'object'}}}}));
-  fs.writeFileSync(path.join(dir, 'handlers', svc, 'slow.js'), 'module.exports = async (input) => { await new Promise((r) => setTimeout(r, Number(input.ms) || 0)); return {output: {done: true}}; };\n');
+    [svc]: {slow: {input: {type: 'object'}, output: {type: 'object'}}, finished: {input: {type: 'object'}, output: {type: 'object'}}}}));
+  // a slow run counts itself once it has waited (B5 Task 4: a run its session ended under goes to its end)
+  fs.writeFileSync(path.join(dir, 'handlers', svc, 'slow.js'), 'module.exports = async (input) => { await new Promise((r) => setTimeout(r, Number(input.ms) || 0)); global.__slowDone = (global.__slowDone || 0) + 1; return {output: {done: true}}; };\n');
+  fs.writeFileSync(path.join(dir, 'handlers', svc, 'finished.js'), 'module.exports = async () => ({output: {finished: global.__slowDone || 0}});\n');
   return dir;
 }
 
@@ -133,6 +136,37 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
     assert.ok((await legacy(a, 'tasks/list', {})).result.tasks.some((t) => t.taskId === lid));
     assert.ok(await until(async() => (await legacy(a, 'tasks/get', {taskId: lid})).result.status === 'completed'), 'A\'s legacy task, not cancelled by B');
     a.c.end();
+    b.c.end();
+  });
+
+  it('A says bye with a task under way: it runs to its end (cooperative), and B\'s own task completes (B5 Task 4)', async() => {
+    r = runtime(home, ['--loadModule', scenario(home)]);
+    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    const secret = secretOf(r);
+    const a = await shim.session(r.socket, secret);
+    const b = await shim.session(r.socket, secret);
+    assert.ok(await until(async() => {
+      const list = await modern(a, 'tools/list', {});
+      return list != null && list.result != null && list.result.tools.some((t) => t.name === 'slow');
+    }), r.err.slice(-1500));
+    const finished = async() => {
+      const got = await modern(b, 'tools/call', {name: 'finished', arguments: {}});
+      return got != null && got.result != null && got.result.structuredContent != null ? got.result.structuredContent.finished : JSON.stringify(got);
+    };
+    assert.strictEqual(await finished(), 0);
+    const made = await modern(a, 'tools/call', {name: 'slow', arguments: {ms: 1500}});
+    const tid = made.result.taskId;
+    assert.match(tid, /^t-[0-9a-f]{32}$/, JSON.stringify(made));
+    // A ends (its shim says bye) while its task runs
+    a.c.send('C', {op: 'bye'});
+    // its run is not interrupted: it waits out its 1.5 s and counts itself
+    assert.ok(await until(async() => (await finished()) === 1), `A's run went to its end: ${await finished()}`);
+    // B's own task, made after A's end, completes; A's id is still one never issued to B
+    const mine = await modern(b, 'tools/call', {name: 'slow', arguments: {ms: 100}});
+    assert.ok(await until(async() => (await modern(b, 'tasks/get', {taskId: mine.result.taskId})).result.status === 'completed'), 'B\'s completes');
+    const never = `t-${'0'.repeat(32)}`;
+    assert.strictEqual(shape(await modern(b, 'tasks/get', {taskId: tid}), tid), shape(await modern(b, 'tasks/get', {taskId: never}), never));
+    assert.strictEqual(r.child.exitCode, null, 'the runtime serves on');
     b.c.end();
   });
 });
