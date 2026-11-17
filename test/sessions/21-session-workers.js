@@ -178,3 +178,24 @@ describe('sessions 21: a session\'s packs and its per-session workers', () => {
     assert.deepStrictEqual(h.told, [], 'a stop for the view is not a reset notice');
   });
 });
+
+// The live options (lib/settings-tool.js broadcastLiveOptions) reach every
+// running worker: a session's too, which the module map doesn't hold.
+describe('sessions 21: every running worker is told the live options', () => {
+  it('liveWorkers: the module map\'s workers and every session worker, never a record', async () => {
+    const {SessionModuleRecord} = require('../../lib/session-module-record');
+    const ModuleManager = require('../../lib/module-manager');
+    const h = harness({max: 4});
+    const mm = Object.create(ModuleManager.prototype);
+    const shared = {sendMessageToWorker: () => {}};
+    mm.modules = {shared: shared, m: new SessionModuleRecord({name: 'm', version: '1.0.0', modulePath: '/x', moduleSpec: null})};
+    mm.sessionWorkers = h.sw;
+    const a = (await h.get('m', A)).wm;
+    const b = (await h.get('m', B)).wm;
+    assert.deepStrictEqual(mm.liveWorkers(), [shared, a, b]);
+    const told = [];
+    for (const w of [a, b]) w.sendMessageToWorker = (msg) => told.push([w.sid, msg.command]);
+    require('../../lib/settings-tool').broadcastLiveOptions(mm.liveWorkers());
+    assert.deepStrictEqual(told, [[A, 'live-options'], [B, 'live-options']]);
+  });
+});
