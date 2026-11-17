@@ -194,7 +194,7 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     sessionPacks.onPack('ci', () => gate);
     const pb = t.confirm('pack.ci', 'on', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B));
     await new Promise((res) => setTimeout(res, 100));
-    settings.set(A, 'pack.ci', false);   // A, the only member, goes off: its last-out unload is queued after B's load
+    settings.set(A, 'pack.ci', false, {version: '1.0.0'});   // A, the only member, goes off: its last-out unload is queued after B's load
     open();
     const done = await pb;
     assert.strictEqual(done.applies, 'this session', JSON.stringify(done));
@@ -275,7 +275,7 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
       nothingApplied('latched');
     });
     it('A\'s own override for the pack changes during its load', async() => {
-      const err = await during(() => { settings.set(A, 'pack.ci', false, {}); });
+      const err = await during(() => { settings.set(A, 'pack.ci', false, {version: '1.0.0'}); });
       assert.ok(err != null);
       assert.strictEqual(settings.packOverridesOf(A).get('ci'), false, 'its own off stands');
       nothingApplied('changed');
