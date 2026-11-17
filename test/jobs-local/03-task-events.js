@@ -1,7 +1,8 @@
 'use strict';
 // MCP completeness M16, Task 1: the local runner tells lib/task-events.js a
 // 2026-07-28 task's changes (its run started, its progress, completed,
-// failed for good, removed), and nothing for any other job. Server-free,
+// failed for good), and nothing for any other job. A removal is not one:
+// the gateway tells a cancel. Server-free,
 // as jobs-local 01: the runner's surface with a stub cdifInterface and the
 // owner check stubbed.
 const assert = require('assert');
@@ -59,12 +60,15 @@ describe('jobs-local 03: the local runner tells a 2026-07-28 task\'s changes (M1
     runner.close();
   });
 
-  it('a task removed before its run (its owner\'s cancel) is told removed, and never runs', async () => {
+  // a removal is the gateway's to tell, as cancelled, once the task's
+  // tombstone is written: told here, a listener's lookup could find neither
+  it('a task removed before its run (its owner\'s cancel) is told nothing by the runner, and never runs', async () => {
     const runner = runnerWith(() => assert.fail('it never runs'));
     await add(runner, {name: 'n', taskId: tid('c'), era: 'modern', delay: 5000});
     const {err} = await remove(runner, tid('c'));
     assert.strictEqual(err, null);
-    assert.deepStrictEqual(seen, ['t-c removed']);
+    await wait(50);
+    assert.deepStrictEqual(seen, []);
     runner.close();
   });
 
