@@ -63,7 +63,8 @@ describe('session-transport 07: resume across a runtime restart (#255, N3)', () 
     const reg = createRegistry({tell: keep((m) => told.push(m))});
     const s = reg._create();
     reg._issue(s);
-    s._end();
+    // (its shim left: a 'closed' end, the runtime stopping, tells none: session-transport 10)
+    s._end('bye');
     assert.deepStrictEqual(told.map((m) => m.type), ['session-resume', 'session-gone']);
     const r = createRegistry({tell: () => {}});
     r._restore([{session: 'c'.repeat(32), resume: sha('rt_y')}]);
