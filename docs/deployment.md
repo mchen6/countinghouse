@@ -225,7 +225,7 @@ What local mode does not keep: jobs and tasks live in memory only, so a
 restart forgets them (`tasks/get` for a task from an earlier process
 answers "not found"), and a finished job is kept for `--jobResultTtl`
 seconds. The device log is kept in memory only, the last 1000 entries per
-device. The API monitor's log (`--apiMonitor`) is absent. Over `--stdio`
+device. Over `--stdio`
 without `--authConfigPath` the server runs as one user, its key made at
 start and written nowhere ([security model](security-model.md)).
 

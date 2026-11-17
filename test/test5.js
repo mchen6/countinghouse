@@ -18,7 +18,6 @@ describe("Start job control tests in multi thread mode", function () {
     "--debug",
     "--debugKey",
     "aabbcc",
-    "--apiMonitor",
     "--redisUrl",
     redisUrlFor(),
     "--loadModule",
