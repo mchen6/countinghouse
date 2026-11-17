@@ -62,6 +62,26 @@ boundary, enforced **inside the same process as the code they restrict**:
 One overlooked internal API, or one V8 bug, gets past the in-process layers.
 Each layer below says what it stops and what it does not.
 
+**Boundary checks run on intrinsics captured before module code loads.**
+Module code shares the worker's realm with the checks that bound it, and can
+replace a method of `String`, `Array`, `Set`, `Map`, `RegExp` or
+`Function`, or a property of a shared built-in module. So every check the
+worker's boundary relies on (which built-in may load, whether a file is
+inside the module's root, whether a host is granted) calls only functions
+taken when its file loaded, before any module code: never a method looked
+up when the check runs. A guard hands a call on to the original it wraps
+through a `Reflect.apply` taken at load, never the original's own `call` or
+`apply`, which a module could have replaced to receive it. Live lists a check
+consults (the allowed built-ins, the loopback names) are private to their
+file, exported only as frozen copies. The intrinsics themselves are not
+frozen (that breaks common packages). What Node's own loader reads from
+objects a module can reach is fixed at the lockdown instead, in audit and
+enforce: every function of the `path`, `path.posix`, `path.win32` and `url`
+exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
+are non-writable and non-configurable, so a module cannot show the loader
+or a check one path and have another one used. A module that patches
+`path`, `url` or `URL` runs only under `off`.
+
 **Modes.** `--moduleSandbox off|audit|enforce`, default `audit`. The sandbox
 needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
 22.16 or later. Below 24.15 a compatibility shim routes `require.resolve`

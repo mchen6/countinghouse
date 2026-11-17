@@ -18,6 +18,21 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
+
+- **Every check the worker's boundary relies on** (the allowed built-ins,
+  a file inside the module's root, a granted host, `CHUtil.loadFile` and
+  `CHUtil.request`) calls only functions taken before module code loads,
+  and each guard hands a call on through a `Reflect.apply` taken then. The
+  allowed built-ins and the loopback names are no longer exported as live
+  sets (`ALLOWED_BUILTIN_IDS` and `LOOPBACK_NAME_LIST`, frozen arrays, take
+  their place).
+- **A module can no longer patch `path`, `url` or `URL`** under audit or
+  enforce: the functions of the `path`, `path.posix`, `path.win32` and `url`
+  exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
+  are non-writable and non-configurable from the lockdown on. A module that
+  patches them runs under `--moduleSandbox off`.
+
 ### Added — what a module declares for MCP clients is checked (MCP completeness, M0)
 
 - **`api.json` takes the fields the MCP layer serves**: an action's `title`,

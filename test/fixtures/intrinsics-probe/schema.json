@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "probe": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "change": {"type": "string"},
+          "builtins": {"type": "array", "items": {"type": "string"}},
+          "runtimeFile": {"type": "string"},
+          "outsidePath": {"type": "string"},
+          "port": {"type": "integer"}
+        },
+        "required": ["change", "builtins", "runtimeFile", "outsidePath", "port"]
+      },
+      "output": {
+        "type": "object"
+      }
+    }
+  }
+}
