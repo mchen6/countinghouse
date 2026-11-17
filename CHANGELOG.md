@@ -20,6 +20,14 @@ loaded the runtime's files by the short spelling until its file broker was
 installed and by the long one after, so one of them was loaded twice. The
 worker is now started by its real path, and each file is loaded once.
 
+### Fixed — the settings ceiling is found on Windows with no SystemDrive in the environment
+
+A runtime started with no `SystemDrive` in its environment (ch-local's
+daemon is) could not find ProgramData. Every setting that loosens a default
+was then refused with `SETTING_CEILING_UNTRUSTED`. The lookup now sets
+`SystemDrive` itself, from the system's Windows directory, before asking for
+the folder.
+
 ### Removed — flags that did nothing, or let a failing module load
 
 - **`--verifyModule`** is gone. With it, the loader carried on past a
