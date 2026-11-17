@@ -50,7 +50,17 @@ const H2 = path.join(FIXTURE, 'h2.cjs');
 // what the lockdown fixes (non-writable, non-configurable): these changes
 // cannot be made at all under audit or enforce, and every other one can
 const FIXED = new Set(['url.fileURLToPath', 'path.resolve', 'path.relative', 'Module.isBuiltin', 'URL hostname',
-  'NodeEventTarget.prototype.on', 'MessagePort.prototype.postMessage', 'EventTarget.prototype.addEventListener']);
+  'NodeEventTarget.prototype.on', 'MessagePort.prototype.postMessage', 'EventTarget.prototype.addEventListener',
+  // the runtime fixes its own files' exports and classes' prototypes at a
+  // worker's boot, under every mode
+  'runtime exports and prototypes replaced in place']);
+// changes left in place across calls (the probe's persist mode): a call's
+// token is kept, passed on and answered after the call that made the change
+const PERSISTENT = ['Map.prototype.set/get/has/delete', 'Array.prototype.push/shift/unshift/splice/forEach', 'Object.assign',
+  'TypedArray buffer/byteOffset/byteLength, ArrayBuffer.prototype.slice', 'Object.prototype numeric-key setters',
+  'Object.prototype port-symbol setters', 'EventEmitter.prototype emit/on/once/addListener/removeListener/listenerCount',
+  'require.cache entries swapped (call-limits, hop-input, port-scope, peer-channel, peer-worker, chutil-facade)',
+  'runtime exports and prototypes replaced in place', 'Object.prototype setters'];
 const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
 
 for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'audit', port: testPort(9715)}]) {
@@ -108,6 +118,35 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
       assert.strictEqual(r.status, 200, JSON.stringify(r.body));
       assert.deepStrictEqual(r.body.output, {setterHits: 0, answer: 'ASK_UNAVAILABLE'});
     });
+
+    // util.inspect (console.log's way) of a port, with its methods fixed
+    it('a port is inspected as a MessagePort', async () => {
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'inspect'}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.deepStrictEqual(r.body.output, {inspect: 'MessagePort'});
+    });
+
+    // a change installed by one call and kept: the next calls' tokens, kept by
+    // the runtime, passed on to the main thread and answered, are never seen
+    for (const change of PERSISTENT) {
+      it(`with ${change} kept across calls, no later call's token or port is handed over`, async () => {
+        const invoke = (input) => post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: Object.assign({change}, input)});
+        const installed = await invoke({persist: 'install'});
+        assert.strictEqual(installed.status, 200, JSON.stringify(installed.body));
+        assert.strictEqual(installed.body.output.installed, !FIXED.has(change), `${change}: ${JSON.stringify(installed.body.output)}`);
+        const work = [];
+        for (let n = 0; n < 2; n++) {
+          const r = await invoke({route: 'work'});
+          work[n] = r.status === 200 ? r.body.output : {status: r.status, body: r.body};
+        }
+        const collected = await invoke({persist: 'collect'});
+        const shown = JSON.stringify({work, collected: collected.body});
+        assert.strictEqual(collected.status, 200, shown);
+        for (const w of work) assert.deepStrictEqual(Object.keys(w).sort(), ['ask', 'remote', 'usage'], shown);
+        assert.strictEqual(collected.body.output.tokensSeen, 0, `a token was handed over with ${change} kept: ${shown}`);
+        assert.strictEqual(collected.body.output.portsSeen, 0, `a port was handed over with ${change} kept: ${shown}`);
+      });
+    }
 
     // a read grant does not write (h2.cjs: kept as it was, whatever happens)
     let h2Before = null;

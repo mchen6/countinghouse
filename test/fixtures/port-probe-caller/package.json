@@ -4,7 +4,8 @@
   "license": "Apache-2.0",
   "countinghouse": {
     "calls": [
-      "hop-input-callee/sinkService.count"
+      "hop-input-callee/sinkService.count",
+      "hop-input-callee/sinkService.sink"
     ]
   }
 }

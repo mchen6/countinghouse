@@ -6,7 +6,7 @@
     "probe": {
       "input": {
         "type": "object",
-        "properties": {}
+        "properties": {"watch": {"type": "boolean"}, "forge": {"type": "boolean"}}
       },
       "output": {
         "type": "object"

@@ -15,6 +15,12 @@ const {deviceIDForName} = require('../../lib/call-address');
 
 describe('sandbox 63: port methods taken at boot', function() {
   this.timeout(20000);
+  // (a worker's mode: under off a post looks postMessage up as the port has
+  // it, as the worker's own post does; below)
+  const options = require('../../lib/cli-options');
+  let modeBefore;
+  before(() => { modeBefore = options.moduleSandbox; options.moduleSandbox = 'enforce'; });
+  after(() => { options.moduleSandbox = modeBefore; });
 
   it('postOnPort, onPortMessage, onPortEvent and closePort never call a replaced method', async () => {
     // (made before the methods are replaced: Node's own port set-up calls
@@ -43,6 +49,26 @@ describe('sandbox 63: port methods taken at boot', function() {
       port2.close();
     }
     assert.deepStrictEqual(handed.map((h) => h[0]), [], 'a replaced port method was called with a port');
+  });
+
+  it('under --moduleSandbox off, a post uses postMessage as the port has it now (nothing is fixed there)', async () => {
+    const {port1, port2} = new MessageChannel();
+    const proto = MessagePort.prototype;
+    const saved = proto.postMessage;
+    let seen = 0;
+    options.moduleSandbox = 'off';
+    proto.postMessage = function(...a) { seen++; return saved.apply(this, a); };
+    try {
+      const got = new Promise((resolve) => portScope.onPortMessage(port2, (m) => resolve(m)));
+      portScope.postOnPort(port1, {hello: 2});
+      assert.deepStrictEqual(await got, {hello: 2});
+      assert.strictEqual(seen, 1);
+    } finally {
+      proto.postMessage = saved;
+      options.moduleSandbox = 'enforce';
+      port1.close();
+      port2.close();
+    }
   });
 
   it('withFields and ownField set and read own data only', () => {
@@ -84,9 +110,9 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9754)}, {mode: 'aud
     });
     after(() => stopServer(server));
 
-    it(mode === 'off' ? 'a replaced NodeEventTarget.on is handed the port (nothing is fixed)' : 'no replaced method is handed the port, and the calls are answered', async () => {
+    it(mode === 'off' ? 'a replaced NodeEventTarget.on is handed the port (nothing is fixed)' : 'no replaced method, setter or watched built-in is handed the port or a token, and the calls are answered', async () => {
       const r = await post(port, KEY, `/devices/${deviceIDForName('port-probe-caller')}/invoke-action`,
-        {serviceID: 'urn:countinghouse-test:serviceID:probeService', actionName: 'probe', input: {}});
+        {serviceID: 'urn:countinghouse-test:serviceID:probeService', actionName: 'probe', input: {watch: mode !== 'off'}});
       assert.strictEqual(r.status, 200, JSON.stringify(r.body));
       const out = r.body.output;
       const shown = JSON.stringify(out);
@@ -99,6 +125,55 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9754)}, {mode: 'aud
       }
       for (const name of FIXED) assert.strictEqual(out.changed[name], false, `${name} is fixed by the lockdown: ${shown}`);
       assert.strictEqual(out.portsSeen, 0, `a port was handed to a replaced method: ${shown}`);
+      // nor a call's token, on the peer path: its queue, the channel's
+      // pending calls, the callee's metering reply, the envelope's bytes
+      assert.strictEqual(out.tokensSeen, 0, `a token was handed to a replaced method or setter: ${shown}`);
     });
   });
 }
+
+// What Node itself leaves: it writes the ports a message transferred into an
+// array by index, natively, before any JavaScript runs, so a setter module
+// code put on Array.prototype's index 0 is handed a peer channel's port as
+// it arrives (counted as nativeIndexPorts above, and accepted: an index
+// accessor on Array.prototype would change every array's holes). The port
+// is worth nothing more than the module's own end of a channel: no token,
+// target or input crosses it, and the callee serves an invoke only as the
+// main thread's announcement of it says. Under enforce: the module takes
+// the port, reads what arrives on it, and posts a replayed invoke (the
+// first call's id) and a guessed one while a legitimate hop runs. Neither
+// forged invoke is served (the callee ran two sinks, the module's own), each
+// is refused on the port, the legitimate hop answers with its own result,
+// and no token is seen.
+describe('sandbox 63: a peer port module code takes from Node\'s own array (enforce)', function() {
+  this.timeout(120000);
+  const port = testPort(9756);
+  let server = null;
+  before(async () => {
+    server = await startServer(port, ['--authConfigPath', AUTH, '--loadModule', CALLEE, '--loadModule', CALLER, '--workerThread',
+      '--directPeerChannels', '--moduleSandbox', 'enforce']);
+  });
+  after(() => stopServer(server));
+
+  it('a forged invoke on the taken port is refused unserved; a concurrent hop answers with its own result; no token is seen', async () => {
+    const r = await post(port, KEY, `/devices/${deviceIDForName('port-probe-caller')}/invoke-action`,
+      {serviceID: 'urn:countinghouse-test:serviceID:probeService', actionName: 'probe', input: {forge: true}});
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    const out = r.body.output;
+    const shown = JSON.stringify(out);
+    const sha = (s) => require('crypto').createHash('sha256').update(s).digest('hex');
+    // the residual is real: the module holds the port
+    assert.strictEqual(out.captured, true, shown);
+    assert.deepStrictEqual(out.first, {length: 'ch-sandbox-63-first'.length, sha256: sha('ch-sandbox-63-first')}, shown);
+    assert.deepStrictEqual(out.legit, {length: 'ch-sandbox-63-legit'.length, sha256: sha('ch-sandbox-63-legit')}, shown);
+    // only the module's own two sinks ran: neither forged invoke was served
+    assert.strictEqual(out.runs, 2, shown);
+    // each forged invoke refused on the port, with no data
+    for (const id of [0, 424242]) {
+      const reply = out.read.find((m) => m.id === id && m.category === 'peer-reply');
+      assert.ok(reply != null && typeof(reply.errCode) === 'string' && reply.data === null, `invoke ${id} refused on the port: ${shown}`);
+    }
+    // nothing on the port held a token
+    assert.strictEqual(out.tokensSeen, 0, shown);
+  });
+});
