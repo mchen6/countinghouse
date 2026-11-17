@@ -297,7 +297,7 @@
                 },
                 "method": {
                   "type": "string",
-                  "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call"
+                  "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only"
                 },
                 "bound": {
                   "title": "upper: it takes the model to have read, without the tool, every byte the tool read",
@@ -374,7 +374,7 @@
                   },
                   "method": {
                     "type": "string",
-                    "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call"
+                    "const": "utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only"
                   },
                   "bound": {
                     "title": "upper: it takes the model to have read, without the tool, every byte the tool read",

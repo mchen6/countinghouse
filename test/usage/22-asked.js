@@ -147,6 +147,22 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       assert.deepStrictEqual([isAskedPass({server: null, outcome: 'asked'}), isAskedPass({server: null, outcome: 'ok'}), isAskedPass({server: 'github', outcome: 'asked'})], [true, false, false]);
     });
 
+    // The reviewer's ruling (11-15, kept 11-16): kept out is the final pass's. A handler that answers its
+    // retry from data an earlier pass read (its own /data) is counted from its final pass only, and the
+    // method says so
+    it('a call that asked is counted from its final pass only, also when that pass read nothing; the method says so', async () => {
+      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+      const first = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      u.recordIn(first, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+      u.recordOut(first, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
+      const retry = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      u.recordOut(retry, {tool: 't', bytes: 2000, lines: 5, ms: 50, outcome: 'ok'});
+      const report = await reportOf(u);
+      assert.strictEqual(report.totals.keptOut.estimate, 0, 'the final pass read nothing, so nothing is counted kept out');
+      assert.deepStrictEqual([report.totals.keptOut.bound, report.totals.keptOut.method],
+        ['upper', 'utf8 bytes / 4 of max(0, bytes read from servers - bytes returned), rounded per tool call; a call that asked is counted from its final pass only']);
+    });
+
     it('a call that asked and was never retried is no call, and kept nothing out: its server calls are still its cost', async () => {
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
       const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
