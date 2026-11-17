@@ -369,6 +369,21 @@ If two of the modules a runtime lists have names that spell the same
 `<module>` (`twin-a` and `twin_a`), neither one's resources are served, and
 the operator is warned; rename one.
 
+A client can subscribe to your resources' URIs on its `subscriptions/listen`
+stream. You have no API to say your data changed: your resource's
+`changesWith` says which of your module's actions may change it
+(`"changesWith": ["notesService.save", "notesService.remove"]`). After a call
+to one of them succeeds, by any path (a `tools/call`, an `invoke-action`, a
+hop from another module, a job), every subscription of the calling key that
+names a URI of that resource is sent `notifications/resources/updated`,
+once per URI within a quarter second. It is coarse on purpose: it says only
+"read again", whatever the call changed. A call that fails, or is refused
+before your handler runs, sends nothing. On a shared runtime, a module that
+keeps its state per session tells only the calling session's subscriptions.
+A resource's `changesWith` may not name its own read action (the load is
+refused): every read would announce a change, and a client that reads again
+on each would loop.
+
 An action that declares `longRunning: true` runs as a task for a 2026-07-28
 client that declares the `io.modelcontextprotocol/tasks` extension (with
 `--workerThread`): the call is answered at once with a `taskId`, and the
@@ -377,7 +392,7 @@ call to it runs inline, as any action's does. Your handler is the same
 either way. While it runs, `ctx.job.progress(n)` (1–100) is the task's
 `statusMessage` on `tasks/get`, as `"NN%"`, rounded. A progress of 0 shows
 none, since every task starts at 0. A task that failed without an answer
-(it ran past `--jobTimeout`) shows its code, or `"failed"`, never your
+shows its code (`JOB_TIMEOUT` when it ran past `--jobTimeout`), never your
 handler's text.
 
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each

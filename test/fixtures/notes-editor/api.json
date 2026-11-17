@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "notes-editor",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "saves a note through a hop (MCP completeness M8)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:editorService": {
+        "actionList": [
+          {
+            "name": "edit",
+            "description": "Saves a note in notes-notices, by a hop.",
+            "input": {"schema": "/editorService/edit/input"},
+            "output": {"schema": "/editorService/edit/output"}
+          }
+        ]
+      }
+    }
+  }
+}

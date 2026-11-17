@@ -1,0 +1,38 @@
+{
+  "device": {
+    "friendlyName": "notes-notices",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "resources whose changes are announced (MCP completeness M8)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:notesService": {
+        "actionList": [
+          {
+            "name": "readNote",
+            "description": "One saved note.",
+            "input": {"schema": "/notesService/readNote/input"},
+            "output": {"schema": "/notesService/readNote/output"},
+            "resource": {"uriTemplate": "notes/{id}", "name": "note", "changesWith": ["notesService.save", "notesService.fail"]}
+          },
+          {
+            "name": "about",
+            "description": "How many notes there are.",
+            "output": {"schema": "/notesService/about/output"},
+            "resource": {"uriTemplate": "about", "name": "about", "changesWith": ["notesService.save"]}
+          },
+          {
+            "name": "save",
+            "description": "Saves a note.",
+            "input": {"schema": "/notesService/save/input"},
+            "output": {"schema": "/notesService/save/output"}
+          },
+          {
+            "name": "fail",
+            "description": "Fails, always.",
+            "input": {"schema": "/notesService/fail/input"},
+            "output": {"schema": "/notesService/fail/output"}
+          }
+        ]
+      }
+    }
+  }
+}
