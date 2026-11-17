@@ -103,6 +103,17 @@ describe('sessions 01: the wire (contract 2)', () => {
       assert.strictEqual(handshake.macEquals(ms, ms.subarray(1)), false);
     });
 
+    it('the conditions why vectors are consistent: each accepted one passes the rule, each refused one fails it', () => {
+      const W = V.conditionsWhy;
+      const hidden = new RegExp(`[${W.hiddenClass}]`, 'u');
+      const ok = (w) => w != null && typeof(w) === 'object' && !Array.isArray(w) && W.reasons.includes(w.reason)
+        && Object.keys(w).every((k) => k === 'reason' || k === 'at')
+        && (w.at === undefined || (typeof(w.at) === 'string' && w.at.startsWith('~/') && Array.from(w.at).length <= 200 && !hidden.test(w.at)
+          && !w.at.split('/').includes('..')));
+      for (const {why, value} of W.accepted) assert.strictEqual(ok(value), true, why);
+      for (const {why, value} of W.refused) assert.strictEqual(ok(value), false, why);
+    });
+
     it('makes the token MAC as the vectors have it', () => {
       assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
     });
