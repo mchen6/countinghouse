@@ -87,7 +87,7 @@ describe('sessions 14: pack overrides under the ceiling (shared runtime B3, Task
     sessionPacks.configure({
       records: () => [{pack: 'ci', modules: ['ci-scenario']}], moduleOf: () => 'ci-scenario',
       overridesOf: (id) => settings.packOverridesOf(id), onOverrideChange: (fn) => settings.onChange(fn),
-      openSessions: () => [...live], shared: () => true});
+      openSessions: () => [...live], shared: () => true, allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
     sessionPacks.onEmpty((p) => emptied.push(p));
     on(A, 'ci');
     assert.deepStrictEqual([...sessionPacks.audienceOf('ci')], [A]);
@@ -99,13 +99,18 @@ describe('sessions 14: pack overrides under the ceiling (shared runtime B3, Task
   // force no longer allows is not on, before ceilingSeen has dropped it
   it('session-packs lists an "on" only while the ceiling in force allows it, as effective() says, before ceilingSeen drops it', () => {
     sessionPacks.configure({records: () => [{pack: 'ci', modules: ['ci-scenario']}], moduleOf: () => 'ci-scenario', overridesOf: settings.packOverridesOf,
-      onOverrideChange: settings.onChange, openSessions: () => [...live], shared: () => true, allowsOn: settings.packOnAllowed});
+      onOverrideChange: settings.onChange, openSessions: () => [...live], shared: () => true, allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
+    const emptied = [];
+    sessionPacks.onEmpty((p) => emptied.push(p));
     on(A, 'ci');
     assert.deepStrictEqual([settings.effective(A, 'pack.ci'), sessionPacks.lists(A, 'ci'), sessionPacks.listsDevice(A, 'd')], [true, true, true]);
     ceiling = {state: 'trusted', ceiling: {packs: ['docs']}};   // read now (memo 0), not yet seen
     sessionPacks.packChanged('ci');                              // (a view kept from before is the next finding's: a ceiling read is no event)
     assert.deepStrictEqual([settings.effective(A, 'pack.ci'), sessionPacks.lists(A, 'ci'), sessionPacks.listsDevice(A, 'd')], [false, false, false]);
-    assert.deepStrictEqual([...sessionPacks.audienceOf('ci')], [A], 'membership follows the stored value: no unload from a read');
+    // membership follows the stored value, so a read unloads nothing; and no notice names A while its "on" is off (the reviewer's #340 review, 4)
+    assert.deepStrictEqual([emptied, [...sessionPacks.audienceOf('ci')]], [[], []]);
+    ceiling = ALLOWS_CI;
+    assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd'), [...sessionPacks.audienceOf('ci')]], [true, [A]], 'allowed again: back, nothing lost');
   });
 
   it('clear says so for a pack override too', () => {

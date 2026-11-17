@@ -5,11 +5,12 @@
 // registered ("unknown tool"), byte for byte. Over a fake interface (as
 // roles 02), with real shared sessions (lib/sessions.js attached to a
 // stand-in registry) and lib/session-packs.js configured with stand-ins.
-// Redis is pointed at a port nothing listens on before the registry is required.
+// Redis is pointed at port 1 (nothing can listen there, a private Redis
+// included) before the registry is required.
 const assert = require('assert');
 const EventEmitter = require('events');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
+options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
 require('../../lib/logger').createLogger(false);
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const gateway = require('../../lib/mcp/gateway');
@@ -191,6 +192,20 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     assert.ok(['ci_failure_triage', 'docs_search', 'plain_svc_go'].every((n) => tools.includes(n)), JSON.stringify(tools));
     const prompts = (await plain('prompts/list')).result.prompts.map((p) => p.name);
     assert.ok(prompts.some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(prompts));
+  });
+
+  // the reviewer's #340 review, 6: a page's cursor anchored at a tool B doesn't list is B's invalid cursor,
+  // byte for byte as one anchored at a name that never existed
+  it('a cursor from A\'s tools/list replayed in B\'s is -32602, identical to a cursor at a name never registered', async () => {
+    const {encodeCursor} = require('../../lib/mcp/pages');
+    const hiddenAt = await request(ci, B, 'tools/list', {cursor: encodeCursor('tools', 'ci_failure_triage')});
+    const neverAt = await request(ci, B, 'tools/list', {cursor: encodeCursor('tools', 'no_such_tool_ever')});
+    assert.strictEqual(hiddenAt.error && hiddenAt.error.code, -32602, JSON.stringify(hiddenAt));
+    assert.strictEqual(JSON.stringify(hiddenAt), JSON.stringify(neverAt));
+    const promptHidden = await request(ci, B, 'prompts/list', {cursor: encodeCursor('prompts', 'ch_pack_x_brief')});
+    const promptNever = await request(ci, B, 'prompts/list', {cursor: encodeCursor('prompts', 'no_such_prompt_ever')});
+    assert.strictEqual(promptHidden.error && promptHidden.error.code, -32602, JSON.stringify(promptHidden));
+    assert.strictEqual(JSON.stringify(promptHidden), JSON.stringify(promptNever));
   });
 
   it('the global tool table is untouched: the same frozen object, and the filter hands it back while no session has a pack override', () => {

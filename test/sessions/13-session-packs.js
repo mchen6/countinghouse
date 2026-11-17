@@ -30,8 +30,10 @@ describe('sessions 13: which packs a session lists (shared runtime B3, Task 1)',
     overridesOf: (id) => new Map(overrides.get(id) || []),
     onOverrideChange: (fn) => { hear = fn; },
     openSessions: () => [...open],
-    shared: () => shared
+    shared: () => shared,
+    allowsOn: () => allowed
   });
+  let allowed = true;   // the ceiling's word on an "on"
   // a session's stored override changes, by whatever road, and the settings store says so
   const override = (id, pack, value) => {
     if (!overrides.has(id)) overrides.set(id, new Map());
@@ -46,6 +48,7 @@ describe('sessions 13: which packs a session lists (shared runtime B3, Task 1)',
     shared = true;
     emptied = [];
     changed = [];
+    allowed = true;
     packs.resetForTests();
     configure();
     packs.onEmpty((p) => emptied.push(p));
@@ -196,7 +199,7 @@ describe('sessions 13: which packs a session lists (shared runtime B3, Task 1)',
       records: () => { recordReads += 1; return [...records].map(([pack, modules]) => ({pack, modules: [...modules]})); },
       moduleOf: (deviceID) => (devices.has(deviceID) ? devices.get(deviceID) : null),
       overridesOf: (id) => { overrideReads += 1; return new Map(overrides.get(id) || []); },
-      onOverrideChange: (fn) => { hear = fn; }, openSessions: () => [...open], shared: () => shared
+      onOverrideChange: (fn) => { hear = fn; }, openSessions: () => [...open], shared: () => shared, allowsOn: () => true
     });
     for (let i = 0; i < 100; i++) packs.none();
     assert.strictEqual(overrideReads, 0, 'none() is a counter, not a walk of the sessions');
@@ -206,6 +209,21 @@ describe('sessions 13: which packs a session lists (shared runtime B3, Task 1)',
     packs.packChanged('ci');
     packs.listsDeviceFor({packsOff: []}, 'dev-ci');
     assert.strictEqual(recordReads, afterRun + 1, 'read again after a change');
+  });
+
+  // the reviewer's #340 review, 4: a missed wiring can't skip the ceiling; a notice names no session whose "on" is off
+  it('a store configured without allowsOn fails closed: an "on" does not count', () => {
+    packs.configure({records: () => [{pack: 'ci', modules: ['ci-scenario']}], moduleOf: () => 'ci-scenario',
+      overridesOf: (id) => new Map(overrides.get(id) || []), onOverrideChange: (fn) => { hear = fn; }, openSessions: () => [...open], shared: () => true});
+    override(A, 'ci', true);
+    assert.deepStrictEqual([packs.lists(A, 'ci'), packs.listsDevice(A, 'dev-ci')], [false, false]);
+  });
+
+  it('audienceOf a session pack leaves out every session while the ceiling doesn\'t allow its "on"', () => {
+    override(A, 'ci', true);
+    assert.deepStrictEqual([...packs.audienceOf('ci')], [A]);
+    allowed = false;
+    assert.deepStrictEqual([...packs.audienceOf('ci')], []);
   });
 
   it('outside shared mode every question answers listed, and none() is true', () => {

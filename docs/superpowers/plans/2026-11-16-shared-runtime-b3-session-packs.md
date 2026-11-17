@@ -197,6 +197,7 @@
 - **An ended session's job** lists the global packs, minus the packs its session had turned off, and none of its this-session packs. `lib/sessions.js` `close` reads `sessionPacks.packsOffOf(id)` before it forgets the session, and `job-sessions.sessionEnded(id, limits, {packsOff})` keeps the set with the session's last caps, for as long as it keeps those (#251). `forRun` hands it back, and a run of an ended session asks `sessionPacks.listsDeviceFor({packsOff}, deviceID)`.
 
 - [ ] **Step 1: Write the failing tests.**
+  - **Required (the reviewer's #340 review, obligation 2):** `flushPendingPeerInvokes` sends every call queued for a device over its granted channel, other sessions' included (B1, A1, B2 queued; A1's grant flushes B2). The per-invoke check (the announcement, then the match) must refuse B2 while A1 and B1's own answers stand. Test that case, and that the two deny kinds (the request's headOnly deny and the announcement's refusal) serialize the same for a hidden device as for one never hosted.
   - Spawned, routed, then again with `--directPeerChannels`:
     - A's `relay` to `back` returns the echo.
     - B's `relay` to `back` and B's `relay` to `ghost` return the same error fields, equal as serialized text.
@@ -264,6 +265,8 @@
 - A session that wants a pack back after the terminal's off asks again, with a form (Task 8).
 
 - [ ] **Step 1: Write the failing tests.**
+  - **Required (the reviewer's #340 review, obligation 1):** the per-session view must not fail open while a this-session pack loads. Today its devices register and `toolschanged` fires before `packChanged`, so for a moment its module is owned by no pack and listed to everyone. Either `records()` holds the pack and `packChanged` runs before any of its devices is visible, or the view's cache is keyed on `toolGeneration.current()` too. Test: B can't see A's pack mid-load (its tools/list, tools/call and prompts, between the devices' registration and the load's answer).
+  - Task 6's commit wires `session-packs.configure()` in production, with the globals (the reviewer's ruling (1) on #340): `allowsOn`, `ceilingNow` and `ceilingKey` from lib/session-settings.js, `isOpen` and `endedPacksOff` (Task 4). Test: a runtime started in shared mode answers through the wired store (no default left in place).
   - `load {pack, global: false}` while A's `load-pack` waits: the pack isn't global. `load {pack, global: true}` while A's `load-pack` waits: it is global, and B lists it.
   - `load {pack, global: false}` with no session waiting (a restart's reload): not global, and no session lists it.
   - In shared mode a `load` about a pack with no `global` is refused and loads nothing.
