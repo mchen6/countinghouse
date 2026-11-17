@@ -13,7 +13,10 @@
 // reads leaves silently; a task already terminal at the listen is sent
 // after the ack; a closed listener frees its timers and writes nothing.
 // Then spawned (a server, --workerThread --store local, two keys): the ack,
-// the gate, and each kind of change end to end.
+// the gate, and each kind of change end to end. M22's question (#374):
+// input_required keeps the id, its wait's end is told by task-events
+// (in-process), and an answered task runs to completed (spawned, both
+// stores).
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -147,6 +150,41 @@ describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)
     assert.strictEqual(r.views.length, viewsBefore, 'no build after the close: its timer was cleared');
   });
 
+  // M22: input_required is not terminal (the view decides), so its id is
+  // kept; its question's wait ends unseen (tasks/get reads ASK_EXPIRED from
+  // the record's expiresAt), so task-events tells it, wired as route-manager
+  // wires the hub, with task-asks' record stood in for
+  it('a task waiting on its question: input_required sent, its id kept; its wait\'s end, told by task-events, sent once as the task reads it', async () => {
+    const taskEvents = require('../../lib/task-events');
+    const taskAsks = require('../../lib/task-asks');
+    const id = `t-${'e'.repeat(32)}`;
+    const records = {[`task-ask:${id}`]: JSON.stringify({owner: 'o', expiresAt: Date.now() + 200})};
+    taskAsks.configure({kv: () => ({get: (k, cb) => setImmediate(cb, null, records[k] != null ? records[k] : null)})});
+    const r = rig();
+    const off = taskEvents.on((t, kind) => r.hub.taskChanged(t, kind));
+    try {
+      r.set(id, 'working');
+      const l = r.open([id]);
+      r.set(id, 'input_required', {statusMessage: 'waiting for an answer'});
+      taskEvents.emit(id, 'input_required');
+      await settle();
+      assert.deepStrictEqual(l.sent(), [`${id} input_required waiting for an answer`]);
+      // as tasks/get reads it once the wait has passed
+      r.set(id, 'failed', {statusMessage: 'ASK_EXPIRED'});
+      await tick(100);
+      assert.strictEqual(l.out.length, 1, 'not before its wait ends');
+      assert.ok(await (async () => { for (let i = 0; i < 40 && l.out.length < 2; i++) await tick(25); return l.out.length === 2; })(), JSON.stringify(l.sent()));
+      assert.deepStrictEqual(l.sent(), [`${id} input_required waiting for an answer`, `${id} failed ASK_EXPIRED`]);
+      taskEvents.emit(id, 'failed');
+      await settle();
+      assert.strictEqual(l.out.length, 2, 'once: the id has left the set');
+      assert.strictEqual(taskEvents.pendingWaits(), 0);
+    } finally {
+      off();
+      taskAsks.configure({kv: () => require('../../lib/store').getStore().kv});
+    }
+  });
+
   it('a listen holds at most MAX_TASK_IDS (64): the gateway refuses more, and the hub never holds more', async () => {
     assert.strictEqual(MAX_TASK_IDS, 64);
     const r = rig();
@@ -165,12 +203,15 @@ const EXT = 'io.modelcontextprotocol/tasks';
 const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
 const tool = (a) => `m15_tasks_taskservice_${a}`;
-const META = (ext = true) => ({'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': ext ? {extensions: {[EXT]: {}}} : {}});
+const META = (ext = true, forms = false) => ({'io.modelcontextprotocol/protocolVersion': V,
+  'io.modelcontextprotocol/clientCapabilities': Object.assign(ext ? {extensions: {[EXT]: {}}} : {}, forms ? {elicitation: {form: {}}} : {})});
+// M22's fixture: a task that asks its user (asks once, beforeMs into each pass)
+const ASK_TOOL = 'm22_task_ask_askservice_probe';
 
 // the request's Mcp-Name, as its body names it (27's NAME_PARAM)
 const NAME_PARAM = {'tools/call': 'name', 'tasks/get': 'taskId', 'tasks/update': 'taskId', 'tasks/cancel': 'taskId'};
-function post(port, key, method, params, {ext = true} = {}) {
-  const data = JSON.stringify({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: META(ext)}, params)});
+function post(port, key, method, params, {ext = true, forms = false} = {}) {
+  const data = JSON.stringify({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: META(ext, forms)}, params)});
   const headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Content-Length': Buffer.byteLength(data),
     'X-CH-Key': key, 'MCP-Protocol-Version': V, 'Mcp-Method': method};
   if (NAME_PARAM[method] != null) headers['Mcp-Name'] = params[NAME_PARAM[method]];
@@ -234,7 +275,8 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       const auth = path.join(dir, 'auth.json');
       fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}}));
       server = await startServer(port, ['--workerThread', ...extraArgs, '--jobTimeout', '5', '--moduleDataPath', path.join(dir, 'module_data'),
-        '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks')]);
+        '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks'),
+        '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm22-task-ask')]);
     });
     // ext-tasks: never notifications/progress or notifications/message on a
     // task's listen stream -- checked on every stream each case opened
@@ -308,6 +350,44 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       assert.ok(await until(() => notices(s).some((n) => n.status === 'cancelled'), 1500), JSON.stringify(s.events));
       await tick(4500);   // past its run's end
       assert.deepStrictEqual(notices(s).filter((n) => n.status !== 'working').map((n) => n.status), ['cancelled']);
+    });
+
+    // M22, on both stores: the ask's pass is told input_required (never
+    // completed) with tasks/get's own form, the id kept; answered, the run
+    // again is told working, then completed once
+    it('a task that asks: input_required with its form, its id kept; answered, working again, then completed once', async () => {
+      assert.ok(await until(async () => {
+        const l = await post(port, KEY_A, 'tools/list', {});
+        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
+      }, 30000), 'the M22 fixture never listed');
+      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it', beforeMs: 1500}}, {forms: true});
+      const t = r.result && r.result.taskId;
+      assert.match(String(t), /^t-/, JSON.stringify(r));
+      const s = await open(KEY_A, {taskIds: [t]});
+      assert.ok(await until(() => notices(s).some((n) => n.status === 'input_required'), 20000), JSON.stringify(s.events));
+      const asked = notices(s).find((n) => n.status === 'input_required');
+      assert.strictEqual(asked.statusMessage, 'waiting for an answer');
+      const got = await get(KEY_A, t);
+      assert.strictEqual(got.status, 'input_required', JSON.stringify(got));
+      assert.deepStrictEqual(asked.inputRequests, got.inputRequests, 'tasks/get\'s own form');
+      const key = Object.keys(asked.inputRequests)[0];
+      const waiting = notices(s).length;
+      await tick(1200);
+      assert.strictEqual(notices(s).length, waiting, 'nothing more while it waits');
+      assert.ok(!s.ended, 'its id is kept');
+      const answered = await post(port, KEY_A, 'tasks/update', {taskId: t, inputResponses: {[key]: {action: 'accept', content: {yes: true}}}}, {forms: true});
+      assert.ok(answered.result != null, JSON.stringify(answered));
+      assert.ok(await until(() => notices(s).some((n) => n.status === 'completed'), 20000), JSON.stringify(s.events));
+      await tick(1500);
+      // (a working notice may come first: the first pass's start can reach
+      // the hub after the listen opened)
+      const seq = notices(s).map((n) => n.status);
+      const from = seq.indexOf('input_required');
+      assert.ok(seq.slice(0, from).every((x) => x === 'working'), JSON.stringify(seq));
+      assert.deepStrictEqual(seq.slice(from), ['input_required', 'working', 'completed'], JSON.stringify(seq));
+      const done = notices(s).find((n) => n.status === 'completed');
+      assert.deepStrictEqual(done.result, (await get(KEY_A, t)).result, 'tasks/get\'s own result');
+      assert.deepStrictEqual(done.result.structuredContent.answer, {yes: true});
     });
 
     each('a task already completed at the listen is sent once, after the ack', async () => {
