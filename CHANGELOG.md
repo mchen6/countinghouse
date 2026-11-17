@@ -10,6 +10,24 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — modules load on Windows when the install is run by an 8.3 short name
+
+An install run by a short-name spelling (`C:\Users\RUNNER~1\...`, as
+under GitHub's Windows runner's temporary directory), with no
+`--preserve-symlinks`, listed none of its modules under the sandbox: each
+failed with `Cannot find module '/app/handlers/...'`. A module's worker
+loaded the runtime's files by the short spelling until its file broker was
+installed and by the long one after, so one of them was loaded twice. The
+worker is now started by its real path, and each file is loaded once.
+
+### Fixed — the settings ceiling is found on Windows with no SystemDrive in the environment
+
+A runtime started with no `SystemDrive` in its environment (ch-local's
+daemon is) could not find ProgramData. Every setting that loosens a default
+was then refused with `SETTING_CEILING_UNTRUSTED`. The lookup now sets
+`SystemDrive` itself, from the system's Windows directory, before asking for
+the folder.
+
 ### Removed — flags that did nothing, or let a failing module load
 
 - **`--verifyModule`** is gone. With it, the loader carried on past a
@@ -204,6 +222,17 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 `--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
+
+### Changed — declared text reaches the client with no hidden characters (MCP completeness, M18)
+
+What a module declares for the client is cleaned as it leaves: a tool's
+title and description, a prompt's title, description, arguments'
+descriptions and messages, a resource's title and description, and a
+question's dialog. Each hidden character (a control, line separator, bidi
+control, zero-width character, tag, variation selector or filler) becomes a
+space. A prompt's message keeps its line breaks and tabs, and an emoji
+keeps its joiner and VS-16. A completion candidate with a hidden character
+is no longer offered. Nothing is refused or changed at load.
 
 ### Added — completion for resource templates, and completion actions (MCP completeness, M11)
 

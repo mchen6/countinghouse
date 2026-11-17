@@ -855,6 +855,27 @@ module has no way to it.
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
 
+### Declared text, as it reaches the client
+
+What a module declares and a client shows or a model reads is cleaned as it
+leaves, never refused or changed at load. That covers a tool's title and
+description, a prompt's title, description, arguments' descriptions and
+messages, a resource's and a template's title and description, and a
+question's dialog. Each hidden character becomes a space, so no two words
+are joined by what was hidden between them. These are characters a model
+reads and a person doesn't see: controls, line separators, bidi controls,
+zero-width characters, tags, variation selectors and fillers. They form
+countinghouse's one class, `lib/conditions-why.json`'s `hiddenClass`, the
+same one ch-local checks.
+- A prompt's message keeps its `\n` and `\t`.
+- An emoji keeps its joiner (U+200D between two pictographic characters)
+  and its VS-16 (right after one).
+- A resource's name is an identifier, by the meta-schema.
+- A completion candidate is a value the client sends back, so one with a
+  hidden character is left out rather than changed.
+- A prompt's arguments are the client's own, and go into its messages as
+  the client sent them.
+
 ### A module's question to the user (`ctx.ask`)
 
 A module's handler may put a question to the user of an MCP client
