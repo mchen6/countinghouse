@@ -37,7 +37,10 @@ describe('session-runtime 11: a per-session module\'s partitions live as long as
   };
   async function up(opts = {}) {
     r = runtime(home, ['--loadModule', perSession(home)], opts);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    // its own 'listening' tell (after the restore and the sweep), not the
+    // socket file: or its exit, which the assert then shows with its log
+    await until(async() => r.told.some((m) => m.type === 'listening') || r.code !== undefined, 30000);
+    assert.ok(r.told.some((m) => m.type === 'listening'), `not listening (exit ${r.code}): ${r.log().slice(-3000)}`);
     const secret = secretOf(r);
     assert.ok(secret != null, `no secret: ${r.log().slice(-3000)}`);
     return secret;
@@ -86,12 +89,15 @@ describe('session-runtime 11: a per-session module\'s partitions live as long as
     const secret = await up();
     const a = await open(secret);
     outOf(await a.call('touch'));
-    const held = a.call('hold', {ms: 3000}).catch(() => null);
-    void held;
+    const held = a.call('hold', {ms: 3000}).then((res) => ({res}), (err) => ({err: String(err && err.message)}));
     await tick(400);
     a.c.send('C', {op: 'bye'});
     await until(async() => !fs.existsSync(dirOf(a.id)), 15000);
     assert.ok(!fs.existsSync(dirOf(a.id)));
+    // the held call ends with its session: no answer on a connection the bye
+    // closed (request's null), never left pending, never a success
+    const outcome = await Promise.race([held, tick(5000).then(() => 'pending')]);
+    assert.deepStrictEqual(outcome, {res: null}, JSON.stringify(outcome).slice(0, 400));
     const c = counts(r);
     assert.strictEqual(c.ended, c.up, `${c.up} up, ${c.ended} ended: no worker left under a removed partition`);
   });

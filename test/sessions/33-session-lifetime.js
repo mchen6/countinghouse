@@ -78,13 +78,28 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
 
   it('a partition that can\'t be removed is logged, never thrown', async () => {
     await make(A);
-    fs.symlinkSync(os.tmpdir(), path.join(env.dataRoot, 'ps', 'sessions', 'x'));   // a stray link: not this session's
-    fs.rmSync(path.join(env.dataRoot, 'ps', 'sessions'), {recursive: true, force: true});
-    fs.symlinkSync(os.tmpdir(), path.join(env.dataRoot, 'ps', 'sessions'));          // sessions/ itself a link: refused
-    const ending = lifetime.ended(mm, A, 'bye', env);
-    releaseStop();
-    await ending;   // no throw
-    fs.unlinkSync(path.join(env.dataRoot, 'ps', 'sessions'));
+    // the links point at a decoy of the test's own, never a shared directory:
+    // a regression that followed one would remove the decoy, not /tmp
+    const decoy = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sessions-33-decoy-'));
+    fs.writeFileSync(path.join(decoy, 'kept'), 'x');
+    const LOG = require('../../lib/logger');
+    const realE = LOG.E;
+    const logged = [];
+    LOG.E = (e) => logged.push(String(e && e.message));
+    try {
+      fs.symlinkSync(decoy, path.join(env.dataRoot, 'ps', 'sessions', 'x'));   // a stray link: not this session's
+      fs.rmSync(path.join(env.dataRoot, 'ps', 'sessions'), {recursive: true, force: true});
+      fs.symlinkSync(decoy, path.join(env.dataRoot, 'ps', 'sessions'));          // sessions/ itself a link: refused
+      const ending = lifetime.ended(mm, A, 'bye', env);
+      releaseStop();
+      await ending;   // no throw
+      assert.ok(logged.some((m) => /^module: ps: a session's partition was not removed/.test(m)), JSON.stringify(logged));
+      assert.ok(fs.existsSync(path.join(decoy, 'kept')), 'nothing behind the link touched');
+    } finally {
+      LOG.E = realE;
+      fs.unlinkSync(path.join(env.dataRoot, 'ps', 'sessions'));
+      fs.rmSync(decoy, {recursive: true, force: true});
+    }
   });
 
   it('a start\'s sweep keeps the restored sessions\' partitions and removes the rest; with none restored, the next session is told once', async () => {
