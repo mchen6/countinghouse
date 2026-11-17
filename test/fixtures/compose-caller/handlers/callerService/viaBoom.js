@@ -30,7 +30,9 @@ module.exports = async (input, ctx) => {
     console.log(`CTX_CALL_FAULT ${JSON.stringify({
       fault:    (err != null && err.fault !== undefined) ? err.fault : null,
       code:     (err != null && err.code !== undefined) ? err.code : null,
-      ctorName: (err != null && err.constructor != null) ? err.constructor.name : null
+      ctorName: (err != null && err.constructor != null) ? err.constructor.name : null,
+      // the fault as structured clone made it: an ordinary object
+      faultPlain: (err != null && err.fault != null) ? Object.getPrototypeOf(err.fault) === Object.prototype : null
     })}`);
     throw err;
   }

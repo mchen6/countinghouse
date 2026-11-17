@@ -54,17 +54,11 @@ const ALLOWED = [
   'lib/module-lockdown.js',
   'lib/module-permissions.js',
   'lib/loopback-names.js',
-  'node_modules/uuid-1345/'
-];
-
-// What one routed ctx.call may add to the above: the hop's own path, and
-// nothing of the device model, the validator or its schema tooling (ajv,
-// json-schema-ref-parser, js-yaml), which the main thread holds. Loaded on a
-// worker's first hop, they cost it most of a second under that request's
-// timer (composition 18's #138-8).
-const ALLOWED_AFTER_CALL = ALLOWED.concat([
-  // countinghouse-util, attached to the worker on its first use (chutil-facade
-  // runtime()), and the routed hop's device query and client
+  'node_modules/uuid-1345/',
+  // PR-c round 2: loaded before module code. countinghouse-util, attached to
+  // the worker at boot (lib/chutil-facade.js), and the hop's device query
+  // and client: a call path's require after module code would return
+  // whatever module code had put in require.cache (about 8 ms per worker)
   'lib/countinghouse-util.js',
   'lib/lazy-require.js',
   'node_modules/json-stringify-safe/',
@@ -75,7 +69,14 @@ const ALLOWED_AFTER_CALL = ALLOWED.concat([
   'node_modules/wrappy/',
   'lib/timer.js',
   'lib/store.js'
-]);
+];
+
+// What one routed ctx.call may add to the above: nothing of the device
+// model, the validator or its schema tooling (ajv, json-schema-ref-parser,
+// js-yaml), which the main thread holds. Loaded on a worker's first hop,
+// they cost it most of a second under that request's timer (composition
+// 18's #138-8). The hop's own path is loaded at boot now (above).
+const ALLOWED_AFTER_CALL = ALLOWED.concat([]);
 
 const allowedIn = (list) => (rel) => list.some((a) => (a.endsWith('/') ? rel.startsWith(a) : rel === a));
 const allowed = allowedIn(ALLOWED);

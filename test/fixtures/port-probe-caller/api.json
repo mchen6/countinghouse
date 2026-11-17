@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "port-probe-caller",
+    "manufacturer": "countinghouse",
+    "modelDescription": "Replaces port and event methods, then calls hop-input-callee over a direct peer channel (test/sandbox/63).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "With port and event methods replaced, makes the worker's first peer call; answers what the replacements were handed.",
+            "input": {
+              "schema": "/probeService/probe/input"
+            },
+            "output": {
+              "schema": "/probeService/probe/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -12,6 +12,13 @@
 // and the invoke is refused CALL_TOKEN_INVALID; the device it names is never
 // read. (An announcement naming a device the channel's callee does not host
 // is refused PEER_NOT_GRANTED: composition 18's unit cases.)
+// Since PR-c the runtime posts on a peer channel's port with methods it took
+// at boot, so the hook never sees that port: the module has no channel to
+// post on ('no channel'), which test/direct-peer-channels/07 asserts. The
+// callee's refusal of an invoke no announcement matches stays covered
+// server-free (composition 18: "a metering request with no announcement is
+// held, then refused"). The other device is also asked for the proper way,
+// by a hop of its own (otherByHop).
 const SERVICE = 'urn:countinghouse-test:serviceID:dynService';
 const outcome = (e, d) => (e != null ? `error: ${e.code || e.message}` : `ok: ${JSON.stringify(d)}`);
 
@@ -50,7 +57,11 @@ module.exports = {
       const granted = await new Promise((resolve) => ctx.serviceClient({deviceID: input.granted, serviceID: SERVICE},
         (ce, client) => (ce != null ? resolve(outcome(ce)) : client.invoke({actionName: 'hello', input: {}}, (e, d) => resolve(outcome(e, d))))));
       const other = await forge(input.other);
-      return {output: {granted: granted, other: other}};
+      // the other device the proper way: a hop of its own (authorized as the
+      // identity that runs this module, under a grant of its own)
+      const otherByHop = await new Promise((resolve) => ctx.serviceClient({deviceID: input.other, serviceID: SERVICE},
+        (ce, client) => (ce != null ? resolve(outcome(ce)) : client.invoke({actionName: 'hello', input: {}}, (e, d) => resolve(outcome(e, d))))));
+      return {output: {granted: granted, other: other, hooked: state.hooked, otherByHop: otherByHop}};
     }
   }
 };

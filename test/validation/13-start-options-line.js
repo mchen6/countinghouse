@@ -29,6 +29,25 @@ describe('validation 13: the start line\'s options', () => {
     assert.ok(!cli.BOOLEAN_FLAGS.includes('logStream'));
   });
 
+  // The settings tool is served only in the single-identity profile, with
+  // --settingsFile; a size cap's hint names it only then (the review of the
+  // --settingsFile refusal): never on --settingsTool, nor outside the profile.
+  it('settingsTool on the main thread: only a --settingsFile in the single-identity profile', () => {
+    const file = '/nowhere/settings.json';
+    cli.setOptions({workerThread: false, store: 'local', stdio: true, settingsFile: file});
+    assert.strictEqual(cli.settingsTool, true, 'the profile, with the file');
+    cli.setOptions({workerThread: false, store: 'local', stdio: true, settingsFile: file, authConfigPath: '/nowhere/auth.json'});
+    assert.strictEqual(cli.settingsTool, false, 'an auth file: not the profile');
+    cli.setOptions({workerThread: false, settingsFile: file});
+    assert.strictEqual(cli.settingsTool, false, 'a hosted start');
+    cli.setOptions({workerThread: false, settingsTool: true});
+    assert.strictEqual(cli.settingsTool, false, '--settingsTool alone, hosted');
+    cli.setOptions({workerThread: false, store: 'local', stdio: true, settingsTool: true});
+    assert.strictEqual(cli.settingsTool, false, '--settingsTool alone, in the profile: no file, no tool');
+    cli.setOptions({workerThread: false, settingsFile: true});
+    assert.strictEqual(cli.settingsFileInvalid, true, 'a bare --settingsFile');
+  });
+
   it('keeps --dbUrl under couchdb, without credentials', () => {
     const secret = `pw${'X'.repeat(8)}`;
     cli.setOptions({workerThread: false, debug: true, authProvider: 'couchdb', dbUrl: `http://admin:${secret}@127.0.0.1:5984`,

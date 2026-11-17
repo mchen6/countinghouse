@@ -14,8 +14,10 @@
           "host": {"type": "string"},
           "rethrow": {"type": "boolean"},
           "route": {"type": "string"},
+          "marker": {"type": "string"},
           "hostFile": {"type": "string"},
           "hostDir": {"type": "string"},
+          "persist": {"type": "string"},
           "realFd": {"type": "integer"}
         },
         "required": ["change"]

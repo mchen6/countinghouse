@@ -1,7 +1,9 @@
 // Lean worker step 3, Task 5: the CHUtil a lean worker's module sees
-// (lib/chutil-facade.js). A fresh facade has loaded no implementation; it
-// has no dm or ci; countinghouse-util, however it is first loaded, is wired
-// once by the worker's hook. Run in a worker thread, as a lean worker runs
+// (lib/chutil-facade.js). Its implementation, countinghouse-util, is loaded
+// with the facade's file, at the worker's boot, before any module code (PR-c:
+// a later require would return whatever module code had put in
+// require.cache), and attached once, when the worker makes the facade; the
+// facade has no dm or ci, and its file exports no way to wire it. Run in a worker thread, as a lean worker runs
 // it (countinghouse-util opens a Redis client at require on the main thread).
 // Server-free.
 const assert = require('assert');
@@ -30,7 +32,7 @@ function inWorker(body) {
 describe('module-loading 26: the CHUtil facade (lean worker step 3)', function() {
   this.timeout(30000);
 
-  it('a fresh facade has loaded no implementation, has no dm or ci, and its file exports no way to wire it', async () => {
+  it('the facade\'s file loads its implementation with it (postman-request still on first use); the facade has no dm or ci, and its file exports no way to wire it', async () => {
     const r = await inWorker(`async (facadeLib) => {
       const CHUtil = facadeLib.createFacade(() => ({dm: null, ci: null, redis: null}));
       const loaded = Object.keys(require.cache).map((k) => path.basename(k));
@@ -38,9 +40,8 @@ describe('module-loading 26: the CHUtil facade (lean worker step 3)', function()
         logger: loaded.includes('logger.js'), keys: Object.keys(CHUtil).sort(), dm: 'dm' in CHUtil, ci: 'ci' in CHUtil,
         internal: '__deviceLogWithID' in CHUtil, exported: Object.keys(facadeLib).sort()};
     }`);
-    assert.strictEqual(r.util, false, 'countinghouse-util loaded');
+    assert.strictEqual(r.util, true, 'countinghouse-util is loaded with the facade, before any module code');
     assert.strictEqual(r.request, false, 'postman-request loaded');
-    assert.strictEqual(r.logger, false, 'the logger loaded');
     assert.strictEqual(r.dm, false);
     assert.strictEqual(r.ci, false);
     assert.strictEqual(r.internal, false);

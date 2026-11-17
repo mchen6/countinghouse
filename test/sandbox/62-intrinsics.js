@@ -49,8 +49,51 @@ const BROKER_PATH_REFUSAL = ['ENOENT', 'EACCES', 'EINVAL', 'ERR_INVALID_ARG_TYPE
 const H2 = path.join(FIXTURE, 'h2.cjs');
 // what the lockdown fixes (non-writable, non-configurable): these changes
 // cannot be made at all under audit or enforce, and every other one can
-const FIXED = new Set(['url.fileURLToPath', 'path.resolve', 'path.relative', 'Module.isBuiltin', 'URL hostname']);
+const FIXED = new Set(['url.fileURLToPath', 'path.resolve', 'path.relative', 'Module.isBuiltin', 'URL hostname',
+  'NodeEventTarget.prototype.on', 'MessagePort.prototype.postMessage', 'EventTarget.prototype.addEventListener',
+  // the runtime fixes its own files' exports and classes' prototypes at a
+  // worker's boot, under every mode
+  'runtime exports and prototypes replaced in place']);
+// changes left in place across calls (the probe's persist mode): a call's
+// token is kept, passed on and answered after the call that made the change
+const PERSISTENT = ['Map.prototype.set/get/has/delete', 'Array.prototype.push/shift/unshift/splice/forEach', 'Object.assign',
+  'TypedArray buffer/byteOffset/byteLength, ArrayBuffer.prototype.slice', 'Object.prototype numeric-key setters',
+  'Object.prototype port-symbol setters', 'EventEmitter.prototype emit/on/once/addListener/removeListener/listenerCount',
+  'require.cache entries swapped (call-limits, hop-input, port-scope, peer-channel, peer-worker, chutil-facade)',
+  'runtime exports and prototypes replaced in place', 'Object.prototype setters', 'Object.prototype getters (runtime fields read)'];
 const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
+// the changes made through require.cache: each must have reached the
+// runtime's files there, or its "unchanged" would be a miss, not a refusal
+const CACHE_CHANGES = new Set(['require.cache entries swapped (call-limits, hop-input, port-scope, peer-channel, peer-worker, chutil-facade)',
+  'runtime exports and prototypes replaced in place']);
+// what only the main thread answers a remote call to nothing declared: the
+// message carrying the call's token crossed with the change in place
+const CROSSED = 'REMOTE_UNDECLARED';
+
+// lib/port-scope.js rehome, server free: assigned into an object with no
+// prototype (no inherited setter there), a "__proto__" key stays an own key
+// and never becomes the copy's prototype
+describe('sandbox 62: re-homing a message', () => {
+  const {rehome, rehomeMessage} = require('../../lib/port-scope');
+  it('copies own data fields into an object with no prototype; "__proto__" round-trips as an own key; a getter is not run', () => {
+    const given = JSON.parse('{"__proto__": {"polluted": true}, "id": 3, "args": {"token": "t", "__proto__": {"x": 1}}}');
+    let ran = false;
+    Object.defineProperty(given, 'getter', {enumerable: true, get() { ran = true; return 1; }});
+    const msg = rehomeMessage(given);
+    assert.strictEqual(Object.getPrototypeOf(msg), null);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(msg, '__proto__'), true);
+    assert.deepStrictEqual(Object.getOwnPropertyDescriptor(msg, '__proto__').value, {polluted: true});
+    assert.strictEqual(msg.polluted, undefined, 'never its prototype');
+    assert.strictEqual(Object.getPrototypeOf(msg.args), null);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(msg.args, '__proto__'), true);
+    assert.strictEqual(msg.args.x, undefined);
+    assert.strictEqual(msg.args.token, 't');
+    assert.strictEqual(ran, false, 'a getter is not run');
+    assert.strictEqual('getter' in msg, false);
+    assert.strictEqual(rehome(null), null);
+    assert.deepStrictEqual(rehome([1, 2]), [1, 2]);
+  });
+});
 
 for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'audit', port: testPort(9715)}]) {
   describe(`sandbox 62: the lockdown's checks with the realm changed around them (${mode})`, function() {
@@ -77,6 +120,68 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
       const loaded = await post(port, KEY, '/load-module', {path: FIXTURE, name: PROBE});
       assert.strictEqual(loaded.status, 200, JSON.stringify(loaded.body));
     });
+    // the worker's own ports still carry its messages after the lockdown fixed
+    // their methods: a reply (its parent port) and a line on stdout (Node's
+    // stdio port)
+    it('the worker\'s own ports work with their methods fixed', async () => {
+      const marker = `${process.pid}-${Date.now()}`;
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'stdio', marker}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.deepStrictEqual(r.body.output, {written: true});
+      const until = Date.now() + 5000;
+      while (!server.output.includes(`ch-sandbox-62-stdio-${marker}`) && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.ok(server.output.includes(`ch-sandbox-62-stdio-${marker}`), 'the module\'s stdout line reached the server');
+    });
+
+    // what shares EventTarget.prototype with a port still works for a module
+    it('AbortController, AbortSignal.timeout, timers\' abort, EventTarget (subclassed, defined on, onabort) and fetch\'s abort still work', async () => {
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'abort'}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.deepStrictEqual(r.body.output, {controller: true, timeout: true, timers: 'AbortError', eventTarget: 'ping',
+        // EventTarget.prototype's methods are fixed: an instance assignment
+        // throws in strict code; a definition, a subclass and an accessor work
+        instanceAssign: 'TypeError', ownDefine: 'own', subclass: 'sub', onabort: true, fetch: 'rejected'});
+    });
+
+    // ctx.ask's values as the runtime copies them: never written through a
+    // setter module code put on Object.prototype
+    it('ctx.ask copies its values without a setter on Object.prototype seeing them', async () => {
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'ask'}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.deepStrictEqual(r.body.output, {setterHits: 0, answer: 'ASK_UNAVAILABLE'});
+    });
+
+    // util.inspect (console.log's way) of a port, with its methods fixed
+    it('a port is inspected as a MessagePort', async () => {
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'inspect'}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.deepStrictEqual(r.body.output, {inspect: 'MessagePort'});
+    });
+
+    // a change installed by one call and kept: the next calls' tokens, kept by
+    // the runtime, passed on to the main thread and answered, are never seen
+    for (const change of PERSISTENT) {
+      it(`with ${change} kept across calls, no later call's token or port is handed over`, async () => {
+        const invoke = (input) => post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: Object.assign({change}, input)});
+        const installed = await invoke({persist: 'install'});
+        assert.strictEqual(installed.status, 200, JSON.stringify(installed.body));
+        assert.strictEqual(installed.body.output.installed, !FIXED.has(change), `${change}: ${JSON.stringify(installed.body.output)}`);
+        if (CACHE_CHANGES.has(change)) assert.strictEqual(installed.body.output.cacheReachable, true, `${change}: the runtime's files were never reached: ${JSON.stringify(installed.body.output)}`);
+        const work = [];
+        for (let n = 0; n < 2; n++) {
+          const r = await invoke({route: 'work'});
+          work[n] = r.status === 200 ? r.body.output : {status: r.status, body: r.body};
+        }
+        const collected = await invoke({persist: 'collect'});
+        const shown = JSON.stringify({work, collected: collected.body});
+        assert.strictEqual(collected.status, 200, shown);
+        for (const w of work) assert.deepStrictEqual(Object.keys(w).sort(), ['ask', 'remote', 'usage'], shown);
+        for (const w of work) assert.strictEqual(w.remote, CROSSED, `the token-carrying call never crossed with ${change} kept: ${shown}`);
+        assert.strictEqual(collected.body.output.tokensSeen, 0, `a token was handed over with ${change} kept: ${shown}`);
+        assert.strictEqual(collected.body.output.portsSeen, 0, `a port was handed over with ${change} kept: ${shown}`);
+      });
+    }
+
     // a read grant does not write (h2.cjs: kept as it was, whatever happens)
     let h2Before = null;
     it('a read grant (an imported CommonJS file) opens read-only and reads with options of its own', async () => {
@@ -142,6 +247,8 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         if (out != null) {
           assert.strictEqual(out.undone, true, JSON.stringify(out));
           assert.strictEqual(out.changed, !FIXED.has(change), `${change} ${FIXED.has(change) ? 'is fixed by the lockdown' : 'was made'}: ${JSON.stringify(out)}`);
+          if (CACHE_CHANGES.has(change)) assert.strictEqual(out.cacheReachable, true, `${change}: the runtime's files were never reached: ${JSON.stringify(out)}`);
+          if (change !== URL_BREAKING) assert.strictEqual(out.remoteCall, CROSSED, `${change}: the token-carrying call never crossed: ${JSON.stringify(out)}`);
         }
         const shown = JSON.stringify(out);
         if (mode === 'enforce') {
@@ -201,6 +308,8 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         }
         // no port reaches a setter a module put on a prototype
         if (out != null) assert.strictEqual(out.portsSeen, 0, `a port was handed to a setter with ${change} in place: ${shown}`);
+        // nor a message holding the call's token
+        if (out != null) assert.strictEqual(out.tokensSeen, 0, `a token was handed to a setter with ${change} in place: ${shown}`);
         // the code of an error the runtime issued is one it issued, never one
         // the module chose (the change offers DEVICE_OFFLINE)
         const issued = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: Object.assign({}, input, {rethrow: true})});
