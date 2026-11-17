@@ -95,7 +95,10 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const report = await reportOf(asking());
       assert.strictEqual(report.profile.asked, 2);
       assert.strictEqual((await reportOf(createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW}))).profile.asked, 0, 'there with none, too');
-      assert.match(require('../../lib/usage/report').reportText(report), /asked the user: 2 passes ended on a question/);
+      const text = require('../../lib/usage/report').reportText(report);
+      // /code-review of #333, 4: a pass that asked was no call, retried or not: the line never says it was counted
+      assert.match(text, /asked the user: 2 passes ended on a question \(a pass that asked is no call; the retry that answers is one\)/);
+      assert.doesNotMatch(text, /each retried call is counted once/);
       assert.strictEqual(report.profile.callMs.count, 1, JSON.stringify(report.profile.callMs));
       assert.deepStrictEqual([report.profile.serverCallsPerCall.mean, report.profile.serverCallsPerCall.max], [1, 1]);
       assert.strictEqual(report.profile.serverCallMs.count, 3, 'every server call was made');
@@ -108,6 +111,40 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
       const out = require('../../lib/usage/aggregate').aggregate(asking().records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
       assert.deepStrictEqual([out.totals.calls, out.totals.serverCalls], [1, 3]);
       assert.deepStrictEqual(out.outcomes, {asked: 2, ok: 1});
+    });
+
+    // /code-review of #333, 1: a pass whose server calls are inside the window and whose asked result falls
+    // just past it still kept nothing out
+    it('an asked pass whose result falls just past the window kept nothing out', async () => {
+      let now = Date.parse('2026-11-14T23:59:59.900Z');
+      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => now});
+      const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+      u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 100000, lines: 10, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+      now = Date.parse('2026-11-15T00:00:00.100Z');
+      u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round: 1});
+      const report = await usageReport({since: '2026-11-14', until: '2026-11-14'}, ADMIN, {usage: u, usageDir: null, now: () => NOW});
+      assert.strictEqual(report.totals.serverCalls, 1, 'its server call is in the window');
+      const none = await usageReport({since: '2026-11-14', until: '2026-11-14'}, ADMIN, {usage: createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW}), usageDir: null, now: () => NOW});
+      assert.deepStrictEqual(report.totals.keptOut, none.totals.keptOut);
+    });
+
+    // /code-review of #333, 3: the CLI's "pack calls that replaced server calls" keeps a tool whose only
+    // passes in the range asked (its retry in a later file): it still made those server calls
+    it('the CLI\'s replaced view keeps a tool whose only passes in the range asked', () => {
+      const {normalise} = require('../../lib/usage/read');
+      const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => NOW});
+      for (const round of [1, 2]) {
+        const c = u.beginCall({pack: 'p', module: 'm', tool: 't', caller: 'c1'});
+        u.recordIn(c, {server: 'github', module: 'ch-access-github', tool: 'get_logs', bytes: 1000, lines: 1, ms: 30, outcome: 'ok', credential: 'GITHUB_TOKEN'});
+        u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round});
+      }
+      const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
+      assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.packCalls, r.serverCalls]), [['t', 0, 2]]);
+    });
+
+    it('the report and the CLI\'s aggregate tell an asked pass by one rule', () => {
+      const {isAskedPass} = require('../../lib/usage/aggregate');
+      assert.deepStrictEqual([isAskedPass({server: null, outcome: 'asked'}), isAskedPass({server: null, outcome: 'ok'}), isAskedPass({server: 'github', outcome: 'asked'})], [true, false, false]);
     });
 
     it('a call that asked and was never retried is no call, and kept nothing out: its server calls are still its cost', async () => {
