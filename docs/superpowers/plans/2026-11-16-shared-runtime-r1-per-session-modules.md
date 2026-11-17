@@ -87,10 +87,11 @@
 **Interfaces:**
 - Produces:
   - `sessionPrefixFor(name, sid) -> 'ms:' + encodeURIComponent(name) + ':' + sid + ':'`, or null for a bad name or an id that isn't 32 hex characters;
-  - `partition.ensure(name, sid) -> Promise<{data, tmp}>`;
-  - `partition.remove(name, sid) -> Promise<{keys, dirs}>`;
-  - `partition.list() -> Promise<[{name, sid}]>` (the dirs under every `<name>/sessions/`, plus the `ms:` keys by SCAN, or `deletePrefix` on the local kv);
-  - `partition.sweep(keepIds: Set) -> Promise<{removed: [{name, sid}]}>`.
+  - **As built (#353, after its review):**
+  - `partition.ensure(dataRoot, name, sid) -> Promise<{data, tmp}>`;
+  - `partition.remove(dataRoot, kv, name, sid) -> Promise<{keys, dirs}>`. It validates the name and id before any key, and refuses a link at `<@scope>`, `<name>` or `<name>/sessions` before any key;
+  - `partition.list(dataRoot, kv) -> Promise<{partitions: [{name, sessionId}], skipped: [{path, why}]}>`;
+  - `partition.sweep(dataRoot, kv, keep: Set) -> Promise<{removed, failed: [{name, sessionId, why}], skipped}>`. It throws unless `keep` is a Set, and it is **never fatal**: Task 6 logs `failed` and `skipped` and goes on to `listen()`.
 
 - [ ] Failing tests:
   - two sessions' prefixes and dirs are distinct, and a third id's purge removes only its own;
