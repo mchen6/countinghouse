@@ -30,6 +30,8 @@ function mPayload(header, message) {
   return Buffer.concat([len, h, Buffer.isBuffer(message) ? message : Buffer.from(message, 'utf8')]);
 }
 const json = (o) => JSON.stringify(o);
+// a hidden character: one a reader doesn't see (see conditionsWhy.hiddenClass)
+const HIDDEN_CLASS = '\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2069\\u2800\\u3164\\ud800-\\udfff\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff9-\\ufffb\\u{1d173}-\\u{1d17a}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}';
 
 // Plainly made-up inputs (repeated bytes, example names), so no value here
 // reads as a credential to a secret scanner. Each MAC is derived from them.
@@ -224,6 +226,41 @@ const out = {
     rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}'
   },
+  // The client line's why when its conditions is "no" (ch-local's
+  // conditions child): what made the client unable to take a form from the
+  // runtime, for the latch's refusal text (B2). Text that reaches the agent,
+  // so a closed reason and, at most, a path under the user's home.
+  conditionsWhy: {
+    rule: 'on a status-ok client line whose conditions is "no", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is "~/" and a path under the user\'s home, its segments split on "/" with none empty and none "..", no backslash anywhere (a separator on Windows), at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown',
+    // the one definition of a hidden character (a RegExp class body, with
+    // the u flag): ch-local's cleaner and each rule check use it
+    hiddenClass: HIDDEN_CLASS,
+    reasons: ['client hook present', 'project plugin or marketplace', 'plugin hook present', 'client settings unreadable', 'no conditions known', 'not an interactive session', 'project directory unknown'],
+    accepted: [
+      {why: 'a hook in the user\'s settings', value: {reason: 'client hook present', at: '~/.claude/settings.json'}},
+      {why: 'a plugin with a hook', value: {reason: 'plugin hook present', at: '~/.claude/plugins/cache/example-market/example-plugin/1.0.0'}},
+      {why: 'a directory whose name starts with two dots is still under the home', value: {reason: 'client hook present', at: '~/..dotfiles/.claude/settings.json'}},
+      {why: 'a reason with no place', value: {reason: 'not an interactive session'}}
+    ],
+    refused: [
+      {why: 'not an object', value: 'client hook present'},
+      {why: 'a reason outside the set', value: {reason: 'something else'}},
+      {why: 'an absolute path', value: {reason: 'client hook present', at: '/home/example/.claude/settings.json'}},
+      {why: 'a path not under ~/', value: {reason: 'client hook present', at: '../example/.claude/settings.json'}},
+      {why: 'a path that leaves the home by ..', value: {reason: 'client hook present', at: '~/../example/.claude/settings.json'}},
+      {why: 'a path that leaves the home by a later ..', value: {reason: 'client hook present', at: '~/a/../../example/.claude/settings.json'}},
+      {why: 'a variation selector in the path', value: {reason: 'client hook present', at: '~/.claude/x\ufe0fy'}},
+      {why: 'a Hangul filler in the path', value: {reason: 'client hook present', at: '~/.claude/x\u3164y'}},
+      {why: 'a path over 200 characters', value: {reason: 'client hook present', at: `~/${'x'.repeat(199)}`}},
+      {why: 'a bidi override in the path', value: {reason: 'client hook present', at: '~/.claude/set\u202etings.json'}},
+      {why: 'a tag character in the path', value: {reason: 'client hook present', at: '~/.claude/settings\u{e0041}.json'}},
+      {why: 'a path that is not a string', value: {reason: 'client hook present', at: 7}},
+      {why: 'a key beside reason and at', value: {reason: 'client hook present', at: '~/.claude/settings.json', path: '/home/example'}},
+      {why: 'a backslash, a separator on Windows, where split on "/" sees no ..', value: {reason: 'client hook present', at: '~/..\\..\\Users\\example\\.claude\\settings.json'}},
+      {why: 'an empty segment after ~/, which some path joins read as absolute', value: {reason: 'client hook present', at: '~//home/example/x'}},
+      {why: 'an empty segment inside the path', value: {reason: 'client hook present', at: '~/a//b'}}
+    ]
+  },
   // ch-local's one order for a GitHub token (lib/github-token.js
   // chooseGitHubToken), in start, the daemon's shared runtime and the
   // conditions check. Inputs: what the client's environment sets
@@ -339,4 +376,11 @@ const out = {
     {name: 'conditions? unanswered', given: 'the shim sends no client frame for 12 s after conditions? (it gives the child 10 s)', expect: 'the runtime counts it as no for that form: no form'}
   ]
 };
-fs.writeFileSync(path.join(__dirname, 'vectors.json'), `${JSON.stringify(out, null, 2)}\n`);
+// hidden characters a vector carries on purpose (bidi, tag, zero-width...)
+// are written as \u escapes, so the file itself holds none (a reader, or a
+// diff, sees them for what they are)
+// (C0 controls aside: JSON.stringify already escapes them inside strings,
+// and outside them they are the file's own newlines)
+const HIDDEN_IN_FILE = new RegExp(`[${HIDDEN_CLASS.replace('\\u0000-\\u001f', '')}]`, 'gu');
+const escapeHidden = (text) => text.replace(HIDDEN_IN_FILE, (c) => c.split('').map((u) => `\\u${u.charCodeAt(0).toString(16).padStart(4, '0')}`).join(''));
+fs.writeFileSync(path.join(__dirname, 'vectors.json'), `${escapeHidden(JSON.stringify(out, null, 2))}\n`);

@@ -25,7 +25,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
   const QUESTION = 'c'.repeat(64);
   const binding = (over = {}) => Object.assign({caller: 'u_AbCdEfGhIjKlMnOpQrStUv', session: '', method: 'tools/call', tool: 'ch_pack_service_act',
     arguments: {name: 'report.txt', n: 1, deep: {b: [1, 2], a: null}}}, over);
-  const content = (over = {}) => Object.assign({question: QUESTION, round: 1, answers: {}}, over);
+  const content = (over = {}) => Object.assign({question: QUESTION, round: 1, callRound: 1, answers: {}}, over);
   const payloadOf = (state) => JSON.parse(Buffer.from(state.split('.')[1], 'base64url').toString('utf8'));
   // a state under the right key whose payload is anything: what only the
   // key's holder could make (a later version, or a bug), still checked
@@ -42,25 +42,25 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
   };
 
   describe('a state', () => {
-    it('is v1.<payload>.<mac>: a 16-byte nonce, an expiry 5 minutes out, the question, the round, the earlier answers', () => {
-      const state = rs.mint(key, content({round: 2, answers: {[QUESTION]: {approve: true}}}), binding(), {now});
+    it('is v1.<payload>.<mac>: a 16-byte nonce, an expiry 5 minutes out, the question, its round, the call\'s round, the earlier answers', () => {
+      const state = rs.mint(key, content({round: 2, callRound: 5, answers: {[QUESTION]: {approve: true}}}), binding(), {now});
       assert.match(state, /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
       const p = payloadOf(state);
-      assert.deepStrictEqual(Object.keys(p).sort(), ['a', 'e', 'n', 'q', 'r']);
+      assert.deepStrictEqual(Object.keys(p).sort(), ['a', 'c', 'e', 'n', 'q', 'r']);
       assert.match(p.n, /^[A-Za-z0-9_-]{22}$/);
       assert.strictEqual(Buffer.from(p.n, 'base64url').length, 16);
       assert.strictEqual(p.e, now + 5 * MIN);
       assert.strictEqual(rs.TTL_MS, 5 * MIN);
-      assert.deepStrictEqual([p.q, p.r, p.a], [QUESTION, 2, {[QUESTION]: {approve: true}}]);
+      assert.deepStrictEqual([p.q, p.r, p.c, p.a], [QUESTION, 2, 5, {[QUESTION]: {approve: true}}]);
       // nothing of the caller, the session or the arguments is in it
       assert.ok(!Buffer.from(state.split('.')[1], 'base64url').toString('utf8').includes('report.txt'));
       assert.notStrictEqual(rs.mint(key, content(), binding(), {now}), rs.mint(key, content(), binding(), {now}), 'a fresh nonce each time');
     });
 
     it('verifies for the request it was made for, and gives back what it carries', () => {
-      const state = rs.mint(key, content({round: 3, answers: {x: {n: 1}}}), binding(), {now});
+      const state = rs.mint(key, content({round: 3, callRound: 4, answers: {x: {n: 1}}}), binding(), {now});
       const v = rs.verify(key, state, binding(), {now: now + 4 * MIN});
-      assert.deepStrictEqual(v, {ok: true, nonce: payloadOf(state).n, expiresAt: now + 5 * MIN, question: QUESTION, round: 3, answers: {x: {n: 1}}});
+      assert.deepStrictEqual(v, {ok: true, nonce: payloadOf(state).n, expiresAt: now + 5 * MIN, question: QUESTION, round: 3, callRound: 4, answers: {x: {n: 1}}});
     });
 
     it('the arguments are bound by their canonical form: key order does not matter, any value does', () => {
@@ -178,11 +178,11 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       refused(big);
       // one over the bound under a right MAC (only the key's holder could
       // make it) is refused for its size all the same
-      const padded = forged({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, a: {pad: 'x'.repeat(12 * 1024)}});
+      const padded = forged({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, c: 1, a: {pad: 'x'.repeat(12 * 1024)}});
       assert.ok(padded.length > rs.MAX_STATE_BYTES && padded.length < 22000, String(padded.length));
       refused(padded);
       // and earlier answers over their 8 KiB, in a state within the 16
-      const fat = forged({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, a: {pad: 'x'.repeat(9 * 1024)}});
+      const fat = forged({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, c: 1, a: {pad: 'x'.repeat(9 * 1024)}});
       assert.ok(fat.length <= rs.MAX_STATE_BYTES, String(fat.length));
       refused(fat);
       assert.strictEqual(rs.MAX_STATE_BYTES, 16 * 1024);
@@ -191,8 +191,9 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       assert.ok(rs.mint(key, content({answers: {x: {text: 'y'.repeat(7 * 1024)}}}), binding(), {now}).length <= 16 * 1024);
     });
 
-    it('what it is made from is checked: the question, the round, the answers, the binding', () => {
-      for (const bad of [{question: ''}, {question: 'x'.repeat(129)}, {question: 7}, {round: 0}, {round: 1.5}, {round: 17}, {round: '1'}, {answers: null}, {answers: []}, {answers: 'x'}]) {
+    it('what it is made from is checked: the question, its round, the call\'s round (never under its question\'s), the answers, the binding', () => {
+      for (const bad of [{question: ''}, {question: 'x'.repeat(1025)}, {question: 7}, {round: 0}, {round: 1.5}, {round: 17}, {round: '1'}, {answers: null}, {answers: []}, {answers: 'x'},
+        {callRound: 0}, {callRound: 1.5}, {callRound: 17}, {callRound: '1'}, {callRound: undefined}, {round: 3, callRound: 2}]) {
         assert.throws(() => rs.mint(key, content(bad), binding(), {now}), /request-state/, JSON.stringify(bad));
       }
       for (const bad of [{caller: ''}, {caller: null}, {session: null}, {method: ''}, {tool: 7}]) {
@@ -211,7 +212,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
     });
 
     it('a payload of any other shape is refused, though its MAC is right', () => {
-      const good = {n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, a: {}};
+      const good = {n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, c: 1, a: {}};
       assert.strictEqual(rs.verify(key, forged(good), binding(), {now}).ok, true, 'the control');
       assert.strictEqual(rs.verify(key, forged(Object.assign({}, good, {e: now + 6 * MIN})), binding(), {now}).ok, true, 'the furthest one from a clock a minute ahead');
       for (const bad of [Object.assign({}, good, {x: 1}), (({a, ...rest}) => rest)(good), Object.assign({}, good, {n: 'short'}), Object.assign({}, good, {n: 7}),
@@ -219,6 +220,8 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
         // further out than any state is given, the minute between clocks allowed for
         Object.assign({}, good, {e: now + 6 * MIN + 1}),
         Object.assign({}, good, {q: ''}), Object.assign({}, good, {r: 0}), Object.assign({}, good, {r: 17}), Object.assign({}, good, {a: []}), Object.assign({}, good, {a: null}),
+        // the call's round: there, 1 to 16, and never under its question's
+        (({c, ...rest}) => rest)(good), Object.assign({}, good, {c: 0}), Object.assign({}, good, {c: 17}), Object.assign({}, good, {c: '1'}), Object.assign({}, good, {r: 3, c: 2}),
         [good], 'not json', '"a string"', 'null']) {
         refused(forged(bad));
       }
@@ -343,7 +346,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
     });
 
     it('a state made by one process verifies in another that shares the secret, and in none that does not', () => {
-      const made = inChild(`out({state: rs.mint(rs.key(), {question: 'q', round: 1, answers: {}}, ${JSON.stringify(B)})});`);
+      const made = inChild(`out({state: rs.mint(rs.key(), {question: 'q', round: 1, callRound: 1, answers: {}}, ${JSON.stringify(B)})});`);
       assert.match(made.state, /^v1\./);
       const check = `out(rs.verify(rs.key(), ${JSON.stringify(made.state)}, ${JSON.stringify(B)}));`;
       assert.strictEqual(inChild(check).ok, true, 'after a restart, or on another server of the same deployment');
