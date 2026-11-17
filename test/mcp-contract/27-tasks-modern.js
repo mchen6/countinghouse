@@ -141,12 +141,13 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
     assert.strictEqual(done.status, 'failed', JSON.stringify(done));
     assert.strictEqual(done.result, undefined);
-    // l.891: a failed task carries the JSON-RPC error. The runner's timeout
-    // has no code of its own, so it carries no data. (Its statusMessage, a
-    // SHOULD, is M16 Task 1's.)
-    assert.deepStrictEqual(Object.keys(done.error).sort(), ['code', 'message'], JSON.stringify(done.error));
+    // l.891: a failed task carries the JSON-RPC error: the runner's timeout
+    // is the catalogued JOB_TIMEOUT, its code in data as any coded error's.
+    // (Its statusMessage, a SHOULD, is M16 Task 1's.)
+    assert.deepStrictEqual(Object.keys(done.error).sort(), ['code', 'data', 'message'], JSON.stringify(done.error));
     assert.strictEqual(done.error.code, -32603);
-    assert.match(done.error.message, /^Promise timed out after 5000 milliseconds$/);
+    assert.deepStrictEqual(done.error.data, {'countinghouse/code': 'JOB_TIMEOUT'});
+    assert.strictEqual(done.error.message, 'The job did not finish within its timeout (5 s), so it failed; an answer after that is dropped');
   });
 
   it('another key\'s task, an unknown id and a malformed one get one -32602, which echoes no id, for get, update and cancel', async () => {
@@ -222,6 +223,19 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
       const r = await modern(KEY_A, method, {taskId: 't-x'});
       assert.strictEqual(r.body.error && r.body.error.code, -32601, method);
     }
+  });
+
+  it('the legacy era: a run past --jobTimeout is failed, its statusMessage JOB_TIMEOUT and the catalogued text', async () => {
+    const made = await legacy(KEY_A, 'tools/call', {name: tool('slow'), arguments: {ms: 8000}, task: {}});
+    assert.ok(made.result != null && made.result.task != null, JSON.stringify(made));
+    let got = null;
+    for (let i = 0; i < 300; i++) {
+      got = (await legacy(KEY_A, 'tasks/get', {taskId: made.result.task.taskId})).result;
+      if (got.status !== 'working') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.strictEqual(got.status, 'failed', JSON.stringify(got));
+    assert.strictEqual(got.statusMessage, 'JOB_TIMEOUT: The job did not finish within its timeout (5 s), so it failed; an answer after that is dropped');
   });
 
   it('the legacy era: a failed task\'s statusMessage is its code and the module\'s words, cut and cleaned', async () => {

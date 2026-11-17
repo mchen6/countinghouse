@@ -966,6 +966,32 @@ bounds it:
   at most 64 of a key's tasks (10,000 in all) wait at once, so the records
   a client can make are bounded.
 
+### Change notices on a listen (`subscriptions/listen`)
+
+A listen is opened by a key (on a shared runtime, by a session), counted
+against that key's or session's limit, and sent only what it agreed to.
+Each list it follows is the list its own key and session are shown, so a
+notice never tells a caller about a module it cannot reach. A
+`resources/updated` notice goes only to the subscriptions of the key whose
+call succeeded: a module that keeps data per caller would otherwise tell one
+tenant when another was active. Each subscription's URIs are resolved in its
+own view (a pack a session doesn't list resolves nothing for it), and on a
+shared runtime a per-session module's change reaches only the calling
+session. A URI the caller can't read is left out of what is agreed, so a
+listen can't be used to learn that another tenant's resource exists. A call
+is announced where it is recorded, on the main thread, by every entry path;
+module code in a worker can't record one. A call with no key (`--debug`
+without `--debugKey`) is not recorded, and announces nothing.
+
+What a listen costs is bounded. Calls are held for a quarter second in a
+batch of their own key and session, each with its own timer, so a notice's
+timing says nothing about another key's or session's calls; a batch holds
+each call once and never starts a round while its last one runs. An HTTP
+listen whose client leaves more than 1 MiB unread is closed, which cancels
+it and frees its slot, so a client that never reads holds nothing of a
+key's notices. The runtime's own reads of a listener's lists never spend
+its rate limit.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
