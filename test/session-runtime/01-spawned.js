@@ -181,14 +181,20 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(valueOf(await call({action: 'get'}), 'requestTimeout'), 20000, 'as it was');
     b.c.end();
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
-    for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
-      // a modern request: tasks/* are gone in 2026-07-28 (#243), method not found
+    // a session's tasks are its own (B5 Task 2; session-runtime 04 has them both eras):
+    // a modern tasks/list is no method in 2026-07-28; a modern tasks/get or
+    // tasks/cancel that doesn't declare M15's extension is its gate's -32021; a
+    // legacy one is served, and an id never issued is unknown
+    const modernList = await request(a.c, 'tasks/list', {});
+    assert.ok(modernList.error != null && modernList.error.code === -32601, JSON.stringify(modernList));
+    for (const method of ['tasks/get', 'tasks/cancel']) {
       const t = await request(a.c, method, {taskId: 'x'});
-      assert.ok(t.error != null && t.error.code === -32601, `${method}: ${JSON.stringify(t)}`);
-      // a legacy one reaches the session guard: not served on a shared runtime
+      assert.ok(t.error != null && t.error.code === -32021, `${method}: ${JSON.stringify(t)}`);
+    }
+    for (const method of ['tasks/list', 'tasks/get', 'tasks/cancel']) {
       const l = await requestLegacy(a.c, method, {taskId: 'x'});
-      assert.ok(l.error != null, `${method}: ${JSON.stringify(l)}`);
-      assert.match(l.error.message, /shared runtime/);
+      if (method === 'tasks/list') assert.deepStrictEqual(l.result.tasks, [], JSON.stringify(l));
+      else assert.ok(l.error != null && !/shared runtime/.test(l.error.message), `${method}: ${JSON.stringify(l)}`);
     }
     // a modern request's logging/setLevel is gone in 2026-07-28; a legacy
     // session's sets its own level (B2 Task 3: lib/notices.js, per session)
