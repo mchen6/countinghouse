@@ -8,8 +8,10 @@
 //   - active: it runs to its end (cooperative, as tasks/cancel), is billed and
 //     recorded under the session's id, is not retried, and its record goes when it finishes;
 //   - finished: its record and result go now.
-// A detach cancels nothing. A job of no session, or another session's, is
-// untouched. Server-free: the local runner with a stub interface, real shared sessions.
+// It fires only at a session's real end, as R1 removes its partitions: its
+// shim's bye, or its reconnect window running out. The runtime stopping
+// ('closed'), a connection that never settled ('unsettled') and a detach
+// cancel nothing. A job of no session, or another session's, is untouched. Server-free: the local runner with a stub interface, real shared sessions.
 const assert = require('assert');
 const EventEmitter = require('events');
 const options = require('../../lib/cli-options');
@@ -186,7 +188,7 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
     it('A ends (bye): its tasks are cancelled; B\'s are not', async() => {
       const {completed, delayed, active} = await three();
       const ofB = await add(IN(B), 'b', {delay: 60 * 60 * 1000});
-      sources[A].emit('end');
+      sources[A].emit('end', 'bye');
       assert.strictEqual(await stateOf(delayed), 'gone');
       assert.strictEqual(await stateOf(completed), 'gone');
       assert.strictEqual(await stateOf(ofB), 'delayed', 'B\'s');
@@ -196,6 +198,26 @@ describe('sessions 26: an ended session\'s tasks are cancelled (shared runtime B
       open(C);
       for (const id of [completed, delayed, active]) assert.strictEqual((await call(runner, 'getJob', IN(C), id)).err.code, 'GET_JOB_ERROR');
     });
+
+    it('its reconnect window running out (\'window\') is an end too', async() => {
+      const delayed = await add(IN(A), 'later', {delay: 60 * 60 * 1000});
+      sources[A].emit('end', 'window');
+      assert.strictEqual(await stateOf(delayed), 'gone');
+    });
+
+    for (const reason of ['closed', 'unsettled']) {
+      it(`a '${reason}' end cancels nothing: A's delayed task still runs once A resumes, and A reads it`, async() => {
+        const delayed = await add(IN(A), 'soon', {delay: 300});
+        sources[A].emit('end', reason);
+        assert.strictEqual(await stateOf(delayed), 'delayed', 'kept');
+        open(A);   // resumed (a runtime restart's restore keeps its id)
+        assert.ok(await until(async() => (await stateOf(delayed)) === 'completed'), 'it ran');
+        assert.deepStrictEqual(invoked.filter((x) => x === 'soon'), ['soon']);
+        const got = await call(runner, 'getJob', IN(A), delayed);
+        assert.ifError(got.err);
+        assert.deepStrictEqual(got.r.job.returnvalue, {output: {ok: 'soon'}});
+      });
+    }
 
     it('a detach cancels nothing: A resumes with all three and reads its completed one\'s result', async() => {
       const {completed, delayed, active} = await three();
