@@ -29,6 +29,19 @@ space. A prompt's message keeps its line breaks and tabs, and an emoji
 keeps its joiner and VS-16. A completion candidate with a hidden character
 is no longer offered. Nothing is refused or changed at load.
 
+### Fixed — a 2026-07-28 task's status mirrors the inline answer
+
+- **A task whose module was unloaded, reloaded or suspended while it ran**
+  is now `completed`, its result the isError result the same `tools/call`
+  gets inline, with the code in `_meta["countinghouse/code"]`
+  (`MODULE_UNLOADED`, `MODULE_RELOADING`, `MODULE_SUSPENDED`). It was
+  `failed`. The tasks extension uses `failed` only for a request that fails
+  with a JSON-RPC error, and a tool result with `isError` is `completed`
+  (`tasks.md` l.157-158, l.835-837). A task is still `failed`, with its
+  JSON-RPC `error`, when its run left no answer: the runner's
+  `--jobTimeout`, or the owner's access refused when the run starts.
+  Legacy-era tasks are unchanged.
+
 ### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
 
 - **The lockdown's checks** (the allowed built-ins, a path given to

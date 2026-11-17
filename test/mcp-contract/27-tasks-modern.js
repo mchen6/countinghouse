@@ -141,8 +141,12 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
     assert.strictEqual(done.status, 'failed', JSON.stringify(done));
     assert.strictEqual(done.result, undefined);
+    // l.891: a failed task carries the JSON-RPC error. The runner's timeout
+    // has no code of its own, so it carries no data. (Its statusMessage, a
+    // SHOULD, is M16 Task 1's.)
+    assert.deepStrictEqual(Object.keys(done.error).sort(), ['code', 'message'], JSON.stringify(done.error));
     assert.strictEqual(done.error.code, -32603);
-    assert.match(done.error.message, /timed out/);
+    assert.match(done.error.message, /^Promise timed out after 5000 milliseconds$/);
   });
 
   it('another key\'s task, an unknown id and a malformed one get one -32602, which echoes no id, for get, update and cancel', async () => {
@@ -303,5 +307,91 @@ describe('mcp-contract 27: a task cancelled while it runs, under --store redis',
     const got = await on('tasks/get', {taskId});
     assert.strictEqual(got.body.result && got.body.result.status, 'cancelled', JSON.stringify(got.body));
     assert.strictEqual(got.body.result.result, undefined, 'no result');
+  });
+});
+
+// ext-tasks (tasks.md l.157-158, l.835-837): `failed` only for a request
+// that fails with a JSON-RPC error, never for a tool result with isError,
+// which is `completed`. So a task's status mirrors how the same tools/call is
+// answered inline. The module unloaded, reloaded or suspended under a call
+// is answered inline with an isError result; a task meeting the same event
+// is completed with that result, its code kept (before: failed). A second
+// server, --debug for the module routes; the inline call is the same
+// long-running tool without the extension declared.
+describe('mcp-contract 27: a task\'s status mirrors the inline answer, the module gone under it', function() {
+  this.timeout(120000);
+  const DPORT = testPort(9660);
+  const KEY_D = `test-d-${'d'.repeat(24)}`;
+  const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'm15-tasks');
+  const {post, waitFor} = require('../helpers/sandbox-server');
+  const {toolErrorCode} = require('../helpers/tool-result');
+  let server = null;
+  let dir = null;
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-27d-'));
+    server = await startServer(DPORT, ['--debug', '--debugKey', KEY_D, '--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'),
+      '--jobTimeout', '30', '--moduleDataPath', path.join(dir, 'module_data'), '--loadModule', FIXTURE]);
+  });
+  after(() => {
+    stopServer(server);
+    if (dir != null) fs.rmSync(dir, {recursive: true, force: true});
+  });
+  const on = (method, params, opts = {}) => modern(KEY_D, method, params, Object.assign({port: DPORT}, opts));
+  // a tools/call answered inline (the extension not declared)
+  const inline = (a, args = {}) => on('tools/call', {name: tool(a), arguments: args}, {ext: false}).then((r) => r.body);
+  const answerOf = (result) => ({isError: result.isError === true, code: toolErrorCode(result)});
+  const up = () => waitFor(async () => (await inline('quick')).result.isError !== true, 20000, 'm15-tasks to answer');
+  const settled = async (taskId) => waitFor(async () => {
+    const got = (await on('tasks/get', {taskId})).body.result;
+    return (got != null && got.status !== 'working') ? got : null;
+  }, 20000, `task ${taskId} to settle`);
+  // an inline call and a task, both in flight when `event` happens: the
+  // inline answer, and the task as it settled
+  async function bothUnder(event) {
+    const call = inline('slow', {ms: 8000});
+    const made = (await on('tools/call', {name: tool('slow'), arguments: {ms: 8000}})).body.result;
+    assert.match(String(made && made.taskId), /^t-/, JSON.stringify(made));
+    await new Promise((r) => setTimeout(r, 600));   // both running in the worker
+    await event();
+    return {inlineBody: await call, task: await settled(made.taskId)};
+  }
+  // the mirror: an inline isError result (no JSON-RPC error) is a completed
+  // task with the same result
+  function mirrors({inlineBody, task}, code) {
+    assert.strictEqual(inlineBody.error, undefined, `inline: a result, not a JSON-RPC error: ${JSON.stringify(inlineBody)}`);
+    assert.deepStrictEqual(answerOf(inlineBody.result), {isError: true, code}, JSON.stringify(inlineBody.result));
+    assert.strictEqual(task.status, 'completed', JSON.stringify(task));
+    assert.strictEqual(task.error, undefined);
+    assert.deepStrictEqual(answerOf(task.result), answerOf(inlineBody.result), JSON.stringify(task.result));
+  }
+
+  it('unloaded under it: inline an isError MODULE_UNLOADED, the task completed with the same', async () => {
+    await up();
+    const both = await bothUnder(async () => assert.strictEqual((await post(DPORT, KEY_D, '/unload-module', {name: 'm15-tasks'})).status, 200));
+    mirrors(both, 'MODULE_UNLOADED');
+    await post(DPORT, KEY_D, '/load-module', {path: FIXTURE, name: 'm15-tasks'});
+  });
+
+  it('reloaded under it: inline an isError MODULE_RELOADING, the task completed with the same', async () => {
+    await up();
+    const both = await bothUnder(() => post(DPORT, KEY_D, '/load-module', {path: FIXTURE, name: 'm15-tasks'}));
+    mirrors(both, 'MODULE_RELOADING');
+  });
+
+  it('suspended (three exits): inline an isError MODULE_SUSPENDED, a task run then completed with the same', async () => {
+    // three crashes in the supervisor's window, each once the restart is up
+    for (let i = 0; i < 3; i++) {
+      await up();
+      await inline('exit');
+      // down (restarting, or suspended on the third): never the dying worker's answer
+      await waitFor(async () => (await inline('quick')).result.isError === true, 20000, `exit ${i + 1} seen`);
+    }
+    const inlineBody = await waitFor(async () => {
+      const b = await inline('slow', {ms: 0});
+      return (b.result != null && toolErrorCode(b.result) === 'MODULE_SUSPENDED') ? b : null;
+    }, 20000, 'the module to be suspended');
+    const made = (await on('tools/call', {name: tool('slow'), arguments: {ms: 0}})).body.result;
+    assert.match(String(made && made.taskId), /^t-/, JSON.stringify(made));
+    mirrors({inlineBody, task: await settled(made.taskId)}, 'MODULE_SUSPENDED');
   });
 });
