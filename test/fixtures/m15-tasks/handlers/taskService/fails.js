@@ -4,7 +4,7 @@
 // cut and cleaned, its code kept (the review of the M15 plan). input.code: the
 // module's code (M15_FAILED unless given).
 module.exports = async (input) => {
-  const err = new Error(`it failed\u0007 here‮ and there${' and on'.repeat(100)}`);
+  const err = new Error(`it failed\u0007 here\u202E and there${' and on'.repeat(100)}`);
   err.code = typeof(input.code) === 'string' ? input.code : 'M15_FAILED';
   throw err;
 };
