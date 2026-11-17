@@ -144,6 +144,17 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     assert.doesNotMatch(JSON.stringify(aGets), /unknown prompt/);
   });
 
+  // completion/complete (M11, #332) for a pack's prompt: the same unknown answer (the reviewer's ruling)
+  it('B\'s completion/complete for the pack\'s prompt is answered as one with the pack unloaded: unknown prompt', async () => {
+    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_x_brief/.test(n));
+    const params = {ref: {type: 'ref/prompt', name: listed}, argument: {name: 'x', value: ''}};
+    const hidden = await request(ci, B, 'completion/complete', params);
+    const gone = await request(fakeInterface({withCi: false}), B, 'completion/complete', params);
+    assert.match(JSON.stringify(hidden), /unknown prompt/);
+    assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
+    assert.doesNotMatch(JSON.stringify(await request(ci, A, 'completion/complete', params)), /unknown prompt/, 'A\'s is found');
+  });
+
   it('the global tool table is untouched: the same frozen object, and the filter hands it back while no session has a pack override', () => {
     const before = toolRegistry.buildToolTargets(ci);
     assert.strictEqual(toolRegistry.filterTargetsBySession(before, B) === before, false, 'B\'s view is a copy');
