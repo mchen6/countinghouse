@@ -69,6 +69,18 @@ describe('module-loading 35: a request refused in the queue names its queue wait
     }
   });
 
+  it('a question (M13\'s form check) refused in the queue says its own deadline, as a check does', async () => {
+    const p = stuckPool({loadQueueMs: 150});
+    try {
+      const key = register(p, 'qwait-question');
+      const answer = await p.question(key, '/s/a/input');
+      assert.ok(answer != null && answer.timeout != null, JSON.stringify(answer));
+      assert.match(answer.timeout.message, /within 300 ms/, answer.timeout.message);
+    } finally {
+      p.close();
+    }
+  });
+
   it('a call\'s check refused in the queue still says its own deadline, as before', async () => {
     const p = stuckPool({loadQueueMs: 150});
     try {

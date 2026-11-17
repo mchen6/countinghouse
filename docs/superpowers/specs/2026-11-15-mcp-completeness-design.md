@@ -340,6 +340,7 @@ It's unavoidable because a question arises in the middle of a handler, from what
 - **The schema** is within MCP's form subset: a flat object of string, number, integer, boolean and enum properties, at most 8.
 - **The message** is at most 500 characters, with `{name}` placeholders. `ctx.ask` supplies the values: strings (cut to 200 characters and cleaned of control and bidi characters, as output lines are), numbers and booleans.
 - **The runtime composes the dialog:** `<module name>: <message>`, at most 1000 characters. So the sentence a user reads was reviewed at install, and the user sees which third-party module is asking.
+  - **Over composition (the reviewer's ruling, 2026-11-16):** `<module name>` is always the called, LISTED module's, the one whose tool the user called, whoever in the chain asks. An unlisted part is never named to the client, as M9 never names one. The runtime's own log line and usage record (`askedBy`) name the part that asked. So a scenario vouches for its parts' declared questions: whoever reviews a scenario reviews its parts' `questions` too.
 - **Limits.** At most 4 questions per action. Validate warns when a property's name or title reads like a credential (password, token, key, secret, card): the spec forbids asking for one in a form.
 
 **How a handler waits across a stateless transport: it runs again.**
@@ -367,7 +368,7 @@ MCP's own description of MRTR is that the retry "does not need any information b
   - a 16-byte nonce;
   - an expiry, 5 minutes out;
   - the pending question's key;
-  - the round;
+  - the question's round, and the call's round (every question's rounds together);
   - the answers given in earlier rounds, at most 8 KiB.
 - **The MAC** is HMAC-SHA256 over a JSON array of:
   - a version label;
@@ -387,7 +388,7 @@ MCP's own description of MRTR is that the retry "does not need any information b
 **The answer.**
 - An `accept` whose `content` validates against the question's schema is the answer. It's validated in the validator pool, since it's a module's schema.
 - A `decline` or a `cancel` is `null`.
-- A missing or invalid answer gets the same question again, as the spec asks. After 3 rounds `ctx.ask` rejects with `ASK_UNAVAILABLE`.
+- A missing or invalid answer gets the same question again, as the spec asks. After 3 rounds of one question, or 8 rounds of the call in all (any mix of questions), `ctx.ask` rejects with `ASK_UNAVAILABLE`. The call's count is what bounds a handler whose question reads differently on every pass: each is a new question in its first round, and a pass that asks is not billed.
 - The module receives the content object and nothing else: no action, no client name, no session.
 
 **A question's key** is a hash of the module, the action, the question's name and the composed message. An answer applies only to a question with the same text. A handler that asks "Delete A?" and then "Delete B?" gets two dialogs, never one answer used twice.
@@ -499,7 +500,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 - A module author who reads files from a variable must guard it themselves, as for any input; the docs say so.
 - `countinghouse://r/` and `countinghouse://m/` are the only forms read. Any other scheme is "not found", and the runtime never fetches a URL.
 
-**Dialogs.** Form mode only. The text is the declared sentence with bounded, cleaned values, prefixed with the module's name. At most 3 rounds per call. Rate limited per key.
+**Dialogs.** Form mode only. The text is the declared sentence with bounded, cleaned values, prefixed with the called, listed module's name (a part's question too: section 8, the ruling of 2026-11-16). At most 8 rounds per call, 3 per question. Rate limited per key.
 
 **Prompt text** is declared and reviewed. An argument is substituted once, as text, and bounded.
 
@@ -515,7 +516,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 | A resource subscription | 64 URIs per listen, within the hub's existing listener limits |
 | Completion | 100 values of 256 characters; a 2 s action timeout; the per-key rate limit |
 | A prompt answer | 64 KiB |
-| A dialog | 1000 characters; 8 properties; 3 rounds; a state of 16 KiB at most |
+| A dialog | 1000 characters; 8 properties; 8 rounds per call, 3 per question; a state of 16 KiB at most |
 | Progress | 4 a second and 240 per call |
 | Cancellation | a request of the caller's own connection or session only; an unknown id is ignored; no answer and no error text |
 | Every read, get, completion and task method | the per-key rate limit, before any work |

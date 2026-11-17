@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "asks-through-part",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a scenario that declares no question of its own and calls a part that asks (ctx.ask over composition, MCP completeness M14)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:packService": {
+        "actionList": [
+          {
+            "name": "run",
+            "description": "Stores a thing through its part, which asks before it replaces one.",
+            "input": {
+              "schema": "/packService/run/input"
+            },
+            "output": {
+              "schema": "/packService/run/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
