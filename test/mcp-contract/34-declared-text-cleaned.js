@@ -111,7 +111,8 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
             questions: {confirm: {message: `Go${ZWSP} on with {what}?`, schema: `/${svc}/show/questions/confirm`}}},
           {name: 'item', description: `One item${NBSP_HANGUL}.`, input: {schema: `/${svc}/item/input`}, output: {schema: `/${svc}/item/output`},
             annotations: {readOnlyHint: true},
-            resource: {uriTemplate: 'items/{id}', name: 'item', title: `An${LRI} item`, description: `One${TAG_A} item.`}},
+            resource: {uriTemplate: 'items/{id}', name: 'item', title: `An${LRI} item`, description: `One${TAG_A} item.`, completion: {id: `${svc}.completeId`}}},
+          {name: 'completeId', description: 'Completes an item id.', input: {schema: `/${svc}/completeId/input`}, output: {schema: `/${svc}/completeId/output`}},
           {name: 'all', description: 'Every item.', output: {schema: `/${svc}/all/output`}, annotations: {readOnlyHint: true},
             resource: {uriTemplate: 'items', name: 'items', title: `All${LRI} items`}}
         ]}},
@@ -121,11 +122,14 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
         [svc]: {show: {input: {type: 'object', properties: {what: {type: 'string'}}}, output: {type: 'object'},
           questions: {confirm: {type: 'object', properties: {yes: {type: 'boolean', title: 'Yes'}}, required: ['yes']}}},
         item: {input: {type: 'object', properties: {id: {type: 'string'}}, required: ['id']}, output: {type: 'object'}},
-        all: {output: {type: 'object'}}},
+        all: {output: {type: 'object'}},
+        completeId: {input: {type: 'object', properties: {argument: {type: 'string'}, value: {type: 'string'}, context: {type: 'object'}}, required: ['argument', 'value']},
+          output: {type: 'object', properties: {values: {type: 'array', items: {type: 'string'}}}, required: ['values']}}},
         prompts: {greet: {arguments: {type: 'object', properties: {who: {type: 'string', description: `Who${ZWSP} to greet`, enum: ['ann', `b${ZWSP}ob`, 'bea']}}, required: ['who']}}}}));
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'show.js'), 'module.exports = async (input, ctx) => ({output: {answer: await ctx.ask(\'confirm\', {what: input.what || \'it\'})}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'item.js'), 'module.exports = async (input) => ({output: {id: input.id}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'all.js'), 'module.exports = async () => ({output: {ids: []}});\n');
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'completeId.js'), `module.exports = async () => ({output: {values: ['i-1', 'i-${ZWSP}2', 'i-3']}});\n`);
       const auth = path.join(dir, 'auth.json');
       fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
       server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--moduleDataPath', path.join(dir, 'module_data'),
@@ -169,6 +173,11 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       const name = (await modern('prompts/list')).result.prompts.find((p) => /greet$/.test(p.name)).name;
       const got = await modern('completion/complete', {ref: {type: 'ref/prompt', name}, argument: {name: 'who', value: ''}});
       assert.deepStrictEqual(got.result.completion.values, ['ann', 'bea'], JSON.stringify(got));
+    });
+
+    it('completion: a completion action\'s value with a hidden character is left out too (M11)', async () => {
+      const got = await modern('completion/complete', {ref: {type: 'ref/resource', uri: 'countinghouse://m/hidden_text/items/{id}'}, argument: {name: 'id', value: 'i'}});
+      assert.deepStrictEqual(got.result.completion.values, ['i-1', 'i-3'], JSON.stringify(got));
     });
 
     it('a question\'s dialog text', async () => {
