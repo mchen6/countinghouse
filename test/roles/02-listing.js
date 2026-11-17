@@ -10,7 +10,7 @@
 const assert = require('assert');
 const options = require('../../lib/cli-options');
 options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const gateway = require('../../lib/mcp/gateway');
 const toolName = require('../../lib/mcp/tool-name');

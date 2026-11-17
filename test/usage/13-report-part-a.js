@@ -1,5 +1,5 @@
-// countinghouse_usage_report, Part A (Matt, 2026-11-13; #158): `until` and
-// `since: "all"`, by-day rows, the tokens kept out of the model's context as
+// countinghouse_usage_report, Part A (maintainer's decision, 2026-11-13;
+// #158): `until` and `since: "all"`, by-day rows, the tokens kept out of the model's context as
 // an upper-bound estimate ({estimate, method, bound: "upper"}), and
 // profiling (call time, errors by code, server calls per call). The headline
 // is the period's totals. Pure over an in-memory recorder (and a fixture

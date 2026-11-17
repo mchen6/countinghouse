@@ -1,5 +1,5 @@
-// One module format (lean worker, step 1; Matt, 2026-11-13): a module is
-// api.json, schema.json and handlers/<service>/<action>.js, decided from
+// One module format (lean worker, step 1; maintainer's decision,
+// 2026-11-13): a module is api.json, schema.json and handlers/<service>/<action>.js, decided from
 // static facts on the main thread. A main entry (package.json "main", or
 // index.js) with no handlers/ directory is refused with
 // MODULE_LAYOUT_UNSUPPORTED, before any of the module's code runs; with a

@@ -24,7 +24,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   let DeviceManager, usage, CountinghouseError;
   before(() => {
     require(path.join(LIB, 'cli-options')).setOptions({redisUrl: 'redis://127.0.0.1:9749', workerThread: true});
-    require(path.join(LIB, 'logger')).createLogger(false);
+    require(path.join(LIB, 'logger')).createLogger();
     ({CountinghouseError} = require(path.join(LIB, 'countinghouse-error')));
     savedAuth = require.cache[authPath];
     require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,

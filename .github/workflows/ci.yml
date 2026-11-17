@@ -7,10 +7,12 @@ on:
     branches: [master]
 
 # A new push to a pull request cancels that PR's superseded run (the group is
-# the PR number); a push to master is grouped by its sha, unique per commit,
-# so no master run is ever cancelled and every merged commit keeps its result.
+# the PR number); a push to master is grouped by the branch, so a newer merge
+# cancels the run of an older one still queued or running. Every PR is gated by
+# its own run before it merges; master keeps the result of its newest commit,
+# and superseded master runs no longer queue ahead of every PR.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

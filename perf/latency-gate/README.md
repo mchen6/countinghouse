@@ -1,6 +1,6 @@
 # The shared runtime's latency gate
 
-Matt's gate (2026-11-15), for a warm `tools/call` measured end to end through the real Rust shim, on an idle machine with 4 or more cores:
+The maintainer's gate (2026-11-15), for a warm `tools/call` measured end to end through the real Rust shim, on an idle machine with 4 or more cores:
 
 - **1 session:** a shared call is at most 2 ms slower than a separate server.
 - **2+ sessions:** a shared call is no slower than separate servers.

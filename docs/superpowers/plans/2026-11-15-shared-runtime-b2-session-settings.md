@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revision 4: revision 3 (#252's re-check: F1, F3, F4, F7, F8, F10, N1, N2), plus Task 5b, the all-sessions change (Matt, 2026-11-14, from business's decision-coverage audit). Tasks 0–4 may start; Task 5 includes N1's latch. It builds on B1 (#246, #247, #251) and C1 part 2 (#248). The runtime⇄daemon messages (Task 6) are agreed with C (2026-11-15).
+**Status:** revision 4: revision 3 (#252's re-check: F1, F3, F4, F7, F8, F10, N1, N2), plus Task 5b, the all-sessions change (maintainer's decision, 2026-11-14, from business's decision-coverage audit). Tasks 0–4 may start; Task 5 includes N1's latch. It builds on B1 (#246, #247, #251) and C1 part 2 (#248). The runtime⇄daemon messages (Task 6) are agreed with C (2026-11-15).
 
 **Goal:** In shared mode, every change made in conversation is the session's own override. Nothing a session does reaches another session, `settings.json`, or the options every session shares. A terminal tightening binds every session at once, calls in flight included. The confirmation state is per session, with a per-user window that a prompt injection can't fan out past. Notices and `logging/setLevel` are per session. This lifts C's #248 guard on cap sets, confirmation retries and `logging/setLevel`, and only those.
 
@@ -20,7 +20,7 @@
 
 ## Global constraints
 
-- **Conversation never writes `settings.json` in shared mode,** and never changes `options`, `atStart` or the live options broadcast. The settings tool records a session override and writes only the history, which names the session opaquely (§3). The one exception is Task 5b: a low-stakes setting the user explicitly asks to change for all sessions, after a confirmation naming all sessions (Matt, 2026-11-14).
+- **Conversation never writes `settings.json` in shared mode,** and never changes `options`, `atStart` or the live options broadcast. The settings tool records a session override and writes only the history, which names the session opaquely (§3). The one exception is Task 5b: a low-stakes setting the user explicitly asks to change for all sessions, after a confirmation naming all sessions (maintainer's decision, 2026-11-14).
 - **In shared mode only the two caps are lifted from C's guard,** by name: `maxOutputBytes` and `requestTimeout`. Every other setting stays refused (`SETTING_TERMINAL_ONLY_SHARED`):
   - `moduleSandbox`, `autoUpgrade` and `upgradeCheck`, whose `set` writes the file;
   - `locale`, which is global (§3);
@@ -181,7 +181,7 @@
   - The form's text says "for this session" in both languages.
 - [ ] **Steps 2–5:** run (they fail), implement, run them plus stdio 18–21 and sessions 09 (they pass), commit.
 
-### Task 5b: a change for all sessions (Matt, 2026-11-14)
+### Task 5b: a change for all sessions (maintainer's decision, 2026-11-14)
 
 In one session the user may explicitly ask to change a low-stakes setting for all sessions. After its confirmation it's a global change: it writes `settings.json`, as a terminal change does, and every live session is told. Heavy settings stay terminal-only. C fixes #236's text to match.
 

@@ -7,8 +7,9 @@
 // each once it is on master (mcp-contract 03 checks every tool result; 35
 // checks 2026-07-28 against the official schema).
 //
-// A server on a free port: the bundled modules and the module that declares
-// everything, with --listPageSize 10 so the tools list has pages.
+// A server on a free port: the bundled modules, the module that declares
+// everything, progress (progress-part) and completion by a template and an
+// action (completion-actions), with --listPageSize 10 so the lists have pages.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -22,6 +23,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'declares-everything');
 // a module that reports progress (M9, M21)
 const PROGRESS = path.join(ROOT, 'test', 'fixtures', 'progress-part');
+// completion of a resource template, and by a module's action (M11)
+const COMPLETING = path.join(ROOT, 'test', 'fixtures', 'completion-actions');
 const KEY = 'sdk-feature-conformance-key';
 
 function freePort() {
@@ -48,7 +51,7 @@ describe('mcp-contract 36: the official SDK client accepts each feature\'s answe
     const modules = fs.readdirSync(pre).filter((d) => fs.statSync(path.join(pre, d)).isDirectory()).flatMap((d) => ['--loadModule', path.join(pre, d)]);
     const port = await freePort();
     const args = [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(port), '--store', 'local', '--storePath', path.join(tmp, 'store'),
-      '--authConfigPath', auth, '--moduleDataPath', path.join(tmp, 'module_data'), '--listPageSize', '10', ...modules, '--loadModule', FIXTURE, '--loadModule', PROGRESS];
+      '--authConfigPath', auth, '--moduleDataPath', path.join(tmp, 'module_data'), '--listPageSize', '10', ...modules, '--loadModule', FIXTURE, '--loadModule', PROGRESS, '--loadModule', COMPLETING];
     server = spawn(process.execPath, args.concat(redisArgsFor(args)), {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
     server.output = '';
     server.stdout.on('data', (c) => { server.output += c.toString(); });
@@ -127,6 +130,33 @@ describe('mcp-contract 36: the official SDK client accepts each feature\'s answe
       const done = await client.complete({ref: {type: 'ref/prompt', name: summarise.name}, argument: {name: 'style', value: ''}});
       assert.ok(Array.isArray(done.completion.values));
       await refused(client.getPrompt({name: 'no_such_prompt', arguments: {}}));
+    });
+  });
+
+  // (M8's listen and M22's question held for a task are 2026-07-28's:
+  // mcp-contract 35 checks them against the official schema)
+  describe('completion of a resource template, and by a module\'s action (M11)', () => {
+    it('complete with a ref/resource, and one a completion action answers, as the SDK parses them', async () => {
+      const pages = async (list, field) => {
+        const out = [];
+        let cursor;
+        for (let page = 0; page < 50; page++) {
+          const r = await list(cursor != null ? {cursor} : undefined);
+          out.push(...r[field]);
+          if (r.nextCursor == null) return out;
+          cursor = r.nextCursor;
+        }
+        throw new Error(`${field} never ended`);
+      };
+      const resourceTemplates = await pages((p) => client.listResourceTemplates(p), 'resourceTemplates');
+      const items = resourceTemplates.find((t) => /completion_actions\/items\/\{id\}$/.test(t.uriTemplate));
+      assert.ok(items != null, JSON.stringify(resourceTemplates));
+      const byResource = await client.complete({ref: {type: 'ref/resource', uri: items.uriTemplate}, argument: {name: 'id', value: ''}});
+      assert.ok(byResource.completion.values.includes('item-1'), JSON.stringify(byResource));
+      const pick = (await pages((p) => client.listPrompts(p), 'prompts')).find((p) => /completion_actions.*pick$/.test(p.name));
+      assert.ok(pick != null, 'completion-actions\' prompt is listed');
+      const byAction = await client.complete({ref: {type: 'ref/prompt', name: pick.name}, argument: {name: 'colour', value: 'c'}});
+      assert.ok(byAction.completion.values.includes('crimson'), JSON.stringify(byAction));
     });
   });
 

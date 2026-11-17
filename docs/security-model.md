@@ -179,8 +179,8 @@ drive-qualified path as outside the namespace. Under `enforce` such a path is
 refused (ENOENT): it fails closed. The module gets its own `/data` and
 `/tmp`.
 
-**Under `audit` a module changes nothing outside its own area** (Matt,
-2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
+**Under `audit` a module changes nothing outside its own area**
+(maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
 declared `rw`. Every write-class operation aimed anywhere else is refused
 `EACCES` and recorded as a denial: an open for writing, a create or truncate,
 `writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
@@ -894,6 +894,27 @@ module has no way to it.
 
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
+
+### Declared text, as it reaches the client
+
+What a module declares and a client shows or a model reads is cleaned as it
+leaves, never refused or changed at load. That covers a tool's title and
+description, a prompt's title, description, arguments' descriptions and
+messages, a resource's and a template's title and description, and a
+question's dialog. Each hidden character becomes a space, so no two words
+are joined by what was hidden between them. These are characters a model
+reads and a person doesn't see: controls, line separators, bidi controls,
+zero-width characters, tags, variation selectors and fillers. They form
+countinghouse's one class, `lib/conditions-why.json`'s `hiddenClass`, the
+same one ch-local checks.
+- A prompt's message keeps its `\n` and `\t`.
+- An emoji keeps its joiner (U+200D between two pictographic characters)
+  and its VS-16 (right after one).
+- A resource's name is an identifier, by the meta-schema.
+- A completion candidate is a value the client sends back, so one with a
+  hidden character is left out rather than changed.
+- A prompt's arguments are the client's own, and go into its messages as
+  the client sent them.
 
 ### A module's question to the user (`ctx.ask`)
 
