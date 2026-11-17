@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// The maintainer's latency gate for the shared runtime (2026-11-15), measured end to
-// end through the real Rust shim:
+// The maintainer's latency gate for the shared runtime (2026-11-15, reset the
+// same day after the first 4-core run), measured end to end through the real
+// Rust shim:
 //   N = 1:  a warm shared call is at most 2 ms slower than a separate server;
-//   N >= 2: a warm shared call is no slower than separate servers.
+//   N >= 2: at most 1.5 ms slower than separate servers.
 // A (separate): N copies of plain-server.js, the MCP SDK's own stdio server,
 //   one per session, each with its client.
 // S (shared): ONE runtime on --sessionSocket in a private home, started as
@@ -11,15 +12,24 @@
 //   enforce --controlChannel ipc), with perf-time as a scenario; daemon.json
 //   written once it listens; each session is a client running
 //   `ch-shim --home <home>` over stdio, which attaches and proves the secret.
+// P (per-session): the same runtime and shim, with a copy of perf-time that
+//   declares "state": "per-session" (generated in the run's home), so each
+//   session's calls go to that session's own worker (shared runtime R1:
+//   DeviceManager workerFor on every call). Its worker spawns on the
+//   session's first warm-up call, so the timed calls are warm.
 // Two load shapes (--mode):
 // - closed: each session makes WARMUP calls, then CALLS timed calls back to
 //   back, all N sessions at once;
 // - open: each session makes WARMUP calls, then CALLS timed calls, each after
 //   a gap drawn uniformly from 1-5 s by a seeded RNG (--seed), at random
 //   offsets, so a run repeats; separate and shared get the same schedule.
-// A and S alternate, ROUNDS times per N. A round's figures are the median and
-// p95 over every session's timed calls; the result is the median of the
-// rounds. The verdict uses the medians. See README.md.
+// A, S and P alternate, ROUNDS times per N. A round's figures are the median,
+// p90 and p95 over every session's timed calls; the result is the median of
+// the rounds. The verdict uses the medians: S and P each against A. Each
+// round records the 1-minute load average it started at, and is marked when
+// that was above LOADED. It isn't run again: much of that load is the
+// harness's own previous round (N sessions back to back), which a 1-minute
+// average still holds. See README.md.
 //
 // node perf/latency-gate/gate.js --shim <ch-shim> [--mode closed|open] [--sessions 1,2,4] [--rounds 5] [--calls 300] [--seed 1] [--json <file>]
 // node perf/latency-gate/gate.js --ch-local <ch-local checkout>   (builds ch-shim with cargo first)
@@ -33,7 +43,13 @@ const ROOT = path.resolve(HERE, '..', '..');
 const WARMUP = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.floor(s.length / 2)]; };
-const p95 = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.min(s.length - 1, Math.floor(s.length * 0.95))]; };
+const pct = (q) => (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.min(s.length - 1, Math.floor(s.length * q))]; };
+const p90 = pct(0.90);
+const p95 = pct(0.95);
+// the gate: how much slower than separate a warm call may be, by session count
+const allowanceMs = (n) => (n === 1 ? 2 : 1.5);
+// a round that starts with the 1-minute load above this is marked
+const LOADED = 1.0;
 // mulberry32: a small seeded RNG, so an open-mode schedule repeats
 function rng(seed) {
   let a = seed >>> 0;
@@ -126,7 +142,19 @@ async function separate(n, calls, plan) {
 
 const priv = (file, text) => { fs.writeFileSync(file, text, {mode: 0o600}); fs.chmodSync(file, 0o600); };
 
-async function shared(n, calls, shim, plan) {
+// perf-time as a per-session module (P): a copy in the run's home
+function perSessionCopy(home) {
+  const dir = path.join(home, 'modules-ps', 'perf-time');
+  fs.cpSync(path.join(HERE, 'modules', 'perf-time'), dir, {recursive: true});
+  const file = path.join(dir, 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+  pkg.countinghouse = Object.assign({}, pkg.countinghouse, {state: 'per-session'});
+  fs.writeFileSync(file, JSON.stringify(pkg));
+  return dir;
+}
+
+// S (perSession false) or P (true)
+async function shared(n, calls, shim, plan, perSession = false) {
   // a short path: a Unix socket's is capped near 107 bytes
   const home = fs.mkdtempSync(path.join(os.homedir(), '.chgate-'));
   const run = path.join(home, 'run', 'daemon');
@@ -138,7 +166,7 @@ async function shared(n, calls, shim, plan) {
   const socket = path.join(run, 'rt.sock');
   const rt = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--sessionSocket', socket, '--workerThread', '--store', 'local',
     '--storePath', path.join(home, 'store'), '--moduleSandbox', 'enforce', '--moduleDataPath', path.join(home, 'data'),
-    '--loadModule', path.join(HERE, 'modules', 'perf-time'), '--controlChannel', 'ipc'],
+    '--loadModule', perSession ? perSessionCopy(home) : path.join(HERE, 'modules', 'perf-time'), '--controlChannel', 'ipc'],
   {stdio: ['ignore', 'pipe', 'pipe', 'ipc'], cwd: home});
   let out = '';
   rt.stdout.on('data', (d) => { out = (out + d).slice(-8000); });
@@ -177,20 +205,27 @@ async function main() {
   const machine = {cpus: os.cpus().length, model: (os.cpus()[0] || {}).model, node: process.version, platform: `${os.platform()} ${os.release()}`, loadavgAtStart: os.loadavg()};
   process.stdout.write(`latency gate (${o.mode}): ${machine.cpus} CPUs (${machine.model}), node ${machine.node}, load ${machine.loadavgAtStart.map((x) => x.toFixed(2)).join('/')}; ${o.rounds} rounds of ${o.calls} calls per session${o.mode === 'open' ? `, 1-5 s gaps, seed ${o.seed}` : ''}\n`);
   const rows = [];
+  const fig = (x) => x.toFixed(2);
+  const over = (x) => `${x >= 0 ? '+' : ''}${fig(x)}`;
   for (const n of o.sessions) {
-    const a = [], s = [], ap = [], sp = [];
+    // per layout: each round's median, p90 and p95
+    const per = {separate: {med: [], p90: [], p95: []}, shared: {med: [], p90: [], p95: []}, perSession: {med: [], p90: [], p95: []}};
+    const roundsMeta = [];
     for (let r = 0; r < o.rounds; r++) {
       const plan = {mode: o.mode, seed: o.seed + r};
-      const sa = await separate(n, o.calls, plan);
-      const ss = await shared(n, o.calls, shim, plan);
-      a.push(median(sa)); ap.push(p95(sa)); s.push(median(ss)); sp.push(p95(ss));
-      process.stdout.write(`  N=${n} round ${r + 1}: separate ${a[r].toFixed(2)} ms (p95 ${ap[r].toFixed(2)}), shared ${s[r].toFixed(2)} ms (p95 ${sp[r].toFixed(2)})\n`);
+      const load = os.loadavg()[0];
+      const got = {separate: await separate(n, o.calls, plan), shared: await shared(n, o.calls, shim, plan), perSession: await shared(n, o.calls, shim, plan, true)};
+      roundsMeta.push({loadAtStart: load, loaded: load > LOADED});
+      for (const k of Object.keys(per)) { per[k].med.push(median(got[k])); per[k].p90.push(p90(got[k])); per[k].p95.push(p95(got[k])); }
+      process.stdout.write(`  N=${n} round ${r + 1} (load ${fig(load)}${load > LOADED ? ', LOADED' : ''}): separate ${fig(per.separate.med[r])} ms, shared ${fig(per.shared.med[r])} ms, per-session ${fig(per.perSession.med[r])} ms\n`);
     }
-    const A = median(a), S = median(s), AP = median(ap), SP = median(sp);
-    const limit = n === 1 ? A + 2 : A;
-    const pass = S <= limit;
-    rows.push({n, separateMs: A, sharedMs: S, separateP95Ms: AP, sharedP95Ms: SP, overMs: S - A, limitMs: limit, pass, rounds: {separate: a, shared: s, separateP95: ap, sharedP95: sp}});
-    process.stdout.write(`N=${n}: separate ${A.toFixed(2)} ms (p95 ${AP.toFixed(2)}), shared ${S.toFixed(2)} ms (p95 ${SP.toFixed(2)}), ${S - A >= 0 ? '+' : ''}${(S - A).toFixed(2)} ms; gate ${n === 1 ? 'shared <= separate + 2 ms' : 'shared <= separate'}: ${pass ? 'PASS' : 'FAIL'}\n`);
+    const A = median(per.separate.med), S = median(per.shared.med), P = median(per.perSession.med);
+    const limit = A + allowanceMs(n);
+    const pass = {shared: S <= limit, perSession: P <= limit};
+    const summary = (k) => ({ms: median(per[k].med), p90Ms: median(per[k].p90), p95Ms: median(per[k].p95), rounds: per[k]});
+    rows.push({n, allowanceMs: allowanceMs(n), limitMs: limit, separate: summary('separate'), shared: Object.assign(summary('shared'), {overMs: S - A, pass: pass.shared}),
+      perSession: Object.assign(summary('perSession'), {overMs: P - A, pass: pass.perSession}), roundsMeta, pass: pass.shared && pass.perSession});
+    process.stdout.write(`N=${n}: separate ${fig(A)} ms (p90 ${fig(median(per.separate.p90))}); shared ${fig(S)} ms, ${over(S - A)} (p90 ${fig(median(per.shared.p90))}); per-session ${fig(P)} ms, ${over(P - A)} (p90 ${fig(median(per.perSession.p90))}); gate <= +${allowanceMs(n)} ms: shared ${pass.shared ? 'PASS' : 'FAIL'}, per-session ${pass.perSession ? 'PASS' : 'FAIL'}\n`);
   }
   const verdict = rows.every((r) => r.pass) ? 'PASS' : 'FAIL';
   process.stdout.write(`verdict: ${verdict}\n`);
