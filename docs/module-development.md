@@ -392,7 +392,7 @@ call to it runs inline, as any action's does. Your handler is the same
 either way. While it runs, `ctx.job.progress(n)` (1–100) is the task's
 `statusMessage` on `tasks/get`, as `"NN%"`, rounded. A progress of 0 shows
 none, since every task starts at 0. A task that failed without an answer
-(it ran past `--jobTimeout`) shows its code, or `"failed"`, never your
+shows its code (`JOB_TIMEOUT` when it ran past `--jobTimeout`), never your
 handler's text.
 
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
