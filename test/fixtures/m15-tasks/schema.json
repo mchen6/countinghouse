@@ -7,6 +7,7 @@
              "output": {"type": "object", "properties": {"done": {"type": "boolean"}}, "required": ["done"]}},
     "scalar": {"input": {"type": "object"}, "output": {"type": "string"}},
     "fails": {"input": {"type": "object"}, "output": {"type": "object"}},
-    "quick": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"quick": {"type": "boolean"}}}}
+    "quick": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"quick": {"type": "boolean"}}}},
+    "exit": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"exiting": {"type": "boolean"}}}}
   }
 }
