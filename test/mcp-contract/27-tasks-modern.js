@@ -140,9 +140,35 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     const t = await created('slow', {ms: 8000});
     const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
     assert.strictEqual(done.status, 'failed', JSON.stringify(done));
+    assert.strictEqual(done.statusMessage, 'failed', 'M16 D3: its code, or "failed" for none');
     assert.strictEqual(done.result, undefined);
     assert.strictEqual(done.error.code, -32603);
     assert.match(done.error.message, /timed out/);
+  });
+
+  // M16 Task 1, D3: a working task's statusMessage is its last
+  // ctx.job.progress as "NN%" (rounded); nothing for a value that isn't a
+  // positive number, and nothing once it has completed
+  it('a working task\'s statusMessage is its progress, "NN%"; none once completed', async () => {
+    const t = await created('progress', {values: [42.4], holdMs: 1500});
+    const working = await until(KEY_A, t.taskId, (x) => x.status !== 'working' || x.statusMessage != null);
+    assert.strictEqual(working.status, 'working', JSON.stringify(working));
+    assert.strictEqual(working.statusMessage, '42%');
+    const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
+    assert.strictEqual(done.status, 'completed', JSON.stringify(done));
+    assert.strictEqual(done.statusMessage, undefined);
+  });
+
+  // (ctx.job.progress drops anything but a number from 0 to 100 in the
+  // worker; the gateway's own check is the second guard for the record)
+  it('a progress that isn\'t a number from 1 to 100 gives no statusMessage: "half", {}, 0, -5, 150', async () => {
+    for (const v of ['half', {}, 0, -5, 150]) {
+      const t = await created('progress', {values: [v], holdMs: 600});
+      const seen = new Set();
+      const done = await until(KEY_A, t.taskId, (x) => { seen.add(x.statusMessage); return x.status !== 'working'; });
+      assert.strictEqual(done.status, 'completed', JSON.stringify(done));
+      assert.deepStrictEqual([...seen], [undefined], `${JSON.stringify(v)}: ${JSON.stringify([...seen])}`);
+    }
   });
 
   it('another key\'s task, an unknown id and a malformed one get one -32602, which echoes no id, for get, update and cancel', async () => {
