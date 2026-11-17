@@ -15,6 +15,11 @@
 // then sends SIGUSR2 (the test file set process.report to write a
 // diagnostic report to stdout on it: native stacks, heap statistics, libuv
 // handles) and, 3 s later, SIGKILL. It ends with the watched process.
+// And machine-wide (the runner's memory, which a loss's monitor showed at
+// 11.7 GB used): while /proc/meminfo's MemAvailable is under 4 GB it prints,
+// at most once per 2 s, the 8 processes with the most RSS (pid, ppid, RSS,
+// command line cut to 120), killing nothing: only the watched process, past
+// its own limit, is killed.
 // Linux only (CI); elsewhere it exits at once.
 const fs = require('fs');
 
@@ -44,10 +49,47 @@ function threads() {
   return out;
 }
 
+// a closed stdout (its reader gone) never ends the watcher
+process.stdout.on('error', () => {});
+
+const LOW_AVAILABLE = 4 * 1024 * 1024 * 1024;
+const TOP_EVERY_MS = 2000;
+let toldTopAt = 0;
+
+// the `n` processes with the most RSS, as one line each
+function topByRss(n) {
+  const rows = [];
+  let pids = [];
+  try { pids = fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d)); } catch (e) { return rows; }
+  for (const p of pids) {
+    try {
+      const st = fs.readFileSync(`/proc/${p}/status`, 'utf8');
+      const rss = kib('VmRSS', st);
+      if (rss == null) continue;
+      const ppid = (/^PPid:\s+(\d+)/m.exec(st) || [])[1];
+      let cmd = '';
+      try { cmd = fs.readFileSync(`/proc/${p}/cmdline`, 'utf8').split('\0').join(' ').trim(); } catch (e) { /* gone */ }
+      rows.push({pid: p, ppid, rss, cmd: cmd.slice(0, 120)});
+    } catch (e) { /* gone meanwhile */ }
+  }
+  return rows.sort((a, b) => b.rss - a.rss).slice(0, n);
+}
+
+function machineCheck() {
+  let info = '';
+  try { info = fs.readFileSync('/proc/meminfo', 'utf8'); } catch (e) { return; }
+  const available = kib('MemAvailable', info);
+  if (available == null || available >= LOW_AVAILABLE || Date.now() - toldTopAt < TOP_EVERY_MS) return;
+  toldTopAt = Date.now();
+  const rows = topByRss(8).map((r) => `${r.pid} (ppid ${r.ppid}) ${mb(r.rss)} ${r.cmd}`);
+  process.stdout.write(`\n[ml24-watch] MemAvailable ${mb(available)} (under ${mb(LOW_AVAILABLE)}); watched pid ${pid}; top by RSS: ${rows.join(' | ')}\n`);
+}
+
 let last = threads();
 let fired = false;
 const timer = setInterval(() => {
   if (!alive()) { clearInterval(timer); return; }
+  machineCheck();
   if (fired) return;
   let status = '';
   try { status = fs.readFileSync(`/proc/${pid}/status`, 'utf8'); } catch (e) { return; }
