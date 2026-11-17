@@ -224,6 +224,29 @@ const out = {
     rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}'
   },
+  // ch-local's one order for a GitHub token (lib/github-token.js
+  // chooseGitHubToken), in start, the daemon's shared runtime and the
+  // conditions check. Inputs: what the client's environment sets
+  // (COUNTINGHOUSE_GITHUB_TOKEN, GITHUB_TOKEN), whether a token is stored
+  // with `ch-local credentials add github` and passes its checks, whether gh
+  // is logged in, and what the running daemon's runtime holds (it takes the
+  // token at its start: after a credential is added it holds the old one
+  // until it restarts). Each value names a source, never a token.
+  githubTokenPrecedence: {
+    rule: 'start (a per-session runtime) takes the first of: the client\'s COUNTINGHOUSE_GITHUB_TOKEN, the stored token, gh auth token, the client\'s GITHUB_TOKEN. The daemon\'s runtime, which no client environment reaches, takes the stored token, else gh\'s, at its start. The conditions check sends the keyed hash of the token start would choose, except that a gh login is sent as null (the daemon has it too): so token is mac(env), mac(stored), null or mac(GITHUB_TOKEN). The session shares when token is null (the daemon\'s, whatever it holds), or when token is the hash of the token the daemon holds; otherwise own-runtime (token). A stored token that fails its file checks counts as none',
+    cases: [
+      {why: 'nothing anywhere', input: {env: [], stored: false, ghLogin: false, daemonHolds: null}, start: null, daemon: null, conditions: null, outcome: 'shares'},
+      {why: 'gh only', input: {env: [], stored: false, ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'a stored token, the daemon started on it', input: {env: [], stored: true, ghLogin: true, daemonHolds: 'stored'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'shares'},
+      {why: 'a stored token added while the daemon runs on gh\'s: its own runtime until the daemon restarts', input: {env: [], stored: true, ghLogin: true, daemonHolds: 'gh'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'own-runtime (token)'},
+      {why: 'the client sets COUNTINGHOUSE_GITHUB_TOKEN beside a stored one', input: {env: ['COUNTINGHOUSE_GITHUB_TOKEN'], stored: true, ghLogin: true, daemonHolds: 'stored'}, start: 'environment', daemon: 'stored', conditions: 'mac(env)', outcome: 'own-runtime (token)'},
+      {why: 'GITHUB_TOKEN beside a gh login chooses nothing', input: {env: ['GITHUB_TOKEN'], stored: false, ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'GITHUB_TOKEN beside a stored token chooses nothing', input: {env: ['GITHUB_TOKEN'], stored: true, ghLogin: false, daemonHolds: 'stored'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'shares'},
+      {why: 'GITHUB_TOKEN with neither a stored token nor gh', input: {env: ['GITHUB_TOKEN'], stored: false, ghLogin: false, daemonHolds: null}, start: 'GITHUB_TOKEN', daemon: null, conditions: 'mac(GITHUB_TOKEN)', outcome: 'own-runtime (token)'},
+      {why: 'a stored token removed while the daemon still runs on it: null is the daemon\'s, until its restart (the restart request)', input: {env: [], stored: false, ghLogin: true, daemonHolds: 'stored'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'a stored token whose file fails its checks counts as none', input: {env: [], stored: 'refused', ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'}
+    ]
+  },
   // ch-local's pack messages on the control channel (B3, "For C" in
   // docs/superpowers/plans/2026-11-16-shared-runtime-b3-session-packs.md):
   // which pack a load, reload, unload or notice is about, and whether a load
