@@ -5,7 +5,10 @@
 // ctx.caller as a call ({id, isAdmin}, the same id for the same key), and
 // nothing it can reach (ctx, globalThis, every loaded file's exports) holds
 // an API key, a user name or the Redis URL. Over a 2026-07-28 request and a
-// legacy one. (test/auth/30 checks calls, tasks and hops; the scan is its.)
+// legacy one. So does a task's run after its answer (M22: the runtime starts
+// it again from the record it held its question in), and a completion action
+// (M11), which answers what it found as values. (test/auth/30 checks calls,
+// tasks and hops; the scan is its.)
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -30,8 +33,10 @@ const post = (body, headers = {}) => {
   for (const [k, v] of Object.entries(headers)) r = r.set(k, v);
   return r.send(body).then((res) => res.body);
 };
-const modern = (method, params, name) => post({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': V,
-  'io.modelcontextprotocol/clientCapabilities': {}}}, params)}, Object.assign({'MCP-Protocol-Version': V, 'Mcp-Method': method}, name != null ? {'Mcp-Name': name} : {}));
+const modern = (method, params, name, caps = {}) => post({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': V,
+  'io.modelcontextprotocol/clientCapabilities': caps}}, params)}, Object.assign({'MCP-Protocol-Version': V, 'Mcp-Method': method}, name != null ? {'Mcp-Name': name} : {}));
+// a client that runs tasks and answers forms
+const TASKS = {extensions: {'io.modelcontextprotocol/tasks': {}}, elicitation: {form: {}}};
 const legacy = (method, params) => post({jsonrpc: '2.0', id: 1, method, params});
 
 function assertClean(view, label) {
@@ -42,7 +47,7 @@ function assertClean(view, label) {
   assert.strictEqual(view.caller.isAdmin, false);
 }
 
-describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s module code (M18)', function() {
+describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s, an answered task\'s or a completion action\'s module code (M18)', function() {
   this.timeout(120000);
   let base = null;
   let server = null;
@@ -85,5 +90,46 @@ describe('auth 53: no API key, user name or Redis URL reaches a resource read\'s
 
   it('a legacy resources/read: nothing found', async () => {
     assertClean(readView(await legacy('resources/read', {uri: URI})), 'a legacy read');
+  });
+
+  const whoCalled = async () => {
+    const name = (await legacy('tools/list', {})).result.tools.find((t) => /readservice_who$/.test(t.name)).name;
+    return (await modern('tools/call', {name, arguments: {}}, name)).result.structuredContent.caller;
+  };
+
+  it('a task\'s run after its answer (M22): nothing found, and the caller a call sees', async () => {
+    const name = (await legacy('tools/list', {})).result.tools.find((t) => /readservice_askthenpeek$/.test(t.name)).name;
+    const made = await modern('tools/call', {name, arguments: {}}, name, TASKS);
+    assert.strictEqual((made.result || {}).resultType, 'task', JSON.stringify(made).slice(0, 600));
+    const taskId = made.result.taskId;
+    const until = async (want) => {
+      for (let i = 0; i < 300; i++) {
+        const got = await modern('tasks/get', {taskId}, taskId, TASKS);
+        if (got.result != null && want(got.result)) return got.result;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw new Error(`task ${taskId} never got there: ${JSON.stringify(await modern('tasks/get', {taskId}, taskId, TASKS)).slice(0, 600)}`);
+    };
+    const asking = await until((t) => t.status === 'input_required');
+    const key = Object.keys(asking.inputRequests)[0];
+    await modern('tasks/update', {taskId, inputResponses: {[key]: {action: 'accept', content: {yes: true}}}}, taskId, TASKS);
+    const done = await until((t) => t.status !== 'working' && t.status !== 'input_required');
+    assert.strictEqual(done.status, 'completed', JSON.stringify(done).slice(0, 600));
+    const view = done.result.structuredContent;
+    assert.deepStrictEqual(view.answer, {yes: true}, 'the run after the answer');
+    assertClean(view, 'a task\'s run after its answer');
+    assert.deepStrictEqual(view.caller, await whoCalled(), 'a task and a call see the same caller');
+  });
+
+  it('a completion action (M11): nothing found, and the caller a call sees', async () => {
+    const got = await modern('completion/complete', {ref: {type: 'ref/prompt', name: 'key_dump_read_pick'}, argument: {name: 'thing', value: ''}});
+    assert.ok(got.result != null && got.result.completion != null, JSON.stringify(got).slice(0, 600));
+    const values = Object.fromEntries(got.result.completion.values.map((v) => [v.slice(0, v.indexOf(':')), v.slice(v.indexOf(':') + 1)]));
+    assert.strictEqual(values.budget, 'false', `the walk ran out of budget, so it proves nothing: ${JSON.stringify(values)}`);
+    assert.strictEqual(values.hits, '0', `found: ${values.first}`);
+    assert.strictEqual(values.callerKeys, 'id,isAdmin', JSON.stringify(values));
+    assert.match(values.id, ID_SHAPE);
+    assert.strictEqual(values.admin, 'false');
+    assert.strictEqual(values.id, (await whoCalled()).id, 'a completion action and a call see the same caller');
   });
 });

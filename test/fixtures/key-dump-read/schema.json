@@ -3,7 +3,83 @@
   "$id": "#/",
   "type": "object",
   "readService": {
-    "peek": {"output": {"type": "object"}},
-    "who": {"output": {"type": "object"}}
+    "peek": {
+      "output": {
+        "type": "object"
+      }
+    },
+    "who": {
+      "output": {
+        "type": "object"
+      }
+    },
+    "askThenPeek": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      },
+      "questions": {
+        "confirm": {
+          "type": "object",
+          "properties": {
+            "yes": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "yes"
+          ]
+        }
+      }
+    },
+    "completeThing": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "argument": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "argument",
+          "value"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "values"
+        ]
+      }
+    }
+  },
+  "prompts": {
+    "pick": {
+      "type": "object",
+      "properties": {
+        "thing": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "thing"
+      ]
+    }
   }
 }
