@@ -973,6 +973,62 @@ it and frees its slot, so a client that never reads holds nothing of a
 key's notices. The runtime's own reads of a listener's lists never spend
 its rate limit.
 
+### What the MCP layer serves, and its bounds (MCP completeness)
+
+The 2026-07-28 surfaces (stored results, module resources, prompts,
+completion, questions, listens, tasks, cancelling) are a layer over the
+schema contract. They add no way for module code to learn who is calling,
+and every one is bounded.
+
+- **Identity never reaches a module.** A resource read and a completion
+  action get the same `ctx.caller` as a call, `{id, isAdmin}`: the opaque
+  id, never the key or the user's name. `ctx.ask` returns the answer's
+  content only. No URI, cursor, progress token, task id, session id or
+  `requestState` is passed to a worker; each is resolved on the main
+  thread. Error texts and log lines name the module and the action, never
+  a key or a user name. An icon is inlined at load, so a client never
+  fetches a module author's URL.
+- **Stored results** (a value past the inline budget, linked as
+  `countinghouse://r/<id>`). The id is 256 random bits, and every read
+  checks the owner and the session as well, so knowing a URI isn't enough
+  to read it. One answer serves an unknown, an expired and another
+  caller's result alike. The files are owner-only, in a directory of the
+  runtime's, never under a module's data path, so no module reaches them
+  through the file broker.
+- **Module resource URIs** (`countinghouse://m/<module>/<path>`) are parsed
+  by one strict function. Anything that doesn't match a loaded template
+  exactly is "not found". A variable holds no raw `/`, and is decoded
+  strictly. The decoded value is only ever an input to the action,
+  validated by its schema; the runtime never uses it as a path, a key or a
+  log field. A module that reads files from a variable must guard it, as
+  for any input. No other scheme is read, and the runtime never fetches a
+  URL.
+- **Prompt text** is declared and reviewed. An argument is substituted
+  once, as text, and bounded.
+
+**Bounds.** Each is enforced on the main thread, and each has a test that
+fails if it is removed:
+
+| Surface | Bound | Pinned by |
+|---|---|---|
+| A list page | `--listPageSize` items (250; 10 to 1000); a cursor of at most 512 bytes | mcp-contract 21, 20 |
+| Declarations per module | 32 prompts; 8 messages of at most 8 KiB each; 16 arguments; 4 questions per action; 16 binary fields per action; 4 icons of at most 16 KiB; `api.json` at most 256 KB | module-authoring 06, module-loading 23 |
+| A result's binary values | at most 16; inline up to `--inlineContentBytes` (1 MiB), linked past it | validation 18, mcp-contract 15 and 03, store 08 |
+| The result store | per owner 128 MiB under Redis, 256 MiB under the local store (`--resourceQuotaBytes`) and 1024 items; `--resourceStoreBytes` in all; `--resourceRetention` | store 07, 08 |
+| A resource URI | at most 2048 bytes; at most 8 variables | mcp-contract 25, module-authoring 06 |
+| A listen | 64 URIs; 8 listens per key, 2 per session, 512 in all; an HTTP listen closed past 1 MiB unread | stdio 32, mcp-contract 09 |
+| Completion | 100 values of at most 256 characters; a completion action answers within 2 s or is cancelled; the per-key rate limit | mcp-contract 30, stdio 33 |
+| A prompt's answer | at most 64 KiB, measured before it is built and again as sent | mcp-contract 24 |
+| A question | a dialog of 1000 characters; 8 form properties; 8 rounds per call, 3 per question; a `requestState` of at most 16 KiB; answers of at most 8 KiB | questions 01, 05, module-authoring 06, mcp-contract 10 |
+| A task's question | at most 64 of an owner's tasks waiting, 10,000 in all; a wait of an hour, then `ASK_EXPIRED` | questions 08 |
+| Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
+| Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
+| Every read, get, completion and task method | the per-key rate limit, before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+
+A module resource read takes its token from the call path, after the
+listing lookup that finds its action: a probe of a URI that reads nothing
+is limited too, and no module code runs before the limit.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
@@ -1182,8 +1238,9 @@ the main thread's, not the module's (spec:
   its allowlist, so for the single local user the user is the operator.
 - **What a remote can reach.**
   - https only (http only to a loopback host under `--debug`, for tests);
-  - redirects refused, never followed, so a credential never goes to a
-    second location;
+  - a redirect followed only within the same origin (the exact scheme,
+    host and port; at most 5, its Authorization kept), never to another
+    origin, so a credential never goes to another origin;
   - outside `--debug`, a URL whose host is a loopback or non-public
     address is refused at load: private, link-local, CGNAT, multicast and
     reserved ranges, and IPv6 forms that carry such an IPv4 address;

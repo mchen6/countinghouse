@@ -13,7 +13,8 @@
 //   slow        echo_text's answer after 3 s
 //
 // mode: 'ok' (default), '401' (every request), 'garbage' (200 with a body
-// that is not JSON-RPC), 'redirect' (302 to `redirectTo`), 'paged'
+// that is not JSON-RPC), 'redirect' (302 to `redirectTo`), 'redirect-same'
+// (307 to /moved on this server, which answers as 'ok'), 'paged'
 // (tools/list in pages of two), 'loopcursor' (every page names cursor "0"
 // next), '600', '404', '500', '503', '504' (that status on every
 // request), 'echo400' (400 whose body repeats the Authorization header's
@@ -60,6 +61,7 @@ function startRemoteServer(port, opts) {
       state.paths.push(req.url);
       if (state.mode === '401') { res.writeHead(401, {'content-type': 'text/plain'}); return res.end('unauthorized'); }
       if (state.mode === 'redirect') { res.writeHead(302, {location: o.redirectTo}); return res.end(); }
+      if (state.mode === 'redirect-same' && req.url !== '/moved') { res.writeHead(307, {location: `http://127.0.0.1:${port}/moved`}); return res.end(); }
       if (state.mode === 'garbage') { res.writeHead(200, {'content-type': 'application/json'}); return res.end('not json'); }
       if (/^\d{3}$/.test(state.mode)) { res.writeHead(Number(state.mode), {'content-type': 'text/plain'}); return res.end('status'); }
       if (state.mode === 'echo400') {
