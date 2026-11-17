@@ -30,6 +30,17 @@ describe('mcp-contract 20: the page helper (M1)', () => {
     assert.ok(MAX_ANCHOR_CHARS >= longest.length);
   });
 
+  // the review of M7: a resource list's anchor is its URI after the fixed
+  // prefix: a slug of 64 (never suffixed), a / and a template of 256
+  it('the longest resource anchor round-trips, within 512 bytes', () => {
+    const longest = `${'s'.repeat(64)}/${'t'.repeat(256)}`;
+    for (const kind of ['resources', 'resourceTemplates']) {
+      const c = encodeCursor(kind, longest);
+      assert.ok(c.length <= MAX_CURSOR_BYTES, `${kind}: ${c.length} bytes`);
+      assert.strictEqual(decodeCursor(kind, c), longest);
+    }
+  });
+
   it('anything that is no cursor of this kind is null', () => {
     const good = {v: 1, k: 'tools', a: 'x'};
     for (const [why, cursor] of [

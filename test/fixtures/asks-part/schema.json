@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "partService": {
+    "store": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "asked": {
+            "type": "boolean"
+          },
+          "answer": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asked"
+        ]
+      },
+      "questions": {
+        "overwrite": {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "boolean",
+              "title": "Replace"
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      }
+    }
+  }
+}

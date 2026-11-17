@@ -1,0 +1,11 @@
+{
+  "name": "asks-through-part",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "countinghouse": {
+    "role": "scenario",
+    "calls": [
+      "asks-part/partService.store"
+    ]
+  }
+}

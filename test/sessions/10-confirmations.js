@@ -491,7 +491,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(settings.limitsOf(A), null);
       // the session's lock, in its own words: for the session, not "until countinghouse restarts"
       const locked = await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
-      assert.strictEqual(locked.message, 'Loosening maxOutputBytes is not asked again in this session (it was declined or left unanswered here, or this client\'s configuration could answer for you); '
+      assert.strictEqual(locked.message, 'Loosening maxOutputBytes is not asked again in this session (it was declined or left unanswered here); '
         + 'nothing was changed. To allow it, run `ch-local settings set maxOutputBytes 16MiB` in a terminal yourself.');
       assert.ok((await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B))).inputRequired != null, 'B is not locked by A\'s decline');
       assert.strictEqual(confirm.userWindow().count('maxOutputBytes'), 1);
@@ -532,13 +532,49 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(settings.limitsOf(A), null);
     });
 
+    // The latch's own refusal (after A's M17 run): it says why, never that the user declined
+    it('a latched session is refused SETTING_CLIENT_NOT_CONFIRMED, naming why; a real decline keeps its own code and text', async () => {
+      const t0 = tool();
+      sources[A].answer = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'project plugin or marketplace', at: '~/.claude/settings.json'}};
+      const e = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+      assert.match(e.message, /this client's configuration could answer forms by itself \(project plugin or marketplace: ~\/\.claude\/settings\.json\)/);
+      assert.doesNotMatch(e.message, /declined/);
+      assert.match(e.message, /ch-local settings set requestTimeout 60s/);
+      // later asks too, and of every kind, with the same why: one "no" is final
+      sources[A].answer = {status: 'ok', conditions: 'yes', repo: null};
+      const again = await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+      assert.match(again.message, /project plugin or marketplace/);
+      // no why given, or one the rule refuses: it could not be confirmed, and no path is said
+      sources[B].answer = {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client hook present', at: '/home/x/.claude/settings.json'}};
+      const none = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_CLIENT_NOT_CONFIRMED');
+      assert.match(none.message, /this client could not be confirmed/);
+      assert.doesNotMatch(none.message, /\/home\/x/);
+    });
+
+    // The reviewer's ruling (c) on #337: a lock restored from the daemon's row has an unknown origin (a
+    // decline or a latch before the restart), so its refusal claims neither. A fresh "no" re-latches with its why.
+    it('a lock restored across a restart is told neutrally, never "declined"; a fresh "no" then gives the latch\'s text with its why', async () => {
+      const t0 = tool();
+      confirm.confirmations(A).restore({locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 3});
+      const restored = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
+      assert.doesNotMatch(restored.message, /declined|configuration/);
+      assert.match(restored.message, /ch-local settings set requestTimeout 60s/);
+      sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null, why: {reason: 'client hook present', at: '~/.claude/settings.json'}});
+      const latched = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+      assert.match(latched.message, /client hook present: ~\/\.claude\/settings\.json/);
+      // a lock made in this runtime's life keeps its own text: a decline in B is a decline
+      const r = await t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B));
+      await t0.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: DECLINE}, ctx(B));
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(B)), 'SETTING_DECLINED_THIS_SESSION');
+    });
+
     it('one "conditions: no" from a session\'s client latches it: no form of any kind for its life, though a later answer says yes (N1)', async () => {
       const t0 = tool();
       sources[A].answer = {status: 'ok', conditions: 'no', repo: null};
-      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       sources[A].answer = {status: 'ok', conditions: 'yes', repo: null};
-      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
-      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(confirm.confirmations(A).formsLeft(), 3, 'no form was ever shown');
       assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => h.change), ['not confirmed (locked in this session)', 'not confirmed (locked in this session)']);
       assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
@@ -557,7 +593,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       sources[A].emit('client', {status: 'ok', conditions: 'yes', repo: null});
       assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
       const before = asked.length;
-      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(asked.length, before, 'a latched session\'s shim is not asked');
       // a frame that is not "ok, no" latches nothing
       sources[B].emit('client', {status: 'failed', conditions: 'no', repo: null});
@@ -570,10 +606,10 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // C1 updates s.client in place at each frame; this one came unasked
       sources[A].client.conditions = 'no';
       const before = asked.length;
-      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(asked.length, before, 'the latest frame said it: nothing more is asked');
       sources[A].client.conditions = 'yes';
-      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       // a frame whose status is not ok is no "no": no form now, no latch
       sources[B].client.status = 'failed';
       sources[B].client.conditions = 'no';
@@ -628,7 +664,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       });
 
       it('the session latched meanwhile (its client reattached saying no): not applied', async () => {
-        await confirming(async () => { sources[A].client.conditions = 'no'; sources[A].emit('attach'); }, 'SETTING_DECLINED_THIS_SESSION');
+        await confirming(async () => { sources[A].client.conditions = 'no'; sources[A].emit('attach'); }, 'SETTING_CLIENT_NOT_CONFIRMED');
         assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 8 * MiB);
       });
 
