@@ -226,4 +226,21 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
     }
     assert.deepStrictEqual(workers(TWO), {up: 3, ended: 0});
   });
+
+  // Issue #391 (C's packs queue): a reload of a pack whose new version brings
+  // ps-two as its part leaves ps-two unlisted, though its own load lists it
+  // (MODULE_NOT_LISTED on touchTwo). Skipped until #391 is fixed; then this
+  // runs as it stands.
+  it.skip('#391: a reload of per-session-module\'s pack, which brings ps-two as its part, leaves ps-two listed and running', async() => {
+    const s = await three(['--packsRoot', path.join(home, 'packs')]);
+    for (const who of SESSIONS) outOf(await s.call(who, 'two', 'touch'));
+    const v2 = one(home, {dir: path.join(home, 'packs', NAME, '1.1.0', 'node_modules', NAME), version: '1.1.0'});
+    fs.cpSync(two(home, {dir: path.join(home, 'tmp-two')}), path.join(path.dirname(v2), TWO), {recursive: true});
+    const answer = await r.control({type: 'reload', name: NAME, scenario: v2, pack: NAME, global: true});
+    assert.strictEqual(answer.ok, true, JSON.stringify(answer));
+    await until(async() => workers(NAME).ended === workers(NAME).up, 20000);
+    for (const who of SESSIONS) {
+      assert.deepStrictEqual(outOf(await s.call(who, 'two', 'touch')), {file: 2, store: 2, memory: 2}, `${who}'s ${TWO}: still listed, run on`);
+    }
+  });
 });
