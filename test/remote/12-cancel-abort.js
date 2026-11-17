@@ -18,7 +18,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const REMOTE = testPort(9589);
 const KEY = 'remote-12-key';
 const TOKEN = `ghp_${'C'.repeat(36)}`;
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const callTokens = require('../../lib/call-tokens');
 
 describe('remote 12: a dropped token aborts its remote call (M19)', function() {

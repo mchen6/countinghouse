@@ -31,7 +31,7 @@ const options = require('../../lib/cli-options');
 // from whichever file asked first.
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
 options.setOptions(OPTIONS);
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const toolRegistry = require('../../lib/mcp/tool-registry');
 const {encodeCursor, decodeCursor} = require('../../lib/mcp/pages');

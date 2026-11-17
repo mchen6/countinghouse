@@ -22,7 +22,7 @@ const LIB = path.join(ROOT, 'lib');
 function run(scenario) {
   const script = `
     require(${JSON.stringify(path.join(LIB, 'cli-options'))}).setOptions({workerThread: true, peerChannelAuthRecheckSeconds: 0});
-    require(${JSON.stringify(path.join(LIB, 'logger'))}).createLogger(false);
+    require(${JSON.stringify(path.join(LIB, 'logger'))}).createLogger();
     let during = () => {};
     const authPath = require.resolve(${JSON.stringify(path.join(LIB, 'user-auth'))});
     require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
