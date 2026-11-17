@@ -142,6 +142,18 @@
 
 ### Task 5: Routing every dispatch through `workerFor`
 
+**Ruling at build time (Reviewer, 2026-11-17): no direct peer channel to a per-session target.** A worker keys its peer channels by target device alone (`lib/peer-worker.js` `peerDeviceWorkerMap`), and it can't key them by session, since no session id reaches a module. So a shared caller serving sessions A and B would carry A's hop into B's worker over the channel B's call opened. Therefore:
+- the broker answers a channel request for a per-session target with a grant-less `route: main`;
+- the caller's peer-worker marks that device main-routed for its life, and re-sends the queued calls, and every later one, through the main-thread hop (`invokeforeignaction`), where `workerFor` picks the worker from each call's own token;
+- as a backstop, the broker refuses an announcement whose token's session isn't the callee worker's `hostSession`.
+
+Isolation is then structural: no channel to a per-session worker exists. **Cost:** one main-thread round trip per hop into a per-session module. **Tests added:**
+- hop isolation, with and without `--no-directPeerChannels`;
+- queued calls racing the `route: main` answer, each landing in its own session's worker;
+- Task 4's surviving hop-guard mutants, now killed.
+
+**Deferred, not now:** a per-session caller (one session per worker) could keep a channel to the same session's per-session target. That needs a measurement first.
+
 **Files:**
 - Modify: `lib/device-manager.js`, `lib/peer-channel-broker.js`, `lib/route-manager.js` (each `deviceMap[` site in a dispatch path; the listing readers stay as they are)
 - Test: `test/session-runtime/04-per-session-routing.js` (spawned), plus `test/fixtures/per-session-caller` (a shared module that hops into the per-session one, and opens a peer channel to it)
@@ -180,6 +192,10 @@
 - [ ] Implement. Run: PASS. Commit.
 
 ### Task 7: Docs (the user asked for this explanation to be documented; the Reviewer's checklist, #349)
+
+**Added by the Reviewer's peer-channel ruling (Task 5):**
+- `docs/security-model.md`: hops into a per-session module always go through the main thread, routed by each call's token, never over a direct peer channel, and why (a caller's channels are keyed by device, never by session).
+- `docs/module-development.md`: the cost, one main-thread round trip per hop into a per-session module.
 
 **`docs/module-development.md`, a section "Modules that keep state per session" (for authors):**
 - [ ] **The default:** one worker per module, shared by every session. Declare `"countinghouse": {"state": "per-session"}` only if the module keeps per-user state in memory or storage.
