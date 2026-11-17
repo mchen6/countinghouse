@@ -271,8 +271,13 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     });
     it('a lock falls on A during its load (its client says no)', async() => {
       const err = await during(() => { sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null}); });
-      assert.ok(err != null);
+      assert.strictEqual(err && err.code, 'SETTING_CLIENT_NOT_CONFIRMED', err && err.message);
       nothingApplied('latched');
+    });
+    it('another kind is declined in A during its load: locked, never said as a decline of the pack (ruling (c))', async() => {
+      const err = await during(() => { confirm.confirmations(A).decline('requestTimeout'); });
+      assert.strictEqual(err && err.code, 'SETTING_LOCKED_THIS_SESSION', err && err.message);
+      nothingApplied('locked');
     });
     it('A\'s own override for the pack changes during its load', async() => {
       const err = await during(() => { settings.set(A, 'pack.ci', false, {version: '1.0.0'}); });
