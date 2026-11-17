@@ -16,7 +16,9 @@ const gateway = require('../../lib/mcp/gateway');
 const sessions = require('../../lib/sessions');
 const sessionPacks = require('../../lib/session-packs');
 
-const spec = (friendlyName, actions) => ({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: `${a} it`}))}}}});
+// (each module declares one prompt with no arguments: prompts/list and prompts/get read the session too)
+const spec = (friendlyName, actions) => ({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: `${a} it`}))}},
+  promptList: [{name: `${friendlyName.replace(/-/g, '_')}_brief`, description: 'Briefly.', messages: [{role: 'user', text: 'Be brief.'}]}]}});
 
 // a pack `ci` (its scenario ch-pack-x and its unlisted part ch-step-a), a global pack `docs`, and a plain module no pack owns
 function fakeInterface({withCi = true} = {}) {
@@ -117,6 +119,29 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     assert.ok(!names(await request(ci, B, 'tools/list', {})).includes('docs_search'));
     assert.match((await request(ci, B, 'tools/call', {name: 'docs_search', arguments: {}})).error.message, /unknown tool: docs_search/);
     assert.ok(names(await request(ci, A, 'tools/list', {})).includes('docs_search'));
+  });
+
+  // the reviewer's ruling (2026-11-16): a pack's prompt surface is hidden as its tools are
+  it('A\'s prompts/list has the pack\'s prompts and B\'s doesn\'t; B\'s is exactly its list with the pack never loaded', async () => {
+    const pnames = (r) => r.result.prompts.map((p) => p.name);
+    const a = await request(ci, A, 'prompts/list', {});
+    const b = await request(ci, B, 'prompts/list', {});
+    assert.ok(pnames(a).some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(pnames(a)));
+    assert.ok(!pnames(b).some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(pnames(b)));
+    assert.ok(!pnames(b).some((n) => /ch_step_a_brief/.test(n)), 'nor its part\'s');
+    const never = await request(fakeInterface({withCi: false}), B, 'prompts/list', {});
+    assert.strictEqual(JSON.stringify(b), JSON.stringify(never));
+  });
+
+  it('B\'s prompts/get of the pack\'s prompt is answered as one with the pack unloaded: unknown prompt', async () => {
+    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_x_brief/.test(n));
+    const hidden = await request(ci, B, 'prompts/get', {name: listed});
+    const gone = await request(fakeInterface({withCi: false}), B, 'prompts/get', {name: listed});
+    assert.match(JSON.stringify(hidden), /unknown prompt/);
+    assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
+    // A's is found (past the lookup; the fake interface has no validators to check its arguments)
+    const aGets = await request(ci, A, 'prompts/get', {name: listed});
+    assert.doesNotMatch(JSON.stringify(aGets), /unknown prompt/);
   });
 
   it('the global tool table is untouched: the same frozen object, and the filter hands it back while no session has a pack override', () => {
