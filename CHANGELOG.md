@@ -80,6 +80,17 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — declared text reaches the client with no hidden characters (MCP completeness, M18)
+
+What a module declares for the client is cleaned as it leaves: a tool's
+title and description, a prompt's title, description, arguments'
+descriptions and messages, a resource's title and description, and a
+question's dialog. Each hidden character (a control, line separator, bidi
+control, zero-width character, tag, variation selector or filler) becomes a
+space. A prompt's message keeps its line breaks and tabs, and an emoji
+keeps its joiner and VS-16. A completion candidate with a hidden character
+is no longer offered. Nothing is refused or changed at load.
+
 ### Added — completion for resource templates, and completion actions (MCP completeness, M11)
 
 - **`completion/complete` takes `ref/resource`**: one of the caller's listed

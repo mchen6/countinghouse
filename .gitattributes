@@ -1,0 +1,5 @@
+# Append-only lists every PR adds to: a local merge keeps both sides'
+# lines (git's union driver). A line one side removed comes back in a union
+# merge and is removed by hand; GitHub's merge button ignores this file.
+CHANGELOG.md merge=union
+test/ports.md merge=union
