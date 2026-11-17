@@ -626,6 +626,52 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     back.c.end();
   });
 
+  // ch-local credentials: a stored token added while sessions share the
+  // runtime restarts it (ch-local daemon's restart request) with the table
+  // restored. The token check runs again on every reconnect: a restored
+  // session whose client chose the old runtime's token goes to its own
+  // runtime, never onto the new one; one that chose none, or the new one,
+  // shares it.
+  it('after a restart onto another token, a restored session whose client chose the old one is own-runtime (token) on its reconnect', async() => {
+    const handshake = require('../../lib/session-transport/handshake');
+    const crypto = require('crypto');
+    const made = () => `t${crypto.randomBytes(12).toString('hex')}`;
+    const old = made();
+    const stored = made();
+    const frame = (s, token) => ({status: 'ok', conditions: 'no', repo: null, token: token == null ? null : handshake.tokenMac(s, token).toString('base64')});
+    r = runtime(home, [], {env: {COUNTINGHOUSE_GITHUB_TOKEN: old}});
+    let secret = await listening(r);
+    const sessions = [];
+    for (const chose of [old, null, stored]) {
+      const s = await shim.session(r.socket, secret, frame(secret, chose));
+      assert.deepStrictEqual(s.settled, chose === stored ? {op: 'own-runtime', reason: 'token'} : {op: 'settled'}, 'before: only the old token, or none, shares');
+      if (chose !== stored) sessions.push({chose, id: s.welcome.session, token: s.welcome.resumeToken});
+      s.c.end();
+    }
+    await tick(300);
+    const rows = sessions.map(({id}) => {
+      const told = r.told.filter((m) => m.type === 'session-resume' && m.session === id);
+      return {session: id, resume: told[told.length - 1].hash, state: {overrides: [], locks: [], formsLeft: 3}};
+    });
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+    // the daemon's restart: the stored token now, the table restored
+    r = runtime(home, [], {env: {COUNTINGHOUSE_GITHUB_TOKEN: stored}, restore: {id: 'restore-1', type: 'restore', sessions: rows, declines: [], reset: []}});
+    secret = await listening(r);
+    const [choseOld, choseNone] = sessions;
+    const back = await shim.session(r.socket, secret, frame(secret, old), {resume: choseOld.token});
+    assert.strictEqual(back.welcome != null && back.welcome.session, choseOld.id, 'restored');
+    assert.deepStrictEqual(back.settled, {op: 'own-runtime', reason: 'token'}, 'never onto the new token');
+    const none = await shim.session(r.socket, secret, frame(secret, null), {resume: choseNone.token});
+    assert.deepStrictEqual(none.settled, {op: 'settled'}, 'one that chose none shares the new one');
+    const fresh = await shim.session(r.socket, secret, frame(secret, stored));
+    assert.deepStrictEqual(fresh.settled, {op: 'settled'}, 'and one that chooses the stored token shares it');
+    for (const c of [back, none, fresh]) c.c.end();
+    assert.ok(!r.err.includes(old) && !r.err.includes(stored), 'no token is printed');
+  });
+
   it('a second restore, and one after the safety net, are refused CONTROL_RESTORE_DONE (#255 review)', async() => {
     r = runtime(home);
     await listening(r);
@@ -701,6 +747,33 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     while (!r.told.some((m) => m.type === 'drained') && Date.now() < until0) await tick(50);
     assert.ok(r.told.some((m) => m.type === 'drained'), JSON.stringify(r.told));
     assert.strictEqual(a.c.sock.destroyed, true, 'its connection closed by the runtime');
+  });
+
+  it('a pack credential the client chooses that the runtime\'s environment holds the same: shared; another value, or one it lacks: own-runtime (credential)', async() => {
+    // made here, plainly not a real credential
+    const value = `example-${require('crypto').randomBytes(6).toString('hex')}`;
+    // a variable is a pack credential only where an allowance names it
+    const allowance = path.join(home, 'remote-credentials.json');
+    fs.writeFileSync(allowance, JSON.stringify({'https://example.invalid': ['CH_PACK_VAR_ALPHA', 'CH_PACK_VAR_BETA']}));
+    r = runtime(home, ['--remoteCredentials', allowance], {env: {CH_PACK_VAR_ALPHA: value, CH_PACK_VAR_UNLISTED: value}});
+    const secret = await listening(r);
+    const handshake = require('../../lib/session-transport/handshake');
+    const frame = (name, v) => ({status: 'ok', conditions: 'no', repo: null, token: null, credentials: {[name]: handshake.credentialMac(secret, name, v).toString('base64')}});
+    const same = await shim.session(r.socket, secret, frame('CH_PACK_VAR_ALPHA', value));
+    assert.deepStrictEqual(same.settled, {op: 'settled'});
+    const other = await shim.session(r.socket, secret, frame('CH_PACK_VAR_ALPHA', `${value}-other`));
+    assert.deepStrictEqual(other.settled, {op: 'own-runtime', reason: 'credential'});
+    const lacking = await shim.session(r.socket, secret, frame('CH_PACK_VAR_BETA', value));
+    assert.deepStrictEqual(lacking.settled, {op: 'own-runtime', reason: 'credential'});
+    // a variable no allowance names is never hashed, whatever the runtime
+    // holds: its HOME, or one set with the very value, named with it, still
+    // gets a runtime of its own
+    for (const [name, v] of [['HOME', process.env.HOME || ''], ['CH_PACK_VAR_UNLISTED', value]]) {
+      const unlisted = await shim.session(r.socket, secret, frame(name, v));
+      assert.deepStrictEqual(unlisted.settled, {op: 'own-runtime', reason: 'credential'}, name);
+    }
+    assert.ok(!r.err.includes(value) && !r.out.includes(value), 'the value is never printed');
+    same.c.end();
   });
 
   it('two sessions each get their own answers', async() => {

@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "intrinsics-probe",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "The lockdown's checks with the module's realm changed around them.",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:probeService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Changes one intrinsic, runs each attempt, changes it back, and says what each reached.",
+            "input": {
+              "schema": "/probeService/probe/input"
+            },
+            "output": {
+              "schema": "/probeService/probe/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
