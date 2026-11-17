@@ -21,6 +21,9 @@
 // - the value checked is the structured clone the module's worker receives,
 //   and ajv's log lines are bounded and escaped.
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const TIMEOUT_MS = 300;
 const COMPILE_MS = 2000;
@@ -88,21 +91,43 @@ describe('module-loading 24: the validator pool', function() {
         process.exit(1);
       }, 250);
       ml24Watch.unref();
+      // (#344, temporary) the timer above never fired in a loss: the main
+      // thread ran no timers while the process grew. So a watcher in its own
+      // process (test/helpers/rss-watch.js) reads /proc every 250 ms and, past
+      // the limit, prints the case and every thread's CPU and state, sends
+      // SIGUSR2 for the diagnostic report set up here (to stdout), then kills.
+      process.report.reportOnSignal = true;
+      process.report.signal = 'SIGUSR2';
+      process.report.filename = 'stdout';
+      ml24CaseFile = path.join(os.tmpdir(), `ml24-case-${process.pid}`);
+      fs.writeFileSync(ml24CaseFile, '(before the first case)\n');
+      ml24Child = require('child_process').spawn(process.execPath, [path.join(__dirname, '..', 'helpers', 'rss-watch.js'), String(process.pid),
+        String(ML24_RSS_LIMIT), ml24CaseFile], {stdio: ['ignore', 'inherit', 'inherit']});
+      ml24Child.unref();
     }
     pool = newPool();
     return whenReady(pool);
   });
   let ml24Spawn = null;
   let ml24Watch = null;
+  let ml24Child = null;
+  let ml24CaseFile = null;
   beforeEach(function() {
     ml24Case = this.currentTest.fullTitle();
     ml24Started = Date.now();
+    if (ML24_GUARD) {
+      // a case that never ends prints no afterEach line: its start is said too
+      process.stdout.write(`[ml24-mem] start ${ml24Case}: ${ml24Memory()} liveValidators=${ml24Live()}\n`);
+      try { fs.writeFileSync(ml24CaseFile, `${ml24Case}\n`); } catch (e) { /* the watcher says (unknown) */ }
+    }
   });
   afterEach(() => {
     if (ML24_GUARD) process.stdout.write(`[ml24-mem] ${ml24Case}: ${ml24Memory()} liveValidators=${ml24Live()} ms=${Date.now() - ml24Started}\n`);
   });
   after(() => {
     if (ml24Watch != null) clearInterval(ml24Watch);
+    if (ml24Child != null) ml24Child.kill();
+    if (ml24CaseFile != null) fs.rmSync(ml24CaseFile, {force: true});
     if (ml24Spawn != null) ValidatorPool.prototype.spawn = ml24Spawn;
     if (pool != null) pool.close();
     LOG.W = logW;
