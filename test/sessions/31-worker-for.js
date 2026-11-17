@@ -67,6 +67,88 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     assert.strictEqual((await workerFor(A)).err.code, 'SESSION_WORKERS_BUSY');
   });
 
+  // the review of #367 (1): a start's own error can name the session and
+  // its partition's path, and a hop's error goes to the calling module, a
+  // job's into its history
+  it('workerFor: a worker that could not start is logged, and answered with a fixed text naming no session and no path', async () => {
+    const LOG = require('../../lib/logger');
+    const logged = [];
+    const realE = LOG.E;
+    LOG.E = (e) => logged.push(e);
+    const path = `/h/module_data/per-session-module/sessions/${A}/data`;
+    dm.moduleManager.sessionWorkers.get = (n, s, cb) => cb(Object.assign(new Error(`Module load failed: per-session-module file broker: ENOSPC: mkdir '${path}'`), {code: 'LOAD_MODULE_FAIL'}));
+    try {
+      for (const opts of [undefined, {hop: true}]) {
+        const {err} = await workerFor(A, opts);
+        assert.strictEqual(err.code, 'SESSION_WORKER_NOT_STARTED');
+        assert.ok(!err.message.includes(A) && !err.message.includes('/h/'), err.message);
+      }
+    } finally {
+      LOG.E = realE;
+    }
+    assert.strictEqual(logged.length, 2);
+    assert.ok(String(logged[0].message).includes(path), 'the log has the reason');
+    // busy, suspended, a device not hosted: as they are
+    for (const code of ['SESSION_WORKERS_BUSY', 'MODULE_SESSION_PAUSED', 'DEVICE_NOT_FOUND']) {
+      dm.moduleManager.sessionWorkers.get = (n, s, cb) => cb(Object.assign(new Error(code), {code}));
+      assert.strictEqual((await workerFor(A)).err.code, code);
+    }
+  });
+
+  // the review of #367 (2): as the B3 check's refusal is, so a job whose
+  // session has ended (or has none) is not retried in shared mode
+  it('a job\'s run whose session has ended, or has none, is a device not hosted, tagged after discovery: not retried', async () => {
+    dm.allDevicesLoaded = true;
+    const {notRetried} = require('../../lib/job-control-common');
+    const realShared = sessions.shared;
+    sessions.shared = () => true;
+    try {
+      live.delete(A);
+      for (const extra of [{session: A}, {}]) {
+        const err = await new Promise((resolve) => dm.invokeJobsNow(D, SVC, 'touch', {}, 'j1', (e) => resolve(e), () => false, extra));
+        assert.strictEqual(err.code, 'DEVICE_NOT_FOUND', JSON.stringify(extra));
+        assert.strictEqual(err.afterDiscovery, true);
+        assert.strictEqual(notRetried(err.code, err), true);
+      }
+    } finally {
+      sessions.shared = realShared;
+    }
+  });
+
+  // the review of #367 (3a): the hop site itself, after a granted access
+  // check: workerFor with the hop token's session and {hop: true}
+  it('the hop: after the access check, a session that has left gets DEVICE_NOT_FOUND with no ID; a failed start, no session id', () => {
+    const authPath = require.resolve('../../lib/user-auth');
+    const saved = require.cache[authPath];
+    require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(null, {})};
+    const replies = [];
+    const caller = {workerId: 42, sendActionInvokeReplyToChild: (m) => replies.push(m),
+      bindings: {[CALLER]: {identity: 'i', module: 'ps-caller', targets: new Set([`${D}|${SVC}|touch`])}}};
+    const asked = [];
+    dm.moduleManager.sessionWorkers.get = (n, s, cb) => { asked.push(s); cb(Object.assign(new Error(`mkdir '/h/sessions/${s}'`), {code: 'EACCES'})); };
+    const hop = (session, msgID) => dm.sendInvokeActionMessageToWorker(null, null, D, SVC, 'touch', {}, msgID,
+      caller, callTokens.issue({billingKey: 'k', workerId: 42, deviceID: CALLER, session}));
+    const LOG = require('../../lib/logger');
+    const realE = LOG.E;
+    LOG.E = () => {};
+    try {
+      live.delete(B);
+      hop(B, 1);
+      const gone = replies.pop();
+      assert.strictEqual(gone.errCode, 'DEVICE_NOT_FOUND', JSON.stringify(gone));
+      assert.ok(!String(gone.errMsg).includes(D), gone.errMsg);
+      assert.deepStrictEqual(asked, [], 'no worker asked for a session that has left');
+      hop(A, 2);
+      const failed = replies.pop();
+      assert.deepStrictEqual(asked, [A], 'the hop token\'s own session');
+      assert.strictEqual(failed.errCode, 'SESSION_WORKER_NOT_STARTED', JSON.stringify(failed));
+      assert.ok(!String(failed.errMsg).includes(A) && !String(failed.errMsg).includes('/h/'), failed.errMsg);
+    } finally {
+      LOG.E = realE;
+      if (saved != null) require.cache[authPath] = saved; else delete require.cache[authPath];
+    }
+  });
+
   it('the device query: a live session\'s call gets the record\'s spec, starting no worker; one that has left gets DEVICE_NOT_FOUND, no ID', () => {
     const replies = [];
     const caller = {workerId: 41, sendDeviceQueryReplyToChild: (m) => replies.push(m),

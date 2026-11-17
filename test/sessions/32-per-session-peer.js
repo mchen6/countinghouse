@@ -51,6 +51,36 @@ describe('sessions 32: no direct peer channel to a per-session module (R1 Task 5
     assert.strictEqual(Object.keys(b.channelRegistry || {}).length, 0, 'no channel');
   });
 
+  // the review of #367 (3b): the route is told only after the access check.
+  // The broker holds user-auth from its load, so a broker loaded afresh
+  // over one that refuses.
+  it('the broker: a caller the access check refuses gets the access error, never route: main', async () => {
+    const authPath = require.resolve('../../lib/user-auth');
+    const brokerPath = require.resolve('../../lib/peer-channel-broker');
+    const savedAuth = require.cache[authPath];
+    const savedBroker = require.cache[brokerPath];
+    const CountinghouseError = require('../../lib/countinghouse-error').CountinghouseError;
+    require.cache[authPath] = {id: authPath, filename: authPath, loaded: true, exports: (a, b, c, d, e, f, g, cb) => cb(new CountinghouseError('DENY_DEVICE_ACCESS'))};
+    delete require.cache[brokerPath];
+    const told = [];
+    try {
+      const Refusing = require('../../lib/peer-channel-broker');
+      const requester = {workerId: 43, sendPeerChannelDenyToChild: (m) => told.push(['deny', m]), sendPeerChannelGrantToChild: (m) => told.push(['grant', m]),
+        bindings: {'d-caller': {identity: null, module: 'caller', targets: new Set(['d-ps|svc|touch'])}}};
+      const record = new SessionModuleRecord({name: 'ps', version: '1.0.0', modulePath: '/m', moduleSpec: null});
+      const b = new Refusing({deviceMap: {'d-ps': record}, missingDeviceErrorForHop: () => { throw new Error('not missing'); }});
+      b.handleRequest({targetDeviceID: 'd-ps', token: issue({billingKey: 'k', workerId: 43, deviceID: 'd-caller', session: A})}, requester);
+      await sleep(30);
+    } finally {
+      if (savedAuth != null) require.cache[authPath] = savedAuth; else delete require.cache[authPath];
+      require.cache[brokerPath] = savedBroker;
+    }
+    assert.strictEqual(told.length, 1, JSON.stringify(told));
+    assert.strictEqual(told[0][0], 'deny');
+    assert.strictEqual(told[0][1].errCode, 'DENY_DEVICE_ACCESS', JSON.stringify(told[0][1]));
+    assert.strictEqual(told[0][1].route, undefined, 'no route before the access check');
+  });
+
   // a caller worker's peer state, as sessions 16 builds it
   function worker() {
     const viaMain = [];

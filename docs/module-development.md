@@ -369,6 +369,13 @@ If two of the modules a runtime lists have names that spell the same
 `<module>` (`twin-a` and `twin_a`), neither one's resources are served, and
 the operator is warned; rename one.
 
+An action that declares `longRunning: true` runs as a task for a 2026-07-28
+client that declares the `io.modelcontextprotocol/tasks` extension (with
+`--workerThread`): the call is answered at once with a `taskId`, and the
+client polls `tasks/get` for the result your action returns. Anyone else's
+call to it runs inline, as any action's does. Your handler is the same
+either way.
+
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
 the keys that may reach the module, with its `title`, `description` and
