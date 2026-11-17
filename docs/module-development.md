@@ -275,6 +275,13 @@ percent-decoded as UTF-8; a value with a control character, a `/` or a
 `\`, or that is exactly `.` or `..`, never reaches you, but anything else
 is yours to guard, as any input is.
 
+An action that declares `longRunning: true` runs as a task for a 2026-07-28
+client that declares the `io.modelcontextprotocol/tasks` extension (with
+`--workerThread`): the call is answered at once with a `taskId`, and the
+client polls `tasks/get` for the result your action returns. Anyone else's
+call to it runs inline, as any action's does. Your handler is the same
+either way.
+
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
 the keys that may reach the module, with its `title`, `description` and

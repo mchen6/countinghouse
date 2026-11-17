@@ -103,24 +103,34 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
     });
   });
 
-  describe('tasks: none for a modern request in release 1 (#232)', () => {
+  describe('tasks for a modern request: the extension, not the legacy methods (#232, M15)', () => {
     const options = require('../../lib/cli-options');
     let workerThread;
     before(() => { workerThread = options.workerThread; options.workerThread = true; });
     after(() => { options.workerThread = workerThread; });
 
-    it('server/discover advertises no tasks; a legacy initialize still does', async() => {
+    it('server/discover advertises the tasks extension, not the legacy tasks capability; a legacy initialize still has that', async() => {
       const now = await viaGateway(modern('server/discover', {}, 20));
       assert.strictEqual(now.res.result.capabilities.tasks, undefined, JSON.stringify(now.res.result.capabilities));
+      assert.deepStrictEqual(now.res.result.capabilities.extensions, {'io.modelcontextprotocol/tasks': {}});
       const legacy = await viaGateway({jsonrpc: '2.0', id: 21, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}}});
       assert.ok(legacy.res.result.capabilities.tasks != null);
     });
 
-    it('modern tasks/get, tasks/result, tasks/list and tasks/cancel are unknown methods: -32601, 404', async() => {
-      for (const method of ['tasks/get', 'tasks/result', 'tasks/list', 'tasks/cancel']) {
+    it('modern tasks/result and tasks/list are unknown methods: -32601, 404', async() => {
+      for (const method of ['tasks/result', 'tasks/list']) {
         const {res, info} = await viaGateway(modern(method, {taskId: 'x'}, 22));
         assert.strictEqual(res.error.code, -32601, `${method}: ${JSON.stringify(res)}`);
         assert.strictEqual(info && info.status, 404, method);
+      }
+    });
+
+    // M15: the extension's methods, for a request that does not declare it
+    // (mcp-contract 27 has the rest)
+    it('modern tasks/get and tasks/cancel without the extension declared are the gate\'s -32021', async() => {
+      for (const method of ['tasks/get', 'tasks/cancel']) {
+        const {res} = await viaGateway(modern(method, {taskId: 'x'}, 23));
+        assert.strictEqual(res.error.code, -32021, `${method}: ${JSON.stringify(res)}`);
       }
     });
   });
