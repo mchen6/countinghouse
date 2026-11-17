@@ -265,6 +265,19 @@ Under worker mode, in every `--moduleSandbox` mode unless noted:
   are logged under `audit`, and are refused under `enforce`. The list is in
   the CHANGELOG's "module sandbox, part 1" section and in
   [`security-model.md`](security-model.md).
+- **Some shared built-ins are fixed** under `audit` and `enforce`: the
+  functions of `path`, `path.posix`, `path.win32` and `url`,
+  `URL.prototype`'s accessors and methods, `module.isBuiltin`, and the
+  methods of `EventTarget.prototype`, `NodeEventTarget` and
+  `MessagePort.prototype` are non-writable and non-configurable. A module
+  that replaces one of them runs only under `off`. Because the inherited
+  property is non-writable, a plain assignment on an instance, such as
+  `target.addEventListener = fn` on an `EventTarget` or `AbortSignal`,
+  throws a `TypeError` in strict code (and is ignored in sloppy code).
+  Accessors (`port.onmessage = fn`, `signal.onabort = fn`), subclasses
+  that define their own methods, and `Object.defineProperty` on an
+  instance still work, as do `AbortController`, `AbortSignal.timeout` and
+  `fetch`'s `signal`.
 - **Virtual paths.** A module sees its own directory as `/app`:
   `__dirname`, `__filename`, `require.resolve`, `import.meta`, stack traces,
   `process.cwd()` (`/app`) and `os.tmpdir()` (`/tmp`). Code that builds

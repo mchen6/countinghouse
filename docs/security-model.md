@@ -91,8 +91,17 @@ objects a module can reach is fixed at the lockdown instead, in audit and
 enforce: every function of the `path`, `path.posix`, `path.win32` and `url`
 exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
 are non-writable and non-configurable, so a module cannot show the loader
-or a check one path and have another one used. A module that patches
-`path`, `url` or `URL` runs only under `off`.
+or a check one path and have another one used. So are a port's
+methods and its event targets' (`MessagePort.prototype`, the
+`NodeEventTarget` behind it and `EventTarget.prototype`): Node's own set-up
+of a port that reaches a worker after module code has loaded (a peer
+channel's) calls `this.on`, so a replaced method would be handed the port
+before the runtime holds it. A module that patches `path`, `url`, `URL`,
+`EventTarget`, `NodeEventTarget` or `MessagePort` runs only under `off`.
+Since the inherited properties are non-writable, an assignment on an
+instance (`target.addEventListener = fn`) throws in strict code; accessors
+(`port.onmessage = fn`), subclasses and `Object.defineProperty` on an
+instance still work.
 
 Known limits of this rule:
 - **`CHUtil.request`'s redirects** are followed inside postman-request,

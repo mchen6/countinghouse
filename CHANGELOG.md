@@ -28,6 +28,15 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   shim. The allowed built-ins and
   the loopback names are no longer exported as live sets
   (`ALLOWED_BUILTIN_IDS`, a frozen array, takes the place of the first).
+- **A module can no longer patch `EventTarget`, `NodeEventTarget` or
+  `MessagePort`** under audit or enforce: their methods are fixed at the
+  lockdown, as `path`'s and `url`'s are. A peer channel's port is set up
+  by Node with them after module code has loaded. An assignment on an
+  instance (`target.addEventListener = fn`) now throws in strict code;
+  accessors such as `port.onmessage`, subclasses and
+  `Object.defineProperty` on an instance still work, and so do
+  `AbortController` and `AbortSignal`. The runtime's own port use (replies,
+  stdio, peer channels) goes through methods taken at a worker's boot.
 - **A module can no longer patch `path`, `url` or `URL`** under audit or
   enforce: the functions of the `path`, `path.posix`, `path.win32` and `url`
   exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
