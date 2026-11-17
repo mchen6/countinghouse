@@ -1029,6 +1029,34 @@ A module resource read takes its token from the call path, after the
 listing lookup that finds its action: a probe of a URI that reads nothing
 is limited too, and no module code runs before the limit.
 
+**What is recorded, and what is not yet.** There is no audit log in this
+release; it comes with the planned audit work (structured records,
+bounded retention, an administrator's readback). Until then, these events
+are a usage record or a log line, and none carries a key, a user's name,
+a module's text or an answer:
+- a call's result (`ok`, `error` with its catalogued code, `cancelled`),
+  with what was stored past the inline budget counted in its bytes;
+- a stored result refused (`RESULT_STORE_FULL`), and a stored result read;
+- a module resource read, recorded under its action's tool;
+- a question asked (its module, action, question name and round); a retry's
+  answer refused (`ASK_STATE_INVALID` or `ASK_STATE_UNCHECKED`, the log
+  line naming why: expired, used, and so on);
+- a task's question asked, and a task cancelled while it ran.
+
+These events are **not recorded in this release**:
+- a stored result's id and size per item, a read of one refused or
+  cancelled, and one expired;
+- a module resource read that found nothing, or was limited (and a read is
+  not marked apart from a call of its action);
+- a question answered, declined or left unanswered for three rounds (a
+  task's question too), and, for a retry refused, its module, action,
+  question and round; a task's question expired, or answered under a key
+  that is no longer waiting;
+- a task created, cancelled before it ran (2026-07-28 or legacy), or
+  expired;
+- how far a cancelled call had run (only its time and bytes);
+- a list cursor refused.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
