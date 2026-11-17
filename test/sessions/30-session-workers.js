@@ -188,14 +188,18 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
     assert.match(refused.err.message, /paused for this session; it starts again after 10 minutes/);
   });
 
-  it('stopSession stops that session\'s workers only, and forgets its exits', async () => {
+  // (a session id is never reused: stopSession runs at a session's real end,
+  // bye, its window, or the runtime closing)
+  it('stopSession stops that session\'s workers only, and spawns none for it afterwards: a device not hosted (the security pass, 11-17)', async () => {
     const h = harness({max: 4});
-    for (let i = 0; i < 3; i++) (await h.get('m', A)).wm.emit('exit');
+    await h.get('m', A);
     await h.get('m', B);
     await h.sw.stopSession(A);
-    assert.ifError((await h.get('m', A)).err, 'a session that comes back (a new one) is not suspended');
-    await h.sw.stopSession(B);
-    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [A]);
+    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [B], 'B\'s runs on');
+    const late = await h.get('m', A);   // a job's run that raced A's end
+    assert.strictEqual(late.err.code, 'DEVICE_NOT_FOUND');
+    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [B], 'nothing spawned for A');
+    assert.ifError((await h.get('n', B)).err, 'B spawns on');
   });
 });
 
