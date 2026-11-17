@@ -31,8 +31,16 @@ describe('module-loading 36: a module\'s state declaration (R1)', function() {
         assert.throws(() => moduleState.stateOf(pkgWith(bad), NAME), (e) => e.code === 'MODULE_STATE_INVALID' && e.message.includes(NAME) && e.message.includes(JSON.stringify(bad)),
           JSON.stringify(bad));
       }
-      const long = 'x'.repeat(500);
-      assert.throws(() => moduleState.stateOf(pkgWith(long), NAME), (e) => e.message.length < 400, 'the value is cut');
+      // the value is the module's own text: a cut, cleaned token, never raw
+      // (the Reviewer, #350)
+      const nasty = `per-session\u0007\u202Eevil\n\u2028${'x'.repeat(500)}`;
+      assert.throws(() => moduleState.stateOf(pkgWith(nasty), NAME), (e) => {
+        const value = e.message.slice(e.message.indexOf('countinghouse.state is ') + 'countinghouse.state is '.length, e.message.indexOf('; it must be'));
+        assert.ok(value.length <= 65, `cut to 64 and an ellipsis: ${value.length}`);
+        assert.ok(!/[\u0000-\u001f\u007f-\u009f\u202A-\u202E\u2066-\u2069\u2028\u2029]/.test(e.message), JSON.stringify(e.message));
+        assert.ok(value.startsWith('"per-session'), value);
+        return e.code === 'MODULE_STATE_INVALID';
+      });
     });
 
     it('the profile: the shared runtime, --stdio, or the HTTP hosting profile', () => {
