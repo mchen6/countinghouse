@@ -52,6 +52,19 @@ describe('mcp-contract 20: the page helper (M1)', () => {
     ]) assert.strictEqual(decodeCursor('tools', cursor), null, why);
   });
 
+  // M18's bounds audit: 'A' x 513 above is no JSON as well, so it never
+  // showed the byte bound refusing. A well-formed cursor whose anchor is
+  // within MAX_ANCHOR_CHARS but whose bytes are not (a multibyte anchor) is
+  // refused by the byte bound alone.
+  it('a well-formed cursor over 512 bytes is null: the byte bound, not its anchor\'s length, refuses it', () => {
+    const anchor = '\u00e9'.repeat(300);
+    assert.ok(anchor.length <= MAX_ANCHOR_CHARS);
+    const c = encodeCursor('tools', anchor);
+    assert.ok(c.length > MAX_CURSOR_BYTES, `${c.length} bytes`);
+    assert.deepStrictEqual(JSON.parse(Buffer.from(c, 'base64url').toString()), {v: 1, k: 'tools', a: anchor}, 'well formed');
+    assert.strictEqual(decodeCursor('tools', c), null);
+  });
+
   it('a page is a keyset: it starts right after its anchor, and says where the next one starts', () => {
     const keys = ['a', 'b', 'c', 'd', 'e'];
     assert.deepStrictEqual(page(keys, undefined, 2), {from: 0, to: 2, next: 'b'});

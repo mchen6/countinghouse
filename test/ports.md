@@ -61,6 +61,7 @@ one) as well as the ports it binds.
 | `test/auth/42-redis-down-answers.js` | 9652 |
 | `test/auth/44-cache-require-builtins.js` | 9653 |
 | `test/auth/45-retired-device-fields.js` | 9655 |
+| `test/auth/53-no-keys-reach-reads.js` | 9757 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |
 | `test/composition/02-ctx-call.js` | 9556–9557, 9560 |
@@ -105,7 +106,6 @@ one) as well as the ports it binds.
 | `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
 | `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/27-tasks-modern.js` | 9637, 9639, 9660 |
-| `test/mcp-contract/35-modern-schema-conformance.js` | 9756 (a Redis URL nothing answers on, as stdio 27's) |
 | `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
