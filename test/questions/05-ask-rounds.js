@@ -277,6 +277,20 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       }
     });
 
+    // M18's bounds audit: the 9000-character answer above is also refused
+    // by the stand-in form for its extra key. Here the form takes it, so
+    // only the answer's bound (requestState's MAX_ANSWERS_BYTES, 8 KiB) can
+    // make it none.
+    it('an answer over 8 KiB is none, though its form would take it; one within is the answer', async () => {
+      const lenient = async (pointer, content) => ({schema: FORM, valid: content === undefined ? null : (content != null && typeof(content.replace) === 'boolean')});
+      const within = {action: 'accept', content: {replace: true, note: 'n'.repeat(7000)}};
+      const over = {action: 'accept', content: {replace: true, note: 'n'.repeat(requestState.MAX_ANSWERS_BYTES)}};
+      const took = await retryWith(await firstForm({form: lenient}), within, {form: lenient});
+      assert.deepStrictEqual(asks(took), {answer: within.content});
+      const refused = await retryWith(await firstForm({form: lenient}), over, {form: lenient});
+      assert.deepStrictEqual(asks(refused), {code: 'ASK_PENDING'}, 'over the bound: no answer, asked again');
+    });
+
     it('after three rounds with none, ctx.ask is ASK_UNAVAILABLE for that question', async () => {
       let made = await firstForm();
       for (let round = 1; round <= 2; round++) {

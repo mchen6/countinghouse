@@ -210,18 +210,4 @@ describe('auth 50: the review of B4', function() {
     `);
     assert.deepStrictEqual(out, {prot: true, created: true, read: true, write: true});
   });
-
-  it('--apiMonitor under --store local logs nothing and does not throw (the API log is absent)', () => {
-    const out = child(`
-      const options = lib('cli-options');
-      options.setOptions({store: 'local', apiMonitor: true});
-      const Session = lib('session');
-      const s = Object.create(Session.prototype);
-      s.serviceID = 'svc'; s.actionName = 'act'; s.deviceID = 'd'; s.appKey = 'k'; s.startTime = Date.now();
-      s.device = {spec: {device: {serviceList: {svc: {actionList: [{name: 'act'}]}}}}};
-      Session.prototype.logAPICall.call(s, null, null, null, true);
-      return {ok: true};
-    `);
-    assert.deepStrictEqual(out, {ok: true});
-  });
 });

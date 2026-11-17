@@ -48,49 +48,6 @@
       ]
     },
     {
-      "name": "declares_everything_notesservice_completeid",
-      "description": "Completes the id of a saved note.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "argument": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          },
-          "context": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "argument",
-          "value"
-        ]
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 100
-          }
-        },
-        "required": [
-          "values"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      }
-    },
-    {
       "name": "declares_everything_notesservice_rendernote",
       "description": "Renders a note as images: a cover and its pages.",
       "inputSchema": {
@@ -215,49 +172,6 @@
           ]
         }
       ]
-    },
-    {
-      "name": "declares_everything_notesservice_completeid",
-      "description": "Completes the id of a saved note.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "argument": {
-            "type": "string"
-          },
-          "value": {
-            "type": "string"
-          },
-          "context": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "argument",
-          "value"
-        ]
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 100
-          }
-        },
-        "required": [
-          "values"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      }
     },
     {
       "name": "declares_everything_notesservice_rendernote",
