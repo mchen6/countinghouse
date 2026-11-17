@@ -6,6 +6,7 @@
 const path = require('path');
 const url = require('url');
 const Module = require('module');
+const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const OWN_FILE = path.join(ROOT, 'own.txt');
@@ -49,6 +50,11 @@ const CHANGES = {
   'Array.prototype.some': () => swap(Array.prototype, 'some', () => { return true; }),
   'Array.prototype.includes': () => swap(Array.prototype, 'includes', () => { return true; }),
   'Array.prototype.indexOf': () => swap(Array.prototype, 'indexOf', () => { return 0; }),
+  // the file broker's routing and grants, and its loader hook's format
+  'Array.prototype.every': () => swap(Array.prototype, 'every', () => true),
+  'Array.prototype.map': () => swap(Array.prototype, 'map', () => ['/']),
+  'Array.prototype.concat': () => swap(Array.prototype, 'concat', () => ['/']),
+  'JSON.parse': () => swap(JSON, 'parse', () => ({type: 'module'})),
   'String.prototype.startsWith': () => swap(String.prototype, 'startsWith', () => { return true; }),
   'String.prototype.endsWith': () => swap(String.prototype, 'endsWith', () => { return true; }),
   'String.prototype.toLowerCase': () => swap(String.prototype, 'toLowerCase', () => { return 'localhost'; }),
@@ -135,6 +141,10 @@ module.exports = async (input, ctx) => {
     // a file outside the module's root, by require (the test holds this
     // until the file broker's checks are on captured intrinsics too)
     result.runtimeFile = outcome(() => require(input.runtimeFile));
+    // the file broker: a host file outside every grant, and a real
+    // descriptor number
+    result.hostFile = outcome(() => fs.readFileSync(input.hostFile, 'utf8'));
+    result.realFd = outcome(() => fs.fstatSync(input.realFd));
     // (enforce serves the reduced module; its createRequire checks the path)
     result.createRequireOutside = outcome(() => require('module').createRequire(input.outsidePath));
     // allowed: the guard hands these on to the original

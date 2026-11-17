@@ -48,17 +48,23 @@ const FIXED = new Set(['url.fileURLToPath', 'path.resolve', 'path.relative', 'Mo
 // outside the root by require, refused with each change in place. Until
 // then a change that makes the broker's loader hook pass it lets the
 // broker's read answer ENOENT instead.
-const REQUIRE_OUTSIDE_PENDING = true;
+const REQUIRE_OUTSIDE_PENDING = false;
+const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
 
 for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'audit', port: testPort(9715)}]) {
   describe(`sandbox 62: the lockdown's checks with the realm changed around them (${mode})`, function() {
     this.timeout(240000);
     let server = null;
     let base = null;
+    // a host file outside every grant, made by the test
+    let hostFile = null;
+    const HOST_FILE = () => hostFile;
     before(async () => {
       assert.ok(CHANGES.length >= 20, CHANGES.join(', '));
       assert.ok(OUTSIDE_FILES.length >= CHANGES.length, `${OUTSIDE_FILES.length} files for ${CHANGES.length} changes`);
       base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sandbox-62-'));
+      hostFile = path.join(base, 'host-file.txt');
+      fs.writeFileSync(hostFile, 'a host file\n');
       server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode,
         '--moduleDataPath', path.join(base, 'store')]);
       const loaded = await post(port, KEY, '/load-module', {path: FIXTURE, name: PROBE});
@@ -80,7 +86,8 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         const mark = server.output.length;
         // (a name under .invalid never resolves: no connection is made, audit's included)
         const input = {change, builtins: mode === 'enforce' ? BLOCKED : (i < BLOCKED.length ? [BLOCKED[i]] : []),
-          runtimeFile: OUTSIDE_FILES[i], outsidePath: path.join(os.tmpdir(), `ch-sandbox-62-outside-${i}.txt`), host: `ch-sandbox-62-${i}.invalid`};
+          runtimeFile: OUTSIDE_FILES[i], outsidePath: path.join(os.tmpdir(), `ch-sandbox-62-outside-${i}.txt`), host: `ch-sandbox-62-${i}.invalid`,
+          hostFile: HOST_FILE(), realFd: 3};
         const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input});
         // A change the runtime's own code in the worker then trips over (Map's
         // get, say) can end the module's worker: the module's own loss. A
@@ -112,8 +119,13 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
           assert.deepStrictEqual(out.host, {outcome: 'refused', code: 'ERR_ACCESS_DENIED'}, `an ungranted host: ${shown}`);
           if (!REQUIRE_OUTSIDE_PENDING) {
             assert.strictEqual(out.runtimeFile.outcome, 'refused', `require of a file outside the root: ${shown}`);
-            assert.strictEqual(out.runtimeFile.code, 'MODULE_NOT_FOUND', shown);
+            // (a getter-only href on Object.prototype makes Node's own URL
+            // parser throw first, in that realm: refused all the same)
+            if (!(change === URL_BREAKING && /only a getter/.test(out.runtimeFile.message))) assert.strictEqual(out.runtimeFile.code, 'MODULE_NOT_FOUND', shown);
           }
+          // the file broker
+          assert.strictEqual(out.hostFile.outcome, 'refused', `fs.readFileSync of a host file outside every grant: ${shown}`);
+          assert.strictEqual(out.realFd.outcome, 'refused', `fs.fstatSync of a real descriptor: ${shown}`);
         } else {
           // reported, whatever the call did (audit allows)
           const log = () => server.output.slice(mark);
