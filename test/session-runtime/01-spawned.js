@@ -626,6 +626,52 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     back.c.end();
   });
 
+  // ch-local credentials: a stored token added while sessions share the
+  // runtime restarts it (ch-local daemon's restart request) with the table
+  // restored. The token check runs again on every reconnect: a restored
+  // session whose client chose the old runtime's token goes to its own
+  // runtime, never onto the new one; one that chose none, or the new one,
+  // shares it.
+  it('after a restart onto another token, a restored session whose client chose the old one is own-runtime (token) on its reconnect', async() => {
+    const handshake = require('../../lib/session-transport/handshake');
+    const crypto = require('crypto');
+    const made = () => `t${crypto.randomBytes(12).toString('hex')}`;
+    const old = made();
+    const stored = made();
+    const frame = (s, token) => ({status: 'ok', conditions: 'no', repo: null, token: token == null ? null : handshake.tokenMac(s, token).toString('base64')});
+    r = runtime(home, [], {env: {COUNTINGHOUSE_GITHUB_TOKEN: old}});
+    let secret = await listening(r);
+    const sessions = [];
+    for (const chose of [old, null, stored]) {
+      const s = await shim.session(r.socket, secret, frame(secret, chose));
+      assert.deepStrictEqual(s.settled, chose === stored ? {op: 'own-runtime', reason: 'token'} : {op: 'settled'}, 'before: only the old token, or none, shares');
+      if (chose !== stored) sessions.push({chose, id: s.welcome.session, token: s.welcome.resumeToken});
+      s.c.end();
+    }
+    await tick(300);
+    const rows = sessions.map(({id}) => {
+      const told = r.told.filter((m) => m.type === 'session-resume' && m.session === id);
+      return {session: id, resume: told[told.length - 1].hash, state: {overrides: [], locks: [], formsLeft: 3}};
+    });
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+    // the daemon's restart: the stored token now, the table restored
+    r = runtime(home, [], {env: {COUNTINGHOUSE_GITHUB_TOKEN: stored}, restore: {id: 'restore-1', type: 'restore', sessions: rows, declines: [], reset: []}});
+    secret = await listening(r);
+    const [choseOld, choseNone] = sessions;
+    const back = await shim.session(r.socket, secret, frame(secret, old), {resume: choseOld.token});
+    assert.strictEqual(back.welcome != null && back.welcome.session, choseOld.id, 'restored');
+    assert.deepStrictEqual(back.settled, {op: 'own-runtime', reason: 'token'}, 'never onto the new token');
+    const none = await shim.session(r.socket, secret, frame(secret, null), {resume: choseNone.token});
+    assert.deepStrictEqual(none.settled, {op: 'settled'}, 'one that chose none shares the new one');
+    const fresh = await shim.session(r.socket, secret, frame(secret, stored));
+    assert.deepStrictEqual(fresh.settled, {op: 'settled'}, 'and one that chooses the stored token shares it');
+    for (const c of [back, none, fresh]) c.c.end();
+    assert.ok(!r.err.includes(old) && !r.err.includes(stored), 'no token is printed');
+  });
+
   it('a second restore, and one after the safety net, are refused CONTROL_RESTORE_DONE (#255 review)', async() => {
     r = runtime(home);
     await listening(r);
