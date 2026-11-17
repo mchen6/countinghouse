@@ -133,12 +133,14 @@ you have to do. What the sandbox does and does not protect is in
   it is not refused (the flag is ignored, and bounds nothing), so take it
   out of your start command.
 
-- **Five flags are gone:**
+- **Six flags are gone:**
   - `--verifyModule`, which let a module that failed its spec or interface
     check load anyway. Such a module is now refused whatever the options:
     check a module with `countinghouse-validate`.
   - `--apiMonitor`, a per-call API log in Redis that nothing read.
   - `--centralPortalUrl`, `--wetty` and `--validateData`, which nothing read.
+  - `--logStream`, which changed nothing: the log went to the same place with
+    it or without.
 
   A start that still passes one is not refused, and the flag does nothing.
   Take it out of your start command.
