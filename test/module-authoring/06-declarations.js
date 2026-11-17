@@ -404,6 +404,7 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
         clean(withActions({action: {resource: Object.assign({changesWith: ['notesService.save'], completion: {id: 'notesService.completeId'}}, RESOURCE)}}));
         one(withActions({action: {resource: Object.assign({changesWith: ['notesService.gone']}, RESOURCE)}}), /changesWith names notesService\.gone, which is no action of this module/, 'an unknown action');
         one(withActions({action: {resource: Object.assign({changesWith: ['other.save']}, RESOURCE)}}), /changesWith names other\.save/, 'another service');
+        one(withActions({action: {resource: Object.assign({changesWith: ['notesService.readNote']}, RESOURCE)}}), /changesWith names notesService\.readNote, the resource's own read/, 'its own read');
         one(withActions({action: {resource: Object.assign({completion: {name: 'notesService.completeId'}}, RESOURCE)}}), /completion is for "name", which is not a variable/, 'not a variable');
         one(withActions({action: {resource: Object.assign({completion: {id: 'notesService.gone'}}, RESOURCE)}}), /completion names notesService\.gone, which is no action/, 'an unknown completion action');
       });
