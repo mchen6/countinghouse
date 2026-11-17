@@ -18,7 +18,10 @@ const sessions = require('../../lib/sessions');
 const sessionPacks = require('../../lib/session-packs');
 
 // (each module declares one prompt with no arguments: prompts/list and prompts/get read the session too)
-const spec = (friendlyName, actions) => ({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: `${a} it`}))}},
+// (and an action named *_res declares a resource, M7: one static, one a template, so resources/list and
+// resources/templates/list read the session too)
+const spec = (friendlyName, actions) => ({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => Object.assign({name: a, description: `${a} it`},
+  /_res$/.test(a) ? {resource: {uriTemplate: 'all', name: `${friendlyName}-all`}} : {}, /_tpl$/.test(a) ? {resource: {uriTemplate: 'logs/{id}', name: `${friendlyName}-logs`}} : {}))}},
   promptList: [{name: `${friendlyName.replace(/-/g, '_')}_brief`, description: 'Briefly.', messages: [{role: 'user', text: 'Be brief.'}]}]}});
 
 // a pack `ci` (its scenario ch-pack-x and its unlisted part ch-step-a), a global pack `docs`, and a plain module no pack owns
@@ -28,7 +31,7 @@ function fakeInterface({withCi = true} = {}) {
     d3: {spec: spec('ch-pack-docs', ['docs_search']), packageInfo: {name: 'ch-pack-docs', countinghouse: {role: 'scenario'}}, hostModuleName: 'ch-pack-docs'},
     d4: {spec: spec('plain', ['go']), packageInfo: {name: 'plain'}, hostModuleName: 'plain'}
   };
-  if (withCi) devices.d1 = {spec: spec('ch-pack-x', ['ci_failure_triage']), packageInfo: {name: 'ch-pack-x', countinghouse: {role: 'scenario'}}, hostModuleName: 'ch-pack-x'};
+  if (withCi) devices.d1 = {spec: spec('ch-pack-x', ['ci_failure_triage', 'ci_res', 'ci_tpl']), packageInfo: {name: 'ch-pack-x', countinghouse: {role: 'scenario'}}, hostModuleName: 'ch-pack-x'};
   return {deviceManager: {
     deviceMap: devices,
     moduleManager: {unlisted: new Set(['ch-step-a'])},
@@ -206,6 +209,35 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     const promptNever = await request(ci, B, 'prompts/list', {cursor: encodeCursor('prompts', 'no_such_prompt_ever')});
     assert.strictEqual(promptHidden.error && promptHidden.error.code, -32602, JSON.stringify(promptHidden));
     assert.strictEqual(JSON.stringify(promptHidden), JSON.stringify(promptNever));
+  });
+
+  // M7's resources are on master now: a pack's resources are hidden as its tools and prompts are (#340's TODO)
+  it('A\'s resources/list and templates/list have the pack\'s and B\'s don\'t; B\'s equal its lists with the pack never loaded', async () => {
+    const uris = (r) => r.result.resources.map((x) => x.uri);
+    const tpls = (r) => r.result.resourceTemplates.map((x) => x.uriTemplate);
+    const aList = await request(ci, A, 'resources/list', {});
+    const bList = await request(ci, B, 'resources/list', {});
+    assert.ok(uris(aList).some((u) => /ch_pack_x/.test(u)), JSON.stringify(aList));
+    assert.ok(!uris(bList).some((u) => /ch_pack_x/.test(u)), JSON.stringify(bList));
+    assert.strictEqual(JSON.stringify(bList), JSON.stringify(await request(fakeInterface({withCi: false}), B, 'resources/list', {})));
+    const aT = await request(ci, A, 'resources/templates/list', {});
+    const bT = await request(ci, B, 'resources/templates/list', {});
+    assert.ok(tpls(aT).some((u) => /ch_pack_x/.test(u)), JSON.stringify(aT));
+    assert.strictEqual(JSON.stringify(bT), JSON.stringify(await request(fakeInterface({withCi: false}), B, 'resources/templates/list', {})));
+    // B's read of the pack's resource is the answer a URI never served gets
+    const uri = uris(aList).find((u) => /ch_pack_x/.test(u));
+    const hidden = await request(ci, B, 'resources/read', {uri});
+    const gone = await request(fakeInterface({withCi: false}), B, 'resources/read', {uri});
+    assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
+    assert.ok(hidden.error != null, JSON.stringify(hidden));
+  });
+
+  it('in shared mode a session that isn\'t live gets no resources either: empty lists, and its read is not found', async () => {
+    const C = 'c'.repeat(32);
+    assert.deepStrictEqual((await request(ci, C, 'resources/list', {})).result.resources, []);
+    assert.deepStrictEqual((await request(ci, C, 'resources/templates/list', {})).result.resourceTemplates, []);
+    const uri = (await request(ci, A, 'resources/list', {})).result.resources.map((x) => x.uri).find((u) => /ch_pack_docs|ch_pack_x/.test(u));
+    assert.ok((await request(ci, C, 'resources/read', {uri})).error != null);
   });
 
   it('the global tool table is untouched: the same frozen object, and the filter hands it back while no session has a pack override', () => {
