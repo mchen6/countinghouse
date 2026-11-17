@@ -20,6 +20,8 @@ const {redisArgsFor} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'declares-everything');
+// a module that reports progress (M9, M21)
+const PROGRESS = path.join(ROOT, 'test', 'fixtures', 'progress-part');
 const KEY = 'sdk-feature-conformance-key';
 
 function freePort() {
@@ -46,7 +48,7 @@ describe('mcp-contract 36: the official SDK client accepts each feature\'s answe
     const modules = fs.readdirSync(pre).filter((d) => fs.statSync(path.join(pre, d)).isDirectory()).flatMap((d) => ['--loadModule', path.join(pre, d)]);
     const port = await freePort();
     const args = [path.join(ROOT, 'framework.js'), '--workerThread', '--bindAddr', '127.0.0.1', '--port', String(port), '--store', 'local', '--storePath', path.join(tmp, 'store'),
-      '--authConfigPath', auth, '--moduleDataPath', path.join(tmp, 'module_data'), '--listPageSize', '10', ...modules, '--loadModule', FIXTURE];
+      '--authConfigPath', auth, '--moduleDataPath', path.join(tmp, 'module_data'), '--listPageSize', '10', ...modules, '--loadModule', FIXTURE, '--loadModule', PROGRESS];
     server = spawn(process.execPath, args.concat(redisArgsFor(args)), {cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], detached: true});
     server.output = '';
     server.stdout.on('data', (c) => { server.output += c.toString(); });
@@ -125,6 +127,17 @@ describe('mcp-contract 36: the official SDK client accepts each feature\'s answe
       const done = await client.complete({ref: {type: 'ref/prompt', name: summarise.name}, argument: {name: 'style', value: ''}});
       assert.ok(Array.isArray(done.completion.values));
       await refused(client.getPrompt({name: 'no_such_prompt', arguments: {}}));
+    });
+  });
+
+  describe('progress (M9)', () => {
+    it('the SDK\'s onprogress receives each notifications/progress it parses, before the result', async () => {
+      const work = (await allTools()).find((t) => /partservice_work$/.test(t.name));
+      const seen = [];
+      const result = await client.callTool({name: work.name, arguments: {}}, undefined, {onprogress: (p) => seen.push(p.progress)});
+      assert.strictEqual(result.isError, false, JSON.stringify(result));
+      assert.ok(seen.length > 0, 'no progress reached the SDK');
+      assert.deepStrictEqual([...seen].sort((a, b) => a - b), seen, 'progress went backwards');
     });
   });
 

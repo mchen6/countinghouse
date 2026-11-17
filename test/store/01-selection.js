@@ -72,7 +72,6 @@ describe('store 01: one selection point (LM1 B1)', function() {
     const out = inChild(`
       const options = lib('cli-options');
       options.globalRateLimit = 5;
-      options.apiMonitor = true;
       const store = lib('store').getStore();
       const seen = {};
       const before = created.length;
@@ -81,7 +80,6 @@ describe('store 01: one selection point (LM1 B1)', function() {
       seen.meteringClass = metering instanceof lib('metering/redis-provider');
       let at = created.length; void store.kv; seen.kv = created.slice(at);
       at = created.length; void store.globalLimiter; seen.globalLimiter = created.slice(at);
-      at = created.length; void store.apiLog; seen.apiLog = created.slice(at);
       at = created.length;
       await new Promise((resolve) => store.deviceLog('store-01-device', 'entry', Date.now(), () => resolve()));
       seen.deviceLog = created.slice(at);
@@ -89,7 +87,7 @@ describe('store 01: one selection point (LM1 B1)', function() {
       seen.jobsAddJob = typeof(store.jobs.addJob) === 'function';
       return seen;
     `);
-    assert.deepStrictEqual(out, {metering: [0], meteringClass: true, kv: [5], globalLimiter: [9], apiLog: [0],
+    assert.deepStrictEqual(out, {metering: [0], meteringClass: true, kv: [5], globalLimiter: [9],
       deviceLog: [10], jobsInternal: true, jobsAddJob: true});
   });
 
@@ -120,14 +118,12 @@ describe('store 01: one selection point (LM1 B1)', function() {
     assert.deepStrictEqual(out, {viaMethod: true, viaSet: true, newOnImpl: true, readThrough: true, internal: true});
   });
 
-  it('open() makes the device log and API log clients at start, as loading those files used to', () => {
+  it('open() makes the device log client at start, as loading its file used to; there is no API log (--apiMonitor is retired)', () => {
     const out = inChild(`
-      const options = lib('cli-options');
-      options.apiMonitor = false;
       lib('store').getStore().open();
-      return {created: created.slice().sort(), apiLog: lib('store').getStore().apiLog != null};
+      return {created: created.slice().sort(), apiLog: 'apiLog' in lib('store').getStore()};
     `);
-    assert.deepStrictEqual(out, {created: [0, 10], apiLog: true});
+    assert.deepStrictEqual(out, {created: [10], apiLog: false});
   });
 });
 
@@ -144,9 +140,9 @@ describe('store 01: --store local, so far (LM1 B2)', function() {
       const limits = [];
       for (let i = 0; i < 2; i++) limits.push(await new Promise((resolve) => store.globalLimiter('g', (err, timeLeft) => resolve(timeLeft != null && timeLeft > 0))));
       const jobsLocal = store.jobs === lib('job-control-local') && typeof(store.jobs.addJob) === 'function';
-      return {local, limits, apiLog: store.apiLog, jobsLocal, created};
+      return {local, limits, apiLog: 'apiLog' in store, jobsLocal, created};
     `);
-    assert.deepStrictEqual(out, {local: true, limits: [false, true], apiLog: null, jobsLocal: true, created: []});
+    assert.deepStrictEqual(out, {local: true, limits: [false, true], apiLog: false, jobsLocal: true, created: []});
   });
 });
 

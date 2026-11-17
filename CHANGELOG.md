@@ -10,6 +10,23 @@ the auth config.
 
 ## Unreleased
 
+### Removed — flags that did nothing, or let a failing module load
+
+- **`--verifyModule`** is gone. With it, the loader carried on past a
+  module's failed interface check, `DEVICE_SPEC_VALIDATION_FAIL`,
+  `INVALID_MODULE_INSTANCE` and even `DEVICE_OBJECT_CONFLICT`, and
+  registered the device anyway. A module that fails a check is now refused
+  whatever the options (`test/module-loading/37`). `countinghouse-validate`
+  is the way to check a module.
+- **`--apiMonitor`** is gone, with the Redis client it opened: it wrote a
+  per-call API log that nothing read.
+- **`--centralPortalUrl`**, **`--wetty`** and **`--validateData`** are gone:
+  nothing read them.
+- **`--heapDump`** stays (a dev aid), and no longer throws every minute when
+  Node runs without `--expose-gc`: it says once that it needs it
+  (`bin/countinghouse` and `npm run start-heap-dump` pass it) and does
+  nothing.
+
 ### Added — resource and prompt change notices on a listen (MCP completeness, M8)
 
 - **`subscriptions/listen` agrees to `resourcesListChanged`,
