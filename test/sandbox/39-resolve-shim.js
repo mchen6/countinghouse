@@ -178,4 +178,15 @@ describe('sandbox 39: a hook context\'s conditions, as an array or a Set', () =>
     assert.strictEqual(hasCondition({}, 'require'), false);
     assert.strictEqual(hasCondition(null, 'require'), false);
   });
+  // CI's 22.16 and 24.0.0 legs: Node's own SafeSet, a Set whose prototype
+  // chain is cut off from Set.prototype; read as an absent condition, every
+  // CommonJS require became an import and no module loaded
+  it('reads a Set by what it is, not by its prototype; an object that only looks like one is not', () => {
+    const conditions = new Set(['require', 'node']);
+    Object.setPrototypeOf(conditions, null);
+    assert.strictEqual(Object.prototype.isPrototypeOf.call(Set.prototype, conditions), false);
+    assert.strictEqual(hasCondition({conditions}, 'require'), true);
+    assert.strictEqual(hasCondition({conditions}, 'import'), false);
+    assert.strictEqual(hasCondition({conditions: {has: () => true}}, 'require'), false);
+  });
 });
