@@ -891,8 +891,9 @@ configuration). None of it is available to a hosted server.
   where a credential goes.
 - `--remoteTimeout` (default 60 s, one deadline for connecting and calling)
   and `--remoteMaxBytes` (default 16 MiB, an answer cut off as it streams).
-  Redirects are refused, and a loopback, private or Redis-endpoint address
-  is refused by URL at load and by resolved address before the socket
+  A redirect is followed only within the declared URL's origin (at most 5,
+  its Authorization kept) and refused to another, and a loopback, private
+  or Redis-endpoint address is refused by URL at load and by resolved address before the socket
   opens.
 - Each remote call is metered to the outer caller as an inner hop. The
   server's tools/list is recorded at load with a hash in the log; it

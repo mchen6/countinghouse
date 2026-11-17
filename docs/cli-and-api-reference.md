@@ -8,8 +8,11 @@ For what the runtime *is* and why it exists, start with the
 ## CLI flags reference
 
 Every flag the runtime reads (`lib/cli-options.js`). The last rows are the
-less common ones: the shared runtime's and `ch-local`'s, which `ch-local`
-passes and an operator of a hosted server never sets, and two internal ones.
+less common ones: a few operator flags (`--modulePath`, `--authoringTools`,
+`--debugKey`, `--dbUrl`, `--deviceLogEntrySize`, `--heapDump`,
+`--maxSessionWorkers`), then the shared runtime's and `ch-local`'s, which
+`ch-local` passes and an operator of a hosted server never sets, and two
+internal ones.
 
 | Flag | Default | Purpose |
 |---|---|---|
@@ -67,14 +70,14 @@ passes and an operator of a hosted server never sets, and two internal ones.
 | `--authoringTools` | off | Serve the four authoring tools (`countinghouse_validate_plan`, `countinghouse_validate_module`, `countinghouse_load_module`, `countinghouse_call_tool`): admin-only, and absent from `tools/list` without it. See [`module-authoring.md`](module-authoring.md). |
 | `--debugKey <key>` | none | With `--debug`: the one key accepted, compared in constant time, instead of every key; any other is `SYSTEM_ERROR_UNKNOWN_USER`. Without it, `--debug` binds only to a loopback address and answers only a loopback `Host`. A bare `--debugKey` stops the start (exit 2). |
 | `--dbUrl <url>` | a CouchDB at `127.0.0.1:5984` | The CouchDB that `--authProvider couchdb` uses ([Authentication](authentication.md)). The default carries development credentials: set it whenever you use CouchDB. |
-| `--deviceLogEntrySize <n>` | `1000` | Under `--store redis`, how many entries each device's log keeps (Redis db 10, newest first). Under `--store local` the log is in memory, the last 1000, whatever this says. |
+| `--deviceLogEntrySize <n>` | `1000` | Under `--store redis`, about how many entries each device's log keeps (Redis db 10, newest first; it trims to the newest n + 1). Under `--store local` the log is in memory, the last 1000, whatever this says. |
 | `--maxSessionWorkers <n>` | `16` | On the shared runtime, how many per-session workers run at once, in all: every per-session module, every session. At the cap the least recently used idle one gives up its slot; with none idle, a call is refused `SESSION_WORKERS_BUSY`. Each costs about 24 MB, plus about 15 MB once ([the measurement](benchmarks/lean-worker.md#per-session-workers-shared-runtime-r1)). The operator's only: no session can change it. A positive integer, else exit 2. |
 | `--heapDump` | off | A development aid: every minute, a full garbage collection, and the heap in use logged. Needs `node --expose-gc`, which `bin/countinghouse` passes; without it, it warns once and logs nothing. |
 | `--sessionSocket <path>` | none | *Set by `ch-local daemon`.* Serve MCP sessions on this Unix socket (on Windows the named pipe `\\.\pipe\countinghouse-<32 hex>`) instead of stdio or HTTP: the shared runtime. Needs `--store local`, `--controlChannel ipc` and the single-identity profile; `--stdio` or `--port` with it, or a bare `--sessionSocket`, stops the start (exit 2). |
 | `--sessionDir <dir>` | the socket's own directory | *Set by `ch-local daemon`.* The directory of the session secret and the runtime's lock. Required with a named pipe; on Windows a drive path only. Only with `--sessionSocket`. |
 | `--controlChannel ipc` | none | *Set by `ch-local`.* The channel `ch-local start` (and its daemon) uses while the runtime serves: announcements, settings that apply now, and a pack's load, unload and reload ([Upgrading to 8](upgrading-to-8.md)). Only in the single-identity profile, over an IPC descriptor the spawning process holds; any other value, and `--hardened`, are refused. |
 | `--packsRoot <dir>` | none | *Set by `ch-local`.* Where a pack the control channel loads may be (`<home>/packs`). A pack whose real path is outside every one given is refused; with none, the channel loads nothing. Repeat for more. |
-| `--settingsFile <path>` | none | *Set by `ch-local`.* The user's `settings.json`, which the built-in `countinghouse_settings` reads and tightens. Only in the single-identity profile. |
+| `--settingsFile <path>` | none | *Set by `ch-local`.* The user's `settings.json`, which the built-in `countinghouse_settings` reads and tightens. The tool is served only in the single-identity profile; given elsewhere, the flag is not refused, and the tool is not served. |
 | `--settingsTool` | — | *Internal.* Whether `countinghouse_settings` is served, given to each module's worker (which never gets the file's path), so a size cap's error can say how to raise it. On with `--settingsFile`. |
 | `--outputCeiling <n>` | — | *Internal.* The most `--maxOutputBytes` may be raised to under the operator's ceiling, as the main thread read it when it spawned a worker, given to that worker for the same error. |
 

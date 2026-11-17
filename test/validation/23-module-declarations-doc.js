@@ -123,7 +123,11 @@ describe('validation 23: module-development\'s declaration tables match the meta
     it('has a row for every key lib/ reads from a module\'s countinghouse object, and no other', () => {
       const read = new Set();
       for (const f of sources()) {
-        for (const m of fs.readFileSync(f, 'utf8').matchAll(/\b(?:pkg|packageInfo|pinned)\.countinghouse\.([A-Za-z_$][\w$]*)/g)) read.add(m[1]);
+        const src = fs.readFileSync(f, 'utf8');
+        // any object's .countinghouse.<key> (a package.json's, whatever it is named)
+        for (const m of src.matchAll(/\.countinghouse\.([A-Za-z_$][\w$]*)/g)) read.add(m[1]);
+        // and never through an alias, whose reads the line above would miss
+        assert.doesNotMatch(src, /=\s*[\w$.]*\.countinghouse\s*[;,)]/, `${path.relative(ROOT, f)} aliases a package.json's countinghouse object: read its keys as .countinghouse.<key>`);
       }
       assert.ok(read.size > 0, 'lib/ reads some');
       assert.deepStrictEqual(table.map((r) => code(r[0])).sort(), [...read].sort());

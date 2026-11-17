@@ -366,7 +366,8 @@ says how to write a module for this.
   `{mimeType, bytes, uri}`. `resources/read` returns it to the caller who
   made the call, in the same session, for `--resourceRetention` (24 h), as
   `text` for valid UTF-8 `text/*`, else `blob`; anything else is "Resource
-  not found". Stored results are never listed in `resources/list`. A result whose stored values would pass a store limit is
+  not found". Stored results are never listed in `resources/list`. A
+  result whose stored values would pass a store limit is
   refused `RESULT_STORE_FULL`, with nothing stored. A client on protocol
   revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
   may not show a link; it can still read the `uri` from the text block.
