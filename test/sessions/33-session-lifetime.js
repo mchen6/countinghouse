@@ -104,77 +104,141 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
 
   // The security pass of 11-17: the module's fs quota is one counter shared
   // by its session workers (module-manager sessionQuota), and a partition
-  // removed outside the broker must leave it. The real ModuleManager methods,
-  // over a real Quota.
-  describe('the module\'s shared fs quota (module-manager creditSessionRemoval)', () => {
-    const {Quota} = require('../../lib/fs-broker/quota');
+  // removed outside the broker must leave it, without ever giving back more
+  // than it counted. The real ModuleManager methods, the quota measured by
+  // its own walk (take()), over the test's data root.
+  describe('the module\'s shared fs quota (module-manager removeSessionPartition)', () => {
     const ModuleManager = require('../../lib/module-manager');
-    const limits = {diskMb: 10, diskEntries: 1000};
+    const options = require('../../lib/cli-options');
+    let saved;
     let quota;
-    const held = (bytes, entries) => {
-      quota = new Quota({maxBytes: 10 * 1024 * 1024, maxEntries: 1000, enforce: true, bytes, entries});
-      const q = {ready: Promise.resolve(quota), workers: 1, limits};
-      mm.sessionQuotas = new Map([['ps', q]]);
-      return q;
-    };
     beforeEach(() => {
-      mm.measureSessionPartition = ModuleManager.prototype.measureSessionPartition;
-      mm.creditSessionRemoval = ModuleManager.prototype.creditSessionRemoval;
+      saved = {moduleDataPath: options.moduleDataPath, moduleSandbox: options.moduleSandbox};
+      options.moduleDataPath = env.dataRoot;
+      options.moduleSandbox = 'enforce';
+      for (const m of ['sessionQuota', 'underSessionQuota', 'removeSessionPartition', 'measureSessionPartition', 'creditSessionRemoval']) mm[m] = ModuleManager.prototype[m];
       mm.sessionQuotas = new Map();
     });
-    const fill = (sid, bytes) => fs.writeFileSync(path.join(env.dataRoot, 'ps', 'sessions', sid, 'data', 'f'), Buffer.alloc(bytes));
+    afterEach(() => Object.assign(options, saved));
+    // the module's quota taken as a spawn takes it: its walk over sessions/
+    const take = async (limits = {diskMb: 10, diskEntries: 1000}) => { quota = await mm.sessionQuota('ps', limits, () => {}).take(); return quota; };
+    const file = (sid, name) => path.join(env.dataRoot, 'ps', 'sessions', sid, 'data', name);
+    const bye = async (sid) => { const ending = lifetime.ended(mm, sid, 'bye', env); releaseStop(); await ending; };
 
-    it('a bye: after the workers stop, what the partition held leaves the quota; B\'s stays counted', async () => {
+    it('a partition the quota counted: its files\' bytes and entries leave it; its three directories stay counted (the safe direction)', async () => {
       await make(A);
       await make(B);
-      fill(A, 3000);
-      fill(B, 2000);
-      held(5000 + 6, 6);   // as the spawn's walk counted both: 5000 bytes, data and tmp and f per session
-      const ending = lifetime.ended(mm, A, 'bye', env);
-      releaseStop();
-      await ending;
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(3000));
+      fs.writeFileSync(file(B, 'f'), Buffer.alloc(2000));
+      await take();
+      assert.deepStrictEqual([quota.bytes, quota.entries], [5000, 8], 'the walk: each session\'s dir, data, tmp and f');
+      await bye(A);
       assert.ok(!has(A) && has(B));
-      assert.strictEqual(quota.bytes, 2006, 'A\'s 3000 bytes left the quota');
-      assert.strictEqual(quota.entries, 3, 'and its three entries (data, tmp, f)');
+      assert.deepStrictEqual([quota.bytes, quota.entries], [2000, 7], 'A\'s f left; A\'s three directories stay counted');
     });
 
-    it('clamped at zero: a quota that counted less than the partition holds never goes below zero', async () => {
-      await make(A);
-      fill(A, 3000);
-      held(1000, 1);
-      const ending = lifetime.ended(mm, A, 'bye', env);
-      releaseStop();
-      await ending;
-      assert.deepStrictEqual([quota.bytes, quota.entries], [0, 0]);
+    it('a partition made after the quota was measured (its directories never counted): only what its broker counted leaves', async () => {
+      await make(B);
+      fs.writeFileSync(file(B, 'f'), Buffer.alloc(2000));
+      await take();
+      const before = [quota.bytes, quota.entries];
+      await make(A);   // as a later session's spawn makes it: outside the broker, uncounted
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(3000));
+      quota.settle(0, 0, 3000, 1);   // as A's broker counted its write
+      await bye(A);
+      assert.deepStrictEqual([quota.bytes, quota.entries], before, 'back to what B holds: nothing uncounted was given back');
     });
 
-    it('a removal that fails credits nothing (an over-count is the safe direction); no quota held, nothing is measured', async () => {
+    it('hard links: a file with a name outside the partition gives nothing back; one linked twice inside gives its bytes once', async () => {
       await make(A);
-      fill(A, 3000);
-      held(3000, 3);
+      await make(B);
+      fs.writeFileSync(file(B, 'shared'), Buffer.alloc(4000));
+      fs.linkSync(file(B, 'shared'), file(A, 'alsoB'));   // nlink 2, one name in B
+      fs.writeFileSync(file(A, 'own'), Buffer.alloc(1000));
+      fs.linkSync(file(A, 'own'), file(A, 'own2'));   // two names, both in A
+      await take();
+      const bytes = quota.bytes;
+      await bye(A);
+      assert.strictEqual(quota.bytes, bytes - 1000, 'A\'s own file once; B\'s file, which still exists, not at all');
+    });
+
+    it('nothing is given back when either walk stopped past the limits, when the removal fails, or when the module holds no quota', async () => {
+      // the quota's walk stopped past 1 MB (B's 3 MB), A's own walk doesn't
+      await make(A);
+      await make(B);
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(1000));
+      fs.writeFileSync(file(B, 'f'), Buffer.alloc(3 * 1024 * 1024));
+      await take({diskMb: 1, diskEntries: 1000});
+      let counted = quota.bytes;
+      await bye(A);
+      assert.strictEqual(quota.bytes, counted, 'the quota\'s walk stopped: what it counted isn\'t known');
+      // and A's own walk stopped: A over the limit, the quota's walk not (A alone, a limit it passes later)
+      mm.sessionQuotas = new Map();
+      fs.rmSync(path.join(env.dataRoot, 'ps', 'sessions', B), {recursive: true, force: true});
+      await make(A);
+      await take({diskMb: 1, diskEntries: 1000});
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(2 * 1024 * 1024));
+      quota.settle(0, 0, 2 * 1024 * 1024, 1);
+      counted = quota.bytes;
+      await bye(A);
+      assert.strictEqual(quota.bytes, counted, 'A\'s walk stopped: nothing given back');
+      mm.sessionQuotas = new Map();
+      await make(A);
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(3000));
+      await take();
       const realRemove = partition.remove;
       partition.remove = () => Promise.reject(Object.assign(new Error('partly removed'), {code: 'EBUSY'}));
       try {
-        const ending = lifetime.ended(mm, A, 'bye', env);
-        releaseStop();
-        await ending;
+        await bye(A);
       } finally {
         partition.remove = realRemove;
       }
-      assert.deepStrictEqual([quota.bytes, quota.entries], [3000, 3], 'not credited');
+      assert.strictEqual(quota.bytes, 3000, 'a failed removal gives nothing back');
       mm.sessionQuotas = new Map();
-      assert.strictEqual(await mm.measureSessionPartition('ps', A, env.dataRoot), null, 'no quota held: no ticket');
+      assert.strictEqual(await mm.measureSessionPartition('ps', A), null, 'no quota held: nothing measured');
     });
 
-    it('a quota dropped and measured again between the measure and the credit is not credited: it already counts without it', async () => {
+    it('a quota dropped and measured again meanwhile is not credited; clamped at zero', async () => {
       await make(A);
-      fill(A, 3000);
-      held(3000, 3);
-      const ticket = await mm.measureSessionPartition('ps', A, env.dataRoot);
-      assert.deepStrictEqual([ticket.bytes, ticket.entries], [3000, 3]);
-      const again = held(0, 0);   // the module's last worker ended, and a new spawn measured afresh
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(3000));
+      await take();
+      const ticket = await mm.measureSessionPartition('ps', A);
+      assert.deepStrictEqual([ticket.bytes, ticket.entries], [3000, 1]);
+      mm.sessionQuotas = new Map();
+      await take();   // measured again
       assert.strictEqual(mm.creditSessionRemoval('ps', ticket), false);
-      assert.strictEqual(mm.creditSessionRemoval('ps', Object.assign({}, ticket, {q: again, quota})), true, 'the same quota is credited');
+      quota.settle(0, 0, -quota.bytes + 100, 0);   // counts less than the partition holds
+      assert.strictEqual(mm.creditSessionRemoval('ps', Object.assign({}, ticket, {q: mm.sessionQuotas.get('ps'), quota})), true);
+      assert.strictEqual(quota.bytes, 0, 'clamped');
+    });
+
+    it('the quota\'s walk waits for a removal under way (never races an rm into counting nothing)', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(file(B, 'f'), Buffer.alloc(2000));
+      let release = null;
+      const removing = mm.removeSessionPartition('ps', A, () => new Promise((r) => { release = () => r(partition.remove(env.dataRoot, env.kv, 'ps', A)); }));
+      await new Promise((r) => setImmediate(r));
+      let measured = false;
+      const taking = take().then((q) => { measured = true; return q; });
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(measured, false, 'held while A\'s partition is being removed');
+      release();
+      await removing;
+      await taking;
+      assert.deepStrictEqual([quota.bytes, quota.entries], [2000, 4], 'measured after: B\'s alone');
+    });
+
+    it('a spawn\'s quota taken in the same tick as a removal is queued: neither waits for the other forever, and it counts without the partition', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(file(A, 'f'), Buffer.alloc(3000));
+      fs.writeFileSync(file(B, 'f'), Buffer.alloc(2000));
+      const removing = mm.removeSessionPartition('ps', A, () => partition.remove(env.dataRoot, env.kv, 'ps', A));
+      const taking = take();   // its walk queued behind the removal; the removal sees a quota not yet measured
+      const done = await Promise.race([Promise.all([removing, taking]).then(() => 'done'), new Promise((r) => setTimeout(r, 3000, 'stuck'))]);
+      assert.strictEqual(done, 'done', 'no deadlock');
+      assert.deepStrictEqual([quota.bytes, quota.entries], [2000, 4], 'measured after the removal: B\'s alone, nothing credited twice');
     });
   });
 
