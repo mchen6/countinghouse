@@ -117,6 +117,29 @@ describe('sessions 01: the wire (contract 2)', () => {
       }
     });
 
+    it('the pack messages\' vectors are consistent: every accepted pack fits the pattern and a load or reload carries a boolean global; every refused case names one of the three reasons', () => {
+      const P = V.packMessages;
+      const pattern = new RegExp(P.packPattern);
+      for (const {why, message: m} of P.accepted) {
+        if (m.type === 'set') { assert.strictEqual(m.value, true, why); continue; }
+        if (m.pack !== undefined) assert.ok(typeof(m.pack) === 'string' && pattern.test(m.pack), why);
+        if (m.type === 'load' || m.type === 'reload') assert.strictEqual(typeof(m.global), 'boolean', why);
+        if (m.type !== 'notice') assert.ok(m.pack !== undefined, why);
+      }
+      // each refused case breaks the rule for its own reason, and only it
+      const problem = (m) => {
+        const packOk = (p) => typeof(p) === 'string' && pattern.test(p);
+        if (m.type === 'set') return (typeof(m.name) === 'string' && m.name.startsWith('pack.') && m.value !== true) ? 'set-false' : null;
+        if (m.type === 'load' || m.type === 'reload') return typeof(m.global) !== 'boolean' ? 'global' : (packOk(m.pack) ? null : 'pack');
+        if (m.type === 'unload') return packOk(m.pack) ? null : 'pack';
+        if (m.type === 'notice') return (m.pack === undefined || packOk(m.pack)) ? null : 'pack';
+        return null;
+      };
+      for (const {why, message} of P.accepted) assert.strictEqual(problem(message), null, why);
+      for (const {why, reason, message} of P.refused) assert.strictEqual(problem(message), reason, why);
+      assert.deepStrictEqual([...new Set(P.refused.map((r) => r.reason))].sort(), ['global', 'pack', 'set-false']);
+    });
+
     it('makes the token MAC as the vectors have it', () => {
       assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
     });

@@ -685,6 +685,206 @@
       }
     ]
   },
+  "packMessages": {
+    "rule": "load and reload carry pack: <n> (the pack's own name, as settings spell pack.<n>; name stays the scenario's package name) and global: a boolean (true: the settings have the pack on, for everyone; false: only a session's load-pack asked). unload carries pack. A notice about a pack carries pack and goes to the sessions that list the pack when it is delivered; one with no pack goes to everyone. set pack.<n> is only ever true (the terminal turning on, for everyone, a pack already loaded for a session); a terminal off is always an unload. In shared mode a load or reload without a boolean global is refused; under --stdio pack and global are not read",
+    "packPattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+    "accepted": [
+      {
+        "why": "a load from the settings, for everyone",
+        "message": {
+          "id": 1,
+          "type": "load",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "notice": "example added 1.0.0",
+          "pack": "example",
+          "global": true
+        }
+      },
+      {
+        "why": "a load a session asked for",
+        "message": {
+          "id": 2,
+          "type": "load",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "pack": "example",
+          "global": false
+        }
+      },
+      {
+        "why": "a reload",
+        "message": {
+          "id": 3,
+          "type": "reload",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "notice": "example upgraded 1.0.0 → 1.1.0",
+          "pack": "example",
+          "global": true
+        }
+      },
+      {
+        "why": "an unload",
+        "message": {
+          "id": 4,
+          "type": "unload",
+          "name": "@countinghouse/ch-pack-example",
+          "notice": "example turned off",
+          "pack": "example"
+        }
+      },
+      {
+        "why": "a notice about a pack",
+        "message": {
+          "id": 5,
+          "type": "notice",
+          "module": null,
+          "text": "example turned on for this session 1.0.0 (confirmed in your client)",
+          "pack": "example"
+        }
+      },
+      {
+        "why": "a notice about no pack: to everyone",
+        "message": {
+          "id": 6,
+          "type": "notice",
+          "module": null,
+          "text": "requestTimeout set to 60 s"
+        }
+      },
+      {
+        "why": "the terminal turning on a pack a session had",
+        "message": {
+          "id": 7,
+          "type": "set",
+          "name": "pack.example",
+          "value": true
+        }
+      }
+    ],
+    "refused": [
+      {
+        "why": "a load with no global",
+        "reason": "global",
+        "message": {
+          "id": 11,
+          "type": "load",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "pack": "example"
+        }
+      },
+      {
+        "why": "a load whose global is not a boolean",
+        "reason": "global",
+        "message": {
+          "id": 12,
+          "type": "load",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "pack": "example",
+          "global": "true"
+        }
+      },
+      {
+        "why": "a reload with no global",
+        "reason": "global",
+        "message": {
+          "id": 13,
+          "type": "reload",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "pack": "example"
+        }
+      },
+      {
+        "why": "a load with no pack",
+        "reason": "pack",
+        "message": {
+          "id": 14,
+          "type": "load",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "global": true
+        }
+      },
+      {
+        "why": "a pack with an uppercase letter",
+        "reason": "pack",
+        "message": {
+          "id": 15,
+          "type": "load",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "pack": "Example",
+          "global": true
+        }
+      },
+      {
+        "why": "a pack with a leading dash",
+        "reason": "pack",
+        "message": {
+          "id": 16,
+          "type": "reload",
+          "name": "@countinghouse/ch-pack-example",
+          "scenario": "/home/example/.countinghouse/packs/example/node_modules/@countinghouse/ch-pack-example",
+          "remoteCredentials": "/home/example/.countinghouse/run/start-1/remote-credentials-example.json",
+          "pack": "-example",
+          "global": true
+        }
+      },
+      {
+        "why": "an unload whose pack is not a string",
+        "reason": "pack",
+        "message": {
+          "id": 17,
+          "type": "unload",
+          "name": "@countinghouse/ch-pack-example",
+          "pack": 7
+        }
+      },
+      {
+        "why": "a notice whose pack is not a string",
+        "reason": "pack",
+        "message": {
+          "id": 18,
+          "type": "notice",
+          "module": null,
+          "text": "x",
+          "pack": null
+        }
+      },
+      {
+        "why": "a pack over 64 characters",
+        "reason": "pack",
+        "message": {
+          "id": 19,
+          "type": "unload",
+          "name": "@countinghouse/ch-pack-example",
+          "pack": "paaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      {
+        "why": "set pack.<n> false",
+        "reason": "set-false",
+        "message": {
+          "id": 20,
+          "type": "set",
+          "name": "pack.example",
+          "value": false
+        }
+      }
+    ]
+  },
   "restoreRows": {
     "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 64, one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; pack.<n> (^pack\\.[a-z0-9][a-z0-9-]{0,63}$) has a boolean value, over null and a semver version (required, never null); locks distinct kinds of maxOutputBytes, requestTimeout, pack; formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
     "accepted": [
