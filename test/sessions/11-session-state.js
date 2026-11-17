@@ -341,11 +341,13 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.strictEqual(settings.effective(B, 'maxOutputBytes'), 24 * MiB);
     });
 
-    it('a pack\'s override is reset and said: a session has no packs of its own yet', async () => {
+    // (B3 Task 9: a restored pack "on" is a loosening; with no daemon to load it here, it is reset, and the
+    // session, with forms left, may ask again)
+    it('a pack\'s "on" that can\'t be loaded is reset and said', async () => {
       sessions.importTable(table([row(A, {overrides: [{name: 'pack.ci', value: true, loosening: true, over: null, version: '1.2.3'}]})]));
       await resumed(A);
       assert.deepStrictEqual(settings.overridesOf(A), []);
-      assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart']);
+      assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart; ask again']);
     });
 
     it('a session a re-exec took loosenings from (reset) is told so at its resume', async () => {
@@ -586,10 +588,139 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(notices.take(null, A), ['your this-session maxOutputBytes of 12MiB was not restored after a runtime restart: the default is lower now']);
     });
 
-    it('a pack\'s override reset is not said as something to ask again: packs are a terminal\'s', async () => {
-      sessions.importTable(table([row(A, {overrides: [{name: 'pack.ci', value: true, loosening: true, over: null, version: '1.2.3'}]})]));
+    it('a pack\'s "on" reset for a session whose kind pack is locked is not said as something to ask again', async () => {
+      sessions.importTable(table([row(A, {overrides: [{name: 'pack.ci', value: true, loosening: true, over: null, version: '1.2.3'}], locks: ['pack']})]));
       await resumed(A);
       assert.deepStrictEqual(notices.take(null, A), ['your this-session change of pack.ci was reset after a runtime restart']);
+    });
+
+    // B3 Task 9: a restored session's packs
+    describe('a restored session\'s packs (shared runtime B3, Task 9)', () => {
+      const sessionPacks = require('../../lib/session-packs');
+      const pack = (n, value, version) => ({name: `pack.${n}`, value, loosening: value === true, over: null, version});
+      let loaded;
+      let asked;
+      let answer;
+      beforeEach(() => {
+        sessionPacks.resetForTests();
+        loaded = new Map([['ci', '1.2.3']]);
+        asked = [];
+        answer = (msg) => {
+          if (msg.type === 'load-pack') { loaded.set(msg.name, msg.version); sessionPacks.packChanged(msg.name); }
+          if (msg.type === 'unload-pack') { loaded.delete(msg.name); sessionPacks.packGone(msg.name); }
+          return {ok: true};
+        };
+        sessionPacks.configure({
+          records: () => [...loaded.keys()].map((p) => ({pack: p, modules: [`m-${p}`]})), moduleOf: (d) => d.replace(/^d-/, 'm-'),
+          overridesOf: settings.packOverridesOf, onOverrideChange: settings.onChange, openSessions: () => sessions.ids(), isOpen: (id) => sessions.get(id) != null,
+          shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey,
+          versionOf: (p) => (loaded.has(p) ? loaded.get(p) : null), ask: async(msg) => { asked.push(msg); return answer(msg); }
+        });
+      });
+      afterEach(() => sessionPacks.resetForTests());
+      const resetText = (n, askAgain) => `your this-session change of pack.${n} was reset after a runtime restart${askAgain ? '; ask again' : ''}`;
+
+      it('an "on" at the loaded version, the client saying ok and yes: listed to that session only, no load asked', async () => {
+        sessions.importTable(table([row(A, {overrides: [pack('ci', true, '1.2.3')]})]));
+        await resumed(A);
+        await resumed(B);
+        assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd-ci'), sessionPacks.listsDevice(B, 'd-ci')], [true, false]);
+        assert.deepStrictEqual(asked, []);
+        assert.deepStrictEqual(notices.take(null, A), ['this session\'s settings were restored after a runtime restart']);
+      });
+
+      it('the client saying no, nothing, or failed: dropped, and said', async () => {
+        sessions.importTable(table([row(A, {overrides: [pack('ci', true, '1.2.3')]}), row(B, {overrides: [pack('ci', true, '1.2.3')]}), row(C, {overrides: [pack('ci', true, '1.2.3')]})]));
+        await resumed(A, {status: 'ok', conditions: 'no', repo: null});
+        await resumed(B, {status: 'failed', conditions: null, repo: null});
+        await resumed(C, {status: 'ok', conditions: 'unknown', repo: null});
+        for (const id of [A, B, C]) assert.strictEqual(settings.packOverridesOf(id).get('ci'), undefined, id);
+        assert.deepStrictEqual(notices.take(null, A), [resetText('ci', false)], 'its no latched it: no asking again');
+        assert.deepStrictEqual(notices.take(null, B), [resetText('ci', true)]);
+      });
+
+      it('one at another version than the loaded one, or under a ceiling that no longer allows the pack: dropped and said', async () => {
+        settings.configure({ceiling: () => ({state: 'trusted', ceiling: {packs: ['ci']}})});
+        loaded.set('docs', '2.0.0');
+        sessions.importTable(table([row(A, {overrides: [pack('ci', true, '1.0.0'), pack('docs', true, '2.0.0')]})]));
+        await resumed(A);
+        assert.deepStrictEqual([...settings.packOverridesOf(A)], []);
+        assert.deepStrictEqual(notices.take(null, A).sort(), [resetText('ci', true), resetText('docs', true)].sort());
+      });
+
+      it('one not loaded is loaded once the session has resumed; its client saying no while the load waits drops it, and the pack is unloaded', async () => {
+        loaded.delete('ci');
+        answer = (msg) => {
+          if (msg.type === 'load-pack') { loaded.set(msg.name, msg.version); sessionPacks.packChanged(msg.name); sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null}); }
+          if (msg.type === 'unload-pack') { loaded.delete(msg.name); sessionPacks.packGone(msg.name); }
+          return {ok: true};
+        };
+        sessions.importTable(table([row(A, {overrides: [pack('ci', true, '1.2.3')]})]));
+        await resumed(A);
+        await new Promise((r) => setTimeout(r, 20));
+        assert.deepStrictEqual(asked, [{type: 'load-pack', name: 'ci', version: '1.2.3'}, {type: 'unload-pack', name: 'ci'}]);
+        assert.strictEqual(settings.packOverridesOf(A).get('ci'), undefined);
+      });
+
+      it('a restored "off" hides a global pack, as stored', async () => {
+        loaded.set('docs', '2.0.0');
+        sessionPacks.setGlobal('docs', true);
+        sessions.importTable(table([row(A, {overrides: [pack('docs', false, '2.0.0')]})]));
+        await resumed(A);
+        await resumed(B);
+        assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd-docs'), sessionPacks.listsDevice(B, 'd-docs')], [false, true]);
+        assert.deepStrictEqual(sessionState.exportOf(A).overrides, [pack('docs', false, '2.0.0')], 'kept in the export, its version with it');
+      });
+
+      it('a row for a session that never resumes takes no pack and asks no load', async () => {
+        loaded.delete('ci');
+        sessions.importTable(table([row(A, {overrides: [pack('ci', true, '1.2.3')]})]));
+        await new Promise((r) => setTimeout(r, 30));
+        assert.deepStrictEqual(asked, []);
+      });
+    });
+
+    // the reviewer, on #341: a session's "off" of a global pack survives the export, a restart and the
+    // restore, and the pack stays unlisted to that session (an "off" that named no version was left out of the
+    // export, and the pack listed to it again after a restart: fail open)
+    it('an "off" of a global pack survives export, restart and restore, and the pack stays unlisted to that session', async () => {
+      const sessionPacks = require('../../lib/session-packs');
+      const settingsFile = require('path').join(require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'ch-s11-off-')), 'settings.json');
+      const wire = () => {
+        sessionPacks.resetForTests();
+        sessionPacks.configure({records: () => [{pack: 'docs', modules: ['m-docs']}], moduleOf: (d) => d.replace(/^d-/, 'm-'),
+          overridesOf: settings.packOverridesOf, onOverrideChange: settings.onChange, openSessions: () => sessions.ids(), isOpen: (id) => sessions.get(id) != null,
+          shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey,
+          versionOf: () => '2.0.0'});
+        sessionPacks.setGlobal('docs', true);
+      };
+      try {
+        // before the restart: A turns the global docs off through the settings tool
+        wire();
+        await resumed(A);
+        await resumed(B);
+        const tool = settingsTool.create({file: settingsFile, lockWaitMs: 200, ceiling: () => ({state: 'none'})});
+        const off = await tool.set('pack.docs', 'off', 'settings tool', {shared: true, session: A, clientInfo: CLIENT, capabilities: null});
+        assert.strictEqual(off.applies, 'this session');
+        const exported = sessionState.exportOf(A);
+        assert.deepStrictEqual(exported.overrides, [{name: 'pack.docs', value: false, loosening: false, over: null, version: '2.0.0'}], 'in the export, its version with it');
+        // the restart: a fresh runtime, the daemon's table, A resumes
+        reset();
+        settings.configure({ceiling: () => ({state: 'none'})});
+        sessionState.configure({tell: () => true});
+        confirm.configure({tell: () => {}});
+        reg = new EventEmitter();
+        sessions.attach(reg);
+        sources = {};
+        wire();
+        sessions.importTable(table([row(A, exported)]));
+        await resumed(A);
+        await resumed(B);
+        assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd-docs'), sessionPacks.listsDevice(B, 'd-docs')], [false, true], 'still hidden from A only');
+      } finally {
+        sessionPacks.resetForTests();
+        require('fs').rmSync(require('path').dirname(settingsFile), {recursive: true, force: true});
+      }
     });
 
     // #300's review, (3)

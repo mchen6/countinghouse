@@ -231,10 +231,11 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.deepStrictEqual(heard, [A, A, A]);
   });
 
-  it('pack overrides: always with their version; an "on" only where the ceiling allows the pack', () => {
+  // an "on" names the version confirmed, an "off" the one it was off at (B3 Task 9: the state's wire)
+  it('pack overrides: always with their plain version, on or off; an "on" only where the ceiling allows the pack', () => {
     packs['pack.ci'] = true;
-    assert.throws(() => settings.set(A, 'pack.ci', false), /names its plain version/);
-    for (const v of ['', 'latest', '^1.2.0', '1.2', '1.2.0 ', 'v1.2.0']) assert.throws(() => settings.set(A, 'pack.ci', false, {version: v}), /plain version/, v);
+    for (const v of [undefined, '', 'latest', '^1.2.0', '1.2', '1.2.0 ', 'v1.2.0']) assert.throws(() => settings.set(B, 'pack.docs', true, {loosening: true, version: v}), /plain version/, String(v));
+    assert.throws(() => settings.set(A, 'pack.ci', false), /plain version/);
     settings.set(A, 'pack.ci', false, {version: '1.2.0'});
     assert.strictEqual(settings.effective(A, 'pack.ci'), false);
     assert.strictEqual(settings.effective(B, 'pack.ci'), true);

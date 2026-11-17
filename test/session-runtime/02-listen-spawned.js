@@ -119,7 +119,8 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     shim.message(b.c, null, JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: lb2}}));
     await tick(200);
     const two = scenario(path.join(packs, 'ch-pack-two', '1.0.0', 'node_modules', 'ch-pack-two'), 'ch-pack-two');
-    const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: two});
+    // a shared runtime's load names its pack and whether it is global (B3 Task 6)
+    const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: two, pack: 'ch-pack-two', global: true});
     assert.strictEqual(reply.ok, true, `${JSON.stringify(reply)}\n${r.err.slice(-1500)}`);
     const until = Date.now() + 15000;
     while ((changesFor(ra, la) < 1 || changesFor(rb, lb) < 1) && Date.now() < until) await tick(100);
@@ -133,7 +134,7 @@ describe('session-runtime 02: discover and listen per session, spawned', functio
     a.c.end();
     await tick(300);
     const three = scenario(path.join(packs, 'ch-pack-three', '1.0.0', 'node_modules', 'ch-pack-three'), 'ch-pack-three');
-    const reply3 = await r.control({type: 'load', name: 'ch-pack-three', scenario: three});
+    const reply3 = await r.control({type: 'load', name: 'ch-pack-three', scenario: three, pack: 'ch-pack-three', global: true});
     assert.strictEqual(reply3.ok, true, `${JSON.stringify(reply3)}\n${r.err.slice(-1500)}`);
     const until2 = Date.now() + 15000;
     while (changesFor(rb, lb) < 2 && Date.now() < until2) await tick(100);

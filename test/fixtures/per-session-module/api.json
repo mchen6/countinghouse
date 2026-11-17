@@ -9,11 +9,76 @@
           {
             "name": "touch",
             "description": "Adds one to a counter in its store and its /data, and answers both.",
-            "input": {"schema": "/stateService/touch/input"},
-            "output": {"schema": "/stateService/touch/output"}
+            "input": {
+              "schema": "/stateService/touch/input"
+            },
+            "output": {
+              "schema": "/stateService/touch/output"
+            }
+          },
+          {
+            "name": "hold",
+            "description": "Answers after input.ms milliseconds (a call held in flight).",
+            "input": {
+              "schema": "/stateService/hold/input"
+            },
+            "output": {
+              "schema": "/stateService/hold/output"
+            }
+          },
+          {
+            "name": "crash",
+            "description": "Ends its own worker with an uncaught error, after answering.",
+            "input": {
+              "schema": "/stateService/crash/input"
+            },
+            "output": {
+              "schema": "/stateService/crash/output"
+            }
+          },
+          {
+            "name": "readCount",
+            "description": "Its /data counter, as a resource.",
+            "input": {
+              "schema": "/stateService/readCount/input"
+            },
+            "output": {
+              "schema": "/stateService/readCount/output"
+            },
+            "resource": {
+              "uriTemplate": "count",
+              "name": "count",
+              "mimeType": "text/plain"
+            }
+          },
+          {
+            "name": "flood",
+            "description": "Many store commands at once, each a message to the main thread (the message-rate limit).",
+            "input": {
+              "schema": "/stateService/flood/input"
+            },
+            "output": {
+              "schema": "/stateService/flood/output"
+            }
           }
         ]
       }
-    }
+    },
+    "promptList": [
+      {
+        "name": "greet",
+        "title": "Greet",
+        "description": "Asks for a greeting in a style.",
+        "arguments": {
+          "schema": "/prompts/greet/arguments"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "text": "Greet me in a {{style}} style."
+          }
+        ]
+      }
+    ]
   }
 }
