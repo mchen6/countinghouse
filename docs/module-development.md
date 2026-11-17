@@ -647,8 +647,11 @@ user's client sessions, `--sessionSocket`):
 
 - `--maxSessionWorkers` (default 16) caps the per-session workers **in
   all**, across every per-session module and every session. It's the one
-  bound on their memory: each is a lean worker, about 14.5 MB, so the default
-  cap is about 232 MB above the shared workers. Only the operator sets it, from
+  bound on their memory: about 15 MB once plus about 24 MB per per-session
+  worker (resident memory, measured on Node 24 with a small module; a
+  heavier module adds its own heap), so the default cap of 16 is about
+  400 MB at most, above the shared workers
+  ([benchmarks](benchmarks/lean-worker.md)). Only the operator sets it, from
   the terminal. A session can't change it.
 - At the cap, the least recently used worker that is idle (no call in flight,
   and no call token issued to it still live) gives up its slot, and its

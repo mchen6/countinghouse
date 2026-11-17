@@ -984,6 +984,10 @@ What keeps one session out of another's:
   when the session turns its pack off.
 - **The memory bound is the operator's.** `--maxSessionWorkers` (default
   16, in all) is a terminal flag only, not a setting a session can change.
+  It bounds their memory at about 15 MB once plus about 24 MB per
+  per-session worker (measured, Node 24, a small module; a heavier module
+  adds its own heap): the default cap is about 400 MB at most
+  ([benchmarks](benchmarks/lean-worker.md)).
   At the cap only an idle worker is retired, never one with a call in
   flight. A session that can't get a worker is refused
   `SESSION_WORKERS_BUSY`; nothing is queued.
