@@ -8,7 +8,7 @@
 
 **Architecture:**
 - **`statusMessage`** is computed in M15's `modernTaskOf` from the job record: `job.progress` (a finite number, clamped to 0–100 and rounded) while `working`, and the failure's code for a `failed` run. Both runners already keep `job.progress` (`updateJobProgress`).
-- **A main-thread event bus, `lib/task-events.js`,** is told by both job runners when a 2026-07-28 job changes: active, progress, completed, failed or removed. In the Redis runner that's the `QueueEvents` handlers, including `'progress'`, which master ignores today. In the local runner it's its state changes and `updateJobProgress`.
+- **A main-thread event bus, `lib/task-events.js`,** keyed by the task's minted `t-` id (`TASK_ID`: the Redis runner's `QueueEvents` give only an id), is told by both job runners when a 2026-07-28 job changes: active, progress, completed, failed or removed. In the Redis runner that's the `QueueEvents` handlers, including `'progress'`, which master ignores today. In the local runner it's its state changes and `updateJobProgress`.
 - **The listen hub (`lib/mcp/subscriptions.js`) takes a fourth filter, `taskIds`.** A listener's agreed ids are a `Set`. On a task event the hub builds the task as `tasks/get` would (one function, shared with M15's handler), for each listener whose set holds that id. It writes `notifications/tasks`, coalesced per (listener, task), and drops the id once the task is terminal.
 
 **Tech stack:** Node ≥ 22.16, mocha; BullMQ's `QueueEvents`; M15's `modernTaskOf`, `taskFailure`, `taskCallResult` and tombstones.
@@ -31,7 +31,7 @@
 - **D2. When a notification is sent:** on a change to what `tasks/get` would return. That's `working` → its first progress, each later progress, and the terminal state (`completed`, `failed`, or `cancelled` by its owner's `tasks/cancel`). Progress is coalesced to at most one per (listener, task) every `TASK_NOTICE_MS` = 1000, always the latest. A terminal state is sent at once, exactly once, and the id then leaves the listener's set. A task already terminal when the listen opens is sent once, right after the ack (it saves a poll). **Ruled, also:** a listener's ids are re-checked at send time through the same lookup (a removed or no-longer-visible job leaves the set silently), and a closed listener frees its coalescing timers.
 - **D3. statusMessage:**
   - `working`: `"NN%"` from a finite numeric `job.progress` (clamped 0–100, rounded); nothing for any other value (the spec's own words for progress, `ctx.job.progress(n)`).
-  - `failed` (a run that left no result, M15's rule): the failure's code (e.g. `MODULE_UNLOADED`), or `"failed"` when there's none (a job timeout's error has no code). Never module text.
+  - `failed` (a run that left no answer): the failure's code, or `"failed"` when there's none (a job timeout's error has no code until JOB_TIMEOUT). Never module text. After #369 a module unloaded, reloaded or suspended under a run is `completed` with isError, as inline, so it has no `statusMessage`. What stays `failed` is the runner's timeout (`"failed"`) and a refused auth re-check (its code, e.g. `SYSTEM_ERROR_UNKNOWN_USER`) (the Reviewer, 2026-11-17).
   - `completed` and `cancelled`: no `statusMessage`.
   - The legacy era's statusMessage stays as M15 left it.
 - **D4. Shared runtime's sessions (REVERSED by the Reviewer):** B5 Task 2 removes M15's shared-runtime refusals and turns tasks on in the shared runtime, scoped by session. So M16 works there too: the listener's session is the request's session, and D1's shared lookup does the scoping.
@@ -77,7 +77,7 @@
 - [ ] Failing tests:
   - a task whose handler calls `ctx.job.progress(42.4)` reads `statusMessage: "42%"` on `tasks/get` while working, and nothing once completed;
   - a progress of `"half"` or `{}` gives no statusMessage;
-  - a run past `--jobTimeout` reads failed with statusMessage `"failed"` (its error has no code), and a lost run's is its code (`MODULE_UNLOADED`); never module words;
+  - a run past `--jobTimeout` reads failed with statusMessage `"failed"` (its error has no code); never module words. (A lost run's `MODULE_UNLOADED` case is dropped: after #369 that run is `completed` with isError.);
   - the local runner emits active, progress, completed, failed and removed for a modern job, and nothing for a legacy job.
 - [ ] Implement. The fixture `m15-tasks` gains an action `progress` that reports 10, 50 and 90 a little apart, then answers.
 - [ ] Run: PASS. Commit.
