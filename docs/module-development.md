@@ -304,11 +304,9 @@ shows up as a load error rather than silently doing nothing. Directly under
 
 An action may also carry `title`, `annotations`, `icons`, `longRunning`,
 `questions` and `resource`, and the device a `promptList`: what the MCP
-layer serves to a client beyond a tool's name, description and schemas. Each
-is served as its part of that layer is released, and one that is not served
-yet changes nothing a client sees. All of them are checked already, by the
-meta-schema and at load (stage `declarations`), so a module written against
-them is right when they are served:
+layer serves to a client beyond a tool's name, description and schemas
+([every declaration, at a glance](#declarations-at-a-glance)). Each is
+checked by the meta-schema and at load (stage `declarations`):
 
 - a `resource`'s `uriTemplate` is a relative path of literals and `{name}`
   variables, at most 8 and at most one to a segment (`notes/{id}`,
@@ -442,6 +440,51 @@ error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
 [`MIGRATION.md`](../MIGRATION.md).
 
+### Declarations at a glance
+
+Every key an action, its `resource` and a prompt may carry, with where the
+meta-schema ([`spec/schema.json`](../spec/schema.json)) defines it. Two
+prefixes keep the pointers short:
+
+- `ACTION` is
+  `#/properties/device/properties/serviceList/patternProperties/^urn:[\S]{1,64}:serviceID:[\S]{1,64}$/properties/actionList/items`
+- `PROMPT` is `#/properties/device/properties/promptList/items`
+
+An action, a resource and a prompt refuse any other key.
+
+| Declaration | In `spec/schema.json` | What it is |
+|---|---|---|
+| `name` | `ACTION/properties/name` | Required. The action's name, unique within its service. |
+| `description` | `ACTION/properties/description` | What a client, and an LLM, reads as the tool's description. An action without one is skipped. |
+| `input` | `ACTION/properties/input` | `{schema}`: a pointer into your `schema.json`. Without it, the action takes no input. |
+| `output` | `ACTION/properties/output` | `{schema}`. Without it, the result is not validated on the way back. |
+| `fault` | `ACTION/properties/fault` | `{schema}`: the shape of what a failure of this action carries ([Failing a call](#failing-a-call)), of any root type. It describes; no fault is checked against it. |
+| `title` | `ACTION/properties/title` | The tool's title, served on `tools/list`. |
+| `annotations` | `ACTION/properties/annotations` | `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`: your claims, served on `tools/list`, enforced by nothing. |
+| `icons` | `ACTION/properties/icons` | At most 4 files inside your module (PNG, JPEG or WebP, at most 16 KiB each), read at load and served inline. |
+| `longRunning` | `ACTION/properties/longRunning` | Runs as a task for a client that declares the tasks extension (with `--workerThread`). Every other caller runs it inline. |
+| `questions` | `ACTION/properties/questions` | At most 4 named questions your handler may ask with `ctx.ask`, each a message and a flat form ([Asking the user](#asking-the-user-ctxask)). |
+| `resource` | `ACTION/properties/resource` | The action is a resource, read by its URI, and is not listed as a tool. |
+| `resource.uriTemplate` | `ACTION/properties/resource/properties/uriTemplate` | Required. A relative path of literals and `{name}` variables, each one a string property of the input. |
+| `resource.name` | `ACTION/properties/resource/properties/name` | Required. The resource's name, as `resources/list` shows it. |
+| `resource.title` | `ACTION/properties/resource/properties/title` | Its title. |
+| `resource.description` | `ACTION/properties/resource/properties/description` | Its description. |
+| `resource.mimeType` | `ACTION/properties/resource/properties/mimeType` | What a string output is served as, when the output schema's `contentMediaType` does not say. |
+| `resource.changesWith` | `ACTION/properties/resource/properties/changesWith` | Up to 32 actions of this module (`<service>.<action>`) whose success tells subscribers to read again. Never its own read action. |
+| `resource.icons` | `ACTION/properties/resource/properties/icons` | As an action's `icons`. |
+| `resource.completion` | `ACTION/properties/resource/properties/completion` | Per variable, the action of this module that offers values for it. |
+| `promptList` | `#/properties/device/properties/promptList` | On the device: at most 32 prompts, served on `prompts/list` and `prompts/get`. |
+| `prompt.name` | `PROMPT/properties/name` | Required. Listed as `<module>_<name>`, or a scenario's under the bare name. |
+| `prompt.title` | `PROMPT/properties/title` | Its title. |
+| `prompt.description` | `PROMPT/properties/description` | Its description. |
+| `prompt.icons` | `PROMPT/properties/icons` | As an action's `icons`. |
+| `prompt.arguments` | `PROMPT/properties/arguments` | `{schema}`: an object schema of at most 16 string properties. |
+| `prompt.messages` | `PROMPT/properties/messages` | Required. 1 to 8 `{role, text}` messages, `role` being `user` or `assistant`, with `{{name}}` placeholders. |
+| `prompt.completion` | `PROMPT/properties/completion` | Per argument, the action of this module that offers values for it. |
+
+The declarations in your `package.json`'s `countinghouse` object are listed
+under [`package.json`: the `countinghouse` keys](#packagejson-the-countinghouse-keys).
+
 ## `schema.json`
 
 Supplies the JSON Schema 2020-12 documents the action's `input`/`output`/`fault`
@@ -533,6 +576,20 @@ action):
 
 The load stops at the first such problem. `countinghouse-validate` prints
 them all.
+
+## `package.json`: the `countinghouse` keys
+
+What your module declares outside its spec goes in one object in its
+`package.json`, `"countinghouse": {...}`. The runtime reads these keys and
+ignores any other one.
+
+| Key | Value | What it is |
+|---|---|---|
+| `calls` | `["<module>/<service>.<action>", ...]` | The actions of other modules this one may `ctx.call`. An address that is not here is refused ([Calling other modules](#calling-other-modules)). A scenario's parts are the modules it names. |
+| `permissions` | `{fs, net, env, limits}` | What its worker may reach under the sandbox: paths, hosts, environment variables, and memory, blocking and disk limits ([Declaring permissions](#declaring-permissions)). |
+| `remotes` | `[{name, transport, url, headers, credential}]` | The remote MCP server it calls, one per module in this version ([Calling a remote MCP server](#calling-a-remote-mcp-server)). |
+| `role` | `"scenario"` or `"part"` | A scenario is listed and loads its parts. A part loaded by a scenario is not listed ([Roles](module-authoring.md#roles-scenarios-and-parts)). Any other value counts as no role. In the single-identity profile (`--stdio`, the shared runtime) only scenarios are listed; on a hosted server a module with no role is listed as any module is. |
+| `state` | `"shared"` (the default) or `"per-session"` | Whether the module keeps state per user session. `per-session` gives it, on the shared runtime, a worker, `ctx.redis` keys and `/data` and `/tmp` of its own per session. It is refused on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`); under `--stdio`, one session, it runs as a shared module. Any other value refuses the load (`MODULE_STATE_INVALID`); a reload that changes it is refused (`MODULE_STATE_CHANGED`). |
 
 ## Loading your module
 
@@ -1041,7 +1098,7 @@ rejects, with a code:
 
 | Code | When | Retryable |
 |---|---|---|
-| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect (refused, never followed), a 502 or 503, or the module was reloaded during the call | yes |
+| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect to another origin (refused; one within the same origin is followed, at most 5), a 502 or 503, or the module was reloaded during the call | yes |
 | `REMOTE_TIMEOUT` | no answer within `--remoteTimeout`, or a 504 | yes |
 | `REMOTE_AUTH_FAILED` | the server answered 401 or 403; the message names the variable, never its value | no |
 | `REMOTE_PROTOCOL` | an answer that is not valid MCP | no |

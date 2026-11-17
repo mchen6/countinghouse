@@ -37,6 +37,17 @@
             }
           },
           {
+            "name": "die",
+            "description": "Long-running: ends its own worker after input.ms milliseconds, mid-run, and never answers.",
+            "longRunning": true,
+            "input": {
+              "schema": "/stateService/die/input"
+            },
+            "output": {
+              "schema": "/stateService/die/output"
+            }
+          },
+          {
             "name": "readCount",
             "description": "Its /data counter, as a resource.",
             "input": {
