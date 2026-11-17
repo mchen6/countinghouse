@@ -13,7 +13,7 @@
           "outsidePath": {"type": "string"},
           "port": {"type": "integer"}
         },
-        "required": ["change", "builtins", "runtimeFile", "outsidePath", "port"]
+        "required": ["change", "builtins", "runtimeFile", "outsidePath", "host"]
       },
       "output": {
         "type": "object"

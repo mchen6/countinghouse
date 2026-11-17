@@ -65,11 +65,15 @@ Each layer below says what it stops and what it does not.
 **Boundary checks run on intrinsics captured before module code loads.**
 Module code shares the worker's realm with the checks that bound it, and can
 replace a method of `String`, `Array`, `Set`, `Map`, `RegExp` or
-`Function`, or a property of a shared built-in module. So every check the
-worker's boundary relies on (which built-in may load, whether a file is
-inside the module's root, whether a host is granted) calls only functions
-taken when its file loaded, before any module code: never a method looked
-up when the check runs. A guard hands a call on to the original it wraps
+`Function`, or a property of a shared built-in module. So the lockdown's
+checks (which built-in may load, whether a path given to `CHUtil.loadFile`
+or the reduced `module.createRequire` is inside the module's root, whether
+a host is granted) call only functions taken when their file loaded, before
+any module code: never a method looked up when the check runs. The file
+broker's own checks and its loader hook (`lib/fs-broker`) follow the same
+rule in the next change; until then a `require` of a file outside the root
+can pass the loader hook with such a method replaced, and the broker's read
+of it answers ENOENT. A guard hands a call on to the original it wraps
 through a `Reflect.apply` taken at load, never the original's own `call` or
 `apply`, which a module could have replaced to receive it. Live lists a check
 consults (the allowed built-ins, the loopback names) are private to their
@@ -81,6 +85,19 @@ exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
 are non-writable and non-configurable, so a module cannot show the loader
 or a check one path and have another one used. A module that patches
 `path`, `url` or `URL` runs only under `off`.
+
+Known limits of this rule:
+- **`CHUtil.request`'s redirects** are followed inside postman-request,
+  whose redirect handling looks methods up when it runs: the lockdown's
+  `followRedirect` check runs on its own captured functions, but what
+  postman-request hands it can be shaped by a module. This is moot while
+  raw `http`, `https` and `net` stay allowed under enforce (until sandbox
+  parts 3 and 4): when network enforcement comes, the wrapper follows each
+  redirect itself (`followRedirect: false`) and checks every hop.
+- **`CHUtil.loadFile`** derives its path through the file broker's identity
+  functions (`resolveModulePath`, `specifierFor`), whose module object is
+  reachable through the require cache until the runtime's own loads move
+  off it (#194).
 
 **Modes.** `--moduleSandbox off|audit|enforce`, default `audit`. The sandbox
 needs worker mode; without it the mode is `off`. countinghouse 8 needs Node
@@ -1400,7 +1417,11 @@ The rest is not implemented:
 - **Part 3: HTTP(S) broker.** `fetch`, `http` and `https` through the main
   thread, DNS done by the broker, the destination checked after resolution,
   private ranges and localhost denied unless approved, request quotas. This
-  is what makes the declared `net` permissions take effect.
+  is what makes the declared `net` permissions take effect. `CHUtil.request`
+  then follows each redirect itself (`followRedirect: false`) and checks
+  every hop, rather than relying on postman-request's redirect handling
+  (see "Boundary checks run on intrinsics captured before module code
+  loads").
 - **Part 4: raw TCP/TLS relay.** `net` and `tls` through the main thread;
   UDP stays denied.
 

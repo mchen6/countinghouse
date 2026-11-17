@@ -34,7 +34,7 @@ const replace = (obj, key, descriptor) => {
     return () => {};
   }
   changed = true;
-  return () => ObjectDefineProperty(obj, key, before);
+  return () => (before !== undefined ? ObjectDefineProperty(obj, key, before) : delete obj[key]);
 };
 const swap = (obj, key, value) => replace(obj, key, {value, writable: true, configurable: true, enumerable: false});
 const getter = (obj, key, get) => replace(obj, key, {get, configurable: true, enumerable: false});
@@ -65,7 +65,31 @@ const CHANGES = {
   'url.fileURLToPath': () => swap(url, 'fileURLToPath', () => { return inside; }),
   'path.resolve': () => swap(path, 'resolve', () => { return inside; }),
   'path.relative': () => swap(path, 'relative', () => { return 'inside.js'; }),
-  'Module.isBuiltin': () => swap(Module, 'isBuiltin', () => { return false; })
+  'Module.isBuiltin': () => swap(Module, 'isBuiltin', () => { return false; }),
+  // iteration, reflection and conversion a check could reach
+  'Array.prototype[Symbol.iterator]': () => swap(Array.prototype, Symbol.iterator, function* () { yield '/'; }),
+  '%ArrayIteratorPrototype%.next': () => swap(Object.getPrototypeOf([][Symbol.iterator]()), 'next', () => ({done: true, value: undefined})),
+  'String.prototype[Symbol.iterator]': () => swap(String.prototype, Symbol.iterator, function* () { yield '/'; }),
+  'Object.getOwnPropertyDescriptor': () => swap(Object, 'getOwnPropertyDescriptor', () => ({value: 'DEVICE_OFFLINE', writable: true, enumerable: true, configurable: true})),
+  'Object.defineProperty': () => swap(Object, 'defineProperty', (o) => o),
+  'Object.hasOwn': () => swap(Object, 'hasOwn', () => true),
+  'Object.freeze': () => swap(Object, 'freeze', (o) => o),
+  'globalThis.String': () => swap(globalThis, 'String', () => 'own.txt'),
+  'Function.prototype.toString': () => swap(Function.prototype, 'toString', () => 'function () { [native code] }'),
+  'Object.prototype getters (href, host, ports, net)': () => {
+    const undo = ['href', 'host', 'ports', 'net'].map((key) => getter(Object.prototype, key, () => (key === 'ports' || key === 'net' ? [] : 'granted.example')));
+    return () => undo.forEach((u) => u());
+  },
+  'WeakMap.prototype.get/has': () => {
+    const a = swap(WeakMap.prototype, 'get', () => ({code: 'DEVICE_OFFLINE', message: 'm', origin: 'runtime'}));
+    const b = swap(WeakMap.prototype, 'has', () => true);
+    return () => { b(); a(); };
+  },
+  'WeakSet.prototype.has/add': () => {
+    const a = swap(WeakSet.prototype, 'has', () => true);
+    const b = swap(WeakSet.prototype, 'add', function() { return this; });
+    return () => { b(); a(); };
+  },
 };
 
 const outcome = (fn) => {
@@ -77,8 +101,24 @@ const outcome = (fn) => {
   }
 };
 
-module.exports = async (input) => {
-  if (!Object.hasOwn(CHANGES, input.change)) return {output: {unknown: input.change}};
+const ObjectHasOwn = Object.hasOwn;
+
+module.exports = async (input, ctx) => {
+  if (!ObjectHasOwn(CHANGES, input.change)) return {output: {unknown: input.change}};
+  // A refusal the runtime issues (a ctx.call to nothing composed), taken
+  // with the change in place and thrown back: answered with the code the
+  // runtime issued, whatever the change.
+  if (input.rethrow === true) {
+    let refusal = null;
+    changed = false;
+    const undoIssued = CHANGES[input.change]();
+    try {
+      await ctx.call('nothing-composed/noService.none', {}).catch((e) => { refusal = e; });
+    } finally {
+      undoIssued();
+    }
+    throw refusal != null ? refusal : new Error('no refusal');
+  }
   const result = {builtins: {}, getBuiltin: {}};
   let host = null;
   handed = [];
@@ -92,12 +132,17 @@ module.exports = async (input) => {
       result.getBuiltin[b] = outcome(() => process.getBuiltinModule(b));
     }
     result.outsidePath = outcome(() => CHUtil.loadFile(input.outsidePath));
+    // a file outside the module's root, by require (the test holds this
+    // until the file broker's checks are on captured intrinsics too)
+    result.runtimeFile = outcome(() => require(input.runtimeFile));
+    // (enforce serves the reduced module; its createRequire checks the path)
+    result.createRequireOutside = outcome(() => require('module').createRequire(input.outsidePath));
     // allowed: the guard hands these on to the original
     result.ownFile = outcome(() => CHUtil.loadFile(OWN_FILE));
     result.allowedBuiltin = outcome(() => process.getBuiltinModule('path'));
     host = new PromiseCtor((resolve) => {
       try {
-        CHUtil.request({uri: `http://127.0.0.1:${input.port}/`, method: 'GET'}, (err) => resolve(err != null ? {outcome: 'refused', code: err.code != null ? StringCtor(err.code) : null} : {outcome: 'reached'}));
+        CHUtil.request({uri: `http://${input.host}/`, method: 'GET', timeout: 3000}, (err) => resolve(err != null ? {outcome: 'refused', code: err.code != null ? StringCtor(err.code) : null} : {outcome: 'reached'}));
       } catch (e) {
         resolve({outcome: 'refused', code: e != null && e.code != null ? StringCtor(e.code) : null, message: StringCtor(e && e.message)});
       }
