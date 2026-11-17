@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+'use strict';
 // Minimal CLI for managing lib/auth/sqlite-provider.js's db file at rest
 // (add/remove users and their device grants) -- deliberately not an HTTP
 // admin endpoint (see sqlite-provider.js's header comment for why).

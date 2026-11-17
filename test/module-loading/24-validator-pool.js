@@ -325,6 +325,44 @@ describe('module-loading 24: the validator pool', function() {
       }
     });
 
+    // the review of #321: a prompts/get's arguments are an input like a
+    // call's. Before, their stalls were never counted, so one caller could
+    // cost a replaced validator on every request, braked by the rate limit
+    // alone.
+    it('a prompts/get whose arguments stall 3 times in 5 minutes: that caller is refused VALIDATION_CALLER_THROTTLED; no one else is', async () => {
+      const p = newPool();
+      try {
+        const name = `pool-module-${++names}`;
+        const api = {device: {friendlyName: name, serviceList: {[SERVICE]: {actionList: [{name: 'a', input: {schema: '/s/a/input'}}]}},
+          promptList: [{name: 'slow', arguments: {schema: '/prompts/slow'}, messages: [{role: 'user', text: 'x'}]}]}};
+        const schema = {$id: '#/', s: {a: {input: {type: 'object'}}}, prompts: {slow: {type: 'object', properties: {x: STALL}}}};
+        const m = {key: `${name}#${names}`, name};
+        p.register(m.key, name, JSON.stringify(api), JSON.stringify(schema));
+        await warmed(p);
+        assert.ok((await p.prompts(m.key)).prompts != null, 'derived at load');
+        const stalls = () => (p.callerStalls.get(`u_prompt\n${name}`) || []).length;
+        // a validator that has not derived the prompts yet may run out of
+        // the deadline deriving: that is no stall of the caller's, so try on
+        for (let tries = 0; stalls() < 3 && tries < 10; tries++) {
+          const before = stalls();
+          const answer = await p.promptArgs(m.key, 'slow', {x: STALLING}, 'u_prompt');
+          assert.ok(answer != null && answer.timeout != null, JSON.stringify(answer).slice(0, 200));
+          assert.strictEqual(answer.timeout.code, 'VALIDATION_TIMEOUT');
+          for (let w = 0; stalls() === before && w < 3000; w += 20) await new Promise((res) => setTimeout(res, 20));
+          await warmed(p);
+        }
+        assert.strictEqual(stalls(), 3, 'each stall held against the caller');
+        await blocked(p, 'u_prompt', m);
+        const throttled = await p.promptArgs(m.key, 'slow', {x: [1]}, 'u_prompt');
+        assert.ok(Array.isArray(throttled), JSON.stringify(throttled));
+        assert.strictEqual(codeOf(throttled), 'VALIDATION_CALLER_THROTTLED');
+        assert.deepStrictEqual(await p.promptArgs(m.key, 'slow', {x: [1]}, 'u_someone'), {errors: null}, 'another caller');
+        assert.strictEqual(p.isQuarantined(name), false, 'no strike against the module');
+      } finally {
+        p.close();
+      }
+    });
+
     it('the stall window slides across a block: once a block ends, the next stall within 5 minutes blocks the caller again', async () => {
       // a block of 2 s: long enough that a loaded machine reaches the check
       // inside it, short enough to wait out

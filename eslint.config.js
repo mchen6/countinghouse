@@ -65,6 +65,15 @@ module.exports = [
     languageOptions: {sourceType: 'module'}
   },
 
+  // #194: no runtime function is ever handed out by fn.caller or
+  // arguments.callee.caller, which a sloppy-mode module function could read
+  // while the runtime calls it. So every runtime file is strict, and a new
+  // one without the directive fails here.
+  {
+    files: ['lib/**/*.js', 'bin/**/*.js', 'framework.js'],
+    rules: {strict: ['error', 'global']}
+  },
+
   // framework.js is the entry point and returns at top level when --hardened
   // hands startup to the re-launched child (lib/hardened-launch.js).
   {

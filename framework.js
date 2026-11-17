@@ -1,3 +1,4 @@
+'use strict';
 // Brokered file operations from module workers share libuv's threadpool with
 // countinghouse's own DNS lookups, crypto and zlib. 16 threads unless the
 // operator chose otherwise; it must be set before the pool is first used.

@@ -344,6 +344,15 @@ missing, oversized or SVG icon refuses the load (stage `icons`), and a reload
 to such a version leaves the loaded one serving. Each is sent inline as a
 `data:` URI from what the load read; nothing is read at list time.
 
+A device's `promptList` is served on `prompts/list` and `prompts/get`: each
+prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
+the keys that may reach the module, with its `title`, `description` and
+`icons` and the arguments its schema declares (name, description, whether
+required). `prompts/get` runs none of your code: it checks the arguments
+against that schema, replaces each `{{name}}` once with the argument's value
+(an absent optional one is the empty string; substituted text is never
+scanned again) and returns your messages, at most 64 KiB in all.
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
