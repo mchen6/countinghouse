@@ -262,6 +262,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
 
+### Added — a task may ask its user a module's question (MCP completeness, M22)
+
+A long-running action run as a 2026-07-28 task may now use `ctx.ask`, when
+the request that made the task declared form elicitation. The pass that
+asks ends; the task reads `input_required`, with the form in
+`inputRequests` and the status message "waiting for an answer"; the client
+answers with `tasks/update`, and the handler runs again under the same
+`taskId`. The question is held on the server, outside every module's
+reach, never in a requestState. The pass that asks is not billed and
+spends no attempt. A question waits at most an hour, then the task fails
+with the new code `ASK_EXPIRED`; at most 64 of a key's tasks (10,000 in
+all) wait on a question at once, past which `ctx.ask` is
+`ASK_UNAVAILABLE`.
+
 ### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
 
 - **`ctx.ask(name, values)`** puts one of the action's declared questions

@@ -139,7 +139,9 @@ the answer at once. So:
   its own answer.
 - **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
   to fall back: the client offered no form, the call came by HTTP
-  `invoke-action` or as a task, the operator turned questions off
+  `invoke-action`, it runs as a task whose request declared no form
+  elicitation or while too many tasks already wait on questions, the
+  operator turned questions off
   (`--moduleQuestions off`), the outer call (when your action is a part)
   has no one to ask for any of these reasons, three rounds brought no valid
   answer, or the call has had eight rounds in all already (every
@@ -388,6 +390,17 @@ client that declares the `io.modelcontextprotocol/tasks` extension (with
 client polls `tasks/get` for the result your action returns. Anyone else's
 call to it runs inline, as any action's does. Your handler is the same
 either way.
+
+A task may ask, as a call does (see [Asking the user](#asking-the-user-ctxask)), when the request
+that made it declared form elicitation: the pass that asks ends, the task
+reads `input_required` with the form, and once the client answers it with
+`tasks/update` your handler runs again from the top under the same
+`taskId`, where `ctx.ask` returns the answer. The same rules hold: ask
+first, act after; three rounds of a question, eight in all. The pass that
+asks is not billed and spends none of the task's attempts. A question waits
+at most an hour; after that the task fails (`ASK_EXPIRED`) and nothing
+more of it runs. At most 64 of a key's tasks wait on a question at once
+(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once.
 
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
