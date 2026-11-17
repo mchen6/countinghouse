@@ -7,9 +7,9 @@ For what the runtime *is* and why it exists, start with the
 
 ## CLI flags reference
 
-The flags most operators need. `lib/cli-options.js` has the complete set,
-including less commonly used ones (module verification, OpenStack API
-simulation).
+Every flag the runtime reads (`lib/cli-options.js`). The last rows are the
+less common ones: the shared runtime's and `ch-local`'s, which `ch-local`
+passes and an operator of a hosted server never sets, and two internal ones.
 
 | Flag | Default | Purpose |
 |---|---|---|
@@ -30,6 +30,7 @@ simulation).
 | `--debug` | off | Bypass AuthProvider entirely: every apiKey accepted, every key treated as admin, no `tools/list` filtering, no task-ownership check. Local iteration only — not a way to grant access, see [Admin keys](authentication.md#admin-keys). |
 | `--no-directPeerChannels` | direct channels on | Route worker-to-worker calls through the main thread instead of directly. Direct peer channels are the default since 7.1.0 (when hosting, `--directPeerChannels` is still accepted and is a no-op; in the single-identity profile it is refused, below) — see [`direct-peer-channels.md`](direct-peer-channels.md) for what the two paths check and when. In the single-identity profile peer channels are off, and `--directPeerChannels` is refused (exit 2): a peer hop carries no usage call id. When hosting, they stay on, and a receipt undercounts the server calls of any hop that takes one. |
 | `--peerChannelAuthRecheckSeconds <n>` | `5` | How often the authorization behind each open peer channel is re-checked, so a grant revoked while the server runs closes the channel. `0` turns the re-check off. |
+| `--peerChannelAuthLookupTimeoutMs <n>` | `10000` | How long one of those re-check lookups may take, in milliseconds. Past it the channel it guards is closed as unconfirmed: an auth backend that never answers leaves no channel open. A number above 0, else the default. |
 | `--directPeerChannelsMaxConcurrency` | `16` | Backpressure cap (in-flight calls per channel) for the direct-peer-channels path (the default path). |
 | `--moduleQuestions off` | questions on | Turn off every module's question to the user (`ctx.ask`): each ask is then `ASK_UNAVAILABLE`, which a module may catch to fall back. Takes `on` or `off` (`true`, `false`); any other value stops the start. On by default: a question reaches only a client whose own request declares form elicitation (MCP 2026-07-28). See `docs/security-model.md`, "A module's question to the user". |
 | `--mcpToolCallCost <n>` | `0` | Cost recorded via `MeteringProvider.recordCall` for every MCP `tools/call`. A finite number `>= 0`; anything else exits with status 2. |
@@ -62,6 +63,21 @@ simulation).
 | `--moduleMessageRate <n>` | `2000` | Messages per second a module's worker may send to the main thread (Redis commands included); beyond it, calls fail with `RATE_LIMITED`. |
 | `--hardened` | off | Re-launch the server under Node's permission model (needs `--workerThread`). Not supported for pnpm installs until [nodejs/node#66812](https://github.com/nodejs/node/issues/66812) is fixed (see [Security model](security-model.md)). Exits with status 2 before relaunching if Node would refuse one of its granted directories (paths whose names extend each other), naming them. Every module must live under `--modulePath`, symlinks resolved, on load, reload and restart alike (`MODULE_PATH_OUTSIDE_ROOT`). Adds `--allow-addons` for SQLite auth or when no `--loadModule` is given, which leaves native code in the main thread outside the permission model. `--authoringTools` adds `--allow-child-process`, which lets the whole process start children outside the permission model. On Node 26 and later it passes `--allow-net` (experimental in Node 26), so the network is unrestricted under `--hardened` on every supported Node, until the network broker. |
 | `--locale <locale>` | `en-US` | Error message locale (`zh-CN` also available). |
+| `--modulePath <dir>` | `$HOME/countinghouse_modules` | The module folder, created at start if it is missing; the start stops if it can't be written. `--moduleRegistry` loads from it, and under `--hardened` every module must live under it (`MODULE_PATH_OUTSIDE_ROOT`). |
+| `--authoringTools` | off | Serve the four authoring tools (`countinghouse_validate_plan`, `countinghouse_validate_module`, `countinghouse_load_module`, `countinghouse_call_tool`): admin-only, and absent from `tools/list` without it. See [`module-authoring.md`](module-authoring.md). |
+| `--debugKey <key>` | none | With `--debug`: the one key accepted, compared in constant time, instead of every key; any other is `SYSTEM_ERROR_UNKNOWN_USER`. Without it, `--debug` binds only to a loopback address and answers only a loopback `Host`. A bare `--debugKey` stops the start (exit 2). |
+| `--dbUrl <url>` | a CouchDB at `127.0.0.1:5984` | The CouchDB that `--authProvider couchdb` uses ([Authentication](authentication.md)). The default carries development credentials: set it whenever you use CouchDB. |
+| `--deviceLogEntrySize <n>` | `1000` | Under `--store redis`, how many entries each device's log keeps (Redis db 10, newest first). Under `--store local` the log is in memory, the last 1000, whatever this says. |
+| `--maxSessionWorkers <n>` | `16` | On the shared runtime, how many per-session workers run at once, in all: every per-session module, every session. At the cap the least recently used idle one gives up its slot; with none idle, a call is refused `SESSION_WORKERS_BUSY`. Each costs about 24 MB, plus about 15 MB once ([the measurement](benchmarks/lean-worker.md#per-session-workers-shared-runtime-r1)). The operator's only: no session can change it. A positive integer, else exit 2. |
+| `--heapDump` | off | A development aid: every minute, a full garbage collection, and the heap in use logged. Needs `node --expose-gc`, which `bin/countinghouse` passes; without it, it warns once and logs nothing. |
+| `--logStream` | off | Accepted, and changes nothing: the log is written the same way with it or without. |
+| `--sessionSocket <path>` | none | *Set by `ch-local daemon`.* Serve MCP sessions on this Unix socket (on Windows the named pipe `\\.\pipe\countinghouse-<32 hex>`) instead of stdio or HTTP: the shared runtime. Needs `--store local`, `--controlChannel ipc` and the single-identity profile; `--stdio` or `--port` with it, or a bare `--sessionSocket`, stops the start (exit 2). |
+| `--sessionDir <dir>` | the socket's own directory | *Set by `ch-local daemon`.* The directory of the session secret and the runtime's lock. Required with a named pipe; on Windows a drive path only. Only with `--sessionSocket`. |
+| `--controlChannel ipc` | none | *Set by `ch-local`.* The channel `ch-local start` (and its daemon) uses while the runtime serves: announcements, settings that apply now, and a pack's load, unload and reload ([Upgrading to 8](upgrading-to-8.md)). Only in the single-identity profile, over an IPC descriptor the spawning process holds; any other value, and `--hardened`, are refused. |
+| `--packsRoot <dir>` | none | *Set by `ch-local`.* Where a pack the control channel loads may be (`<home>/packs`). A pack whose real path is outside every one given is refused; with none, the channel loads nothing. Repeat for more. |
+| `--settingsFile <path>` | none | *Set by `ch-local`.* The user's `settings.json`, which the built-in `countinghouse_settings` reads and tightens. Only in the single-identity profile. |
+| `--settingsTool` | — | *Internal.* Whether `countinghouse_settings` is served, given to each module's worker (which never gets the file's path), so a size cap's error can say how to raise it. On with `--settingsFile`. |
+| `--outputCeiling <n>` | — | *Internal.* The most `--maxOutputBytes` may be raised to under the operator's ceiling, as the main thread read it when it spawned a worker, given to that worker for the same error. |
 
 **Module limits in the policy.** `--modulePolicy` ceilings and per-module
 entries take the same `limits` keys a module declares: `heapMb`,
