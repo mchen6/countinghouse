@@ -69,6 +69,86 @@
     "rule": "HMAC-SHA256(secret, \"ch-token\" || the token's UTF-8 bytes), sent base64",
     "macB64": "QveAbUsC61CJrznLyqzJYsMAN3MwnyoUU4PFI4f5jK4="
   },
+  "credentialMac": {
+    "name": "PACK_VAR_ALPHA",
+    "value": "example-value-not-a-real-one",
+    "rule": "HMAC-SHA256(secret, \"ch-cred\" || the variable's name || 0x00 || the value's UTF-8 bytes), sent standard base64 as credentials[name]",
+    "macB64": "g97AptL7IaGLNmxPFR0xrQMGeWZIB3pfrINBp53W5VA="
+  },
+  "credentialsMalformed": {
+    "rule": "on the first client frame, any of these as credentials is own-runtime (conditions-failed), never shared: not an object, over 32 entries, a name not ^[A-Za-z_][A-Za-z0-9_]{0,127}$, a value not the standard base64 of exactly 32 bytes",
+    "cases": [
+      null,
+      [],
+      "PACK_VAR_ALPHA",
+      7,
+      {
+        "1BAD": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      },
+      {
+        "A-B": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      },
+      {
+        "": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      },
+      {
+        "PACK_VAR_ALPHA": null
+      },
+      {
+        "PACK_VAR_ALPHA": "not base64!"
+      },
+      {
+        "PACK_VAR_ALPHA": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=="
+      },
+      {
+        "PACK_VAR_ALPHA": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+      },
+      {
+        "Vxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      },
+      {
+        "PACK_VAR_ALPHA": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+      },
+      {
+        "PACK_VAR_ALPHA": "-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_s"
+      },
+      {
+        "V0": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V1": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V2": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V3": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V4": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V5": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V6": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V7": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V8": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V9": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V10": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V11": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V12": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V13": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V14": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V15": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V16": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V17": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V18": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V19": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V20": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V21": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V22": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V23": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V24": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V25": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V26": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V27": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V28": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V29": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V30": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V31": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+        "V32": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      }
+    ]
+  },
   "messages": {
     "requestToRuntime": {
       "header": {
@@ -203,6 +283,11 @@
       "json": "{\"op\":\"client\",\"seq\":3,\"status\":\"ok\",\"conditions\":\"yes\",\"repo\":\"acme/widgets\",\"token\":null}",
       "hex": "430000005b7b226f70223a22636c69656e74222c22736571223a332c22737461747573223a226f6b222c22636f6e646974696f6e73223a22796573222c227265706f223a2261636d652f77696467657473222c22746f6b656e223a6e756c6c7d"
     },
+    "clientCredentials": {
+      "json": "{\"op\":\"client\",\"status\":\"ok\",\"conditions\":\"no\",\"repo\":null,\"token\":null,\"credentials\":{\"PACK_VAR_ALPHA\":\"g97AptL7IaGLNmxPFR0xrQMGeWZIB3pfrINBp53W5VA=\"}}",
+      "hex": "43000000987b226f70223a22636c69656e74222c22737461747573223a226f6b222c22636f6e646974696f6e73223a226e6f222c227265706f223a6e756c6c2c22746f6b656e223a6e756c6c2c2263726564656e7469616c73223a7b225041434b5f5641525f414c504841223a226739374170744c374961474c4e6d78504652307872514d4765575a494233706672494e42703533573556413d227d7d",
+      "rule": "credentials: the pack credentials the client environment chooses, by the installed packs' declared names (never the GitHub ones, which token covers), each credentialMac; absent or {}: none chosen. On the first client frame only: one whose hash is unlike the runtime's own for that name, or that the runtime has no value for, is own-runtime (credential)"
+    },
     "settled": {
       "json": "{\"op\":\"settled\"}",
       "hex": "43000000107b226f70223a22736574746c6564227d"
@@ -234,6 +319,10 @@
     "ownRuntimeConditions": {
       "json": "{\"op\":\"own-runtime\",\"reason\":\"conditions-failed\"}",
       "hex": "43000000317b226f70223a226f776e2d72756e74696d65222c22726561736f6e223a22636f6e646974696f6e732d6661696c6564227d"
+    },
+    "ownRuntimeCredential": {
+      "json": "{\"op\":\"own-runtime\",\"reason\":\"credential\"}",
+      "hex": "430000002a7b226f70223a226f776e2d72756e74696d65222c22726561736f6e223a2263726564656e7469616c227d"
     },
     "unknownOp": {
       "json": "{\"op\":\"later-op\",\"x\":1}",
@@ -692,6 +781,149 @@
           "reason": "client hook present",
           "at": "~/a//b"
         }
+      }
+    ]
+  },
+  "githubTokenPrecedence": {
+    "rule": "start (a per-session runtime) takes the first of: the client's COUNTINGHOUSE_GITHUB_TOKEN, the stored token, gh auth token, the client's GITHUB_TOKEN. The daemon's runtime, which no client environment reaches, takes the stored token, else gh's, at its start. The conditions check sends the keyed hash of the token start would choose, except that a gh login is sent as null (the daemon has it too): so token is mac(env), mac(stored), null or mac(GITHUB_TOKEN). The session shares when token is null (the daemon's, whatever it holds), or when token is the hash of the token the daemon holds; otherwise own-runtime (token). A stored token that fails its file checks counts as none",
+    "cases": [
+      {
+        "why": "nothing anywhere",
+        "input": {
+          "env": [],
+          "stored": false,
+          "ghLogin": false,
+          "daemonHolds": null
+        },
+        "start": null,
+        "daemon": null,
+        "conditions": null,
+        "outcome": "shares"
+      },
+      {
+        "why": "gh only",
+        "input": {
+          "env": [],
+          "stored": false,
+          "ghLogin": true,
+          "daemonHolds": "gh"
+        },
+        "start": "gh",
+        "daemon": "gh",
+        "conditions": null,
+        "outcome": "shares"
+      },
+      {
+        "why": "a stored token, the daemon started on it",
+        "input": {
+          "env": [],
+          "stored": true,
+          "ghLogin": true,
+          "daemonHolds": "stored"
+        },
+        "start": "stored",
+        "daemon": "stored",
+        "conditions": "mac(stored)",
+        "outcome": "shares"
+      },
+      {
+        "why": "a stored token added while the daemon runs on gh's: its own runtime until the daemon restarts",
+        "input": {
+          "env": [],
+          "stored": true,
+          "ghLogin": true,
+          "daemonHolds": "gh"
+        },
+        "start": "stored",
+        "daemon": "stored",
+        "conditions": "mac(stored)",
+        "outcome": "own-runtime (token)"
+      },
+      {
+        "why": "the client sets COUNTINGHOUSE_GITHUB_TOKEN beside a stored one",
+        "input": {
+          "env": [
+            "COUNTINGHOUSE_GITHUB_TOKEN"
+          ],
+          "stored": true,
+          "ghLogin": true,
+          "daemonHolds": "stored"
+        },
+        "start": "environment",
+        "daemon": "stored",
+        "conditions": "mac(env)",
+        "outcome": "own-runtime (token)"
+      },
+      {
+        "why": "GITHUB_TOKEN beside a gh login chooses nothing",
+        "input": {
+          "env": [
+            "GITHUB_TOKEN"
+          ],
+          "stored": false,
+          "ghLogin": true,
+          "daemonHolds": "gh"
+        },
+        "start": "gh",
+        "daemon": "gh",
+        "conditions": null,
+        "outcome": "shares"
+      },
+      {
+        "why": "GITHUB_TOKEN beside a stored token chooses nothing",
+        "input": {
+          "env": [
+            "GITHUB_TOKEN"
+          ],
+          "stored": true,
+          "ghLogin": false,
+          "daemonHolds": "stored"
+        },
+        "start": "stored",
+        "daemon": "stored",
+        "conditions": "mac(stored)",
+        "outcome": "shares"
+      },
+      {
+        "why": "GITHUB_TOKEN with neither a stored token nor gh",
+        "input": {
+          "env": [
+            "GITHUB_TOKEN"
+          ],
+          "stored": false,
+          "ghLogin": false,
+          "daemonHolds": null
+        },
+        "start": "GITHUB_TOKEN",
+        "daemon": null,
+        "conditions": "mac(GITHUB_TOKEN)",
+        "outcome": "own-runtime (token)"
+      },
+      {
+        "why": "a stored token removed while the daemon still runs on it: null is the daemon's, until its restart (the restart request)",
+        "input": {
+          "env": [],
+          "stored": false,
+          "ghLogin": true,
+          "daemonHolds": "stored"
+        },
+        "start": "gh",
+        "daemon": "gh",
+        "conditions": null,
+        "outcome": "shares"
+      },
+      {
+        "why": "a stored token whose file fails its checks counts as none",
+        "input": {
+          "env": [],
+          "stored": "refused",
+          "ghLogin": true,
+          "daemonHolds": "gh"
+        },
+        "start": "gh",
+        "daemon": "gh",
+        "conditions": null,
+        "outcome": "shares"
       }
     ]
   },
