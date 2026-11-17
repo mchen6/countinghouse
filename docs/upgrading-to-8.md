@@ -479,6 +479,10 @@ says how to write a module for this.
   the callee's code; it was `DEVICE_INVOKE_EXCEPTION`. 23 catalogue codes
   that nothing raised are gone (the CHANGELOG lists them).
 - ctx.call and HTTP `invoke-action` are unchanged: they keep `{output: …}`.
+- **Checked against the official schemas.** The results above are tested
+  against the official 2026-07-28 schema and the tasks extension's
+  (`test/mcp-contract/35`), and the legacy era's through the official SDK
+  client (`36`), in CI. Only the list caching hints changed with it.
 
 ## What HTTP API clients will notice
 
@@ -566,6 +570,11 @@ says how to write a module for this.
       default cap ([the measurement](benchmarks/lean-worker.md#per-session-workers-shared-runtime-r1)).
     - A hosted server refuses such a module (`MODULE_NEEDS_SESSIONS`); under
       `--stdio` it runs as a shared one.
+  - **A pack a ch-local release withdraws** (no longer lists) is not
+    started, at `ch-local start` or after an upgrade. The client is told once
+    per session: "pack X was withdrawn in this release and was not started;
+    `ch-local remove-pack X` removes it". Nothing of the pack is deleted. An
+    upgrade to such a release still installs (ch-local #74).
   - None of these is for a hosted server.
 - **Disk limits in the policy:** `diskMb` and `diskEntries` take the same
   ceilings and per-module entries as the other limits.
