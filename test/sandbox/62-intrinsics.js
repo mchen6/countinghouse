@@ -37,15 +37,19 @@ const OUTSIDE_FILES = fs.readdirSync(path.join(ROOT, 'test', 'fixtures'))
   .filter((f) => !f.startsWith(`${FIXTURE}${path.sep}`) && fs.existsSync(f)).sort();
 // the originals the guards wrap, by name: none may be handed to a replaced
 // call, apply or Reflect method
-const ORIGINALS = ['loadFile', 'request', 'getBuiltinModule'];
+const ORIGINALS = ['loadFile', 'request', 'getBuiltinModule', 'readFileSync', 'openSync', 'fstatSync', 'statSync',
+  '_stat', '_findPath', '_resolveFilename', '_readPackage'];
+// the file broker's own refusal of a path outside the module's grants (the
+// host file exists, so only the broker answers so), and of a descriptor it
+// did not open
+// (a change to the array iterator mangles the module's own arguments on
+// their way to the broker, which then refuses them as invalid: the host file
+// exists, so any of these means it was not read)
+const BROKER_PATH_REFUSAL = ['ENOENT', 'EACCES', 'EINVAL', 'ERR_INVALID_ARG_TYPE'];
+const H2 = path.join(FIXTURE, 'h2.cjs');
 // what the lockdown fixes (non-writable, non-configurable): these changes
 // cannot be made at all under audit or enforce, and every other one can
 const FIXED = new Set(['url.fileURLToPath', 'path.resolve', 'path.relative', 'Module.isBuiltin', 'URL hostname']);
-// Checked from the next change on (the file broker's own checks): a file
-// outside the root by require, refused with each change in place. Until
-// then a change that makes the broker's loader hook pass it lets the
-// broker's read answer ENOENT instead.
-const REQUIRE_OUTSIDE_PENDING = false;
 const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
 
 for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'audit', port: testPort(9715)}]) {
@@ -68,7 +72,19 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
       const loaded = await post(port, KEY, '/load-module', {path: FIXTURE, name: PROBE});
       assert.strictEqual(loaded.status, 200, JSON.stringify(loaded.body));
     });
+    // a read grant does not write (h2.cjs: kept as it was, whatever happens)
+    let h2Before = null;
+    it('a read grant (an imported CommonJS file) opens read-only and reads with options of its own', async () => {
+      h2Before = fs.readFileSync(H2, 'utf8');
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'grant-write'}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      const out = r.body.output;
+      if (mode === 'enforce') assert.strictEqual(out.write.outcome, 'refused', `openSync(r+) of a granted file: ${JSON.stringify(out)}`);
+      assert.strictEqual(fs.readFileSync(H2, 'utf8'), h2Before, 'the file is as it was');
+      assert.ok(out.length > 0, JSON.stringify(out));
+    });
     after(() => {
+      if (h2Before != null && fs.readFileSync(H2, 'utf8') !== h2Before) fs.writeFileSync(H2, h2Before);
       stopServer(server);
       if (base != null) fs.rmSync(base, {recursive: true, force: true});
     });
@@ -85,7 +101,7 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         // (a name under .invalid never resolves: no connection is made, audit's included)
         const input = {change, builtins: mode === 'enforce' ? BLOCKED : (i < BLOCKED.length ? [BLOCKED[i]] : []),
           runtimeFile: OUTSIDE_FILES[i], outsidePath: path.join(os.tmpdir(), `ch-sandbox-62-outside-${i}.txt`), host: `ch-sandbox-62-${i}.invalid`,
-          hostFile: HOST_FILE(), realFd: 3};
+          hostFile: HOST_FILE(), realFd: 2};
         const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input});
         // A change the runtime's own code in the worker then trips over (Map's
         // get, say) can end the module's worker: the module's own loss. A
@@ -115,15 +131,23 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
           assert.strictEqual(out.createRequireOutside.outcome, 'refused', `module.createRequire outside the root: ${shown}`);
           assert.strictEqual(out.createRequireOutside.code, 'MODULE_NOT_FOUND', shown);
           assert.deepStrictEqual(out.host, {outcome: 'refused', code: 'ERR_ACCESS_DENIED'}, `an ungranted host: ${shown}`);
-          if (!REQUIRE_OUTSIDE_PENDING) {
-            assert.strictEqual(out.runtimeFile.outcome, 'refused', `require of a file outside the root: ${shown}`);
-            // (a getter-only href on Object.prototype makes Node's own URL
-            // parser throw first, in that realm: refused all the same)
-            if (!(change === URL_BREAKING && /only a getter/.test(out.runtimeFile.message))) assert.strictEqual(out.runtimeFile.code, 'MODULE_NOT_FOUND', shown);
-          }
-          // the file broker
+          assert.strictEqual(out.runtimeFile.outcome, 'refused', `require of a file outside the root: ${shown}`);
+          // (a getter-only href on Object.prototype makes Node's own URL
+          // parser throw first, in that realm: refused all the same)
+          if (!(change === URL_BREAKING && /only a getter/.test(out.runtimeFile.message))) assert.strictEqual(out.runtimeFile.code, 'MODULE_NOT_FOUND', shown);
+          // the file broker (enforce only: under audit a module may read
+          // outside its grants, as the broker's L2 rule says)
           assert.strictEqual(out.hostFile.outcome, 'refused', `fs.readFileSync of a host file outside every grant: ${shown}`);
+          assert.ok(BROKER_PATH_REFUSAL.includes(out.hostFile.code), `refused by the broker: ${shown}`);
+          assert.strictEqual(out.hostStat.outcome, 'refused', `fs.statSync of a host file outside every grant: ${shown}`);
+          assert.ok(BROKER_PATH_REFUSAL.includes(out.hostStat.code), `refused by the broker: ${shown}`);
+          // descriptor 2 is always open in this process, so the original
+          // fs's fstat of it cannot fail: any refusal means the original was
+          // not used (EBADF is the broker's; a change to the array iterator
+          // mangles the module's own arguments, which the broker refuses)
           assert.strictEqual(out.realFd.outcome, 'refused', `fs.fstatSync of a real descriptor: ${shown}`);
+          assert.ok(['EBADF', ...BROKER_PATH_REFUSAL].includes(out.realFd.code), `refused by the broker: ${shown}`);
+          assert.ok(!('importFailed' in out), `the module's own import: ${shown}`);
         } else {
           // reported, whatever the call did (audit allows)
           const log = () => server.output.slice(mark);
@@ -141,6 +165,11 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
           await seen(new RegExp(`${PROBE} violation net (?:${esc(input.host)}:80\\b|invalid )`), 'an ungranted host');
         }
         if (out != null) for (const name of ORIGINALS) assert.ok(!out.handed.includes(name), `the original ${name} was handed to the replaced ${change}: ${shown}`);
+        // what is checked is what is used: never the host file
+        if (out != null) {
+          assert.ok(!(out.toPrimitiveLoad.outcome === 'reached' && out.toPrimitiveLoad.value !== 'own data'), `CHUtil.loadFile of a value read twice: ${shown}`);
+          assert.ok(!(out.ownHrefRead.outcome === 'reached' && out.ownHrefRead.value !== "'use strict';\nmodule.exports = 'own data';\n"), `fs.readFileSync of a URL with an own href: ${shown}`);
+        }
         // no port reaches a setter a module put on a prototype
         if (out != null) assert.strictEqual(out.portsSeen, 0, `a port was handed to a setter with ${change} in place: ${shown}`);
         // the code of an error the runtime issued is one it issued, never one

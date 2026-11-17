@@ -71,9 +71,15 @@ is inside the module's root, by `require`, `CHUtil.loadFile` or the reduced
 `module.createRequire`, whether an fs call goes to the file broker or a
 granted original, whether a host is granted) calls only functions taken
 when its file loaded, before any module code: never a method looked up when
-the check runs. That holds for the lockdown (`lib/module-lockdown.js`), the
-file broker's worker side and its loader hook (`lib/fs-broker`) and the
-resolve shim. A guard hands a call on to the original it wraps
+the check runs. What those checks keep (the file broker's grants, a
+filtered list) is written by definition, never by assignment, which would
+run a setter a module put on `Array.prototype` or `Object.prototype` with
+the runtime's own list or object as `this`; the exports such a check
+consults are frozen or read once at load. That holds for the lockdown
+(`lib/module-lockdown.js`), the file broker's worker side and its loader
+hook (`lib/fs-broker`) and the resolve shim. A grant is for reading only: a
+granted `openSync` opens read-only, and a granted `readFileSync` reads with
+options of the runtime's own. A guard hands a call on to the original it wraps
 through a `Reflect.apply` taken at load, never the original's own `call` or
 `apply`, which a module could have replaced to receive it. Live lists a check
 consults (the allowed built-ins, the loopback names) are private to their

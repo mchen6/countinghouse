@@ -13,10 +13,11 @@
           "outsidePath": {"type": "string"},
           "host": {"type": "string"},
           "rethrow": {"type": "boolean"},
+          "route": {"type": "string"},
           "hostFile": {"type": "string"},
           "realFd": {"type": "integer"}
         },
-        "required": ["change", "builtins", "runtimeFile", "outsidePath", "host"]
+        "required": ["change"]
       },
       "output": {
         "type": "object"

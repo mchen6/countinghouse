@@ -10,6 +10,7 @@ const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const OWN_FILE = path.join(ROOT, 'own.txt');
+const OWN_DATA = path.join(ROOT, 'own-data.js');
 // this file's own, taken before any change
 const ReflectApply = Reflect.apply;
 const ObjectDefineProperty = Object.defineProperty;
@@ -37,8 +38,11 @@ const replace = (obj, key, descriptor) => {
   changed = true;
   return () => (before !== undefined ? ObjectDefineProperty(obj, key, before) : delete obj[key]);
 };
-// what a setter put on a prototype is handed: ports it saw, counted
+// what a setter put on a prototype is handed: ports it saw, counted; and a
+// list of paths it is handed (a grant's) gets this host path appended
 let portsSeen = 0;
+let appendPath = null;
+const ArrayIsArray = Array.isArray;
 const MessagePortProto = MessagePort.prototype;
 const ObjectIsPrototypeOf = Function.prototype.call.bind(Object.prototype.isPrototypeOf);
 const setterOn = (proto, key) => replace(proto, key, {configurable: true, enumerable: false,
@@ -46,6 +50,11 @@ const setterOn = (proto, key) => replace(proto, key, {configurable: true, enumer
   set(v) {
     if (v != null && typeof(v) === 'object' && ObjectIsPrototypeOf(MessagePortProto, v)) portsSeen++;
     ObjectDefineProperty(this, key, {value: v, writable: true, enumerable: true, configurable: true});
+    if (appendPath != null && ArrayIsArray(this) && typeof(v) === 'string' && v[0] === '/' && v !== appendPath) {
+      let there = false;
+      for (let i = 0; i < this.length; i++) if (this[i] === appendPath) there = true;
+      if (!there) ObjectDefineProperty(this, this.length, {value: appendPath, writable: true, enumerable: true, configurable: true});
+    }
   }});
 const swap = (obj, key, value) => replace(obj, key, {value, writable: true, configurable: true, enumerable: false});
 const getter = (obj, key, get) => replace(obj, key, {get, configurable: true, enumerable: false});
@@ -122,6 +131,14 @@ const CHANGES = {
   },
 };
 
+// what fn answered, as a string, or its refusal
+const valueOf = (fn) => {
+  try {
+    return {outcome: 'reached', value: StringCtor(fn())};
+  } catch (e) {
+    return {outcome: 'refused', code: e != null && e.code != null ? StringCtor(e.code) : null};
+  }
+};
 const outcome = (fn) => {
   try {
     const v = fn();
@@ -149,27 +166,50 @@ module.exports = async (input, ctx) => {
     }
     throw refusal != null ? refusal : new Error('no refusal');
   }
+  // A read grant (an imported CommonJS file's) opens and reads read-only.
+  if (input.route === 'grant-write') {
+    const h2 = (await import('../../h2.cjs')).default;
+    return {output: {write: h2.tryWrite(), truncate: h2.tryTruncate(), length: h2.length()}};
+  }
   const result = {builtins: {}, getBuiltin: {}};
   let host = null;
   handed = [];
   changed = false;
   portsSeen = 0;
+  appendPath = input.hostFile;
   const undo = CHANGES[input.change]();
   let undone = false;
   try {
+    // a lasting grant taken with the change in place (the first import of
+    // the module's own CommonJS file)
+    if (input.change === 'Array.prototype index setters') {
+      try { await import('../../h.cjs'); } catch (e) { result.importFailed = StringCtor(e && e.message); }
+    }
     for (let i = 0; i < input.builtins.length; i++) {
       const b = input.builtins[i];
       result.builtins[b] = outcome(() => require(b));
       result.getBuiltin[b] = outcome(() => process.getBuiltinModule(b));
     }
     result.outsidePath = outcome(() => CHUtil.loadFile(input.outsidePath));
-    // a file outside the module's root, by require (the test holds this
-    // until the file broker's checks are on captured intrinsics too)
+    // a file outside the module's root, by require
     result.runtimeFile = outcome(() => require(input.runtimeFile));
     // the file broker: a host file outside every grant, and a real
     // descriptor number
     result.hostFile = outcome(() => fs.readFileSync(input.hostFile, 'utf8'));
     result.realFd = outcome(() => fs.fstatSync(input.realFd));
+    result.hostStat = outcome(() => fs.statSync(input.hostFile));
+    // what is checked is what is used: a value that answers one path the
+    // first time it is read and the host file after, and a URL whose own
+    // href accessor names the host file
+    let reads = 0;
+    const turning = {[Symbol.toPrimitive]: () => (reads++ === 0 ? OWN_DATA : input.hostFile)};
+    result.toPrimitiveLoad = valueOf(() => CHUtil.loadFile(turning));
+    // (inside the attempt: a change can make the URL constructor throw)
+    result.ownHrefRead = valueOf(() => {
+      const ownHref = new URL(`file://${OWN_DATA}`);
+      ObjectDefineProperty(ownHref, 'href', {get: () => `file://${input.hostFile}`, configurable: true});
+      return fs.readFileSync(ownHref, 'utf8');
+    });
     // (enforce serves the reduced module; its createRequire checks the path)
     result.createRequireOutside = outcome(() => require('module').createRequire(input.outsidePath));
     // allowed: the guard hands these on to the original
@@ -193,6 +233,7 @@ module.exports = async (input, ctx) => {
   result.undone = undone;
   result.changed = changed;
   result.portsSeen = portsSeen;
+  appendPath = null;
   return {output: result};
 };
 // the changes' names, for test/sandbox/62 (it requires this file to read them)
