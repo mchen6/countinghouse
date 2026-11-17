@@ -23,7 +23,8 @@ const DECLARED = {message: 'Replace the saved note {id}?', schema: '/notesServic
 const FORMS = {capabilities: {elicitation: {}}};
 const textOf = (id) => `${MODULE}: Replace the saved note ${id}?`;
 const keyOf = (id) => questions.keyOf({module: MODULE, serviceID: SERVICE, action: 'saveNote', question: 'overwrite', text: textOf(id)});
-const CONTEXT = (state) => ({state, module: MODULE, serviceID: SERVICE, actionName: 'saveNote',
+const DEVICE = 'dev-notes';
+const CONTEXT = (state) => ({state, module: MODULE, deviceID: DEVICE, serviceID: SERVICE, actionName: 'saveNote',
   spec: {device: {serviceList: {[SERVICE]: {actionList: [{name: 'saveNote', questions: {overwrite: DECLARED}}]}}}}});
 
 describe('questions 05: a call\'s rounds, as the gateway drives them (MCP completeness M13)', () => {
@@ -37,7 +38,13 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     if (pointer !== DECLARED.schema) return {schema: null, valid: null};
     return {schema: FORM, valid: content === undefined ? null : (content != null && typeof(content.replace) === 'boolean' && Object.keys(content).length === 1)};
   };
-  const deps = (over = {}) => Object.assign({modern: true, questionsOn: true, asks: true, binding: binding(), declared: (name) => (name === 'overwrite' ? DECLARED : null), form, key, used}, FORMS, over);
+  // (M14: begin and formOf look up who asked; here there is one asker, the called action, and a case
+  // changes its declaration or its form by `declared` and `form`)
+  const deps = (over = {}) => {
+    const d = Object.assign({modern: true, questionsOn: true, asks: true, binding: binding(), declared: (name) => (name === 'overwrite' ? DECLARED : null), form, key, used}, FORMS, over);
+    if (d.ofAsker === undefined) d.ofAsker = (asker) => (asker.deviceID === DEVICE && asker.serviceID === SERVICE && asker.actionName === 'saveNote' ? {declared: d.declared, form: d.form} : null);
+    return d;
+  };
   const rejectedWith = (code, promise) => assert.rejects(promise, (e) => e instanceof CountinghouseError && e.code === code, code);
   // one pass of a handler that asks about `id`: its ask's outcome
   const asks = (state, id = 'first') => { try { return {answer: ask.decide(CONTEXT(state), 'overwrite', {id})}; } catch (e) { return {code: e.code}; } };
@@ -82,7 +89,7 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       assert.strictEqual(made.round, 1);
       const verified = requestState.verify(key, made.requestState, binding());
       assert.strictEqual(verified.ok, true);
-      assert.deepStrictEqual([verified.question, verified.round, verified.answers], [`${keyOf('first')}:overwrite`, 1, {}]);
+      assert.deepStrictEqual([verified.question, verified.round, verified.answers], [JSON.stringify([keyOf('first'), 'overwrite', DEVICE, SERVICE, 'saveNote']), 1, {}]);
     });
 
     it('with no form to show (the validators have none, did not run, or timed out), or no pending question, there is no one to ask', async () => {
@@ -231,6 +238,28 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     });
   });
 
+  // M14 with M19: a call cancelled after its handler asked, while the form is being made, gets no form
+  // and no state: none is minted, so none can be presented or replayed
+  describe('a call cancelled while its form is made', () => {
+    it('no state is made for it: the form is refused as no one to ask, which the gateway answers as the cancel it is', async () => {
+      let cancelled = false;
+      let minted = 0;
+      const state = await ask.begin(deps());
+      assert.deepStrictEqual(asks(state), {code: 'ASK_PENDING'});
+      // the cancel lands while the asker's validators answer for the form
+      const slowForm = async (pointer, content) => { cancelled = true; return form(pointer, content); };
+      const counting = () => { minted += 1; return key; };
+      await rejectedWith('ASK_UNAVAILABLE', ask.formOf(state, deps({form: slowForm, key: counting, cancelled: () => cancelled})));
+      assert.strictEqual(minted, 0, 'the key was never reached: no state was made');
+      // cancelled before the form is asked for: nothing is looked up either
+      formCalls.length = 0;
+      await rejectedWith('ASK_UNAVAILABLE', ask.formOf(state, deps({key: counting, cancelled: () => true})));
+      assert.deepStrictEqual([formCalls.length, minted], [0, 0]);
+      // and a call not cancelled is asked as before
+      assert.ok((await ask.formOf(state, deps({cancelled: () => false}))).requestState.startsWith('v1.'));
+    });
+  });
+
   describe('an answer that is none', () => {
     const NONE = [undefined, null, 'yes', {}, {action: 'accept'}, {action: 'accept', content: null}, {action: 'accept', content: 'yes'}, {action: 'accept', content: []},
       {action: 'accept', content: {replace: 'yes'}}, {action: 'accept', content: {replace: true, extra: 1}}, {action: 'approve', content: {replace: true}},
@@ -338,7 +367,7 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       assert.deepStrictEqual(asks(first, 'second'), {code: 'ASK_PENDING'});
       const made = await ask.formOf(first, deps());
       const verified = requestState.verify(key, made.requestState, binding());
-      assert.deepStrictEqual([verified.question, verified.round, verified.answers], [`${keyOf('second')}:overwrite`, 1, {[keyOf('first')]: {replace: true}}]);
+      assert.deepStrictEqual([verified.question, verified.round, verified.answers], [JSON.stringify([keyOf('second'), 'overwrite', DEVICE, SERVICE, 'saveNote']), 1, {[keyOf('first')]: {replace: true}}]);
       const second = await retryWith(made, {action: 'decline'});
       assert.deepStrictEqual(asks(second), {answer: {replace: true}});
       assert.deepStrictEqual(asks(second, 'second'), {answer: null});
@@ -347,14 +376,15 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
     it('what a state carries as earlier answers is taken entry by entry: only a question\'s key, only an object or null', async () => {
       // a state of this runtime's own making, holding what begin never puts there
       const odd = {[keyOf('first')]: {replace: true}, short: {x: 1}, [keyOf('second')]: 'text', ['x'.repeat(43)]: [1], constructor: {x: 1}};
-      const state = requestState.mint(key, {question: `${keyOf('third')}:overwrite`, round: 1, callRound: 1, answers: odd}, binding());
+      const state = requestState.mint(key, {question: JSON.stringify([keyOf('third'), 'overwrite', DEVICE, SERVICE, 'saveNote']), round: 1, callRound: 1, answers: odd}, binding());
       const got = await ask.begin(deps({params: {requestState: state, inputResponses: {answer: {action: 'decline'}}}}));
       assert.deepStrictEqual([...got.answers.keys()].sort(), [keyOf('first'), keyOf('third')].sort());
       assert.strictEqual(Object.getPrototypeOf(got.answers), Map.prototype);
     });
 
-    it('a state whose question is not a key and a name is refused as any other', async () => {
-      for (const q of ['overwrite', `${keyOf('first')}`, `${keyOf('first')}:`, `short:overwrite`, `${keyOf('first')}:bad name`]) {
+    // (M14: a state's question is a key, a name and who asked; test/questions/07 has the rest)
+    it('a state whose question is not a key, a name and who asked is refused as any other', async () => {
+      for (const q of ['overwrite', `${keyOf('first')}`, `${keyOf('first')}:overwrite`, JSON.stringify(['short', 'overwrite', DEVICE, SERVICE, 'saveNote']), JSON.stringify([keyOf('first'), 'bad name', DEVICE, SERVICE, 'saveNote'])]) {
         const state = requestState.mint(key, {question: q, round: 1, callRound: 1, answers: {}}, binding());
         await rejectedWith('ASK_STATE_INVALID', ask.begin(deps({params: {requestState: state, inputResponses: {answer: {action: 'decline'}}}})));
       }

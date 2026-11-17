@@ -70,8 +70,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - **`--moduleQuestions off`** turns every module's question off. Under
   `--store redis` the used states' nonces are in Redis db 14, which must
   not evict.
-- A module reached through another's `ctx.call` cannot ask yet
-  (`ASK_UNAVAILABLE`).
+- **A part may ask too (M14).** A module reached through a scenario's
+  `ctx.call`, routed or over a direct peer channel, asks the outer call's
+  user one of its own action's declared questions. The dialog carries the
+  called, listed module's name, never the part's; the usage record
+  (`askedBy`) and the runtime's log name the part. The call's rounds are
+  the chain's: one question a round, eight in all. The part's
+  `ASK_PENDING` rejects the caller's `ctx.call`; a caller that catches it
+  and returns a result keeps that result, and the question is dropped.
+  In single-thread mode a part has no one to ask.
+- **A call that can end on a question** (its own action declares one, or
+  one it can reach through declared calls does) refuses `requestState` or
+  `inputResponses` in its arguments.
+- **A call cancelled while its form is made** is asked nothing: no state
+  is made for it, and its record says `cancelled`.
 
 ### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
 

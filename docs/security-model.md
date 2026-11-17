@@ -915,8 +915,23 @@ bounds it:
   authorization for what the caller's key could not do without it.
 - **`--moduleQuestions off`** turns every module's question off: each
   `ctx.ask` is then `ASK_UNAVAILABLE`. So is one from a legacy client, a
-  request that declares no form elicitation, HTTP `invoke-action`, a task,
-  and a module reached through another's `ctx.call`.
+  request that declares no form elicitation, HTTP `invoke-action` and a
+  task, and so is a part's under any of these.
+- **A part asks only its own action's questions, and only the outer
+  call's user (M14).** Who asks is the hop's token entry (its device and
+  action, written by the main thread when it issued the hop) and the
+  asking worker's own module, never the message. The call's one ask state
+  stays on the outer call's token, so its round limits hold for the whole
+  chain. The state names who asked, under its MAC, and the retry's answer
+  is checked against that asker's own form, looked up afresh: an asker
+  that is gone, or no longer declares the question, gets no answer. The
+  dialog carries the listed module's name; an unlisted part is never
+  named to the client, only in the runtime's own log and usage record.
+  So a scenario vouches for its parts' declared questions: when you review
+  a scenario, review its parts' `questions` too, since the user reads each
+  under the scenario's name.
+- **A call cancelled while its form is made gets no state.** None is
+  minted, so none can be presented later.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
