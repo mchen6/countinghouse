@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+'use strict';
 // Validate a countinghouse module directory without starting a server.
 //
 //   countinghouse-validate ./my-module
