@@ -240,7 +240,7 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     assert.strictEqual(result._meta['countinghouse/code'], 'M15_FAILED');
     const text = result.content[0].text;
     assert.match(text, /it failed. here. and there and on/);
-    assert.ok(!/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/.test(text), JSON.stringify(text));
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f\u202A-\u202E\u2066-\u2069]/.test(text), JSON.stringify(text));
     assert.ok(text.length <= 512, `cut: ${text.length}`);
   });
 

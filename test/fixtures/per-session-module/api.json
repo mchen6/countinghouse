@@ -1,0 +1,19 @@
+{
+  "device": {
+    "friendlyName": "per-session-module",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "Keeps state per session (shared runtime R1, section 4a).",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:stateService": {
+        "actionList": [
+          {
+            "name": "touch",
+            "description": "Adds one to a counter in its store and its /data, and answers both.",
+            "input": {"schema": "/stateService/touch/input"},
+            "output": {"schema": "/stateService/touch/output"}
+          }
+        ]
+      }
+    }
+  }
+}
