@@ -64,6 +64,21 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     assert.ok((await workerFor(null)).err.message.includes(D), 'a client\'s call names the device it asked for, as for one unknown');
   });
 
+  // the review of #367's /code-review: a spawn given up on because the
+  // session ended says MODULE_UNLOADED, as an unload's does; the session gone,
+  // the answer is a device not hosted, never the module's state
+  it('workerFor: a spawn given up on (MODULE_UNLOADED) is the module\'s state while the session is live; a device not hosted once it has ended', async () => {
+    dm.moduleManager.endedStateForDevice = () => ({code: 'MODULE_RESTARTING', name: 'per-session-module'});
+    const givenUp = () => Object.assign(new Error('given up'), {code: 'MODULE_UNLOADED'});
+    dm.moduleManager.sessionWorkers.get = (n, s, cb) => cb(givenUp());
+    assert.strictEqual((await workerFor(A)).err.code, 'MODULE_RESTARTING', 'live: the device\'s ended state');
+    dm.moduleManager.sessionWorkers.get = (n, s, cb) => { live.delete(s); cb(givenUp()); };
+    const ended = await workerFor(A, {hop: true});
+    assert.strictEqual(ended.err.code, 'DEVICE_NOT_FOUND', JSON.stringify(ended.err));
+    assert.ok(!ended.err.message.includes(D), ended.err.message);
+    assert.strictEqual((await workerFor(B)).err.code, 'DEVICE_NOT_FOUND', 'a client\'s call too');
+  });
+
   it('workerFor: a module closing starts no worker; busy and suspended pass through', async () => {
     record.closing = true;
     assert.strictEqual((await workerFor(A)).err.code, 'DEVICE_NOT_FOUND');
@@ -170,5 +185,30 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     assert.strictEqual(refused.spec, null);
     assert.ok(!String(refused.errMsg).includes(D), refused.errMsg);
     assert.strictEqual(started, 0, 'a query starts no worker');
+  });
+
+  it('the device query: a session that ends, or a record unloaded, during the access check gets no spec', () => {
+    const replies = [];
+    const caller = {workerId: 41, sendDeviceQueryReplyToChild: (m) => replies.push(m),
+      bindings: {[CALLER]: {identity: 'i', module: 'ps-caller', targets: new Set([`${D}|${SVC}|touch`])}}};
+    const tokenOf = (session) => callTokens.issue({billingKey: 'k', workerId: 41, deviceID: CALLER, session});
+    let granted = null;
+    // held, not answered at once (before()'s stand-in): the gap a round trip makes
+    const grantedAtOnce = DeviceManager.prototype.replyAfterQueryAccessCheck;
+    DeviceManager.prototype.replyAfterQueryAccessCheck = function(wm, msgID, deviceID, identity, onGranted) { granted = onGranted; };
+    try {
+      dm.queryDeviceForChild(D, 3, caller, {token: tokenOf(A)});
+      live.delete(A);
+      granted();
+      assert.strictEqual(replies.pop().errCode, 'DEVICE_NOT_FOUND', 'the session ended meanwhile');
+      dm.queryDeviceForChild(D, 4, caller, {token: tokenOf(B)});
+      delete dm.deviceMap[D];
+      granted();
+      const gone = replies.pop();
+      assert.strictEqual(gone.spec, null, JSON.stringify(gone));
+      assert.ok(gone.errCode != null, JSON.stringify(gone));
+    } finally {
+      DeviceManager.prototype.replyAfterQueryAccessCheck = grantedAtOnce;
+    }
   });
 });
