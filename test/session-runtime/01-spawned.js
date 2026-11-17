@@ -258,18 +258,21 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     // and none for the session's life, though it would now say yes (N1);
     // its shim is not asked a second time
     const no = await call(c, set60, {}, 'no');
-    assert.strictEqual(no.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(no));
+    assert.strictEqual(no.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(no));
     const still = await call(c, {action: 'set', name: 'maxOutputBytes', value: '32MiB'});
-    assert.strictEqual(still.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(still));
+    assert.strictEqual(still.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(still));
     assert.strictEqual(await c.c.json('C', 300), null, 'not asked again');
     assert.match(still.result.content[0].text, /ch-local settings set maxOutputBytes 32MiB/);
+    // never said to be a decline: it could not be confirmed (this frame gives no why)
+    assert.match(still.result.content[0].text, /this client could not be confirmed/);
+    assert.doesNotMatch(still.result.content[0].text, /declined/);
     // D's client says no in a frame nobody asked for, then yes in another:
     // the first has latched it, though the session's own copy now says yes
     const d = await shim.session(r.socket, secret);
     d.c.send('C', {op: 'client', status: 'ok', conditions: 'no', repo: null, token: null});
     d.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: null, token: null});
     const overwritten = await call(d, set60);
-    assert.strictEqual(overwritten.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(overwritten));
+    assert.strictEqual(overwritten.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(overwritten));
     assert.strictEqual(await d.c.json('C', 300), null, 'and its shim is not asked');
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     for (const s of [a, b, c, d]) s.c.end();
@@ -623,6 +626,66 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.notStrictEqual(back.welcome.resumeToken, t2, 'rotated again on the resume');
     // the restored row made it busy once, never twice (#263 review)
     assert.deepStrictEqual(r.told.filter((m) => m.type === 'idle' || m.type === 'busy').map((m) => m.type), ['busy']);
+    back.c.end();
+  });
+
+  // MCP completeness M13 (ctx.ask), the reviewer's condition on M12: a
+  // question's state is single use across a runtime restart. A resumed
+  // session keeps its id, so a state from before the restart still verifies
+  // after it (the key is derived from the identity secret, which is in the
+  // store): what refuses the used one is its nonce, kept in the local
+  // store's file, and nothing else. One not yet used is still good.
+  it('a question\'s state used before a restart is refused after it on the resumed session, by its stored nonce; one not yet used is still good (M13)', async() => {
+    const asks = path.join(ROOT, 'test', 'fixtures', 'asks-questions');
+    const FORMS = Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}});
+    let tool = null;
+    const listed = async(s) => {
+      await until(async() => {
+        const list = await request(s.c, 'tools/list');
+        tool = list != null && list.result != null ? (list.result.tools.find((x) => /probe$/.test(x.name)) || {}).name : null;
+        return tool != null;
+      });
+      assert.ok(tool != null, r.err.slice(-2000));
+    };
+    const call = (s, args, extra = {}) => request(s.c, 'tools/call', Object.assign({name: tool, arguments: args, _meta: FORMS}, extra));
+    const accept = (state, content) => ({requestState: state, inputResponses: {answer: {action: 'accept', content}}});
+    const codeOf = (got) => (got != null && got.result != null && got.result._meta != null ? got.result._meta['countinghouse/code'] : null);
+
+    r = runtime(home, ['--loadModule', asks]);
+    let secret = await listening(r);
+    const first = await shim.session(r.socket, secret);
+    const id = first.welcome.session;
+    const token = first.welcome.resumeToken;
+    await listed(first);
+    const used = await call(first, {what: 'it'});
+    const unused = await call(first, {what: 'that'});
+    assert.deepStrictEqual([used.result.resultType, unused.result.resultType], ['input_required', 'input_required'], JSON.stringify(used).slice(0, 400));
+    const done = await call(first, {what: 'it'}, accept(used.result.requestState, {yes: true}));
+    assert.ok(done.result != null && done.result.structuredContent != null && done.result.structuredContent.asked === true, JSON.stringify(done).slice(0, 500));
+    assert.ok(fs.existsSync(path.join(home, 'store', 'used-nonces.json')), 'the used nonce is in the store before the answer');
+    const hash = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+
+    r = runtime(home, ['--loadModule', asks], {restore: {id: 'restore-1', type: 'restore',
+      sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 3}}], declines: [], reset: []}});
+    secret = await listening(r);
+    const back = await shim.session(r.socket, secret, undefined, {resume: token});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, `the same session: ${JSON.stringify(back.refused)}`);
+    await listed(back);
+    const replay = await call(back, {what: 'it'}, accept(used.result.requestState, {yes: true}));
+    assert.strictEqual(codeOf(replay), 'ASK_STATE_INVALID', JSON.stringify(replay).slice(0, 500));
+    // refused as used, and for no other reason: the runtime's own line says which
+    // (this runtime's log is its stdout: its protocol is on the socket)
+    const logged = `${r.out}\n${r.err}`;
+    assert.ok(/a retry's answer was refused \(ASK_STATE_INVALID: used\)/.test(logged), logged.split('\n').filter((l) => /refused/.test(l)).join('\n').slice(0, 600));
+    const kept = await call(back, {what: 'that'}, accept(unused.result.requestState, {yes: false}));
+    assert.ok(kept.result != null && kept.result.structuredContent != null, JSON.stringify(kept).slice(0, 500));
+    assert.deepStrictEqual([kept.result.structuredContent.asked, kept.result.structuredContent.answer], [true, {yes: false}]);
+    // and that one is used now
+    assert.strictEqual(codeOf(await call(back, {what: 'that'}, accept(unused.result.requestState, {yes: false}))), 'ASK_STATE_INVALID');
     back.c.end();
   });
 

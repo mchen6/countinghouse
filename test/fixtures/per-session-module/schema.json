@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "stateService": {
+    "touch": {
+      "input": {"type": "object", "properties": {}},
+      "output": {"type": "object", "properties": {"file": {"type": "integer"}}, "required": ["file"]}
+    }
+  }
+}

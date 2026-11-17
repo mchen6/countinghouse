@@ -99,6 +99,12 @@ if (options.validatorLimitInvalid != null) {
     JSON.stringify(String(options.validatorLimitInvalid.value)) + ')');
   process.exit(2);
 }
+// --moduleQuestions (ctx.ask): on or off, and nothing else
+if (options.moduleQuestionsInvalid != null) {
+  console.error('--' + options.moduleQuestionsInvalid.name + ' must be ' + options.moduleQuestionsInvalid.what + ' (got ' +
+    JSON.stringify(String(options.moduleQuestionsInvalid.value)) + ')');
+  process.exit(2);
+}
 // MCP completeness M5: the result store's limits.
 if (options.resourceLimitInvalid != null) {
   console.error('--' + options.resourceLimitInvalid.name + ' must be ' + options.resourceLimitInvalid.what + ' (got ' +

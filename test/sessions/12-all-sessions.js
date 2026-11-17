@@ -323,7 +323,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
         await refused(t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(B)), 'SETTING_NEEDS_CONFIRMATION');
       }
       sources[C].emit('client', {status: 'ok', conditions: 'no', repo: null});
-      await refused(t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(C)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(C)), 'SETTING_CLIENT_NOT_CONFIRMED');
       // yes at the form, gone at the confirmation
       const r = await t0.set('maxOutputBytes', '32MiB', 'settings tool', ctx(A));
       sources[A].answer = null;
@@ -371,7 +371,7 @@ describe('sessions 12: a change for all sessions (shared runtime B2, Task 5b)', 
       };
 
       it('the asking session latched (its client said no): not applied', async () => {
-        await during(async () => { sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null}); }, 'SETTING_DECLINED_THIS_SESSION');
+        await during(async () => { sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null}); }, 'SETTING_CLIENT_NOT_CONFIRMED');
       });
 
       it('the asking session ended: not applied', async () => {
