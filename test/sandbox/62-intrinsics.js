@@ -60,7 +60,7 @@ const PERSISTENT = ['Map.prototype.set/get/has/delete', 'Array.prototype.push/sh
   'TypedArray buffer/byteOffset/byteLength, ArrayBuffer.prototype.slice', 'Object.prototype numeric-key setters',
   'Object.prototype port-symbol setters', 'EventEmitter.prototype emit/on/once/addListener/removeListener/listenerCount',
   'require.cache entries swapped (call-limits, hop-input, port-scope, peer-channel, peer-worker, chutil-facade)',
-  'runtime exports and prototypes replaced in place', 'Object.prototype setters'];
+  'runtime exports and prototypes replaced in place', 'Object.prototype setters', 'Object.prototype getters (runtime fields read)'];
 const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
 
 for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'audit', port: testPort(9715)}]) {

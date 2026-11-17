@@ -24,63 +24,97 @@ const LIB = path.join(__dirname, '..', '..', 'lib');
 const FILES = ['lean-worker', 'peer-worker', 'peer-channel', 'port-scope', 'call-limits', 'hop-input', 'message-envelope', 'serialized-result',
   'query-device', 'service-client', 'handler-ctx', 'chutil-facade', 'countinghouse-util', 'worker-message'];
 
-// [file, the line's text (a regex), why]
+// [file, rule, the line's text (a regex), why]
 const REVIEWED = [
-  ['lean-worker', /^require\('\.\/fs-broker\/identity'\);$/, 'boot: before module code'],
-  ['lean-worker', /^fsGrant = require\('\.\/fs-broker\/patch'\)/, 'boot: before module code'],
-  ['lean-worker', /^for \(const name of PEER_METHODS\)/, 'boot: a literal list'],
-  ['lean-worker', /^for \(const lib of \[callLimits/, 'boot: a literal list'],
-  ['lean-worker', /^for \(const Ctor of \[WorkerMessage/, 'boot: a literal list'],
-  ['lean-worker', /^const redisAPI = require\('\.\/redis-api'\);$/, 'first use: handed only its own Redis send (redisSender)'],
-  ['lean-worker', /^require\('\.\/fs-broker\/patch'\)\.setConsoleSilenced/, 'set-options: before module code'],
-  ['lean-worker', /^require\('\.\/fs-broker\/identity'\)\.install\(/, 'set-options: before module code'],
-  ['lean-worker', /^lockdown = require\('\.\/module-lockdown'\)\.install\(/, 'set-options: before module code'],
-  ['lean-worker', /^require\('\.\/settings-tool'\)\.applyLiveOptions/, 'live options: the worker\'s own copy of the options, no token (#194 P)'],
-  ['lean-worker', /^require\('\.\/module-validator'\)\.validateModule/, 'a validation worker, discarded after (#194 P)'],
-  ['peer-worker', /require\('\.\/countinghouse-util'\)\.ci;$/, 'the main thread\'s and a test\'s: a lean worker\'s peer state always serves'],
-  ['call-limits', /^c = require\('\.\/settings-tool'\)\.cachedCeiling/, 'main thread: a worker has outputCeiling, and returns before'],
-  ['call-limits', /^const settings = require\('\.\/session-settings'\);$/, 'main thread: of() returns before in a worker'],
-  ['call-limits', /^\.\.\.\(limits\.bound === 'defaults' \? \{bound: 'defaults'\} : \{\}\)\}\);$/, 'an object literal spread: no iterator'],
-  ['call-limits', /^\.\.\.\(\(x\.bound === 'defaults' \|\| y\.bound === 'defaults'\)/, 'an object literal spread: no iterator'],
-  ['message-envelope', /^for \(const key of Reflect\.ownKeys\(p\)\) \{$/, 'pinPort: at set-options and the bridge\'s boot, before module code'],
-  ['message-envelope', /Object\.prototype\.hasOwnProperty\.call\(port, key\)\) continue;$/, 'pinPort: at set-options and the bridge\'s boot, before module code'],
-  ['serialized-result', /^const entries = \(v instanceof Map\)/, 'a refusal\'s pointer into the module\'s own output'],
-  ['serialized-result', /^for \(const \[k, x\] of entries\) \{$/, 'a refusal\'s pointer into the module\'s own output'],
-  ['query-device', /^if \(!workerAtLoad && threadInfo\.isMainThread === true\) return require\('\.\/countinghouse-device'\);$/, 'main thread: a worker never asks'],
-  ['service-client', /^const userAuth  = require\('\.\/user-auth'\);$/, 'main thread: a worker\'s client is always a remote thread\'s'],
-  ['handler-ctx', /^return require\('\.\/remote'\)\.callRemote\(/, 'main thread: a worker\'s remote call goes over its channel'],
-  ['handler-ctx', /require\('\.\/usage\/query'\)\.answerUsageQuery/, 'main thread (isMainThread above)'],
-  ['handler-ctx', /require\('\.\/module-ask'\)\.decide\(/, 'main thread (isMainThread above)'],
-  ['handler-ctx', /require\('\.\/redis-api'\)\.namespacedClient\(/, 'main thread (isMainThread above)'],
-  ['chutil-facade', /^for \(const name of METHODS\) \{$/, 'boot: createFacade, a literal list'],
-  ['countinghouse-util', /^return require\('\.\/bind-address'\)\.hostIp\(\);$/, 'the module\'s own CHUtil.getHostIp: no token'],
-  ['countinghouse-util', /^let p = require\('\.\/fs-broker\/identity'\)\.resolveModulePath\(name\);$/, 'the module\'s own CHUtil.loadFile: its own file'],
-  ['countinghouse-util', /^const facade = require\('\.\/single-thread-facade'\);$/, 'the module\'s own CHUtil.loadFile: its own file'],
-  ['countinghouse-util', /^return require\(require\('\.\/fs-broker\/identity'\)\.specifierFor\(p\)\);$/, 'the module\'s own CHUtil.loadFile: its own file'],
-  ['countinghouse-util', /^for \(const key of \['dm', 'ci'\]\) \{$/, 'load: a literal list'],
+  ['lean-worker', 'require in a function body', /^require\('\.\/fs-broker\/identity'\);$/, 'boot: before module code'],
+  ['lean-worker', 'require in a function body', /^fsGrant = require\('\.\/fs-broker\/patch'\)/, 'boot: before module code'],
+  ['lean-worker', 'for...of', /^for \(const name of PEER_METHODS\)/, 'boot: a literal list'],
+  ['lean-worker', 'for...of', /^for \(const lib of \[callLimits/, 'boot: a literal list'],
+  ['lean-worker', 'for...of', /^for \(const Ctor of \[WorkerMessage/, 'boot: a literal list'],
+  ['lean-worker', 'require in a function body', /^const redisAPI = require\('\.\/redis-api'\);$/, 'first use: handed only its own Redis send (redisSender)'],
+  ['lean-worker', 'require in a function body', /^require\('\.\/fs-broker\/patch'\)\.setConsoleSilenced/, 'set-options: before module code'],
+  ['lean-worker', 'require in a function body', /^require\('\.\/fs-broker\/identity'\)\.install\(/, 'set-options: before module code'],
+  ['lean-worker', 'require in a function body', /^lockdown = require\('\.\/module-lockdown'\)\.install\(/, 'set-options: before module code'],
+  ['lean-worker', 'require in a function body', /^require\('\.\/settings-tool'\)\.applyLiveOptions/, 'live options: the worker\'s own copy of the options, no token (#194 P)'],
+  ['lean-worker', 'require in a function body', /^require\('\.\/module-validator'\)\.validateModule/, 'a validation worker, discarded after (#194 P)'],
+  ['peer-worker', 'require in a function body', /require\('\.\/countinghouse-util'\)\.ci;$/, 'the main thread\'s and a test\'s: a lean worker\'s peer state always serves'],
+  ['call-limits', 'require in a function body', /^c = require\('\.\/settings-tool'\)\.cachedCeiling/, 'main thread: a worker has outputCeiling, and returns before'],
+  ['call-limits', 'require in a function body', /^const settings = require\('\.\/session-settings'\);$/, 'main thread: of() returns before in a worker'],
+  ['call-limits', 'spread', /^\.\.\.\(limits\.bound === 'defaults' \? \{bound: 'defaults'\} : \{\}\)\}\);$/, 'an object literal spread: no iterator'],
+  ['call-limits', 'spread', /^\.\.\.\(\(x\.bound === 'defaults' \|\| y\.bound === 'defaults'\)/, 'an object literal spread: no iterator'],
+  ['message-envelope', 'for...of', /^for \(const key of Reflect\.ownKeys\(p\)\) \{$/, 'pinPort: at set-options and the bridge\'s boot, before module code'],
+  ['message-envelope', 'a live bind, call or apply', /Object\.prototype\.hasOwnProperty\.call\(port, key\)\) continue;$/, 'pinPort: at set-options and the bridge\'s boot, before module code'],
+  ['serialized-result', 'spread', /^const entries = \(v instanceof Map\)/, 'a refusal\'s pointer into the module\'s own output'],
+  ['serialized-result', 'for...of', /^for \(const \[k, x\] of entries\) \{$/, 'a refusal\'s pointer into the module\'s own output'],
+  ['query-device', 'require in a function body', /^if \(!workerAtLoad && threadInfo\.isMainThread === true\) return require\('\.\/countinghouse-device'\);$/, 'main thread: a worker never asks'],
+  ['service-client', 'require in a function body', /^const userAuth  = require\('\.\/user-auth'\);$/, 'main thread: a worker\'s client is always a remote thread\'s'],
+  ['handler-ctx', 'require in a function body', /^return require\('\.\/remote'\)\.callRemote\(/, 'main thread: a worker\'s remote call goes over its channel'],
+  ['handler-ctx', 'require in a function body', /require\('\.\/usage\/query'\)\.answerUsageQuery/, 'main thread (isMainThread above)'],
+  ['handler-ctx', 'require in a function body', /require\('\.\/module-ask'\)\.decide\(/, 'main thread (isMainThread above)'],
+  ['handler-ctx', 'require in a function body', /require\('\.\/redis-api'\)\.namespacedClient\(/, 'main thread (isMainThread above)'],
+  ['chutil-facade', 'for...of', /^for \(const name of METHODS\) \{$/, 'boot: createFacade, a literal list'],
+  ['countinghouse-util', 'require in a function body', /^return require\('\.\/bind-address'\)\.hostIp\(\);$/, 'the module\'s own CHUtil.getHostIp: no token'],
+  ['countinghouse-util', 'require in a function body', /^let p = require\('\.\/fs-broker\/identity'\)\.resolveModulePath\(name\);$/, 'the module\'s own CHUtil.loadFile: its own file'],
+  ['countinghouse-util', 'require in a function body', /^const facade = require\('\.\/single-thread-facade'\);$/, 'the module\'s own CHUtil.loadFile: its own file'],
+  ['countinghouse-util', 'require in a function body', /^return require\(require\('\.\/fs-broker\/identity'\)\.specifierFor\(p\)\);$/, 'the module\'s own CHUtil.loadFile: its own file'],
+  ['countinghouse-util', 'for...of', /^for \(const key of \['dm', 'ci'\]\) \{$/, 'load: a literal list'],
   // WorkerMessage: built at a worker's boot (its one), and on the main
   // thread (one per worker), where no module code runs in worker mode
-  ['worker-message', /^this\.\w+\s*=/, 'constructor: built at boot in a worker, and on the main thread'],
-  ['worker-message', /^if \(this\.worker != null\) this\.worker\.on\('message', this\.onEnvelope\.bind\(this\)\);$/, 'main thread (this.worker)'],
-  ['worker-message', /require\('\.\/logger'\)\.E\(new Error\(`module worker /, 'main thread: a worker\'s end'],
-  ['worker-message', /require\('\.\/worker-output'\)\./, 'main thread: a worker\'s messages']
+  ['worker-message', 'an assignment in a constructor', /^this\.\w+\s*=/, 'constructor: built at boot in a worker, and on the main thread'],
+  ['worker-message', 'a live bind, call or apply', /^if \(this\.worker != null\) this\.worker\.on\('message', this\.onEnvelope\.bind\(this\)\);$/, 'main thread (this.worker)'],
+  ['worker-message', 'require in a function body', /require\('\.\/logger'\)\.E\(new Error\(`module worker /, 'main thread: a worker\'s end'],
+  ['worker-message', 'require in a function body', /require\('\.\/worker-output'\)\./, 'main thread: a worker\'s messages'],
+  // the capture helpers and captures, defined at load (they are called there only)
+  ['peer-worker', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
+  ['peer-channel', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
+  ['call-limits', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
+  ['message-envelope', 'a live bind, call or apply', /^const uncurryE = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
+  ['serialized-result', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
+  ['handler-ctx', 'a live bind, call or apply', /^const uncurry = \(fn\) => Function\.prototype\.call\.bind\(fn\);$/, 'the capture helper: called at load'],
+  ['message-envelope', 'a live bind, call or apply', /^const tagOf = Function\.prototype\.call\.bind\(/, 'a capture, at load'],
+  ['message-envelope', 'a live array method', /^const CTORS = VIEWS\.map\(/, 'load: a literal list'],
+  ['peer-channel', 'a collection built from an iterable', /^const NOT_SERVED = new Set\(\[/, 'load: a literal list'],
+  ['worker-message', 'a collection built from an iterable', /^const RATE_(EXEMPT|QUIET) = new Set\(\[/, 'load: a literal list'],
+  ['lean-worker', 'a live array method', /^Object\.keys\(console\)\.forEach\(/, 'set-options: before module code'],
+  ['worker-message', 'a live array method', /^Object\.keys\(pending\)\.forEach\(/, 'main thread: a worker\'s end'],
+  ['serialized-result', 'a live array method', /^const entries = \(v instanceof Map\)/, 'a refusal\'s pointer into the module\'s own output'],
+  ['serialized-result', 'an assignment in a constructor', /^this\._(buffer|error) = /, 'SerializedResult: the main thread\'s'],
+  ['serialized-result', 'an assignment in a constructor', /^this\.view = view;$/, 'NotJson: holds a view of the module\'s own output'],
+  // reads of objects that are re-homed (lib/port-scope.js), or the runtime's
+  // own null-prototype copies, or the module's own options to its own calls
+  ['peer-worker', 'a read off a message or options not re-homed', /\bmsg\./, 'a message: re-homed by lean-worker\'s port handler before a peer method gets it'],
+  ['peer-worker', 'a read off a message or options not re-homed', /\b(item\.)?args\./, 'a hop\'s args: the service client\'s own null-prototype copy'],
+  ['hop-input', 'a read off a message or options not re-homed', /\bargs\./, 'a call\'s args: re-homed (lean-worker) or the service client\'s own copy'],
+  ['service-client', 'a read off a message or options not re-homed', /\bopts\./, 'the options of the module\'s own invoke, or handler-ctx\'s null-prototype copy (billingWrapper)'],
+  ['handler-ctx', 'a read off a message or options not re-homed', /\bargs\./, 'a call\'s args: re-homed (lean-worker), hop-input\'s or peer-worker\'s null-prototype copy'],
+  ['handler-ctx', 'a read off a message or options not re-homed', /\bopts\./, 'the options of the module\'s own invoke or usage query'],
+  ['countinghouse-util', 'a read off a message or options not re-homed', /\b(opts|args)\./, 'the module\'s own CHUtil options, or handler-ctx\'s null-prototype copy'],
+  ['worker-message', 'a read off a message or options not re-homed', /\bmsg\./, 'main thread: a worker\'s messages (onWorkerMessage)'],
+  ['worker-message', 'a read off a message or options not re-homed', /\bargs\.token\b/, 'a hop\'s args: the service client\'s own null-prototype copy'],
 ];
 
 // the offending lines of src: [{line, rule, text}]
+const CAPTURE = /^const \w+ += (uncurry\w*|Function\.prototype\.call\.bind|getter\w*)\((\w+\.)*\w+(\.prototype)?(\.\w+)?(, '\w+')?\);$/;
 function offenders(src) {
   const lines = src.split('\n');
   const out = [];
   let inCtor = false;
+  let classDepth = null;
+  // a file that re-homes what it reads (lib/port-scope.js rehome)
+  const rehomes = /\brehome(Message)?\b/.test(src);
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
     if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
     const line = lines[i].replace(/\s\/\/ .*$/, '');
     if (/^function [A-Z]\w*\(/.test(line)) inCtor = true;
+    else if (/^\s*constructor\(/.test(line)) { inCtor = true; classDepth = line.match(/^\s*/)[0].length; }
+    else if (classDepth != null && new RegExp(`^\\s{${classDepth}}}`).test(line)) { inCtor = false; classDepth = null; }
     else if (/^}/.test(line)) inCtor = false;
     const at = (rule) => out.push({line: i + 1, rule, text: line.trim()});
+    const capture = CAPTURE.test(line.trim());
     if (/^\s+/.test(line) && /\brequire\(/.test(line)) at('require in a function body');
     if (/require\.cache|Module\._cache/.test(line)) at('require.cache');
-    if (/\.(bind|call|apply)\(/.test(line) && !/^const \w+ += .*(Function\.prototype\.call\.bind|call\.bind)\(/.test(line) && !/\buncurry\w*\(/.test(line)) at('a live bind, call or apply');
+    if (/\.(bind|call|apply)\(/.test(line) && !capture) at('a live bind, call or apply');
     if (inCtor && /\bthis\.\w+\s*=(?!=)/.test(line)) at('an assignment in a constructor');
     if (/for\s*\((const|let|var)\s+[^;]*\sof\s/.test(line)) at('for...of');
     for (const m of line.matchAll(/\.\.\.(\w|\[|\()/g)) {
@@ -89,6 +123,9 @@ function offenders(src) {
       if (/(function\s*\w*\s*\(|\(\s*)[\w\s,]*$/.test(before) && /^\.\.\.\w+\)\s*(=>|\{)/.test(line.slice(m.index))) continue;
       at('spread');
     }
+    if (/\.(push|shift|unshift|splice|forEach|map|filter|some|every|find|indexOf|includes)\(/.test(line) && !capture) at('a live array method');
+    if (/new (Set|Map|WeakMap|WeakSet)\(\s*[^)\s]/.test(line)) at('a collection built from an iterable');
+    if (!rehomes && /\b(msg|args|opts)\.\w+/.test(line)) at('a read off a message or options not re-homed');
   }
   return out;
 }
@@ -106,18 +143,24 @@ describe('sandbox 64: the worker\'s token path, read as source', () => {
     assert.deepStrictEqual(rules('  for (const x of list) f(x);'), ['for...of']);
     assert.deepStrictEqual(rules('  g(...list);'), ['spread']);
     assert.deepStrictEqual(rules('  const f = function(...args) { return 1; };\n  const g = (...a) => a;'), []);
+    assert.deepStrictEqual(rules('class C {\n  constructor(a) {\n    this.a = a;\n  }\n  m() { this.b = 1; }\n}'), ['an assignment in a constructor']);
+    assert.deepStrictEqual(rules('  queue.push(item);'), ['a live array method']);
+    assert.deepStrictEqual(rules('  const s = new Set(list);\n  const t = new Set();'), ['a collection built from an iterable']);
+    assert.deepStrictEqual(rules('  const id = msg.id;'), ['a read off a message or options not re-homed']);
+    assert.deepStrictEqual(rules('const {rehome} = require(\'./port-scope\');\nfunction f(m) {\n  const msg = rehome(m);\n  return msg.id;\n}'), []);
+    assert.deepStrictEqual(rules('const x = uncurry(Map.prototype.get);\nconst y = uncurry(Map.prototype.get); f.call(this);'), ['a live bind, call or apply']);
   });
 
   for (const name of FILES) {
     it(`lib/${name}.js: nothing module code could hand itself, but what is reviewed`, () => {
       const found = offenders(fs.readFileSync(path.join(LIB, `${name}.js`), 'utf8'));
-      const left = found.filter((o) => !REVIEWED.some(([file, re]) => file === name && re.test(o.text)));
+      const left = found.filter((o) => !REVIEWED.some(([file, rule, re]) => file === name && rule === o.rule && re.test(o.text)));
       assert.deepStrictEqual(left.map((o) => `${o.line} ${o.rule}: ${o.text}`), []);
     });
   }
 
   it('every reviewed exception still matches a line (none is stale)', () => {
-    const stale = REVIEWED.filter(([file, re]) => !offenders(fs.readFileSync(path.join(LIB, `${file}.js`), 'utf8')).some((o) => re.test(o.text)));
-    assert.deepStrictEqual(stale.map(([file, re, why]) => `${file} ${re} (${why})`), []);
+    const stale = REVIEWED.filter(([file, rule, re]) => !offenders(fs.readFileSync(path.join(LIB, `${file}.js`), 'utf8')).some((o) => o.rule === rule && re.test(o.text)));
+    assert.deepStrictEqual(stale.map(([file, rule, re, why]) => `${file} ${rule} ${re} (${why})`), []);
   });
 });

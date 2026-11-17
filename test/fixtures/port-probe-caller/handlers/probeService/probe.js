@@ -119,8 +119,12 @@ const setterOn = (obj, key, undo) => define(obj, key, {configurable: true, enume
 // token), and a setter on Object.prototype for a field the runtime's
 // constructors and containers hold (the module assigns none of these itself).
 let runtimeSeen = 0;
+// (with the fields the runtime reads off its own messages and options, which
+// a getter there is handed when they are absent: a call's args, a reply)
 const RUNTIME_KEYS = ['port', 'announce', 'onInvoke', 'pending', 'sendQueue', 'dispatchQueue', 'inFlight', 'ci', 'cdifInterface', 'cb',
-  'allowedDevices', '_ctxServiceClients', '_composition', '_compositionSettled', '_verdictWaiters', 'deviceManager', 'workerMessage'];
+  'allowedDevices', '_ctxServiceClients', '_composition', '_compositionSettled', '_verdictWaiters', 'deviceManager', 'workerMessage',
+  'inputBytes', 'jobID', 'wantsProgress', 'httpHeaders', 'billingPending', 'ctx', 'billingKey', 'caller', 'usageCall',
+  'peerChannels', 'peerDeviceWorkerMap', 'pendingPeerInvokes'];
 const looksRuntime = (o) => o != null && typeof(o) === 'object' &&
   ['pending', 'port', 'ci', 'cdifInterface', 'deviceManager', 'workerMessage'].some((k) => ObjectGetOwnPropertyDescriptor(o, k) !== undefined);
 function watchRuntime(undo) {
@@ -131,7 +135,12 @@ function watchRuntime(undo) {
   }, writable: true, configurable: true, enumerable: false}, undo);
   for (const key of RUNTIME_KEYS) {
     define(Object.prototype, key, {configurable: true, enumerable: false,
-      get() { return undefined; },
+      // a read that falls through to here, off a runtime object or one
+      // holding a token
+      get() {
+        if (looksRuntime(this) || holdsToken(this)) { runtimeSeen++; seen[seen.length] = `runtime getter ${key}`; }
+        return undefined;
+      },
       set(v) {
         runtimeSeen++;
         seen[seen.length] = `runtime setter ${key}`;

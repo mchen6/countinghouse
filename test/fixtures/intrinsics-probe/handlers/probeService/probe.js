@@ -90,6 +90,10 @@ const addListener = EventTarget.prototype.addEventListener;
 const emitterOn = require('events').prototype.on;
 const ObjectIsPrototypeOf = Function.prototype.call.bind(Object.prototype.isPrototypeOf);
 const isPort = (v) => v != null && typeof(v) === 'object' && ObjectIsPrototypeOf(MessagePortProto, v);
+// a runtime object by its own fields (a channel, a query, a client, the
+// worker's interface or peer state, a device)
+const looksRuntime = (o) => o != null && typeof(o) === 'object' &&
+  ['pending', 'port', 'ci', 'cdifInterface', 'deviceManager', 'workerMessage', '_composition', '_compositionSettled'].some((k) => ObjectGetOwnPropertyDescriptor(o, k) !== undefined);
 const setterOn = (proto, key) => replace(proto, key, {configurable: true, enumerable: false,
   get() { return undefined; },
   set(v) {
@@ -215,6 +219,19 @@ const CHANGES = {
     const keys = Object.getOwnPropertySymbols(new EventTarget());
     keys[keys.length] = Symbol.for('nodejs.internal.kCurrentlyReceivingPorts');
     const undo = keys.map((key) => setterOn(Object.prototype, key));
+    return () => { for (let i = undo.length - 1; i >= 0; i--) undo[i](); };
+  },
+  // getters on Object.prototype for fields the runtime reads off its own
+  // messages, options and objects: a read of one that is absent falls
+  // through to here, with the object (a call's args, a reply, the device) as
+  // `this`
+  'Object.prototype getters (runtime fields read)': () => {
+    const keys = ['inputBytes', 'jobID', 'wantsProgress', 'httpHeaders', 'billingPending', 'ctx', 'billingKey', 'caller', 'usageCall',
+      '_ctxServiceClients', '_verdictWaiters', '_composition', 'peerChannels', 'peerDeviceWorkerMap', 'pendingPeerInvokes', 'limits', 'mainChecked'];
+    const undo = keys.map((key) => getter(Object.prototype, key, function() {
+      if (holdsToken(this) || looksRuntime(this)) tokensSeen++;
+      return undefined;
+    }));
     return () => { for (let i = undo.length - 1; i >= 0; i--) undo[i](); };
   },
   // what the runtime's emitters inherit (not fixed: modules extend it)
