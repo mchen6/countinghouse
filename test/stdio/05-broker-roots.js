@@ -24,9 +24,27 @@ describe('stdio 05: a path under the granted roots (issue #40)', () => {
       assert.strictEqual(under('/a/lib\\x.js', ['/a/lib']), false);
       assert.strictEqual(under('/a/lib/x.js', []), false);
     });
-    it('is the expression the patch had before (byte-identical on POSIX)', () => {
-      assert.strictEqual(under.toString(), '(s, roots) => roots.some((r) => s === r || s.startsWith(`${r}/`))');
-      assert.strictEqual(underFor('darwin').toString(), under.toString());
+    it('is the same rule on macOS', () => {
+      const mac = underFor('darwin');
+      for (const [s, roots] of [['/a/lib', ['/a/lib']], ['/a/lib/x.js', ['/a/lib']], ['/a/library/x.js', ['/a/lib']],
+        ['/A/lib/x.js', ['/a/lib']], ['/a/lib\\x.js', ['/a/lib']], ['/a/lib/x.js', []]]) {
+        assert.strictEqual(mac(s, roots), under(s, roots), `${s} under ${roots}`);
+      }
+    });
+    it('answers by what roots.js took at load: a replaced startsWith or some changes nothing', () => {
+      const {startsWith} = String.prototype;
+      const {some} = Array.prototype;
+      let inside, outside;
+      try {
+        String.prototype.startsWith = () => true;
+        Array.prototype.some = () => true;
+        inside = under('/a/lib/x.js', ['/a/lib']);
+        outside = under('/b/lib/x.js', ['/a/lib']);
+      } finally {
+        String.prototype.startsWith = startsWith;
+        Array.prototype.some = some;
+      }
+      assert.deepStrictEqual({inside, outside}, {inside: true, outside: false});
     });
   });
 

@@ -112,7 +112,7 @@
 - **The check.** `common.seesJob(authCtx, ownerSession)` is `scope.sees(scope.of(authCtx.session), ownerSession)`, and true for `INTERNAL`. In shared mode it is asked before `ownsJob`, and `isAdmin` doesn't pass it.
   - `getJob` and `removeJob` (with `isRepeat` false): a job the caller's session doesn't see answers with the error an id not in the map gets (`GET_JOB_ERROR` or `REMOVE_JOB_ERROR`, `unknown job`), never `JOB_ACCESS_DENIED`.
   - `listJobs` keeps only jobs the session sees, then applies `LIST_MAX`.
-- `JobControl.sessionOf(id)` → the job's owner session, null for a job from no session, or undefined for no such job. Main thread only, for M15's tombstone; nothing sends it on.
+- (Dropped in review: `JobControl.sessionOf(id)` had no caller. M15's tombstone takes the canceller's session from its `authCtx`, and keeps only its SHA-256.)
 - **The gateway.** Each handler's `authCtx` is `{appKey, isAdmin, session: sessionIdOf(opts)}`, as `createTaskForToolCall`'s already is. A request whose `sessionIdOf` is undefined is answered as an unknown task (`tasks/list`: an empty list).
 - A modern request's `tasks/*` stays an unknown method (`REMOVED_IN_MODERN`) until M15.
 - A session's end cancels its tasks (Task 4). Until that task is in, an ended session's jobs run on and are seen by no one.
@@ -225,7 +225,7 @@ M17 (`docs/superpowers/specs/2026-11-15-mcp-completeness-design.md`, sections 9 
 
 - `scope.of(sessionId)` and `scope.sees(scope, ownerSession)`: the one check for a task, a cancelled task's tombstone and a stored result (`record.session`). A miss is the caller's own "not found".
 - `sessionIdOf(opts)` and `scopeOf(opts)`, exported by the gateway, for `tasks/get`, `tasks/update`, `tasks/cancel` and `resources/read`.
-- `JobControl.getJob(authCtx, id, cb)`, `removeJob` and `listJobs`, with `authCtx.session` set: the session check is inside the runner, so M15's handlers get it by passing the session. A job's owner session is read main-side as `job.session`; `JobControl.sessionOf(id)` returns it (or undefined for no such job) for M15's tombstone, and is never sent anywhere.
+- `JobControl.getJob(authCtx, id, cb)`, `removeJob` and `listJobs`, with `authCtx.session` set: the session check is inside the runner, so M15's handlers get it by passing the session. A job's owner session is read main-side as `job.session` and is never sent anywhere; a tombstone keeps the canceller's session only as its SHA-256 (`lib/task-tombstones.js` `sessionKey`).
 - The id: M15 mints its own and passes it as `jobOpts.jobId`, which Task 2's runner takes (shape checked, a duplicate refused). With none given, a shared runtime's `s-` id is already unguessable.
 - Not here: a session's stored results end with the session but survive a runtime restart. `Registry.close()` emits the same `'end'` as a `bye` (`lib/session-transport/registry.js:251`), so `lib/sessions.js` can't tell the two apart today. M17, or R1 for §4a's partitions, needs that told apart; tasks don't, since the local runner's jobs don't survive a restart.
 
