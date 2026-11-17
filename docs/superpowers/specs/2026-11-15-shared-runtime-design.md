@@ -346,6 +346,8 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 ## 4a. Modules with per-session state (the maintainer's rule 3)
 
+> **Documented for authors and operators:** `docs/module-development.md`, "Modules that keep state per session", and `docs/security-model.md`, how a per-session module's worker is chosen and what a shared module is trusted with (R1 Task 7).
+
 Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store and files partitioned by session.
 
 - **The declaration.** In the module's `package.json`: `"countinghouse": {"state": "per-session"}`. Absent, or `"shared"`, means shared. Any other value refuses the load, naming it.

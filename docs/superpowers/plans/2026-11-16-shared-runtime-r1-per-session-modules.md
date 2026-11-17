@@ -171,9 +171,35 @@
   - a session ending with a call in flight: the call ends as a cancel does, and the partition is removed only after the worker stopped.
 - [ ] Implement. Run: PASS. Commit.
 
-### Task 7: Docs
+### Task 7: Docs (the user asked for this explanation to be documented; the Reviewer's checklist, #349)
 
-- [ ] Update `docs/module-development.md` (the declaration, what a module sees: nothing new; files and store per session; no idle stop; the cap and its memory cost, ~14.5 MB × the cap, operator-only), `docs/cli-and-api-reference.md` (`--maxSessionWorkers`), `docs/security-model.md` (§9 residual 5 with state; the partitions' lifetime). One commit, in the same PR as Task 6.
+**`docs/module-development.md`, a section "Modules that keep state per session" (for authors):**
+- [ ] **The default:** one worker per module, shared by every session. Declare `"countinghouse": {"state": "per-session"}` only if the module keeps per-user state in memory or storage.
+- [ ] **What you get:**
+  - one worker per session that uses the module, started lazily on that session's first call (a direct call, a hop from another module in the session, a job the session created, or a peer channel) and stopped when the session ends;
+  - its own `ctx.redis` keys, `/data` and `/tmp` per session;
+  - the module never sees a session id, and is written as if it were the only user.
+- [ ] **Limits:**
+  - `--maxSessionWorkers` (default 16) **in all**, across every per-session module, as §4a says (the Reviewer's note said "per module"; this follows the spec, and the Reviewer can rule otherwise);
+  - idle workers are retired least recently used, never one with a call in flight or a live token;
+  - `SESSION_WORKERS_BUSY` when all are busy;
+  - the cost: about 14.5 MB per lean worker × the cap;
+  - the cap is set from the terminal only.
+- [ ] **Lifetime:**
+  - storage is kept while the session can resume (a restart keeps restored sessions' partitions), and removed on `bye` or window expiry, or by the sweep;
+  - a reload stops all its workers;
+  - `MODULE_STATE_CHANGED` if the declaration changes (unload first).
+- [ ] **Where it runs:** not on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`). `--stdio` is one session, so one worker, on today's paths.
+
+**`docs/security-model.md` (for operators):**
+- [ ] **How the worker is chosen: never by the caller.** Every call carries a call token the runtime issues and binds to the session. A hop or peer channel to a per-session module is routed by the token's session (each peer invoke announced and checked), so a session, or a module acting for it, reaches only its own session's worker and storage.
+- [ ] **Shared modules** are reached by every session by design. A shared module serving two sessions at once holds both tokens and could route into either session's per-session worker (§9 residual 5), so a shared module is trusted with every session's data.
+- [ ] **With B3,** a session sees and calls only the modules in packs that are on for it (the global ones plus its own); a hidden one answers like a missing one.
+
+**Also:**
+- [ ] `docs/cli-and-api-reference.md`: `--maxSessionWorkers`.
+- [ ] The spec (#236 §4a) points to both sections.
+- [ ] One commit, in the same PR as Task 6.
 
 ## Out of scope
 
