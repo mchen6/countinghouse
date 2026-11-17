@@ -114,7 +114,34 @@ const setterOn = (obj, key, undo) => define(obj, key, {configurable: true, enume
     if (holdsToken(this) || holdsToken(v)) { tokensSeen++; seen[seen.length] = `token: setter ${String(key)}`; }
     ObjectDefineProperty(this, key, {value: (typeof(v) === 'function') ? watching(v) : v, writable: true, enumerable: true, configurable: true});
   }}, undo);
+// The runtime's own objects, as module code would catch them: a bind it
+// replaced on Function.prototype handed a channel, a query or a client (or a
+// token), and a setter on Object.prototype for a field the runtime's
+// constructors and containers hold (the module assigns none of these itself).
+let runtimeSeen = 0;
+const RUNTIME_KEYS = ['port', 'announce', 'onInvoke', 'pending', 'sendQueue', 'dispatchQueue', 'inFlight', 'ci', 'cdifInterface', 'cb',
+  'allowedDevices', '_ctxServiceClients', '_composition', '_compositionSettled', '_verdictWaiters', 'deviceManager', 'workerMessage'];
+const looksRuntime = (o) => o != null && typeof(o) === 'object' &&
+  ['pending', 'port', 'ci', 'cdifInterface', 'deviceManager', 'workerMessage'].some((k) => ObjectGetOwnPropertyDescriptor(o, k) !== undefined);
+function watchRuntime(undo) {
+  const bind = Function.prototype.bind;
+  define(Function.prototype, 'bind', {value: function(that, ...a) {
+    if (looksRuntime(that) || holdsToken(that) || anyHoldsToken(a)) { runtimeSeen++; seen[seen.length] = 'bind'; }
+    return ReflectApply(bind, this, [that, ...a]);
+  }, writable: true, configurable: true, enumerable: false}, undo);
+  for (const key of RUNTIME_KEYS) {
+    define(Object.prototype, key, {configurable: true, enumerable: false,
+      get() { return undefined; },
+      set(v) {
+        runtimeSeen++;
+        seen[seen.length] = `runtime setter ${key}`;
+        ObjectDefineProperty(this, key, {value: v, writable: true, enumerable: true, configurable: true});
+      }}, undo);
+  }
+}
+
 function watch(undo) {
+  watchRuntime(undo);
   watchMethods(Map.prototype, ['set', 'get', 'has', 'delete'], undo);
   watchMethods(Array.prototype, ['push', 'shift', 'unshift', 'splice', 'forEach'], undo);
   watchMethods(Object, ['assign'], undo);
@@ -188,6 +215,7 @@ module.exports = async (input, ctx) => {
   tokensSeen = 0;
   portsSeen = 0;
   nativeIndexPorts = 0;
+  runtimeSeen = 0;
   seen.length = 0;
   for (let i = 0; i < TARGETS.length; i++) {
     const [name, obj, key] = TARGETS[i];
@@ -218,5 +246,5 @@ module.exports = async (input, ctx) => {
     for (let i = undo.length - 1; i >= 0; i--) undo[i]();
     watchTokens = false;
   }
-  return {output: {changed, calls, portsSeen, tokensSeen, nativeIndexPorts, seen}};
+  return {output: {changed, calls, portsSeen, tokensSeen, nativeIndexPorts, runtimeSeen, seen}};
 };

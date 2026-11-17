@@ -15,12 +15,9 @@ const {deviceIDForName} = require('../../lib/call-address');
 
 describe('sandbox 63: port methods taken at boot', function() {
   this.timeout(20000);
-  // (a worker's mode: under off a post looks postMessage up as the port has
-  // it, as the worker's own post does; below)
-  const options = require('../../lib/cli-options');
-  let modeBefore;
-  before(() => { modeBefore = options.moduleSandbox; options.moduleSandbox = 'enforce'; });
-  after(() => { options.moduleSandbox = modeBefore; });
+  // (here no mode is latched: the methods taken at load, as under audit and
+  // enforce; under off a worker's posts look postMessage up as the port has
+  // it, which composition 18's forge relies on)
 
   it('postOnPort, onPortMessage, onPortEvent and closePort never call a replaced method', async () => {
     // (made before the methods are replaced: Node's own port set-up calls
@@ -49,26 +46,6 @@ describe('sandbox 63: port methods taken at boot', function() {
       port2.close();
     }
     assert.deepStrictEqual(handed.map((h) => h[0]), [], 'a replaced port method was called with a port');
-  });
-
-  it('under --moduleSandbox off, a post uses postMessage as the port has it now (nothing is fixed there)', async () => {
-    const {port1, port2} = new MessageChannel();
-    const proto = MessagePort.prototype;
-    const saved = proto.postMessage;
-    let seen = 0;
-    options.moduleSandbox = 'off';
-    proto.postMessage = function(...a) { seen++; return saved.apply(this, a); };
-    try {
-      const got = new Promise((resolve) => portScope.onPortMessage(port2, (m) => resolve(m)));
-      portScope.postOnPort(port1, {hello: 2});
-      assert.deepStrictEqual(await got, {hello: 2});
-      assert.strictEqual(seen, 1);
-    } finally {
-      proto.postMessage = saved;
-      options.moduleSandbox = 'enforce';
-      port1.close();
-      port2.close();
-    }
   });
 
   it('withFields and ownField set and read own data only', () => {
@@ -128,6 +105,10 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9754)}, {mode: 'aud
       // nor a call's token, on the peer path: its queue, the channel's
       // pending calls, the callee's metering reply, the envelope's bytes
       assert.strictEqual(out.tokensSeen, 0, `a token was handed to a replaced method or setter: ${shown}`);
+      // nor a channel, a query, a client or a device's composition: through
+      // a bind module code replaced, or a setter it put on Object.prototype
+      // for one of their fields
+      assert.strictEqual(out.runtimeSeen, 0, `a runtime object was handed to a replaced bind or a setter: ${shown}`);
     });
   });
 }
