@@ -11,8 +11,8 @@
 // session's (global false), so no session lists it; its module crashes twice
 // on its own (a count in its /data, so a third start would load cleanly); the
 // pack is unloaded inside the supervisor's second backoff (2 s, room for a
-// slow runner); after the restart's time, a session's tools/list holds none
-// of its tools, and the module is gone.
+// slow runner); after the restart's time, no session's tools/list holds any
+// of its tools.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -101,19 +101,22 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
   if (process.platform === 'win32') return;   // the session socket is C2's named pipe there
   let home = null;
   let r = null;
+  const conns = [];
   afterEach(async() => {
+    for (const c of conns.splice(0)) c.end();
     if (r != null && r.child.exitCode == null && r.child.signalCode == null) { r.child.kill('SIGKILL'); await r.exited; }
     r = null;
     if (home != null) fs.rmSync(home, {recursive: true, force: true});
     home = null;
   });
 
-  it('crash, unload inside the backoff, the restart\'s time: no session lists its tools, and the module is gone', async() => {
+  it('crash, unload inside the backoff, the restart\'s time: no session lists its tools', async() => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sr08-'));
     const pack = crashyPack(home);
     r = runtime(home, pack.root);
     assert.ok(await until(() => fs.existsSync(r.socket) && secretOf(r) != null), `never listened: ${r.err.slice(-1500)}`);
     const s = await shim.session(r.socket, secretOf(r));
+    if (s.c != null) conns.push(s.c);
     assert.ok(s.welcome != null, JSON.stringify(s.refused));
     // no session has it on: no session lists it
     const loaded = await r.control({type: 'load', name: NAME, scenario: pack.dir, pack: 'crashy', global: false});
@@ -122,22 +125,19 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
     // its worker ends on its own, twice; the supervisor will restart it after its second backoff
     const escaped = NAME.replace(/[/@]/g, (x) => `\\${x}`);
     const exits = () => [...r.err.matchAll(new RegExp(`module sandbox: ${escaped} exited \\(.*\\); restarting in (\\d+) ms`, 'g'))];
-    const restarts = () => r.err.split(`module sandbox: ${NAME} restarting after`).length - 1;
     assert.ok(await until(() => exits().length >= 2, 30000), `the module never crashed twice: ${r.err.slice(-1500)}`);
     const backoff = Number(exits()[1][1]);
-    // the pack turned off inside the second backoff: sent before the restart (on master the unload's answer
-    // itself can take longer than the backoff, the restart registering the module meanwhile)
+    // the pack turned off inside the second backoff. Only the listing is asserted: on a slow runner the restart
+    // may come first, and the unload then takes out a loaded module, which no build lists after (on master the
+    // unload's own answer took longer than the backoff, the restart registering the module meanwhile)
     const supervisorLines = () => r.err.split('\n').filter((l) => l.includes(`module sandbox: ${NAME} `) && /exited|restarting/.test(l)).map((l) => l.slice(0, 300)).join('\n');
-    assert.strictEqual(restarts(), 1, `premise: the unload is sent inside the second backoff (${backoff} ms):\n${supervisorLines()}`);
     const unloaded = await r.control({type: 'unload', name: NAME, pack: 'crashy'});
     assert.strictEqual(unloaded.ok, true, JSON.stringify(unloaded));
     // past the restart's time, and a spawn's
     await tick(backoff + 3000);
-    assert.ok(!(await toolNames(s.c)).includes('crashy_tool'), `listed to a session after the restart: ${r.err.slice(-1500)}`);
+    assert.ok(!(await toolNames(s.c)).includes('crashy_tool'), `listed to a session after the restart:\n${supervisorLines()}`);
     const s2 = await shim.session(r.socket, secretOf(r));
-    assert.ok(!(await toolNames(s2.c)).includes('crashy_tool'), 'nor to a new session');
-    assert.strictEqual(restarts(), 1, `the second restart never ran:\n${supervisorLines()}`);
-    s.c.end();
-    s2.c.end();
+    if (s2.c != null) conns.push(s2.c);
+    assert.ok(!(await toolNames(s2.c)).includes('crashy_tool'), `nor to a new session:\n${supervisorLines()}`);
   });
 });

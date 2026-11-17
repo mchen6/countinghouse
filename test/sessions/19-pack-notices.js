@@ -293,68 +293,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       sessionPacks.setGlobal('other', false);   // a changed(null): the owners rebuilt at the next question
       await packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-ci', pack: 'ci'});
       assert.deepStrictEqual(seenMidUnload, [false], 'hidden from B while it unloads');
-      // and no orphan left once its supervisor has no record (F1-3): sessionPacks.none() keeps its fast path
       assert.deepStrictEqual(packsInPlace.packRecords(mm), [], 'and gone once unloaded');
-    });
-
-    // F1-3, the reload's side: a part the new version drops is unloaded even while out of the module map
-    // (restarting after a crash), and stays owned by the orphans' pack; a pack that loads it again takes it back
-    it('a reload that drops a restarting part unloads it all the same, and no session lists it after', async() => {
-      const packsInPlace = require('../../lib/packs-in-place');
-      const unloaded = [];
-      // the backstop: the part's supervisor record survives its unload (as no unload leaves it), so a restart
-      // could still register it, with no owner
-      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
-        supervisor: {status: (name) => (name === '@countinghouse/ch-step-x' ? {state: 'restarting'} : null)},
-        loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
-        unloadModuleExternal: (name, cb) => { unloaded.push(name); delete mm.modules[name]; cb(); }};
-      sessionPacks.configure({records: () => packsInPlace.packRecords(mm), moduleOf: () => null,
-        overridesOf: settings.packOverridesOf, onOverrideChange: settings.onChange, openSessions: () => [...open], isOpen: (id) => open.has(id),
-        shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
-      on(A, 'two');
-      const scenario = path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two');
-      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
-      // the part crashed: out of the module map, its supervisor's restart pending
-      delete mm.modules['@countinghouse/ch-step-x'];
-      // the new version calls no part
-      fs.writeFileSync(path.join(scenario, 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-two', version: '1.0.0', countinghouse: {role: 'scenario'}}));
-      await packsInPlace.reloadPack(mm, {type: 'reload', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
-      assert.deepStrictEqual(unloaded, ['@countinghouse/ch-step-x'], 'unloaded, though out of the module map (its supervisor\'s record cleared)');
-      assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'two', modules: ['@countinghouse/ch-pack-two']}, {pack: packsInPlace.ORPHANED, modules: ['@countinghouse/ch-step-x']}]);
-      sessionPacks.setGlobal('other', false);   // the views rebuilt
-      assert.deepStrictEqual([A, B].map((id) => sessionPacks.listsModule(id, '@countinghouse/ch-step-x')), [false, false], 'A has two on, but not the part it dropped');
-      // the old version again: the part is the pack's once more, and A lists it
-      fs.writeFileSync(path.join(scenario, 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-two', version: '1.0.0', countinghouse: {role: 'scenario', calls: ['ch-step-x/svc.run']}}));
-      await packsInPlace.reloadPack(mm, {type: 'reload', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
-      assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'two', modules: ['@countinghouse/ch-pack-two', '@countinghouse/ch-step-x']}]);
-      sessionPacks.setGlobal('other', false);
-      assert.deepStrictEqual([A, B].map((id) => sessionPacks.listsModule(id, '@countinghouse/ch-step-x')), [true, false]);
-    });
-
-    // the review of F1-3: the unload no longer skips a module out of the module map, so it must skip one another
-    // pack's load is bringing up (mid-spawn, out of the map), but not one another pack's unload is taking out
-    it('an unload leaves a shared module to another pack\'s load under way, and two unloads of a shared module unload it once', async() => {
-      const packsInPlace = require('../../lib/packs-in-place');
-      const unloaded = [];
-      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
-        loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
-        unloadModuleExternal: (name, cb) => { unloaded.push(name); delete mm.modules[name]; setImmediate(cb); }};
-      const scenario = path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two');
-      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
-      // another pack's load holding ch-step-x is under way (its worker out of the module map)
-      mm.packsLoading.set('@countinghouse/ch-pack-other', {pack: 'other', modules: ['@countinghouse/ch-step-x'], unloading: false});
-      delete mm.modules['@countinghouse/ch-step-x'];
-      await packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
-      assert.deepStrictEqual(unloaded, ['@countinghouse/ch-pack-two'], 'ch-step-x left to the load under way');
-      mm.packsLoading.delete('@countinghouse/ch-pack-other');
-      // two packs holding ch-step-x, unloaded at once: it is unloaded, once
-      unloaded.length = 0;
-      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
-      mm.packsInPlace.set('@countinghouse/ch-pack-other', {scenario: '/o', pack: 'other', modules: new Map([['@countinghouse/ch-step-x', {version: '1.0.0'}]]), tools: new Set(), prompts: new Set()});
-      await Promise.all([packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'}),
-        packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-other', pack: 'other'})]);
-      assert.deepStrictEqual(unloaded.sort(), ['@countinghouse/ch-pack-two', '@countinghouse/ch-step-x']);
-      assert.deepStrictEqual(packsInPlace.packRecords(mm), []);
     });
 
     it('B can\'t see A\'s pack between its devices\' registration and the load\'s answer', async() => {
@@ -377,6 +316,103 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}]);
       // and a pack loaded at runtime keeps its prompt names for the next load's check (a fix to fd2bfc62)
       assert.ok(mm.packsInPlace.get('@countinghouse/ch-pack-ci').prompts instanceof Set);
+    });
+
+    // F1-3 (the Fable security pass): a pack turned off, or reloaded without a part, while that part restarts after a
+    // crash. Its unload used to skip a module out of the module map, so the supervisor's record survived and its
+    // restart registered the part with no pack owning it: listed to every session. Over the real supervisor (a fake
+    // clock) and the module manager's real unloadModuleExternal, the rest of the module manager stood in.
+    describe('a part restarting after a crash when its pack goes (F1-3)', () => {
+      const ModuleManager = require('../../lib/module-manager');
+      const ModuleSupervisor = require('../../lib/module-supervisor');
+      const PART = '@countinghouse/ch-step-x';
+      function crashedPartRuntime() {
+        const h = {timers: [], restarts: []};
+        const supervisor = new ModuleSupervisor({now: () => 0,
+          setTimer: (fn) => { const timer = {fn, cancelled: false}; h.timers.push(timer); return timer; },
+          clearTimer: (timer) => { if (timer != null) timer.cancelled = true; },
+          restart: (name, record) => h.restarts.push({name, record})});
+        h.mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+          generations: {}, endedDevices: {}, spawnsPending: {}, lifecycle: {live: () => null}, supervisor,
+          loadModuleFromPath: (p, name, version, cb) => { h.mm.modules[name] = {packageInfo: {name, version}}; supervisor.track(name, {modulePath: p, version}); cb(null); },
+          unloadModule: (name, why, cb) => { delete h.mm.modules[name]; cb(); }});
+        h.crash = () => { delete h.mm.modules[PART]; supervisor.exited(PART, 'exit code 1', {}); };
+        h.backoffEnds = () => h.timers.filter((x) => !x.cancelled).forEach((x) => { x.cancelled = true; x.fn(); });
+        return h;
+      }
+      const scenario = () => path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two');
+      const load = (h) => require('../../lib/packs-in-place').loadPack(h.mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario: scenario(), pack: 'two', global: false}, {});
+
+      it('turned off inside the backoff: the restart never runs, and nothing of the part is left', async() => {
+        const packsInPlace = require('../../lib/packs-in-place');
+        const h = crashedPartRuntime();
+        await load(h);
+        h.crash();
+        assert.strictEqual(h.mm.supervisor.status(PART).state, 'restarting', 'premise: its restart is pending');
+        await packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
+        h.backoffEnds();
+        assert.deepStrictEqual(h.restarts, [], 'its restart never runs');
+        assert.strictEqual(h.mm.supervisor.status(PART), null, 'its supervisor\'s record is gone');
+        assert.deepStrictEqual(packsInPlace.packRecords(h.mm), []);
+      });
+
+      // (that a spawn no longer current terminates its worker rather than registering it is the module
+      // manager's own, sandbox 07: an operator restart racing the supervisor restart leaves one worker)
+      it('turned off while its restart\'s spawn is under way: that spawn\'s record is no longer current', async() => {
+        const packsInPlace = require('../../lib/packs-in-place');
+        const h = crashedPartRuntime();
+        await load(h);
+        h.crash();
+        h.backoffEnds();
+        assert.strictEqual(h.restarts.length, 1, 'premise: the restart\'s spawn started');
+        await packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
+        // lib/module-manager.js: a restart spawn whose record is no longer current terminates its worker
+        assert.strictEqual(h.mm.supervisor.isCurrent(PART, h.restarts[0].record), false);
+      });
+
+      it('reloaded without the part inside the backoff: the restart never runs either', async() => {
+        const packsInPlace = require('../../lib/packs-in-place');
+        const h = crashedPartRuntime();
+        await load(h);
+        h.crash();
+        fs.writeFileSync(path.join(scenario(), 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-two', version: '1.0.0', countinghouse: {role: 'scenario'}}));
+        await packsInPlace.reloadPack(h.mm, {type: 'reload', name: '@countinghouse/ch-pack-two', scenario: scenario(), pack: 'two', global: false}, {});
+        h.backoffEnds();
+        assert.deepStrictEqual(h.restarts, [], 'its restart never runs');
+        assert.strictEqual(h.mm.supervisor.status(PART), null);
+        assert.deepStrictEqual(packsInPlace.packRecords(h.mm), [{pack: 'two', modules: ['@countinghouse/ch-pack-two']}]);
+      });
+
+      it('a part that crashed with no supervisor (sandbox off) is unloaded with no warning: nothing of it is known', async() => {
+        const packsInPlace = require('../../lib/packs-in-place');
+        const LOG = require('../../lib/logger');
+        const h = crashedPartRuntime();
+        h.mm.supervisor = null;
+        await load(h);
+        delete h.mm.modules[PART];
+        const warned = [];
+        const W = LOG.W;
+        LOG.W = (m) => warned.push(m);
+        try {
+          await packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
+        } finally { LOG.W = W; }
+        assert.deepStrictEqual(warned, []);
+      });
+
+      it('pack operations run one at a time: one arriving while another is under way is refused, and changes nothing', async() => {
+        const packsInPlace = require('../../lib/packs-in-place');
+        const h = crashedPartRuntime();
+        await load(h);
+        h.mm.packsLoading.set('@countinghouse/ch-pack-ci', {pack: 'ci', modules: ['@countinghouse/ch-pack-ci']});
+        try {
+          await assert.rejects(packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'}),
+            (e) => e.code === 'CONTROL_FAILED' && /serialised/.test(e.message));
+        } finally { h.mm.packsLoading.delete('@countinghouse/ch-pack-ci'); }
+        assert.deepStrictEqual(packsInPlace.packRecords(h.mm), [{pack: 'two', modules: ['@countinghouse/ch-pack-two', PART]}]);
+        // and nothing left for the next test
+        await packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
+        assert.deepStrictEqual(packsInPlace.packRecords(h.mm), []);
+      });
     });
   });
 });
