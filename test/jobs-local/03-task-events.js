@@ -5,7 +5,8 @@
 // A removal is not one: the gateway tells a cancel. A question's wait that
 // ends is told by task-events itself. Server-free,
 // as jobs-local 01: the runner's surface with a stub cdifInterface and the
-// owner check stubbed.
+// owner check stubbed. The Redis runner's one split (input_required or
+// completed, on its QueueEvents 'completed') with its events stood in for.
 const assert = require('assert');
 const {createRunner} = require('../../lib/job-control-local');
 const {INTERNAL} = require('../../lib/job-control-common');
@@ -151,6 +152,27 @@ describe('jobs-local 03: the local runner tells a 2026-07-28 task\'s changes (M1
       assert.ok(await until(() => seen.includes('t-2 failed')), JSON.stringify(seen));
       await wait(100);
       assert.deepStrictEqual(seen, ['t-2 input_required', 't-2 failed']);
+      assert.strictEqual(taskEvents.pendingWaits(), 0);
+    });
+
+    // The Redis runner's split (lib/job-control.js installJobEventHandlers),
+    // server-free: its QueueEvents and queue stood in for. Only here is the
+    // split seen: the hub builds the view whatever the kind, but the wait's
+    // end is timed only for a task told input_required.
+    it('the Redis runner\'s completed event: a job marked asking is told input_required (its wait timed); unmarked, completed', async () => {
+      const {EventEmitter} = require('events');
+      const JobControl = require('../../lib/job-control');
+      const held = {[tid('7')]: {id: tid('7'), data: {era: 'modern', asks: true, asking: 1}}, [tid('8')]: {id: tid('8'), data: {era: 'modern', asks: true}}};
+      const stub = {queueEvents: new EventEmitter(), jobQueue: {getJob: (id) => Promise.resolve(held[id] || null)}, saveJobInfoToRedis: () => Promise.resolve()};
+      JobControl.installJobEventHandlers.call(stub);
+      records.set(`task-ask:${tid('7')}`, {owner: 'o', expiresAt: Date.now() + 60000});
+      stub.queueEvents.emit('completed', {jobId: tid('7')});
+      assert.ok(await until(() => taskEvents.pendingWaits() === 1), JSON.stringify(seen));
+      stub.queueEvents.emit('completed', {jobId: tid('8')});
+      assert.ok(await until(() => seen.length === 2), JSON.stringify(seen));
+      assert.deepStrictEqual(seen, ['t-7 input_required', 't-8 completed']);
+      assert.strictEqual(taskEvents.pendingWaits(), 1, 'a completed task times nothing');
+      taskEvents.emit(tid('7'), 'cancelled');
       assert.strictEqual(taskEvents.pendingWaits(), 0);
     });
 
