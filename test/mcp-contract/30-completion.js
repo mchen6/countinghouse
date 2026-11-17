@@ -66,6 +66,11 @@ const MODULES = [
     }, required: ['colour']},
     shades: {type: 'object', properties: {shade: {type: 'string', enum: MANY}}}
   }, RESOURCES),
+  moduleOf('tints', [{name: 'tint', arguments: {schema: '/prompts/tint'}, messages: [{role: 'user', text: '{{shade}}'}], completion: {shade: 'svc.completeTint'}}],
+    {tint: {type: 'object', properties: {shade: {type: 'string', enum: ['teal', 'tan']}}}},
+    [[{name: 'completeTint', description: 'completes a tint', input: {schema: '/svc/completeTint/input'}, output: {schema: '/svc/completeTint/output'}},
+      {input: {type: 'object', properties: {argument: {type: 'string'}, value: {type: 'string'}, context: {type: 'object'}}, required: ['argument', 'value']},
+        output: {type: 'object', properties: {values: {type: 'array', items: {type: 'string'}}}, required: ['values']}}]]),
   moduleOf('secret', [{name: 'hidden', arguments: {schema: '/prompts/hidden'}, messages: [{role: 'user', text: '{{code}}'}]}],
     {hidden: {type: 'object', properties: {code: {type: 'string', enum: ['alpha', 'omega']}}}}, [RESOURCES[0]])
 ];
@@ -192,6 +197,29 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
       {ref: {type: 'ref/prompt', name: 'colours_paint'}, argument: {name: 'colour'}}]) {
       const r = await ask('completion/complete', KEY_A, params);
       assert.strictEqual(r.error && r.error.code, -32602, JSON.stringify(params));
+    }
+  });
+
+  // The per-key rate limit is what bounds a completion action (it is not
+  // billed): the completion request itself is gated (resolveGatedIdentity's
+  // rateLimitGate.check, which takes the key's token) before anything is
+  // looked up, so a key at its limit is refused and no module code runs.
+  it('a completion that would run an action, at the key\'s rate limit: refused, and the action never runs', async () => {
+    const ran = [];
+    // the module's action, as the call path reaches it, answering at once
+    ci.invokeDeviceAction = (deviceID, serviceID, actionName, args, session) => { ran.push(actionName); session.callbackWithoutTimer(null, {output: {values: ['teal-blue']}}); };
+    try {
+      limited = true;
+      const refused = await complete(KEY_A, 'tints_tint', 'shade', 't');
+      assert.match(refused.error && refused.error.message, /rate limit/, JSON.stringify(refused));
+      assert.deepStrictEqual(ran, [], 'the action ran at the limit');
+      // and under it, the action is what answers
+      limited = false;
+      const answered = await complete(KEY_A, 'tints_tint', 'shade', 't');
+      assert.deepStrictEqual(ran, ['completeTint']);
+      assert.deepStrictEqual(answered.result && answered.result.completion, {values: ['teal-blue'], total: 1, hasMore: false}, JSON.stringify(answered));
+    } finally {
+      delete ci.invokeDeviceAction;
     }
   });
 
