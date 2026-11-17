@@ -181,6 +181,21 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     }
   });
 
+  it('the legacy era: a failed task\'s statusMessage is its code and the module\'s words, cut and cleaned', async () => {
+    const made = await legacy(KEY_A, 'tools/call', {name: tool('fails'), arguments: {}, task: {}});
+    assert.ok(made.result != null && made.result.task != null, JSON.stringify(made));
+    let got = null;
+    for (let i = 0; i < 200; i++) {
+      got = (await legacy(KEY_A, 'tasks/get', {taskId: made.result.task.taskId})).result;
+      if (got.status !== 'working') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.strictEqual(got.status, 'failed', JSON.stringify(got));
+    assert.match(got.statusMessage, /^M15_FAILED: .*it failed. here. and there and on/, JSON.stringify(got.statusMessage).slice(0, 200));
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(got.statusMessage), JSON.stringify(got.statusMessage));
+    assert.ok(got.statusMessage.length <= 512, `cut: ${got.statusMessage.length}`);
+  });
+
   it('the legacy era is unchanged: params.task, the runner\'s id, tasks/get and tasks/result', async () => {
     const made = await legacy(KEY_A, 'tools/call', {name: tool('slow'), arguments: {ms: 0}, task: {}});
     assert.ok(made.result && made.result.task, JSON.stringify(made));
