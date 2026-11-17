@@ -23,8 +23,9 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - **The lockdown's checks** (the allowed built-ins, a path given to
   `CHUtil.loadFile` or the reduced `module.createRequire`, a granted host
   for `CHUtil.request`) call only functions taken before module code loads,
-  and each guard hands a call on through a `Reflect.apply` taken then; the
-  file broker's checks follow in the next change. The allowed built-ins and
+  and each guard hands a call on through a `Reflect.apply` taken then; so
+  do the file broker's routing, grants and loader hook, and the resolve
+  shim. The allowed built-ins and
   the loopback names are no longer exported as live sets
   (`ALLOWED_BUILTIN_IDS`, a frozen array, takes the place of the first).
 - **A module can no longer patch `path`, `url` or `URL`** under audit or

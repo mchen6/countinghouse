@@ -65,15 +65,15 @@ Each layer below says what it stops and what it does not.
 **Boundary checks run on intrinsics captured before module code loads.**
 Module code shares the worker's realm with the checks that bound it, and can
 replace a method of `String`, `Array`, `Set`, `Map`, `RegExp` or
-`Function`, or a property of a shared built-in module. So the lockdown's
-checks (which built-in may load, whether a path given to `CHUtil.loadFile`
-or the reduced `module.createRequire` is inside the module's root, whether
-a host is granted) call only functions taken when their file loaded, before
-any module code: never a method looked up when the check runs. The file
-broker's own checks and its loader hook (`lib/fs-broker`) follow the same
-rule in the next change; until then a `require` of a file outside the root
-can pass the loader hook with such a method replaced, and the broker's read
-of it answers ENOENT. A guard hands a call on to the original it wraps
+`Function`, or a property of a shared built-in module. So every check
+the worker's boundary relies on (which built-in may load, whether a file
+is inside the module's root, by `require`, `CHUtil.loadFile` or the reduced
+`module.createRequire`, whether an fs call goes to the file broker or a
+granted original, whether a host is granted) calls only functions taken
+when its file loaded, before any module code: never a method looked up when
+the check runs. That holds for the lockdown (`lib/module-lockdown.js`), the
+file broker's worker side and its loader hook (`lib/fs-broker`) and the
+resolve shim. A guard hands a call on to the original it wraps
 through a `Reflect.apply` taken at load, never the original's own `call` or
 `apply`, which a module could have replaced to receive it. Live lists a check
 consults (the allowed built-ins, the loopback names) are private to their
