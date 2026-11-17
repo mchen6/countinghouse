@@ -841,6 +841,83 @@ module has no way to it.
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
 
+### A module's question to the user (`ctx.ask`)
+
+A module's handler may put a question to the user of an MCP client
+(`ctx.ask`; an MCP elicitation, answered on a retry of the call). What
+bounds it:
+
+- **The module does not write what the user reads.** A question is
+  declared in the module's `api.json` (a message and a form) and is
+  checked at load. The handler gives a question's name and the values of
+  its message's placeholders; the main thread composes the dialog,
+  `<module name>: <message>`, with each value cut to 200 characters and
+  cleaned of control and bidi characters. So the sentence was there to
+  review at install, and the user sees which module is asking.
+- **A module asks only its own questions.** The worker sends
+  `{token, name, values}`. The asking module, service and action are the
+  call token's, written by the main thread when it sent the call, never
+  the message's.
+- **The form and the answer are checked off the main thread**, in a
+  validator worker, against the module's own schema. An answer holds the
+  form's own properties and no other. The module gets the answer's content
+  and nothing else: no client name, no session, no user.
+- **Only the main thread says "input required".** The call is answered
+  with a question only from the main thread's own record that the handler
+  asked one. Nothing a module returns or throws can produce that answer.
+- **The retry's `requestState`** is the client's to send, so the
+  attacker's to write. It is `v1.<payload>.<mac>`: an HMAC-SHA256 under a
+  key derived from the identity secret, over the payload and the call it
+  is good for (the caller's opaque id, the session, the method, the tool
+  and a hash of the arguments). It lasts five minutes and is used once.
+  **The payload is readable, not private:** it holds a nonce, the expiry,
+  the question's key and declared name, the round and the earlier rounds'
+  answers, which the client already has. Nothing secret may ever be put
+  in it.
+- **One refusal.** A state that is not this call's, has expired or was
+  already used gets one answer with one text (`ASK_STATE_INVALID`); which
+  it was is in the runtime's own log line only. A store that cannot say
+  whether a state was used is a different, retryable refusal
+  (`ASK_STATE_UNCHECKED`): nothing runs, and it is never taken for a
+  replay or for a first use. A store that timed out may still have
+  recorded the state as used; the same retry is then refused, and the
+  caller calls again to be asked again.
+- **Single use rests on the store.** A used state's nonce is kept until a
+  minute past its expiry: in Redis db 14 under `--store redis` (a
+  `SET NX` with an expiry), in `<storePath>/used-nonces.json` under
+  `--store local`, so a restart inside those minutes still refuses it.
+  For Redis this needs what the rest of the runtime's data needs: **db 14
+  must not evict** (`maxmemory-policy noeviction`, or no `maxmemory`),
+  and a Redis restarted without persistence forgets the nonces of the last
+  six minutes, which makes a state from those minutes usable once more by
+  whoever holds it and the caller's key. Run Redis with AOF or RDB
+  persistence if that matters to you.
+- **A call is asked at most eight rounds in all**, any mix of questions,
+  and three at most of one question; one that three rounds left
+  unanswered stays so for the call. The call's round count rides in the
+  state with what the call has settled, so a module cannot ask a user
+  without end by changing its question's text: each new text is a new
+  question in its first round, and the call's count is what stops it. A
+  pass that ends on a question is not billed, which is why the count is
+  the call's and not only the question's.
+- **A state is used up when its retry is taken**, before the call's own
+  checks: a retry that is then refused (a rate limit, a busy worker) has
+  spent the user's answer, and the next call asks again. Single use is
+  put before that convenience.
+- **Under `--stdio` a restart ends every dialog.** Its one session's id is
+  made at each start, and a state is bound to its session. A shared
+  runtime's session keeps its id across a restart, and HTTP has none, so
+  there a state from before a restart is still good, once.
+- **An answer is not proof of a person.** A client may answer a form by
+  itself. A module's question loosens nothing in the runtime, so the
+  tested-client list that guards the runtime's own confirmations
+  (above) is not applied; a module must never treat an answer as
+  authorization for what the caller's key could not do without it.
+- **`--moduleQuestions off`** turns every module's question off: each
+  `ctx.ask` is then `ASK_UNAVAILABLE`. So is one from a legacy client, a
+  request that declares no form elicitation, HTTP `invoke-action`, a task,
+  and a module reached through another's `ctx.call`.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
