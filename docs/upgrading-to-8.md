@@ -417,6 +417,14 @@ says how to write a module for this.
   - A call is asked at most eight rounds.
   - Other clients are never asked: the module gets `ASK_UNAVAILABLE`, and may
     fall back.
+  - Inside a 2026-07-28 task too, when the request that made it declared
+    form elicitation. The task reads `input_required`, with the form in
+    `inputRequests` and the status message "waiting for an answer". The
+    client answers with `tasks/update`, and the run starts again under the
+    same `taskId`.
+    - A question waits at most an hour; then the task fails `ASK_EXPIRED`.
+    - At most 64 of a key's tasks, and 10,000 in all, wait on a question at
+      once. Past either, a new task's question is `ASK_UNAVAILABLE`.
   - `--moduleQuestions off` turns every question off.
 - **Tasks for 2026-07-28 clients.** A client that declares the
   `io.modelcontextprotocol/tasks` extension gets a task, answered at once,
@@ -431,8 +439,8 @@ says how to write a module for this.
   - A task whose module was unloaded, reloaded or suspended while it ran is
     `completed`, with the isError result the inline call gets. It is
     `failed`, with a JSON-RPC error, only when its run left no answer: past
-    its timeout (`JOB_TIMEOUT`), or with the owner's access refused at the
-    start.
+    its timeout (`JOB_TIMEOUT`), with the owner's access refused at the
+    start, or with its question unanswered for an hour (`ASK_EXPIRED`).
 
   The legacy era's tasks (`params.task`) are unchanged.
 - **Progress for composite calls.** A `tools/call` whose `params._meta`
