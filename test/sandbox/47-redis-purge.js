@@ -69,8 +69,16 @@ describe('sandbox 47: an uninstalled module\'s ctx.redis keys go with it (#164)'
 
   it('an uninstall deletes them: a module loaded again under the name starts with none, and the neighbour keeps its own', async () => {
     await run('a', 'hset', ['h', 'f', 'v']);
+    // R1 (section 4a): its session partitions' keys too, ms:<name>:<id>:*,
+    // never a neighbour's whose name it prefixes (ms:redis-ns-ab:). Written
+    // into the local store's file from here, as another process's keys.
+    const LocalKv = require('../../lib/local-kv');
+    const seed = new LocalKv({storePath: path.join(base, 'store')});
+    const id = 'c'.repeat(32);
+    for (const k of [`ms:redis-ns-a:${id}:k`, `ms:redis-ns-ab:${id}:k`]) await new Promise((resolve, reject) => seed.set(k, '1', (e) => (e ? reject(e) : resolve())));
+    seed.close();
     const body = await unloadThenUninstall({});
-    assert.strictEqual(body.keysDeleted, 2, JSON.stringify(body));
+    assert.strictEqual(body.keysDeleted, 3, `its two m: keys and its one session key, never the neighbour's: ${JSON.stringify(body)}`);
     assert.strictEqual((await run('a', 'get', ['k'])).result, null);
     assert.strictEqual((await run('a', 'hget', ['h', 'f'])).result, null);
     assert.strictEqual((await run('b', 'get', ['k'])).result, 'b-own');
