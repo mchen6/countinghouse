@@ -87,20 +87,22 @@ describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)
     const r = rig();
     r.set('t-1', 'working');
     const l = r.open(['t-1']);
+    // (each with its kind, as task-events tells it: a terminal kind builds
+    // at once even while the window's send is pending)
     r.set('t-1', 'working', {statusMessage: '10%'});
-    r.hub.taskChanged('t-1');
+    r.hub.taskChanged('t-1', 'progress');
     await settle();
     r.set('t-1', 'working', {statusMessage: '50%'});
-    r.hub.taskChanged('t-1');
+    r.hub.taskChanged('t-1', 'progress');
     await settle();
     r.set('t-1', 'completed', {result: {content: []}});
-    r.hub.taskChanged('t-1');
+    r.hub.taskChanged('t-1', 'completed');
     await settle();
     assert.deepStrictEqual(l.sent(), ['t-1 working 10%', 't-1 completed']);
     const built = r.views.length;
     r.advance(5000);
     await tick(1050);
-    r.hub.taskChanged('t-1');
+    r.hub.taskChanged('t-1', 'completed');
     await settle();
     assert.deepStrictEqual(l.sent(), ['t-1 working 10%', 't-1 completed'], 'nothing after');
     assert.strictEqual(r.views.length, built, 'its id left: never built again');
@@ -185,6 +187,42 @@ describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)
     }
   });
 
+  // /code-review medium of T2: a flood of changes is one build at a time
+  it('a flood of changes builds one view at a time, never one per change; while a window\'s send is pending only a terminal kind builds', async () => {
+    const r = rig();
+    r.set('t-1', 'working');
+    const l = r.open(['t-1']);
+    for (let i = 0; i < 100; i++) {
+      r.set('t-1', 'working', {statusMessage: `${i}%`});
+      r.hub.taskChanged('t-1', 'progress');
+    }
+    await settle();
+    assert.ok(r.views.length <= 2, `${r.views.length} builds for 100 changes`);
+    assert.deepStrictEqual(l.sent(), ['t-1 working 99%'], 'the latest, once');
+    r.set('t-1', 'working', {statusMessage: '100%'});
+    r.hub.taskChanged('t-1', 'progress');   // inside the window: its send is timed
+    await settle();
+    const timed = r.views.length;
+    for (let i = 0; i < 50; i++) r.hub.taskChanged('t-1', 'progress');
+    await settle();
+    assert.strictEqual(r.views.length, timed, 'nothing built while the window\'s send is pending');
+    r.set('t-1', 'completed');
+    r.hub.taskChanged('t-1', 'completed');
+    await settle();
+    assert.strictEqual(r.views.length, timed + 1, 'a terminal kind builds at once');
+    assert.deepStrictEqual(l.sent(), ['t-1 working 99%', 't-1 completed']);
+  });
+
+  it('at the listen: a task waiting on its question is sent after the ack; a working one is not', async () => {
+    const r = rig();
+    r.set('t-1', 'input_required', {statusMessage: 'waiting for an answer'});
+    r.set('t-2', 'working');
+    const l = r.open(['t-1', 't-2']);
+    l.opened.start();
+    await settle();
+    assert.deepStrictEqual(l.sent(), ['t-1 input_required waiting for an answer']);
+  });
+
   it('a listen holds at most MAX_TASK_IDS (64): the gateway refuses more, and the hub never holds more', async () => {
     assert.strictEqual(MAX_TASK_IDS, 64);
     const r = rig();
@@ -202,6 +240,11 @@ const V = '2026-07-28';
 const EXT = 'io.modelcontextprotocol/tasks';
 const KEY_A = `test-a-${'a'.repeat(24)}`;
 const KEY_B = `test-b-${'b'.repeat(24)}`;
+// revoked mid-listen by the reload-auth case, and used by it alone
+const KEY_C = `test-c-${'c'.repeat(24)}`;
+const ADMIN = `test-admin-${'d'.repeat(20)}`;
+const KEYS = {[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}, [KEY_C]: {userName: 'c', devices: ['*']},
+  [ADMIN]: {userName: 'admin', devices: ['*'], admin: true}};
 const tool = (a) => `m15_tasks_taskservice_${a}`;
 const META = (ext = true, forms = false) => ({'io.modelcontextprotocol/protocolVersion': V,
   'io.modelcontextprotocol/clientCapabilities': Object.assign(ext ? {extensions: {[EXT]: {}}} : {}, forms ? {elicitation: {form: {}}} : {})});
@@ -221,6 +264,21 @@ function post(port, key, method, params, {ext = true, forms = false} = {}) {
       res.setEncoding('utf8');
       res.on('data', (c) => { raw += c; });
       res.on('end', () => { try { resolve(JSON.parse(raw)); } catch (e) { resolve({raw, status: res.statusCode}); } });
+    });
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+// a POST to another route (an admin's /reload-auth): {status, body}
+function raw(port, key, route, body) {
+  const data = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = http.request({host: '127.0.0.1', port, path: route, method: 'POST', headers: {'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(data), 'X-CH-Key': key}}, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({status: res.statusCode, body: text.slice(0, 500)}));
     });
     req.on('error', reject);
     req.end(data);
@@ -268,12 +326,14 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
   describe(`mcp-contract 37: notifications/tasks end to end (${label})`, function() {
     this.timeout(120000);
     let server = null;
+    let authPath = null;
     let dir = null;
     const streams = [];
     before(async () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-28-'));
       const auth = path.join(dir, 'auth.json');
-      fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}}));
+      authPath = auth;
+      fs.writeFileSync(auth, JSON.stringify(KEYS));
       server = await startServer(port, ['--workerThread', ...extraArgs, '--jobTimeout', '5', '--moduleDataPath', path.join(dir, 'module_data'),
         '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks'),
         '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm22-task-ask')]);
@@ -388,6 +448,40 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       const done = notices(s).find((n) => n.status === 'completed');
       assert.deepStrictEqual(done.result, (await get(KEY_A, t)).result, 'tasks/get\'s own result');
       assert.deepStrictEqual(done.result.structuredContent.answer, {yes: true});
+    });
+
+    it('a task already waiting on its question when the listen opens is sent after the ack, with its form', async () => {
+      assert.ok(await until(async () => {
+        const l = await post(port, KEY_A, 'tools/list', {});
+        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
+      }, 30000), 'the M22 fixture never listed');
+      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it'}}, {forms: true});
+      const t = r.result && r.result.taskId;
+      assert.match(String(t), /^t-/, JSON.stringify(r));
+      assert.ok(await until(async () => (await get(KEY_A, t)).status === 'input_required'), 'it asked');
+      const s = await open(KEY_A, {taskIds: [t]});
+      assert.ok(await until(() => notices(s).length > 0), JSON.stringify(s.events));
+      assert.strictEqual(s.events[0].method, 'notifications/subscriptions/acknowledged', 'the ack first');
+      assert.deepStrictEqual(notices(s).map((n) => n.status), ['input_required']);
+      assert.deepStrictEqual(notices(s)[0].inputRequests, (await get(KEY_A, t)).inputRequests, 'tasks/get\'s own form');
+      const key = Object.keys(notices(s)[0].inputRequests)[0];
+      await post(port, KEY_A, 'tasks/update', {taskId: t, inputResponses: {[key]: {action: 'decline'}}}, {forms: true});
+      assert.ok(await until(() => notices(s).some((n) => n.status === 'completed'), 20000), JSON.stringify(s.events));
+    });
+
+    // /code-review medium of T2: each send resolves the caller again
+    each('a key revoked while it listens (POST /reload-auth) hears nothing more of its task, its result least of all', async () => {
+      const t = await task(KEY_C, 'slow', {ms: 1500});
+      const s = await open(KEY_C, {taskIds: [t]});
+      assert.ok(await until(() => ackOf(s) != null));
+      assert.deepStrictEqual(ackOf(s).params.notifications, {taskIds: [t]});
+      const kept = Object.assign({}, KEYS);
+      delete kept[KEY_C];
+      fs.writeFileSync(authPath, JSON.stringify(kept));
+      const reloaded = await raw(port, ADMIN, '/reload-auth', {});
+      assert.strictEqual(reloaded.status, 200, JSON.stringify(reloaded));
+      await tick(3000);   // past its run's end
+      assert.deepStrictEqual(notices(s), [], JSON.stringify(s.events));
     });
 
     each('a task already completed at the listen is sent once, after the ack', async () => {

@@ -1011,10 +1011,12 @@ unknown id, a malformed id, a legacy task and an expired one, and they
 can't be told apart, so a listen can't be used to learn that another
 tenant's task exists. A change is announced by its id alone. Every
 `notifications/tasks` is built by that same lookup again when it is sent,
-and it is the task exactly as `tasks/get` would answer it. A task the
-caller can no longer read (its job gone, its session ended) is dropped
+with the caller's key resolved again, and it is the task exactly as
+`tasks/get` would answer it. A task the caller can no longer read (its job
+gone, its session ended, its key revoked or no longer an admin's) is dropped
 silently. A working task's notices are coalesced to at most one a second
-per listener and task, and a closed listen frees its timers.
+per listener and task, a flood of changes costs one lookup at a time, and a
+closed listen frees its timers.
 
 ### What the MCP layer serves, and its bounds (MCP completeness)
 

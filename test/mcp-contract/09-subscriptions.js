@@ -339,7 +339,7 @@ describe('subscriptions/listen (#231)', () => {
     let closed = 0;
     // a hub that hands the test the listen's writer
     const hub = {
-      open(o) { opened = o; return {ok: true, close: () => { closed += 1; }}; },
+      open(o) { opened = o; return {ok: true, close: () => { closed += 1; }, start: () => {}}; },
       count: () => 0, endAll() {}, changed() {}, callSucceeded() {}, closeSession() {}
     };
     before((done) => {
