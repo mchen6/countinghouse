@@ -26,6 +26,34 @@ const TIMEOUT_MS = 300;
 const COMPILE_MS = 2000;
 const SERVICE = 'urn:countinghouse-test:serviceID:s';
 
+// ---- TEMPORARY INSTRUMENTATION for #344: remove once its cause is fixed ----
+// CI's runner was lost during this file six times on 2026-11-16 (the mocha
+// process grew to 6-15 GB within 30 s, around "a spilled check whose compile
+// outlasts its deadline"); it never reproduced on the dev VM. On CI only
+// (process.env.CI), it logs one line per case (memory, live validators) and,
+// from a 250 ms watchdog, writes the current case, process.memoryUsage(), the
+// live validator count and every pool's slot states, then exits 1 once RSS
+// passes 3 GB: the next loss is a named red test, not a dead runner. Local
+// runs are unchanged.
+const ML24_GUARD = process.env.CI != null && process.env.CI !== '' && process.env.CI !== 'false';
+const ML24_RSS_LIMIT = 3 * 1024 * 1024 * 1024;
+const ml24Pools = new Set();
+let ml24Case = '(before the first case)';
+let ml24Started = Date.now();
+const ml24Slot = (s) => (s == null ? null : {ready: s.ready, ending: s.ending, draining: s.draining, worker: s.worker != null,
+  current: s.current != null ? `${s.current.kind}/${s.current.phase}` : null, background: s.background.size, limitMb: s.limitMb});
+const ml24Live = () => {
+  let n = 0;
+  for (const p of ml24Pools) for (const s of p.slots.concat(p.spare != null ? [p.spare] : [])) if (s.worker != null && !s.ending) n += 1;
+  return n;
+};
+const ml24Mb = (b) => Math.round(b / (1024 * 1024));
+const ml24Memory = () => {
+  const m = process.memoryUsage();
+  return `rss=${ml24Mb(m.rss)}MB heapUsed=${ml24Mb(m.heapUsed)}MB external=${ml24Mb(m.external)}MB arrayBuffers=${ml24Mb(m.arrayBuffers)}MB`;
+};
+// ---- end of the temporary instrumentation's definitions ----
+
 describe('module-loading 24: the validator pool', function() {
   this.timeout(120000);
   let ValidatorPool = null;
@@ -48,10 +76,34 @@ describe('module-loading 24: the validator pool', function() {
     logE = LOG.E;
     LOG.W = (line) => { warned.push(String(line)); return line; };
     LOG.E = (e) => { errors.push(String(e && e.message)); return e; };
+    if (ML24_GUARD) {
+      // (#344, temporary) every pool this file makes, however it's made
+      const spawn = ValidatorPool.prototype.spawn;
+      ml24Spawn = spawn;
+      ValidatorPool.prototype.spawn = function(...a) { ml24Pools.add(this); return spawn.apply(this, a); };
+      ml24Watch = setInterval(() => {
+        if (process.memoryUsage().rss <= ML24_RSS_LIMIT) return;
+        const pools = [...ml24Pools].filter((p) => !p.closed).map((p) => ({size: p.size, slots: p.slots.map(ml24Slot), spare: ml24Slot(p.spare)}));
+        process.stdout.write(`\n[ml24-mem] RSS over 3 GB during "${ml24Case}" (${Date.now() - ml24Started} ms in): ${ml24Memory()} liveValidators=${ml24Live()} pools=${JSON.stringify(pools)}\n`);
+        process.exit(1);
+      }, 250);
+      ml24Watch.unref();
+    }
     pool = newPool();
     return whenReady(pool);
   });
+  let ml24Spawn = null;
+  let ml24Watch = null;
+  beforeEach(function() {
+    ml24Case = this.currentTest.fullTitle();
+    ml24Started = Date.now();
+  });
+  afterEach(() => {
+    if (ML24_GUARD) process.stdout.write(`[ml24-mem] ${ml24Case}: ${ml24Memory()} liveValidators=${ml24Live()} ms=${Date.now() - ml24Started}\n`);
+  });
   after(() => {
+    if (ml24Watch != null) clearInterval(ml24Watch);
+    if (ml24Spawn != null) ValidatorPool.prototype.spawn = ml24Spawn;
     if (pool != null) pool.close();
     LOG.W = logW;
     LOG.E = logE;
