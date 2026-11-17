@@ -27,11 +27,8 @@ const FIXTURE = path.join(ROOT, 'test', 'fixtures', PROBE);
 const SERVICE = 'urn:countinghouse-test:serviceID:probeService';
 const TAG = '(countinghouse module sandbox)';
 // the fixture's list, read from its file so the two never differ
-const CHANGES = Object.keys((() => {
-  const src = fs.readFileSync(path.join(FIXTURE, 'handlers', 'probeService', 'probe.js'), 'utf8');
-  const block = src.slice(src.indexOf('const CHANGES = {'), src.indexOf('};', src.indexOf('const CHANGES = {')));
-  return Object.fromEntries([...block.matchAll(/^ {2}'([^']+)':/gm)].map((m) => [m[1], 1]));
-})());
+// the fixture's own list of its changes (its CHANGES' keys)
+const CHANGES = require(path.join(FIXTURE, 'handlers', 'probeService', 'probe.js')).CHANGE_NAMES;
 const BLOCKED = Module.builtinModules.filter((b) => !b.startsWith('internal/') && !ALLOWED_BUILTIN_IDS.includes(b.replace(/^node:/, '')));
 // files outside the module's root, distinct for each change (each
 // reported once under audit) and harmless to load: other fixtures' api.json
@@ -56,7 +53,8 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
     let server = null;
     let base = null;
     before(async () => {
-      assert.ok(CHANGES.length >= 20, CHANGES.join(', '));
+      assert.ok(CHANGES.length >= 35, CHANGES.join(', '));
+      assert.ok(CHANGES.includes('Array.prototype index setters') && CHANGES.includes('WeakSet.prototype.has/add'), CHANGES.join(', '));
       assert.ok(OUTSIDE_FILES.length >= CHANGES.length, `${OUTSIDE_FILES.length} files for ${CHANGES.length} changes`);
       base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sandbox-62-'));
       server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode,
@@ -131,6 +129,8 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
           await seen(new RegExp(`${PROBE} violation net (?:${esc(input.host)}:80\\b|invalid )`), 'an ungranted host');
         }
         if (out != null) for (const name of ORIGINALS) assert.ok(!out.handed.includes(name), `the original ${name} was handed to the replaced ${change}: ${shown}`);
+        // no port reaches a setter a module put on a prototype
+        if (out != null) assert.strictEqual(out.portsSeen, 0, `a port was handed to a setter with ${change} in place: ${shown}`);
         // the code of an error the runtime issued is one it issued, never one
         // the module chose (the change offers DEVICE_OFFLINE)
         const issued = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: Object.assign({}, input, {rethrow: true})});
