@@ -21,6 +21,8 @@ const {testPort} = require('../helpers/test-env');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'declares-everything');
+// a module that asks (M13; a scenario, listed by its bare name: probe)
+const ASKS = path.join(ROOT, 'test', 'fixtures', 'asks-questions');
 const KEY = 'stdio-test-key';
 const CORE = require('../fixtures/mcp-schema/2026-07-28/schema.json');
 const META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': {name: 'conformance', version: '0'}};
@@ -32,12 +34,15 @@ const validatorOf = (def) => {
   assert.ok(v != null, `the schema has no $def ${def}`);
   return v;
 };
-// a response, as the schema has it: the envelope, then the result as `def`
-function conforms(response, def) {
+// a response, as the schema has it: the envelope, then the result as `def`;
+// resultType: the kind it must be (a schema alone lets one result shape
+// pass for another: an InputRequiredResult's fields are all optional)
+function conforms(response, def, resultType = 'complete') {
   const envelope = validatorOf('JSONRPCResultResponse');
   assert.ok(envelope(response), `not a JSONRPCResultResponse: ${ajv.errorsText(envelope.errors)}\n${JSON.stringify(response).slice(0, 800)}`);
   const v = validatorOf(def);
   assert.ok(v(response.result), `not a ${def}: ${ajv.errorsText(v.errors)}\n${JSON.stringify(response.result).slice(0, 1500)}`);
+  if (resultType != null) assert.strictEqual(response.result.resultType, resultType, JSON.stringify(response.result).slice(0, 800));
   return response.result;
 }
 function conformsAsError(response) {
@@ -71,11 +76,11 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
     fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'stdio', devices: ['*']}}));
     const pre = path.join(ROOT, 'pre-installed-packages');
     const modules = fs.readdirSync(pre).filter((d) => fs.statSync(path.join(pre, d)).isDirectory()).flatMap((d) => ['--loadModule', path.join(pre, d)]);
-    io = startStdio(['--workerThread', ...modules, '--loadModule', FIXTURE, '--authConfigPath', auth, '--listPageSize', '10',
+    io = startStdio(['--workerThread', ...modules, '--loadModule', FIXTURE, '--loadModule', ASKS, '--authConfigPath', auth, '--listPageSize', '10',
       '--moduleDataPath', path.join(home, 'module_data'), '--redisUrl', `redis://127.0.0.1:${testPort(9756)}`], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     for (let i = 0; i < 120; i++) {
       const tools = await allTools().catch(() => []);
-      if (tools.some((t) => /notesservice_savenote$/.test(t.name))) return;
+      if (tools.some((t) => /notesservice_savenote$/.test(t.name)) && tools.some((t) => t.name === 'probe')) return;
       await new Promise((r) => setTimeout(r, 500));
     }
     throw new Error(`the module never listed; stderr:\n${withoutRedisNoise(io.err)}`);
@@ -140,8 +145,9 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
       const save = tools.find((t) => /notesservice_savenote$/.test(t.name));
       conforms(await ask('tools/call', {name: save.name, arguments: {id: 'c35', text: 'a note'}}), 'CallToolResult');
       conforms(await ask('tools/call', {name: render.name, arguments: {id: 'c35'}}), 'CallToolResult');
-      // saving over it asks first
-      conforms(await ask('tools/call', {name: save.name, arguments: {id: 'c35', text: 'again'}}, {elicitation: {form: {}}}), 'InputRequiredResult');
+      // a module that asks, with form elicitation declared
+      const asked = conforms(await ask('tools/call', {name: 'probe', arguments: {what: 'it'}}, {elicitation: {form: {}}}), 'InputRequiredResult', 'input_required');
+      assert.strictEqual(Object.keys(asked.inputRequests).length, 1, JSON.stringify(asked));
       conformsAsError(await ask('tools/call', {name: 'no_such_tool', arguments: {}}));
     });
   });
