@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Matt's latency gate for the shared runtime (2026-11-15), measured end to
+// The maintainer's latency gate for the shared runtime (2026-11-15), measured end to
 // end through the real Rust shim:
 //   N = 1:  a warm shared call is at most 2 ms slower than a separate server;
 //   N >= 2: a warm shared call is no slower than separate servers.

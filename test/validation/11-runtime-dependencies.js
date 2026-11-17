@@ -67,7 +67,7 @@ describe('validation 11: the shipped runtime requires only builtins and its own 
     assert.ok(SPECIFIERS.some((re) => [...text.matchAll(re)].some((m) => m[2] === 'postman-request')));
   });
 
-  // SOAP support is retired (Matt, 2026-11-13): no dependency, no source that
+  // SOAP support is retired (maintainer's decision, 2026-11-13): no dependency, no source that
   // loads it, and no CHUtil.createSOAPClient.
   it('soap is gone: in no dependency field, loaded by no source, and CHUtil has no createSOAPClient', function() {
     // a child that requires countinghouse-util: its own 30 s bound, not

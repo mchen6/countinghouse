@@ -1,7 +1,7 @@
 'use strict';
 // B2 Task 5b (docs/superpowers/plans/2026-11-15-shared-runtime-b2-session-settings.md;
-// Matt, 2026-11-14), server-free: in one session of a shared runtime the
-// user may ask to change one of the two caps for ALL sessions (the call
+// the maintainer's decision, 2026-11-14), server-free: in one session of a
+// shared runtime the user may ask to change one of the two caps for ALL sessions (the call
 // says scope: 'all-sessions'). It is then a global change, as a terminal
 // change is: settings.json is written and every live session is told. A
 // tightening needs no form; a loosening always needs one, which names all

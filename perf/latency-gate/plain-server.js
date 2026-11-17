@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// The "separate server" of Matt's latency gate (perf/latency-gate/README.md):
+// The "separate server" of the maintainer's latency gate (perf/latency-gate/README.md):
 // the MCP SDK's own Server over stdio with the same tool, the same work and
 // the same output as perf-time's get_current_time.
 const path = require('path');
