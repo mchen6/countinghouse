@@ -23,6 +23,12 @@ const {NAME, RESET, tick, until, perSession, runtime, secretOf, request, texts, 
 const TWO = 'ps-two';
 const RESET_TWO = `${TWO}'s in-memory state was reset; its files were kept`;
 const SESSIONS = ['A', 'B', 'C'];
+// a JSON file of a generated module, changed in place by fn
+function editJson(file, fn) {
+  const v = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fn(v);
+  fs.writeFileSync(file, JSON.stringify(v));
+}
 
 // per-session-module, a scenario under <home>/pack/node_modules, with hopTwo:
 // one touch of ps-two, its output (or its error's code)
@@ -30,19 +36,12 @@ const SESSIONS = ['A', 'B', 'C'];
 function one(home, {hop = true, ...opts} = {}) {
   const dir = perSession(home, Object.assign({dir: path.join(home, 'pack', 'node_modules', NAME)}, opts));
   if (!hop) return dir;
-  const pkgFile = path.join(dir, 'package.json');
-  const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
-  pkg.countinghouse = Object.assign({}, pkg.countinghouse, {calls: [`${TWO}/stateService.touchTwo`]});
-  fs.writeFileSync(pkgFile, JSON.stringify(pkg));
-  const apiFile = path.join(dir, 'api.json');
-  const api = JSON.parse(fs.readFileSync(apiFile, 'utf8'));
-  api.device.serviceList['urn:countinghouse-test:serviceID:stateService'].actionList.push({name: 'hopTwo', description: 'One touch of ps-two, in this session.',
-    input: {schema: '/stateService/hopTwo/input'}, output: {schema: '/stateService/hopTwo/output'}});
-  fs.writeFileSync(apiFile, JSON.stringify(api));
-  const schemaFile = path.join(dir, 'schema.json');
-  const schema = JSON.parse(fs.readFileSync(schemaFile, 'utf8'));
-  schema.stateService.hopTwo = {input: {type: 'object'}, output: {type: 'object'}};
-  fs.writeFileSync(schemaFile, JSON.stringify(schema));
+  editJson(path.join(dir, 'package.json'), (pkg) => { pkg.countinghouse = Object.assign({}, pkg.countinghouse, {calls: [`${TWO}/stateService.touchTwo`]}); });
+  editJson(path.join(dir, 'api.json'), (api) => {
+    api.device.serviceList['urn:countinghouse-test:serviceID:stateService'].actionList.push({name: 'hopTwo', description: 'One touch of ps-two, in this session.',
+      input: {schema: '/stateService/hopTwo/input'}, output: {schema: '/stateService/hopTwo/output'}});
+  });
+  editJson(path.join(dir, 'schema.json'), (schema) => { schema.stateService.hopTwo = {input: {type: 'object'}, output: {type: 'object'}}; });
   fs.writeFileSync(path.join(dir, 'handlers', 'stateService', 'hopTwo.js'), `module.exports = async (input, ctx) => {
   const r = await ctx.call('${TWO}/stateService.touchTwo', {}).then((x) => x, (e) => ({code: (e && e.code) || null, message: String(e && e.message).slice(0, 200)}));
   return {output: (r != null && r.output !== undefined) ? r.output : r};
@@ -53,10 +52,7 @@ function one(home, {hop = true, ...opts} = {}) {
 // action and prompt name suffixed Two
 function two(home, opts = {}) {
   const dir = perSession(home, Object.assign({dir: path.join(home, 'pack', 'node_modules', TWO)}, opts));
-  const pkgFile = path.join(dir, 'package.json');
-  const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
-  pkg.name = TWO;
-  fs.writeFileSync(pkgFile, JSON.stringify(pkg));
+  editJson(path.join(dir, 'package.json'), (pkg) => { pkg.name = TWO; });
   const apiFile = path.join(dir, 'api.json');
   const api = JSON.parse(fs.readFileSync(apiFile, 'utf8'));
   api.device.friendlyName = TWO;
@@ -121,8 +117,8 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
     return s;
   }
   // a module's session workers, by the runtime's own lines (each names its module)
-  const workers = (name) => ({up: (r.log().match(new RegExp(`module: ${name}: a session's worker is up`, 'g')) || []).length,
-    ended: (r.log().match(new RegExp(`module: ${name}: a session's worker ended`, 'g')) || []).length});
+  const lines = (name, what) => (r.log().match(new RegExp(`module: ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: a session's worker ${what}`, 'g')) || []).length;
+  const workers = (name) => ({up: lines(name, 'is up'), ended: lines(name, 'ended')});
   const partition = (name, sid) => path.join(home, 'module_data', name, 'sessions', sid);
   const fileCount = (name, sid) => fs.readFileSync(path.join(partition(name, sid), 'data', 'count'), 'utf8');
 
@@ -155,7 +151,7 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
     // and at once from all three: each still its own
     const all = await Promise.all(SESSIONS.map((who) => s.call(who, 'one', 'hopTwo')));
     assert.deepStrictEqual(all.map((a) => outOf(a).file), [4, 5, 3]);
-    assert.strictEqual(workers(TWO).up, 3, 'no ps-two worker beyond the three sessions\' own');
+    assert.deepStrictEqual([workers(NAME), workers(TWO)], [{up: 3, ended: 0}, {up: 3, ended: 0}], 'one worker of each module per session, none more');
   });
 
   it('--maxSessionWorkers counts both modules\' workers together: a ps-two spawn evicts an idle per-session-module worker', async() => {
@@ -167,26 +163,35 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
     outOf(await s.call('B', 'two', 'touch'));
     assert.deepStrictEqual([workers(NAME).up, workers(TWO).up], [2, 2]);
     assert.deepStrictEqual(outOf(await s.call('C', 'two', 'touch')), {file: 1, store: 1, memory: 1}, 'a fifth worker: one was evicted for it');
-    await until(async() => workers(NAME).ended === 1, 20000);
+    assert.ok(await until(async() => workers(NAME).ended === 1, 20000), r.log().slice(-2000));
     assert.deepStrictEqual([workers(NAME), workers(TWO)], [{up: 2, ended: 1}, {up: 3, ended: 0}], 'the idle per-session-module worker went for a ps-two one');
-    // A is told on its next per-session-module result; its files and store kept
+    // A is told on its next per-session-module result; its files and store
+    // kept. Its spawn evicts the least recently used idle one: A's ps-two
     const again = await s.call('A', 'one', 'touch');
     assert.deepStrictEqual(outOf(again), {file: 2, store: 2, memory: 1});
     assert.ok(texts(again).includes(RESET), texts(again));
+    assert.ok(await until(async() => workers(TWO).ended === 1, 20000), r.log().slice(-2000));
+    // and ps-two tells A the same way, on its next ps-two result
+    const twoAgain = await s.call('A', 'two', 'touch');
+    assert.deepStrictEqual(outOf(twoAgain), {file: 2, store: 2, memory: 1});
+    assert.ok(texts(twoAgain).includes(RESET_TWO), texts(twoAgain));
   });
 
   it('at the cap with every slot in a call, of either module, the next session\'s call is SESSION_WORKERS_BUSY; the held calls complete', async() => {
-    const s = await three(['--maxSessionWorkers', '2']);
-    const heldOne = s.call('A', 'one', 'hold', {ms: 3000});
-    const heldTwo = s.call('B', 'two', 'hold', {ms: 3000});
-    await until(async() => workers(NAME).up === 1 && workers(TWO).up === 1, 20000);
-    await tick(300);
+    // (no hop here: a module that declares calls has its verdict sent after
+    // its worker is up and before its first call, a window this case's wait
+    // would have to cover too)
+    const s = await three(['--maxSessionWorkers', '2'], {hop: false});
+    const heldOne = s.call('A', 'one', 'hold', {ms: 5000});
+    const heldTwo = s.call('B', 'two', 'hold', {ms: 5000});
+    assert.ok(await until(async() => workers(NAME).up === 1 && workers(TWO).up === 1, 20000), r.log().slice(-2000));
+    await tick(1000);
     for (const mod of ['one', 'two']) {
       const busy = await s.call('C', mod, 'touch');
       assert.ok(/SESSION_WORKERS_BUSY|per-session module workers are busy/.test(JSON.stringify(busy)), JSON.stringify(busy).slice(0, 800));
     }
-    assert.deepStrictEqual(outOf(await heldOne), {held: 3000});
-    assert.deepStrictEqual(outOf(await heldTwo), {held: 3000});
+    assert.deepStrictEqual(outOf(await heldOne), {held: 5000});
+    assert.deepStrictEqual(outOf(await heldTwo), {held: 5000});
     assert.deepStrictEqual([workers(NAME).ended, workers(TWO).ended], [0, 0], 'no worker taken mid-call');
   });
 
@@ -197,7 +202,8 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
       outOf(await s.call(who, 'two', 'touch'));
     }
     s.B.c.send('C', {op: 'bye'});
-    await until(async() => !fs.existsSync(partition(NAME, s.B.id)) && !fs.existsSync(partition(TWO, s.B.id)), 15000);
+    // (the worker lines come through the child's pipe: waited for too)
+    await until(async() => !fs.existsSync(partition(NAME, s.B.id)) && !fs.existsSync(partition(TWO, s.B.id)) && workers(NAME).ended === 1 && workers(TWO).ended === 1, 15000);
     assert.ok(!fs.existsSync(partition(NAME, s.B.id)) && !fs.existsSync(partition(TWO, s.B.id)), 'B\'s files of both modules removed');
     assert.deepStrictEqual([workers(NAME).ended, workers(TWO).ended], [1, 1], 'B\'s two workers, and only they, ended');
     for (const who of ['A', 'C']) {
@@ -219,12 +225,12 @@ describe('session-runtime 13: two per-session modules, three sessions (R1)', fun
       edit: (src) => src.replace('return {output: {file: n, store: stored, memory}};', 'return {output: {file: n, store: stored, memory: memory + 1000}};')});
     const answer = await r.control({type: 'reload', name: NAME, scenario: v2, pack: NAME, global: true});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
-    await until(async() => workers(NAME).ended === 3, 20000);
+    assert.ok(await until(async() => workers(NAME).ended === 3, 20000), r.log().slice(-2000));
     for (const who of SESSIONS) {
       assert.deepStrictEqual(outOf(await s.call(who, 'one', 'touch')), {file: 2, store: 2, memory: 1001}, `${who}: the new code, its files kept`);
       assert.deepStrictEqual(outOf(await s.call(who, 'two', 'touch')), {file: 2, store: 2, memory: 2}, `${who}'s ${TWO} ran on`);
     }
-    assert.deepStrictEqual(workers(TWO), {up: 3, ended: 0});
+    assert.deepStrictEqual([workers(NAME), workers(TWO)], [{up: 6, ended: 3}, {up: 3, ended: 0}], 'its three stopped and three new ones; ps-two\'s untouched');
   });
 
   // Issue #391 (C's packs queue): a reload of a pack whose new version brings
