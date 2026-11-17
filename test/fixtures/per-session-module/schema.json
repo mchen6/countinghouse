@@ -71,6 +71,23 @@
       "output": {
         "type": "string"
       }
+    },
+    "flood": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "limited": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      }
     }
   },
   "prompts": {

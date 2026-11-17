@@ -40,6 +40,8 @@ function harness({max = 2, delay = 0} = {}) {
   return {sw, get, spawned, ended, told, busySet, pendingSpawns, tick: (ms) => { clock += ms; }};
 }
 
+const tick = () => new Promise((r) => setImmediate(r));
+
 describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
   it('one worker per (module, session), spawned once for calls that arrive together', async () => {
     const h = harness({max: 4});
@@ -84,6 +86,7 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
   it('a spawn under way holds its slot', async () => {
     const h = harness({max: 1, delay: 'manual'});
     const first = h.get('m', A);
+    await tick();
     const b = await h.get('m', B);
     assert.strictEqual(b.err.code, 'SESSION_WORKERS_BUSY', 'nothing idle to evict while A comes up');
     h.pendingSpawns.shift()();
@@ -105,7 +108,7 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
     const b = (await h.get('m', B)).wm;
     for (let i = 0; i < 3; i++) (await h.get('m', A)).wm.emit('exit');
     const refused = await h.get('m', A);
-    assert.strictEqual(refused.err.code, 'MODULE_SUSPENDED');
+    assert.strictEqual(refused.err.code, 'MODULE_SESSION_PAUSED');
     assert.strictEqual((await h.get('m', B)).wm, b, 'B runs on, the same worker');
     assert.ifError((await h.get('other', A)).err, 'another module in the same session runs');
     h.tick(10 * 60 * 1000 + 1);
@@ -115,10 +118,12 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
   it('stopModule: every session\'s worker of the module stops; one spawning meanwhile is ended once up; none left', async () => {
     const h = harness({max: 4, delay: 'manual'});
     const pa = h.get('m', A);
+    await tick();
     h.pendingSpawns.shift()();
     await pa;
     const pb = h.get('m', B);           // under way when the unload begins
     const pOther = h.get('keep', A);
+    await tick();
     h.pendingSpawns.pop()();            // 'keep' comes up; B's is still pending
     const stopping = h.sw.stopModule('m');
     assert.strictEqual((await h.get('m', C)).err.code, 'MODULE_UNLOADED', 'no new spawn while it stops');
@@ -130,6 +135,57 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
     assert.ok(h.ended.some((wm) => wm.sid === B), 'the late worker was ended');
     assert.ifError((await pOther).err);
     assert.strictEqual(h.sw.workersOf('keep').length, 1, 'another module untouched');
+  });
+
+  // the review of #356, 3: a worker still spawning when a stop begins keeps
+  // its slot, and the stop settles only once that worker has ended
+  it('stopModule with a spawn pending settles only once that worker has come up and ended; the cap is never exceeded meanwhile', async () => {
+    const h = harness({max: 2, delay: 'manual'});
+    const pa = h.get('m', A);                 // spawning
+    const pOther = h.get('o', B);             // spawning
+    await tick();                             // both spawns under way
+    let settled = false;
+    const stopping = h.sw.stopModule('m').then(() => { settled = true; });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.strictEqual(settled, false, 'not while A\'s worker is still coming up');
+    assert.strictEqual(h.sw.size(), 2, 'A\'s slot still counted');
+    const pc = h.get('n', C);                 // over the cap: nothing idle to take
+    assert.strictEqual((await pc).err.code, 'SESSION_WORKERS_BUSY');
+    h.pendingSpawns.shift()();                // A's worker comes up: ended at once
+    assert.strictEqual((await pa).err.code, 'MODULE_UNLOADED', 'given up on: MODULE_UNLOADED, never an uncoded error');
+    await stopping;
+    assert.ok(settled);
+    assert.ok(h.ended.some((wm) => wm.sid === A), 'A\'s worker ended before the stop settled');
+    h.pendingSpawns.shift()();
+    assert.ifError((await pOther).err);
+    assert.strictEqual(h.sw.size(), 1);
+  });
+
+  it('at the cap the new worker starts only once the evicted one has ended: never more alive than the cap', async () => {
+    let alive = 0;
+    let most = 0;
+    const endWait = [];
+    const sw = sessionWorkers.create({
+      spawn: (name, sid, wanted, cb) => setImmediate(() => { alive++; most = Math.max(most, alive); const wm = new EventEmitter(); wm.sid = sid; cb(null, wm); }),
+      end: (wm) => new Promise((r) => endWait.push(() => { alive--; wm.emit('exit'); r(); })),
+      onExit: (wm, fn) => wm.once('exit', fn), busy: () => false, announce: () => {}, max: () => 1
+    });
+    const get = (n, sid) => new Promise((resolve) => sw.get(n, sid, (err, wm) => resolve({err, wm})));
+    await get('m', A);
+    const pb = get('m', B);                   // evicts A; B waits for A's end
+    await new Promise((r) => setTimeout(r, 20));
+    assert.strictEqual(alive, 1, 'B not started while A is still ending');
+    endWait.shift()();
+    assert.ifError((await pb).err);
+    assert.strictEqual(most, 1, 'never more than the cap alive');
+  });
+
+  it('a pause (the supervisor\'s rule) says MODULE_SESSION_PAUSED, with its window', async () => {
+    const h = harness({max: 4});
+    for (let i = 0; i < 3; i++) (await h.get('m', A)).wm.emit('exit');
+    const refused = await h.get('m', A);
+    assert.strictEqual(refused.err.code, 'MODULE_SESSION_PAUSED');
+    assert.match(refused.err.message, /paused for this session; it starts again after 10 minutes/);
   });
 
   it('stopSession stops that session\'s workers only, and forgets its exits', async () => {
@@ -197,5 +253,33 @@ describe('sessions 30: every running worker is told the live options', () => {
     for (const w of [a, b]) w.sendMessageToWorker = (msg) => told.push([w.sid, msg.command]);
     require('../../lib/settings-tool').broadcastLiveOptions(mm.liveWorkers());
     assert.deepStrictEqual(told, [[A, 'live-options'], [B, 'live-options']]);
+  });
+});
+
+// the review of #356, 3: an uninstall waits for every session worker of
+// the module, tracked under name\0sid (lib/module-lifecycle.js liveUnder,
+// settledUnder)
+describe('sessions 30: an uninstall sees every session worker of the module', () => {
+  it('liveUnder finds one still running; settledUnder waits for each one\'s broker to settle', async () => {
+    const {ModuleLifecycle} = require('../../lib/module-lifecycle');
+    const lc = new ModuleLifecycle();
+    let exitA;
+    let settleA;
+    let settleB;
+    lc.track(`m\0${A}`, {exited: new Promise((r) => { exitA = r; }), settled: new Promise((r) => { settleA = r; }), terminate: () => {}});
+    lc.track(`m\0${B}`, {exited: Promise.resolve(), settled: new Promise((r) => { settleB = r; }), terminate: () => {}});
+    lc.track(`mm\0${C}`, {exited: new Promise(() => {}), settled: new Promise(() => {}), terminate: () => {}});
+    await tick();
+    assert.ok(lc.liveUnder('m\0') != null, 'A\'s is running');
+    exitA();
+    await tick();
+    assert.strictEqual(lc.liveUnder('m\0'), null, 'none running; mm\'s is another module\'s');
+    let settled = false;
+    const waiting = lc.settledUnder('m\0').then(() => { settled = true; });
+    settleA();
+    await tick();
+    assert.strictEqual(settled, false, 'B\'s broker still settling');
+    settleB();
+    await waiting;
   });
 });

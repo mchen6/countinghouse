@@ -158,6 +158,61 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     assert.deepStrictEqual(counts(r), {up: 2, ended: 0}, 'no worker of its own for a read');
   });
 
+  // the review of #356, 1: a per-session module is held to the message rate
+  // as any module is (declaring "per-session" escapes nothing)
+  it('--moduleMessageRate holds a session\'s worker too: a flood from it is RATE_LIMITED', async() => {
+    const s = await twoSessions(['--moduleMessageRate', '50']);
+    const out = outOf(await s.call('A', 'flood'));
+    assert.strictEqual(out.total, 500);
+    assert.ok(out.limited > 0, `limited ${out.limited} of 500`);
+  });
+
+  // the review of #356, 2: a session's spawn registers no remote, so it
+  // can't close another session's remote clients, and a failed one can't
+  // unregister the module's remotes for every session
+  it('remotes: a remote call in flight in A survives B\'s first call; a session spawn that fails leaves the module\'s remotes in place', async() => {
+    const {startRemoteServer} = require('../helpers/remote-mcp-server');
+    const {testPort} = require('../helpers/test-env');
+    const port = testPort(9693);
+    const remote = await startRemoteServer(port);
+    try {
+      const dir = path.join(home, 'pack', 'remote-probe');
+      fs.cpSync(path.join(__dirname, '..', 'fixtures', 'remote-probe'), dir, {recursive: true});
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+      pkg.countinghouse = Object.assign({}, pkg.countinghouse, {role: 'scenario', state: 'per-session'});
+      pkg.countinghouse.remotes[0].url = `http://127.0.0.1:${port}/mcp`;
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+      const allowance = path.join(home, 'remote-credentials.json');
+      fs.writeFileSync(allowance, JSON.stringify({[`http://127.0.0.1:${port}`]: ['CH_TEST_REMOTE_TOKEN']}));
+      process.env.CH_TEST_REMOTE_TOKEN = 'per-session-remote-token';
+      let s;
+      try {
+        s = await twoSessions(['--debug', '--remoteCredentials', allowance], [dir], ['calltool']);
+      } finally {
+        delete process.env.CH_TEST_REMOTE_TOKEN;
+      }
+      const call = (who, tool) => request(s[who].c, 'tools/call', {name: s.tool('calltool'), arguments: {tool, args: {text: who}}});
+      // A's call held at the remote (3 s) while B's first call spawns B's worker
+      const slow = call('A', 'slow');
+      await until(async() => counts(r).up === 1, 20000);
+      await tick(300);
+      const b = outOf(await call('B', 'echo_text'));
+      assert.ok(b.result != null, `B's remote call: ${JSON.stringify(b)}`);
+      const a = outOf(await slow);
+      assert.ok(a.result != null, `A's call in flight survived B's spawn: ${JSON.stringify(a)}`);
+      // a third session whose spawn fails (its partition's place is a file)
+      const c = await shim.session(r.socket, secretOf(r));
+      fs.mkdirSync(path.join(home, 'module_data', 'remote-probe', 'sessions'), {recursive: true});
+      fs.writeFileSync(path.join(home, 'module_data', 'remote-probe', 'sessions', c.welcome.session), 'not a directory');
+      const failed = await request(c.c, 'tools/call', {name: s.tool('calltool'), arguments: {tool: 'echo_text', args: {text: 'C'}}});
+      assert.ok(failed.result == null || failed.result.isError === true || outOf(failed).result == null, JSON.stringify(failed).slice(0, 500));
+      const after = outOf(await call('A', 'echo_text'));
+      assert.ok(after.result != null, `the module's remotes are still registered after a failed session spawn: ${JSON.stringify(after)}`);
+    } finally {
+      await remote.close();
+    }
+  });
+
   it('its prompt: listed, rendered and completed from the main thread\'s copy of its spec, with no worker; never a TypeError', async() => {
     const s = await twoSessions();
     const list = await request(s.A.c, 'prompts/list');
