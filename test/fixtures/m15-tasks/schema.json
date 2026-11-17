@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "taskService": {
+    "slow": {"input": {"type": "object", "properties": {"ms": {"type": "integer", "minimum": 0, "maximum": 10000}}},
+             "output": {"type": "object", "properties": {"done": {"type": "boolean"}}, "required": ["done"]}},
+    "scalar": {"input": {"type": "object"}, "output": {"type": "string"}},
+    "fails": {"input": {"type": "object"}, "output": {"type": "object"}},
+    "quick": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"quick": {"type": "boolean"}}}}
+  }
+}
