@@ -117,6 +117,12 @@ if (options.listPageSizeInvalid != null) {
     JSON.stringify(String(options.listPageSizeInvalid.value)) + ')');
   process.exit(2);
 }
+// R1: the per-session workers' cap.
+if (options.maxSessionWorkersInvalid != null) {
+  console.error('--' + options.maxSessionWorkersInvalid.name + ' must be ' + options.maxSessionWorkersInvalid.what + ' (got ' +
+    JSON.stringify(String(options.maxSessionWorkersInvalid.value)) + ')');
+  process.exit(2);
+}
 // Packs in place (part 2): the control channel exists only between ch-local
 // start and the runtime it spawned, in the single-identity profile, over an
 // IPC fd. --hardened relaunches this process as a child, which the channel
