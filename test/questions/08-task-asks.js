@@ -403,5 +403,33 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       assert.strictEqual(await runner.rerunTask(t), false);
       runner.close();
     });
+
+    it('a session that ends while its task waits on a question takes the record with it (B5 Task 4\'s cancel)', async () => {
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asking(extraArgs.ask);
+          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+        }};
+      const runner = createRunner({jobTimeoutMs: 0});
+      runner.authorizeRun = () => Promise.resolve();
+      runner.initJobProcess(ci);
+      runner.setAskHooks({
+        before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-e', shownAs: 'm'}),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-e', session: run.session, ofAsker}),
+        settled: (data, taskId) => taskAsks.remove(taskId),
+        holdMs: () => 60000
+      });
+      const t = id();
+      made.add(t);
+      const added = await new Promise((resolve) => runner.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+      assert.ifError(added.err);
+      assert.ok(await until(async () => (await taskAsks.get(t)) != null && (await taskAsks.get(t)).pending != null), 'asked');
+      assert.ok(await until(() => new Promise((resolve) => runner.getJob(INTERNAL, t, (err, r) => resolve(r != null && r.job.data.asking === 1)))), 'held');
+      assert.deepStrictEqual(runner.cancelSession(SESSION), {removed: 1, finishing: 0});
+      assert.ok(await until(async () => (await taskAsks.get(t)) == null), 'the record went with the session');
+      // and its slot: three more of that owner's may wait (the cap is 3)
+      for (const m of [id(), id(), id()]) assert.ok((await ask(m, {owner: 'owner-e'})).asked != null);
+      runner.close();
+    });
   });
 });
