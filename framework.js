@@ -137,6 +137,16 @@ if (options.controlChannel != null) {
     process.exit(2);
   }
 }
+// --settingsFile names the file countinghouse_settings changes, and the tool
+// is served only in the single-identity profile (ch-local start): anywhere
+// else the flag would half-apply (its options.settingsTool on, the tool not
+// served, so a size cap's hint would name a tool that is not there).
+// Refused as --controlChannel and --sessionSocket are.
+if (options.settingsFile != null && options.singleIdentity !== true) {
+  console.error('--settingsFile is only for the single-identity profile (ch-local start), where countinghouse_settings is served (got ' +
+    JSON.stringify(String(options.settingsFile)) + ')');
+  process.exit(2);
+}
 // --remoteOriginMap moves where a credential goes, so it is honoured only
 // with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a
 // module never sees: every COUNTINGHOUSE_* is withheld), checked whole here,

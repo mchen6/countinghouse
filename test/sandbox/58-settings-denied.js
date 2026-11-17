@@ -15,26 +15,28 @@
 //   - the home and the directories above it can't be renamed or removed.
 // Off decides nothing; it is not run here.
 //
-// Ports 9794 (audit) and 9795 (enforce), in B's block (test/ports.md).
+// In the single-identity profile, over stdio, as ch-local runs it:
+// --settingsFile is refused anywhere else (framework.js), so the module is a
+// scenario (the profile lists scenarios only, by their bare action names).
 const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
-const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {ROOT, waitFor} = require('../helpers/sandbox-server');
+const {startStdio, INITIALIZE} = require('../helpers/stdio-client');
 const {toolOutput} = require('../helpers/tool-result');
 
-const ADMIN   = 'settings-denied-admin-key';
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'deny-probe');
 const NAME    = 'deny-probe';
-const tool    = (a) => `deny_probe_probeservice_${a.toLowerCase()}`;
+// a scenario's tools are listed under their bare action names
+const tool    = (a) => a;
 
 // a home laid out as ch-local lays it out (ch-local's lib/home.js)
 function world(tag) {
   const base = fs.mkdtempSync(path.join(os.homedir(), `.ch-home-denied-${tag}-`));
   const home = path.join(base, 'home');
   const at = (...p) => path.join(home, ...p);
-  const w = {base, home, rw: path.join(base, 'rw'), authPath: path.join(base, 'auth.json'),
+  const w = {base, home, rw: path.join(base, 'rw'),
     settings: at('settings.json'), history: at('history.jsonl'), lock: at('settings.lock'), temp: at('settings.json.123.abcd.tmp'),
     secret: at('run', 'daemon', 'secret'), launcher: at('bin', 'ch-local.js'), packs: at('packs.json'),
     // the tokens ch-local credentials add stores (ch-local's credential store)
@@ -57,7 +59,6 @@ function world(tag) {
   // a hard link to the settings file in the directory the module may declare
   w.hard = path.join(w.rw, 'settings-hard');
   fs.linkSync(w.settings, w.hard);
-  fs.writeFileSync(w.authPath, JSON.stringify({[ADMIN]: {userName: 'admin', devices: ['*'], admin: true}}));
   w.policy = path.join(base, 'policy.json');
   fs.writeFileSync(w.policy, JSON.stringify({modules: {[NAME]: {approve: 'as-declared'}}}));
   // the module installed in the home, as ch-local installs a pack
@@ -66,6 +67,7 @@ function world(tag) {
   const pkgPath = path.join(w.fixture, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   pkg.countinghouse.permissions.fs = [{path: home, access: 'rw'}, {path: w.rw, access: 'rw'}, {path: w.work, access: 'rw'}];
+  pkg.countinghouse.role = 'scenario';
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
   w.moduleTmp = path.join(w.moduleData, NAME, 'tmp');
   return w;
@@ -75,27 +77,35 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
   this.timeout(180000);
   if (process.platform === 'win32') return;   // symlinks and hard links as on POSIX
 
-  [['audit', testPort(9794)], ['enforce', testPort(9795)]].forEach(([mode, port]) => {
+  ['audit', 'enforce'].forEach((mode) => {
     describe(mode, () => {
       let w = null;
-      let server = null;
-      const call = (action, args) => mcpCall(port, ADMIN, tool(action), args).then(toolOutput);
+      let io = null;
+      let id = 1;
+      // a module tool's call over stdio -> its output
+      const call = async (action, args) => {
+        const r = await io.request({jsonrpc: '2.0', id: ++id, method: 'tools/call', params: {name: tool(action), arguments: args || {}}}, 30000);
+        if (r.error != null) throw new Error(`${action}: ${JSON.stringify(r.error)}`);
+        return toolOutput(r.result);
+      };
       const untouched = () => {
         assert.strictEqual(fs.readFileSync(w.settings, 'utf8'), w.settingsBytes, 'the settings file is untouched');
         assert.strictEqual(fs.readFileSync(w.launcher, 'utf8'), w.launcherBytes, 'the launcher is untouched');
       };
       before(async () => {
         w = world(mode);
-        server = await startServer(port, ['--workerThread', '--authConfigPath', w.authPath, '--modulePath', w.modules, '--moduleDataPath', w.moduleData,
+        io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(w.base, 'store'), '--modulePath', w.modules, '--moduleDataPath', w.moduleData,
           '--moduleSandbox', mode, '--modulePolicy', w.policy, '--settingsFile', w.settings, '--loadModule', w.fixture]);
+        const init = await io.request(INITIALIZE, 60000);
+        assert.ok(init.result != null, `${JSON.stringify(init)}: ${io.err.slice(-1500)}`);
       });
-      after(() => {
-        stopServer(server);
+      after(async () => {
+        if (io != null && io.child.exitCode == null) { io.child.kill('SIGKILL'); await new Promise((r) => io.child.once('exit', r)); }
         if (w != null) fs.rmSync(w.base, {recursive: true, force: true});
       });
 
       it('the home\'s declaration is refused and the module loads without it; the one beside it is kept', async () => {
-        await waitFor(() => server.output.includes(`${w.home} (overlaps countinghouse's`), 5000, 'the refusal', () => server.output.slice(-1500));
+        await waitFor(() => io.err.includes(`${w.home} (overlaps countinghouse's`), 5000, 'the refusal', () => io.err.slice(-1500));
         assert.deepStrictEqual(await call('read', {path: path.join(w.rw, 'ok.txt')}), {content: 'declared', code: null});
       });
 
@@ -213,8 +223,8 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
       });
 
       it('each denial is recorded', async () => {
-        await waitFor(() => server.output.includes(`module sandbox: ${NAME} file denied ${w.secret}`), 5000, 'the secret\'s denial line',
-          () => server.output.split('\n').filter((l) => l.includes('module sandbox')).slice(-8));
+        await waitFor(() => io.err.includes(`module sandbox: ${NAME} file denied ${w.secret}`), 5000, 'the secret\'s denial line',
+          () => io.err.split('\n').filter((l) => l.includes('module sandbox')).slice(-8));
       });
     });
   });

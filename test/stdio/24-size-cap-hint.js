@@ -65,15 +65,22 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
 
   ['audit', 'enforce'].forEach((mode) => it(`spawned under --stdio with --settingsFile, ${mode}: a module's output over the cap names the ch-local command (the worker's own check)`, async () => {
     const home = tmp.mkdtemp('ch-s24-');
-    const callee = path.join(__dirname, '..', 'fixtures', 'hop-input-callee');
+    // in the single-identity profile, as ch-local runs it (--settingsFile is
+    // refused anywhere else): the callee a scenario, which the profile lists
+    const callee = path.join(home, 'hop-input-callee');
+    fs.cpSync(path.join(__dirname, '..', 'fixtures', 'hop-input-callee'), callee, {recursive: true});
+    const pkgPath = path.join(callee, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    pkg.countinghouse = Object.assign({}, pkg.countinghouse, {role: 'scenario'});
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
     const io = startStdio(['--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
       '--moduleDataPath', path.join(home, 'module_data'), '--settingsFile', path.join(home, 'settings.json'), '--maxOutputBytes', '3000',
-      '--moduleSandbox', mode, '--authConfigPath', path.join(__dirname, '..', 'sandbox', '48-auth.json'), '--loadModule', callee], {env: {COUNTINGHOUSE_API_KEY: 'hop-input-key'}});
+      '--moduleSandbox', mode, '--loadModule', callee]);
     try {
       const init = await io.request({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'test', version: '1'}}});
       assert.ok(init.result != null, JSON.stringify(init));
       const list = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/list', params: {}});
-      const big = list.result.tools.find((t) => /hop.input.callee/i.test(t.name) && /(^|_)big$/.test(t.name));
+      const big = list.result.tools.find((t) => t.name === 'big');
       assert.ok(big != null, JSON.stringify(list.result.tools.map((t) => t.name)));
       const r = await io.request({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: big.name, arguments: {n: 5000}}});
       const text = JSON.stringify(r);
