@@ -127,8 +127,8 @@ describe('MCP 2026-07-28 discovery and versioning (#229)', () => {
 
     // M15: the extension's methods, for a request that does not declare it
     // (mcp-contract 27 has the rest)
-    it('modern tasks/get and tasks/cancel without the extension declared are the gate\'s -32021', async() => {
-      for (const method of ['tasks/get', 'tasks/cancel']) {
+    it('modern tasks/get, tasks/update and tasks/cancel without the extension declared are the gate\'s -32021', async() => {
+      for (const method of ['tasks/get', 'tasks/update', 'tasks/cancel']) {
         const {res} = await viaGateway(modern(method, {taskId: 'x'}, 23));
         assert.strictEqual(res.error.code, -32021, `${method}: ${JSON.stringify(res)}`);
       }

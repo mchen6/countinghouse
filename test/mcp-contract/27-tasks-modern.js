@@ -15,7 +15,7 @@ const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const {ROOT, startServer, stopServer} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisUrlFor} = require('../helpers/test-env');
 const {withoutRedisNoise} = require('../helpers/stdio-client');
 
 const PORT = testPort(9637);
@@ -28,16 +28,17 @@ const NAME_PARAM = {'tools/call': 'name', 'tasks/get': 'taskId', 'tasks/update':
 
 // a 2026-07-28 request over HTTP, its headers matching its body; ext: whether
 // its _meta declares the tasks extension
-function modern(key, method, params = {}, {ext = true, headers = {}} = {}) {
+function modern(key, method, params = {}, {ext = true, headers = {}, port = PORT} = {}) {
   const meta = {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': ext ? {extensions: {[EXT]: {}}} : {}};
   const body = {jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: meta}, params)};
-  let r = request(`http://127.0.0.1:${PORT}`).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
+  let r = request(`http://127.0.0.1:${port}`).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
     .set('X-CH-Key', key).set('MCP-Protocol-Version', V).set('Mcp-Method', method);
   const named = NAME_PARAM[method];
   if (named != null && typeof(params[named]) === 'string' && headers['Mcp-Name'] === undefined) r = r.set('Mcp-Name', params[named]);
   for (const [k, v] of Object.entries(headers)) if (v != null) r = r.set(k, v);
   return r.send(body).then((res) => ({status: res.status, body: res.body}));
 }
+const modernOn = (port, key, method, params) => modern(key, method, params, {port});
 const legacy = (key, method, params) => request(`http://127.0.0.1:${PORT}`).post('/mcp').set('X-CH-Key', key)
   .set('Accept', 'application/json, text/event-stream').send({jsonrpc: '2.0', id: 1, method, params}).then((res) => res.body);
 
@@ -50,7 +51,7 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-27-'));
     const auth = path.join(dir, 'auth.json');
     fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}, [KEY_B]: {userName: 'b', devices: ['*']}}));
-    server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'),
+    server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--jobTimeout', '5',
       '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks')]);
   });
   after(() => {
@@ -110,23 +111,38 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     assert.strictEqual(done.result.structuredContent, 'a bare string');
   });
 
-  it('a failed task inlines its error: its code kept, its text (the module\'s own words) cut and cleaned', async () => {
+  // spec section 9 (the review of #329): `completed` inlines the CallToolResult
+  // a synchronous call would have returned, an isError result included;
+  // `failed` is only for a run that left no result
+  it('a task whose handler fails is completed with the isError result: its code kept, its text (the module\'s own words) cut and cleaned', async () => {
     const t = await created('fails');
     const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
-    assert.strictEqual(done.status, 'failed', JSON.stringify(done));
-    assert.strictEqual(done.error.code, -32603);
-    assert.match(done.error.message, /it failed. here. and there and on/, 'the module\'s words, cleaned');
-    assert.ok(!/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/.test(done.error.message), JSON.stringify(done.error.message));
-    assert.ok(done.error.message.length <= 512, `cut: ${done.error.message.length}`);
-    assert.strictEqual(done.error.data['countinghouse/code'], 'M15_FAILED', 'its code kept');
+    assert.strictEqual(done.status, 'completed', JSON.stringify(done));
+    assert.strictEqual(done.error, undefined);
+    assert.strictEqual(done.result.isError, true, JSON.stringify(done.result));
+    assert.strictEqual(done.result._meta['countinghouse/code'], 'M15_FAILED', 'its code kept');
+    const text = done.result.content[0].text;
+    assert.match(text, /it failed. here. and there and on/, 'the module\'s words, cleaned');
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(text), JSON.stringify(text));
+    assert.ok(text.length <= 512, `cut: ${text.length}`);
   });
 
-  it('a failed task whose code is over 64 characters keeps no code: the whole text is the message, cut and cleaned', async () => {
+  it('a handler\'s error whose code is over 64 characters keeps no code: the whole text is the result\'s, cut and cleaned', async () => {
     const t = await created('fails', {code: `M15_${'X'.repeat(100)}`});
     const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
+    assert.strictEqual(done.status, 'completed', JSON.stringify(done));
+    assert.strictEqual(done.result.isError, true);
+    assert.strictEqual(done.result._meta, undefined, JSON.stringify(done.result));
+    assert.ok(done.result.content[0].text.length <= 512, `cut: ${done.result.content[0].text.length}`);
+  });
+
+  it('a run that left no result (past --jobTimeout) is failed, with its error', async () => {
+    const t = await created('slow', {ms: 8000});
+    const done = await until(KEY_A, t.taskId, (x) => x.status !== 'working');
     assert.strictEqual(done.status, 'failed', JSON.stringify(done));
-    assert.strictEqual(done.error.data, undefined, JSON.stringify(done.error));
-    assert.ok(done.error.message.length <= 512, `cut: ${done.error.message.length}`);
+    assert.strictEqual(done.result, undefined);
+    assert.strictEqual(done.error.code, -32603);
+    assert.match(done.error.message, /timed out/);
   });
 
   it('another key\'s task, an unknown id and a malformed one get one -32602, which echoes no id, for get, update and cancel', async () => {
@@ -155,6 +171,29 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     assert.strictEqual(after.body.result && after.body.result.status, 'cancelled', JSON.stringify(after.body));
     const foreign = await modern(KEY_B, 'tasks/get', {taskId: t.taskId});
     assert.strictEqual(foreign.body.error && foreign.body.error.code, -32602, 'another key learns nothing of the tombstone');
+    const again = await modern(KEY_A, 'tasks/cancel', {taskId: t.taskId});
+    assert.ok(again.body.result != null, `cancelled twice: acknowledged twice ${JSON.stringify(again.body)}`);
+    // the run was already in a worker: it goes on to its end (cooperative),
+    // and is still read cancelled after it, with no result (the review of #329)
+    await new Promise((res) => setTimeout(res, 3500));
+    const ended = await modern(KEY_A, 'tasks/get', {taskId: t.taskId});
+    assert.strictEqual(ended.body.result && ended.body.result.status, 'cancelled', JSON.stringify(ended.body));
+    assert.strictEqual(ended.body.result.result, undefined, 'no result');
+  });
+
+  // ext-tasks 2026-07-28 has no terminal-status rule for tasks/cancel: a known
+  // task is acknowledged, and a finished one is left as it is (the Reviewer's
+  // ruling on #329): no job removed, no tombstone, its status and result kept
+  it('cancel on a finished task is acknowledged and changes nothing: get still reads it completed, with its result', async () => {
+    const t = await created('slow', {ms: 0});
+    await until(KEY_A, t.taskId, (x) => x.status === 'completed');
+    for (let n = 0; n < 2; n++) {
+      const r = await modern(KEY_A, 'tasks/cancel', {taskId: t.taskId});
+      assert.ok(r.body.result != null, `cancel ${n + 1}: ${JSON.stringify(r.body)}`);
+    }
+    const got = await modern(KEY_A, 'tasks/get', {taskId: t.taskId});
+    assert.strictEqual(got.body.result.status, 'completed', JSON.stringify(got.body));
+    assert.deepStrictEqual(got.body.result.result.structuredContent, {done: true});
   });
 
   it('a tasks/* request that does not declare the extension is -32021, naming it', async () => {
@@ -194,6 +233,15 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     assert.match(got.statusMessage, /^M15_FAILED: .*it failed. here. and there and on/, JSON.stringify(got.statusMessage).slice(0, 200));
     assert.ok(!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(got.statusMessage), JSON.stringify(got.statusMessage));
     assert.ok(got.statusMessage.length <= 512, `cut: ${got.statusMessage.length}`);
+    // and its tasks/result: the isError result, its code kept, its text cut
+    // and cleaned as a 2026-07-28 task's is (the review of #329)
+    const result = (await legacy(KEY_A, 'tasks/result', {taskId: made.result.task.taskId})).result;
+    assert.strictEqual(result.isError, true, JSON.stringify(result).slice(0, 300));
+    assert.strictEqual(result._meta['countinghouse/code'], 'M15_FAILED');
+    const text = result.content[0].text;
+    assert.match(text, /it failed. here. and there and on/);
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/.test(text), JSON.stringify(text));
+    assert.ok(text.length <= 512, `cut: ${text.length}`);
   });
 
   it('the legacy era is unchanged: params.task, the runner\'s id, tasks/get and tasks/result', async () => {
@@ -207,5 +255,53 @@ describe('mcp-contract 27: tasks for 2026-07-28 clients (M15)', function() {
     }
     assert.strictEqual(status, 'completed');
     assert.deepStrictEqual((await legacy(KEY_A, 'tasks/result', {taskId: made.result.task.taskId})).result.structuredContent, {done: true});
+    // a 2026-07-28 task is the extension's: never in the legacy list
+    const listed = (await legacy(KEY_A, 'tasks/list', {})).result.tasks.map((x) => x.taskId);
+    assert.ok(listed.includes(made.result.task.taskId), JSON.stringify(listed));
+    assert.ok(!listed.some((id) => /^t-/.test(id)), JSON.stringify(listed));
+  });
+});
+
+// The review of #329: under --store redis a finished job is kept, while a
+// tombstone lasted an hour. A task cancelled while it ran went on to its end
+// and, once the tombstone went, read completed with its result. Its tombstone
+// now lasts as long as the job is kept: no expiry under Redis (a mark on the
+// job would not hold: the runner writes its own copy of the data back).
+describe('mcp-contract 27: a task cancelled while it runs, under --store redis', function() {
+  this.timeout(120000);
+  const RPORT = testPort(9639);
+  let server = null;
+  let dir = null;
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-27r-'));
+    const auth = path.join(dir, 'auth.json');
+    fs.writeFileSync(auth, JSON.stringify({[KEY_A]: {userName: 'a', devices: ['*']}}));
+    server = await startServer(RPORT, ['--workerThread', '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth,
+      '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks')]);
+  });
+  after(() => {
+    stopServer(server);
+    if (dir != null) fs.rmSync(dir, {recursive: true, force: true});
+  });
+
+  it('stays cancelled, with no result, after its run ends: its tombstone lasts as long as its job', async () => {
+    const on = (method, params) => modernOn(RPORT, KEY_A, method, params);
+    const made = await on('tools/call', {name: tool('slow'), arguments: {ms: 1500}});
+    const taskId = made.body.result && made.body.result.taskId;
+    assert.match(String(taskId), /^t-/, JSON.stringify(made.body));
+    await new Promise((res) => setTimeout(res, 400));   // in a worker now
+    assert.ok((await on('tasks/cancel', {taskId})).body.result != null);
+    // the store's kv (Redis db 5): the tombstone never expires while the job is kept
+    const kv = require('redis').createClient(redisUrlFor(), {db: 5});
+    try {
+      const pttl = await new Promise((res, rej) => kv.pttl(`task-tombstone:${taskId}`, (e, n) => (e ? rej(e) : res(n))));
+      assert.strictEqual(pttl, -1, `no expiry (PTTL ${pttl})`);
+    } finally {
+      kv.quit();
+    }
+    await new Promise((res) => setTimeout(res, 2000));   // past its run's end: the job is kept, completed
+    const got = await on('tasks/get', {taskId});
+    assert.strictEqual(got.body.result && got.body.result.status, 'cancelled', JSON.stringify(got.body));
+    assert.strictEqual(got.body.result.result, undefined, 'no result');
   });
 });

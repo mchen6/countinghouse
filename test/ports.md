@@ -101,7 +101,7 @@ one) as well as the ports it binds.
 | `test/mcp-contract/16-resources-read.js` | 9583, 9585 |
 | `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
 | `test/mcp-contract/21-list-pages.js` | 9592 |
-| `test/mcp-contract/27-tasks-modern.js` | 9637 |
+| `test/mcp-contract/27-tasks-modern.js` | 9637, 9639 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |
