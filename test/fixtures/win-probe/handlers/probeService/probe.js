@@ -45,5 +45,19 @@ module.exports = async () => {
   await check('globSync with the default cwd', () => fs.globSync('lib/*.txt'));
   await check('import a "type": "module" package file', async () => (await import('../../lib/esm-pkg/x.js')).typeModule);
   await check('require.resolve.paths are its own', () => require.resolve.paths('anything'));
+  // each of the runtime's own files once in this worker's require cache: two
+  // spellings of one (an 8.3 short name and its long form) were two
+  // instances, one of them never installed (stdio 26)
+  await check('runtime files loaded twice', () => {
+    const seen = new Map();
+    for (const k of Object.keys(require.cache)) {
+      if (k.startsWith('/app/') || /[\\/]node_modules[\\/]/.test(k)) continue;
+      const m = /^.*[\\/]lib[\\/](.+\.js)$/.exec(k);
+      if (m == null) continue;
+      const rel = m[1].replace(/\\/g, '/').toLowerCase();
+      seen.set(rel, (seen.get(rel) || 0) + 1);
+    }
+    return {files: seen.size, twice: [...seen].filter(([, n]) => n > 1).map(([rel]) => rel).sort()};
+  });
   return {output: {checks}};
 };

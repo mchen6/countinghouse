@@ -10,6 +10,16 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — modules load on Windows when the install is run by an 8.3 short name
+
+An install run by a short-name spelling (`C:\Users\RUNNER~1\...`, as
+under GitHub's Windows runner's temporary directory), with no
+`--preserve-symlinks`, listed none of its modules under the sandbox: each
+failed with `Cannot find module '/app/handlers/...'`. A module's worker
+loaded the runtime's files by the short spelling until its file broker was
+installed and by the long one after, so one of them was loaded twice. The
+worker is now started by its real path, and each file is loaded once.
+
 ### Removed — flags that did nothing, or let a failing module load
 
 - **`--verifyModule`** is gone. With it, the loader carried on past a

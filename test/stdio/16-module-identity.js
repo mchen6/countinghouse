@@ -20,6 +20,8 @@ const WIN = process.platform === 'win32';
 const own = (rel) => new RegExp(WIN ? `^[A-Z]:\\\\app\\\\${rel.split('/').join('\\\\')}$` : `^/app/${rel}$`);
 
 const EXPECT = {
+  // the runtime's files each loaded once (stdio 26)
+  'runtime files loaded twice': (c) => c.ok && c.value.files > 0 && c.value.twice.length === 0,
   '__filename': (c) => own('handlers/probeService/probe.js').test(c.value),
   '__dirname': (c) => own('handlers/probeService').test(c.value),
   'process.cwd()': (c) => (WIN ? /^[A-Z]:\\app$/ : /^\/app$/).test(c.value),
