@@ -9,6 +9,7 @@
     "fails": {"input": {"type": "object"}, "output": {"type": "object"}},
     "progress": {"input": {"type": "object", "properties": {"values": {"type": "array", "maxItems": 10}, "holdMs": {"type": "integer", "minimum": 0, "maximum": 10000}}},
                  "output": {"type": "object"}},
-    "quick": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"quick": {"type": "boolean"}}}}
+    "quick": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"quick": {"type": "boolean"}}}},
+    "exit": {"input": {"type": "object"}, "output": {"type": "object", "properties": {"exiting": {"type": "boolean"}}}}
   }
 }
