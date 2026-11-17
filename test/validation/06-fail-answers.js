@@ -295,7 +295,6 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     const script = `
       const options = require(${JSON.stringify(`${lib}/cli-options`)});
       options.debug = true;
-      options.apiMonitor = false;
       const LOG = require(${JSON.stringify(`${lib}/logger`)});
       const {CountinghouseError} = require(${JSON.stringify(`${lib}/countinghouse-error`)});
       const Session = require(${JSON.stringify(`${lib}/session`)});
