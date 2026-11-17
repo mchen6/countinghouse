@@ -34,7 +34,7 @@ describe('questions 03: ctx.ask as a handler has it (MCP completeness M13)', () 
     const first = ask.newState({askable: true});
     await rejectedWith('ASK_PENDING', ctxOf(first).ctx.ask('overwrite', {id: 'first'}));
     assert.deepStrictEqual(first.pending, {key: KEY, question: 'overwrite', text: TEXT, schema: '/notesService/saveNote/questions/overwrite',
-      asker: {deviceID: 'dev-notes', serviceID: SERVICE, actionName: 'saveNote'}});
+      asker: {deviceID: 'dev-notes', serviceID: SERVICE, actionName: 'saveNote'}, module: MODULE});
     const retry = ask.newState({askable: true, answers: new Map([[KEY, {replace: true}]])});
     assert.deepStrictEqual(await ctxOf(retry).ctx.ask('overwrite', {id: 'first'}), {replace: true});
     const declined = ask.newState({askable: true, answers: new Map([[KEY, null]])});

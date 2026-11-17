@@ -55,6 +55,7 @@ describe('questions 07: a part\'s ctx.ask, through composition (MCP completeness
   // a call the gateway began for the pack: someone to ask, and the name its dialogs carry
   const begun = (over = {}) => Object.assign(ask.newState({askable: true, shownAs: OUTER.module}), over);
 
+
   describe('the token chain', () => {
     it('a hop\'s token carries its own action; the ask state is on the outer call\'s token only, found from any token of its chain', () => {
       const state = begun();
@@ -76,14 +77,14 @@ describe('questions 07: a part\'s ctx.ask, through composition (MCP completeness
       const token = hop(outer(state), PART);
       refusedWith('ASK_PENDING', () => asks(token, PART, 'overwrite', {id: 'a.txt'}));
       const text = 'pack: Replace a.txt?';
-      assert.deepStrictEqual(state.pending, {key: keyOf(PART, 'overwrite', text), question: 'overwrite', text, schema: '/partService/store/questions/overwrite', asker: askerOf(PART)});
+      assert.deepStrictEqual(state.pending, {key: keyOf(PART, 'overwrite', text), question: 'overwrite', text, schema: '/partService/store/questions/overwrite', asker: askerOf(PART), module: 'part'});
       assert.ok(!state.pending.text.includes('part'), 'an unlisted part is never named to the client');
     });
 
     it('the outer handler\'s own question names itself as who asked', () => {
       const state = begun();
       refusedWith('ASK_PENDING', () => asks(outer(state), OUTER, 'confirm', {what: 'it'}));
-      assert.deepStrictEqual(state.pending, {key: keyOf(OUTER, 'confirm', 'pack: Run it?'), question: 'confirm', text: 'pack: Run it?', schema: '/packService/run/questions/confirm', asker: askerOf(OUTER)});
+      assert.deepStrictEqual(state.pending, {key: keyOf(OUTER, 'confirm', 'pack: Run it?'), question: 'confirm', text: 'pack: Run it?', schema: '/packService/run/questions/confirm', asker: askerOf(OUTER), module: 'pack'});
     });
 
     it('only what its own action declares: not the outer call\'s question, and the outer not a part\'s', () => {
@@ -103,13 +104,49 @@ describe('questions 07: a part\'s ctx.ask, through composition (MCP completeness
       assert.deepStrictEqual([state.pending.key, state.pending.asker], [keyOf(OTHER, 'overwrite', text), askerOf(OTHER)]);
     });
 
-    it('one question a round, whoever in the chain asks: the first with no answer is the one asked', () => {
+    // /code-review of #330, 1: a handler that catches a part's ASK_PENDING and goes on to ask (itself, or
+    // through another part) ends the call on THAT ask: the question shown is the latest asked, never one
+    // whose rejection was caught
+    it('one question a round, whoever in the chain asks: the latest with no answer is the one asked, so a caught one is not shown', () => {
       const state = begun();
       const top = outer(state);
       refusedWith('ASK_PENDING', () => asks(hop(top, PART), PART, 'overwrite', {id: 'a.txt'}));
-      refusedWith('ASK_PENDING', () => asks(hop(top, OTHER), OTHER, 'overwrite', {id: 'b.txt'}));
+      // the scenario caught it, and asks its own
       refusedWith('ASK_PENDING', () => asks(top, OUTER, 'confirm', {what: 'it'}));
-      assert.deepStrictEqual(state.pending.asker, askerOf(PART));
+      assert.deepStrictEqual([state.pending.asker, state.pending.text], [askerOf(OUTER), 'pack: Run it?']);
+      // or calls another part, which asks
+      refusedWith('ASK_PENDING', () => asks(hop(top, OTHER), OTHER, 'overwrite', {id: 'b.txt'}));
+      assert.deepStrictEqual(state.pending.asker, askerOf(OTHER));
+      // an answered question asked again is answered, and changes nothing pending
+      const answered = begun({answers: new Map([[keyOf(PART, 'overwrite', 'pack: Replace a.txt?'), {replace: true}]])});
+      const top2 = outer(answered);
+      refusedWith('ASK_PENDING', () => asks(top2, OUTER, 'confirm', {what: 'it'}));
+      assert.deepStrictEqual(asks(hop(top2, PART), PART, 'overwrite', {id: 'a.txt'}), {replace: true});
+      assert.deepStrictEqual(answered.pending.asker, askerOf(OUTER));
+    });
+
+    // /code-review of #330, 3: what the state will carry of who asked is bounded when the question is
+    // asked, so a state is never made that its own retry refuses
+    it('an asker whose service or action is longer than a state may name has no one to ask', () => {
+      const LONG = Object.assign({}, PART, {serviceID: `urn:countinghouse-test:serviceID:${'s'.repeat(300)}`});
+      SPECS.long = specOf(LONG, {overwrite: {message: 'Replace {id}?', schema: '/x/y/questions/overwrite'}});
+      const state = begun();
+      const token = hop(outer(state), Object.assign({}, LONG, {module: 'long'}));
+      refusedWith('ASK_UNAVAILABLE', () => ask.answer({token, name: 'overwrite', values: {id: 'a'}}, 'w-long', SPECS.long, 'long'));
+      assert.strictEqual(state.pending, null);
+    });
+
+    // /code-review of #330, 7: the walk and the ask agree. A call the walk found could not end on a
+    // question (so it took no copy of its arguments and refused nothing in them) has no one to ask
+    it('a call the walk found could not ask has no one to ask, whoever in its chain asks', () => {
+      const state = begun({reachable: false});
+      const top = outer(state);
+      refusedWith('ASK_UNAVAILABLE', () => asks(hop(top, PART), PART, 'overwrite', {id: 'a.txt'}));
+      refusedWith('ASK_UNAVAILABLE', () => asks(top, OUTER, 'confirm', {what: 'it'}));
+      assert.strictEqual(state.pending, null);
+      // not known (no walk made): asked as before
+      const unknown = begun();
+      refusedWith('ASK_PENDING', () => asks(hop(outer(unknown), PART), PART, 'overwrite', {id: 'a.txt'}));
     });
 
     it('the call\'s rounds are the chain\'s: after eight a part has no one to ask, and a question three rounds left unanswered stays so for a part', () => {
@@ -195,6 +232,21 @@ describe('questions 07: a part\'s ctx.ask, through composition (MCP completeness
       assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => { throw new Error('gone'); }, callsOf: () => []}), true);
       assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => false, callsOf: () => { throw new Error('gone'); }}), true);
       assert.strictEqual(ask.canAsk(at(OUTER), {asksAt: () => false, callsOf: () => 'not a list'}), false, 'no calls it can read are no calls');
+    });
+
+    // /code-review of #330, 4: the walk is made once per action and tool-set generation, not per call
+    it('the walk is kept per action and tool-set generation: a new generation walks again', () => {
+      let reads = 0;
+      const deps = {asksAt: () => false, callsOf: (d) => { reads += 1; return d === OUTER.deviceID ? [at(PART)] : []; }};
+      ask.forgetReach();
+      assert.strictEqual(ask.canAskKept(at(OUTER), deps, 7), false);
+      const first = reads;
+      assert.strictEqual(ask.canAskKept(at(OUTER), deps, 7), false);
+      assert.strictEqual(reads, first, 'the same generation: not walked again');
+      assert.strictEqual(ask.canAskKept(at(OUTER), deps, 8), false);
+      assert.ok(reads > first, 'a new generation walks again');
+      assert.strictEqual(ask.canAskKept(at(OUTER), {asksAt: (x) => same(x, at(PART)), callsOf: deps.callsOf}, 8), false, 'kept within the generation');
+      assert.strictEqual(ask.canAskKept(at(OUTER), {asksAt: (x) => same(x, at(PART)), callsOf: deps.callsOf}, 9), true);
     });
 
     it('begin and the arguments\' copy take it as a value or as a function, asked only where someone can be asked', async () => {
