@@ -670,7 +670,9 @@ user's client sessions, `--sessionSocket`):
 - It's kept while the session can come back: across a detach within the
   reconnect window, and across a runtime restart that restores the session.
 - It's removed when the session leaves (`bye`) or its reconnect window
-  passes, after the session's workers have stopped.
+  passes, after the session's workers have stopped. If the module is being
+  reloaded at that moment, or was reloaded as a shared module, its storage
+  for that session is removed at the runtime's next start instead.
 - When the runtime starts, the storage of every session it didn't restore
   is removed before it accepts a connection. If it restored none (the
   daemon died), only the next session to connect is told that per-session
