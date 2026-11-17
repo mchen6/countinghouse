@@ -40,6 +40,11 @@ const P = Buffer.from([1]);   // HELLO's protocol, one byte
 const ms = hmac(secret, 'ch-server', P, nc, ns);
 const mc = hmac(secret, 'ch-client', P, ns, nc);
 const token = 'example-token-not-a-real-one';
+// a pack credential the client's environment chooses (ch-local's conditions
+// child names it from the installed packs, never from the environment)
+const credName = 'PACK_VAR_ALPHA';
+const credValue = 'example-value-not-a-real-one';
+const credMac = hmac(secret, 'ch-cred', Buffer.from(credName, 'utf8'), Buffer.from([0]), Buffer.from(credValue, 'utf8'));
 
 const hello = json({protocol: 1, nc: b64(nc)});
 const prove = json({ns: b64(ns), ms: b64(ms)});
@@ -56,6 +61,7 @@ const notification = '{"jsonrpc":"2.0","method":"notifications/tools/list_change
 const client = json({op: 'client', status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
 const clientNoToken = json({op: 'client', status: 'ok', conditions: 'no', repo: null, token: null});
 const clientFailed = json({op: 'client', status: 'failed', why: 'the conditions check timed out after 10 s'});
+const clientCredentials = json({op: 'client', status: 'ok', conditions: 'no', repo: null, token: null, credentials: {[credName]: b64(credMac)}});
 const clientAnswer = json({op: 'client', seq: 3, status: 'ok', conditions: 'yes', repo: 'acme/widgets', token: null});
 const batch = '[{"jsonrpc":"2.0","id":1,"method":"tools/list"},{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":0}},{"jsonrpc":"2.0","id":"b","method":"tools/list"}]';
 const odd = '{"jsonrpc":"2.0","id":1e2,"method":"tools/list"}';
@@ -88,6 +94,13 @@ const out = {
     }
   },
   tokenMac: {token, rule: 'HMAC-SHA256(secret, "ch-token" || the token\'s UTF-8 bytes), sent base64', macB64: b64(hmac(secret, 'ch-token', token))},
+  credentialMac: {name: credName, value: credValue, rule: 'HMAC-SHA256(secret, "ch-cred" || the variable\'s name || 0x00 || the value\'s UTF-8 bytes), sent standard base64 as credentials[name]', macB64: b64(credMac)},
+  credentialsMalformed: {
+    rule: 'on the first client frame, any of these as credentials is own-runtime (conditions-failed), never shared: not an object, over 32 entries, a name not ^[A-Za-z_][A-Za-z0-9_]{0,127}$, a value not the standard base64 of exactly 32 bytes',
+    cases: [null, [], 'PACK_VAR_ALPHA', 7, {'1BAD': b64(Buffer.alloc(32, 1))}, {'A-B': b64(Buffer.alloc(32, 1))}, {'': b64(Buffer.alloc(32, 1))}, {PACK_VAR_ALPHA: null}, {PACK_VAR_ALPHA: 'not base64!'},
+      {PACK_VAR_ALPHA: b64(Buffer.alloc(31, 1))}, {PACK_VAR_ALPHA: b64(Buffer.alloc(33, 1))}, {[`V${'x'.repeat(128)}`]: b64(Buffer.alloc(32, 1))}, {PACK_VAR_ALPHA: b64(Buffer.alloc(32, 1)).replace(/=$/, '')}, {PACK_VAR_ALPHA: Buffer.alloc(32, 0xfb).toString('base64url')},
+      Object.fromEntries(Array.from({length: 33}, (_, i) => [`V${i}`, b64(Buffer.alloc(32, 1))]))]
+  },
   messages: {
     requestToRuntime: {header: {seq: 1}, line: request, rule: 'exact: header {"seq": n}, then the client line\'s bytes without its newline', keep: {seq: 1, idBytes: '7', method: 'tools/call'}, hex: hex(frame('M', mPayload({seq: 1}, request)))},
     oddIdToRuntime: {header: {seq: 2}, line: odd, rule: 'the id 1e2 is kept as its bytes, 1e2; matching is by seq only', keep: {seq: 2, idBytes: '1e2', method: 'tools/list'}, hex: hex(frame('M', mPayload({seq: 2}, odd)))},
@@ -115,6 +128,8 @@ const out = {
     clientFailed: {json: clientFailed, hex: hex(frame('C', clientFailed)), rule: 'as the first client frame: the runtime answers own-runtime (conditions-failed); as an answer to conditions?: no'},
     conditionsAsk: C({op: 'conditions?', seq: 3}),
     clientAnswer: {json: clientAnswer, hex: hex(frame('C', clientAnswer))},
+    clientCredentials: {json: clientCredentials, hex: hex(frame('C', clientCredentials)),
+      rule: 'credentials: the pack credentials the client environment chooses, by the installed packs\' declared names (never the GitHub ones, which token covers), each credentialMac; absent or {}: none chosen. On the first client frame only: one whose hash is unlike the runtime\'s own for that name, or that the runtime has no value for, is own-runtime (credential)'},
     settled: C({op: 'settled'}),
     bye: C({op: 'bye'}),
     drain: C({op: 'drain'}),
@@ -123,6 +138,7 @@ const out = {
     replay: C({op: 'replay', entries: [{kind: 'value', name: 'maxOutputBytes', value: 1048576}]}),
     ownRuntimeToken: C({op: 'own-runtime', reason: 'token'}),
     ownRuntimeConditions: C({op: 'own-runtime', reason: 'conditions-failed'}),
+    ownRuntimeCredential: C({op: 'own-runtime', reason: 'credential'}),
     unknownOp: {json: json({op: 'later-op', x: 1}), hex: hex(frame('C', json({op: 'later-op', x: 1}))), rule: 'ignored'}
   },
   startLock: {
@@ -207,6 +223,29 @@ const out = {
   tooLargeAnswer: {
     rule: 'exact apart from the id; sent with the request\'s seq instead of an M over maxToShim',
     json: '{"jsonrpc":"2.0","id":7,"error":{"code":-32603,"message":"the answer is larger than this connection carries","data":{"countinghouse/code":"OUTPUT_TOO_LARGE","retryable":false}}}'
+  },
+  // ch-local's one order for a GitHub token (lib/github-token.js
+  // chooseGitHubToken), in start, the daemon's shared runtime and the
+  // conditions check. Inputs: what the client's environment sets
+  // (COUNTINGHOUSE_GITHUB_TOKEN, GITHUB_TOKEN), whether a token is stored
+  // with `ch-local credentials add github` and passes its checks, whether gh
+  // is logged in, and what the running daemon's runtime holds (it takes the
+  // token at its start: after a credential is added it holds the old one
+  // until it restarts). Each value names a source, never a token.
+  githubTokenPrecedence: {
+    rule: 'start (a per-session runtime) takes the first of: the client\'s COUNTINGHOUSE_GITHUB_TOKEN, the stored token, gh auth token, the client\'s GITHUB_TOKEN. The daemon\'s runtime, which no client environment reaches, takes the stored token, else gh\'s, at its start. The conditions check sends the keyed hash of the token start would choose, except that a gh login is sent as null (the daemon has it too): so token is mac(env), mac(stored), null or mac(GITHUB_TOKEN). The session shares when token is null (the daemon\'s, whatever it holds), or when token is the hash of the token the daemon holds; otherwise own-runtime (token). A stored token that fails its file checks counts as none',
+    cases: [
+      {why: 'nothing anywhere', input: {env: [], stored: false, ghLogin: false, daemonHolds: null}, start: null, daemon: null, conditions: null, outcome: 'shares'},
+      {why: 'gh only', input: {env: [], stored: false, ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'a stored token, the daemon started on it', input: {env: [], stored: true, ghLogin: true, daemonHolds: 'stored'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'shares'},
+      {why: 'a stored token added while the daemon runs on gh\'s: its own runtime until the daemon restarts', input: {env: [], stored: true, ghLogin: true, daemonHolds: 'gh'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'own-runtime (token)'},
+      {why: 'the client sets COUNTINGHOUSE_GITHUB_TOKEN beside a stored one', input: {env: ['COUNTINGHOUSE_GITHUB_TOKEN'], stored: true, ghLogin: true, daemonHolds: 'stored'}, start: 'environment', daemon: 'stored', conditions: 'mac(env)', outcome: 'own-runtime (token)'},
+      {why: 'GITHUB_TOKEN beside a gh login chooses nothing', input: {env: ['GITHUB_TOKEN'], stored: false, ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'GITHUB_TOKEN beside a stored token chooses nothing', input: {env: ['GITHUB_TOKEN'], stored: true, ghLogin: false, daemonHolds: 'stored'}, start: 'stored', daemon: 'stored', conditions: 'mac(stored)', outcome: 'shares'},
+      {why: 'GITHUB_TOKEN with neither a stored token nor gh', input: {env: ['GITHUB_TOKEN'], stored: false, ghLogin: false, daemonHolds: null}, start: 'GITHUB_TOKEN', daemon: null, conditions: 'mac(GITHUB_TOKEN)', outcome: 'own-runtime (token)'},
+      {why: 'a stored token removed while the daemon still runs on it: null is the daemon\'s, until its restart (the restart request)', input: {env: [], stored: false, ghLogin: true, daemonHolds: 'stored'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'},
+      {why: 'a stored token whose file fails its checks counts as none', input: {env: [], stored: 'refused', ghLogin: true, daemonHolds: 'gh'}, start: 'gh', daemon: 'gh', conditions: null, outcome: 'shares'}
+    ]
   },
   // ch-local's pack messages on the control channel (B3, "For C" in
   // docs/superpowers/plans/2026-11-16-shared-runtime-b3-session-packs.md):
