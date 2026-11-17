@@ -85,6 +85,41 @@ describe('session-runtime 11: a per-session module\'s partitions live as long as
     assert.ok(fs.existsSync(dirOf(b.id)));
   });
 
+  // The security pass of 11-17: the module's fs quota is one counter for all
+  // its session workers; a partition removed by a bye leaves it, while
+  // another session's worker keeps it held (enforced: --moduleSandbox enforce)
+  it('the quota is freed by a bye: B, refused past the module\'s 1 MB, writes again once A has left, its worker running all along', async() => {
+    const dir = perSession(home);
+    const edit = (f, fn) => { const v = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); fn(v); fs.writeFileSync(path.join(dir, f), JSON.stringify(v)); };
+    edit('package.json', (pkg) => { pkg.countinghouse.permissions = {limits: {diskMb: 1}}; });
+    edit('api.json', (api) => api.device.serviceList['urn:countinghouse-test:serviceID:stateService'].actionList.push({name: 'fill', description: 'Writes input.kb KB to a new file in /data.',
+      input: {schema: '/stateService/fill/input'}, output: {schema: '/stateService/fill/output'}}));
+    edit('schema.json', (schema) => { schema.stateService.fill = {input: {type: 'object'}, output: {type: 'object'}}; });
+    fs.writeFileSync(path.join(dir, 'handlers', 'stateService', 'fill.js'), `const fs = require('fs');
+let n = 0;
+module.exports = async (input) => {
+  try {
+    fs.writeFileSync('/data/fill-' + (n++), Buffer.alloc(Number(input.kb) * 1024));
+    return {output: {ok: true}};
+  } catch (e) {
+    return {output: {ok: false, code: (e && e.code) || null}};
+  }
+};\n`);
+    r = runtime(home, ['--loadModule', dir, '--moduleSandbox', 'enforce']);
+    assert.ok(await until(async() => r.told.some((m) => m.type === 'listening') || r.code !== undefined, 30000), r.log().slice(-3000));
+    const secret = secretOf(r);
+    const a = await open(secret);
+    const b = await open(secret);
+    const fill = (s) => s.call('fill', {kb: 400});
+    assert.deepStrictEqual(outOf(await fill(a)), {ok: true});
+    assert.deepStrictEqual(outOf(await fill(a)), {ok: true});
+    assert.deepStrictEqual(outOf(await fill(b)), {ok: false, code: 'ENOSPC'}, 'A\'s 800 KB and B\'s 400 KB are past the module\'s 1 MB');
+    a.c.send('C', {op: 'bye'});
+    assert.ok(await until(async() => !fs.existsSync(dirOf(a.id)) && counts(r).ended === 1, 15000), r.log().slice(-2000));
+    assert.deepStrictEqual(outOf(await fill(b)), {ok: true}, 'A\'s 800 KB left the quota with its partition');
+    assert.deepStrictEqual(counts(r), {up: 2, ended: 1}, 'B\'s worker ran all along: its quota was never measured again');
+  });
+
   it('a bye with a call in flight: the call ends with the worker, and the partition goes only after the worker has stopped', async() => {
     const secret = await up();
     const a = await open(secret);

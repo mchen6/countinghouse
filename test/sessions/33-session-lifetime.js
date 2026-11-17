@@ -102,6 +102,82 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     }
   });
 
+  // The security pass of 11-17: the module's fs quota is one counter shared
+  // by its session workers (module-manager sessionQuota), and a partition
+  // removed outside the broker must leave it. The real ModuleManager methods,
+  // over a real Quota.
+  describe('the module\'s shared fs quota (module-manager creditSessionRemoval)', () => {
+    const {Quota} = require('../../lib/fs-broker/quota');
+    const ModuleManager = require('../../lib/module-manager');
+    const limits = {diskMb: 10, diskEntries: 1000};
+    let quota;
+    const held = (bytes, entries) => {
+      quota = new Quota({maxBytes: 10 * 1024 * 1024, maxEntries: 1000, enforce: true, bytes, entries});
+      const q = {ready: Promise.resolve(quota), workers: 1, limits};
+      mm.sessionQuotas = new Map([['ps', q]]);
+      return q;
+    };
+    beforeEach(() => {
+      mm.measureSessionPartition = ModuleManager.prototype.measureSessionPartition;
+      mm.creditSessionRemoval = ModuleManager.prototype.creditSessionRemoval;
+      mm.sessionQuotas = new Map();
+    });
+    const fill = (sid, bytes) => fs.writeFileSync(path.join(env.dataRoot, 'ps', 'sessions', sid, 'data', 'f'), Buffer.alloc(bytes));
+
+    it('a bye: after the workers stop, what the partition held leaves the quota; B\'s stays counted', async () => {
+      await make(A);
+      await make(B);
+      fill(A, 3000);
+      fill(B, 2000);
+      held(5000 + 6, 6);   // as the spawn's walk counted both: 5000 bytes, data and tmp and f per session
+      const ending = lifetime.ended(mm, A, 'bye', env);
+      releaseStop();
+      await ending;
+      assert.ok(!has(A) && has(B));
+      assert.strictEqual(quota.bytes, 2006, 'A\'s 3000 bytes left the quota');
+      assert.strictEqual(quota.entries, 3, 'and its three entries (data, tmp, f)');
+    });
+
+    it('clamped at zero: a quota that counted less than the partition holds never goes below zero', async () => {
+      await make(A);
+      fill(A, 3000);
+      held(1000, 1);
+      const ending = lifetime.ended(mm, A, 'bye', env);
+      releaseStop();
+      await ending;
+      assert.deepStrictEqual([quota.bytes, quota.entries], [0, 0]);
+    });
+
+    it('a removal that fails credits nothing (an over-count is the safe direction); no quota held, nothing is measured', async () => {
+      await make(A);
+      fill(A, 3000);
+      held(3000, 3);
+      const realRemove = partition.remove;
+      partition.remove = () => Promise.reject(Object.assign(new Error('partly removed'), {code: 'EBUSY'}));
+      try {
+        const ending = lifetime.ended(mm, A, 'bye', env);
+        releaseStop();
+        await ending;
+      } finally {
+        partition.remove = realRemove;
+      }
+      assert.deepStrictEqual([quota.bytes, quota.entries], [3000, 3], 'not credited');
+      mm.sessionQuotas = new Map();
+      assert.strictEqual(await mm.measureSessionPartition('ps', A, env.dataRoot), null, 'no quota held: no ticket');
+    });
+
+    it('a quota dropped and measured again between the measure and the credit is not credited: it already counts without it', async () => {
+      await make(A);
+      fill(A, 3000);
+      held(3000, 3);
+      const ticket = await mm.measureSessionPartition('ps', A, env.dataRoot);
+      assert.deepStrictEqual([ticket.bytes, ticket.entries], [3000, 3]);
+      const again = held(0, 0);   // the module's last worker ended, and a new spawn measured afresh
+      assert.strictEqual(mm.creditSessionRemoval('ps', ticket), false);
+      assert.strictEqual(mm.creditSessionRemoval('ps', Object.assign({}, ticket, {q: again, quota})), true, 'the same quota is credited');
+    });
+  });
+
   it('a start\'s sweep keeps the restored sessions\' partitions and removes the rest; with none restored, the next session is told once', async () => {
     await make(A);
     await make(B);
