@@ -953,7 +953,10 @@ bounds it:
   it. The record keeps the task's owner and its session's hash, never the
   session's id. `tasks/update` finds the task as `tasks/get` does (the
   caller's own, in its session: anyone else's is the one unknown-task
-  error), and the record's own session is checked again. Only the waiting
+  error), and the record's own session is checked again. Outside shared
+  mode the owner key decides, so a key that may read another owner's task
+  (an admin, as M15 rules for `tasks/get` and `tasks/cancel`) may also
+  answer its question. Only the waiting
   question's key is read; its answer is taken once (a compare-and-set, a
   script on Redis), checked against the asker's own form, and the handler
   runs again under the same `taskId`. A cancel removes the job and the

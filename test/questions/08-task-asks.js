@@ -186,6 +186,36 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     for (const t of mine.concat(theirs)) await taskAsks.remove(t);
   });
 
+  // the review of #374: L1, L2, L3 (each a function of the kv it runs on, so
+  // the Redis store's scripts run them too, below)
+  const reviewCases = (label) => {
+    it(`${label}an answer before the asking pass has completed is ignored, and the question still waits (L1)`, async () => {
+      const t = id();
+      await ask(t);
+      assert.strictEqual(await taskAsks.answer(t, {q1: {action: 'accept', content: {yes: true}}}, {session: SESSION, ofAsker, held: false}), 'ignored');
+      assert.strictEqual((await taskAsks.get(t)).pending.reqKey, 'q1');
+      assert.strictEqual(await taskAsks.answer(t, {q1: {action: 'accept', content: {yes: true}}}, {session: SESSION, ofAsker}), 'rerun');
+    });
+
+    it(`${label}a task cancelled during its asking pass: its record goes, and its slot (L2)`, async () => {
+      const t = id();
+      made.add(t);
+      const r = await taskAsks.asked(t, asking(), {owner: 'owner-l2', session: SESSION, ofAsker, cancelled: () => Promise.resolve(true)});
+      assert.deepStrictEqual(r, {cancelled: true});
+      assert.strictEqual(await taskAsks.get(t), null);
+      // its slot is free: three more of that owner's may wait (the cap is 3)
+      const more = [id(), id(), id()];
+      for (const m of more) assert.ok((await ask(m, {owner: 'owner-l2'})).asked != null);
+    });
+
+    it(`${label}the caps hold under concurrent asks: of five of one owner's at once, three wait (L3)`, async () => {
+      const five = [id(), id(), id(), id(), id()];
+      const got = await Promise.all(five.map((t) => ask(t, {owner: 'owner-l3'})));
+      assert.deepStrictEqual([got.filter((r) => r.asked != null).length, got.filter((r) => r.rerun === true).length], [3, 2], JSON.stringify(got));
+    });
+  };
+  reviewCases('');
+
   it('a form that can\'t be shown (its asker gone): unavailable, and the run starts again', async () => {
     const t = id();
     assert.deepStrictEqual(await taskAsks.asked(t, asking(), {owner: 'owner-9', session: null, ofAsker: () => null}), {rerun: true});
@@ -231,6 +261,90 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     } finally {
       for (const tok of issued) callTokens.drop(tok);
     }
+  });
+
+  // The BullMQ runner (the Redis store), against run-local's private Redis:
+  // its asking pass completes the job, and BullMQ's completed event must not
+  // forget the job's session, which the answered run needs (the review of
+  // #374, M1: it ran with no session, so with none of the session's limits).
+  describe('the BullMQ job runner', () => {
+    const options = require('../../lib/cli-options');
+    const jobSessions = require('../../lib/job-sessions');
+    const {redisUrlFor} = require('../helpers/test-env');
+    let saved;
+    let JobControl;
+    before(function() {
+      if (process.env.CH_TEST_REDIS_URL == null || process.env.CH_TEST_REDIS_URL === '') this.skip();
+      saved = {workerThread: options.workerThread, redisUrl: options.redisUrl};
+      Object.assign(options, {workerThread: true, redisUrl: redisUrlFor()});
+      JobControl = require('../../lib/job-control');
+    });
+    after(() => { if (saved != null) Object.assign(options, saved); });
+
+    // the record's take and the caps' reserve as scripts on Redis
+    describe('the record on Redis', () => {
+      let client = null;
+      before(async function() {
+        if (process.env.CH_TEST_REDIS_URL == null || process.env.CH_TEST_REDIS_URL === '') this.skip();
+        client = require('redis').createClient(redisUrlFor(), {db: 5});
+        await new Promise((resolve) => client.flushdb(resolve));
+        taskAsks.configure({kv: () => client});
+      });
+      after(() => {
+        taskAsks.configure({kv: () => kv});
+        if (client != null) client.quit();
+      });
+      it('take is a compare-and-set on Redis too', async () => {
+        const t = id();
+        await ask(t);
+        const got = await Promise.all([taskAsks.take(t, 'q1'), taskAsks.take(t, 'q1')]);
+        assert.deepStrictEqual(got.map((r) => (r == null ? null : r.pending.reqKey)).sort(), [null, 'q1']);
+        // the record keeps its expiry and its lists (cjson writes an empty list back as an object)
+        const r = await taskAsks.get(t);
+        assert.deepStrictEqual([r.pending, Array.isArray(r.unavailable)], [null, true]);
+      });
+      reviewCases('on Redis: ');
+    });
+
+    it('the answered run keeps the job\'s session: the asking pass\'s completed event forgets nothing', async () => {
+      jobSessions.resetForTests();
+      const passes = [];
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          passes.push(extraArgs.session || null);
+          if (passes.length === 1) {
+            asking(extraArgs.ask);
+            return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+          }
+          return setImmediate(callback, null, {output: {done: true}});
+        }};
+      JobControl.authorizeRun = () => Promise.resolve();
+      JobControl.initJobProcess(ci);
+      JobControl.setAskHooks({
+        before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-q', shownAs: 'm'}),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-q', session: run.session, ofAsker}),
+        settled: (data, taskId) => taskAsks.remove(taskId),
+        holdMs: () => 60000
+      });
+      const t = id();
+      made.add(t);
+      const added = await new Promise((resolve) => JobControl.addJob({appKey: 'k', session: SESSION}, {name: 'n', taskId: t, era: 'modern', asks: true}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+      assert.ifError(added.err);
+      const until = async (check, ms = 10000) => {
+        for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 25)); }
+        return false;
+      };
+      assert.ok(await until(async () => (await taskAsks.get(t)) != null && (await taskAsks.get(t)).pending != null), 'asked');
+      // BullMQ's completed event for the asking pass has had its turn
+      await new Promise((r) => setTimeout(r, 500));
+      assert.deepStrictEqual(jobSessions.forRun(t).session, SESSION, 'the job\'s session is kept while its question waits');
+      assert.strictEqual(await taskAsks.answer(t, {q1: {action: 'accept', content: {yes: true}}}, {session: SESSION, ofAsker}), 'rerun');
+      assert.strictEqual(await JobControl.rerunTask(t), true);
+      assert.ok(await until(() => passes.length === 2), JSON.stringify(passes));
+      assert.deepStrictEqual(passes, [SESSION, SESSION], 'the answered run ran in the job\'s session');
+      // done: its entry ends as any finished job's does
+      assert.ok(await until(() => jobSessions.forRun(t).session == null), 'forgotten once done');
+    });
   });
 
   describe('the local job runner', () => {
