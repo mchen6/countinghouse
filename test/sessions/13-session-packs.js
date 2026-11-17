@@ -158,7 +158,9 @@ describe('sessions 13: which packs a session lists (shared runtime B3, Task 1)',
     assert.deepStrictEqual(changed, [A, null, null, B]);
   });
 
-  it('none() is true until a session has a pack override', () => {
+  it('none() is true until a session has a pack override (every loaded pack global)', () => {
+    packs.setGlobal('ci', true);
+    packs.setGlobal('docs', true);
     assert.strictEqual(packs.none(), true);
     override(A, 'ci', true);
     assert.strictEqual(packs.none(), false);
@@ -166,6 +168,44 @@ describe('sessions 13: which packs a session lists (shared runtime B3, Task 1)',
     assert.strictEqual(packs.none(), true);
     override(B, 'docs', false);
     assert.strictEqual(packs.none(), false, 'an off override is one');
+  });
+
+  // /code-review of #340, 2: fail closed. A pack still loaded that no session lists and that isn't global
+  // (its unload asked, or failed) is hidden from every session, so none() must not short-circuit the filter
+  it('none() is false while a loaded pack is neither global nor any session\'s: it stays hidden', () => {
+    packs.setGlobal('ci', true);
+    packs.setGlobal('docs', true);
+    assert.strictEqual(packs.none(), true, 'every loaded pack global, no override: nothing to filter');
+    packs.setGlobal('ci', false);
+    assert.strictEqual(packs.none(), false);
+    assert.strictEqual(packs.listsDevice(B, 'dev-ci'), false);
+    packs.packGone('ci');
+    records.delete('ci');
+    packs.packChanged('ci');
+    assert.strictEqual(packs.none(), true, 'gone: nothing left to hide');
+  });
+
+  // /code-review of #340, 7 and 8: a call's check is one boolean while nothing is filtered, and a view is
+  // built from the records once per change, not per question
+  it('none() reads no session\'s overrides, and the records are read once per change', () => {
+    packs.setGlobal('ci', true);
+    packs.setGlobal('docs', true);
+    let overrideReads = 0;
+    let recordReads = 0;
+    packs.configure({
+      records: () => { recordReads += 1; return [...records].map(([pack, modules]) => ({pack, modules: [...modules]})); },
+      moduleOf: (deviceID) => (devices.has(deviceID) ? devices.get(deviceID) : null),
+      overridesOf: (id) => { overrideReads += 1; return new Map(overrides.get(id) || []); },
+      onOverrideChange: (fn) => { hear = fn; }, openSessions: () => [...open], shared: () => shared
+    });
+    for (let i = 0; i < 100; i++) packs.none();
+    assert.strictEqual(overrideReads, 0, 'none() is a counter, not a walk of the sessions');
+    for (let i = 0; i < 100; i++) packs.listsDeviceFor({packsOff: []}, 'dev-ci');
+    const afterRun = recordReads;
+    assert.ok(afterRun <= 1, `the owners of each module are kept: ${afterRun} reads`);
+    packs.packChanged('ci');
+    packs.listsDeviceFor({packsOff: []}, 'dev-ci');
+    assert.strictEqual(recordReads, afterRun + 1, 'read again after a change');
   });
 
   it('outside shared mode every question answers listed, and none() is true', () => {

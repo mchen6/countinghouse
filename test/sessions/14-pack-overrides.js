@@ -84,6 +84,19 @@ describe('sessions 14: pack overrides under the ceiling (shared runtime B3, Task
     assert.deepStrictEqual([[...sessionPacks.audienceOf('ci')], emptied], [[], ['ci']]);
   });
 
+  // /code-review of #340, 10: what session-packs reads is what effective() says: an "on" the ceiling in
+  // force no longer allows is not on, before ceilingSeen has dropped it
+  it('session-packs lists an "on" only while the ceiling in force allows it, as effective() says, before ceilingSeen drops it', () => {
+    sessionPacks.configure({records: () => [{pack: 'ci', modules: ['ci-scenario']}], moduleOf: () => 'ci-scenario', overridesOf: settings.packOverridesOf,
+      onOverrideChange: settings.onChange, openSessions: () => [...live], shared: () => true, allowsOn: settings.packOnAllowed});
+    on(A, 'ci');
+    assert.deepStrictEqual([settings.effective(A, 'pack.ci'), sessionPacks.lists(A, 'ci'), sessionPacks.listsDevice(A, 'd')], [true, true, true]);
+    ceiling = {state: 'trusted', ceiling: {packs: ['docs']}};   // read now (memo 0), not yet seen
+    sessionPacks.packChanged('ci');                              // (a view kept from before is the next finding's: a ceiling read is no event)
+    assert.deepStrictEqual([settings.effective(A, 'pack.ci'), sessionPacks.lists(A, 'ci'), sessionPacks.listsDevice(A, 'd')], [false, false, false]);
+    assert.deepStrictEqual([...sessionPacks.audienceOf('ci')], [A], 'membership follows the stored value: no unload from a read');
+  });
+
   it('clear says so for a pack override too', () => {
     on(A, 'ci');
     changed.length = 0;
