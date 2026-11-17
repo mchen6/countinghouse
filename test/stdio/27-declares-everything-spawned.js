@@ -37,7 +37,8 @@ describe('--stdio, spawned: the module that declares everything loads and serves
     const list = await io.request({jsonrpc: '2.0', id: 2, method: 'tools/list'});
     const names = list.result.tools.map((t) => t.name).filter((n) => /notesservice_/.test(n)).map((n) => n.replace(/^.*notesservice_/, '')).sort();
     // its two resource actions (readNote, listNotes) are not tools (M7): they are read as resources
-    assert.deepStrictEqual(names, ['completeid', 'rendernote', 'savenote']);
+    // (completeId is a completion action, never a tool: M11)
+    assert.deepStrictEqual(names, ['rendernote', 'savenote']);
     const call = async (action, args, id) => {
       const tool = list.result.tools.find((t) => t.name.endsWith(`notesservice_${action.toLowerCase()}`));
       const got = await io.request({jsonrpc: '2.0', id: id, method: 'tools/call', params: {name: tool.name, arguments: args}});
@@ -55,7 +56,10 @@ describe('--stdio, spawned: the module that declares everything loads and serves
     assert.deepStrictEqual(note.map((c) => [c.uri, c.mimeType]), [['countinghouse://m/declares_everything/notes/first', 'application/json']]);
     assert.deepStrictEqual(JSON.parse(note[0].text), {id: 'first', text: 'A first note.'});
     assert.deepStrictEqual(JSON.parse((await readResource('countinghouse://m/declares_everything/notes', 5))[0].text), {ids: ['first']});
-    assert.deepStrictEqual(await answer('completeId', {argument: 'id', value: 'fi'}, 6), {values: ['first']});
+    // completeId answers its template's completion (M11), never as a tool
+    const completed = await io.request({jsonrpc: '2.0', id: 6, method: 'completion/complete',
+      params: {ref: {type: 'ref/resource', uri: 'countinghouse://m/declares_everything/notes/{id}'}, argument: {name: 'id', value: 'fi'}}});
+    assert.deepStrictEqual(completed.result && completed.result.completion, {values: ['first'], total: 1, hasMore: false}, JSON.stringify(completed));
     // its binary fields are served as M4 serves any: an image block each, and a reference in their place
     const rendered = await call('renderNote', {id: 'first'}, 7);
     const {cover, pages} = rendered.structuredContent;
