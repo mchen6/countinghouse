@@ -345,6 +345,34 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
       // done: its entry ends as any finished job's does
       assert.ok(await until(() => jobSessions.forRun(t).session == null), 'forgotten once done');
     });
+
+    it('a run that times out (JOB_TIMEOUT) while its ask is being written leaves no record and no slot', async () => {
+      const ci = {recordCall: (k, t, c, cb) => { if (cb) cb(null); },
+        invokeJobs: (deviceID, serviceID, actionName, input, jobID, callback, cancelled, extraArgs) => {
+          asking(extraArgs.ask);
+          return setImmediate(callback, new CountinghouseError('ASK_PENDING'));
+        }};
+      JobControl.initJobProcess(ci);
+      // the record is written, then the hook is slow: the run's timeout fires first
+      JobControl.setAskHooks({
+        before: (data, taskId) => taskAsks.forRun(taskId, {asks: data.asks === true, asking: data.asking != null, owner: 'owner-t', shownAs: 'm'}),
+        asked: (data, taskId, state, run) => taskAsks.asked(taskId, state, {owner: 'owner-t', session: run.session, ofAsker}).then((r) => new Promise((res) => setTimeout(() => res(r), 600))),
+        settled: (data, taskId) => taskAsks.remove(taskId),
+        holdMs: () => 60000
+      });
+      const t = id();
+      made.add(t);
+      const added = await new Promise((resolve) => JobControl.addJob({appKey: 'k'}, {name: 'n', taskId: t, era: 'modern', asks: true, timeout: 200}, 'd', 's', 'a', {}, (err, r) => resolve({err, r})));
+      assert.ifError(added.err);
+      const until = async (check, ms = 10000) => {
+        for (const end = Date.now() + ms; Date.now() < end;) { if (await check()) return true; await new Promise((r) => setTimeout(r, 25)); }
+        return false;
+      };
+      assert.ok(await until(async () => (await taskAsks.get(t)) != null), 'the ask was written');
+      assert.ok(await until(async () => (await taskAsks.get(t)) == null), 'the timed-out run left its record');
+      // and its slot: three more of that owner's may wait (the cap is 3)
+      for (const m of [id(), id(), id()]) assert.ok((await ask(m, {owner: 'owner-t'})).asked != null);
+    });
   });
 
   describe('the local job runner', () => {
