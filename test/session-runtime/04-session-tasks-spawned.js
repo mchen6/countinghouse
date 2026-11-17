@@ -110,13 +110,28 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
     const tid = made.result.taskId;
     assert.match(tid, /^t-[0-9a-f]{32}$/);
     const never = `t-${'0'.repeat(32)}`;
-    for (const method of ['tasks/get', 'tasks/cancel']) {
-      const fromB = await modern(b, method, {taskId: tid});
-      const unknown = await modern(b, method, {taskId: never});
-      assert.strictEqual(fromB.error && fromB.error.code, -32602, JSON.stringify(fromB));
-      assert.strictEqual(shape(fromB, tid), shape(unknown, never), method);
-    }
+    // B's answer for A's id, the whole of it, against B's for an id never issued
+    const asNever = async(method, id, extra = {}) => {
+      const fromB = await modern(b, method, Object.assign({taskId: id}, extra));
+      const unknown = await modern(b, method, Object.assign({taskId: never}, extra));
+      assert.strictEqual(fromB.error && fromB.error.code, -32602, `${method}: ${JSON.stringify(fromB)}`);
+      assert.strictEqual(shape(fromB, id), shape(unknown, never), method);
+    };
+    for (const method of ['tasks/get', 'tasks/cancel']) await asNever(method, tid);
+    await asNever('tasks/update', tid, {inputResponses: {}});
     assert.ok(await until(async() => (await modern(a, 'tasks/get', {taskId: tid})).result.status === 'completed'), 'A\'s own, not cancelled by B');
+    // and once it has completed
+    await asNever('tasks/get', tid);
+
+    // A cancels its own working task (its tombstone is written): A reads it
+    // cancelled; to B it is still an id never issued
+    const long = await modern(a, 'tools/call', {name: 'slow', arguments: {ms: 3000}});
+    const cid = long.result.taskId;
+    const cancelled = await modern(a, 'tasks/cancel', {taskId: cid});
+    assert.ok(cancelled.result != null, JSON.stringify(cancelled));
+    assert.strictEqual((await modern(a, 'tasks/get', {taskId: cid})).result.status, 'cancelled');
+    for (const method of ['tasks/get', 'tasks/cancel']) await asNever(method, cid);
+    await asNever('tasks/update', cid, {inputResponses: {}});
 
     // legacy: params.task makes an s- task
     const lmade = await legacy(a, 'tools/call', {name: 'slow', arguments: {ms: 300}, task: {}});
@@ -132,6 +147,12 @@ describe('session-runtime 04: tasks by key and session, spawned (shared runtime 
     assert.deepStrictEqual((await legacy(b, 'tasks/list', {})).result.tasks, []);
     assert.ok((await legacy(a, 'tasks/list', {})).result.tasks.some((t) => t.taskId === lid));
     assert.ok(await until(async() => (await legacy(a, 'tasks/get', {taskId: lid})).result.status === 'completed'), 'A\'s legacy task, not cancelled by B');
+    // and once it has completed: B's get and result of it are still a never-issued id's
+    for (const method of ['tasks/get', 'tasks/result']) {
+      const fromB = await legacy(b, method, {taskId: lid});
+      const unknown = await legacy(b, method, {taskId: lnever});
+      assert.strictEqual(shape(fromB, lid), shape(unknown, lnever), `${method} after completion: ${JSON.stringify(fromB)}`);
+    }
     a.c.end();
     b.c.end();
   });
