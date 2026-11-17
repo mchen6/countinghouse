@@ -13,7 +13,7 @@ const {ROOT} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {createUsage} = require('../../lib/usage');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
 const REMOTE = testPort(9728);
 const KEY = 'remote-counting-key';

@@ -11,7 +11,7 @@ const {createUsage} = require('../../lib/usage');
 const remoteUsage = require('../../lib/remote/usage');
 const callTokens = require('../../lib/call-tokens');
 const {answerUsageQuery} = require('../../lib/usage/query');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
 describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
   const W = 51;

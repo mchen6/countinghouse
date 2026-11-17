@@ -436,7 +436,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   const cli = require('../../lib/cli-options');
   const CHUtil = require('../../lib/countinghouse-util');
   const LOG = require('../../lib/logger');
-  require('../../lib/logger').createLogger(false);
+  require('../../lib/logger').createLogger();
   const tokens = () => require('../../lib/call-tokens');
   const ENTRY = (workerId) => ({billingKey: `alice-key-${hex()}`, identityKey: `forge-internal-${hex()}`, module: 'token-forge', workerId: workerId, deviceID: 'd-callee'});
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

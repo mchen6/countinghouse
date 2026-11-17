@@ -21,7 +21,7 @@ function loggedBy(body) {
     const lib = (m) => require(${JSON.stringify(LIB)} + '/' + m);
     lib('cli-options').setOptions({workerThread: false});
     const LOG = lib('logger');
-    LOG.createLogger(false);
+    LOG.createLogger();
     const lines = [];
     LOG.I = (m) => { lines.push(String(m)); return m; };
     const KEY = ${JSON.stringify(KEY)};
@@ -71,7 +71,7 @@ describe('auth 29: no API key in a log line', function() {
       const lib = (m) => require(${JSON.stringify(LIB)} + '/' + m);
       lib('cli-options').setOptions({workerThread: false});
       const LOG = lib('logger');
-      LOG.createLogger(false);
+      LOG.createLogger();
       const seen = [];
       for (const level of ['I', 'W', 'E', 'D']) LOG[level] = (m) => { seen.push(String(m && m.stack ? m.stack : m)); return m; };
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-near-miss-'));
