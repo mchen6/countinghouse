@@ -49,6 +49,42 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
 
+### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
+
+- **`ctx.ask(name, values)`** puts one of the action's declared questions
+  (`api.json`'s `questions`) to the user of a 2026-07-28 client that
+  declares form elicitation, and resolves with the form's content, or
+  `null` for a decline. The runtime composes what the user reads,
+  `<module name>: <message>`.
+- **The handler runs again.** With no answer yet `ctx.ask` rejects
+  `ASK_PENDING`, the call is answered with the question (an
+  `InputRequiredResult`), and the client's retry runs the handler from the
+  top. Module authors: ask first, act after
+  ([module development](docs/module-development.md#asking-the-user-ctxask)).
+- **The retry's `requestState`** is bound to the caller, the session, the
+  tool and the arguments, lasts five minutes and is used once, also across
+  a restart. New error codes: `ASK_PENDING`, `ASK_UNAVAILABLE`,
+  `ASK_NOT_DECLARED`, `ASK_STATE_INVALID`, `ASK_STATE_UNCHECKED`.
+- **A call is asked at most eight rounds in all**, three at most of one
+  question; after that `ctx.ask` is `ASK_UNAVAILABLE`.
+- **`--moduleQuestions off`** turns every module's question off. Under
+  `--store redis` the used states' nonces are in Redis db 14, which must
+  not evict.
+- **A part may ask too (M14).** A module reached through a scenario's
+  `ctx.call`, routed or over a direct peer channel, asks the outer call's
+  user one of its own action's declared questions. The dialog carries the
+  called, listed module's name, never the part's; the usage record
+  (`askedBy`) and the runtime's log name the part. The call's rounds are
+  the chain's: one question a round, eight in all. The part's
+  `ASK_PENDING` rejects the caller's `ctx.call`; a caller that catches it
+  and returns a result keeps that result, and the question is dropped.
+  In single-thread mode a part has no one to ask.
+- **A call that can end on a question** (its own action declares one, or
+  one it can reach through declared calls does) refuses `requestState` or
+  `inputResponses` in its arguments.
+- **A call cancelled while its form is made** is asked nothing: no state
+  is made for it, and its record says `cancelled`.
+
 ### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
 
 - **A module that passed validate and was then refused at load now fails

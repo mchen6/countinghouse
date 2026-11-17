@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "packService": {
+    "run": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "catch"
+            ]
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "part": {
+            "type": "object"
+          },
+          "caught": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
