@@ -168,11 +168,15 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID', JSON.stringify(r2));
     }
-    // everything else is the terminal's: a pack on or off, any other
-    // setting, and their retries; nothing is written
-    for (const [args, extra] of [[{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}],
-      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {requestState: 'x', inputResponses: {}}],
-      [{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
+    // a pack is the session's own since B3 Task 8: on is a loosening (this
+    // client gets no form here), off a tightening; neither writes a file
+    const packOn = await call({action: 'set', name: 'pack.ch-pack-x', value: 'on'});
+    assert.strictEqual(packOn.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(packOn));
+    const packOff = await call({action: 'set', name: 'pack.ch-pack-x', value: 'off'});
+    assert.strictEqual(packOff.result.structuredContent.applies, 'this session', JSON.stringify(packOff));
+    // everything else is the terminal's: any other setting, and its
+    // retries; nothing is written
+    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
