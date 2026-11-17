@@ -113,6 +113,26 @@ describe('sessions 14: pack overrides under the ceiling (shared runtime B3, Task
     assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd'), [...sessionPacks.audienceOf('ci')]], [true, [A]], 'allowed again: back, nothing lost');
   });
 
+  // the reviewer and A (R1), on #341's follow-up: a change of the ceiling's word on an "on" (it turns untrusted,
+  // or allows again) is every session's view changing, said as onChange(null) at the read that sees it, so a
+  // per-session worker whose pack is now hidden is stopped promptly
+  it('a read that finds the ceiling\'s key changed says onChange(null), once per change', () => {
+    sessionPacks.configure({records: () => [{pack: 'ci', modules: ['ci-scenario']}], moduleOf: () => 'ci-scenario', overridesOf: settings.packOverridesOf,
+      onOverrideChange: settings.onChange, openSessions: () => [...live], shared: () => true, allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow,
+      ceilingKey: settings.ceilingKey, onCeilingChange: settings.onCeilingChange});
+    const heard = [];
+    sessionPacks.onChange((id) => heard.push(id));
+    settings.ceilingNow();
+    heard.length = 0;
+    ceiling = {state: 'untrusted', file: 'x', problem: 'y'};
+    settings.ceilingNow();
+    settings.ceilingNow();
+    assert.deepStrictEqual(heard, [null], 'untrusted: once');
+    ceiling = ALLOWS_CI;
+    settings.ceilingNow();
+    assert.deepStrictEqual(heard, [null, null], 'allowing again: once more');
+  });
+
   it('clear says so for a pack override too', () => {
     on(A, 'ci');
     changed.length = 0;

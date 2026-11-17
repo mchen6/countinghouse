@@ -79,7 +79,7 @@ modules see their own code at. Install it elsewhere (e.g.
 
 | Endpoint | Protocol | Purpose |
 |---|---|---|
-| `POST /mcp` | MCP (JSON-RPC 2.0, stateless Streamable HTTP) | `initialize`, `tools/list`, `tools/call`, and the Tasks extension (`tasks/get`/`tasks/result`/`tasks/list`/`tasks/cancel`) — the primary interface. |
+| `POST /mcp` | MCP (JSON-RPC 2.0, stateless Streamable HTTP) | `initialize`, `tools/list`, `tools/call`, the legacy era's tasks (`params.task`; `tasks/get`/`tasks/result`/`tasks/list`/`tasks/cancel`), and for 2026-07-28 clients the `io.modelcontextprotocol/tasks` extension (`tasks/get`/`tasks/update`/`tasks/cancel`, for an action that declares `longRunning`) — the primary interface. Tasks need `--workerThread`. |
 | `GET /balance` | Platform | Current balance for the caller's apiKey (`MeteringProvider.checkBalance`). |
 | `GET /device-list` | Platform | Devices the caller's apiKey can see — same filtering `tools/list` applies. |
 | `POST /devices/:deviceID/invoke-action` | Platform, pre-MCP HTTP API | Direct HTTP equivalent of `tools/call`; predates the MCP gateway and still works. |
