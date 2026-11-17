@@ -595,7 +595,11 @@ says how to write a module for this.
   credential is sent only where your `--remoteCredentials <file>` allows
   that variable for the declared URL's exact origin; a remote whose
   credential is not allowed is not contacted. `--remoteTimeout` and
-  `--remoteMaxBytes` bound each call
+  `--remoteMaxBytes` bound each call. A redirect is followed only within the
+  declared URL's origin (the same scheme, host and port, at most 5); one to
+  another origin is refused (`REMOTE_UNREACHABLE`), so a credential never
+  leaves its origin. Earlier documentation said no redirect was followed;
+  it has been corrected
   ([module-development.md](module-development.md#calling-a-remote-mcp-server),
   [security-model.md](security-model.md#remote-mcp-servers-a-module-cannot-choose-where-a-credential-goes)).
 

@@ -1077,7 +1077,7 @@ rejects, with a code:
 
 | Code | When | Retryable |
 |---|---|---|
-| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect (refused, never followed), a 502 or 503, or the module was reloaded during the call | yes |
+| `REMOTE_UNREACHABLE` | DNS, connection or TLS failure, a redirect to another origin (refused; one within the same origin is followed, at most 5), a 502 or 503, or the module was reloaded during the call | yes |
 | `REMOTE_TIMEOUT` | no answer within `--remoteTimeout`, or a 504 | yes |
 | `REMOTE_AUTH_FAILED` | the server answered 401 or 403; the message names the variable, never its value | no |
 | `REMOTE_PROTOCOL` | an answer that is not valid MCP | no |
