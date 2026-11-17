@@ -271,8 +271,13 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     });
     it('a lock falls on A during its load (its client says no)', async() => {
       const err = await during(() => { sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null}); });
-      assert.ok(err != null);
+      assert.strictEqual(err && err.code, 'SETTING_CLIENT_NOT_CONFIRMED', err && err.message);
       nothingApplied('latched');
+    });
+    it('another kind is declined in A during its load: locked, never said as a decline of the pack (ruling (c))', async() => {
+      const err = await during(() => { confirm.confirmations(A).decline('requestTimeout'); });
+      assert.strictEqual(err && err.code, 'SETTING_LOCKED_THIS_SESSION', err && err.message);
+      nothingApplied('locked');
     });
     it('A\'s own override for the pack changes during its load', async() => {
       const err = await during(() => { settings.set(A, 'pack.ci', false, {version: '1.0.0'}); });
@@ -291,9 +296,10 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     });
 
     it('a session whose client conditions aren\'t ok and yes gets no form', async() => {
-      // its client answering no latches the session (B2's N1): no form, as for a cap
+      // its client answering no latches the session (B2's N1): no form, as for
+      // a cap, and the refusal says the latch, never a decline (#337)
       sources[A].answer = {status: 'ok', conditions: 'no', repo: null};
-      await refused(tool().set('pack.ci', 'on', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(tool().set('pack.ci', 'on', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       // and one whose client is unknown gets none either
       sources[B].answer = null;
       await refused(tool().set('pack.ci', 'on', 'settings tool', ctx(B)), 'SETTING_NEEDS_CONFIRMATION');

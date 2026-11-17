@@ -125,11 +125,11 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   it('a loosening is judged against the session\'s own value, and in a session whose client could answer for the user it is not asked; nothing changes', async () => {
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
     // back toward the default is a loosening of A's value
-    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+    const e = await refused(tool.set('maxOutputBytes', '4MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
     assert.match(e.message, /ch-local settings set maxOutputBytes 4MiB/);
     assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 2 * MiB);
     // B has no override: above the default is one
-    await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_DECLINED_THIS_SESSION');
+    await refused(tool.set('requestTimeout', '60s', 'settings tool', ctx(B)), 'SETTING_CLIENT_NOT_CONFIRMED');
     assert.strictEqual(settings.limitsOf(B), null);
     assert.ok(!fs.existsSync(file), 'settings.json never written');
     assert.strictEqual(options.maxOutputBytes, 8 * MiB);
@@ -171,8 +171,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     // a terminal change: no session
     fs.appendFileSync(path.join(home, 'history.jsonl'), `${JSON.stringify({at: new Date().toISOString(), by: 'cli', setting: 'upgradeCheck', old: 'daily', new: 'weekly'})}\n`);
     await tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A));
-    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
-    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
     await tool.set('requestTimeout', '20s', 'settings tool', ctx(B));
     const value = (got, name) => got.settings.find((s) => s.name === name).value;
     const seen = (got) => got.history.map((h) => [h.setting, h.change || null, h.new !== undefined ? h.new : (h.asked !== undefined ? h.asked : null)]);
@@ -255,8 +255,8 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   });
 
   it('a session\'s end writes the counts of its repeated requests and keeps nothing of it', async () => {
-    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
-    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+    await refused(tool.set('maxOutputBytes', '64MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
+    await refused(tool.set('maxOutputBytes', '65MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
     assert.strictEqual(history().length, 1, 'the second only counted');
     sources[A].emit('end');
     assert.deepStrictEqual(history().map((h) => [h.session, h.change, h.count]),

@@ -262,18 +262,21 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     // and none for the session's life, though it would now say yes (N1);
     // its shim is not asked a second time
     const no = await call(c, set60, {}, 'no');
-    assert.strictEqual(no.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(no));
+    assert.strictEqual(no.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(no));
     const still = await call(c, {action: 'set', name: 'maxOutputBytes', value: '32MiB'});
-    assert.strictEqual(still.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(still));
+    assert.strictEqual(still.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(still));
     assert.strictEqual(await c.c.json('C', 300), null, 'not asked again');
     assert.match(still.result.content[0].text, /ch-local settings set maxOutputBytes 32MiB/);
+    // never said to be a decline: it could not be confirmed (this frame gives no why)
+    assert.match(still.result.content[0].text, /this client could not be confirmed/);
+    assert.doesNotMatch(still.result.content[0].text, /declined/);
     // D's client says no in a frame nobody asked for, then yes in another:
     // the first has latched it, though the session's own copy now says yes
     const d = await shim.session(r.socket, secret);
     d.c.send('C', {op: 'client', status: 'ok', conditions: 'no', repo: null, token: null});
     d.c.send('C', {op: 'client', status: 'ok', conditions: 'yes', repo: null, token: null});
     const overwritten = await call(d, set60);
-    assert.strictEqual(overwritten.result._meta['countinghouse/code'], 'SETTING_DECLINED_THIS_SESSION', JSON.stringify(overwritten));
+    assert.strictEqual(overwritten.result._meta['countinghouse/code'], 'SETTING_CLIENT_NOT_CONFIRMED', JSON.stringify(overwritten));
     assert.strictEqual(await d.c.json('C', 300), null, 'and its shim is not asked');
     assert.ok(!fs.existsSync(settingsFile), 'settings.json never written');
     for (const s of [a, b, c, d]) s.c.end();

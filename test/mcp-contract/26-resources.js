@@ -41,7 +41,8 @@ const SCHEMAS = {
   '/readCsv/out': {type: 'string', contentMediaType: 'text/csv'},
   '/allNotes/out': {type: 'object'},
   '/cover/out': {type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png'},
-  '/broken/out': {type: 'string'}
+  '/broken/out': {type: 'string'},
+  '/pick/color': {type: 'object', properties: {color: {type: 'string'}}}
 };
 const DEVICES = {
   notes: {role: null, actions: [
@@ -59,10 +60,15 @@ const DEVICES = {
   'twin_a': {role: null, actions: [act('readTwin', {resource: {uriTemplate: 'x/{id}', name: 'twin'}})]},
   secret: {role: null, actions: [act('readNote', {resource: {uriTemplate: 'secret/{k}', name: 'secret'}})]},
   'ch-pack-x': {role: 'scenario', actions: [act('readRun', {resource: {uriTemplate: 'runs/{run}', name: 'run'}})]},
-  'ch-step-part': {role: 'part', actions: [act('readPart', {resource: {uriTemplate: 'parts/{p}', name: 'part'}})]}
+  'ch-step-part': {role: 'part', actions: [act('readPart', {resource: {uriTemplate: 'parts/{p}', name: 'part'}})]},
+  // an action that declares a question (M13): a modern tools/call of it has
+  // someone to ask; a resource read never does
+  asker: {role: null, actions: [act('pick', {questions: {color: {message: 'Which colour?', schema: '/pick/color'}}})]}
 };
 
 const invoked = [];
+// each call's ask state as the call path receives it: {action, askable}
+const asked = [];
 const billed = [];
 let limited = false;
 function buildInterface(devices = DEVICES) {
@@ -85,6 +91,7 @@ function buildInterface(devices = DEVICES) {
       // a limited caller's call is refused DENY_DEVICE_ACCESS and never reaches the module
       if (limited) return answer(new (require('../../lib/countinghouse-error').CountinghouseError)('DENY_DEVICE_ACCESS'), null);
       invoked.push({deviceID, serviceID, actionName, input: args.input});
+      asked.push({action: actionName, askable: session.ask != null ? session.ask.askable : null});
       if (actionName === 'readNote' || actionName === 'readRun' || actionName === 'readPart') return answer(null, {output: `# ${JSON.stringify(args.input)}`});
       if (actionName === 'readCsv') return answer(null, {output: 'a,b'});
       if (actionName === 'allNotes') return answer(null, {output: {ids: ['first']}});
@@ -167,6 +174,31 @@ describe('mcp-contract 26: module resources (M7)', function() {
       }
     });
   }
+
+  // master 939cee95: runModuleTarget, split out of handleToolsCall by M7,
+  // bound a question's state to `name`, a local it no longer had: a
+  // ReferenceError, so every modern ask ran with no one to ask
+  // (ASK_UNAVAILABLE). The fix binds the tool the client called.
+  it('a 2026-07-28 tools/call of an action that asks has someone to ask; a resource read never does', async () => {
+    const meta = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {elicitation: {}}};
+    const errors = [];
+    const LOG = require('../../lib/logger');
+    const errReal = LOG.E;
+    LOG.E = (e) => { errors.push(String(e && e.message)); return e; };
+    try {
+      asked.length = 0;
+      const called = await ask('tools/call', KEY_A, {name: 'asker_svc_pick', arguments: {}, _meta: meta});
+      assert.ok(called.result != null && called.result.isError !== true, JSON.stringify(called));
+      assert.deepStrictEqual(asked, [{action: 'pick', askable: true}], errors.join('\n'));
+      assert.ok(!errors.some((e) => /is not defined/.test(e)), errors.join('\n'));
+      asked.length = 0;
+      const read = await ask('resources/read', KEY_A, {uri: 'countinghouse://m/notes/notes/x', _meta: meta});
+      assert.ok(read.result != null, JSON.stringify(read));
+      assert.deepStrictEqual(asked, [{action: 'readNote', askable: false}]);
+    } finally {
+      LOG.E = errReal;
+    }
+  });
 
   it('a resource action is not a tool: gone from tools/list and from tools/call; a plain action is still one', async () => {
     const tools = (await ask('tools/list', KEY_A)).result.tools.map((t) => t.name);
