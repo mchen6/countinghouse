@@ -939,6 +939,23 @@ bounds it:
 - **A call cancelled while its form is made gets no state.** None is
   minted, so none can be presented later.
 
+### Change notices on a listen (`subscriptions/listen`)
+
+A listen is opened by a key (on a shared runtime, by a session), counted
+against that key's or session's limit, and sent only what it agreed to.
+Each list it follows is the list its own key and session are shown, so a
+notice never tells a caller about a module it cannot reach. A
+`resources/updated` notice goes only to the subscriptions of the key whose
+call succeeded: a module that keeps data per caller would otherwise tell one
+tenant when another was active. Each subscription's URIs are resolved in its
+own view (a pack a session doesn't list resolves nothing for it), and on a
+shared runtime a per-session module's change reaches only the calling
+session. A URI the caller can't read is left out of what is agreed, so a
+listen can't be used to learn that another tenant's resource exists. A call
+is announced where it is recorded, on the main thread, by every entry path;
+module code in a worker can't record one. A call with no key (`--debug`
+without `--debugKey`) is not recorded, and announces nothing.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.

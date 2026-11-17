@@ -155,13 +155,14 @@ describe('subscriptions/listen (#231)', () => {
     const body = (id, notifications = {toolsListChanged: true}) => ({jsonrpc: '2.0', id, method: 'subscriptions/listen', params: {_meta: META, notifications}});
 
     it('answers text/event-stream: the acknowledgement first, then a list_changed with the id, then the graceful end', async() => {
-      const s = await listen(body(41, {toolsListChanged: true, promptsListChanged: true}));
+      // (prompts' list notices are served since M8; a kind that is not, is left out)
+      const s = await listen(body(41, {toolsListChanged: true, promptsListChanged: true, elicitationsListChanged: true}));
       assert.strictEqual(s.res.statusCode, 200);
       assert.match(String(s.res.headers['content-type']), /^text\/event-stream/);
       assert.strictEqual(s.res.headers['x-accel-buffering'], 'no');
       assert.ok(await until(() => s.events.length >= 1));
       assert.deepStrictEqual(s.events[0], {jsonrpc: '2.0', method: 'notifications/subscriptions/acknowledged',
-        params: {notifications: {toolsListChanged: true}, _meta: {[SUBSCRIPTION_ID_KEY]: 41}}}, 'only what is served is acknowledged');
+        params: {notifications: {toolsListChanged: true, promptsListChanged: true}, _meta: {[SUBSCRIPTION_ID_KEY]: 41}}}, 'only what is served is acknowledged');
       await tick();
       tools = [{name: 'a'}, {name: 'b'}];
       hub.changed();
@@ -300,7 +301,7 @@ describe('subscriptions/listen (#231)', () => {
     });
 
     it('a listen that agrees to nothing ends right after its acknowledgement', async() => {
-      const s = await listen(body(71, {promptsListChanged: true}));
+      const s = await listen(body(71, {elicitationsListChanged: true, resourceSubscriptions: []}));
       assert.ok(await until(() => s.ended));
       assert.deepStrictEqual(s.events[0].params.notifications, {});
       assert.strictEqual(s.events[1].result.resultType, 'complete');
