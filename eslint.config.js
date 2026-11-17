@@ -74,6 +74,29 @@ module.exports = [
     rules: {strict: ['error', 'global']}
   },
 
+  // The runtime's own files have no implicit globals, so a free name there is
+  // a bug, never a convention: no-undef is on for lib/ (not for the tests,
+  // whose few intentional implicit globals are the reason it is off above).
+  // #327's merge left `name` unbound in runModuleTarget (lib/mcp/gateway.js),
+  // and with no-undef off, `name` passed as the browser's window.name: every
+  // 2026-07-28 ask was ASK_UNAVAILABLE on master (#355). Node's globals are
+  // listed here, the ones lib/ uses and a few it plausibly will, rather than
+  // read from the transitive `globals` package (no new dependency). A file
+  // that truly means a name it doesn't define says so with /* global */
+  // (lib/couchdb-adapter/init-db.js: CouchDB's emit).
+  {
+    files: ['lib/**/*.js'],
+    languageOptions: {
+      globals: Object.fromEntries([
+        'require', 'module', 'exports', '__dirname', '__filename', 'process', 'Buffer', 'global', 'globalThis', 'console',
+        'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate', 'clearImmediate', 'queueMicrotask',
+        'URL', 'URLSearchParams', 'TextEncoder', 'TextDecoder', 'structuredClone', 'performance',
+        'AbortController', 'AbortSignal', 'fetch', 'Headers', 'Request', 'Response', 'Blob'
+      ].map((g) => [g, 'readonly']))
+    },
+    rules: {'no-undef': 'error'}
+  },
+
   // framework.js is the entry point and returns at top level when --hardened
   // hands startup to the re-launched child (lib/hardened-launch.js).
   {
