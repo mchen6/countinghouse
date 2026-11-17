@@ -154,13 +154,15 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
   it('every other setting stays the terminal\'s for a session: nothing is written (finding 2)', async () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci': true}}));
     const before = fs.readFileSync(file);
-    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly'], ['locale', 'zh'],
-      ['pack.ci', 'off'], ['pack.ci', 'on']]) {
+    // (a pack is a session's own since B3 Task 8: sessions 22)
+    for (const [name, value] of [['moduleSandbox', 'audit'], ['moduleSandbox', 'enforce'], ['autoUpgrade', 'on'], ['upgradeCheck', 'weekly'], ['locale', 'zh']]) {
       const e = await refused(tool.set(name, value, 'settings tool', ctx(A)), 'SETTING_TERMINAL_ONLY_SHARED');
       assert.match(e.message, /ch-local settings set/, `${name} ${value}`);
     }
     await refused(tool.set('nonsense', '1', 'settings tool', ctx(A)), 'SETTING_UNKNOWN');
     await refused(tool.set('maxOutputBytes', '1KiB', 'settings tool', ctx(A)), 'SETTING_OUT_OF_BOUNDS');
+    // and a pack turned off for the session writes nothing either
+    assert.strictEqual((await tool.set('pack.ci', 'off', 'settings tool', ctx(A))).applies, 'this session');
     assert.deepStrictEqual(fs.readFileSync(file), before, 'settings.json byte-identical');
     assert.strictEqual(settings.limitsOf(A), null);
   });
