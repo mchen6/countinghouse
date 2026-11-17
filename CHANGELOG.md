@@ -34,6 +34,18 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
 
+### Changed — a latched session is told why, never that the user declined
+
+- **`SETTING_CLIENT_NOT_CONFIRMED`** (new): a loosening asked in a shared
+  runtime's session whose client said its configuration could answer a
+  dialog by itself. It says why, as the client line gives it (a reason such
+  as "project plugin or marketplace" and a place under the home as
+  "~/..."), or "this client could not be confirmed". It was
+  `SETTING_DECLINED_THIS_SESSION`, whose text read as if the user had
+  declined.
+- **`SETTING_DECLINED_THIS_SESSION`** is a decline's, or two dialogs left
+  unanswered: its text no longer speaks of the client's configuration.
+
 ### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
 
 - **A module that passed validate and was then refused at load now fails

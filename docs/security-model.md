@@ -697,10 +697,16 @@ sessions) all of this is each session's own, for the two caps:
   that session's life, even when a later answer says otherwise (a hook the
   client has loaded can be deleted from disk and still answer). Every frame
   is seen as it arrives, also one that answers late or that nobody asked
-  for. A locked session is told `SETTING_DECLINED_THIS_SESSION`, with the
-  terminal command. A confirmed raise of the output cap waits for the
-  validators to grow; the session, its lock, the ceiling and its value are
-  checked again after that wait, and a change made meanwhile wins.
+  for. A latched session is told `SETTING_CLIENT_NOT_CONFIRMED`, never that
+  the user declined, with why its client said so when the client line gives
+  it (contract 2's conditionsWhy: a reason from a closed set and a place
+  under the home as "~/...", checked again by the runtime, so no user name
+  and no path outside the home reaches the agent), and the terminal
+  command. A session locked by a decline, or by two dialogs left
+  unanswered, is told `SETTING_DECLINED_THIS_SESSION`. A confirmed raise of
+  the output cap waits for the validators to grow; the session, its lock,
+  the ceiling and its value are checked again after that wait, and a change
+  made meanwhile wins.
 - **One window for the user, across sessions.** Per setting (every pack
   counting as one), three dialogs declined or left unanswered within 30
   minutes stop that setting's dialogs in every session for the next 30. A
