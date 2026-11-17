@@ -50,9 +50,12 @@
               "null"
             ]
           },
-          "threw": {
+          "took": {
+            "type": "boolean"
+          },
+          "writable": {
             "type": [
-              "string",
+              "boolean",
               "null"
             ]
           }

@@ -9,6 +9,14 @@
 // step 4 (the review of #202) a port invoke names no target at all: the
 // caller's announcement to the main thread does, so one posted on the port
 // alone is refused at the callee's match (CALL_TOKEN_INVALID).
+// Since PR-c module code cannot reach a peer channel's port at all: the
+// runtime posts on it with methods taken at boot, so a hook a module puts on
+// MessagePort.prototype never sees it, and the forge has no channel to post
+// on. That refusal at the callee's match stays covered server-free
+// (composition 18, "a metering request with no announcement is held, then
+// refused"); here the other device is asked for the proper way too, by a hop
+// of its own, authorized as the identity that runs the module (its
+// runsModules) under a grant of its own.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -40,21 +48,30 @@ const {toolOutput} = require('../helpers/tool-result');
   });
   after(() => { stopServer(server); if (base) fs.rmSync(base, {recursive: true, force: true}); });
 
-  it('a granted device is served; a device the channel was not granted is refused', async () => {
+  it('a granted device is served; module code has no channel to post on, and the other device is served only by a hop of its own', async () => {
     const r = await mcpCall(testPort(9668), 'forger', 'peer_forge_forgeservice_forge', {appKey: 'forger', granted: dev1, other: dev2});
     const out = toolOutput(r);
     assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r) + server.output.slice(-1500));
-    assert.strictEqual(out.other, 'error: CALL_TOKEN_INVALID', JSON.stringify(out));
+    // the module's hook was installed, and never saw the channel's port
+    assert.strictEqual(out.hooked, true, JSON.stringify(out));
+    assert.strictEqual(out.other, 'no channel', JSON.stringify(out));
+    // the other device asked for the proper way, a hop of its own: authorized
+    // as the identity that runs peer-forge ('both', its runsModules), under a
+    // grant of its own, never through the forger's channel
+    assert.match(String(out.otherByHop), /^ok: .*peer-callee-2/, JSON.stringify(out));
   });
 
   // The same channel, now with a key granted both devices: the broker's
   // later grant on the open channel reaches the callee before the caller
   // uses it, and the other device, granted to the key but hosted by another
   // worker, is still not served on this channel.
-  it('a key granted later on the open channel is served; its other device is not served on this channel', async () => {
+  it('a key granted later on the open channel is served; its other device is served by a hop of its own, never through this channel', async () => {
     const r = await mcpCall(testPort(9668), 'both', 'peer_forge_forgeservice_forge', {appKey: 'both', granted: dev1, other: dev2});
     const out = toolOutput(r);
     assert.ok(/^ok: .*peer-callee-1/.test(String(out.granted)), JSON.stringify(r));
-    assert.strictEqual(out.other, 'error: CALL_TOKEN_INVALID', JSON.stringify(out));
+    assert.strictEqual(out.hooked, true, JSON.stringify(out));
+    assert.strictEqual(out.other, 'no channel', JSON.stringify(out));
+    // granted to this key, the other device is served by a hop of its own
+    assert.match(String(out.otherByHop), /^ok: .*peer-callee-2/, JSON.stringify(out));
   });
 });

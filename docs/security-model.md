@@ -91,10 +91,50 @@ objects a module can reach is fixed at the lockdown instead, in audit and
 enforce: every function of the `path`, `path.posix`, `path.win32` and `url`
 exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
 are non-writable and non-configurable, so a module cannot show the loader
-or a check one path and have another one used. A module that patches
-`path`, `url` or `URL` runs only under `off`.
+or a check one path and have another one used. So are a port's
+methods and its event targets' (`MessagePort.prototype`, the
+`NodeEventTarget` behind it and `EventTarget.prototype`): Node's own set-up
+of a port that reaches a worker after module code has loaded (a peer
+channel's) calls `this.on`, so a replaced method would be handed the port
+before the runtime holds it. The keys Node assigns on a port it sets up
+(`kEvents`, `kHandlers`, the listener limits, `kCurrentlyReceivingPorts`)
+have accessors of their own on those prototypes that make the value the
+port's own, so a setter module code puts on `Object.prototype` for one is
+never reached. A module that patches `path`, `url`, `URL`,
+`EventTarget`, `NodeEventTarget` or `MessagePort` runs only under `off`.
+Since the inherited properties are non-writable, an assignment on an
+instance (`target.addEventListener = fn`) throws in strict code; accessors
+(`port.onmessage = fn`), subclasses and `Object.defineProperty` on an
+instance still work. These are fixed under `audit` as under `enforce`:
+audit reports a module's other attempts and allows them, but a patch to
+one of these simply fails, with nothing reported.
+
+A worker loads everything its calls go through at boot, before module
+code: call limits, a hop's input, peer channels, the service client, the
+device query and `countinghouse-util` (attached to the worker then). A
+`require` on a call path after that would return whatever module code had
+put in `require.cache`, so there is none. The exports of those files and
+their classes' prototypes are fixed at boot too, so module code that
+reaches them through `require.cache` can replace nothing the runtime calls.
+A call's token, the queues of calls waiting for a peer channel and the
+callbacks waiting for replies are kept in containers written as own
+properties and walked by index, with intrinsics taken at boot, so a method
+or setter module code puts on a shared prototype is never handed one.
+What the runtime still loads on first use carries no call's token: a
+library for the module's own requests, the logger, live settings and the
+Redis bridge, which is handed only its own send.
 
 Known limits of this rule:
+- **A module in the same realm can still post a message through
+  worker-message's module-level post, and the main thread must refuse what
+  it did not ask for.** Module code reaches `lib/worker-message.js` in
+  `require.cache`; it cannot change the runtime's instance or its
+  prototype, but a `WorkerMessage` of its own posts on the worker's port.
+  So a module can send a request the main thread does not serve for it (a
+  validation's worker is refused every one, by name: test/sandbox/21) and a
+  reply to an id it guesses, as bytes it made by hand (refused, or checked
+  by a validator before any caller decodes them: test/sandbox/42). Nothing
+  the main thread acts on is taken on the message's word.
 - **`CHUtil.request`'s redirects** are followed inside postman-request,
   whose redirect handling looks methods up when it runs: the lockdown's
   `followRedirect` check runs on its own captured functions, but what
@@ -1200,7 +1240,25 @@ and the short list of what the in-process sandbox cannot give.
   (`lib/lazy-require.js`), after module code has run, so a module can plant
   `require.cache` entries for it in its own worker first. That reaches only calls made in that worker, which carry the
   keys the module itself passes; the library is loaded once and kept, so
-  nothing planted after its first use is read.
+  nothing planted after its first use is read. Everything a call's token
+  goes through is loaded at a worker's boot instead, and its exports and
+  classes' prototypes are fixed there (above), so what module code reaches
+  this way it can read, not change.
+- **A module can obtain a peer port transferred into its worker.** Node
+  writes the array of ports a message transferred natively, index by index,
+  before any JavaScript runs, so a setter module code puts on an index of
+  `Array.prototype` or `Object.prototype` is handed a peer channel's port
+  as it arrives. This gives it nothing beyond posting on its own end of the
+  channel: tokens, targets and input never cross the port (they go to the
+  main thread in the caller's announcement), and each invoke is checked
+  against the main thread's announcement before it is served, so a forged
+  or replayed invoke is refused unserved (test/sandbox/63). An index
+  accessor on `Array.prototype` would close it at the cost of every array's
+  holes and V8's fast path in the module's worker, which is worse.
+- **`BroadcastChannel` reaches past the envelope.** The global lets module
+  code in two workers send each other messages directly, unmetered and
+  outside the main thread's bounds. Refusing it to module code under
+  `enforce` is planned with the require-cache isolation work (#194).
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
   (through `require.cache`, `CHUtil.redis.clientInstance`; the global

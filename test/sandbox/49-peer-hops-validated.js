@@ -146,7 +146,9 @@ describe('sandbox 49: a peer channel\'s caller, server-free', () => {
     channel.invoke('d', 's', 'a', {}, 30, (err) => answers.push(err.code));
     channel.invoke('d', 's', 'a', {}, 5000, (err, data) => answers.push(data));
     channel.invoke('d', 's', 'a', {}, 5000, (err, data) => answers.push(data));
-    await new Promise((r) => setTimeout(r, 80));
+    // the timeout frees the slot; the second's post then crosses the port,
+    // which a loaded machine may take longer than a fixed wait to deliver
+    for (const end = Date.now() + 2000; seen.length < 2 && Date.now() < end;) await new Promise((r) => setTimeout(r, 10));
     assert.deepStrictEqual(answers, ['PEER_CHANNEL_TIMEOUT']);
     assert.deepStrictEqual(seen, [0, 1], 'the second waited on a slot no answer would free');
     channel.deliver(0, null, {output: 'late'});   // the first's answer, after its timeout

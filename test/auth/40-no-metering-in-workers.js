@@ -39,6 +39,7 @@ describe('auth 40: a module worker holds no metering provider (M6)', function() 
     const r = await mcpCall(PORT, KEY, 'metering_forge_forgeservice_credit', {key: VICTIM});
     assert.strictEqual(r.isError, false, JSON.stringify(r));
     const out = toolOutput(r);
+    assert.strictEqual(out.reached, true, `the module never reached the runtime's countinghouse-util: ${JSON.stringify(out)}`);
     // The ledger first: what a module could do with the provider.
     assert.strictEqual(await cmd('hget', VICTIM, 'balance'), '50', `the module moved the balance: ${JSON.stringify(out)}`);
     assert.strictEqual(out.provider, 'none', JSON.stringify(out));
