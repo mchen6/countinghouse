@@ -282,6 +282,27 @@ is no longer offered. Nothing is refused or changed at load.
   shim. The allowed built-ins and
   the loopback names are no longer exported as live sets
   (`ALLOWED_BUILTIN_IDS`, a frozen array, takes the place of the first).
+- **A module can no longer patch `EventTarget`, `NodeEventTarget` or
+  `MessagePort`** under audit or enforce: their methods are fixed at the
+  lockdown, as `path`'s and `url`'s are. A peer channel's port is set up
+  by Node with them after module code has loaded. An assignment on an
+  instance (`target.addEventListener = fn`) now throws in strict code;
+  accessors such as `port.onmessage`, subclasses and
+  `Object.defineProperty` on an instance still work, and so do
+  `AbortController` and `AbortSignal`. The runtime's own port use (replies,
+  stdio, peer channels) goes through methods taken at a worker's boot. The
+  keys Node assigns on a port it sets up (`kEvents`, `kHandlers` and the
+  rest) are made the port's own without reaching `Object.prototype`, and
+  `util.inspect` of a port still works.
+- **What a worker's calls go through is loaded at its boot**, before module
+  code, and fixed there: the call path's files (call limits, a hop's
+  input, peer channels, the service client, the device query and
+  `countinghouse-util`, attached to the worker then) are no longer loaded
+  on first use, so what module code puts in `require.cache` changes
+  nothing the runtime uses, and their exports and classes' prototypes are
+  non-writable. A call's token, its queues and its replies are kept in
+  containers written as own properties and walked by index, with
+  intrinsics taken at boot. About 8 ms more per worker boot.
 - **A module can no longer patch `path`, `url` or `URL`** under audit or
   enforce: the functions of the `path`, `path.posix`, `path.win32` and `url`
   exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
