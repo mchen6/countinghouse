@@ -101,6 +101,12 @@
           {
             "name": "completeId",
             "description": "Completes the id of a saved note.",
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
             "input": {
               "schema": "/notesService/completeId/input"
             },

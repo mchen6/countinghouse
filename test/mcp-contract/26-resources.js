@@ -65,10 +65,10 @@ const DEVICES = {
 const invoked = [];
 const billed = [];
 let limited = false;
-function buildInterface() {
+function buildInterface(devices = DEVICES) {
   const deviceMap = {};
   const specs = {};
-  for (const [name, d] of Object.entries(DEVICES)) {
+  for (const [name, d] of Object.entries(devices)) {
     const spec = {device: {friendlyName: name, serviceList: {[SVC]: {actionList: d.actions}}}};
     specs[ID(name)] = spec;
     deviceMap[ID(name)] = {spec, packageInfo: {name, countinghouse: d.role != null ? {role: d.role} : {}}};
@@ -80,8 +80,11 @@ function buildInterface() {
     recordCall(appKey, tool, cost, cb) { billed.push({appKey, tool, cost}); cb(null); },
     // the call path's one way into a module: a read reaches it as a call does
     invokeDeviceAction(deviceID, serviceID, actionName, args, session) {
-      invoked.push({deviceID, serviceID, actionName, input: args.input});
       const answer = (err, data) => setImmediate(() => session.localCallback(err, data));
+      // its per-key limit first, as the real one's (lib/countinghouse-interface.js):
+      // a limited caller's call is refused DENY_DEVICE_ACCESS and never reaches the module
+      if (limited) return answer(new (require('../../lib/countinghouse-error').CountinghouseError)('DENY_DEVICE_ACCESS'), null);
+      invoked.push({deviceID, serviceID, actionName, input: args.input});
       if (actionName === 'readNote' || actionName === 'readRun' || actionName === 'readPart') return answer(null, {output: `# ${JSON.stringify(args.input)}`});
       if (actionName === 'readCsv') return answer(null, {output: 'a,b'});
       if (actionName === 'allNotes') return answer(null, {output: {ids: ['first']}});
@@ -120,8 +123,14 @@ describe('mcp-contract 26: module resources (M7)', function() {
   let real = null;
   const usageSeen = [];
   let usageReal = null;
+  // the operator's warnings, from the first list on (the slug collision's)
+  const warnings = [];
+  let warnReal = null;
   before(() => {
     options.setOptions(OPTIONS);
+    const LOG = require('../../lib/logger');
+    warnReal = LOG.W;
+    LOG.W = (m) => { warnings.push(String(m)); };
     const FileAuthProvider = require('../../lib/auth/file-provider');
     const own = new FileAuthProvider({configPath: AUTH});
     provider = require('../../lib/auth').getAuthProvider();
@@ -134,6 +143,7 @@ describe('mcp-contract 26: module resources (M7)', function() {
     u.recordOut = (call, out) => { usageSeen.push({out}); };
   });
   after(() => {
+    if (warnReal != null) require('../../lib/logger').W = warnReal;
     if (provider != null) Object.assign(provider, real);
     if (usageReal != null) Object.assign(require('../../lib/usage/runtime').usage(), usageReal);
     fs.rmSync(home, {recursive: true, force: true});
@@ -180,6 +190,42 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.deepStrictEqual([begin.begin.module, begin.begin.tool], ['notes', 'notes_svc_readnote']);
   });
 
+  // the review of #327: on stdio or a session, a cancel names what is
+  // registered when it arrives. A read registered only once its caller and
+  // resource were looked up let a cancel in that window drop, and then ran
+  // and billed.
+  it('a read cancelled while its caller and resource are looked up neither runs nor bills, and is not answered', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    // a transport's registry: a cancel reaches what is registered now, else it is dropped
+    let registered = null;
+    const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+    // the lookups take a moment, as a real auth provider's do: its device
+    // list answers on a later turn, and the cancel arrives in between
+    let inWindow = null;
+    const listDevices = provider.listDevices;
+    provider.listDevices = (key, cb) => listDevices(key, (...answer) => { inWindow = setImmediate(() => cb(...answer)); });
+    let got;
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'resources/read', params: {uri: 'countinghouse://m/notes/notes/one'}};
+      got = new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, r, info) => resolve({r, info}), opts));
+      for (let w = 0; inWindow == null && w < 200; w++) await new Promise((res) => setImmediate(res));
+      assert.ok(inWindow != null, 'the device lookup is in flight');
+      assert.deepStrictEqual(invoked, [], 'nothing has run yet');
+      assert.strictEqual(typeof(registered), 'function', 'registered before the lookups end');
+      registered();
+    } finally {
+      provider.listDevices = listDevices;
+    }
+    const {r, info} = await got;
+    assert.strictEqual(r, null, JSON.stringify(r));
+    assert.deepStrictEqual(info, {cancelled: true});
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
+    assert.strictEqual(registered, null, 'unregistered at its end');
+  });
+
   it('the output\'s shape: a string as text (the schema\'s media type, else the declared one), a binary string as a blob, anything else as JSON', async () => {
     assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/csv/x.csv')).result.contents, [{uri: 'countinghouse://m/notes/csv/x.csv', mimeType: 'text/csv', text: 'a,b'}]);
     assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/cover/1')).result.contents, [{uri: 'countinghouse://m/notes/cover/1', mimeType: 'image/png', blob: PNG64}]);
@@ -218,17 +264,45 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));
   });
 
-  it('modules whose names slug alike are not read: their URI is no one\'s', async () => {
+  it('modules whose names slug alike are not read: their URI is no one\'s; the operator is warned once for the slug', async () => {
     const r = await read(KEY_A, 'countinghouse://m/twin_a/x/1');
     assert.deepStrictEqual(r.error, {code: -32602, message: 'Resource not found'});
+    await listAll('resources/templates/list', 'resourceTemplates', KEY_A);
+    const about = warnings.filter((w) => /"twin_a"/.test(w));
+    assert.strictEqual(about.length, 1, JSON.stringify(warnings));
+    assert.match(about[0], /neither's resources are served; rename one of them/);
+  });
+
+  // the review of #327: updateDeviceSpec mutates a spec in place, so a
+  // template compiled once per declaration object went stale: the list showed
+  // the new template while reads matched the old one
+  it('a declaration whose template changed in place is read by its new template, never its old one', async () => {
+    const csv = DEVICES.notes.actions.find((a) => a.name === 'readCsv').resource;
+    assert.ok((await read(KEY_A, 'countinghouse://m/notes/csv/x.csv')).result != null, 'compiled at first');
+    const was = csv.uriTemplate;
+    csv.uriTemplate = 'tables/{id}.csv';
+    try {
+      const templates = await listAll('resources/templates/list', 'resourceTemplates', KEY_A);
+      assert.ok(templates.some((t) => t.uriTemplate === 'countinghouse://m/notes/tables/{id}.csv'), 'listed by the new one');
+      const now = await read(KEY_A, 'countinghouse://m/notes/tables/x.csv');
+      assert.ok(now.result != null, JSON.stringify(now));
+      assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/csv/x.csv')).error, {code: -32602, message: 'Resource not found'}, 'the old one reads nothing');
+    } finally {
+      csv.uriTemplate = was;
+    }
   });
 
   it('a rate-limited caller\'s probe that reads nothing is limited too, with the refusal a limited read gets', async () => {
     limited = true;
     try {
-      const r = await read(KEY_A, 'countinghouse://m/nobody/x/1');
-      assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));
-      assert.strictEqual(r.error.data && r.error.data['countinghouse/code'], 'DENY_DEVICE_ACCESS');
+      invoked.length = 0;
+      const probe = await read(KEY_A, 'countinghouse://m/nobody/x/1');
+      assert.strictEqual(probe.error && probe.error.code, -32603, JSON.stringify(probe));
+      assert.strictEqual(probe.error.data && probe.error.data['countinghouse/code'], 'DENY_DEVICE_ACCESS');
+      // a limited read of a real resource, refused by the call path's own limit: the same answer
+      const real = await read(KEY_A, 'countinghouse://m/notes/notes/one');
+      assert.deepStrictEqual(probe.error, real.error, 'the limit says nothing of what exists');
+      assert.deepStrictEqual(invoked, [], 'no module reached');
     } finally {
       limited = false;
     }
@@ -246,5 +320,23 @@ describe('mcp-contract 26: module resources (M7)', function() {
       const r = await ask(method, KEY_A, {cursor: 'nope'});
       assert.strictEqual(r.error && r.error.code, -32602, method);
     }
+  });
+
+  // the review of #327: a list longer than a page (the floor is 10)
+  it('resources/templates/list pages past one page: 10, then exactly the rest; a cursor whose anchor is gone is -32602', async () => {
+    const actions = Array.from({length: 11}, (_, i) => act(`r${i}`, {resource: {uriTemplate: `r${i}/{id}`, name: `r${i}`}}));
+    const many = buildInterface({pages: {role: null, actions}});
+    const on = (params) => new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'resources/templates/list', params}, many, KEY_A, (err, r) => resolve(r)));
+    const all = actions.map((a, i) => `countinghouse://m/pages/r${i}/{id}`);
+    const first = await on({});
+    assert.deepStrictEqual(first.result.resourceTemplates.map((t) => t.uriTemplate), all.slice(0, 10));
+    assert.strictEqual(typeof(first.result.nextCursor), 'string', 'a next page');
+    const second = await on({cursor: first.result.nextCursor});
+    assert.deepStrictEqual(second.result.resourceTemplates.map((t) => t.uriTemplate), all.slice(10), 'exactly the rest');
+    assert.strictEqual(second.result.nextCursor, undefined, 'the last page');
+    // the anchor's resource gone (its action removed, as an unload would)
+    actions.splice(9, 1);
+    const stale = await on({cursor: first.result.nextCursor});
+    assert.strictEqual(stale.error && stale.error.code, -32602, JSON.stringify(stale));
   });
 });
