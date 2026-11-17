@@ -40,6 +40,7 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
   const B = 'b'.repeat(32);
   let overrides;
   let hear;
+  let allowed;       // the ceiling's word on an "on" (the settings store's packOnAllowed), and its key
   let ci;
   let savedDebug;
   const openSession = (reg, id) => {
@@ -79,8 +80,11 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
       overridesOf: (id) => new Map(overrides.get(id) || []),
       onOverrideChange: (fn) => { hear = fn; },
       openSessions: () => [A, B],
-      shared: () => sessions.shared()
+      shared: () => sessions.shared(),
+      allowsOn: () => allowed,
+      ceilingKey: () => String(allowed)
     });
+    allowed = true;
     sessionPacks.setGlobal('docs', true);
     override(A, 'ci', true);
   });
@@ -153,6 +157,40 @@ describe('sessions 15: tools/list and tools/call read the session (shared runtim
     assert.match(JSON.stringify(hidden), /unknown prompt/);
     assert.strictEqual(JSON.stringify(hidden), JSON.stringify(gone));
     assert.doesNotMatch(JSON.stringify(await request(ci, A, 'completion/complete', params)), /unknown prompt/, 'A\'s is found');
+  });
+
+  // the reviewer's ruling (4) on #340: while the ceiling can't be trusted, an "on" is off on every surface,
+  // with no event: the view is asked again when the ceiling's word changes
+  it('an "on" the ceiling doesn\'t allow now is off on every surface for that session, and back once it does', async () => {
+    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_x_brief/.test(n));
+    assert.ok(names(await request(ci, A, 'tools/list', {})).includes('ci_failure_triage'));
+    allowed = false;
+    assert.ok(!names(await request(ci, A, 'tools/list', {})).includes('ci_failure_triage'));
+    assert.match((await request(ci, A, 'tools/call', {name: 'ci_failure_triage', arguments: {}})).error.message, /unknown tool: ci_failure_triage/);
+    assert.match(JSON.stringify(await request(ci, A, 'prompts/get', {name: listed})), /unknown prompt/);
+    assert.match(JSON.stringify(await request(ci, A, 'completion/complete', {ref: {type: 'ref/prompt', name: listed}, argument: {name: 'x', value: ''}})), /unknown prompt/);
+    allowed = true;
+    assert.ok(names(await request(ci, A, 'tools/list', {})).includes('ci_failure_triage'));
+  });
+
+  // the reviewer's ruling (6) on #340: in shared mode, with no live session, every surface answers as tools/call does
+  it('in shared mode a request whose session is not live gets no surface: empty lists, unknown prompt, MODULE_NOT_LISTED', async () => {
+    const C = 'c'.repeat(32);   // never opened (as one ended)
+    const listed = (await request(ci, A, 'prompts/list', {})).result.prompts.map((p) => p.name).find((n) => /ch_pack_docs_brief/.test(n));
+    assert.deepStrictEqual((await request(ci, C, 'tools/list', {})).result.tools, []);
+    assert.deepStrictEqual((await request(ci, C, 'prompts/list', {})).result.prompts, []);
+    assert.match(JSON.stringify(await request(ci, C, 'prompts/get', {name: listed})), /unknown prompt/);
+    assert.match(JSON.stringify(await request(ci, C, 'completion/complete', {ref: {type: 'ref/prompt', name: listed}, argument: {name: 'x', value: ''}})), /unknown prompt/);
+    assert.strictEqual((await request(ci, C, 'tools/call', {name: 'docs_search', arguments: {}})).result._meta['countinghouse/code'], 'MODULE_NOT_LISTED');
+  });
+
+  it('outside shared mode (no session given) nothing changes: every tool and prompt is listed', async () => {
+    sessions.resetForTests();   // not shared: the request carries no session
+    const plain = (method) => new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 7, method, params: {}}, ci, null, (err, r) => resolve(r)));
+    const tools = names(await plain('tools/list'));
+    assert.ok(['ci_failure_triage', 'docs_search', 'plain_svc_go'].every((n) => tools.includes(n)), JSON.stringify(tools));
+    const prompts = (await plain('prompts/list')).result.prompts.map((p) => p.name);
+    assert.ok(prompts.some((n) => /ch_pack_x_brief/.test(n)), JSON.stringify(prompts));
   });
 
   it('the global tool table is untouched: the same frozen object, and the filter hands it back while no session has a pack override', () => {

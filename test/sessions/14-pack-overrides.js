@@ -42,15 +42,26 @@ describe('sessions 14: pack overrides under the ceiling (shared runtime B3, Task
     assert.strictEqual(settings.effective(A, 'pack.ci'), false, 'not global: off');
   });
 
-  it('conversation turned off, or a ceiling that cannot be trusted, drops it too; a stale one (unknown) drops nothing', () => {
+  it('a trusted ceiling with conversation turned off drops it too; a stale one (unknown) drops nothing', () => {
     on(A, 'ci');
     settings.ceilingSeen(undefined);
     assert.strictEqual(settings.packOverridesOf(A).get('ci'), true, 'stale: kept');
     settings.ceilingSeen({state: 'trusted', ceiling: {conversation: false}});
     assert.strictEqual(settings.packOverridesOf(A).has('ci'), false);
+  });
+
+  // the reviewer's ruling (4) on #340: an untrusted ceiling drops nothing, and while it is untrusted the
+  // "on" counts as off on every surface (packOnAllowed false): fail closed on exposure, no state lost
+  it('a ceiling that cannot be trusted drops nothing, and its "on" is not allowed while it stays so; trusted again, it is', () => {
     on(B, 'docs');
-    settings.ceilingSeen({state: 'untrusted', file: 'x', problem: 'y'});
-    assert.strictEqual(settings.packOverridesOf(B).has('docs'), false);
+    changed.length = 0;
+    ceiling = {state: 'untrusted', file: 'x', problem: 'y'};
+    settings.ceilingSeen(ceiling);
+    assert.deepStrictEqual([settings.packOverridesOf(B).get('docs'), changed], [true, []], 'kept, and no change said');
+    assert.deepStrictEqual([settings.packOnAllowed('docs'), settings.effective(B, 'pack.docs')], [false, false]);
+    ceiling = ALLOWS_CI;
+    settings.ceilingSeen(ceiling);
+    assert.deepStrictEqual([settings.packOnAllowed('docs'), settings.effective(B, 'pack.docs')], [true, true]);
   });
 
   it('an "off" override is never dropped by a ceiling', () => {
