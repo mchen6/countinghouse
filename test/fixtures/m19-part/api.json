@@ -1,0 +1,33 @@
+{
+  "device": {
+    "friendlyName": "m19-part",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "slow work for a cancelled call to stop at (MCP completeness M19)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:partService": {
+        "actionList": [
+          {
+            "name": "slow",
+            "description": "Waits 300 ms, records the run, and answers.",
+            "input": {
+              "schema": "/partService/slow/input"
+            },
+            "output": {
+              "schema": "/partService/slow/output"
+            }
+          },
+          {
+            "name": "slowleaf",
+            "description": "A leaf with no hops: waits 800 ms, records the run, and answers.",
+            "input": {
+              "schema": "/partService/slowleaf/input"
+            },
+            "output": {
+              "schema": "/partService/slowleaf/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

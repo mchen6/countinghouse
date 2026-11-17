@@ -698,6 +698,17 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(e.message, 'The change to maxOutputBytes for this session could not be applied (RESIZE_FAILED); nothing was changed.');
     });
 
+    // /code-review of #308, 4: an answer whose change is not applied still ends its form: said once, after
+    it('an answered form that applied nothing is announced as answered: no form of the session is open after it', async () => {
+      const failing = tool({growValidators: async () => { throw Object.assign(new Error('no'), {code: 'RESIZE_FAILED'}); }});
+      const r = await failing.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A));
+      assert.deepStrictEqual(confirm.exportedOf(A).unanswered, ['maxOutputBytes'], 'open');
+      const seen = [];
+      confirm.onChange((id) => { if (id === A) seen.push(confirm.exportedOf(A).unanswered.join()); });
+      await refused(failing.confirm('maxOutputBytes', '16MiB', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(A)), 'SETTING_NOT_APPLIED_THIS_SESSION');
+      assert.deepStrictEqual(seen, [''], 'announced once, with no form open');
+    });
+
     // the reviewer's two notes on #292
     it('with the user\'s window closed for the kind, the session\'s shim is not asked at all (its conditions cost a child process)', async () => {
       const t0 = tool();

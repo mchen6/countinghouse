@@ -1,0 +1,73 @@
+{
+  "device": {
+    "friendlyName": "progress-part",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "reports its own progress through ctx.job.progress (MCP completeness M21)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:partService": {
+        "actionList": [
+          {
+            "name": "work",
+            "description": "Reports 10, 50 and 90, 300 ms apart, then answers.",
+            "input": {
+              "schema": "/partService/work/input"
+            },
+            "output": {
+              "schema": "/partService/work/output"
+            }
+          },
+          {
+            "name": "flood",
+            "description": "Reports progress 100,000 times at once, waits 600 ms, then answers.",
+            "input": {
+              "schema": "/partService/flood/input"
+            },
+            "output": {
+              "schema": "/partService/flood/output"
+            }
+          },
+          {
+            "name": "bad",
+            "description": "Reports values outside 0..100 and non-numbers, then answers.",
+            "input": {
+              "schema": "/partService/bad/input"
+            },
+            "output": {
+              "schema": "/partService/bad/output"
+            }
+          },
+          {
+            "name": "late",
+            "description": "Answers at once, then reports 50 after 100 ms.",
+            "input": {
+              "schema": "/partService/late/input"
+            },
+            "output": {
+              "schema": "/partService/late/output"
+            }
+          },
+          {
+            "name": "jobshape",
+            "description": "Returns what ctx.job is outside a task: its id and the error from info.",
+            "input": {
+              "schema": "/partService/jobshape/input"
+            },
+            "output": {
+              "schema": "/partService/jobshape/output"
+            }
+          },
+          {
+            "name": "echo",
+            "description": "Reports 50, then returns its input as it got it.",
+            "input": {
+              "schema": "/partService/echo/input"
+            },
+            "output": {
+              "schema": "/partService/echo/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

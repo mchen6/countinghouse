@@ -1,0 +1,23 @@
+{
+  "device": {
+    "friendlyName": "m19-outer",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a composite that hops five times (MCP completeness M19)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:outerService": {
+        "actionList": [
+          {
+            "name": "chain",
+            "description": "Calls m19-part slow five times, one after another.",
+            "input": {
+              "schema": "/outerService/chain/input"
+            },
+            "output": {
+              "schema": "/outerService/chain/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -61,7 +61,7 @@ name and the fix. A module never half-loads.
 | `ctx.log(entry)` | device log, already bound to this device |
 | `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
-| `ctx.job` | `{id, progress(n), info(cb)}` inside a task, otherwise `null` |
+| `ctx.job` | `{id, progress(n), info(cb)}`. Inside a task: the job's id; `progress(n)` (0–100) updates the job; `info` reads it. Outside a task: `id` is `null`; `progress(n)` (0–100) is the call's own progress, sent to a client that asked for it (at most one every 250 ms, the latest winning, none after the answer; a composite's parts' reports are dropped); `info` calls back with an error. Ask `ctx.job.id == null`, not `ctx.job == null`, to tell a call that is not a task |
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
 | `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
@@ -314,6 +314,15 @@ them is right when they are served:
   16 KiB, named by its path from the module's root. Never a URL, and never
   SVG.
 
+A tool's `title`, `annotations` and `icons` are served on `tools/list`
+(each only when the action declares it). The hints in `annotations`
+(`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are
+your claims: the runtime enforces none of them, and a client or an install
+review may show them. Icons are read and checked when the module loads: a
+missing, oversized or SVG icon refuses the load (stage `icons`), and a reload
+to such a version leaves the loaded one serving. Each is sent inline as a
+`data:` URI from what the load read; nothing is read at list time.
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See
@@ -379,14 +388,24 @@ Keep patterns simple, schemas small, and outputs modest: return a reference
 (a path in your data namespace) to anything large. A `schema.json` that is plainly unsafe is refused at load
 (`MODULE_ASSEMBLY_FAIL`, stage `schemaSafety`, naming the schema path):
 
-- `schema.json` larger than 1 MB;
+- `schema.json` larger than 1 MB (checked before it is parsed);
 - a regular expression (`pattern`, a `patternProperties` key, a
-  `propertyNames` pattern) longer than 1000 characters, or with a repetition
-  inside a repeated group, such as `^(a+)+$` or `(\d+)*`, which can
-  backtrack catastrophically. Write `^a+$`, or `^\d+(?:,\d+)?$` with a
-  bounded group, instead;
-- actions whose schemas come to more than 100,000 nodes once their `$ref`s
-  are expanded, or a `$ref` that refers to itself.
+  `propertyNames` pattern) longer than 1000 characters, or one that can
+  backtrack catastrophically: a repetition inside a repeated group, such as
+  `^(a+)+$` or `(\d+)*`, or a repeated group whose alternatives start alike,
+  such as `^(ab|ac)+$`. Write `^a+$`, `^\d+(?:,\d+)?$` with a bounded group,
+  or `^(a[bc])+$`, instead;
+- a schema that comes to more than 100,000 nodes once its `$ref`s are
+  expanded, or actions whose schemas come to that many together;
+- a `$ref` that refers to itself, or one that names no place in
+  `schema.json` (only `#/...` JSON pointers are followed);
+- a schema nested too deeply to check.
+
+`countinghouse-validate` runs this same check, in the load's own order and
+words (stage `schemaSafety`, code `MODULE_ASSEMBLY_FAIL`), so you meet it
+before an operator's load does. Its problems at the stages `declarations`
+and `readRootSchema` carry that code too: each is one the load refuses the
+module for.
 
 What your module declares is checked at load as well, where the meta-schema
 cannot say it (`MODULE_ASSEMBLY_FAIL`, stage `declarations`, naming the

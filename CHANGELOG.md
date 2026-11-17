@@ -58,6 +58,24 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 - A module reached through another's `ctx.call` cannot ask yet
   (`ASK_UNAVAILABLE`).
 
+### Changed — `countinghouse-validate` fails a `schema.json` the load refuses as unsafe
+
+- **A module that passed validate and was then refused at load now fails
+  validate too.** `countinghouse-validate` (and the
+  `countinghouse_validate_module` tool) runs the load's own schema safety
+  check, in the load's order and words: a problem at stage `schemaSafety`,
+  code `MODULE_ASSEMBLY_FAIL`, for a `schema.json` over 1 MB, a pattern
+  that can backtrack catastrophically or is over 1000 characters, more than
+  100,000 schema nodes with `$ref`s expanded, a `$ref` to itself or to no
+  place, or a schema nested too deeply to check. Such a schema is not
+  walked for its declarations: one problem says why.
+- **Validate's problems at the stages `declarations` and `readRootSchema`
+  carry `code: "MODULE_ASSEMBLY_FAIL"`**, as the load refuses the module
+  with it.
+- **The schema path in a `schemaSafety` refusal is cut to 512 characters
+  and carries no control character**, at load and in validate: it is made
+  of the module's own property names.
+
 ### Removed — BSON request bodies
 
 - **An `application/bson` body is no longer taken**, on any route: it is

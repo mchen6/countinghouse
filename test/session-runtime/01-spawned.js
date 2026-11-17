@@ -38,12 +38,13 @@ const until = async(test, ms = 30000) => {
 
 // restore: send ch-local daemon's 'restore' (an empty table) once the
 // control channel says ready, as the daemon does
-function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', restore = true, env = {}} = {}) {
+// socketPath: a socket outside the run directory (C2's long-home fallback)
+function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', socketPath = null, restore = true, env = {}} = {}) {
   const run = path.join(home, 'run', 'daemon');
   fs.mkdirSync(run, {recursive: true});
   fs.chmodSync(path.join(home, 'run'), 0o700);
   fs.chmodSync(run, dirMode);
-  const socket = path.join(run, socketName);
+  const socket = socketPath != null ? socketPath : path.join(run, socketName);
   const child = spawn(process.execPath, [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
     '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
     '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''}, env)});
@@ -392,6 +393,48 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(valueOf(await call(fresh, {action: 'get'}), 'requestTimeout'), 30000);
     back.c.end();
     fresh.c.end();
+  });
+
+  // #300's follow-up: the restore's reset list reaches its session (the line in route-manager that passes it
+  // on), and a session's unanswered-form count crosses the restart in its state
+  it('a session in the daemon\'s reset list is told so at its resume, once; a kind it left one form unanswered of is still counted (B2 Task 6)', async() => {
+    const settingsFile = path.join(home, 'settings.json');
+    const args = ['--settingsFile', settingsFile, '--loadModule', scenario(home)];
+    r = runtime(home, args);
+    let secret = await listening(r);
+    const a = await shim.session(r.socket, secret);
+    const id = a.welcome.session;
+    const token = a.welcome.resumeToken;
+    const hash = r.told.filter((m) => m.type === 'session-resume' && m.session === id).pop().hash;
+    r.child.kill('SIGKILL');
+    await r.exited;
+    fs.rmSync(r.socket, {force: true});
+    fs.rmSync(path.join(r.run, 'secret'), {force: true});
+    // as the daemon hands it over after a re-exec: the row without its loosening, the session named in reset
+    r = runtime(home, args, {restore: {id: 'restore-1', type: 'restore',
+      sessions: [{session: id, resume: hash, state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['maxOutputBytes']}}], declines: [], reset: [id]}});
+    secret = await listening(r);
+    const back = await shim.session(r.socket, secret, undefined, {resume: token});
+    assert.strictEqual(back.welcome != null && back.welcome.session, id, JSON.stringify(back.refused));
+    let hello = null;
+    await until(async() => {
+      const list = await request(back.c, 'tools/list');
+      hello = list != null && list.result != null ? list.result.tools.map((x) => x.name).find((n) => /hello/.test(n)) : null;
+      return hello != null;
+    });
+    assert.ok(hello, r.err.slice(-2000));
+    const textOf = (got) => got.result.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+    const first = await request(back.c, 'tools/call', {name: hello, arguments: {name: 'again'}});
+    assert.match(textOf(first), /your this-session loosenings were reset; ask again/, JSON.stringify(first).slice(0, 500));
+    const second = await request(back.c, 'tools/call', {name: hello, arguments: {name: 'again'}});
+    assert.doesNotMatch(textOf(second), /were reset/, 'said once');
+    // its next change tells its state whole: the unanswered kind is still in it
+    const set = await request(back.c, 'tools/call', {name: 'countinghouse_settings', arguments: {action: 'set', name: 'requestTimeout', value: '20s'}});
+    assert.strictEqual(set.result.structuredContent.new, 20000, JSON.stringify(set).slice(0, 400));
+    await until(() => r.told.some((m) => m.type === 'session-state' && m.session === id));
+    assert.deepStrictEqual(r.told.filter((m) => m.type === 'session-state' && m.session === id).pop().state,
+      {overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}], locks: [], formsLeft: 2, unanswered: ['maxOutputBytes']});
+    back.c.end();
   });
 
   it('with no restore from the daemon, no confirmation form is shown for 30 minutes: what was declined before is not known (B2 Task 6)', async() => {
@@ -831,5 +874,50 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     await refused(['--controlChannel', 'ipc', '--sessionSocket', path.join(run, 's')], /--sessionSocket needs --store local/,
       [FRAMEWORK, '--no-workerThread', '--store', 'redis', '--redisUrl', 'redis://127.0.0.1:1']);
     await refused(['--controlChannel', 'ipc', '--sessionSocket'], /--sessionSocket needs a path/, [FRAMEWORK, '--no-workerThread', '--store', 'local', '--storePath', path.join(home, 'store')]);
+    // C2: --sessionDir only with --sessionSocket, and with a path
+    // (--stdio, so the port guard lets it spawn: the refusal comes first)
+    await refused(['--stdio', '--sessionDir', run], /--sessionDir is only for --sessionSocket/, [FRAMEWORK, '--no-workerThread', '--store', 'local', '--storePath', path.join(home, 'store')]);
+    await refused(['--controlChannel', 'ipc', '--sessionDir'], /--sessionDir needs a path/);
+  });
+
+  // C2 ---------------------------------------------------------------------
+
+  it('the long-home fallback: the socket in a directory of its own (a sticky parent allowed), the secret and lock in --sessionDir', async() => {
+    const tmp = path.join(home, 'tmp');
+    const sockDir = path.join(tmp, 'ch-1000');
+    fs.mkdirSync(sockDir, {recursive: true, mode: 0o700});
+    fs.chmodSync(sockDir, 0o700);
+    fs.chmodSync(tmp, 0o1777);
+    const run = path.join(home, 'run', 'daemon');
+    r = runtime(home, ['--sessionDir', run], {socketPath: path.join(sockDir, 's')});
+    const secret = await listening(r);
+    assert.ok(secret != null, `no secret in --sessionDir: ${r.err.slice(-2000)}`);
+    assert.deepStrictEqual(fs.readdirSync(sockDir), ['s'], 'only the socket is beside the socket');
+    assert.ok(fs.existsSync(path.join(run, 'runtime.lock')), 'the lock is in --sessionDir');
+    assert.ok(r.told.some((m) => m.type === 'listening' && m.socket === path.join(sockDir, 's')));
+    const a = await shim.session(r.socket, secret);
+    assert.ok(a.welcome != null, JSON.stringify(a.refused));
+    a.c.end();
+  });
+
+  it('the fallback\'s socket directory is checked too: a world-writable parent without the sticky bit is refused', async() => {
+    const tmp = path.join(home, 'tmp');
+    const sockDir = path.join(tmp, 'ch-1000');
+    fs.mkdirSync(sockDir, {recursive: true, mode: 0o700});
+    fs.chmodSync(sockDir, 0o700);
+    fs.chmodSync(tmp, 0o777);
+    r = runtime(home, ['--sessionDir', path.join(home, 'run', 'daemon')], {socketPath: path.join(sockDir, 's')});
+    const {code} = await r.exited;
+    fs.chmodSync(tmp, 0o700);
+    assert.strictEqual(code, 2, r.err.slice(-1500));
+    assert.match(r.err, /writable/);
+    assert.ok(!fs.existsSync(path.join(home, 'run', 'daemon', 'secret')), 'no secret written');
+  });
+
+  it('a named pipe\'s name is refused on POSIX', async() => {
+    r = runtime(home, ['--sessionDir', path.join(home, 'run', 'daemon')], {socketPath: '\\\\.\\pipe\\countinghouse-0123456789abcdef0123456789abcdef'});
+    const {code} = await r.exited;
+    assert.strictEqual(code, 2, r.err.slice(-1500));
+    assert.match(r.err, /a named pipe is Windows' only/);
   });
 });

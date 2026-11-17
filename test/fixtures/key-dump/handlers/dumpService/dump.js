@@ -51,7 +51,7 @@ module.exports = async (input, ctx) => {
     const entry = require.cache[k];
     if (entry != null) roots[`require.cache[${k.slice(k.lastIndexOf('/') + 1)}]`] = entry.exports;
   });
-  if (ctx != null && ctx.job != null && typeof ctx.job.info === 'function') {
+  if (ctx != null && ctx.job != null && ctx.job.id != null && typeof ctx.job.info === 'function') {
     roots.jobInfo = await new Promise((ok) => ctx.job.info((e, job) => ok(e != null ? null : job)));
   }
   if (ctx != null && typeof ctx.recordUsage === 'function') {

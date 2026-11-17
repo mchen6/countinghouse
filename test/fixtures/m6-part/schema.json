@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "partService": {
+    "pdf": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "required": [
+          "doc"
+        ],
+        "properties": {
+          "doc": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "application/pdf",
+            "description": "the document"
+          }
+        }
+      }
+    },
+    "two": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "required": [
+          "a",
+          "b"
+        ],
+        "properties": {
+          "a": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "application/pdf"
+          },
+          "b": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "application/pdf"
+          }
+        }
+      }
+    },
+    "note": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "text/plain"
+          }
+        }
+      }
+    },
+    "badtext": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "properties": {
+          "note": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "contentMediaType": "text/plain"
+          }
+        }
+      }
+    }
+  }
+}

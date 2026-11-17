@@ -156,6 +156,18 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `ctx.job` is never `null`.** Outside a task it is now
+  `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
+  is the call's own progress, sent to an MCP client that asked for it
+  (`_meta.progressToken`) as `notifications/progress` with `total: 100`, at
+  most one every 250 ms, the latest value winning, none after the answer.
+  Only the outer call's handler is heard: a composite's parts' reports are
+  dropped, and once the outer handler reports, its hops stop counting as
+  progress. `info` calls back with an error there. A module that asked
+  `ctx.job == null` to tell a call that is not a task must ask
+  `ctx.job.id == null`; a module that wrote `ctx.job.id` into its output
+  outside a task now gets `null` where it threw before. Inside a task
+  nothing changes.
 - **Breaking: `contentEncoding: "base64"` is an assertion.** A string whose
   schema says `contentEncoding: "base64"` must now be canonical RFC 4648
   base64 (the standard alphabet, padded, no whitespace, zero pad bits), in an
@@ -305,6 +317,18 @@ says how to write a module for this.
 
 ## What MCP clients will notice
 
+- **A call can be cancelled while it runs.** For a 2026-07-28 request over
+  HTTP, closing the POST before its answer cancels it; on stdio and the
+  shared runtime, `notifications/cancelled` with the request's id does,
+  naming a request of your own connection or session only. A cancelled call
+  writes no answer. A composite stops at its next hop, which is refused, and
+  a remote call made for it is aborted. Work already running finishes, its
+  result discarded, and is billed as before: the bill is what ran. A legacy
+  HTTP request's disconnect changes nothing, and the call runs to its end.
+  A task-augmented call cancelled before its task's id was sent has its job
+  removed if it hasn't started (one already running runs to its end). This
+  is with `--workerThread`, the default: in single-thread mode a cancel only
+  suppresses the answer.
 - **Results are the tool's output itself.** A module tool's
   `structuredContent` used to be `{output: …}`, one level above the
   `outputSchema` it advertised, so clients that validate results (the
@@ -318,6 +342,24 @@ says how to write a module for this.
   `{mimeType, bytes, block}`, as the tool's `outputSchema` says. A client that
   knows only protocol revision 2024-11-05, which has no audio content type,
   may not render an audio block.
+- **Every binary field is a block, and a large one is a link.** Any other
+  media type (a PDF, a zip, `text/plain`) arrives as a `resource` block,
+  `{uri, mimeType, blob}`, whose `uri` (`countinghouse://r/<id>`) can be read
+  back; its reference in `structuredContent` carries the `uri` too. Before,
+  it stayed a base64 string there and in the `outputSchema`. Past
+  `--inlineContentBytes` (1 MiB of decoded bytes per result, in schema order)
+  a value is stored instead and sent as a `resource_link` with its `name`
+  (the field), `mimeType` and `size`; `structuredContent` holds
+  `{mimeType, bytes, uri}`. `resources/read` returns it to the caller who
+  made the call, in the same session, for `--resourceRetention` (24 h), as
+  `text` for valid UTF-8 `text/*`, else `blob`; anything else is "Resource
+  not found". The server now declares `resources: {}`; `resources/list` is
+  always empty. A result whose stored values would pass a store limit is
+  refused `RESULT_STORE_FULL`, with nothing stored. A client on protocol
+  revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
+  may not show a link; it can still read the `uri` from the text block.
+  `ctx.call` and `invoke-action` are unchanged: their output keeps the base64
+  in place.
 - **Output schemas of any JSON type, for 2026-07-28 requests.** A modern
   `tools/list` advertises an output schema whatever its root type (an array,
   a string, a number, null), and a modern result carries the output as
@@ -380,6 +422,12 @@ says how to write a module for this.
 
 ## What operators get
 
+- **The module registry is opt-in: `--moduleRegistry`.** A start with no
+  `--loadModule` no longer reads the CDIF-era registry database
+  (`lib/device-db`, `sqlite3`) or loads modules from it: it loads nothing,
+  and serves the platform tools. Pass `--moduleRegistry` to keep the old
+  behaviour. Under `--hardened`, such a start no longer gets
+  `--allow-addons` either ([reference](cli-and-api-reference.md)).
 - **`POST /reload-auth`** (admin key), and the authoring tool
   `countinghouse_reload_auth`, re-read the auth configuration without a
   restart. The file provider swaps a new file in only if it passes its

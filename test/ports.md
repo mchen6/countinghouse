@@ -97,6 +97,10 @@ one) as well as the ports it binds.
 | `test/mcp-contract/07-error-shape.js` | 9656–9657 |
 | `test/mcp-contract/11-progress-e2e.js` | 9580 |
 | `test/mcp-contract/12-any-json-output.js` | 9581 |
+| `test/mcp-contract/14-handler-progress-e2e.js` | 9582 |
+| `test/mcp-contract/16-resources-read.js` | 9583, 9585 |
+| `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
+| `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |
@@ -123,7 +127,10 @@ one) as well as the ports it binds.
 | `test/remote/05-route.js` | 9688, 9720–9721 |
 | `test/remote/06-listing.js` | 9722–9723 |
 | `test/remote/07-counting.js` | 9728–9729 |
+| `test/remote/12-cancel-abort.js` | 9589 |
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
+| `test/module-loading/33-registry-opt-in.js` | 9594 |
+| `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
 | `test/remote/08-origin-map.js` | 9744–9745, 9748 |
 | `test/remote/09-sandboxed-call.js` | 9746–9747 |
 | `test/remote/10-hardened-install.js` | 9699, 9726 |
@@ -174,6 +181,7 @@ one) as well as the ports it binds.
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
 | `test/stdio/03-module-data-dirs.js` | 9733 (a `--redisUrl` nothing listens on) |
+| `test/store/08-blob-options.js` | 9579 |
 | `test/test1.js` | 9527 |
 | `test/test2.js` | 9527 |
 | `test/test3.js` | 9527 |

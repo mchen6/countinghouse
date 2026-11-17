@@ -81,7 +81,9 @@ The runtime, not the daemon, takes the session connections. That saves a copy of
 What follows from those facts:
 - **The gap is a restart.** A fixed name could be taken between one runtime's exit and the next one's bind. With a random name per start, there's nothing to take in advance.
 - **A bind failure is fatal** for that runtime start. The runtime exits, saying the name is taken, and never serves under a name it doesn't hold. The daemon's next start picks a new random name.
-- **The shim authenticates the server** (below), so a squatter, local or remote, can't complete a handshake. A remote attacker (Everyone and anonymous have read access) likewise can't open a session without the secret.
+- **The shim authenticates the server** (below), so a squatter, local or remote, can't complete a handshake.
+- **A read-only client gets no bytes at all.** The client speaks first (HELLO), and only the owner, Administrators and SYSTEM can write to the pipe. So a client opened with read access alone can never send a HELLO, and never sees a PROVE.
+- **Node can't set the pipe's descriptor or reject remote clients** (libuv passes `NULL` attributes and no `PIPE_REJECT_REMOTE_CLIENTS`). The maintainer's decision: no native helper, which would break the runtime's pure-JS install. The guard is the random 128-bit name per start, `FILE_FLAG_FIRST_PIPE_INSTANCE`, the mutual HMAC handshake and the shim's owner-SID check. The residual is section 9's item 6.
 
 ### The wire contract
 
@@ -140,7 +142,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `BUSY` | the session limit is reached | retries with jitter, then gives up as below |
 | `SHUTTING_DOWN` | the runtime is draining | retries with jitter |
 
-**The pre-auth stage has its own bounds.** On Windows any local user, or a remote one with SMB access, can open a read-only instance and reach PROVE.
+**The pre-auth stage has its own bounds.** On Windows any local user, or a remote one over SMB, can list the pipe's name and open an instance of it. With read access alone it can't write a HELLO, so it gets no bytes at all, but it holds a pre-auth slot until the 2 s deadline.
 - At most 64 connections may be unauthenticated at once. When a 65th arrives, the **oldest** pre-auth connection is evicted, not the newest refused, so a real shim arriving behind a flood still gets in.
 - Each has 2 s to complete AUTH. At most 512 bytes are read from a connection before its HELLO is complete.
 
@@ -202,6 +204,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `bye` | shim → runtime | | The client's stdin ended. The runtime ends the session. |
 | `record` | runtime → shim | `entry`: an opaque JSON value | Keep this for replay. At most 64 entries and 16 KiB in all; the oldest goes first. |
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
+| `cancelled` | runtime → shim | `seq`: the request's | The client cancelled that call, which will have no answer: forget its seq, so no crash answer is made for it, and a close waiting on it ends once nothing is left (MCP completeness section 13). Optional: an older shim ignores it, as it ignores any op it doesn't know. |
 | `drain` | runtime → shim | | Forward no new request; relay answers until the runtime closes, then reconnect. |
 | `own-runtime` | runtime → shim | `reason`: `"token"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
 
@@ -439,7 +442,12 @@ Modules are shared by default: one worker per module, as today. A module that **
 - the hash of its current resume token;
 - its overrides: loosenings and tightenings;
 - its this-session packs, and its packs turned off;
-- its decline locks, and the forms it has left.
+- its decline locks, and the forms it has left;
+- the kinds of which it has left one form unanswered (`unanswered`, since #308). Two of a kind lock that kind, so without it a restart would hand a form back.
+  - It is in a state only when there is one; a state with none is exactly `{overrides, locks, formsLeft}`.
+  - A form open when the state is told counts, so a kind with one unanswered and another open is told as locked. An answer's tell corrects it.
+  - A kind is in `locks` or in `unanswered`, never both, and `unanswered` is there only with a form spent (`formsLeft` under 3).
+  - **The pairing (the reviewer, 2026-11-15):** the runtime may tell `unanswered`, and a daemon must accept it. A daemon that does not (ch-local before 54858ea) drops the session's whole row when told it. No ch-local has been released without it, so there is no marker and no gate: the first release ships both.
 
 Nothing of a session is ever written to a file.
 
@@ -659,7 +667,14 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
    - The `conditions` child runs as the user, from the paths in `shim.json`.
    - A same-user process that can rewrite `shim.json` can already change ch-local itself, so this adds nothing.
 5. **A module holding two sessions' calls at once** (it serves both) holds two hop tokens, and can make a hop with either, so with the other session's cap or timeout, and into the other session's worker of a per-session module (§4a), so with its state. The values stay within the ceiling, and a module already sees all of one user's data. A token or peer channel that outlives its session is refused like an unknown device.
-6. **On Windows, another user (local, or remote with SMB access) can slow attaches, but can't lock them out.** The pipe accepts read-only opens from Everyone and anonymous, so pre-auth connections can be opened. Eviction of the oldest, the 2 s deadline and the shim's jittered retry keep real shims getting in. Such a connection gets nothing but `PROVE` (a random challenge and a MAC), can't authenticate, and never reads or forges a session.
+6. **On Windows, another user (local, or remote over SMB) can slow attaches, but can't lock them out. Availability only.**
+   - **What it can do:** list the pipe's name, and open read-only instances. Each holds a pre-auth slot for 2 s. Past 64, the oldest is evicted, so a flood slows a real shim's attach without stopping it (the shim retries with jitter).
+   - **What it can't do:**
+     - send a byte: the client speaks first, and only the owner, Administrators and SYSTEM can write, so it never even sees a `PROVE`;
+     - create an instance: that needs `FILE_CREATE_PIPE_INSTANCE`, which read access doesn't include;
+     - take the name ahead: it's 128 random bits, new at each start, and `FILE_FLAG_FIRST_PIPE_INSTANCE` makes a held name fail our bind rather than share it;
+     - read or forge a session.
+   - **Why it stands:** Node can't set the pipe's descriptor or `PIPE_REJECT_REMOTE_CLIENTS`, and the maintainer's decision is no native helper (it would break the runtime's pure-JS install).
 7. **On Windows, the daemon inherits any inheritable handle the client leaked into the shim.**
    - The shim makes its own three standard handles non-inheritable before it spawns the daemon, and refuses to spawn if that fails.
    - Rust's `std` `CreateProcessW` passes `bInheritHandles = TRUE` and offers no `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so closing the rest needs a hand-written `CreateProcessW`. That's post-release.

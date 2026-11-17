@@ -50,8 +50,8 @@ describe('auth 51: the identity secret on Windows: owner and ACL, not mode bits'
   });
 
   it('the PowerShell it runs names no cmdlet (a lookup rebuilds the module cache, and would load module code)', () => {
-    const {FILE_ACL_SCRIPT, CREATE_SCRIPT} = require('../../lib/win-acl');
-    for (const script of [FILE_ACL_SCRIPT, CREATE_SCRIPT]) {
+    const {FILE_ACL_SCRIPT, FILE_ACLS_SCRIPT, CREATE_SCRIPT} = require('../../lib/win-acl');
+    for (const script of [FILE_ACL_SCRIPT, FILE_ACLS_SCRIPT, CREATE_SCRIPT]) {
       const code = script.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
       assert.doesNotMatch(code, /\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/, code);
     }
