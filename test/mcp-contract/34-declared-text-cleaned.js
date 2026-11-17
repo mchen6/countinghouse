@@ -33,6 +33,9 @@ const ZWJ = '‍';
 const VS16 = '️';
 const FAMILY = `\u{1f468}${ZWJ}\u{1f469}${ZWJ}\u{1f467}`;
 const HEART = `❤${VS16}`;
+const ZWNJ = '\u200c';
+// Scotland's flag: a black flag, tag letters, a cancel tag
+const SCOTLAND = `\u{1f3f4}${['g', 'b', 's', 'c', 't'].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('')}\u{e007f}`;
 const hidden = new RegExp(`[${require('../../lib/conditions-why.json').hiddenClass}]`, 'u');
 
 describe('mcp-contract 34: declared text reaches the client cleaned (M18)', function() {
@@ -61,8 +64,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       // a skin tone between: still one sequence
       const tones = `\u{1f469}\u{1f3fd}${ZWJ}\u{1f4bb}`;
       assert.strictEqual(clientText.line(tones), tones);
-      // a joiner between letters, at either end, or doubled, and a VS-16 after a letter or a digit
-      assert.strictEqual(clientText.line(`a${ZWJ}b`), 'a b');
+      // a joiner at either end, or doubled, and a VS-16 after a letter or a digit
       assert.strictEqual(clientText.line(`${ZWJ}\u{1f600}`), ' \u{1f600}');
       assert.strictEqual(clientText.line(`\u{1f600}${ZWJ}`), '\u{1f600} ');
       assert.strictEqual(clientText.line(`\u{1f600}${ZWJ}${ZWJ}\u{1f600}`), '\u{1f600}  \u{1f600}');
@@ -70,11 +72,48 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       assert.strictEqual(clientText.line(`1${VS16}⃣`), '1 ⃣', 'a keycap loses its VS-16 (a digit is not pictographic)');
     });
 
+    // the reviewer's ruling on #378's review, (5): a joiner between two
+    // letters only shapes them (Persian, Arabic, Indic spelling), in any script
+    it('a ZWNJ or ZWJ between two letters is kept (combining marks between allowed); next to anything else, or at an edge, a space', () => {
+      const persian = `\u0645\u06cc${ZWNJ}\u062e\u0648\u0627\u0647\u0645`;
+      assert.strictEqual(clientText.line(persian), persian);
+      assert.strictEqual(clientText.hasHidden(persian), false);
+      // Devanagari: ka, virama (a mark), ZWJ, ssa
+      const conjunct = `\u0915\u094d${ZWJ}\u0937`;
+      assert.strictEqual(clientText.line(conjunct), conjunct);
+      assert.strictEqual(clientText.line(`a${ZWJ}b`), `a${ZWJ}b`);
+      assert.strictEqual(clientText.line(`a${ZWNJ}1`), 'a 1');
+      assert.strictEqual(clientText.line(`1${ZWJ}a`), '1 a');
+      assert.strictEqual(clientText.line(`${ZWNJ}a`), ' a');
+      assert.strictEqual(clientText.line(`a${ZWJ}`), 'a ');
+      assert.strictEqual(clientText.line(`a ${ZWNJ}b`), 'a  b');
+      assert.strictEqual(clientText.line(`a${ZWNJ}${ZWNJ}b`), 'a  b', 'two joiners: neither sits between two letters');
+      assert.strictEqual(clientText.line(`a${ZWSP}b`), 'a b', 'a zero-width space is no joiner');
+    });
+
+    // the ruling's (6): a subdivision flag keeps its tag letters and cancel tag
+    it('a black flag\'s tag run, ending in its cancel tag, is kept; stray tags are spaces', () => {
+      assert.strictEqual(clientText.line(`go ${SCOTLAND}!`), `go ${SCOTLAND}!`);
+      assert.strictEqual(clientText.hasHidden(SCOTLAND), false);
+      assert.strictEqual(clientText.line(`a${TAG_A}b`), 'a b');
+      // no cancel tag, or no black flag before: every tag a space
+      const unended = `\u{1f3f4}${TAG_A}${TAG_A}`;
+      assert.strictEqual(clientText.line(unended), '\u{1f3f4}  ');
+      assert.strictEqual(clientText.line(`x${TAG_A}\u{e007f}`), 'x  ');
+    });
+
     it('hasHidden: a candidate with any hidden character, an emoji sequence\'s joiner apart', () => {
       assert.strictEqual(clientText.hasHidden(`b${ZWSP}ob`), true);
       assert.strictEqual(clientText.hasHidden(FAMILY), false);
       assert.strictEqual(clientText.hasHidden('bob'), false);
     });
+  });
+
+  // #378's review (7): cut first, then cleaned, so no kept joiner is left
+  // dangling at the cut
+  it('a question\'s dialog cut at its limit ends in no hidden character', () => {
+    const text = require('../../lib/module-questions').composed('m', `${'x'.repeat(995)}\u{1f468}${ZWJ}\u{1f469}`, {});
+    assert.ok(!clientText.hasHidden(text), JSON.stringify(text.slice(-4)));
   });
 
   describe('every surface, spawned', () => {
@@ -86,13 +125,14 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       .set(typeof(params.name) === 'string' ? {'Mcp-Name': params.name} : {})
       .send({jsonrpc: '2.0', id: 1, method, params: Object.assign({_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': caps}}, params)})
       .then((res) => res.body);
-    // no hidden character left anywhere in what the client was sent, an
-    // emoji sequence's joiner apart
+    // no hidden character left anywhere in what the client was sent (what
+    // the cleaner keeps apart: an emoji's joiner, a word's, a flag's tags,
+    // and a description's or a message's \n and \t)
     const clean = (value, what) => {
       const text = JSON.stringify(value);
       const left = JSON.parse(text);
       const walk = (v, at) => {
-        if (typeof(v) === 'string') assert.ok(!clientText.hasHidden(v), `${what}: a hidden character at ${at}: ${JSON.stringify(v)}`);
+        if (typeof(v) === 'string') assert.ok(clientText.message(v) === v, `${what}: a hidden character at ${at}: ${JSON.stringify(v)}`);
         else if (v != null && typeof(v) === 'object') for (const k of Object.keys(v)) walk(v[k], `${at}.${k}`);
       };
       walk(left, what);
@@ -106,34 +146,44 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'hidden-text', version: '1.0.0', license: 'Apache-2.0'}));
       fs.writeFileSync(path.join(mod, 'api.json'), JSON.stringify({device: {friendlyName: 'hidden-text', manufacturer: 'countinghouse-test', modelDescription: 'declared text with hidden characters',
         serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [
-          {name: 'show', title: `Show${ZWSP} it`, description: `Shows${LRI} a thing${TAG_A}, ${FAMILY}.`,
+          {name: 'show', title: `Show${ZWSP} it`, description: `Shows${LRI} a thing${TAG_A}, ${FAMILY}.\nArgs:\twhat`,
             input: {schema: `/${svc}/show/input`}, output: {schema: `/${svc}/show/output`},
             questions: {confirm: {message: `Go${ZWSP} on with {what}?`, schema: `/${svc}/show/questions/confirm`}}},
           {name: 'item', description: `One item${NBSP_HANGUL}.`, input: {schema: `/${svc}/item/input`}, output: {schema: `/${svc}/item/output`},
             annotations: {readOnlyHint: true},
-            resource: {uriTemplate: 'items/{id}', name: 'item', title: `An${LRI} item`, description: `One${TAG_A} item.`, completion: {id: `${svc}.completeId`}}},
+            resource: {uriTemplate: 'items/{id}', name: 'item', title: `An${LRI} item`, description: `One${TAG_A} item.\nBy id.`, completion: {id: `${svc}.completeId`}}},
           {name: 'completeId', description: 'Completes an item id.', input: {schema: `/${svc}/completeId/input`}, output: {schema: `/${svc}/completeId/output`}},
+          {name: 'blank', description: `${ZWSP}\u2060`, input: {schema: `/${svc}/blank/input`}, output: {schema: `/${svc}/blank/output`}},
+          {name: 'blob', description: 'A file.', input: {schema: `/${svc}/blob/input`}, output: {schema: `/${svc}/blob/output`}},
           {name: 'all', description: 'Every item.', output: {schema: `/${svc}/all/output`}, annotations: {readOnlyHint: true},
             resource: {uriTemplate: 'items', name: 'items', title: `All${LRI} items`}}
         ]}},
         promptList: [{name: 'greet', title: `Greet${ZWSP}`, description: `Says${LRI} hello`, arguments: {schema: '/prompts/greet/arguments'},
-          messages: [{role: 'user', text: `Hello {{who}}${ZWSP}!\nLine two\tends ${FAMILY} ${HEART} a${ZWJ}b`}]}]}}));
+          messages: [{role: 'user', text: `Hello {{who}}${ZWSP}!\nLine two\tends ${FAMILY} ${HEART} a${ZWJ}b 1${ZWJ}2`}]},
+        {name: 'sneaky', description: 'An argument named with a hidden character.', arguments: {schema: '/prompts/sneaky/arguments'},
+          messages: [{role: 'user', text: 'Hello.'}]}]}}));
       fs.writeFileSync(path.join(mod, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
         [svc]: {show: {input: {type: 'object', properties: {what: {type: 'string'}}}, output: {type: 'object'},
           questions: {confirm: {type: 'object', properties: {yes: {type: 'boolean', title: 'Yes'}}, required: ['yes']}}},
         item: {input: {type: 'object', properties: {id: {type: 'string'}}, required: ['id']}, output: {type: 'object'}},
         all: {output: {type: 'object'}},
+        blank: {input: {type: 'object'}, output: {type: 'object'}},
+        blob: {input: {type: 'object'}, output: {type: 'object', properties: {file: {type: 'string', contentEncoding: 'base64', contentMediaType: 'application/octet-stream',
+          description: `Report${LRI} file`}}}},
         completeId: {input: {type: 'object', properties: {argument: {type: 'string'}, value: {type: 'string'}, context: {type: 'object'}}, required: ['argument', 'value']},
           output: {type: 'object', properties: {values: {type: 'array', items: {type: 'string'}}}, required: ['values']}}},
-        prompts: {greet: {arguments: {type: 'object', properties: {who: {type: 'string', description: `Who${ZWSP} to greet`, enum: ['ann', `b${ZWSP}ob`, 'bea']}}, required: ['who']}}}}));
+        prompts: {greet: {arguments: {type: 'object', properties: {who: {type: 'string', description: `Who${ZWSP} to greet\nby name`, enum: ['ann', `b${ZWSP}ob`, 'bea']}}, required: ['who']}},
+          sneaky: {arguments: {type: 'object', properties: {[`wh${ZWSP}o`]: {type: 'string'}}}}}}));
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'show.js'), 'module.exports = async (input, ctx) => ({output: {answer: await ctx.ask(\'confirm\', {what: input.what || \'it\'})}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'item.js'), 'module.exports = async (input) => ({output: {id: input.id}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'all.js'), 'module.exports = async () => ({output: {ids: []}});\n');
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'blank.js'), 'module.exports = async () => ({output: {}});\n');
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'blob.js'), 'module.exports = async () => ({output: {file: Buffer.alloc(4096, 7).toString(\'base64\')}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'completeId.js'), `module.exports = async () => ({output: {values: ['i-1', 'i-${ZWSP}2', 'i-3']}});\n`);
       const auth = path.join(dir, 'auth.json');
       fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
       server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--moduleDataPath', path.join(dir, 'module_data'),
-        '--authConfigPath', auth, '--loadModule', mod]);
+        '--authConfigPath', auth, '--inlineContentBytes', '1024', '--loadModule', mod]);
       for (let i = 0; i < 300; i++) {
         const listed = await modern('tools/list');
         if (listed.result != null && listed.result.tools.some((t) => /hidden_text_textservice_show$/.test(t.name))) return;
@@ -148,15 +198,24 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
 
     it('tools/list: a tool\'s title and description', async () => {
       const tool = (await modern('tools/list')).result.tools.find((t) => /textservice_show$/.test(t.name));
-      assert.deepStrictEqual([tool.title, tool.description], ['Show  it', `Shows  a thing , ${FAMILY}.`]);
-      clean((await modern('tools/list')).result, 'tools/list');
+      // a description keeps its \n and \t (the ruling's (2)); a title is one line
+      assert.deepStrictEqual([tool.title, tool.description], ['Show  it', `Shows  a thing , ${FAMILY}.\nArgs:\twhat`]);
+      // a description of hidden characters alone is none: the tool is not listed (#378's review (8))
+      assert.ok(!(await modern('tools/list')).result.tools.some((t) => /textservice_blank$/.test(t.name)), 'a blank description was listed');
+      // (text inside an advertised input or output schema is not cleaned in
+      // this release: stated in #378; the blob's field description has one)
+      const tools = (await modern('tools/list')).result.tools.map((t) => { const c = Object.assign({}, t); delete c.inputSchema; delete c.outputSchema; return c; });
+      clean(tools, 'tools/list');
     });
 
     it('prompts/list and prompts/get: title, description, an argument\'s description, the messages (\\n and \\t kept); the client\'s argument as it sent it', async () => {
       const listed = (await modern('prompts/list')).result.prompts.find((p) => /greet$/.test(p.name));
-      assert.deepStrictEqual([listed.title, listed.description, listed.arguments[0].description], ['Greet ', 'Says  hello', 'Who  to greet']);
+      assert.deepStrictEqual([listed.title, listed.description, listed.arguments[0].description], ['Greet ', 'Says  hello', 'Who  to greet\nby name']);
       const got = await modern('prompts/get', {name: listed.name, arguments: {who: 'ann'}});
-      assert.strictEqual(got.result.messages[0].content.text, `Hello ann !\nLine two\tends ${FAMILY} ${HEART} a b`, JSON.stringify(got));
+      // prompts/get's description is cleaned too (#378's review (1))
+      assert.strictEqual(got.result.description, 'Says  hello', JSON.stringify(got));
+      clean(got.result, 'prompts/get');
+      assert.strictEqual(got.result.messages[0].content.text, `Hello ann !\nLine two\tends ${FAMILY} ${HEART} a${ZWJ}b 1 2`, JSON.stringify(got));
       clean((await modern('prompts/list')).result, 'prompts/list');
     });
 
@@ -164,7 +223,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       const r = (await modern('resources/list')).result.resources.find((x) => /items$/.test(x.uri));
       assert.deepStrictEqual([r.name, r.title], ['items', 'All  items']);
       const t = (await modern('resources/templates/list')).result.resourceTemplates.find((x) => /items\/\{id\}$/.test(x.uriTemplate));
-      assert.deepStrictEqual([t.name, t.title, t.description], ['item', 'An  item', 'One  item.']);
+      assert.deepStrictEqual([t.name, t.title, t.description], ['item', 'An  item', 'One  item.\nBy id.']);
       clean((await modern('resources/list')).result, 'resources/list');
       clean((await modern('resources/templates/list')).result, 'resources/templates/list');
     });
@@ -178,6 +237,30 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     it('completion: a completion action\'s value with a hidden character is left out too (M11)', async () => {
       const got = await modern('completion/complete', {ref: {type: 'ref/resource', uri: 'countinghouse://m/hidden_text/items/{id}'}, argument: {name: 'id', value: 'i'}});
       assert.deepStrictEqual(got.result.completion.values, ['i-1', 'i-3'], JSON.stringify(got));
+    });
+
+    // the ruling's (3): its name goes back from the client, so it can't be
+    // cleaned; the prompt is left out, and the load's warning names it
+    it('a prompt whose argument\'s name has a hidden character is left out: not listed, unknown to prompts/get; the load warns', async () => {
+      const prompts = (await modern('prompts/list')).result.prompts;
+      assert.ok(!prompts.some((p) => /sneaky$/.test(p.name)), JSON.stringify(prompts.map((p) => p.name)));
+      const got = await modern('prompts/get', {name: 'hidden_text_sneaky', arguments: {}});
+      assert.ok(got.error != null && /unknown prompt/.test(got.error.message), JSON.stringify(got));
+      // the load's check says why (as validate reports it)
+      const checked = require('../../lib/declarations').check(JSON.parse(fs.readFileSync(path.join(dir, 'hidden-text', 'api.json'), 'utf8')),
+        JSON.parse(fs.readFileSync(path.join(dir, 'hidden-text', 'schema.json'), 'utf8')));
+      assert.ok(checked.warnings.some((w) => /sneaky.*is named with a hidden character, so the prompt is not listed/.test(w.message)), JSON.stringify(checked.warnings));
+    });
+
+    // #378's review (4): a linked value's block carries its field's
+    // description, which is declared text too
+    it('a resource_link block\'s description', async () => {
+      const name = (await modern('tools/list')).result.tools.find((t) => /textservice_blob$/.test(t.name)).name;
+      const got = await modern('tools/call', {name, arguments: {}});
+      const link = (got.result.content || []).find((b) => b.type === 'resource_link');
+      assert.ok(link != null, JSON.stringify(got).slice(0, 800));
+      assert.strictEqual(link.description, 'Report  file');
+      clean(got.result, 'tools/call');
     });
 
     it('a question\'s dialog text', async () => {
