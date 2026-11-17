@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+'use strict';
 //
 // Converts a device module's api.json from the pre-5.0.0 spec format to the
 // 5.0.0 one.
