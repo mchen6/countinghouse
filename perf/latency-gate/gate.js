@@ -22,14 +22,16 @@
 //   back, all N sessions at once;
 // - open: each session makes WARMUP calls, then CALLS timed calls, each after
 //   a gap drawn uniformly from 1-5 s by a seeded RNG (--seed), at random
-//   offsets, so a run repeats; separate and shared get the same schedule.
-// A, S and P alternate, ROUNDS times per N. A round's figures are the median,
-// p90 and p95 over every session's timed calls; the result is the median of
-// the rounds. The verdict uses the medians: S and P each against A. Each
-// round records the 1-minute load average it started at, and is marked when
-// that was above LOADED. It isn't run again: much of that load is the
-// harness's own previous round (N sessions back to back), which a 1-minute
-// average still holds. See README.md.
+//   offsets, so a run repeats; every layout gets the same schedule.
+// A, S and P alternate, ROUNDS times per N, the order rotated each round so
+// no layout always follows another's teardown. A round's figures are the
+// median, p90 and p95 over every session's timed calls; the result is the
+// median of the rounds. The verdict uses the medians: S against A is the
+// maintainer's gate; P against A, at the same allowance, is the release
+// plan's (the reviewer, 2026-11-17). Each layout's run records the 1-minute
+// load average it started at, marked "loaded" above LOADED_PER_CPU x the
+// CPUs. It isn't run again: much of that load is the harness's own previous
+// run, which a 1-minute average still holds. See README.md.
 //
 // node perf/latency-gate/gate.js --shim <ch-shim> [--mode closed|open] [--sessions 1,2,4] [--rounds 5] [--calls 300] [--seed 1] [--json <file>]
 // node perf/latency-gate/gate.js --ch-local <ch-local checkout>   (builds ch-shim with cargo first)
@@ -43,13 +45,21 @@ const ROOT = path.resolve(HERE, '..', '..');
 const WARMUP = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.floor(s.length / 2)]; };
-const pct = (q) => (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? null : s[Math.min(s.length - 1, Math.floor(s.length * q))]; };
-const p90 = pct(0.90);
-const p95 = pct(0.95);
+// one sort: {med, p90, p95} of a sample
+function stats(xs) {
+  const s = [...xs].sort((a, b) => a - b);
+  const at = (q) => (s.length === 0 ? null : s[Math.min(s.length - 1, Math.floor(s.length * q))]);
+  return {med: s.length === 0 ? null : s[Math.floor(s.length / 2)], p90: at(0.90), p95: at(0.95)};
+}
 // the gate: how much slower than separate a warm call may be, by session count
 const allowanceMs = (n) => (n === 1 ? 2 : 1.5);
-// a round that starts with the 1-minute load above this is marked
-const LOADED = 1.0;
+// a layout's run that starts with the 1-minute load above this many per CPU
+// is marked loaded
+const LOADED_PER_CPU = 0.75;
+// the JSON's shape: 2 since the per-session layout (rows hold separate,
+// shared and perSession, each {ms, p90Ms, p95Ms, rounds}); 1 was flat
+// (separateMs, sharedMs, ...)
+const SCHEMA = 2;
 // mulberry32: a small seeded RNG, so an open-mode schedule repeats
 function rng(seed) {
   let a = seed >>> 0;
@@ -164,9 +174,16 @@ async function shared(n, calls, shim, plan, perSession = false) {
   fs.writeFileSync(cond, 'echo \'{"status":"ok","conditions":"no","repo":null,"token":null}\'\n', {mode: 0o700});
   priv(path.join(home, 'shim.json'), JSON.stringify({node: '/bin/sh', chLocal: cond, env: {PATH: '/usr/bin:/bin'}}));
   const socket = path.join(run, 'rt.sock');
+  let module;
+  try {
+    module = perSession ? perSessionCopy(home) : path.join(HERE, 'modules', 'perf-time');
+  } catch (e) {
+    fs.rmSync(home, {recursive: true, force: true});
+    throw e;
+  }
   const rt = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--sessionSocket', socket, '--workerThread', '--store', 'local',
     '--storePath', path.join(home, 'store'), '--moduleSandbox', 'enforce', '--moduleDataPath', path.join(home, 'data'),
-    '--loadModule', perSession ? perSessionCopy(home) : path.join(HERE, 'modules', 'perf-time'), '--controlChannel', 'ipc'],
+    '--loadModule', module, '--controlChannel', 'ipc'],
   {stdio: ['ignore', 'pipe', 'pipe', 'ipc'], cwd: home});
   let out = '';
   rt.stdout.on('data', (d) => { out = (out + d).slice(-8000); });
@@ -207,17 +224,30 @@ async function main() {
   const rows = [];
   const fig = (x) => x.toFixed(2);
   const over = (x) => `${x >= 0 ? '+' : ''}${fig(x)}`;
+  const loadedAbove = LOADED_PER_CPU * machine.cpus;
+  const LAYOUTS = {separate: (n, plan) => separate(n, o.calls, plan), shared: (n, plan) => shared(n, o.calls, shim, plan), perSession: (n, plan) => shared(n, o.calls, shim, plan, true)};
+  const order = Object.keys(LAYOUTS);
+  let loadedRuns = 0;
   for (const n of o.sessions) {
     // per layout: each round's median, p90 and p95
-    const per = {separate: {med: [], p90: [], p95: []}, shared: {med: [], p90: [], p95: []}, perSession: {med: [], p90: [], p95: []}};
+    const per = {};
+    for (const k of order) per[k] = {med: [], p90: [], p95: []};
     const roundsMeta = [];
     for (let r = 0; r < o.rounds; r++) {
       const plan = {mode: o.mode, seed: o.seed + r};
-      const load = os.loadavg()[0];
-      const got = {separate: await separate(n, o.calls, plan), shared: await shared(n, o.calls, shim, plan), perSession: await shared(n, o.calls, shim, plan, true)};
-      roundsMeta.push({loadAtStart: load, loaded: load > LOADED});
-      for (const k of Object.keys(per)) { per[k].med.push(median(got[k])); per[k].p90.push(p90(got[k])); per[k].p95.push(p95(got[k])); }
-      process.stdout.write(`  N=${n} round ${r + 1} (load ${fig(load)}${load > LOADED ? ', LOADED' : ''}): separate ${fig(per.separate.med[r])} ms, shared ${fig(per.shared.med[r])} ms, per-session ${fig(per.perSession.med[r])} ms\n`);
+      // rotated each round: no layout always runs right after another
+      const ran = order.slice(r % order.length).concat(order.slice(0, r % order.length));
+      const meta = {order: ran};
+      for (const k of ran) {
+        const load = os.loadavg()[0];
+        const st = stats(await LAYOUTS[k](n, plan));
+        for (const q of ['med', 'p90', 'p95']) per[k][q].push(st[q]);
+        meta[k] = {loadAtStart: load, loaded: load > loadedAbove};
+        if (load > loadedAbove) loadedRuns++;
+      }
+      roundsMeta.push(meta);
+      const mark = (k) => (meta[k].loaded ? ' LOADED' : '');
+      process.stdout.write(`  N=${n} round ${r + 1} (${ran.join(', ')}): separate ${fig(per.separate.med[r])} ms${mark('separate')}, shared ${fig(per.shared.med[r])} ms${mark('shared')}, per-session ${fig(per.perSession.med[r])} ms${mark('perSession')}\n`);
     }
     const A = median(per.separate.med), S = median(per.shared.med), P = median(per.perSession.med);
     const limit = A + allowanceMs(n);
@@ -228,8 +258,9 @@ async function main() {
     process.stdout.write(`N=${n}: separate ${fig(A)} ms (p90 ${fig(median(per.separate.p90))}); shared ${fig(S)} ms, ${over(S - A)} (p90 ${fig(median(per.shared.p90))}); per-session ${fig(P)} ms, ${over(P - A)} (p90 ${fig(median(per.perSession.p90))}); gate <= +${allowanceMs(n)} ms: shared ${pass.shared ? 'PASS' : 'FAIL'}, per-session ${pass.perSession ? 'PASS' : 'FAIL'}\n`);
   }
   const verdict = rows.every((r) => r.pass) ? 'PASS' : 'FAIL';
-  process.stdout.write(`verdict: ${verdict}\n`);
-  const result = {when: new Date().toISOString(), mode: o.mode, seed: o.mode === 'open' ? o.seed : null, machine, calls: o.calls, rounds: o.rounds, rows, verdict, loadavgAtEnd: os.loadavg()};
+  process.stdout.write(`verdict: ${verdict}${loadedRuns > 0 ? ` (${loadedRuns} layout run(s) started loaded, above ${fig(loadedAbove)}: see the JSON's roundsMeta)` : ''}\n`);
+  const result = {schema: SCHEMA, when: new Date().toISOString(), mode: o.mode, seed: o.mode === 'open' ? o.seed : null, machine, calls: o.calls, rounds: o.rounds, rows, verdict,
+    loadedAbove, loadedRuns, loadavgAtEnd: os.loadavg()};
   if (o.json != null) fs.writeFileSync(o.json, `${JSON.stringify(result, null, 2)}\n`);
   process.exitCode = verdict === 'PASS' ? 0 : 1;
 }

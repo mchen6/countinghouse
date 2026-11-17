@@ -5,7 +5,7 @@ The maintainer's gate (2026-11-15), for a warm `tools/call` measured end to end 
 - **1 session:** a shared call is at most 2 ms slower than a separate server.
 - **2+ sessions:** at most 1.5 ms slower than separate servers. It was "no slower" until the maintainer reset it the same day, after the first 4-core run.
 
-It holds for a shared module and for a per-session one alike (shared runtime R1).
+The maintainer's gate as recorded is for a shared module (S). The release plan (the reviewer, 2026-11-17) holds a per-session module (P) to the same allowance, and the verdict and exit code count both. Whether the maintainer's gate itself covers per-session is to be confirmed with the maintainer; until then, a P-only failure is a failure of the release plan's check.
 
 ## One command
 
@@ -16,7 +16,7 @@ node perf/latency-gate/gate.js --ch-local <path to a ch-local checkout>
 ```
 
 That builds ch-shim with cargo (ch-local pins its toolchain), runs the closed load shape (5 alternating rounds of 300 back-to-back calls per session at N=1, 2 and 4), prints each round and the verdict, and exits 0 on PASS, 1 on FAIL and 2 when the harness itself fails or an option is invalid. Options:
-- `--mode open` runs the realistic rate instead: 60 calls per session, each after a gap drawn from 1–5 s by a seeded RNG (`--seed`), at N=2, 3 and 10, with the median, p90 and p95 reported. This takes about 3 minutes per layout and session count, so about 28 minutes for the three layouts at the three defaults.
+- `--mode open` runs the realistic rate instead: 60 calls per session, each after a gap drawn from 1–5 s by a seeded RNG (`--seed`), at N=2, 3 and 10, with the median, p90 and p95 reported. This takes about 3 minutes per layout and session count, so about 28 minutes for the three layouts at the three defaults. Together with closed mode and the shim's build, one workflow job then comes close to its 45-minute timeout. Dispatch the two modes as separate runs (`-f modes=closed`, then `-f modes=open`), or lower `open_calls`.
 - `--shim <binary>` uses an already-built ch-shim.
 - `--sessions 1,2,4`, `--rounds`, `--calls` override the mode's defaults. They are checked as small positive integers.
 - `--json <file>` writes the result.
@@ -33,9 +33,11 @@ Each session makes 30 warm-up calls, then the timed calls, all N sessions at onc
 - closed: the calls go back to back;
 - open: each call comes after a seeded 1–5 s gap, and every layout gets the same schedule.
 
-A, S and P alternate, `--rounds` times per N. A round's figures are the median, p90 and p95 over all its sessions' timed calls. The result is the median of the rounds. The verdict uses the medians: S and P each against A, within the allowance for that N.
+A, S and P alternate, `--rounds` times per N, in an order rotated each round, so no layout always runs right after another's teardown. A round's figures are the median, p90 and p95 over all its sessions' timed calls. The result is the median of the rounds. The verdict uses the medians: S and P each against A, within the allowance for that N. Open mode runs one round by default, so its verdict rests on that one round.
 
-Each round records the 1-minute load average it started at, with the CPU model in the result's `machine`. A round that started above 1.0 is marked `loaded` in the JSON, not run again: much of that load is the harness's own previous round, which a 1-minute average still holds.
+Each layout's run records the 1-minute load average it started at, with the CPU model in the result's `machine`. A run that started above 0.75 × the CPU count is marked `loaded` in the JSON's `roundsMeta`, and the verdict line counts them. It isn't run again: much of that load is the harness's own previous run, which a 1-minute average still holds.
+
+The JSON's `schema` is 2. Its rows hold `separate`, `shared` and `perSession`, each with `ms`, `p90Ms`, `p95Ms` and its rounds. Schema 1, the 2026-11-15 and 2026-11-16 dispatches, had flat `separateMs`, `sharedMs`, `overMs` and so on.
 
 ## Where it runs
 
