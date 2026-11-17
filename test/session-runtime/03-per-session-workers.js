@@ -240,17 +240,18 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     assert.deepStrictEqual(counts(r), c, 'nothing started after the unload');
   });
 
-  for (const peer of [true, false]) {
-    it(`a path not yet routed to a session's worker (Task 5) fails closed: a hop into it (${peer ? 'a direct peer channel' : 'through the main thread'}) is DEVICE_NOT_FOUND, no TypeError, no hang`, async() => {
-      const part = perSession(home, {dir: path.join(home, 'hop', 'node_modules', NAME), role: 'part'});
-      const s = await twoSessions(peer ? [] : ['--no-directPeerChannels'], [part, caller(home)], ['hop']);
-      const hop = await request(s.A.c, 'tools/call', {name: s.tools.find((t) => /hop$/.test(t)), arguments: {}});
-      const out = outOf(hop);
-      assert.strictEqual(out.code, 'DEVICE_NOT_FOUND', JSON.stringify(out));
-      assert.ok(!/TypeError|is not a function|Cannot read/.test(r.log()), r.log().slice(-3000));
-      assert.deepStrictEqual(counts(r), {up: 0, ended: 0}, 'no session worker was started for a hop');
-    });
-  }
+  // On the shared runtime peer channels are always off (it is the
+  // single-identity profile: lib/local-profile.js), so a hop takes the
+  // main-thread route; Task 5 routes it to the session's worker.
+  it('a path not yet routed to a session\'s worker (Task 5) fails closed: a hop into it is DEVICE_NOT_FOUND, no TypeError, no hang', async() => {
+    const part = perSession(home, {dir: path.join(home, 'hop', 'node_modules', NAME), role: 'part'});
+    const s = await twoSessions([], [part, caller(home)], ['hop']);
+    const hop = await request(s.A.c, 'tools/call', {name: s.tools.find((t) => /hop$/.test(t)), arguments: {}});
+    const out = outOf(hop);
+    assert.strictEqual(out.code, 'DEVICE_NOT_FOUND', JSON.stringify(out));
+    assert.ok(!/TypeError|is not a function|Cannot read/.test(r.log()), r.log().slice(-3000));
+    assert.deepStrictEqual(counts(r), {up: 0, ended: 0}, 'no session worker was started for a hop');
+  });
 
   it('its prompt: listed, rendered and completed from the main thread\'s copy of its spec, with no worker; never a TypeError', async() => {
     const s = await twoSessions();
