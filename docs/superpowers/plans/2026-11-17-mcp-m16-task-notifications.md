@@ -8,7 +8,7 @@
 
 **Architecture:**
 - **`statusMessage`** is computed in M15's `modernTaskOf` from the job record: `job.progress` (a finite number, clamped to 0–100 and rounded) while `working`, and the failure's code for a `failed` run. Both runners already keep `job.progress` (`updateJobProgress`).
-- **A main-thread event bus, `lib/task-events.js`,** keyed by the task's minted `t-` id (`TASK_ID`: the Redis runner's `QueueEvents` give only an id), is told by both job runners when a 2026-07-28 job changes: active, progress, completed, failed or removed. In the Redis runner that's the `QueueEvents` handlers, including `'progress'`, which master ignores today. In the local runner it's its state changes and `updateJobProgress`.
+- **A main-thread event bus, `lib/task-events.js`,** keyed by the task's minted `t-` id (`TASK_ID`: the Redis runner's `QueueEvents` give only an id), is told by both job runners when a 2026-07-28 job changes (active, progress, completed, failed), and by the gateway's tasks/cancel (cancelled). In the Redis runner that's the `QueueEvents` handlers, including `'progress'`, which master ignores today. In the local runner it's its state changes and `updateJobProgress`.
 - **The listen hub (`lib/mcp/subscriptions.js`) takes a fourth filter, `taskIds`.** A listener's agreed ids are a `Set`. On a task event the hub builds the task as `tasks/get` would (one function, shared with M15's handler), for each listener whose set holds that id. It writes `notifications/tasks`, coalesced per (listener, task), and drops the id once the task is terminal.
 
 **Tech stack:** Node ≥ 22.16, mocha; BullMQ's `QueueEvents`; M15's `modernTaskOf`, `taskFailure`, `taskCallResult` and tombstones.
@@ -71,14 +71,14 @@
 - Test: `test/mcp-contract/27-tasks-modern.js` (statusMessage cases); `test/jobs-local/03-task-events.js` (server-free, local runner)
 
 **Interfaces:**
-- Produces: `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'removed'}`.
+- Produces: `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'cancelled'}`. `cancelled` is the gateway's, told once tasks/cancel has written the tombstone; a runner's removal tells nothing (a listener's send-time lookup could otherwise find neither the job nor the tombstone).
 - Consumes: nothing from B5 Task 2 yet; Task 2 does.
 
 - [ ] Failing tests:
   - a task whose handler calls `ctx.job.progress(42.4)` reads `statusMessage: "42%"` on `tasks/get` while working, and nothing once completed;
   - a progress of `"half"` or `{}` gives no statusMessage;
   - a run past `--jobTimeout` reads failed with statusMessage `"failed"` (its error has no code); never module words. (A lost run's `MODULE_UNLOADED` case is dropped: after #369 that run is `completed` with isError.);
-  - the local runner emits active, progress, completed, failed and removed for a modern job, and nothing for a legacy job.
+  - the local runner emits active, progress, completed and failed for a modern job (a removal: nothing; the gateway tells cancelled), and nothing for a legacy job.
 - [ ] Implement. The fixture `m15-tasks` gains an action `progress` that reports 10, 50 and 90 a little apart, then answers.
 - [ ] Run: PASS. Commit.
 
