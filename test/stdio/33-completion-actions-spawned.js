@@ -55,6 +55,10 @@ describe('stdio 33: completion actions, spawned (M11)', function() {
     // at most 100 of its values are kept
     const many = await complete(PROMPT, 'colour', 'many');
     assert.deepStrictEqual([many.values.length, many.total, many.hasMore, many.values[0]], [100, 100, false, 'many-000']);
+    // a value of at most 256 characters is kept, one longer is not (M18's
+    // bounds audit: the action's own cap had no case)
+    const long = await complete(PROMPT, 'colour', 'long');
+    assert.deepStrictEqual(long.values.map((v) => v.length), [256], JSON.stringify(long).slice(0, 200));
     // the template's action
     assert.deepStrictEqual(await complete(RESOURCE, 'id', 'item'), {values: ['item-1', 'item-2'], total: 2, hasMore: false});
     // it throws, or answers no values: the schema's candidates
