@@ -95,7 +95,8 @@ describe('sandbox 52: the validator pool resized for a larger maxOutputBytes (pa
     const workers = all(pool).map((s) => s.worker);
     await pool.resize(4 * MiB);
     await pool.resize(8 * MiB);
-    assert.deepStrictEqual(all(pool).map((s) => s.worker), workers);
+    // by thread id, never the Worker objects (a failure would diff them: #344)
+    assert.deepStrictEqual(all(pool).map((s) => s.worker.threadId), workers.map((w) => w.threadId));
   });
 
   it('a slot holding a check is replaced only after that check answers; two resizes run one after the other', async () => {
@@ -154,7 +155,7 @@ describe('sandbox 52: the validator pool resized for a larger maxOutputBytes (pa
     // a pending replacement, as fail() makes one after a crash at start
     const pendingSlot = pool.spawn(400, true);
     pool.slots.push(pendingSlot);
-    assert.strictEqual(pendingSlot.worker, null);
+    assert.ok(pendingSlot.worker === null, 'no worker yet');
     await pool.resize(96 * MiB);
     assert.strictEqual(pendingSlot.ending, false, 'not retired');
     for (let w = 0; pendingSlot.worker == null && w < 5000; w += 20) await sleep(20);
