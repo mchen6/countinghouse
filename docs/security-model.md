@@ -516,6 +516,11 @@ command, `countinghouse-meter`, reads the key from
 `COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
 fingerprint.
 
+The store's files are written back every 5 seconds, and at a clean stop. So
+a runtime killed without one (SIGKILL, a power loss) can lose up to the
+last 5 seconds of `ctx.redis` writes, per-session or not. Redis has its own
+persistence settings.
+
 In the single-identity profile (`--store local --stdio` without
 `--authConfigPath` or `--authProvider`) no auth file exists. The one key is
 made at start, read-only, and no file holds it: the runtime never prints,
@@ -938,6 +943,56 @@ bounds it:
   under the scenario's name.
 - **A call cancelled while its form is made gets no state.** None is
   minted, so none can be presented later.
+
+### Modules that keep state per session
+
+On the shared runtime, a module that declares
+`"countinghouse": {"state": "per-session"}` runs in one worker per session
+that uses it, with that session's own `ctx.redis` keys, `/data` and `/tmp`
+([module development](module-development.md#modules-that-keep-state-per-session)).
+What keeps one session out of another's:
+
+- **The worker is never the caller's choice.** Every call carries a call
+  token the runtime issues and binds to the session it was made in. A
+  direct call, a hop (`ctx.call`) or a task run reaches the worker of the
+  session its token names, which the main thread looks up for each call. A
+  session, or a module acting for it, reaches only its own session's
+  worker and storage. A call whose session has ended reaches none: it is
+  answered as a device that was never hosted, and nothing runs.
+- **Never over a direct peer channel, under any profile.** Hops into a
+  per-session module always go through the main thread, routed by each
+  call's own token, and the runtime never opens a direct channel to one.
+  A caller's peer channels are keyed by the device they lead to, not by
+  session (a module never sees a session id), so a channel opened for one
+  session's call would carry another session's later hop into the first
+  session's worker. The broker answers a request for one with "route
+  through the main thread"; and were a channel to a session's worker ever
+  to exist, an invoke on it by another session's call is refused. On the
+  shared runtime peer channels are off anyway (it is the single-identity
+  profile), but the guarantee doesn't rest on that.
+- **No session id reaches the module**: not in its options, environment,
+  `ctx`, paths (its `/data` is mapped on the main thread) or error texts.
+- **Shared modules are trusted with every session's data.** A shared module
+  is reached by every session by design. While it serves two sessions'
+  calls at once it holds both tokens, so it could hop into either session's
+  per-session worker. Only load as shared a module you would trust with
+  all of the user's sessions. That is the case already: on the shared
+  runtime every session is the same user.
+- **With session packs (B3),** a session sees and calls only the modules in
+  packs that are on for it (the global ones and its own). A module it
+  doesn't list answers like a missing one, and its per-session workers stop
+  when the session turns its pack off.
+- **The memory bound is the operator's.** `--maxSessionWorkers` (default
+  16, in all) is a terminal flag only, not a setting a session can change.
+  At the cap only an idle worker is retired, never one with a call in
+  flight. A session that can't get a worker is refused
+  `SESSION_WORKERS_BUSY`; nothing is queued.
+- **Storage ends with the session.** A session's partitions are removed
+  when it leaves or its reconnect window passes, after its workers stop, and
+  at a start for every session not restored, before the runtime accepts a
+  connection. Removal never follows a link out of the module's data
+  directory, and a partition that can't be removed doesn't stop the runtime
+  from starting.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
