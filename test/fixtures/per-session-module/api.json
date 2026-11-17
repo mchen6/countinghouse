@@ -50,6 +50,16 @@
               "name": "count",
               "mimeType": "text/plain"
             }
+          },
+          {
+            "name": "flood",
+            "description": "Many store commands at once, each a message to the main thread (the message-rate limit).",
+            "input": {
+              "schema": "/stateService/flood/input"
+            },
+            "output": {
+              "schema": "/stateService/flood/output"
+            }
           }
         ]
       }
