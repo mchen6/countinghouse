@@ -145,7 +145,7 @@ const tool = async(s, name, args = {}) => {
 };
 
 [['routed', []]].forEach(([how, flags]) => {
-  describe(`session-runtime 03: a session's pack at every hop, spawned (shared runtime B3, Task 8b), ${how}`, function() {
+  describe(`session-runtime 05: a session's pack at every hop, spawned (shared runtime B3, Task 8b), ${how}`, function() {
     this.timeout(180000);
     if (process.platform === 'win32') return;   // the named pipe is C2's
     let home;
