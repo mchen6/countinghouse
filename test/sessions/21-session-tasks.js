@@ -75,7 +75,9 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
       assert.strictEqual((await add(IN(A), {taskId: id, era: 'modern'})).r.id, id);
       const again = await add(IN(B), {taskId: id, era: 'modern'});
       assert.strictEqual(again.err != null && again.err.code, 'ADD_JOB_ERROR');
-      assert.strictEqual(runner.sessionOf(id), A, 'the first, unchanged');
+      // the first, unchanged: still A's, never B's
+      assert.ifError((await call(runner, 'getJob', IN(A), id)).err);
+      assert.strictEqual((await call(runner, 'getJob', IN(B), id)).err.code, 'GET_JOB_ERROR');
     });
   });
 
@@ -120,19 +122,75 @@ describe('sessions 21: tasks by key and session (shared runtime B5, Task 2)', fu
       assert.strictEqual((await call(runner, 'getJob', IN(C), id)).err.code, 'GET_JOB_ERROR');
     });
 
-    it('no record or error carries a session id; sessionOf answers the main thread', async() => {
+    it('no record or error carries a session id', async() => {
       shared();
       const id = (await add(IN(A))).r.id;
       const rec = (await call(runner, 'getJob', IN(A), id)).r;
       assert.ok(!JSON.stringify(rec).includes(A), 'not in its record');
       assert.ok(!('session' in rec.job), 'the record has no session key');
       assert.ok(!JSON.stringify((await call(runner, 'getJob', IN(B), id)).err).includes(A));
-      assert.deepStrictEqual([runner.sessionOf(id), runner.sessionOf((await add(INTERNAL)).r.id), runner.sessionOf('nope')], [A, null, undefined]);
     });
 
     it('outside shared mode another key\'s job is JOB_ACCESS_DENIED, as before', async() => {
       const id = (await add({appKey: 'k'})).r.id;
       assert.strictEqual((await call(runner, 'getJob', {appKey: 'other'}, id)).err.code, 'JOB_ACCESS_DENIED');
+    });
+  });
+
+  // the review of #366, L1 and L2: a cancelled 2026-07-28 task's tombstone
+  // keeps the canceller's session only as its SHA-256, and findModernTask
+  // (exported for M16) matches it by the scope rule, as seesJob judges a job
+  describe('the tombstone (M15) and findModernTask', () => {
+    const store = require('../../lib/store');
+    const tombstones = require('../../lib/task-tombstones');
+    const gateway = require('../../lib/mcp/gateway');
+    const NO_LIVE = '(no live session)';
+    const T = `t-${'2'.repeat(32)}`;
+    let kv;
+    let savedGetStore;
+    let savedStore;
+    beforeEach(() => {
+      kv = new Map();
+      // a tombstone not seen falls through to the runner: the local store's
+      // (a shared runtime's), which has no such job
+      savedStore = options.store;
+      options.store = 'local';
+      const real = store.getStore();
+      savedGetStore = store.getStore;
+      const fakeKv = {set: (key, value, ...rest) => { kv.set(key, value); rest[rest.length - 1](null); }, get: (key, cb) => cb(null, kv.has(key) ? kv.get(key) : null)};
+      // the tombstones' kv (lib/task-tombstones.js reads store.getStore().kv)
+      store.getStore = () => new Proxy(real, {get: (target, k) => (k === 'kv' ? fakeKv : target[k])});
+    });
+    afterEach(() => { store.getStore = savedGetStore; options.store = savedStore; });
+    const put = (session) => tombstones.put(T, {owner: require('../../lib/key-fingerprint').meterId('k'), session, createdAt: '2026-11-17T00:00:00.000Z'}, 60000);
+    const find = (session) => gateway.findModernTask({appKey: 'k', isAdmin: false, session}, T);
+
+    it('L1: the stored tombstone has the session\'s SHA-256, never its id', async() => {
+      shared();
+      await put(A);
+      const raw = kv.get(`task-tombstone:${T}`);
+      assert.ok(!raw.includes(A), raw);
+      assert.strictEqual(JSON.parse(raw).session, require('crypto').createHash('sha256').update(A).digest('hex'));
+    });
+
+    it('L2: in shared mode A finds its own; B, an unset session and NO_LIVE_SESSION find nothing', async() => {
+      shared();
+      await put(A);
+      const found = await find(A);
+      assert.ok(found != null && found.tombstone != null, 'A\'s');
+      for (const other of [B, undefined, null, NO_LIVE, '']) assert.strictEqual(await find(other), null, `${other}`);
+    });
+
+    it('L2: a tombstone written with no session is no shared session\'s', async() => {
+      shared();
+      await put(null);
+      for (const s of [A, NO_LIVE, null]) assert.strictEqual(await find(s), null, `${s}`);
+    });
+
+    it('outside shared mode the owner key decides, as before (the --stdio session\'s id may differ after a restart)', async() => {
+      await put('local-session-before-restart');
+      assert.ok((await find('local-session-after-restart')) != null);
+      assert.ok((await find(null)) != null);
     });
   });
 });

@@ -183,7 +183,7 @@
 - Modify: `lib/peer-channel-broker.js`: `handleRequest`, `handleAnnouncement`, `serveMatched`
 - Modify: `lib/job-sessions.js` and `lib/sessions.js` `close` (an ended session's hidden packs, for its jobs)
 - Test: `test/sessions/16-pack-hops.js` (server-free: the broker and the device manager with stand-in workers, as sessions 07 does)
-- Test: `test/session-runtime/03-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port). **Moved to Task 8** (first to Task 6, then on to Task 8; the reviewer both times): no pack can be on in a real runtime until Task 6 wires `configure()`, and nothing gives a session its own pack "on" or "off" until Task 8. Task 4's commit has the server-free cases (`test/sessions/17-pack-hops-main.js`).
+- Test: `test/session-runtime/05-session-pack-hops-spawned.js` (a spawned runtime on `--sessionSocket`, two sessions through the test's shim; no port). **Moved to Task 8** (first to Task 6, then on to Task 8; the reviewer both times): no pack can be on in a real runtime until Task 6 wires `configure()`, and nothing gives a session its own pack "on" or "off" until Task 8. Task 4's commit has the server-free cases (`test/sessions/17-pack-hops-main.js`).
 - Fixtures, written by the test into its home: a global pack `front` (a scenario with one tool, `relay`, and a role-less part `relay-core` that declares calls on `back`'s `echo` and on a module `ghost` that is never installed), and a pack `back` (a scenario whose `echo` counts its runs). `relay` returns the caught error's own fields as JSON.
 
 **Interfaces:**
@@ -213,7 +213,7 @@
     - a match whose session left the pack since the announcement runs no handler.
   - A job A made: after A turns the pack off, its next run fails as a missing device, once. After A ends, a job of A's hops into no this-session pack of A's, and still not into a pack A had turned off.
   - No message posted to a worker in any of these names a session (the probe preload, `test/fixtures/session-probe-preload.js`).
-- [ ] **Step 2:** Run `npx mocha --exit test/sessions/16-pack-hops.js`, then `node test/helpers/run-local.js test/session-runtime/03-session-pack-hops-spawned.js` under the suite lock. They fail: B's hop returns the echo.
+- [ ] **Step 2:** Run `npx mocha --exit test/sessions/16-pack-hops.js`, then `node test/helpers/run-local.js test/session-runtime/05-session-pack-hops-spawned.js` under the suite lock. They fail: B's hop returns the echo.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run both again, then one file at a time: `node test/helpers/run-local.js test/composition/18-call-tokens.js`, `…/test/composition/21-declared-calls-enforced.js`, `npx mocha --exit test/module-loading/32-hop-path-requires.js`, `npx mocha --exit test/sessions/04-job-sessions.js`. They pass.
 - [ ] **Step 5:** Commit.
@@ -266,7 +266,7 @@
 
 - [ ] **Step 1: Write the failing tests.**
   - **Required (the reviewer's #340 review, obligation 1):** the per-session view must not fail open while a this-session pack loads. Today its devices register and `toolschanged` fires before `packChanged`, so for a moment its module is owned by no pack and listed to everyone. Either `records()` holds the pack and `packChanged` runs before any of its devices is visible, or the view's cache is keyed on `toolGeneration.current()` too. Test: B can't see A's pack mid-load (its tools/list, tools/call and prompts, between the devices' registration and the load's answer).
-  - Task 4's spawned file, `test/session-runtime/03-session-pack-hops-spawned.js`, does **not** land here after all: it moved on to Task 8 (the reviewer), since before Task 8 nothing in a real runtime gives a session its own pack "on" or "off".
+  - Task 4's spawned file, `test/session-runtime/05-session-pack-hops-spawned.js`, does **not** land here after all: it moved on to Task 8 (the reviewer), since before Task 8 nothing in a real runtime gives a session its own pack "on" or "off".
   - Task 6's commit wires `session-packs.configure()` in production, with the globals (the reviewer's ruling (1) on #340): `allowsOn`, `ceilingNow` and `ceilingKey` from lib/session-settings.js, `isOpen` and `endedPacksOff` (Task 4). Test: a runtime started in shared mode answers through the wired store (no default left in place).
   - `load {pack, global: false}` while A's `load-pack` waits: the pack isn't global. `load {pack, global: true}` while A's `load-pack` waits: it is global, and B lists it.
   - `load {pack, global: false}` with no session waiting (a restart's reload): not global, and no session lists it.
@@ -343,7 +343,7 @@ This is the task that makes session sets reachable in production. Until it merge
 - Decline locks, forms left and the per-user window use the kind `pack`, as B2's Task 5 built them.
 
 - [ ] **Step 1: Write the failing tests.**
-  - **Lands here:** Task 4's spawned file, `test/session-runtime/03-session-pack-hops-spawned.js` (moved from Task 4 to Task 6, then to here: the reviewer), with Task 4's Step 1 "Spawned" cases and fixtures. Its packs are turned on and off through this task's conversation.
+  - **Lands here:** Task 4's spawned file, `test/session-runtime/05-session-pack-hops-spawned.js` (moved from Task 4 to Task 6, then to here: the reviewer), with Task 4's Step 1 "Spawned" cases and fixtures. Its packs are turned on and off through this task's conversation.
   - A turns `pack.ci` on: a form saying "for this session" in both languages. After the accept: exactly one `load-pack`; A lists the tool and B doesn't; `settings.json`'s bytes and mtime are unchanged; the history line has A's id; B's `get` shows the pack off and no line of A's.
   - The `requestState`'s MAC for a pack equals the one master's `macOf` gives for the same nonce, session, name and value. A retry whose pack is now installed at another version is refused from the staged change.
   - B turns it on too: its own form, no second `load-pack`, and both list it.
