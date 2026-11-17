@@ -489,6 +489,14 @@ says how to write a module for this.
   the callee's code; it was `DEVICE_INVOKE_EXCEPTION`. 23 catalogue codes
   that nothing raised are gone (the CHANGELOG lists them).
 - ctx.call and HTTP `invoke-action` are unchanged: they keep `{output: …}`.
+- **What a module declares reaches the client with no hidden characters**
+  (#378). A tool's title and description, a prompt's text and its
+  arguments' descriptions, a resource's title and description, and a
+  question's dialog are cleaned as they leave. Each control, bidi, zero-width
+  or other invisible character becomes a space, though a prompt message keeps
+  its `\n` and `\t`, and emoji sequences stay whole. Nothing is refused or
+  changed at load. A completion candidate carrying one is left out
+  ([security-model.md](security-model.md#declared-text-as-it-reaches-the-client)).
 - **Checked against the official schemas.** The results above are tested
   against the official 2026-07-28 schema and the tasks extension's
   (`test/mcp-contract/35`), and the legacy era's through the official SDK
