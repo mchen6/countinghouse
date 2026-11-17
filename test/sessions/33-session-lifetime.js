@@ -111,3 +111,29 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     assert.deepStrictEqual(await lifetime.sweepAtStart([], broken), {removed: 0, failed: 0, skipped: 0});
   });
 });
+
+// The figures docs/module-development.md and docs/cli-and-api-reference.md
+// give for per-session workers are the code's own: a test, so neither can
+// drift from the other (the Reviewer, R1 Task 7).
+describe('sessions 33: the per-session docs quote the code\'s figures', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const doc = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'docs', f), 'utf8');
+  it('the crash suspension (the module supervisor\'s rule) and the cap\'s default', () => {
+    const {SUSPEND_AFTER, WINDOW_MS} = require('../../lib/module-supervisor');
+    const words = {3: 'Three', 10: 'ten'};
+    assert.ok(doc('module-development.md').includes(`${words[SUSPEND_AFTER]} exits within ${words[WINDOW_MS / 60000]} minutes`),
+      `module-development.md must say ${SUSPEND_AFTER} exits within ${WINDOW_MS / 60000} minutes`);
+    // the flag as a runtime parses it, in a process of its own (this one's
+    // options are the suite's), as mcp-contract 21 reads --listPageSize
+    const optionsOf = (argv) => JSON.parse(require('child_process').execFileSync(process.execPath, ['-e',
+      `const o = require('./lib/cli-options'); o.setOptions(${JSON.stringify(argv)}); process.stdout.write(JSON.stringify({n: o.maxSessionWorkers, bad: o.maxSessionWorkersInvalid}));`],
+    {cwd: path.join(__dirname, '..', '..')}).toString());
+    assert.deepStrictEqual(optionsOf({}), {n: 16, bad: null});
+    assert.deepStrictEqual(optionsOf({maxSessionWorkers: 1}), {n: 1, bad: null});
+    for (const v of [0, -1, 1.5, 'x']) assert.strictEqual(optionsOf({maxSessionWorkers: v}).bad.name, 'maxSessionWorkers', String(v));
+    assert.ok(doc('module-development.md').includes('`--maxSessionWorkers` (default 16)'));
+    assert.ok(doc('cli-and-api-reference.md').includes('| `--maxSessionWorkers <n>` | `16` |'));
+    assert.strictEqual(lifetime.RESET_AT_START.startsWith('Per-session module state was reset'), true);
+  });
+});
