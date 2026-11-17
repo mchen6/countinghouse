@@ -231,7 +231,7 @@ describe('sessions 06: per-session overrides and effective values (shared runtim
     assert.deepStrictEqual(heard, [A, A, A]);
   });
 
-  // an "on" names the version confirmed, an "off" the one it was off at: the state's wire
+  // an "on" names the version confirmed, an "off" the one it was off at (B3 Task 9: the state's wire)
   it('pack overrides: always with their plain version, on or off; an "on" only where the ceiling allows the pack', () => {
     packs['pack.ci'] = true;
     for (const v of [undefined, '', 'latest', '^1.2.0', '1.2', '1.2.0 ', 'v1.2.0']) assert.throws(() => settings.set(B, 'pack.docs', true, {loosening: true, version: v}), /plain version/, String(v));

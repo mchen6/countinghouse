@@ -381,6 +381,13 @@ once per URI within a quarter second. It is coarse on purpose: it says only
 before your handler runs, sends nothing. On a shared runtime, a module that
 keeps its state per session tells only the calling session's subscriptions.
 
+An action that declares `longRunning: true` runs as a task for a 2026-07-28
+client that declares the `io.modelcontextprotocol/tasks` extension (with
+`--workerThread`): the call is answered at once with a `taskId`, and the
+client polls `tasks/get` for the result your action returns. Anyone else's
+call to it runs inline, as any action's does. Your handler is the same
+either way.
+
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
 the keys that may reach the module, with its `title`, `description` and

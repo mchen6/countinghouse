@@ -53,6 +53,36 @@ describe('session-transport 10: why a session ended (R1)', function() {
       assert.strictEqual(a.endReason, 'closed');
     });
 
+    it('the daemon is told session-gone on every end but \'closed\', whose row the next runtime restores', () => {
+      // a runtime stopping while ch-local's daemon lives (a restart, an
+      // upgrade) must leave each session's row in the daemon's table
+      // (ch-local lib/session-table.js drops a row on session-gone)
+      const told = [];
+      const reg = createRegistry({tell: (m) => told.push(m)});
+      const gone = () => told.filter((m) => m.type === 'session-gone').map((m) => m.session);
+      const ended = {};
+      for (const reason of ['bye', 'window', 'unsettled']) {
+        const s = reg._create();
+        reg._issue(s);
+        if (reason !== 'unsettled') reg._announce(s);
+        s._end(reason);
+        ended[reason] = s.id;
+      }
+      // bye and window: the session left; unsettled: it never settled, and the registry forgets
+      // it whole, so the row its token was told for goes too
+      assert.deepStrictEqual(gone(), [ended.bye, ended.window, ended.unsettled]);
+      const a = reg._create();
+      const b = reg._create();
+      reg._issue(a);
+      reg._issue(b);
+      reg._announce(a);
+      reg._announce(b);
+      const before = gone().length;
+      reg.close();
+      assert.strictEqual(gone().length, before, 'closed: no session-gone');
+      assert.deepStrictEqual(told.filter((m) => m.type === 'session-resume').map((m) => m.session).slice(-2), [a.id, b.id], 'their rows were told');
+    });
+
     it('a detached session whose window expires ends \'window\'', async() => {
       const reg = createRegistry({tell: () => {}, reconnectWindowMs: 60});
       const seen = watch(reg);
