@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revision 1, for the Reviewer's OK before any code. Written against master at 96e231ae with M15 (#329, `mcp-m15-tasks`) as its base: it builds after #329 merges.
+**Status:** revision 2, APPROVED by the Reviewer (#354), with the rulings below: D1 yes, through tasks/get's own lookup; D2 yes, with send-time rechecks; D3 yes; D4 reversed (tasks run in the shared runtime by session, B5 Task 2). Written against master at 96e231ae. Order: Task 1 after #329 merges; Task 2 after B5 Task 2 (B, d8caa040, on #329) merges.
 
 **Goal:** A 2026-07-28 task's `statusMessage` says how far it is (its last `ctx.job.progress` as `NN%`), or for a run that left no result its failure's code, never module text. A client that names its tasks on `subscriptions/listen` gets `notifications/tasks` (the full task, as `tasks/get` would return it) when one changes, so it needn't poll. Polling stays the default and works exactly as M15 left it.
 
@@ -27,14 +27,15 @@
 
 ## Decisions for the Reviewer
 
-- **D1. What's agreed.** Of the ids asked for, the ack lists exactly those that are the caller's own 2026-07-28 tasks right now, with the same check as `tasks/get` (owner key, era `modern`; a tombstoned one of its own counts). Foreign, unknown, malformed, legacy and expired ids are left out, with no error and no difference between them (no existence leak, as `tasks/get`'s one -32602). At most `MAX_TASK_IDS` = 64 asked per listen: more is -32602 ("at most 64 task ids").
-- **D2. When a notification is sent:** on a change to what `tasks/get` would return. That's `working` → its first progress, each later progress, and the terminal state (`completed`, `failed`, or `cancelled` by its owner's `tasks/cancel`). Progress is coalesced to at most one per (listener, task) every `TASK_NOTICE_MS` = 1000, always the latest. A terminal state is sent at once, exactly once, and the id then leaves the listener's set. A task already terminal when the listen opens is sent once, right after the ack (it saves a poll).
+- **D1. What's agreed.** Of the ids asked for, the ack lists exactly those that are the caller's own 2026-07-28 tasks right now. **Ruled:** decided by the SAME lookup `tasks/get` uses for this request, never a separate owner check. After B5 Task 2 that's `getJob`, with `seesJob` (the session scope) before `ownsJob`. So a session's listener can never agree to another session's task, and the two stay identical by construction. A tombstoned task of its own counts. Foreign, unknown, malformed, legacy and expired ids are left out, with no error and no difference between them (no existence leak, as `tasks/get`'s one -32602). At most `MAX_TASK_IDS` = 64 asked per listen: more is -32602 ("at most 64 task ids").
+- **D2. When a notification is sent:** on a change to what `tasks/get` would return. That's `working` → its first progress, each later progress, and the terminal state (`completed`, `failed`, or `cancelled` by its owner's `tasks/cancel`). Progress is coalesced to at most one per (listener, task) every `TASK_NOTICE_MS` = 1000, always the latest. A terminal state is sent at once, exactly once, and the id then leaves the listener's set. A task already terminal when the listen opens is sent once, right after the ack (it saves a poll). **Ruled, also:** a listener's ids are re-checked at send time through the same lookup (a removed or no-longer-visible job leaves the set silently), and a closed listener frees its coalescing timers.
 - **D3. statusMessage:**
   - `working`: `"NN%"` from a finite numeric `job.progress` (clamped 0–100, rounded); nothing for any other value (the spec's own words for progress, `ctx.job.progress(n)`).
   - `failed` (a run that left no result, M15's rule): the failure's code (e.g. `MODULE_UNLOADED`), or `"failed"` when there's none (a job timeout's error has no code). Never module text.
   - `completed` and `cancelled`: no `statusMessage`.
   - The legacy era's statusMessage stays as M15 left it.
-- **D4. Shared runtime's sessions:** the tasks extension isn't offered there (M15). A `taskIds` filter on a session's listen agrees to none: an ack with no `taskIds`, no error, like any type not served.
+- **D4. Shared runtime's sessions (REVERSED by the Reviewer):** B5 Task 2 removes M15's shared-runtime refusals and turns tasks on in the shared runtime, scoped by session. So M16 works there too: the listener's session is the request's session, and D1's shared lookup does the scoping.
+- **Who extracts the builder (Reviewer, to avoid a collision in `tasks/get`):** B, in B5 Task 2, as a pure function `modernTaskView(record, cdifInterface, authCtx) -> Promise<DetailedTask>`. M16 consumes it and never touches `tasks/get`'s handler.
 
 ## Global constraints
 
@@ -60,15 +61,14 @@
 **Files:**
 - Create: `lib/task-events.js`
 - Modify:
-  - `lib/mcp/gateway.js`: `modernTaskOf` gains `statusMessage` per D3, and `modernTaskView` is extracted from `handleModernTask`'s get branch;
+  - `lib/mcp/gateway.js`: `modernTaskOf` gains `statusMessage` per D3. `modernTaskView` comes from B5 Task 2 (B extracts it); if that hasn't merged when Task 1 is ready, Task 1 lands the `statusMessage` line only, and the rest waits;
   - `lib/job-control.js`: the `QueueEvents` `'active'`, `'progress'`, `'completed'` and `'failed'` handlers, and `removeJob`, emit for a job whose `data.era === 'modern'`;
   - `lib/job-control-local.js`: `run`'s active, `updateJobProgress`, `finish`, `failed`'s final, and `removeJob`.
 - Test: `test/mcp-contract/27-tasks-modern.js` (statusMessage cases); `test/jobs-local/03-task-events.js` (server-free, local runner)
 
 **Interfaces:**
-- Produces:
-  - `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'removed'}`;
-  - `modernTaskView(record, cdifInterface, authCtx) -> Promise<DetailedTask>`.
+- Produces: `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'removed'}`.
+- Consumes: B5 Task 2's `modernTaskView(record, cdifInterface, authCtx) -> Promise<DetailedTask>` and its `getJob` (`seesJob` then `ownsJob`).
 
 - [ ] Failing tests:
   - a task whose handler calls `ctx.job.progress(42.4)` reads `statusMessage: "42%"` on `tasks/get` while working, and nothing once completed;
@@ -90,7 +90,7 @@
     - the ack's `notifications.taskIds`;
     - an already-terminal task sent right after the ack;
   - the hub is wired to `task-events` where the hub is made.
-- Test: `test/mcp-contract/28-task-notifications.js` (spawned, `--workerThread --store local`, like 27; one case also on `--store redis` with run-local's private Redis). The SSE listen client comes from `test/mcp-contract/09-subscriptions.js`.
+- Test: `test/mcp-contract/28-task-notifications.js` (spawned, `--workerThread --store local`, like 27; one case also on `--store redis` with run-local's private Redis). The SSE listen client comes from `test/mcp-contract/09-subscriptions.js`. Plus a shared-runtime case (D4 reversed): two sessions each listen for both sessions' task ids, and each is agreed and notified only its own.
 
 **Interfaces:**
 - Consumes: Task 1's `taskEvents` and `modernTaskView`.
@@ -105,7 +105,9 @@
   - `taskIds` without the extension declared is -32021 with `requiredCapabilities`;
   - 65 ids is -32602;
   - a disconnect with a coalescing timer pending writes nothing after;
-  - a listen with `toolsListChanged` only is unchanged (09 stays green).
+  - a listen with `toolsListChanged` only is unchanged (09 stays green);
+  - an id whose job is removed after the listen leaves the set without a write (the send-time recheck);
+  - on the shared runtime, session A's listener is never agreed or notified session B's task.
 - [ ] Implement. Run: PASS, plus mcp-contract 09, 27, stdio 23, session-transport 05. Commit.
 
 ### Task 3: Docs
