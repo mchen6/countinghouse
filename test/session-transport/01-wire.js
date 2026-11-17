@@ -130,6 +130,11 @@ describe('sessions 01: the wire (contract 2)', () => {
       assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
     });
 
+    it('makes a pack credential\'s MAC as the vectors have it', () => {
+      assert.strictEqual(handshake.credentialMac(secret, V.credentialMac.name, V.credentialMac.value).toString('base64'), V.credentialMac.macB64);
+      assert.deepStrictEqual(JSON.parse(V.control.clientCredentials.json).credentials, {[V.credentialMac.name]: V.credentialMac.macB64});
+    });
+
     it('reads the accepted secret files and refuses the others', () => {
       for (const s of V.secretFiles.accepted) assert.strictEqual(hexOf(handshake.parseSecret(s)), V.handshake.secretHex, JSON.stringify(s));
       for (const s of V.secretFiles.refused) assert.strictEqual(handshake.parseSecret(s), null, JSON.stringify(s));

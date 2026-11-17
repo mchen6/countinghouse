@@ -197,7 +197,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 
 | `op` | Direction | Fields | Meaning |
 |---|---|---|---|
-| `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none); when failed: `why` | The child's line (section 5). Sent right after WELCOME, after each reconnect, and in answer to each `conditions?`. |
+| `client` | shim → runtime | `seq`? (the `conditions?` it answers); `status`: `"ok"` or `"failed"`; and when ok: `conditions` (`"yes"` or `"no"`), `repo` (`"owner/name"` or null), `token` (base64 MAC, or null when the environment chooses none), and optionally `credentials` (an object of a pack credential's variable name to its base64 MAC); when failed: `why` | The child's line (section 5). Sent right after WELCOME, after each reconnect, and in answer to each `conditions?`. |
 | `conditions?` | runtime → shim | `seq` | Run the child again and answer with `client` carrying this `seq`. The runtime sends it before each form and again at the confirmation. It waits **12 s**, longer than the shim's 10 s for the child, so a slow Windows ancestry read still answers. No answer by then counts as `"no"`: no form. |
 | `settled` | runtime → shim | | The first `client` frame is accepted. The shim forwards client lines from here. |
 | `replay` | shim → runtime | `entries`: array | After WELCOME on a new session: the records the shim kept, as it received them. |
@@ -206,7 +206,7 @@ A HELLO whose `protocol` the runtime doesn't speak gets REFUSED `{code: "PROTOCO
 | `forget` | runtime → shim | | Drop every record (a terminal change ended them all). |
 | `cancelled` | runtime → shim | `seq`: the request's | The client cancelled that call, which will have no answer: forget its seq, so no crash answer is made for it, and a close waiting on it ends once nothing is left (MCP completeness section 13). Optional: an older shim ignores it, as it ignores any op it doesn't know. |
 | `drain` | runtime → shim | | Forward no new request; relay answers until the runtime closes, then reconnect. |
-| `own-runtime` | runtime → shim | `reason`: `"token"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
+| `own-runtime` | runtime → shim | `reason`: `"token"`, `"credential"` or `"conditions-failed"` | This session can't be shared. The runtime closes; the shim runs the per-session mode (section 5). |
 
 **Holding until settled.** After WELCOME the shim sends its first `client` frame and forwards no client line until `settled` arrives. Lines read meanwhile are held, as during a drain. An `own-runtime` instead hands the held lines to the per-session runtime. So no call runs on the shared runtime before the session's token is known to match.
 
@@ -405,7 +405,8 @@ Modules are shared by default: one worker per module, as today. A module that **
     - `status`: `"ok"`;
     - `conditions`: `"yes"` or `"no"`, from the existing check of *this* client: the process `<client pid>` (the shim's parent), the environment and the project directory;
     - `repo`: the cwd's git remote as an `owner/name` slug, or null;
-    - `token`: the keyed hash (below) of the token this environment *chooses*, or null when it chooses none.
+    - `token`: the keyed hash (below) of the token this environment *chooses*, or null when it chooses none;
+    - `credentials`, when any: for each other pack credential this environment chooses (named only by the installed packs' declarations, never by the environment), its keyed hash, by variable name.
   - `node` and the `ch-local` entry are the absolute paths that `ch-local install` writes to `<home>/shim.json` (section 6, "The shim's home and `shim.json`").
   - **A failure is never "no token".** The shim waits 10 s for the line. If the child exits non-zero, times out, or prints anything but one valid line, the shim sends `client` with `status: "failed"` and `why`.
     - **For the first `client` frame**, the runtime answers `own-runtime` (`"conditions-failed"`). The session can't be shown to share the daemon's token, so it doesn't share. The per-session runtime says why.
@@ -421,9 +422,10 @@ Modules are shared by default: one worker per module, as today. A module that **
   - nothing from any client's environment reaches it.
 - **A shim launched with inputs the shared runtime can't honour per session runs the per-session mode instead:** it execs `<node> <chLocal> start --stdio --own-runtime --home <home> <its arguments>`, from `shim.json`, and says so on stderr and in the first result's notice. `--home` is the shim's own (absolute; `start` refuses a relative or missing one with exit 2), and it overrides `COUNTINGHOUSE_HOME`, so a client's environment can't pick another home. ch-local's options come before the pass-through flags, and neither reaches the runtime. A pass-through flag it sees in its own arguments, before attaching; a token, when the runtime sends `own-runtime`. Those inputs are:
   - a pass-through runtime flag (`--moduleSandbox`, `--maxOutputBytes`, `--requestTimeout`, `--locale` or any other `start` passes through);
+  - a pack credential the client's environment *chooses* that the daemon's runtime doesn't hold the same (its runtime holds only what an allowance names: `--remoteCredentials`, or a pack loaded in place). The runtime sends `own-runtime` (`"credential"`). A `credentials` key that isn't an object of at most 32 entries, each an environment variable's name and the standard base64 of 32 bytes, is `own-runtime` (`"conditions-failed"`), never a share;
   - a token the client's environment *chooses* under today's precedence, which differs from the daemon's. That's a `COUNTINGHOUSE_GITHUB_TOKEN`, or a `GITHUB_TOKEN` when `gh` has none. A shell-wide `GITHUB_TOKEN` beside a working `gh` login chooses nothing, so it doesn't push a session to its own runtime.
 
-    Tokens are compared by a keyed hash and never sent. The child computes `HMAC-SHA256(secret, "ch-token" ‖ token)` (it can read the secret, as the user), and the shim carries it in the `client` frame. The runtime compares it in constant time with the same keyed hash of the daemon's token. Neither token crosses the socket. On a difference the runtime sends `own-runtime` and closes.
+    Tokens are compared by a keyed hash and never sent. The child computes `HMAC-SHA256(secret, "ch-token" ‖ token)` (it can read the secret, as the user), and the shim carries it in the `client` frame. A pack credential is compared the same way, as `HMAC-SHA256(secret, "ch-cred" ‖ name ‖ 0x00 ‖ value)`. The runtime compares it in constant time with the same keyed hash of the daemon's token. Neither token crosses the socket. On a difference the runtime sends `own-runtime` and closes.
 
   Otherwise one session's `--moduleSandbox audit` would put every session in audit, and one client's token would be silently replaced or shared.
 - **`defaultRepo` becomes a per-session input default. There's no new module API.**

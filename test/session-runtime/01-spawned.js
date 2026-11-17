@@ -703,6 +703,33 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     assert.strictEqual(a.c.sock.destroyed, true, 'its connection closed by the runtime');
   });
 
+  it('a pack credential the client chooses that the runtime\'s environment holds the same: shared; another value, or one it lacks: own-runtime (credential)', async() => {
+    // made here, plainly not a real credential
+    const value = `example-${require('crypto').randomBytes(6).toString('hex')}`;
+    // a variable is a pack credential only where an allowance names it
+    const allowance = path.join(home, 'remote-credentials.json');
+    fs.writeFileSync(allowance, JSON.stringify({'https://example.invalid': ['CH_PACK_VAR_ALPHA', 'CH_PACK_VAR_BETA']}));
+    r = runtime(home, ['--remoteCredentials', allowance], {env: {CH_PACK_VAR_ALPHA: value, CH_PACK_VAR_UNLISTED: value}});
+    const secret = await listening(r);
+    const handshake = require('../../lib/session-transport/handshake');
+    const frame = (name, v) => ({status: 'ok', conditions: 'no', repo: null, token: null, credentials: {[name]: handshake.credentialMac(secret, name, v).toString('base64')}});
+    const same = await shim.session(r.socket, secret, frame('CH_PACK_VAR_ALPHA', value));
+    assert.deepStrictEqual(same.settled, {op: 'settled'});
+    const other = await shim.session(r.socket, secret, frame('CH_PACK_VAR_ALPHA', `${value}-other`));
+    assert.deepStrictEqual(other.settled, {op: 'own-runtime', reason: 'credential'});
+    const lacking = await shim.session(r.socket, secret, frame('CH_PACK_VAR_BETA', value));
+    assert.deepStrictEqual(lacking.settled, {op: 'own-runtime', reason: 'credential'});
+    // a variable no allowance names is never hashed, whatever the runtime
+    // holds: its HOME, or one set with the very value, named with it, still
+    // gets a runtime of its own
+    for (const [name, v] of [['HOME', process.env.HOME || ''], ['CH_PACK_VAR_UNLISTED', value]]) {
+      const unlisted = await shim.session(r.socket, secret, frame(name, v));
+      assert.deepStrictEqual(unlisted.settled, {op: 'own-runtime', reason: 'credential'}, name);
+    }
+    assert.ok(!r.err.includes(value) && !r.out.includes(value), 'the value is never printed');
+    same.c.end();
+  });
+
   it('two sessions each get their own answers', async() => {
     r = runtime(home);
     const secret = await listening(r);
