@@ -63,6 +63,31 @@ const PERSISTENT = ['Map.prototype.set/get/has/delete', 'Array.prototype.push/sh
   'runtime exports and prototypes replaced in place', 'Object.prototype setters', 'Object.prototype getters (runtime fields read)'];
 const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
 
+// lib/port-scope.js rehome, server free: assigned into an object with no
+// prototype (no inherited setter there), a "__proto__" key stays an own key
+// and never becomes the copy's prototype
+describe('sandbox 62: re-homing a message', () => {
+  const {rehome, rehomeMessage} = require('../../lib/port-scope');
+  it('copies own data fields into an object with no prototype; "__proto__" round-trips as an own key; a getter is not run', () => {
+    const given = JSON.parse('{"__proto__": {"polluted": true}, "id": 3, "args": {"token": "t", "__proto__": {"x": 1}}}');
+    let ran = false;
+    Object.defineProperty(given, 'getter', {enumerable: true, get() { ran = true; return 1; }});
+    const msg = rehomeMessage(given);
+    assert.strictEqual(Object.getPrototypeOf(msg), null);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(msg, '__proto__'), true);
+    assert.deepStrictEqual(Object.getOwnPropertyDescriptor(msg, '__proto__').value, {polluted: true});
+    assert.strictEqual(msg.polluted, undefined, 'never its prototype');
+    assert.strictEqual(Object.getPrototypeOf(msg.args), null);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(msg.args, '__proto__'), true);
+    assert.strictEqual(msg.args.x, undefined);
+    assert.strictEqual(msg.args.token, 't');
+    assert.strictEqual(ran, false, 'a getter is not run');
+    assert.strictEqual('getter' in msg, false);
+    assert.strictEqual(rehome(null), null);
+    assert.deepStrictEqual(rehome([1, 2]), [1, 2]);
+  });
+});
+
 for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'audit', port: testPort(9715)}]) {
   describe(`sandbox 62: the lockdown's checks with the realm changed around them (${mode})`, function() {
     this.timeout(240000);

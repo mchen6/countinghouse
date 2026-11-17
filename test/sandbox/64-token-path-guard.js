@@ -91,6 +91,9 @@ const REVIEWED = [
   ['countinghouse-util', 'a read off a message or options not re-homed', /\b(opts|args)\./, 'the module\'s own CHUtil options, or handler-ctx\'s null-prototype copy'],
   ['worker-message', 'a read off a message or options not re-homed', /\bmsg\./, 'main thread: a worker\'s messages (onWorkerMessage)'],
   ['worker-message', 'a read off a message or options not re-homed', /\bargs\.token\b/, 'a hop\'s args: the service client\'s own null-prototype copy'],
+  ['peer-channel', 'a read off a message or options not re-homed', /\bmsg\./, 'a port message: re-homed by _onMessage, the only caller of the methods that read it'],
+  ['peer-channel', 'a read off a message or options not re-homed', /hopInput\.encode\(\{input: input\}\)\.args\.inputBytes/, 'hop-input\'s own null-prototype copy'],
+  ['port-scope', 'a read off a message or options not re-homed', /^for \(let i = 0; i < args\.length; i\+\+\) ObjectDefineProperty\(call/, 'a rest parameter: its own array'],
 ];
 
 // the offending lines of src: [{line, rule, text}]
@@ -100,8 +103,9 @@ function offenders(src) {
   const out = [];
   let inCtor = false;
   let classDepth = null;
-  // a file that re-homes what it reads (lib/port-scope.js rehome)
-  const rehomes = /\brehome(Message)?\b/.test(src);
+  // the names re-homed so far in this top-level function (lib/port-scope.js
+  // rehome, rehomeMessage): a read off one of them is a read of own data
+  let rehomed = new Set();
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
     if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
@@ -111,6 +115,8 @@ function offenders(src) {
     else if (classDepth != null && new RegExp(`^\\s{${classDepth}}}`).test(line)) { inCtor = false; classDepth = null; }
     else if (/^}/.test(line)) inCtor = false;
     const at = (rule) => out.push({line: i + 1, rule, text: line.trim()});
+    if (/^(function |[\w.]+\s*=\s*function\b|async function )/.test(line)) rehomed = new Set();
+    for (const m of line.matchAll(/\b(\w+)\s*=\s*rehome(Message)?\(/g)) rehomed.add(m[1]);
     const capture = CAPTURE.test(line.trim());
     if (/^\s+/.test(line) && /\brequire\(/.test(line)) at('require in a function body');
     if (/require\.cache|Module\._cache/.test(line)) at('require.cache');
@@ -125,7 +131,9 @@ function offenders(src) {
     }
     if (/\.(push|shift|unshift|splice|forEach|map|filter|some|every|find|indexOf|includes)\(/.test(line) && !capture) at('a live array method');
     if (/new (Set|Map|WeakMap|WeakSet)\(\s*[^)\s]/.test(line)) at('a collection built from an iterable');
-    if (!rehomes && /\b(msg|args|opts)\.\w+/.test(line)) at('a read off a message or options not re-homed');
+    for (const m of line.matchAll(/\b(msg|args|opts)\.\w+/g)) {
+      if (!rehomed.has(m[1]) && !/\b(\w+)\s*=\s*rehome(Message)?\(/.test(line)) { at('a read off a message or options not re-homed'); break; }
+    }
   }
   return out;
 }
@@ -148,6 +156,8 @@ describe('sandbox 64: the worker\'s token path, read as source', () => {
     assert.deepStrictEqual(rules('  const s = new Set(list);\n  const t = new Set();'), ['a collection built from an iterable']);
     assert.deepStrictEqual(rules('  const id = msg.id;'), ['a read off a message or options not re-homed']);
     assert.deepStrictEqual(rules('const {rehome} = require(\'./port-scope\');\nfunction f(m) {\n  const msg = rehome(m);\n  return msg.id;\n}'), []);
+    assert.deepStrictEqual(rules('const {rehome} = require(\'./port-scope\');\nfunction f(m) {\n  const msg = rehome(m);\n  return msg.id;\n}\nfunction g(opts) {\n  return opts.x;\n}'),
+      ['a read off a message or options not re-homed'], 'a re-homing file still flags a read nothing re-homed');
     assert.deepStrictEqual(rules('const x = uncurry(Map.prototype.get);\nconst y = uncurry(Map.prototype.get); f.call(this);'), ['a live bind, call or apply']);
   });
 
