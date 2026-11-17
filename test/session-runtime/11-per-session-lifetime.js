@@ -120,6 +120,24 @@ module.exports = async (input) => {
     assert.deepStrictEqual(counts(r), {up: 2, ended: 1}, 'B\'s worker ran all along: its quota was never measured again');
   });
 
+  // 'unsettled' (a connection that ended before its session was announced):
+  // a removal reason like 'bye' (the registry's 'end', any but 'closed').
+  // Such a session can't have called anything, so it has no partition: its
+  // end must simply leave every other session's alone (its removal and its
+  // quota share: sessions 33)
+  it('an unsettled session\'s end (its connection gone before it settled) touches no other session\'s partition or worker', async() => {
+    const secret = await up();
+    const a = await open(secret);
+    outOf(await a.call('touch'));
+    const raw = await shim.attach(r.socket, secret);   // welcomed, never settled
+    assert.ok(raw.welcome != null, JSON.stringify(raw.refused));
+    raw.c.end();
+    await tick(500);
+    assert.ok(fs.existsSync(dirOf(a.id)), 'A\'s partition kept');
+    assert.deepStrictEqual(outOf(await a.call('touch')), {file: 2, store: 2, memory: 2}, 'A\'s worker ran on');
+    assert.doesNotMatch(r.log(), /partition was not removed/);
+  });
+
   it('a bye with a call in flight: the call ends with the worker, and the partition goes only after the worker has stopped', async() => {
     const secret = await up();
     const a = await open(secret);
