@@ -947,6 +947,16 @@ bounds it:
 - **A call cancelled while its form is made gets no state.** None is
   minted, so none can be presented later.
 
+### Completion actions
+
+Completion actions run module code per request: they are rate-limited (the
+per-key limit every request counts against) but not billed, so a module's
+completion action should be cheap. Each is authorized as a call of its
+action, runs in the caller's session's worker for a per-session module,
+answers within 2 seconds or is cancelled as a cancelled call is, and has
+its values bounded (100 of 256 characters). A prompt or template the caller
+is not listed is answered as an unknown one.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.

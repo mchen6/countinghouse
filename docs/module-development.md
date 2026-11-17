@@ -385,6 +385,22 @@ against that schema, replaces each `{{name}}` once with the argument's value
 (an absent optional one is the empty string; substituted text is never
 scanned again) and returns your messages, at most 64 KiB in all.
 
+`completion/complete` offers values for a prompt's argument, or for a
+resource template's variable (`ref/resource`, the template as listed): the
+argument's schema's `enum`, then its `examples` (a template's: the input
+property behind the variable), matched to what the user has typed. A
+prompt or a resource may instead name an action of your module to answer:
+`"completion": {"<argument>": "<service>.<action>"}`. That action is called
+with `{argument, value, context}` (`context.arguments`: the other
+arguments' values so far, strings only) and answers `{values: string[]}`;
+at most 100 values of at most 256 characters are kept. It runs as a call of
+that action (authorized, rate limited, your input and output schemas
+checked), but it is not billed and is not listed as a tool; it is counted
+in usage as `completion/complete`. Keep it cheap: a client may ask on every
+keystroke. If it fails, answers no values, or takes more than 2 seconds,
+the schema's candidates are offered instead, and a run past 2 seconds is
+cancelled as a cancelled call is (what it asks afterwards is refused).
+
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
 `npx countinghouse-migrate-spec ./my-module`. See

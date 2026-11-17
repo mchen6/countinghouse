@@ -18,6 +18,21 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Added — completion for resource templates, and completion actions (MCP completeness, M11)
+
+- **`completion/complete` takes `ref/resource`**: one of the caller's listed
+  resource templates, by its URI template; the variable's candidates are
+  the input property's `enum`, then its `examples`, derived at load and
+  matched as a prompt argument's are.
+- **A prompt or a resource may name a completion action**
+  (`"completion": {"<argument>": "<service>.<action>"}`): called with
+  `{argument, value, context}`, it answers `{values: string[]}` (100 kept,
+  of at most 256 characters). It runs as a call of that action, authorized
+  and rate limited, is not billed and is recorded in usage as
+  `completion/complete`; it is not listed as a tool. If it fails, answers
+  no values or takes more than 2 s, the schema's candidates are offered,
+  and a run past 2 s is cancelled as a cancelled call is.
+
 ### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
 
 - **The lockdown's checks** (the allowed built-ins, a path given to
