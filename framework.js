@@ -142,6 +142,10 @@ if (options.controlChannel != null) {
 // else the flag would half-apply (its options.settingsTool on, the tool not
 // served, so a size cap's hint would name a tool that is not there).
 // Refused as --controlChannel and --sessionSocket are.
+if (options.settingsFileInvalid === true) {
+  console.error('--settingsFile needs a path (--settingsFile <file>)');
+  process.exit(2);
+}
 if (options.settingsFile != null && options.singleIdentity !== true) {
   console.error('--settingsFile is only for the single-identity profile (ch-local start), where countinghouse_settings is served (got ' +
     JSON.stringify(String(options.settingsFile)) + ')');

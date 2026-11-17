@@ -100,7 +100,8 @@ describe('sandbox 58: ch-local\'s home is no module\'s', function() {
         assert.ok(init.result != null, `${JSON.stringify(init)}: ${io.err.slice(-1500)}`);
       });
       after(async () => {
-        if (io != null && io.child.exitCode == null) { io.child.kill('SIGKILL'); await new Promise((r) => io.child.once('exit', r)); }
+        // a child already ended (by a signal too) has nothing to wait for
+        if (io != null && io.child.exitCode == null && io.child.signalCode == null) { io.child.kill('SIGKILL'); await new Promise((r) => io.child.once('exit', r)); }
         if (w != null) fs.rmSync(w.base, {recursive: true, force: true});
       });
 

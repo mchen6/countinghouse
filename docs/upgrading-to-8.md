@@ -473,7 +473,9 @@ says how to write a module for this.
     built-in **`countinghouse_settings`**. An agent reads the settings and
     tightens them within bounds, and never loosens a guarding one: that's
     `SETTING_LOOSENS_A_GUARD`, and the user loosens with the `ch-local`
-    command instead.
+    command instead. It works only in the single-identity profile:
+    anywhere else, a hosted server or a start with `--authConfigPath` or
+    `--authProvider`, the start stops with exit 2.
   - **`--controlChannel ipc`** is the channel `ch-local start` uses while
     the runtime serves. It works only in the single-identity profile, over
     an IPC descriptor the spawning process holds, and is refused with

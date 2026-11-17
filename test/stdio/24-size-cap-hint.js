@@ -87,7 +87,8 @@ describe('stdio 24: a size cap\'s error says how to raise it', function() {
       assert.match(text, /OUTPUT_TOO_LARGE|over the 3000-byte limit/, text.slice(0, 600));
       assert.match(text, /ch-local settings set maxOutputBytes 1MiB/, text.slice(0, 600));
     } finally {
-      io.child.kill('SIGKILL');
+      // the home holds what the runtime writes: removed once it has exited
+      if (io.child.exitCode == null && io.child.signalCode == null) { io.child.kill('SIGKILL'); await new Promise((r) => io.child.once('exit', r)); }
       fs.rmSync(home, {recursive: true, force: true});
     }
   }));
