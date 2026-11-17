@@ -37,7 +37,8 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
     const state = ask.newState({askable: true});
     const token = call(state);
     refusedWith('ASK_PENDING', () => ask.answer({token, name: 'overwrite', values: {id: 'first'}}, 'w1'));
-    assert.deepStrictEqual(state.pending, {key: keyFor(), question: 'overwrite', text: TEXT, schema: '/notesService/saveNote/questions/overwrite'});
+    assert.deepStrictEqual(state.pending, {key: keyFor(), question: 'overwrite', text: TEXT, schema: '/notesService/saveNote/questions/overwrite',
+      asker: {deviceID: 'dev-1', serviceID: SERVICE, actionName: 'saveNote'}, module: MODULE});
   });
 
   it('on the retry the answer under the question\'s key is given at once: the content, or null for a decline', () => {
@@ -87,17 +88,14 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
     assert.strictEqual(state.pending, null);
   });
 
-  it('with no one to ask it is ASK_UNAVAILABLE, and nothing is recorded: a call that may not ask, one with no ask state, a hop\'s', () => {
+  it('with no one to ask it is ASK_UNAVAILABLE, and nothing is recorded: a call that may not ask, one with no ask state, an asker with no device', () => {
     const closed = ask.newState({askable: false});
     refusedWith('ASK_UNAVAILABLE', () => ask.answer({token: call(closed), name: 'overwrite', values: {id: 'first'}}, 'w1'));
     assert.strictEqual(closed.pending, null);
     refusedWith('ASK_UNAVAILABLE', () => ask.answer({token: call(null), name: 'overwrite', values: {id: 'first'}}, 'w1'));
-    // a part reached by a hop asks no one yet (M14): its token is a child of the outer call's
+    // who asks is known, or no one is asked (a part's ask, through a hop, is test/questions/07: M14)
     const outer = ask.newState({askable: true});
-    const parent = call(outer);
-    const child = callTokens.issue({billingKey: 'k', module: MODULE, workerId: 'w1', deviceID: 'dev-1', serviceID: SERVICE, actionName: 'saveNote', parent});
-    issued.push(child);
-    refusedWith('ASK_UNAVAILABLE', () => ask.answer({token: child, name: 'overwrite', values: {id: 'first'}}, 'w1'));
+    refusedWith('ASK_UNAVAILABLE', () => ask.answer({token: call(outer, {deviceID: null}), name: 'overwrite', values: {id: 'first'}}, 'w1'));
     assert.strictEqual(outer.pending, null);
     // an answer is never read for a call that may not ask
     const withAnswer = ask.newState({askable: false, answers: new Map([[keyFor(), {replace: true}]])});
@@ -117,13 +115,14 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
     refusedWith('ASK_NOT_DECLARED', () => ask.answer({token: call(unknown, {module: 'gone'}), name: 'overwrite', values: {id: 'first'}}, 'w1'));
   });
 
-  it('one question a round: a second, different one asked after the first was caught leaves the first pending', () => {
+  // (the review of #330: the latest ask is the one pending, so a caught one is never the one shown)
+  it('one question a round: a second, different one asked after the first was caught is the one pending', () => {
     const state = ask.newState({askable: true});
     const token = call(state);
     refusedWith('ASK_PENDING', () => ask.answer({token, name: 'overwrite', values: {id: 'first'}}, 'w1'));
     refusedWith('ASK_PENDING', () => ask.answer({token, name: 'overwrite', values: {id: 'second'}}, 'w1'));
-    assert.strictEqual(state.pending.text, TEXT);
-    // asked again as it was, it is still the one pending
+    assert.strictEqual(state.pending.text, `${MODULE}: Replace the saved note second?`);
+    // asked again as it was, the first is the one pending again
     refusedWith('ASK_PENDING', () => ask.answer({token, name: 'overwrite', values: {id: 'first'}}, 'w1'));
     assert.strictEqual(state.pending.key, keyFor());
   });
@@ -144,7 +143,7 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
   });
 
   it('newState takes only a Map of answers, and a state that is not one asks no one', () => {
-    const fresh = {askable: false, answers: new Map(), pending: null, rounds: new Map(), unavailable: new Set(), callRounds: 0};
+    const fresh = {askable: false, answers: new Map(), pending: null, rounds: new Map(), unavailable: new Set(), callRounds: 0, shownAs: null, reachable: null};
     assert.deepStrictEqual(ask.newState(), fresh);
     assert.deepStrictEqual(ask.newState({askable: 'yes', answers: {a: 1}}), fresh);
     // (one with no count of the call's rounds, or one that is no count, is no state: the cap is never skipped)

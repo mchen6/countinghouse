@@ -8,6 +8,8 @@ module.exports = async (input, ctx) => {
   // still the call the client made
   input.what = input.what.trim();
   input.seen = true;
+  // wait (ms): the handler works a while before it asks (a call cancelled meanwhile, M19)
+  if (Number.isInteger(input.wait) && input.wait > 0) await new Promise((r) => setTimeout(r, input.wait));
   try {
     const answer = await ctx.ask('confirm', {what: input.what});
     return {output: {asked: true, answer: answer, runs: runs}};

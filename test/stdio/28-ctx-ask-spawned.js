@@ -169,6 +169,57 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
       assert.strictEqual(progressAfter(32).after, 0, 'nor after the result');
     });
 
+    // M14 with M19 (the reviewer's ruling): a call cancelled while its handler works, which then asks, is
+    // a cancelled call: no answer is written, and its record says cancelled. (Here the cancel drops the
+    // call's token, so the handler's ask fails before any form; a cancel that lands while the form is
+    // being made is questions 05's case.)
+    it('a call cancelled before its handler asks: no answer, no state made, and its record says cancelled, not asked', async () => {
+      local();
+      await loaded();
+      io.notify({jsonrpc: '2.0', id: 41, method: 'tools/call', params: {name: TOOL, arguments: {what: 'late', wait: 1500}, _meta: META}});
+      await new Promise((r) => setTimeout(r, 400));
+      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 41}});
+      await new Promise((r) => setTimeout(r, 3000));
+      assert.deepStrictEqual(io.lines.map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((m) => m != null && m.id === 41), [], 'no answer');
+      const records = [];
+      const walk = (dir) => { for (const e of fs.readdirSync(dir, {withFileTypes: true})) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (p.endsWith('.jsonl')) records.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))); } };
+      walk(home);
+      const outs = records.filter((x) => x.tool === TOOL && x.outcome !== undefined && x.server === undefined);
+      assert.deepStrictEqual(outs.slice(-1).map((x) => [x.outcome, x.round]), [['cancelled', undefined]], JSON.stringify(outs.slice(-3)).slice(0, 600));
+    });
+
+    // M14 with M19 (the reviewer's deep review of #330, 2): a part that asks under an outer call cancelled
+    // meanwhile (a routed hop) has no call to ask in: its ask fails CALL_TOKEN_INVALID (M19 dropped the
+    // chain's tokens), the outer call's record says cancelled, and nothing was asked
+    it('a part asking under a cancelled outer call: CALL_TOKEN_INVALID in the part, the call recorded cancelled, no asked record', async () => {
+      const installed = path.join(home, 'packs', 'node_modules');
+      for (const name of ['asks-through-part', 'asks-part']) fs.cpSync(path.join(__dirname, '..', 'fixtures', name), path.join(installed, name), {recursive: true});
+      io = startStdio(['--workerThread', '--directPeerChannels', 'false', '--store', 'local', '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'),
+        '--moduleDataPath', path.join(home, 'module_data'), '--loadModule', path.join(installed, 'asks-through-part')], {});
+      let tool = null;
+      for (let i = 0; i < 120 && tool == null; i++) {
+        const list = await io.request({jsonrpc: '2.0', id: 8000 + i, method: 'tools/list', params: {_meta: META}});
+        const found = ((list.result && list.result.tools) || []).find((x) => /run$/.test(x.name));
+        if (found != null) tool = found.name;
+        else await new Promise((r) => setTimeout(r, 500));
+      }
+      assert.ok(tool != null, `the scenario never listed; stderr without the Redis noise:\n${withoutRedisNoise(io.err)}`);
+      io.notify({jsonrpc: '2.0', id: 61, method: 'tools/call', params: {name: tool, arguments: {id: 'a.txt', wait: 1500}, _meta: META}});
+      await new Promise((r) => setTimeout(r, 500));
+      io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 61}});
+      const codesFile = path.join(home, 'module_data', 'asks-part', 'data', 'ask-codes');
+      for (let i = 0; i < 40 && !fs.existsSync(codesFile); i++) await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 1500));
+      assert.deepStrictEqual(io.lines.map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((m) => m != null && m.id === 61), [], 'no answer');
+      assert.deepStrictEqual(fs.readFileSync(codesFile, 'utf8').split('\n').filter(Boolean), ['CALL_TOKEN_INVALID'], 'the part saw no call to ask in');
+      const records = [];
+      const walk = (dir) => { for (const e of fs.readdirSync(dir, {withFileTypes: true})) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (p.endsWith('.jsonl')) records.push(...fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))); } };
+      walk(home);
+      const outs = records.filter((x) => x.tool === tool && x.outcome !== undefined && x.server === undefined);
+      assert.deepStrictEqual(outs.slice(-1).map((x) => x.outcome), ['cancelled'], JSON.stringify(outs).slice(0, 600));
+      assert.ok(!records.some((x) => x.outcome === 'asked'), 'nothing was asked');
+    });
+
     it('a decline is null to the handler; an answer that does not fit the form gets the question again; a state is for its own arguments', async () => {
       local();
       await loaded();

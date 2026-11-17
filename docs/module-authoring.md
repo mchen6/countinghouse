@@ -126,6 +126,37 @@ substitute for each other:
   or if the bound identity lacks a grant to a declared target. Load it (step
   5 of the loop) and check the server log before declaring the chain done.
 
+## Asking the user: ask first, act after
+
+A handler may put one of its action's declared questions to the user
+(`ctx.ask`, [module development](module-development.md#asking-the-user-ctxask)).
+The handler does not wait: with no answer yet it ends, the client shows the
+form, and the retry runs it again from the top. So the rule is one line,
+**ask first, act after**, and it is stated plainly because it costs money
+and can do damage:
+
+- **Every hop made before the ask is made again on the retry, and billed
+  again.** A handler that calls three parts and then asks pays for six part
+  calls when the user answers.
+- **A non-idempotent action before an ask happens twice.** A message sent,
+  a record written or a card charged before the ask is done on the first
+  run and again on the retry; if the user declines, the first one has still
+  happened.
+- **Neither validator can see it.** Whether a handler acts before it asks
+  is in its code, which `countinghouse_validate_module` does not analyse.
+  Review it.
+
+Over composition a part may ask too: its question goes to the user of the
+call that reached it, under the listed scenario's name (the part is never
+named to the client). The scenario's `ctx.call` then rejects with
+`ASK_PENDING`; let it pass, and on the retry both run again. The rule holds
+for the whole chain: a scenario that calls a part that asks should call it
+before anything it cannot do twice.
+
+The user reads a part's question under the scenario's name. So a scenario
+vouches for its parts' declared questions: review a part's `questions` when
+you review the scenario.
+
 ## Roles: scenarios and parts
 
 `package.json` `countinghouse.role` is `"scenario"` or `"part"`. Without a role,

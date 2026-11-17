@@ -22,7 +22,7 @@ describe('questions 03: ctx.ask as a handler has it (MCP completeness M13)', () 
   // the ctx of one call of saveNote's whose ask state is `state`
   const ctxOf = (state, over = {}) => {
     const args = {input: {id: 'first'}};
-    if (state !== undefined) handlerCtx.attachAsk(args, Object.assign({state, module: MODULE, serviceID: SERVICE, actionName: 'saveNote', spec: SPEC}, over));
+    if (state !== undefined) handlerCtx.attachAsk(args, Object.assign({state, module: MODULE, deviceID: 'dev-notes', serviceID: SERVICE, actionName: 'saveNote', spec: SPEC}, over));
     return {ctx: handlerCtx.buildCtx(null, args), args};
   };
   const rejectedWith = async (code, promise) => {
@@ -33,7 +33,8 @@ describe('questions 03: ctx.ask as a handler has it (MCP completeness M13)', () 
   it('a first pass rejects with ASK_PENDING, the question recorded on the call; the retry\'s pass resolves with the answer', async () => {
     const first = ask.newState({askable: true});
     await rejectedWith('ASK_PENDING', ctxOf(first).ctx.ask('overwrite', {id: 'first'}));
-    assert.deepStrictEqual(first.pending, {key: KEY, question: 'overwrite', text: TEXT, schema: '/notesService/saveNote/questions/overwrite'});
+    assert.deepStrictEqual(first.pending, {key: KEY, question: 'overwrite', text: TEXT, schema: '/notesService/saveNote/questions/overwrite',
+      asker: {deviceID: 'dev-notes', serviceID: SERVICE, actionName: 'saveNote'}, module: MODULE});
     const retry = ask.newState({askable: true, answers: new Map([[KEY, {replace: true}]])});
     assert.deepStrictEqual(await ctxOf(retry).ctx.ask('overwrite', {id: 'first'}), {replace: true});
     const declined = ask.newState({askable: true, answers: new Map([[KEY, null]])});
