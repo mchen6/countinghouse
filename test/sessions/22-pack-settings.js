@@ -182,6 +182,27 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     assert.deepStrictEqual(unloads(), [{type: 'unload-pack', name: 'ci'}]);
   });
 
+  // the #341 deep review, 2: A is the only member and goes off while B's confirm is on the chain: the
+  // last-out unload waits for B's join, which then stands
+  it('the last one out doesn\'t unload under a session that is joining: B\'s confirmed "on" stands', async() => {
+    const t = tool();
+    await turnOn(t, A);
+    const r = await t.set('pack.ci', 'on', 'settings tool', ctx(B));
+    // the pack's chain held, so B's load waits on it
+    let open;
+    const gate = new Promise((res) => { open = res; });
+    sessionPacks.onPack('ci', () => gate);
+    const pb = t.confirm('pack.ci', 'on', {requestState: r.inputRequired.requestState, inputResponses: ACCEPT}, ctx(B));
+    await new Promise((res) => setTimeout(res, 100));
+    settings.set(A, 'pack.ci', false);   // A, the only member, goes off: its last-out unload is queued after B's load
+    open();
+    const done = await pb;
+    assert.strictEqual(done.applies, 'this session', JSON.stringify(done));
+    await new Promise((res) => setTimeout(res, 30));
+    assert.deepStrictEqual(unloads(), [], 'no unload under B');
+    assert.strictEqual(settings.packOverridesOf(B).get('ci'), true);
+  });
+
   describe('off: a tightening, no form; the last one out asks the unload', () => {
     it('A ends: no unload-pack while B has it; B turns it off: one unload-pack, and no form', async() => {
       const t = tool();

@@ -249,6 +249,14 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       const dir = path.join(root, 'ci', 'node_modules', '@countinghouse', 'ch-pack-ci');
       fs.mkdirSync(dir, {recursive: true});
       fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-ci', version: '1.0.0', countinghouse: {role: 'scenario'}}));
+      // a second pack, whose scenario calls a part beside it (two modules to load)
+      const two = path.join(root, 'two', 'node_modules', '@countinghouse');
+      fs.mkdirSync(path.join(two, 'ch-pack-two'), {recursive: true});
+      fs.mkdirSync(path.join(two, 'ch-step-x'), {recursive: true});
+      fs.writeFileSync(path.join(two, 'ch-pack-two', 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-two', version: '1.0.0', countinghouse: {role: 'scenario', calls: ['ch-step-x/svc.run']}}));
+      fs.writeFileSync(path.join(two, 'ch-pack-two', 'api.json'), JSON.stringify({device: {friendlyName: 'ch-pack-two', serviceList: {'urn:x:serviceID:svc': {actionList: [{name: 'two_tool', description: 'two'}]}}}}));
+      fs.writeFileSync(path.join(two, 'ch-step-x', 'package.json'), JSON.stringify({name: '@countinghouse/ch-step-x', version: '1.0.0', countinghouse: {role: 'part'}}));
+      fs.writeFileSync(path.join(two, 'ch-step-x', 'api.json'), JSON.stringify({device: {friendlyName: 'ch-step-x', serviceList: {'urn:x:serviceID:svc': {actionList: [{name: 'run', description: 'run'}]}}}}));
       fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'ch-pack-ci', serviceList: {'urn:x:serviceID:svc': {actionList: [{name: 'ci_triage', description: 'triage'}]}}}}));
       options.packsRoot = [root];
     });
@@ -257,12 +265,35 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     // #341 review, 5: the loading record is gone whatever throws, the rollback included
     it('a load whose rollback throws leaves no loading record behind', async() => {
       const packsInPlace = require('../../lib/packs-in-place');
+      let loads = 0;
       const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
-        loadModuleFromPath: (p, name, version, cb) => cb(new Error('no spawn')),
+        // the first module loads, the second fails, and the rollback's unload throws
+        loadModuleFromPath: (p, name, version, cb) => { loads += 1; if (loads === 1) { mm.modules[name] = {}; return cb(null); } return cb(new Error('no spawn')); },
         unloadModuleExternal: () => { throw new Error('unload threw'); }};
-      await assert.rejects(packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-ci', scenario: path.join(root, 'ci', 'node_modules', '@countinghouse', 'ch-pack-ci'), pack: 'ci', global: false}, {}));
+      await assert.rejects(packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario: path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two'), pack: 'two', global: false}, {}));
+      assert.strictEqual(loads, 2, 'two modules, the rollback ran');
       assert.deepStrictEqual(packsInPlace.packRecords(mm), []);
       assert.strictEqual(mm.packsLoading == null || mm.packsLoading.size === 0, true);
+    });
+
+    // the #341 deep review, 1: the mid-UNLOAD side. The record goes only once its modules are unloaded; a
+    // view rebuilt meanwhile (any changed(null)) still has the pack's modules owned by it
+    it('B can\'t see A\'s pack while it unloads, though the views are rebuilt meanwhile', async() => {
+      const packsInPlace = require('../../lib/packs-in-place');
+      const seenMidUnload = [];
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+        loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
+        unloadModuleExternal: (name, cb) => { seenMidUnload.push(sessionPacks.listsModule(B, name)); delete mm.modules[name]; cb(); }};
+      sessionPacks.configure({records: () => packsInPlace.packRecords(mm), moduleOf: () => null,
+        overridesOf: settings.packOverridesOf, onOverrideChange: settings.onChange, openSessions: () => [...open], isOpen: (id) => open.has(id),
+        shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
+      on(A, 'ci');
+      const scenario = path.join(root, 'ci', 'node_modules', '@countinghouse', 'ch-pack-ci');
+      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-ci', scenario, pack: 'ci', global: false}, {});
+      sessionPacks.setGlobal('other', false);   // a changed(null): the owners rebuilt at the next question
+      await packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-ci', pack: 'ci'});
+      assert.deepStrictEqual(seenMidUnload, [false], 'hidden from B while it unloads');
+      assert.deepStrictEqual(packsInPlace.packRecords(mm), [], 'and gone once unloaded');
     });
 
     it('B can\'t see A\'s pack between its devices\' registration and the load\'s answer', async() => {
