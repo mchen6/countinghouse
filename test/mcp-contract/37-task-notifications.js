@@ -25,7 +25,7 @@ const {testPort} = require('../helpers/test-env');
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-describe('mcp-contract 28: notifications/tasks, the hub (M16 Task 2, in-process)', () => {
+describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)', () => {
   // a hub with a clock the test moves, and tasks the test sets
   function rig({noticeMs = 1000} = {}) {
     let clock = 1000;
@@ -224,7 +224,7 @@ const notices = (s) => s.events.filter((e) => e.method === 'notifications/tasks'
 // full: every case; else the change paths only (the second store)
 function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
   const each = full ? it : () => {};
-  describe(`mcp-contract 28: notifications/tasks end to end (${label})`, function() {
+  describe(`mcp-contract 37: notifications/tasks end to end (${label})`, function() {
     this.timeout(120000);
     let server = null;
     let dir = null;

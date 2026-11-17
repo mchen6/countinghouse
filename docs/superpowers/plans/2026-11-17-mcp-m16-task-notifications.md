@@ -94,7 +94,7 @@
     - the ack's `notifications.taskIds`;
     - an already-terminal task sent right after the ack;
   - the hub is wired to `task-events` where the hub is made.
-- Test: `test/mcp-contract/28-task-notifications.js` (spawned, `--workerThread --store local`, like 27; one case also on `--store redis` with run-local's private Redis). The SSE listen client comes from `test/mcp-contract/09-subscriptions.js`. Plus a shared-runtime case (D4 reversed): two sessions each listen for both sessions' task ids, and each is agreed and notified only its own.
+- Test: `test/mcp-contract/37-task-notifications.js` (spawned, `--workerThread --store local`, like 27; one case also on `--store redis` with run-local's private Redis). The SSE listen client comes from `test/mcp-contract/09-subscriptions.js`. Plus a shared-runtime case (D4 reversed): two sessions each listen for both sessions' task ids, and each is agreed and notified only its own.
 
 **Interfaces:**
 - Consumes: Task 1's `taskEvents`, and B5 Task 2's `findModernTask` (at listen, and again at each send) and `detailedTask` (each notification's params), with the authCtx from `withTaskSession`.
