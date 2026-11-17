@@ -173,6 +173,15 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     });
   });
 
+  // #341 review, 4: a load-pack with no answer may still land: its unload is asked at once, whether or not
+  // the pack is loaded here yet (ch-local's daemon takes a pack's requests in order)
+  it('a load-pack with no answer is undone by an unload-pack, though nothing is loaded here yet', async() => {
+    answer = (msg) => (msg.type === 'load-pack' ? {ok: false, code: 'CONTROL_NO_ANSWER'} : {ok: true});
+    await refused(turnOn(tool(), A), 'SETTING_NOT_APPLIED');
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepStrictEqual(unloads(), [{type: 'unload-pack', name: 'ci'}]);
+  });
+
   describe('off: a tightening, no form; the last one out asks the unload', () => {
     it('A ends: no unload-pack while B has it; B turns it off: one unload-pack, and no form', async() => {
       const t = tool();

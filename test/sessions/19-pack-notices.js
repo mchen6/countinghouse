@@ -210,10 +210,23 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       const RouteManager = require('../../lib/route-manager');
       let ceiling = {state: 'none'};
       settings.configure({ceiling: () => ceiling, defaultOf: () => 8 * 1024 * 1024, isLive: (id) => open.has(id), ceilingMemoMs: 0});
+      // a pack loaded at start (the terminal's) is global; ci is loaded after, for a session
       const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
-        packsInPlace: new Map([['@countinghouse/ch-pack-ci', {scenario: '/x', pack: 'ci', modules: new Map([['m-ci', {version: '1.0.0'}]]), tools: new Set(), prompts: new Set()}]])};
+        packsInPlace: new Map([['@countinghouse/ch-pack-docs', {scenario: '/y', pack: 'docs', modules: new Map([['@countinghouse/ch-pack-docs', {version: '2.0.0'}]]), tools: new Set(), prompts: new Set()}]]),
+        supervisor: {errorForDevice: (d) => (d === 'd-restarting' ? {code: 'MODULE_RESTARTING', module: 'm-ci'} : null)},
+        endedStateForDevice: (d) => (d === 'd-ended' ? {code: 'MODULE_UNLOADED', name: 'm-ci'} : null)};
       const dm = {deviceMap: {'d-ci': {hostModuleName: 'm-ci'}}};
-      RouteManager.prototype.configureSessionPacks.call({moduleManager: mm, cdifInterface: {deviceManager: dm}});
+      let gone = false;
+      RouteManager.prototype.configureSessionPacks.call({moduleManager: mm, cdifInterface: {deviceManager: dm}}, {daemonGone: () => gone});
+      assert.strictEqual(sessionPacks.isGlobal('docs'), true, 'a start pack is global');
+      mm.packsInPlace.set('@countinghouse/ch-pack-ci', {scenario: '/x', pack: 'ci', modules: new Map([['@countinghouse/ch-pack-ci', {version: '1.0.0'}], ['m-ci', {version: '1.0.0'}]]), tools: new Set(), prompts: new Set()});
+      sessionPacks.packChanged('ci');
+      // the loaded version, from the pack's own scenario (#341 review, 1)
+      assert.deepStrictEqual([sessionPacks.loadedVersion('ci'), sessionPacks.loadedVersion('docs'), sessionPacks.loadedVersion('nope')], ['1.0.0', '2.0.0', null]);
+      // a device out of the map (restarting, ended) is still its module's: hidden from B (#341 review, 3)
+      assert.deepStrictEqual([sessionPacks.listsDevice(B, 'd-restarting'), sessionPacks.listsDevice(B, 'd-ended'), sessionPacks.listsDevice(B, 'd-unknown')], [false, false, true]);
+      gone = true;
+      assert.strictEqual(sessionPacks.unloadIfUnused != null, true);
       on(A, 'ci');
       // B: no override; A: its own "on"; both by the store's records and the device map
       assert.deepStrictEqual([sessionPacks.listsDevice(A, 'd-ci'), sessionPacks.listsDevice(B, 'd-ci')], [true, false]);
@@ -239,6 +252,17 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       options.packsRoot = [root];
     });
     afterEach(() => { options.packsRoot = saved; fs.rmSync(root, {recursive: true, force: true}); });
+
+    // #341 review, 5: the loading record is gone whatever throws, the rollback included
+    it('a load whose rollback throws leaves no loading record behind', async() => {
+      const packsInPlace = require('../../lib/packs-in-place');
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+        loadModuleFromPath: (p, name, version, cb) => cb(new Error('no spawn')),
+        unloadModuleExternal: () => { throw new Error('unload threw'); }};
+      await assert.rejects(packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-ci', scenario: path.join(root, 'ci', 'node_modules', '@countinghouse', 'ch-pack-ci'), pack: 'ci', global: false}, {}));
+      assert.deepStrictEqual(packsInPlace.packRecords(mm), []);
+      assert.strictEqual(mm.packsLoading == null || mm.packsLoading.size === 0, true);
+    });
 
     it('B can\'t see A\'s pack between its devices\' registration and the load\'s answer', async() => {
       const packsInPlace = require('../../lib/packs-in-place');

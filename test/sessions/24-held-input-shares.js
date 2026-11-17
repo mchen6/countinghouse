@@ -152,6 +152,23 @@ describe('sessions 24: a hop\'s held input is shared out per session (shared run
     assert.ok(announce(B, 1, 1), 'B\'s release isn\'t held off by A\'s');
   });
 
+  // #341 review, 7: a full total's walk of every share releases every session's ended hops, so it is bounded
+  // per caller worker, as on master: N sessions on one worker don't buy N walks a window
+  it('the walk of every share, at a full total, is at most once a window per caller worker, whatever the sessions', () => {
+    broker = new PeerChannelBroker({deviceMap: {'d-callee': callee}}, {shareFloorBytes: 1024, totalFloorBytes: 1024, countShare: 64});
+    for (const w of [1, 2]) broker.channelRegistry[`${w}:90`] = {callerWM: workers[w], calleeWM: callee, grants: {}};
+    broker.monotonicMs = () => 5000;
+    let walks = 0;
+    const releaseEnded = broker.releaseEnded.bind(broker);
+    broker.releaseEnded = (share) => { if (share == null) walks += 1; return releaseEnded(share); };
+    // the total is 2048 (8 x the 256 cap): A's share and B's, both full, fill it
+    for (let i = 0; i < 4; i++) assert.ok(announce(A, 1, CAP));
+    for (let i = 0; i < 4; i++) assert.ok(announce(B, 1, CAP));
+    assert.strictEqual(announce(A, 1, 1), false);
+    assert.strictEqual(announce(B, 1, 1), false);
+    assert.strictEqual(walks, 1, 'one walk for worker 1 in the window, not one per session');
+  });
+
   it('outside shared mode the shares are the caller worker\'s, as on master', () => {
     sessions.resetForTests();
     for (let i = 0; i < 4; i++) assert.ok(announce(null, 1, CAP));
