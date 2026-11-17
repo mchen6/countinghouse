@@ -125,6 +125,16 @@ library for the module's own requests, the logger, live settings and the
 Redis bridge, which is handed only its own send.
 
 Known limits of this rule:
+- **A module in the same realm can still post a message through
+  worker-message's module-level post, and the main thread must refuse what
+  it did not ask for.** Module code reaches `lib/worker-message.js` in
+  `require.cache`; it cannot change the runtime's instance or its
+  prototype, but a `WorkerMessage` of its own posts on the worker's port.
+  So a module can send a request the main thread does not serve for it (a
+  validation's worker is refused every one, by name: test/sandbox/21) and a
+  reply to an id it guesses, as bytes it made by hand (refused, or checked
+  by a validator before any caller decodes them: test/sandbox/42). Nothing
+  the main thread acts on is taken on the message's word.
 - **`CHUtil.request`'s redirects** are followed inside postman-request,
   whose redirect handling looks methods up when it runs: the lockdown's
   `followRedirect` check runs on its own captured functions, but what

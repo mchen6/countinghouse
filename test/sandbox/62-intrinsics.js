@@ -62,6 +62,13 @@ const PERSISTENT = ['Map.prototype.set/get/has/delete', 'Array.prototype.push/sh
   'require.cache entries swapped (call-limits, hop-input, port-scope, peer-channel, peer-worker, chutil-facade)',
   'runtime exports and prototypes replaced in place', 'Object.prototype setters', 'Object.prototype getters (runtime fields read)'];
 const URL_BREAKING = 'Object.prototype getters (href, host, ports, net)';
+// the changes made through require.cache: each must have reached the
+// runtime's files there, or its "unchanged" would be a miss, not a refusal
+const CACHE_CHANGES = new Set(['require.cache entries swapped (call-limits, hop-input, port-scope, peer-channel, peer-worker, chutil-facade)',
+  'runtime exports and prototypes replaced in place']);
+// what only the main thread answers a remote call to nothing declared: the
+// message carrying the call's token crossed with the change in place
+const CROSSED = 'REMOTE_UNDECLARED';
 
 // lib/port-scope.js rehome, server free: assigned into an object with no
 // prototype (no inherited setter there), a "__proto__" key stays an own key
@@ -159,6 +166,7 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         const installed = await invoke({persist: 'install'});
         assert.strictEqual(installed.status, 200, JSON.stringify(installed.body));
         assert.strictEqual(installed.body.output.installed, !FIXED.has(change), `${change}: ${JSON.stringify(installed.body.output)}`);
+        if (CACHE_CHANGES.has(change)) assert.strictEqual(installed.body.output.cacheReachable, true, `${change}: the runtime's files were never reached: ${JSON.stringify(installed.body.output)}`);
         const work = [];
         for (let n = 0; n < 2; n++) {
           const r = await invoke({route: 'work'});
@@ -168,6 +176,7 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         const shown = JSON.stringify({work, collected: collected.body});
         assert.strictEqual(collected.status, 200, shown);
         for (const w of work) assert.deepStrictEqual(Object.keys(w).sort(), ['ask', 'remote', 'usage'], shown);
+        for (const w of work) assert.strictEqual(w.remote, CROSSED, `the token-carrying call never crossed with ${change} kept: ${shown}`);
         assert.strictEqual(collected.body.output.tokensSeen, 0, `a token was handed over with ${change} kept: ${shown}`);
         assert.strictEqual(collected.body.output.portsSeen, 0, `a port was handed over with ${change} kept: ${shown}`);
       });
@@ -238,6 +247,8 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         if (out != null) {
           assert.strictEqual(out.undone, true, JSON.stringify(out));
           assert.strictEqual(out.changed, !FIXED.has(change), `${change} ${FIXED.has(change) ? 'is fixed by the lockdown' : 'was made'}: ${JSON.stringify(out)}`);
+          if (CACHE_CHANGES.has(change)) assert.strictEqual(out.cacheReachable, true, `${change}: the runtime's files were never reached: ${JSON.stringify(out)}`);
+          if (change !== URL_BREAKING) assert.strictEqual(out.remoteCall, CROSSED, `${change}: the token-carrying call never crossed: ${JSON.stringify(out)}`);
         }
         const shown = JSON.stringify(out);
         if (mode === 'enforce') {
