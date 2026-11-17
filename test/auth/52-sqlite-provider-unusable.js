@@ -93,6 +93,32 @@ const loads = spawnSync(process.execPath, ['-e', 'require("sqlite3")'], {encodin
     await new Promise((r) => p.db.close(r));
   });
 
+  it('an already-migrated database mounted read-only (0444) still serves: the schema\'s no-ops need no write', async function() {
+    if (typeof(process.getuid) === 'function' && process.getuid() === 0) this.skip();   // root writes a read-only file
+    require('../../lib/logger').createLogger(false);
+    const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
+    const file = path.join(dir, 'auth.sqlite3');
+    const call = (fn) => new Promise((resolve) => fn((err, r) => resolve({err, r})));
+    // migrated by a first provider, with a user granted a device and a module bound
+    const first = new SqliteAuthProvider({dbPath: file});
+    await first.ready;
+    await call((cb) => first.db.run('INSERT INTO users (apiKey, userName, admin) VALUES (?, ?, 1)', ['k', 'u'], cb));
+    await call((cb) => first.db.run('INSERT INTO user_devices (apiKey, deviceID) VALUES (?, ?)', ['k', 'dev'], cb));
+    await call((cb) => first.db.run('INSERT INTO module_identities (moduleName, apiKey) VALUES (?, ?)', ['m', 'k'], cb));
+    await new Promise((r) => first.db.close(r));
+    fs.chmodSync(file, 0o444);
+    const p = new SqliteAuthProvider({dbPath: file});
+    await p.ready;
+    assert.strictEqual(p.failed, null);
+    const got = await call((cb) => p.authenticate('k', 'dev', null, null, cb));
+    assert.ifError(got.err);
+    assert.deepStrictEqual([got.r.ok, got.r.isAdmin], [true, true]);
+    assert.deepStrictEqual((await call((cb) => p.listDevices('k', cb))).r.devices, ['dev']);
+    assert.strictEqual((await call((cb) => p.identityForModule('m', cb))).r.apiKey, 'k');
+    assert.strictEqual((await call((cb) => p.entries(cb))).r.length, 1);
+    await new Promise((r) => p.db.close(r));
+  });
+
   it('a database error after it was ready marks the provider failed and is logged, never thrown', async () => {
     require('../../lib/logger').createLogger(false);
     const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
