@@ -374,7 +374,11 @@ client that declares the `io.modelcontextprotocol/tasks` extension (with
 `--workerThread`): the call is answered at once with a `taskId`, and the
 client polls `tasks/get` for the result your action returns. Anyone else's
 call to it runs inline, as any action's does. Your handler is the same
-either way.
+either way. While it runs, `ctx.job.progress(n)` (1–100) is the task's
+`statusMessage` on `tasks/get`, as `"NN%"`, rounded. A progress of 0 shows
+none, since every task starts at 0. A task that failed without an answer
+(it ran past `--jobTimeout`) shows its code, or `"failed"`, never your
+handler's text.
 
 A device's `promptList` is served on `prompts/list` and `prompts/get`: each
 prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
