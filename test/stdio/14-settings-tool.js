@@ -42,7 +42,7 @@ describe('stdio 14: countinghouse_settings', () => {
   it('get, with no file: every setting at its default, with its bounds, whether it guards, and when it applies', async () => {
     const got = await tool.get();
     const byName = Object.fromEntries(got.settings.map((s) => [s.name, s]));
-    // 16 MiB: the approved default (Matt, 2026-11-15)
+    // 16 MiB: the approved default (maintainer's decision, 2026-11-15)
     assert.deepStrictEqual(byName.maxOutputBytes, {name: 'maxOutputBytes', value: 16 * MiB, default: 16 * MiB, bounds: {min: MiB, max: 256 * MiB}, guarding: true, applies: 'now'});
     assert.deepStrictEqual(byName.requestTimeout, {name: 'requestTimeout', value: 30000, default: 30000, bounds: {min: 5000, max: 120000}, guarding: true, applies: 'now'});
     assert.deepStrictEqual(byName.moduleSandbox.bounds, {enum: ['enforce', 'audit']});

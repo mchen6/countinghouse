@@ -1,5 +1,5 @@
-// Dynamic discovery is retired (lean worker, step 1; Matt, 2026-11-13: "CDIF
-// style modules should be retired"). This file used to show both module
+// Dynamic discovery is retired (lean worker, step 1; maintainer's decision,
+// 2026-11-13: "CDIF style modules should be retired"). This file used to show both module
 // shapes in one server: a handler map (one device from api.json) and a
 // class / EventEmitter main entry that decided its device count at runtime
 // and withdrew a device with 'deviceoffline'. A module is now api.json,

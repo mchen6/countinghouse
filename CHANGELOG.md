@@ -10,6 +10,24 @@ the auth config.
 
 ## Unreleased
 
+### Fixed — modules load on Windows when the install is run by an 8.3 short name
+
+An install run by a short-name spelling (`C:\Users\RUNNER~1\...`, as
+under GitHub's Windows runner's temporary directory), with no
+`--preserve-symlinks`, listed none of its modules under the sandbox: each
+failed with `Cannot find module '/app/handlers/...'`. A module's worker
+loaded the runtime's files by the short spelling until its file broker was
+installed and by the long one after, so one of them was loaded twice. The
+worker is now started by its real path, and each file is loaded once.
+
+### Fixed — the settings ceiling is found on Windows with no SystemDrive in the environment
+
+A runtime started with no `SystemDrive` in its environment (ch-local's
+daemon is) could not find ProgramData. Every setting that loosens a default
+was then refused with `SETTING_CEILING_UNTRUSTED`. The lookup now sets
+`SystemDrive` itself, from the system's Windows directory, before asking for
+the folder.
+
 ### Removed — flags that did nothing, or let a failing module load
 
 - **`--verifyModule`** is gone. With it, the loader carried on past a
@@ -504,8 +522,8 @@ configuration). None of it is available to a hosted server.
 ### Removed — SOAP support: `CHUtil.createSOAPClient` (breaking)
 
 - **`CHUtil.createSOAPClient` is gone**, with the `soap` dependency and its
-  lockdown host check (Matt, 2026-11-13). Nothing in the repository, the
-  bundled modules or the packs used it. A module that still needs SOAP
+  lockdown host check (maintainer's decision, 2026-11-13). Nothing in the
+  repository, the bundled modules or the packs used it. A module that still needs SOAP
   depends on a SOAP library itself and declares its hosts under
   `countinghouse.permissions.net`. The ONVIF WSDL files under `spec/tools`
   stay, as data.
@@ -547,8 +565,9 @@ configuration). None of it is available to a hosted server.
 ### Removed — CDIF-style modules: one module format (breaking)
 
 - **A module is `api.json`, `schema.json` and `handlers/<service>/<action>.js`**
-  (lean worker, step 1; Matt, 2026-11-13). A module with a main entry
-  (`package.json` `"main"`, or an `index.js`) and no `handlers/` directory is
+  (lean worker, step 1; maintainer's decision, 2026-11-13). A module with a
+  main entry (`package.json` `"main"`, or an `index.js`) and no `handlers/`
+  directory is
   refused before any of its code runs, at every way in (start, load, reload,
   restart) and by `countinghouse-validate` (stage `layout`), with the new code
   `MODULE_LAYOUT_UNSUPPORTED`, whose text names the file. That retires a
