@@ -1,0 +1,29 @@
+{
+  "device": {
+    "friendlyName": "asks-after-hops",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a scenario that calls its part and then asks its user a declared question (ctx.ask after hops; M13 with M9's progress)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:hopService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Calls a part a few times at once, then asks whether to go on.",
+            "input": {
+              "schema": "/hopService/probe/input"
+            },
+            "output": {
+              "schema": "/hopService/probe/output"
+            },
+            "questions": {
+              "go": {
+                "message": "Go on after {hops} calls?",
+                "schema": "/hopService/probe/questions/go"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

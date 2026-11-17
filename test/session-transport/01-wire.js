@@ -109,13 +109,55 @@ describe('sessions 01: the wire (contract 2)', () => {
       const ok = (w) => w != null && typeof(w) === 'object' && !Array.isArray(w) && W.reasons.includes(w.reason)
         && Object.keys(w).every((k) => k === 'reason' || k === 'at')
         && (w.at === undefined || (typeof(w.at) === 'string' && w.at.startsWith('~/') && Array.from(w.at).length <= 200 && !hidden.test(w.at)
-          && !w.at.split('/').includes('..')));
+          && !w.at.includes('\\') && w.at.slice(2).split('/').every((seg) => seg !== '' && seg !== '..')));
       for (const {why, value} of W.accepted) assert.strictEqual(ok(value), true, why);
       for (const {why, value} of W.refused) assert.strictEqual(ok(value), false, why);
     });
 
+    it('the GitHub token order\'s vectors follow their rule: start, the daemon and the conditions check agree, and the outcome follows from them', () => {
+      for (const c of V.githubTokenPrecedence.cases) {
+        const {env, stored, ghLogin, daemonHolds} = c.input;
+        const storedOk = stored === true;
+        const start = env.includes('COUNTINGHOUSE_GITHUB_TOKEN') ? 'environment' : storedOk ? 'stored' : ghLogin ? 'gh' : env.includes('GITHUB_TOKEN') ? 'GITHUB_TOKEN' : null;
+        const daemon = storedOk ? 'stored' : ghLogin ? 'gh' : null;
+        const conditions = start === 'environment' ? 'mac(env)' : start === 'stored' ? 'mac(stored)' : start === 'GITHUB_TOKEN' ? 'mac(GITHUB_TOKEN)' : null;
+        // null is "the daemon's", whatever it holds (listener.js); a hash
+        // shares only when it is the daemon's own token's
+        const shares = conditions === null || (conditions === 'mac(stored)' && daemonHolds === 'stored');
+        assert.deepStrictEqual([c.start, c.daemon, c.conditions, c.outcome], [start, daemon, conditions, shares ? 'shares' : 'own-runtime (token)'], c.why);
+      }
+    });
+
+    it('the pack messages\' vectors are consistent: every accepted pack fits the pattern and a load or reload carries a boolean global; every refused case names one of the three reasons', () => {
+      const P = V.packMessages;
+      const pattern = new RegExp(P.packPattern);
+      for (const {why, message: m} of P.accepted) {
+        if (m.type === 'set') { assert.strictEqual(m.value, true, why); continue; }
+        if (m.pack !== undefined) assert.ok(typeof(m.pack) === 'string' && pattern.test(m.pack), why);
+        if (m.type === 'load' || m.type === 'reload') assert.strictEqual(typeof(m.global), 'boolean', why);
+        if (m.type !== 'notice') assert.ok(m.pack !== undefined, why);
+      }
+      // each refused case breaks the rule for its own reason, and only it
+      const problem = (m) => {
+        const packOk = (p) => typeof(p) === 'string' && pattern.test(p);
+        if (m.type === 'set') return (typeof(m.name) === 'string' && m.name.startsWith('pack.') && m.value !== true) ? 'set-false' : null;
+        if (m.type === 'load' || m.type === 'reload') return typeof(m.global) !== 'boolean' ? 'global' : (packOk(m.pack) ? null : 'pack');
+        if (m.type === 'unload') return packOk(m.pack) ? null : 'pack';
+        if (m.type === 'notice') return (m.pack === undefined || packOk(m.pack)) ? null : 'pack';
+        return null;
+      };
+      for (const {why, message} of P.accepted) assert.strictEqual(problem(message), null, why);
+      for (const {why, reason, message} of P.refused) assert.strictEqual(problem(message), reason, why);
+      assert.deepStrictEqual([...new Set(P.refused.map((r) => r.reason))].sort(), ['global', 'pack', 'set-false']);
+    });
+
     it('makes the token MAC as the vectors have it', () => {
       assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
+    });
+
+    it('makes a pack credential\'s MAC as the vectors have it', () => {
+      assert.strictEqual(handshake.credentialMac(secret, V.credentialMac.name, V.credentialMac.value).toString('base64'), V.credentialMac.macB64);
+      assert.deepStrictEqual(JSON.parse(V.control.clientCredentials.json).credentials, {[V.credentialMac.name]: V.credentialMac.macB64});
     });
 
     it('reads the accepted secret files and refuses the others', () => {

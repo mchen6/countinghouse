@@ -18,6 +18,21 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
 
+### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
+
+- **The lockdown's checks** (the allowed built-ins, a path given to
+  `CHUtil.loadFile` or the reduced `module.createRequire`, a granted host
+  for `CHUtil.request`) call only functions taken before module code loads,
+  and each guard hands a call on through a `Reflect.apply` taken then; the
+  file broker's checks follow in the next change. The allowed built-ins and
+  the loopback names are no longer exported as live sets
+  (`ALLOWED_BUILTIN_IDS`, a frozen array, takes the place of the first).
+- **A module can no longer patch `path`, `url` or `URL`** under audit or
+  enforce: the functions of the `path`, `path.posix`, `path.win32` and `url`
+  exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
+  are non-writable and non-configurable from the lockdown on. A module that
+  patches them runs under `--moduleSandbox off`.
+
 ### Added — what a module declares for MCP clients is checked (MCP completeness, M0)
 
 - **`api.json` takes the fields the MCP layer serves**: an action's `title`,
@@ -33,6 +48,42 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   binary output field that is not under `properties` or an array's `items`
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
+
+### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
+
+- **`ctx.ask(name, values)`** puts one of the action's declared questions
+  (`api.json`'s `questions`) to the user of a 2026-07-28 client that
+  declares form elicitation, and resolves with the form's content, or
+  `null` for a decline. The runtime composes what the user reads,
+  `<module name>: <message>`.
+- **The handler runs again.** With no answer yet `ctx.ask` rejects
+  `ASK_PENDING`, the call is answered with the question (an
+  `InputRequiredResult`), and the client's retry runs the handler from the
+  top. Module authors: ask first, act after
+  ([module development](docs/module-development.md#asking-the-user-ctxask)).
+- **The retry's `requestState`** is bound to the caller, the session, the
+  tool and the arguments, lasts five minutes and is used once, also across
+  a restart. New error codes: `ASK_PENDING`, `ASK_UNAVAILABLE`,
+  `ASK_NOT_DECLARED`, `ASK_STATE_INVALID`, `ASK_STATE_UNCHECKED`.
+- **A call is asked at most eight rounds in all**, three at most of one
+  question; after that `ctx.ask` is `ASK_UNAVAILABLE`.
+- **`--moduleQuestions off`** turns every module's question off. Under
+  `--store redis` the used states' nonces are in Redis db 14, which must
+  not evict.
+- **A part may ask too (M14).** A module reached through a scenario's
+  `ctx.call`, routed or over a direct peer channel, asks the outer call's
+  user one of its own action's declared questions. The dialog carries the
+  called, listed module's name, never the part's; the usage record
+  (`askedBy`) and the runtime's log name the part. The call's rounds are
+  the chain's: one question a round, eight in all. The part's
+  `ASK_PENDING` rejects the caller's `ctx.call`; a caller that catches it
+  and returns a result keeps that result, and the question is dropped.
+  In single-thread mode a part has no one to ask.
+- **A call that can end on a question** (its own action declares one, or
+  one it can reach through declared calls does) refuses `requestState` or
+  `inputResponses` in its arguments.
+- **A call cancelled while its form is made** is asked nothing: no state
+  is made for it, and its record says `cancelled`.
 
 ### Changed — a latched session is told why, never that the user declined
 

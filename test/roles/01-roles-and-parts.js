@@ -12,13 +12,15 @@ const path = require('path');
 const roles = require('../../lib/module-roles');
 
 // A module directory: package.json and an api.json with one action per name.
-function moduleAt(dir, {name, friendlyName = name.replace(/^@[^/]+\//, ''), role, calls, actions = ['run']}) {
+function moduleAt(dir, {name, friendlyName = name.replace(/^@[^/]+\//, ''), role, calls, actions = ['run'], prompts}) {
   fs.mkdirSync(dir, {recursive: true});
   const ch = {};
   if (role !== undefined) ch.role = role;
   if (calls !== undefined) ch.calls = calls;
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name, version: '1.0.0', ...(Object.keys(ch).length ? {countinghouse: ch} : {})}));
-  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: a}))}}}}));
+  const device = {friendlyName, serviceList: {'urn:x:serviceID:svc': {actionList: actions.map((a) => ({name: a, description: a}))}}};
+  if (prompts !== undefined) device.promptList = prompts.map((p) => ({name: p, description: p, messages: [{role: 'user', text: p}]}));
+  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device}));
   return dir;
 }
 
@@ -115,6 +117,24 @@ describe('module roles, scenarios and parts', () => {
       ['s2', 'TOOL_NAME_TAKEN', 'countinghouse_check_balance', 'a runtime built-in'],
       ['s3', 'TOOL_NAME_TAKEN', 'plain_svc_run', 'plain']
     ]);
+  });
+
+  // the reviewer's #340 review, 3: names were deduped across every module before the session filter, so a
+  // hidden pack's `review` renamed a global one's to review_2. A clash is refused at load instead.
+  it('two scenarios with the same bare prompt name, or one taking a listed module\'s or a reserved prompt name: refused PROMPT_NAME_TAKEN', () => {
+    const a = moduleAt(path.join(root, 'pa'), {name: 'pa', role: 'scenario', actions: ['a_tool'], prompts: ['review']});
+    const b = moduleAt(path.join(root, 'pb'), {name: 'pb', role: 'scenario', actions: ['b_tool'], prompts: ['review']});
+    const plain = moduleAt(path.join(root, 'plain'), {name: 'plain', actions: ['go'], prompts: ['brief']});
+    const c = moduleAt(path.join(root, 'pc'), {name: 'pc', role: 'scenario', actions: ['c_tool'], prompts: ['plain_brief']});
+    const d = moduleAt(path.join(root, 'pd'), {name: 'pd', role: 'scenario', actions: ['d_tool'], prompts: ['held']});
+    const {load, refused} = roles.expandLoadList([a, b, plain, c, d], {reservedPrompts: ['held']});
+    assert.deepStrictEqual(load.map((m) => m.name).sort(), ['pa', 'plain']);
+    assert.deepStrictEqual(refused.map((r) => [r.name, r.code, r.prompt, r.with]), [
+      ['pb', 'PROMPT_NAME_TAKEN', 'review', 'pa'],
+      ['pc', 'PROMPT_NAME_TAKEN', 'plain_brief', 'plain'],
+      ['pd', 'PROMPT_NAME_TAKEN', 'held', 'another pack']
+    ]);
+    assert.match(roles.refusedWhy(refused[0]), /pb: its prompt review is already the prompt of pa/);
   });
 
   it('two scenarios with the same bare tool name: the second is refused', () => {

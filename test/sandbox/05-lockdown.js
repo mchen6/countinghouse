@@ -5,7 +5,7 @@
 const assert = require('assert');
 const path   = require('path');
 const Module = require('module');
-const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTINS} = require('../../lib/module-lockdown');
+const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTIN_IDS} = require('../../lib/module-lockdown');
 const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
@@ -273,7 +273,7 @@ describe('sandbox 05: the built-in allowlist', () => {
   // allowlist or to REFUSED here.
   it('accounts for every built-in this Node has', () => {
     const unaccounted = Module.builtinModules.map((id) => id.replace(/^node:/, ''))
-      .filter((id) => !ALLOWED_BUILTINS.has(id) && REFUSED.indexOf(id) === -1);
+      .filter((id) => !ALLOWED_BUILTIN_IDS.includes(id) && REFUSED.indexOf(id) === -1);
     assert.deepStrictEqual(unaccounted, []);
   });
 });

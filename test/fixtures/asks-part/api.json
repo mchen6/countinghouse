@@ -1,0 +1,29 @@
+{
+  "device": {
+    "friendlyName": "asks-part",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a part whose handler asks the outer call's user a declared question (ctx.ask over composition, MCP completeness M14)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:partService": {
+        "actionList": [
+          {
+            "name": "store",
+            "description": "Asks whether to replace a thing, and says what came of asking.",
+            "input": {
+              "schema": "/partService/store/input"
+            },
+            "output": {
+              "schema": "/partService/store/output"
+            },
+            "questions": {
+              "overwrite": {
+                "message": "Replace {id}?",
+                "schema": "/partService/store/questions/overwrite"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

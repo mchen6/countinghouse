@@ -65,6 +65,7 @@ name and the fix. A module never half-loads.
 | `ctx.redis` | your module's own key-value space, in node_redis v3's callback style: Redis db 5 under `--store redis`, a local store with the same commands and answers under `--store local`. Every key you name is your module's alone: the runtime stores it as `m:<module name, URI-encoded>:<key>`, by the name it loaded your module under, so another module's `get('x')` never sees your `x`, and you never see the runtime's own keys. You write and read the key as you named it. The commands are `del`, `get`, `hdel`, `hget`, `hgetall`, `hmget`, `hmset` (fields as pairs or one `{field: value}` object), `hset`, `llen`, `lpush`, `lrange`, `ltrim`, `mget`, `pexpire`, `rpush`, `set`, `zadd`, `zrange` and `zrem`; there is no `multi`/`exec` |
 | `ctx.recordUsage(tool, cost, cb)` | app-layer bookkeeping; never touches balance; answers `{id, tool, cost, ts}` |
 | `ctx.usage()` | a promise of the current tools/call's counts so far, read-only: `{calls, linesIn, bytesIn, tokensInEst, servers: {name: calls}, sentence}`, plus `standIn: [names]` when an acceptance stand-in answered (`--remoteOriginMap`). They are the call's remote server calls, its parts' included, and the lines and bytes of text those calls returned; `tokensInEst` is bytes/4, an estimate; `sentence` is the first half of the runtime's receipt sentence, word for word (`read 48,210 lines (3.1 MB) in 14 calls to github`, or `no server was called`). The call's own output is measured when it returns, so it is not counted here. `null` when the call is not a counted one (not a tools/call, or one that has already answered). In a worker the query carries the call's token and is refused `CALL_TOKEN_INVALID` without it (a direct peer channel's call has none, and a call's token ends when it answers). Never a key, an id or a caller. A scenario writes its receipt sentence from it |
+| `ctx.ask(name, values)` | a promise of the user's answer to one of this action's declared questions: the form's content, or `null` when the user declined — see [Asking the user](#asking-the-user-ctxask) |
 | `ctx.httpHeaders` | request headers, when the call arrived over HTTP, minus `X-CH-Key`, `X-App-Key` and `Authorization` |
 
 A module is never handed an API key or a user name (R2-1): not in `ctx`,
@@ -78,6 +79,88 @@ takes no `appKey` in a worker.
 narrowing on purpose: handlers used to be able to reach `setAction`,
 `deviceControl` and the rest of the framework's own surface. They no longer
 can.
+
+## Asking the user: `ctx.ask`
+
+A handler may ask its user one of the questions its action declares:
+
+```js
+module.exports = async (input, ctx) => {
+  const answer = await ctx.ask('overwrite', {id: input.id});
+  if (answer == null || answer.replace !== true) return {output: {saved: false}};
+  // ... save it
+};
+```
+
+The question is declared in `api.json`, never written by the handler:
+
+```json
+"questions": {"overwrite": {"message": "Replace the saved note {id}?", "schema": "/notesService/saveNote/questions/overwrite"}}
+```
+
+`values` fills the message's `{name}` placeholders with strings (cut to 200
+characters), numbers and booleans. The user reads
+`<module name>: <the message>`, and answers a form made from the
+schema (see [`api.json`](#apijson) for what a form may hold). The name is
+the module whose tool the user called: your own, or, when your action is a
+part reached through a scenario's `ctx.call`, the scenario's. A part is
+never named to the client; the runtime's log and usage record name it.
+
+**The handler runs again.** MCP is stateless here, so the first time
+`ctx.ask` has no answer it rejects with `ASK_PENDING`, which ends your
+handler; the client shows the form, and when the user answers the call is
+made again and your handler runs **from the top**, where `ctx.ask` returns
+the answer at once. So:
+
+- **Ask first, act after.** Whatever your handler did before the ask is
+  done again on the second run, and costs again:
+  - **Every hop made before the ask is made again, and billed again.** A
+    handler that calls three parts and then asks pays for six part calls
+    when the user answers. The call itself is billed once, when it
+    completes.
+  - **A non-idempotent action before an ask happens twice**: a message is
+    sent twice, a record written twice, a card charged twice. If the user
+    declines, the first one has still happened.
+  - `countinghouse-validate` cannot see either: whether a handler acts
+    before it asks is in its code. The usage record of a pass that asked
+    shows its round, so an operator can see a module that asks late.
+- **Let `ASK_PENDING` pass.** Do not catch it. If you do and return a
+  result, that result is the call's answer and the question is dropped.
+  This holds through composition too: a part's question rejects the
+  calling handler's `ctx.call` with `ASK_PENDING`, and the caller should
+  let it pass; on the retry both run again and the part's `ctx.ask` gets
+  its answer.
+- **A part asks only its own action's questions.** Which module and action
+  ask is the runtime's to know, never the message's. A call has one set of
+  rounds, whoever in its chain asks: one question a round, three rounds of
+  one question, eight in all.
+- **An answer is for the exact text asked.** `ctx.ask('overwrite', {id: 'a'})`
+  and `ctx.ask('overwrite', {id: 'b'})` are two questions, and each needs
+  its own answer.
+- **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
+  to fall back: the client offered no form, the call came by HTTP
+  `invoke-action` or as a task, the operator turned questions off
+  (`--moduleQuestions off`), the outer call (when your action is a part)
+  has no one to ask for any of these reasons, three rounds brought no valid
+  answer, or the call has had eight rounds in all already (every
+  question's together). A part reached in single-thread mode
+  (`--no-workerThread`) has no one to ask either.
+- **Keep a question's values the same on every run.** A time or a counter
+  in `values` makes a new question each time, and the answer the user gave
+  is for the old one.
+- **A retry that is refused after the user answered asks again.** The
+  answer's state is used up when the retry is taken; if the call is then
+  refused before your handler runs (a rate limit, say), the next call
+  starts from the question.
+- **`ASK_NOT_DECLARED`** is your own mistake: no such question on this
+  action, or a value that is missing or is not a string, a number or a
+  boolean.
+- **An answer is not proof of a person.** A client may answer a form
+  however it likes, so an answer must never unlock what the caller could
+  not do without it.
+
+The answer is the form's content and nothing else: no client name, no
+session, no user.
 
 ## Failing a call
 
@@ -260,6 +343,15 @@ review may show them. Icons are read and checked when the module loads: a
 missing, oversized or SVG icon refuses the load (stage `icons`), and a reload
 to such a version leaves the loaded one serving. Each is sent inline as a
 `data:` URI from what the load read; nothing is read at list time.
+
+A device's `promptList` is served on `prompts/list` and `prompts/get`: each
+prompt is listed as `<module>_<name>` (a scenario's under its bare name), to
+the keys that may reach the module, with its `title`, `description` and
+`icons` and the arguments its schema declares (name, description, whether
+required). `prompts/get` runs none of your code: it checks the arguments
+against that schema, replaces each `{{name}}` once with the argument's value
+(an absent optional one is the empty string; substituted text is never
+scanned again) and returns your messages, at most 64 KiB in all.
 
 Specs written for 4.x (`argumentList` + `serviceStateTable`) do not load. The
 error says so and names the converter:
