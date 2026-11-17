@@ -93,11 +93,13 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.setCompletionHook((jobData, results, meta) => { failures.push({results, error: meta && meta.error && meta.error.message}); });
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 't', timeout: 100}, 'd', 's', 'a', {});
     assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
-    assert.strictEqual((await state(runner, r.id)).job.failedReason, 'Promise timed out after 100 milliseconds');
+    // the catalogued JOB_TIMEOUT, as "CODE: text" (lib/job-control-common.js timeoutError)
+    const TIMEOUT = 'JOB_TIMEOUT: The job did not finish within its timeout (0.1 s), so it failed; an answer after that is dropped';
+    assert.strictEqual((await state(runner, r.id)).job.failedReason, TIMEOUT);
     late(null, {late: true});
     await wait(50);
     assert.strictEqual((await state(runner, r.id)).state, 'failed');
-    assert.deepStrictEqual(failures, [{results: null, error: 'Promise timed out after 100 milliseconds'}]);
+    assert.deepStrictEqual(failures, [{results: null, error: TIMEOUT}]);
     runner.close();
   });
 
