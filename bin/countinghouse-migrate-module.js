@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+'use strict';
 // Converts a 5.x device module to the 6.0.0 shape:
 //
 //   index.js  + device.js + com-<ns>-<service>-<action>.js

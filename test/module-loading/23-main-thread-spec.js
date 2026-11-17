@@ -25,7 +25,8 @@ describe('module-loading 23: a module\'s spec on the main thread, and its checks
     own = await moduleSpec.build(FIXTURE, 'main-checked');
   });
   after(() => {
-    require('../../lib/validator-pool').pool().close();
+    // closed and forgotten: a later file in this mocha run starts its own
+    require('../../lib/validator-pool').closeShared();
     require('../../lib/cli-options').setOptions({workerThread: false});
   });
 
