@@ -101,6 +101,14 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         instanceAssign: 'TypeError', ownDefine: 'own', subclass: 'sub', onabort: true, fetch: 'rejected'});
     });
 
+    // ctx.ask's values as the runtime copies them: never written through a
+    // setter module code put on Object.prototype
+    it('ctx.ask copies its values without a setter on Object.prototype seeing them', async () => {
+      const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'ask'}});
+      assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+      assert.deepStrictEqual(r.body.output, {setterHits: 0, answer: 'ASK_UNAVAILABLE'});
+    });
+
     // a read grant does not write (h2.cjs: kept as it was, whatever happens)
     let h2Before = null;
     it('a read grant (an imported CommonJS file) opens read-only and reads with options of its own', async () => {

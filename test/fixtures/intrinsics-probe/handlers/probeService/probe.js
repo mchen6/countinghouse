@@ -223,6 +223,28 @@ module.exports = async (input, ctx) => {
     out.fetch = await fetch('http://ch-sandbox-62.invalid/', {signal: AbortSignal.timeout(2000)}).then(() => 'answered', (e) => (e != null && e.name != null ? 'rejected' : 'rejected'));
     return {output: out};
   }
+  // ctx.ask's values copied by the runtime while a setter on Object.prototype
+  // has the value's key: the runtime's own copy is never written through it
+  // (the question is not declared, so the ask is refused either way)
+  if (input.route === 'ask') {
+    const KEY = 'chSandbox62AskValue';
+    let hits = 0;
+    const undoSetter = replace(Object.prototype, KEY, {configurable: true, enumerable: false,
+      get() { return undefined; },
+      set(v) { hits++; ObjectDefineProperty(this, KEY, {value: v, writable: true, enumerable: true, configurable: true}); }});
+    let asked = null;
+    try {
+      const values = {};
+      ObjectDefineProperty(values, KEY, {value: 'ch-sandbox-62-value', writable: true, enumerable: true, configurable: true});
+      asked = ctx.ask('ch-sandbox-62-question', values);
+    } catch (e) {
+      asked = PromiseCtor.reject(e);
+    } finally {
+      undoSetter();
+    }
+    const answer = await asked.then(() => 'answered', (e) => StringCtor(e && e.code));
+    return {output: {setterHits: hits, answer}};
+  }
   // A read grant (an imported CommonJS file's) opens and reads read-only.
   if (input.route === 'grant-write') {
     const h2 = (await import('../../h2.cjs')).default;
