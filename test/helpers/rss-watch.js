@@ -12,9 +12,16 @@
 // - VmRSS and VmHWM;
 // - every thread with its name, its state and the CPU ticks it used since
 //   the last sample, busiest first;
-// then sends SIGUSR2 (the test file set process.report to write a
-// diagnostic report to stdout on it: native stacks, heap statistics, libuv
-// handles) and, 3 s later, SIGKILL. It ends with the watched process.
+// then the stacks, each bounded in time, and SIGKILL. It ends with the
+// watched process. The diagnostic report on SIGUSR2 never came (#346's
+// first hit: its handler needs the main loop, which was the busy one), so:
+// - JS stacks, from the inspector: SIGUSR1 starts it on its own thread even
+//   with the main thread busy; /json/list gives its websocket (port 9229);
+//   Debugger.pause on the main isolate, and on each worker's through
+//   NodeWorker, prints the paused call frames (function, url:line:column).
+//   A pause stops the main thread's JS, and so its allocation, if JS it is.
+// - native stacks, from gdb (sudo -n where there is one: CI's runners),
+//   for the busiest threads: whether a thread is in JS, a GC or a copy.
 // And machine-wide (the runner's memory, which a loss's monitor showed at
 // 11.7 GB used): while /proc/meminfo's MemAvailable is under 4 GB it prints,
 // at most once per 2 s, the 8 processes with the most RSS (pid, ppid, RSS,
@@ -22,6 +29,7 @@
 // its own limit, is killed.
 // Linux only (CI); elsewhere it exits at once.
 const fs = require('fs');
+const {spawnSync} = require('child_process');
 
 const [pidArg, limitArg, caseFile] = process.argv.slice(2);
 const pid = Number(pidArg);
@@ -85,6 +93,79 @@ function machineCheck() {
   process.stdout.write(`\n[ml24-watch] MemAvailable ${mb(available)} (under ${mb(LOW_AVAILABLE)}); watched pid ${pid}; top by RSS: ${rows.join(' | ')}\n`);
 }
 
+const say = (line) => process.stdout.write(`[ml24-watch] ${line}\n`);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const frameText = (f) => `${f.functionName || '(anonymous)'} ${String(f.url || '').replace(/^file:\/\//, '')}:${f.location.lineNumber + 1}:${f.location.columnNumber + 1}`;
+
+// The JS stacks of the main isolate and of each worker, paused through the
+// inspector, within budgetMs.
+async function jsStacks(budgetMs) {
+  const until = Date.now() + budgetMs;
+  if (typeof(WebSocket) !== 'function' || typeof(fetch) !== 'function') return say('no WebSocket or fetch in this Node: no JS stacks');
+  try { process.kill(pid, 'SIGUSR1'); } catch (e) { return say('the test process is gone: no JS stacks'); }
+  let target = null;
+  while (target == null && Date.now() < until) {
+    try {
+      const list = await (await fetch('http://127.0.0.1:9229/json/list')).json();
+      target = list.find((t) => typeof(t.webSocketDebuggerUrl) === 'string') || null;
+    } catch (e) { await sleep(200); }
+  }
+  if (target == null) return say('the inspector did not answer on 127.0.0.1:9229: no JS stacks');
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  let nextId = 1;
+  const send = (method, params = {}) => ws.send(JSON.stringify({id: nextId++, method, params}));
+  const toWorker = (sessionId, method, params = {}) => send('NodeWorker.sendMessageToWorker', {sessionId, message: JSON.stringify({id: nextId++, method, params})});
+  const titles = new Map();
+  const told = new Set();
+  const paused = (who, frames) => {
+    if (told.has(who)) return;
+    told.add(who);
+    say(`JS stack of ${who} (${frames.length} frames, innermost first):`);
+    for (const f of frames.slice(0, 25)) say(`    ${frameText(f)}`);
+  };
+  ws.addEventListener('message', (ev) => {
+    let m;
+    try { m = JSON.parse(String(ev.data)); } catch (e) { return; }
+    if (m.method === 'Debugger.paused') return paused('the main thread', m.params.callFrames || []);
+    if (m.method === 'NodeWorker.attachedToWorker') {
+      const sid = m.params.sessionId;
+      titles.set(sid, `worker ${m.params.workerInfo ? `${m.params.workerInfo.workerId} ${m.params.workerInfo.url || ''}` : sid}`);
+      toWorker(sid, 'Debugger.enable');
+      toWorker(sid, 'Debugger.pause');
+      return;
+    }
+    if (m.method === 'NodeWorker.receivedMessageFromWorker') {
+      let inner;
+      try { inner = JSON.parse(m.params.message); } catch (e) { return; }
+      if (inner.method === 'Debugger.paused') paused(titles.get(m.params.sessionId) || 'a worker', inner.params.callFrames || []);
+    }
+  });
+  await new Promise((resolve) => { ws.addEventListener('open', resolve, {once: true}); ws.addEventListener('error', resolve, {once: true}); setTimeout(resolve, Math.max(0, until - Date.now())); });
+  if (ws.readyState !== 1) return say('the inspector\'s websocket did not open: no JS stacks');
+  send('Debugger.enable');
+  send('Debugger.pause');
+  send('NodeWorker.enable', {waitForDebuggerOnStart: false});
+  while (Date.now() < until && !(told.has('the main thread') && told.size > titles.size)) await sleep(100);
+  if (!told.has('the main thread')) say('the main thread did not pause in time: it is not running JS (native code: a GC, a copy, a lock?)');
+  try { ws.close(); } catch (e) { /* gone */ }
+}
+
+// The native stacks of the busiest threads, from gdb, within budgetMs. The
+// process stays stopped under gdb only while it reads them.
+function nativeStacks(busyTids, budgetMs) {
+  const args = ['-batch', '-p', String(pid), '-ex', 'set pagination off', '-ex', 'thread apply all bt 30'];
+  let r = spawnSync('sudo', ['-n', 'gdb'].concat(args), {encoding: 'utf8', timeout: budgetMs});
+  if (r.error != null || !/Thread /.test(r.stdout || '')) r = spawnSync('gdb', args, {encoding: 'utf8', timeout: budgetMs});
+  if (r.error != null || !/Thread /.test(r.stdout || '')) return say(`no native stacks (gdb: ${r.error != null ? r.error.code || r.error.message : String(r.stderr || '').trim().split('\n').pop()})`);
+  const blocks = r.stdout.split(/\n(?=Thread \d+ )/);
+  for (const b of blocks) {
+    const lwp = (/\(LWP (\d+)\)/.exec(b) || [])[1];
+    if (lwp == null || !busyTids.has(lwp)) continue;
+    say(`native stack of thread ${lwp}:`);
+    for (const line of b.split('\n').slice(0, 32)) say(`    ${line}`);
+  }
+}
+
 let last = threads();
 let fired = false;
 const timer = setInterval(() => {
@@ -103,12 +184,19 @@ const timer = setInterval(() => {
       .sort((a, b) => b.used - a.used);
     process.stdout.write(`\n[ml24-watch] RSS ${mb(rss)} (peak ${mb(kib('VmHWM', status))}) over ${mb(limit)} during "${where}"; ${rows.length} threads, busiest first ` +
       `(ticks in the last 250 ms): ${rows.slice(0, 24).map((r) => `${r.tid} ${r.name} ${r.state} ${r.used}`).join(' | ')}\n`);
-    try { process.kill(pid, 'SIGUSR2'); } catch (e) { /* gone */ }
-    setTimeout(() => {
-      process.stdout.write('[ml24-watch] killing the test process (SIGKILL)\n');
+    // the busiest (at least half a CPU in the last 250 ms) and the main thread
+    const busy = new Set(rows.filter((r) => r.used >= 12).map((r) => r.tid).concat([String(pid)]));
+    const kill = () => {
+      say('killing the test process (SIGKILL)');
       try { process.kill(pid, 'SIGKILL'); } catch (e) { /* gone */ }
       process.exit(0);
-    }, 3000);
+    };
+    // a backstop: whatever the stacks do, the process is killed in 30 s
+    setTimeout(kill, 30000).unref();
+    jsStacks(8000).catch((e) => say(`JS stacks failed: ${e.message}`))
+      .then(() => nativeStacks(busy, 15000))
+      .catch((e) => say(`native stacks failed: ${e.message}`))
+      .then(kill);
   }
   last = now;
 }, 250);
