@@ -291,9 +291,10 @@ describe('sessions 22: packs turned on and off in conversation (shared runtime B
     });
 
     it('a session whose client conditions aren\'t ok and yes gets no form', async() => {
-      // its client answering no latches the session (B2's N1): no form, as for a cap
+      // its client answering no latches the session (B2's N1): no form, as for
+      // a cap, and the refusal says the latch, never a decline (#337)
       sources[A].answer = {status: 'ok', conditions: 'no', repo: null};
-      await refused(tool().set('pack.ci', 'on', 'settings tool', ctx(A)), 'SETTING_DECLINED_THIS_SESSION');
+      await refused(tool().set('pack.ci', 'on', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       // and one whose client is unknown gets none either
       sources[B].answer = null;
       await refused(tool().set('pack.ci', 'on', 'settings tool', ctx(B)), 'SETTING_NEEDS_CONFIRMATION');
