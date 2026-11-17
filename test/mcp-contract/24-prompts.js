@@ -59,8 +59,17 @@ const MODULES = [
   // two scenarios whose prompts share a bare name: deduped over every
   // module, before a caller's grants (B is granted z only)
   moduleOf('ch-pack-y', [{name: 'review', messages: [{role: 'user', text: 'y'}]}], {}, {role: 'scenario'}),
-  moduleOf('ch-pack-z', [{name: 'review', messages: [{role: 'user', text: 'z'}]}], {}, {role: 'scenario'})
+  moduleOf('ch-pack-z', [{name: 'review', messages: [{role: 'user', text: 'z'}]}], {}, {role: 'scenario'}),
+  // more prompts than a page (the floor is 10): `many` first, whose 100
+  // placeholders and one large argument would build hundreds of MB
+  moduleOf('pages', [{name: 'many', messages: [{role: 'user', text: '{{x}}'.repeat(100)}]},
+    ...Array.from({length: 10}, (_, i) => ({name: `p${String(i + 2).padStart(2, '0')}`, messages: [{role: 'user', text: `page ${i + 2}`}]}))], {}),
+  // a prompt named __proto__: its arguments are listed as anyone's
+  moduleOf('odd', [{name: '__proto__', arguments: {schema: '/prompts/proto'}, messages: [{role: 'user', text: '{{q}}'}]}],
+    {proto: {type: 'object', properties: {q: {type: 'string'}}, required: ['q']}})
 ];
+const PAGES = ['pages_many', ...Array.from({length: 10}, (_, i) => `pages_p${String(i + 2).padStart(2, '0')}`)];
+const ALL_A = ['notes_summarise', 'notes_plain', 'notes_big', 'secret_hidden', 'triage', 'review', 'review_2', ...PAGES, 'odd___proto__'];
 
 let ci = null;
 async function buildInterface() {
@@ -125,9 +134,9 @@ describe('mcp-contract 24: prompts (M10)', function() {
   });
   after(() => {
     // the validator pool this file started (lib/validator-pool.js): closed,
-    // or a run without --exit (the pre-commit hook's) never ends
-    const validatorPool = require('../../lib/validator-pool');
-    if (validatorPool.started() != null) validatorPool.started().close();
+    // or a run without --exit (the pre-commit hook's) never ends; and
+    // forgotten, so a later file in the same mocha run starts its own
+    require('../../lib/validator-pool').closeShared();
     if (provider != null) Object.assign(provider, real);
     if (usageReal != null) Object.assign(require('../../lib/usage/runtime').usage(), usageReal);
     fs.rmSync(home, {recursive: true, force: true});
@@ -138,7 +147,7 @@ describe('mcp-contract 24: prompts (M10)', function() {
     const era = modern ? '2026-07-28' : 'legacy';
     it(`${era}: a key's prompts, named <module>_<name> (a scenario's bare), each with what it declares and its arguments from its schema`, async () => {
       const a = await listAll(KEY_A, {modern});
-      assert.deepStrictEqual(a.map((p) => p.name), ['notes_summarise', 'notes_plain', 'notes_big', 'secret_hidden', 'triage', 'review', 'review_2']);
+      assert.deepStrictEqual(a.map((p) => p.name), ALL_A);
       const s = a[0];
       assert.deepStrictEqual(s, {name: 'notes_summarise', title: 'Summarise a note', description: 'Asks for a summary.',
         arguments: [{name: 'id', description: 'the note\'s id', required: true}, {name: 'style', description: 'how', required: false}]});
@@ -148,15 +157,28 @@ describe('mcp-contract 24: prompts (M10)', function() {
     });
   }
 
-  it('prompts/list pages with M1\'s cursor; a bad cursor is -32602', async () => {
+  it('prompts/list pages with M1\'s cursor: 10, then exactly the rest; a bad cursor is -32602', async () => {
     const was = options.listPageSize;
     options.listPageSize = 10;
     try {
+      const first = await ask('prompts/list', KEY_A);
+      assert.deepStrictEqual(first.result.prompts.map((p) => p.name), ALL_A.slice(0, 10));
+      assert.strictEqual(typeof(first.result.nextCursor), 'string', 'a next page');
+      const second = await ask('prompts/list', KEY_A, {cursor: first.result.nextCursor});
+      assert.deepStrictEqual(second.result.prompts.map((p) => p.name), ALL_A.slice(10), 'the rest');
+      assert.strictEqual(second.result.nextCursor, undefined, 'the last page');
       const r = await ask('prompts/list', KEY_A, {cursor: 'nope'});
       assert.strictEqual(r.error && r.error.code, -32602);
     } finally {
       options.listPageSize = was;
     }
+  });
+
+  it('a prompt named __proto__ lists its arguments, as any prompt', async () => {
+    const a = await listAll(KEY_A);
+    assert.deepStrictEqual(a.find((p) => p.name === 'odd___proto__'), {name: 'odd___proto__', arguments: [{name: 'q', required: true}]});
+    const r = await get(KEY_A, 'odd___proto__', {q: 'hi'});
+    assert.strictEqual(r.result && r.result.messages[0].content.text, 'hi', JSON.stringify(r));
   });
 
   it('prompts/get: each {{name}} replaced once, the result never scanned again; an absent optional argument is the empty string', async () => {
@@ -203,6 +225,89 @@ describe('mcp-contract 24: prompts (M10)', function() {
     assert.match(big.error.message, /64 KiB/);
   });
 
+  // the review of #321: the size is known from the arguments' lengths, so
+  // nothing is checked or built for a request over it. Before, 100
+  // placeholders of a 6 MB argument built ~600 MB on the main thread, past
+  // the engine's longest string: a RangeError, and no answer at all.
+  it('prompts/get: a result over 64 KiB is refused before it is checked or built, however many placeholders', async () => {
+    usageSeen.length = 0;
+    const checks = moduleSpec.promptArgs;
+    const renders = require('../../lib/mcp/prompts').render;
+    let reached = 0;
+    moduleSpec.promptArgs = (...a) => { reached += 1; return checks(...a); };
+    require('../../lib/mcp/prompts').render = (...a) => { reached += 1; return renders(...a); };
+    try {
+      const started = Date.now();
+      const r = await Promise.race([get(KEY_A, 'pages_many', {x: 'y'.repeat(6 * 1024 * 1024)}), new Promise((res) => setTimeout(() => res('no answer'), 10000))]);
+      assert.strictEqual(r.error && r.error.code, -32602, typeof(r) === 'string' ? r : JSON.stringify(r).slice(0, 300));
+      assert.match(r.error.message, /64 KiB/);
+      assert.ok(Date.now() - started < 2000, `answered in ${Date.now() - started} ms`);
+      assert.strictEqual(reached, 0, 'neither checked nor built');
+      // just over the bound with no escaping: 100 x 656 bytes
+      const over = await get(KEY_A, 'pages_many', {x: 'y'.repeat(656)});
+      assert.strictEqual(over.error && over.error.code, -32602);
+      assert.strictEqual(reached, 0);
+      const out = usageSeen.filter((x) => x.out != null).map((x) => [x.out.outcome, x.out.code]);
+      assert.deepStrictEqual(out, [['error', 'OUTPUT_TOO_LARGE'], ['error', 'OUTPUT_TOO_LARGE']], 'counted');
+      const fits = await get(KEY_A, 'pages_many', {x: 'y'.repeat(600)});
+      assert.ok(fits.result != null, JSON.stringify(fits).slice(0, 300));
+    } finally {
+      moduleSpec.promptArgs = checks;
+      require('../../lib/mcp/prompts').render = renders;
+    }
+  });
+
+  it('prompts/get answers when building its result throws', async () => {
+    const prompts = require('../../lib/mcp/prompts');
+    const renders = prompts.render;
+    prompts.render = () => { throw new RangeError('Invalid string length'); };
+    try {
+      const r = await Promise.race([get(KEY_A, 'triage', {run: '1'}), new Promise((res) => setTimeout(() => res('no answer'), 5000))]);
+      assert.strictEqual(r.error && r.error.code, -32603, typeof(r) === 'string' ? r : JSON.stringify(r));
+      assert.match(r.error.message, /could not be built \(RangeError\)/);
+    } finally {
+      prompts.render = renders;
+    }
+  });
+
+  it('prompts/get: a check that timed out says its code (VALIDATION_TIMEOUT), as a refused one does', async () => {
+    const checks = moduleSpec.promptArgs;
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    moduleSpec.promptArgs = async () => ({timeout: CountinghouseError.withFields('VALIDATION_TIMEOUT', {module: 'notes', action: '(prompt summarise)', which: {en: 'input', zh: '输入'}, ms: 1000})});
+    try {
+      const r = await get(KEY_A, 'notes_summarise', {id: 'a'});
+      assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));
+      assert.match(r.error.message, /could not be checked now \(VALIDATION_TIMEOUT\)/);
+    } finally {
+      moduleSpec.promptArgs = checks;
+    }
+  });
+
+  // the review of #321: a prompt's schema may be the very one an action's
+  // input is, $id and all. Its arguments are compiled in a validator of
+  // their own, so neither the load (prompts after the warm compile) nor the
+  // action's calls (a check after the prompts) meet ajv's duplicate-$id
+  // refusal, whichever runs first on a validator.
+  it('worker mode: a prompt whose arguments are an action\'s input schema, with an $id, loads, and the action still checks', async () => {
+    const pool = require('../../lib/validator-pool').pool();
+    for (const [n, warmFirst] of [[1, true], [2, false]]) {
+      const name = `shared-${n}`;
+      const spec = {device: {friendlyName: name, serviceList: {[SVC]: {actionList: [{name: 'go', input: {schema: '/svc/go/input'}}]}},
+        promptList: [{name: 'ask', arguments: {schema: '/svc/go/input'}, messages: [{role: 'user', text: '{{q}}'}]}]}};
+      const schemaDoc = {[SCHEMA]: 'https://json-schema.org/draft/2020-12/schema', $id: '#/',
+        svc: {go: {input: {$id: `urn:countinghouse-test:shared-go-${n}`, type: 'object', properties: {q: {type: 'string'}}}}}};
+      const own = await moduleSpec.fromParts(spec, schemaDoc, name);
+      moduleSpec.register(own);
+      if (warmFirst) assert.strictEqual(await pool.warm(own.key), null, 'the action compiled first');
+      assert.strictEqual(await moduleSpec.prompts(own), null, `${name}: the load is not refused`);
+      assert.deepStrictEqual(own.prompts, {ask: [{name: 'q', required: false}]});
+      assert.strictEqual(await pool.check(own.key, SVC, 'go', 'input', {input: {q: 'x'}}), null, `${name}: the action checks`);
+      if (!warmFirst) assert.strictEqual(await pool.warm(own.key), null, 'the action compiled after the prompts');
+      assert.deepStrictEqual(await moduleSpec.promptArgs(own, 'ask', {q: 'x'}), {errors: null});
+      moduleSpec.release(own);
+    }
+  });
+
   it('prompts/get is counted in the usage records, and never billed', async () => {
     usageSeen.length = 0;
     let billed = 0;
@@ -244,6 +349,9 @@ describe('mcp-contract 24: prompts (M10)', function() {
       const single = {deviceManager: {deviceMap: {single: device}, getAllDeviceSpecs: () => ({single: spec})}, rateLimit: (key, cb) => cb(null, {limited: false})};
       return new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method: 'prompts/list', params: {}}, single, KEY_A, (err, r) => resolve(r)));
     };
+    // and an $id the process's shared validator compiled already (the device's
+    // own action schema, as the worker-mode case above): no clash either
+    require('../../lib/validator').getSchemaValidator().compile({$id: 'urn:countinghouse-test:ask', type: 'object'});
     for (let n = 0; n < 2; n++) {
       const r = await listFor();
       assert.deepStrictEqual(r.result.prompts, [{name: 'single_ask', arguments: [{name: 'q', required: true}]}], `listing ${n + 1}: ${JSON.stringify(r)}`);

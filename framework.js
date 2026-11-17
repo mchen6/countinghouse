@@ -41,10 +41,12 @@ if (options.stdioWithPort === true) {
 // --sessionSocket (the shared runtime, C1): ch-local daemon's runtime
 {
   var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
-    : options.sessionSocket == null ? null
+    : options.sessionDirInvalid === true ? '--sessionDir needs a path'
+    : options.sessionDirNotDrive === true ? '--sessionDir on Windows must be a drive path (C:\\...), not a UNC or device path'
+      : options.sessionSocket == null ? (options.sessionDir != null ? '--sessionDir is only for --sessionSocket' : null)
       : options.stdio === true ? '--stdio and --sessionSocket: choose one'
         : options.sessionWithPort === true ? '--sessionSocket and --port: choose one'
-          : process.platform === 'win32' ? '--sessionSocket is not served on Windows yet'
+          : (process.platform === 'win32' && options.sessionDir == null) ? '--sessionSocket on Windows (a named pipe) needs --sessionDir, the directory of its secret'
             : options.store !== 'local' ? '--sessionSocket needs --store local (the shared runtime is one per user, on ch-local\'s local store)'
               : options.controlChannel !== 'ipc' ? '--sessionSocket needs --controlChannel ipc (ch-local daemon starts it so)'
               : options.singleIdentity !== true ? '--sessionSocket is only for the single-identity profile (--store local, no --authConfigPath or --authProvider)' : null;
@@ -374,17 +376,18 @@ try {
 }
 
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
-// ModuleManager.prototype.loadAllModules's registry-lookup branch, and
-// only when no --loadModule path was given (see that function's own
-// "in case loading local module, we won't read module info from DB"
-// early return) -- the --loadModule quickstart path never touches it.
+// ModuleManager.prototype.loadAllModules's registry-lookup branch, and only
+// under --moduleRegistry with no --loadModule path (options.usesModuleRegistry)
+// -- every other start, the --loadModule quickstart path and a start with no
+// module alike, never touches it.
 // Requiring sqlite3 unconditionally here loads its native binding on
 // every single startup regardless, which is unnecessary work for the
 // common case and the actual crash on a glibc too old for the current
 // prebuilt binary (ERR_DLOPEN_FAILED) -- gating the require itself,
 // not just the init() call, avoids that entirely for anyone who never
 // needed the registry DB in the first place.
-if (options.localModulePath == null) {
+// --moduleRegistry only: the registry is opt-in (lib/cli-options.js).
+if (options.usesModuleRegistry()) {
   require('./lib/device-db').init(options.modulePath);
 }
 
@@ -425,7 +428,12 @@ function serve() {
   }
 
   // routeManager.startServer();
-  mm.loadAllModules();
+  // Discovery starts once the server takes requests (RouteManager
+  // whenServing): over HTTP, listen() with a host binds only after resolving
+  // it, and a start with nothing to load finishes discovery at once, so
+  // "countinghouse ready" (which every waiter waits for) would otherwise come
+  // before the port is bound.
+  routeManager.whenServing(function() { mm.loadAllModules(); });
 }
 
 // The Redis host name a module worker is denied is resolved before any module
