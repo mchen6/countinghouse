@@ -15,6 +15,7 @@
           "rethrow": {"type": "boolean"},
           "route": {"type": "string"},
           "hostFile": {"type": "string"},
+          "hostDir": {"type": "string"},
           "realFd": {"type": "integer"}
         },
         "required": ["change"]

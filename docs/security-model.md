@@ -78,8 +78,10 @@ the runtime's own list or object as `this`; the exports such a check
 consults are frozen or read once at load. That holds for the lockdown
 (`lib/module-lockdown.js`), the file broker's worker side and its loader
 hook (`lib/fs-broker`) and the resolve shim. A grant is for reading only: a
-granted `openSync` opens read-only, and a granted `readFileSync` reads with
-options of the runtime's own. A guard hands a call on to the original it wraps
+granted `openSync` opens read-only, a granted `readFileSync` reads with
+options of the runtime's own, and a descriptor a grant opened is only
+stat'ed, read and closed (any other call on it is the broker's, which answers
+`EBADF`). A guard hands a call on to the original it wraps
 through a `Reflect.apply` taken at load, never the original's own `call` or
 `apply`, which a module could have replaced to receive it. Live lists a check
 consults (the allowed built-ins, the loopback names) are private to their

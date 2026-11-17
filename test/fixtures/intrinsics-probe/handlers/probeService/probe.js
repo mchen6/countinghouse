@@ -169,7 +169,30 @@ module.exports = async (input, ctx) => {
   // A read grant (an imported CommonJS file's) opens and reads read-only.
   if (input.route === 'grant-write') {
     const h2 = (await import('../../h2.cjs')).default;
-    return {output: {write: h2.tryWrite(), truncate: h2.tryTruncate(), length: h2.length()}};
+    return {output: {write: h2.tryWrite(), truncate: h2.tryTruncate(), length: h2.length(), fdOps: h2.fdOps()}};
+  }
+  // The loader's package.json read, called with no directory while a setter
+  // on Array.prototype's index 0 turns the directory it is handed into a
+  // host one: what is checked is what is read.
+  if (input.route === 'read-package') {
+    const M = module.constructor;
+    const readPackage = M != null ? M._readPackage : undefined;
+    if (typeof(readPackage) !== 'function') return {output: {readPackage: 'unreachable'}};
+    // (the first write only: Node's own arrays after it keep their values)
+    let swapped = 0;
+    const undoSetter = replace(Array.prototype, '0', {configurable: true, enumerable: false,
+      get() { return undefined; },
+      set(v) { ObjectDefineProperty(this, '0', {value: swapped++ === 0 ? input.hostDir : v, writable: true, enumerable: true, configurable: true}); }});
+    let got = null;
+    try {
+      const r = readPackage();
+      got = r == null ? null : {exists: r.exists === true, name: r.name != null ? StringCtor(r.name) : null};
+    } catch (e) {
+      got = {threw: StringCtor(e && e.code)};
+    } finally {
+      undoSetter();
+    }
+    return {output: {readPackage: got}};
   }
   const result = {builtins: {}, getBuiltin: {}};
   let host = null;

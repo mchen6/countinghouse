@@ -57,16 +57,21 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
     this.timeout(240000);
     let server = null;
     let base = null;
-    // a host file outside every grant, made by the test
-    let hostFile = null;
-    const HOST_FILE = () => hostFile;
+    // host files outside every grant and outside the namespace (under the
+    // home: os.tmpdir() can be the host side of the module's /tmp), one for
+    // each change (under audit each read is reported once), and a host
+    // directory with a package.json
+    const HOST_FILE = (i) => path.join(base, `host-file-${i}.txt`);
+    const HOST_DIR = () => path.join(base, 'host-pkg');
+    const HOST_PKG_NAME = 'ch-sandbox-62-host-pkg';
     before(async () => {
       assert.ok(CHANGES.length >= 35, CHANGES.join(', '));
       assert.ok(CHANGES.includes('Array.prototype index setters') && CHANGES.includes('WeakSet.prototype.has/add'), CHANGES.join(', '));
       assert.ok(OUTSIDE_FILES.length >= CHANGES.length, `${OUTSIDE_FILES.length} files for ${CHANGES.length} changes`);
-      base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sandbox-62-'));
-      hostFile = path.join(base, 'host-file.txt');
-      fs.writeFileSync(hostFile, 'a host file\n');
+      base = fs.mkdtempSync(path.join(os.homedir(), '.ch-sandbox-62-'));
+      for (let i = 0; i < CHANGES.length; i++) fs.writeFileSync(HOST_FILE(i), 'a host file\n');
+      fs.mkdirSync(HOST_DIR());
+      fs.writeFileSync(path.join(HOST_DIR(), 'package.json'), JSON.stringify({name: HOST_PKG_NAME}));
       server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode,
         '--moduleDataPath', path.join(base, 'store')]);
       const loaded = await post(port, KEY, '/load-module', {path: FIXTURE, name: PROBE});
@@ -79,10 +84,31 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
       const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'grant-write'}});
       assert.strictEqual(r.status, 200, JSON.stringify(r.body));
       const out = r.body.output;
-      if (mode === 'enforce') assert.strictEqual(out.write.outcome, 'refused', `openSync(r+) of a granted file: ${JSON.stringify(out)}`);
+      const shown = JSON.stringify(out);
+      if (mode === 'enforce') {
+        // (the broker's answer: the imported file's host path is outside the namespace)
+        assert.deepStrictEqual(out.write, {outcome: 'refused', code: 'ENOENT'}, `openSync(r+) of a granted file: ${shown}`);
+        // a descriptor the grant opened (a real one) stats, reads and
+        // closes; every other descriptor call is the broker's, which does
+        // not know it
+        for (const op of ['fstat', 'read', 'close']) assert.strictEqual(out.fdOps[op].outcome, 'reached', `${op} on the grant's descriptor: ${shown}`);
+        for (const op of ['fchmod', 'fchown', 'futimes', 'fsync', 'ftruncate', 'write']) {
+          assert.deepStrictEqual(out.fdOps[op], {outcome: 'refused', code: 'EBADF'}, `${op} on the grant's read-only descriptor: ${shown}`);
+        }
+      }
       assert.strictEqual(fs.readFileSync(H2, 'utf8'), h2Before, 'the file is as it was');
-      assert.ok(out.length > 0, JSON.stringify(out));
+      assert.ok(out.length > 0, shown);
     });
+    // the loader's package.json read reads the directory it checked (enforce
+    // hides a host directory's package.json from the loader; audit hides nothing)
+    if (mode === 'enforce') {
+      it('Module._readPackage reads the directory it checked, with a setter on Array.prototype[0]', async () => {
+        const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input: {change: CHANGES[0], route: 'read-package', hostDir: HOST_DIR()}});
+        assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+        const got = r.body.output.readPackage;
+        assert.ok(got === 'unreachable' || (got != null && got.name !== HOST_PKG_NAME && got.exists !== true), `the host directory's package.json was read: ${JSON.stringify(got)}`);
+      });
+    }
     after(() => {
       if (h2Before != null && fs.readFileSync(H2, 'utf8') !== h2Before) fs.writeFileSync(H2, h2Before);
       stopServer(server);
@@ -101,7 +127,7 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
         // (a name under .invalid never resolves: no connection is made, audit's included)
         const input = {change, builtins: mode === 'enforce' ? BLOCKED : (i < BLOCKED.length ? [BLOCKED[i]] : []),
           runtimeFile: OUTSIDE_FILES[i], outsidePath: path.join(os.tmpdir(), `ch-sandbox-62-outside-${i}.txt`), host: `ch-sandbox-62-${i}.invalid`,
-          hostFile: HOST_FILE(), realFd: 2};
+          hostFile: HOST_FILE(i), realFd: 2};
         const r = await post(port, KEY, `/devices/${deviceIDForName(PROBE)}/invoke-action`, {serviceID: SERVICE, actionName: 'probe', input});
         // A change the runtime's own code in the worker then trips over (Map's
         // get, say) can end the module's worker: the module's own loss. A
@@ -163,6 +189,9 @@ for (const {mode, port} of [{mode: 'enforce', port: testPort(9714)}, {mode: 'aud
           // parser throw in that realm: the check then fails closed, and the
           // report names the target "invalid")
           await seen(new RegExp(`${PROBE} violation net (?:${esc(input.host)}:80\\b|invalid )`), 'an ungranted host');
+          // the file broker: a host file outside the namespace, read (audit
+          // allows) and reported
+          await seen(new RegExp(`module sandbox: ${PROBE} file outside ${esc(input.hostFile)}\\b`), 'a host file outside the namespace');
         }
         if (out != null) for (const name of ORIGINALS) assert.ok(!out.handed.includes(name), `the original ${name} was handed to the replaced ${change}: ${shown}`);
         // what is checked is what is used: never the host file
