@@ -181,6 +181,53 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     assert.deepStrictEqual(r.result.completion, {values: ['yes', 'maybe'], total: 2, hasMore: false}, JSON.stringify(r));
   });
 
+  it('a value that only matches lowercased (U+0130 lowercases to two code units) is still matched past 256 characters', () => {
+    const completion = require('../../lib/mcp/completion');
+    const candidate = '\u0130'.repeat(200);
+    const r = completion.match([candidate], candidate.toLowerCase().slice(0, 300));
+    assert.deepStrictEqual(r, {values: [candidate], total: 1, hasMore: false});
+    assert.deepStrictEqual(completion.match([candidate], 'x'.repeat(513)), {values: [], total: 0, hasMore: false});
+  });
+
+  it('a module\'s candidates are bounded over all its prompts (10000), later arguments offering none', async () => {
+    const promptArguments = require('../../lib/prompt-arguments');
+    const many = (k) => ({type: 'string', enum: Array.from({length: 1000}, (_, i) => `${k}-${i}`)});
+    const props = {};
+    for (let k = 0; k < 12; k++) props[`a${String(k).padStart(2, '0')}`] = many(k);
+    const spec = {device: {promptList: [{name: 'big', arguments: {schema: '/prompts/big'}}]}};
+    const schemaDoc = {prompts: {big: {type: 'object', properties: props}}};
+    const device = {spec, schemaDoc, resolveSchemaFromPath: (pointer, x, cb) => cb(null, null, schemaDoc.prompts.big)};
+    const d = (await promptArguments.deriveAll(device)).get('big').candidates;
+    const counts = Object.keys(props).map((k) => d[k].length);
+    assert.deepStrictEqual(counts, [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 0, 0]);
+  });
+
+  it('single-thread mode: a derivation that fails is the server\'s error (-32603), not an unknown argument', async () => {
+    const spec = {device: {friendlyName: 'broken', serviceList: {}, promptList: [{name: 'ask', arguments: {schema: '/prompts/ask'}, messages: [{role: 'user', text: '{{q}}'}]}]}};
+    const device = {spec, schemaDoc: {}, resolveSchemaFromPath: (pointer, x, cb) => cb(new Error('no such schema')), packageInfo: {name: 'broken'}};
+    const single = {deviceManager: {deviceMap: {broken: device}, getAllDeviceSpecs: () => ({broken: spec})}, rateLimit: (key, cb) => cb(null, {limited: false})};
+    const r = await complete(KEY_A, 'broken_ask', 'q', '', {iface: single});
+    assert.strictEqual(r.error && r.error.code, -32603, JSON.stringify(r));
+  });
+
+  it('a transport that throws on the answer leaves no unhandled rejection', async () => {
+    const seen = [];
+    const onUnhandled = (e) => seen.push(e);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await new Promise((resolve) => {
+        gateway.handle({jsonrpc: '2.0', id: 1, method: 'completion/complete', params: {ref: {type: 'ref/prompt', name: 'colours_paint'}, argument: {name: 'colour', value: 'r'}}}, ci, KEY_A, () => {
+          setTimeout(resolve, 50);
+          throw new Error('the socket is gone');
+        });
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+    }
+    assert.deepStrictEqual(seen, []);
+  });
+
   for (const modern of [false, true]) {
     it(`${modern ? 'discover' : 'initialize'} declares completions`, async () => {
       const r = modern ? await ask('server/discover', KEY_A, {}, {modern: true})
