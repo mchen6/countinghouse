@@ -35,7 +35,11 @@
   - `completed` and `cancelled`: no `statusMessage`.
   - The legacy era's statusMessage stays as M15 left it.
 - **D4. Shared runtime's sessions (REVERSED by the Reviewer):** B5 Task 2 removes M15's shared-runtime refusals and turns tasks on in the shared runtime, scoped by session. So M16 works there too: the listener's session is the request's session, and D1's shared lookup does the scoping.
-- **Who extracts the builder (Reviewer, to avoid a collision in `tasks/get`):** B, in B5 Task 2, as a pure function `modernTaskView(record, cdifInterface, authCtx) -> Promise<DetailedTask>`. M16 consumes it and never touches `tasks/get`'s handler.
+- **Who extracts the builder (Reviewer, to avoid a collision in `tasks/get`):** B, in B5 Task 2 (branch `b-b5-session-tasks`; it opens after #329 merges). They stay in `lib/mcp/gateway.js`, because they need its internals, and are exported:
+  - `findModernTask(authCtx, taskId) -> Promise<{taskId, record} | {taskId, tombstone} | null>`: tasks/get's own lookup (getJob, `seesJob`, `ownsJob`, plus the tombstone's owner and session). `null` is everything tasks/get answers -32602;
+  - `detailedTask(found, cdifInterface, authCtx) -> Promise<DetailedTask>`: tasks/get's exact body (the cancelled view, or the view plus `result` or `error`);
+  - `modernTaskView`, `cancelledTaskView` (used by `detailedTask`), and `withTaskSession(authCtx, opts)` (the request's session; a non-live one sees nothing).
+  Modern tasks/get is `findModernTask`, then `detailedTask`, then the reply. M16 calls the same two and never touches tasks/get's handler.
 
 ## Global constraints
 
@@ -61,14 +65,14 @@
 **Files:**
 - Create: `lib/task-events.js`
 - Modify:
-  - `lib/mcp/gateway.js`: `modernTaskOf` gains `statusMessage` per D3. `modernTaskView` comes from B5 Task 2 (B extracts it); if that hasn't merged when Task 1 is ready, Task 1 lands the `statusMessage` line only, and the rest waits;
+  - `lib/mcp/gateway.js`: `modernTaskOf` (the one place the base view is built) gains `statusMessage` per D3;
   - `lib/job-control.js`: the `QueueEvents` `'active'`, `'progress'`, `'completed'` and `'failed'` handlers, and `removeJob`, emit for a job whose `data.era === 'modern'`;
   - `lib/job-control-local.js`: `run`'s active, `updateJobProgress`, `finish`, `failed`'s final, and `removeJob`.
 - Test: `test/mcp-contract/27-tasks-modern.js` (statusMessage cases); `test/jobs-local/03-task-events.js` (server-free, local runner)
 
 **Interfaces:**
 - Produces: `taskEvents.on(fn(taskId, kind))` and `taskEvents.emit(taskId, kind)`, with `kind ∈ {'active', 'progress', 'completed', 'failed', 'removed'}`.
-- Consumes: B5 Task 2's `modernTaskView(record, cdifInterface, authCtx) -> Promise<DetailedTask>` and its `getJob` (`seesJob` then `ownsJob`).
+- Consumes: nothing from B5 Task 2 yet; Task 2 does.
 
 - [ ] Failing tests:
   - a task whose handler calls `ctx.job.progress(42.4)` reads `statusMessage: "42%"` on `tasks/get` while working, and nothing once completed;
@@ -93,7 +97,7 @@
 - Test: `test/mcp-contract/28-task-notifications.js` (spawned, `--workerThread --store local`, like 27; one case also on `--store redis` with run-local's private Redis). The SSE listen client comes from `test/mcp-contract/09-subscriptions.js`. Plus a shared-runtime case (D4 reversed): two sessions each listen for both sessions' task ids, and each is agreed and notified only its own.
 
 **Interfaces:**
-- Consumes: Task 1's `taskEvents` and `modernTaskView`.
+- Consumes: Task 1's `taskEvents`, and B5 Task 2's `findModernTask` (at listen, and again at each send) and `detailedTask` (each notification's params), with the authCtx from `withTaskSession`.
 
 - [ ] Failing tests:
   - listen with `taskIds: [own, foreign, unknown, 'not-a-task']`: the ack lists only `own`, and a listen with `[foreign]` alone acks `[]`, the same as `[unknown]`;
