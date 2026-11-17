@@ -31,6 +31,19 @@ describe('sessions 20: the scope rule (shared runtime B5, Task 0)', () => {
     assert.deepStrictEqual(scope.of(B), {shared: true, session: B});
   });
 
+  // the reviewer's fix on #334: a caller that forgets its scope sees nothing in shared mode (fail closed);
+  // outside shared mode it sees everything, as before
+  it('a missing scope sees nothing in shared mode, and everything outside it; only INTERNAL, by identity, sees all there', () => {
+    for (const missing of [undefined, null]) assert.strictEqual(scope.sees(missing, A), true, 'outside shared mode');
+    sessions.attach(new EventEmitter());
+    for (const missing of [undefined, null]) {
+      assert.strictEqual(scope.sees(missing, 'any'), false, String(missing));
+      assert.strictEqual(scope.sees(missing, null), false, String(missing));
+    }
+    assert.strictEqual(scope.sees({shared: true, session: null, internal: true}, A), false, 'a look-alike of INTERNAL is not it');
+    assert.strictEqual(scope.sees({shared: false, session: null}, A), false, 'a scope made before shared mode began is judged by the mode now');
+  });
+
   it('a scope is frozen, and a session that is no string is none', () => {
     sessions.attach(new EventEmitter());
     const s = scope.of(A);
