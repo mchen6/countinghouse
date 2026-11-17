@@ -114,7 +114,8 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     outOf(await s.call('B', 'touch'));
     const v2 = perSession(home, {dir: path.join(home, 'packs', NAME, '1.1.0', 'node_modules', NAME), version: '1.1.0',
       edit: (src) => src.replace('return {output: {file: n, store: stored, memory}};', 'return {output: {file: n, store: stored, memory: memory + 1000}};')});
-    const answer = await r.control({type: 'reload', name: NAME, scenario: v2});
+    // on the shared runtime a pack message names its pack, and a reload whether it is global (B3, lib/pack-control.js)
+    const answer = await r.control({type: 'reload', name: NAME, scenario: v2, pack: NAME, global: true});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
     await until(async() => counts(r).ended === 2, 20000);
     assert.deepStrictEqual(outOf(await s.call('A', 'touch')), {file: 2, store: 2, memory: 1001});
@@ -126,7 +127,7 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     outOf(await s.call('B', 'touch'));
     const held = s.call('A', 'hold', {ms: 1500});
     await until(async() => counts(r).up === 2, 20000);
-    const answer = await r.control({type: 'unload', name: NAME});
+    const answer = await r.control({type: 'unload', name: NAME, pack: NAME});
     assert.strictEqual(answer.ok, true, JSON.stringify(answer));
     const a = await held;
     assert.ok(a != null && a.result != null, JSON.stringify(a));

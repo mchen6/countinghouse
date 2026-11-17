@@ -21,6 +21,7 @@
 // - the value checked is the structured clone the module's worker receives,
 //   and ajv's log lines are bounded and escaped.
 const assert = require('assert');
+const {sameRef, notSameRef} = require('../helpers/same-ref');
 
 const TIMEOUT_MS = 300;
 const COMPILE_MS = 2000;
@@ -884,9 +885,17 @@ describe('module-loading 24: the validator pool', function() {
         for (const m of [a, b, c]) assert.strictEqual(await p.warm(m.key), null);
         await warmed(p);
         const spare = p.spare;
-        // a's slow input stalls the home past its deadline: the home is replaced
+        const home = p.slots[0];
+        // a's slow input stalls the home past its deadline: the home is
+        // replaced. Either way it's refused (lib/validator-pool.js
+        // onDeadline): on time, the home is failed first and then the check
+        // answered; started late, answered first and the home failed a full
+        // budget after its start. So the replacement is waited for, within
+        // one budget (#344: CI took the late way, and the old assertion
+        // here, failing, diffed two slots and took the runner)
         assert.strictEqual(codeOf(await checkFrom(p, a, STALLING, 'u_stall')), 'VALIDATION_TIMEOUT');
-        assert.strictEqual(p.slots[0], spare, 'the spare took the place at once');
+        for (const until = Date.now() + TIMEOUT_MS + 2000; p.slots[0] === home && Date.now() < until;) await new Promise((r) => setTimeout(r, 10));
+        sameRef(p.slots[0], spare, 'the ready spare took the place, nothing else');
         assert.strictEqual(spare.compiled.size, 0, 'and warmed nothing');
         assert.strictEqual(await checkIn(b, {n: 1}, p), null);
         assert.strictEqual(await checkIn(c, {n: 1}, p), null);
@@ -949,7 +958,7 @@ describe('module-loading 24: the validator pool', function() {
           const home = p.slots[0];
           assert.strictEqual(codeOf(await p.check(a.key, SERVICE, 'a', 'input', {input: STALLING}, 'u_stall')), 'VALIDATION_TIMEOUT');
           for (const until = Date.now() + TIMEOUT_MS + 2000; p.slots[0] === home && Date.now() < until;) await new Promise((r) => setTimeout(r, 10));
-          assert.notStrictEqual(p.slots[0], home, 'slot 0 replaced within one budget of the refusal');
+          notSameRef(p.slots[0], home, 'slot 0 replaced within one budget of the refusal');
           assert.ok(p.slots[0].replacement, 'a fresh replacement in slot 0');
           // its warm-up done: the slots ready and idle (not warmed(), which also
           // waits for a ready spare, and this pool has none)
