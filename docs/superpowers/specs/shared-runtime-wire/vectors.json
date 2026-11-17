@@ -631,6 +631,159 @@
     "rule": "exact apart from the id; sent with the request's seq instead of an M over maxToShim",
     "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"the answer is larger than this connection carries\",\"data\":{\"countinghouse/code\":\"OUTPUT_TOO_LARGE\",\"retryable\":false}}}"
   },
+  "conditionsWhy": {
+    "rule": "on a status-ok client line whose conditions is \"no\", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is \"~/\" and a path under the user's home, its segments split on \"/\" with none empty and none \"..\", no backslash anywhere (a separator on Windows), at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown",
+    "hiddenClass": "\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2069\\u2800\\u3164\\ud800-\\udfff\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff9-\\ufffb\\u{1d173}-\\u{1d17a}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}",
+    "reasons": [
+      "client hook present",
+      "project plugin or marketplace",
+      "plugin hook present",
+      "client settings unreadable",
+      "no conditions known",
+      "not an interactive session",
+      "project directory unknown"
+    ],
+    "accepted": [
+      {
+        "why": "a hook in the user's settings",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/.claude/settings.json"
+        }
+      },
+      {
+        "why": "a plugin with a hook",
+        "value": {
+          "reason": "plugin hook present",
+          "at": "~/.claude/plugins/cache/example-market/example-plugin/1.0.0"
+        }
+      },
+      {
+        "why": "a directory whose name starts with two dots is still under the home",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/..dotfiles/.claude/settings.json"
+        }
+      },
+      {
+        "why": "a reason with no place",
+        "value": {
+          "reason": "not an interactive session"
+        }
+      }
+    ],
+    "refused": [
+      {
+        "why": "not an object",
+        "value": "client hook present"
+      },
+      {
+        "why": "a reason outside the set",
+        "value": {
+          "reason": "something else"
+        }
+      },
+      {
+        "why": "an absolute path",
+        "value": {
+          "reason": "client hook present",
+          "at": "/home/example/.claude/settings.json"
+        }
+      },
+      {
+        "why": "a path not under ~/",
+        "value": {
+          "reason": "client hook present",
+          "at": "../example/.claude/settings.json"
+        }
+      },
+      {
+        "why": "a path that leaves the home by ..",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/../example/.claude/settings.json"
+        }
+      },
+      {
+        "why": "a path that leaves the home by a later ..",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/a/../../example/.claude/settings.json"
+        }
+      },
+      {
+        "why": "a variation selector in the path",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/.claude/x\ufe0fy"
+        }
+      },
+      {
+        "why": "a Hangul filler in the path",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/.claude/x\u3164y"
+        }
+      },
+      {
+        "why": "a path over 200 characters",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      {
+        "why": "a bidi override in the path",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/.claude/set\u202etings.json"
+        }
+      },
+      {
+        "why": "a tag character in the path",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/.claude/settings\udb40\udc41.json"
+        }
+      },
+      {
+        "why": "a path that is not a string",
+        "value": {
+          "reason": "client hook present",
+          "at": 7
+        }
+      },
+      {
+        "why": "a key beside reason and at",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/.claude/settings.json",
+          "path": "/home/example"
+        }
+      },
+      {
+        "why": "a backslash, a separator on Windows, where split on \"/\" sees no ..",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/..\\..\\Users\\example\\.claude\\settings.json"
+        }
+      },
+      {
+        "why": "an empty segment after ~/, which some path joins read as absolute",
+        "value": {
+          "reason": "client hook present",
+          "at": "~//home/example/x"
+        }
+      },
+      {
+        "why": "an empty segment inside the path",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/a//b"
+        }
+      }
+    ]
+  },
   "githubTokenPrecedence": {
     "rule": "start (a per-session runtime) takes the first of: the client's COUNTINGHOUSE_GITHUB_TOKEN, the stored token, gh auth token, the client's GITHUB_TOKEN. The daemon's runtime, which no client environment reaches, takes the stored token, else gh's, at its start. The conditions check sends the keyed hash of the token start would choose, except that a gh login is sent as null (the daemon has it too): so token is mac(env), mac(stored), null or mac(GITHUB_TOKEN). The session shares when token is null (the daemon's, whatever it holds), or when token is the hash of the token the daemon holds; otherwise own-runtime (token). A stored token that fails its file checks counts as none",
     "cases": [
