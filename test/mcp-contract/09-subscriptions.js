@@ -308,4 +308,59 @@ describe('subscriptions/listen (#231)', () => {
       assert.strictEqual(hub.count(KEY), 0);
     });
   });
+
+  // M8: notices now follow a key's own calls, so a listen whose client
+  // never reads would hold every one of them. Past what a stream may hold
+  // unread, it is closed: the listen is cancelled and its slot freed.
+  describe('the /mcp route: a client that never reads', () => {
+    const options = require('../../lib/cli-options');
+    const KEY = 'listen-unread-key';
+    let saved;
+    let server;
+    let port;
+    let opened = null;
+    let closed = 0;
+    // a hub that hands the test the listen's writer
+    const hub = {
+      open(o) { opened = o; return {ok: true, close: () => { closed += 1; }}; },
+      count: () => 0, endAll() {}, changed() {}, callSucceeded() {}, closeSession() {}
+    };
+    before((done) => {
+      saved = {debug: options.debug, debugKey: options.debugKey};
+      options.debug = true;
+      options.debugKey = KEY;
+      const app = express();
+      app.use(express.json());
+      app.use('/mcp', require('../../lib/routes/mcp')(null, null, hub, {maxListenBuffered: 64 * 1024}));
+      server = app.listen(0, '127.0.0.1', () => { port = server.address().port; done(); });
+    });
+    after((done) => {
+      options.debug = saved.debug;
+      options.debugKey = saved.debugKey;
+      server.closeAllConnections();
+      server.close(() => done());
+    });
+
+    it('its stream is closed once it holds more than it may unread, cancelling the listen', async() => {
+      let clientRes = null;
+      const data = JSON.stringify({jsonrpc: '2.0', id: 90, method: 'subscriptions/listen', params: {_meta: META, notifications: {toolsListChanged: true}}});
+      const req = http.request({host: '127.0.0.1', port, path: '/mcp', method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Content-Length': Buffer.byteLength(data),
+          'MCP-Protocol-Version': V, 'Mcp-Method': 'subscriptions/listen', 'X-CH-Key': KEY}}, (res) => {
+        clientRes = res;
+        res.pause();   // and never read
+      });
+      req.on('error', () => {});
+      req.end(data);
+      assert.ok(await until(() => opened != null && clientRes != null));
+      // far more than the sockets between them can hold, in notices of 64 KiB
+      const big = {jsonrpc: '2.0', method: 'notifications/resources/updated', params: {uri: `countinghouse://m/x/${'y'.repeat(64 * 1024)}`}};
+      for (let i = 0; i < 400 && closed === 0; i++) {
+        opened.write(big);
+        await tick(1);
+      }
+      assert.ok(await until(() => closed === 1), 'the stream was never closed');
+      req.destroy();
+    });
+  });
 });

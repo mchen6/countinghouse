@@ -380,6 +380,9 @@ once per URI within a quarter second. It is coarse on purpose: it says only
 "read again", whatever the call changed. A call that fails, or is refused
 before your handler runs, sends nothing. On a shared runtime, a module that
 keeps its state per session tells only the calling session's subscriptions.
+A resource's `changesWith` may not name its own read action (the load is
+refused): every read would announce a change, and a client that reads again
+on each would loop.
 
 An action that declares `longRunning: true` runs as a task for a 2026-07-28
 client that declares the `io.modelcontextprotocol/tasks` extension (with

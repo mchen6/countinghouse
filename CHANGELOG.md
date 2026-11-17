@@ -30,7 +30,9 @@ the auth config.
   `notifications/resources/updated`, once per URI per quarter second. On a
   shared runtime a per-session module's change reaches only the calling
   session. A call with no key (`--debug` without `--debugKey`) is not
-  recorded, so it announces nothing.
+  recorded, so it announces nothing. An HTTP listen whose client leaves
+  more than 1 MiB unread is closed (the listen is cancelled). A resource's
+  `changesWith` naming its own read action refuses the load.
 
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
 groups everything below by what an operator has to do. Measured cost of the

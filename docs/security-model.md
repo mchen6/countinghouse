@@ -956,6 +956,15 @@ is announced where it is recorded, on the main thread, by every entry path;
 module code in a worker can't record one. A call with no key (`--debug`
 without `--debugKey`) is not recorded, and announces nothing.
 
+What a listen costs is bounded. Calls are held for a quarter second in a
+batch of their own key and session, each with its own timer, so a notice's
+timing says nothing about another key's or session's calls; a batch holds
+each call once and never starts a round while its last one runs. An HTTP
+listen whose client leaves more than 1 MiB unread is closed, which cancels
+it and frees its slot, so a client that never reads holds nothing of a
+key's notices. The runtime's own reads of a listener's lists never spend
+its rate limit.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.

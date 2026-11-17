@@ -193,6 +193,48 @@ describe('M8: the listen hub, resources and prompts', function() {
       assert.deepStrictEqual([a.got.length, b.got.length], [2, 1]);
     });
 
+    it('another key\'s call never moves this key\'s settle: each key (and session) is batched and timed apart', async() => {
+      const slow = createHub({lists: {}, settleMs: 60, perSession: () => false,
+        resolveUris: async(appKey, session, uris) => new Map(uris.map((u) => [u, {deviceID: 'd1', changesWith: ['notesService.save']}]))});
+      const at = {};
+      slow.open({id: 1, appKey: 'ka', filter: {resourceSubscriptions: [U1]}, write: () => { at.a = Date.now(); }, finish: () => {}});
+      slow.open({id: 2, appKey: 'kb', filter: {resourceSubscriptions: [U1]}, write: () => { at.b = Date.now(); }, finish: () => {}});
+      const t0 = Date.now();
+      slow.callSucceeded({appKey: 'ka', deviceID: 'd1', serviceID: 'notesService', actionName: 'save'});
+      await tick(40);
+      const tb = Date.now();
+      slow.callSucceeded({appKey: 'kb', deviceID: 'd1', serviceID: 'notesService', actionName: 'save'});
+      assert.ok(await until(() => at.a != null && at.b != null));
+      assert.ok(at.a - t0 >= 55, `A's notice came ${at.a - t0} ms after its call`);
+      assert.ok(at.b - tb >= 55, `B's notice came ${at.b - tb} ms after its call: B's settle was moved by A's call`);
+    });
+
+    it('a settle\'s calls are held once each; its round lists each view once; a round never overlaps the last', async() => {
+      let running = 0;
+      let most = 0;
+      let resolves = 0;
+      const h = createHub({lists: {}, settleMs: 5, perSession: () => false, resolveUris: async(appKey, session, uris) => {
+        resolves++;
+        running++;
+        most = Math.max(most, running);
+        await tick(80);
+        running--;
+        return new Map(uris.map((u) => [u, {deviceID: 'd1', changesWith: ['notesService.save']}]));
+      }});
+      const got = [[], []];
+      for (const i of [0, 1]) h.open({id: i, appKey: 'k', filter: {resourceSubscriptions: [U1, U2]}, write: (m) => got[i].push(m.params.uri), finish: () => {}});
+      for (let n = 0; n < 20; n++) h.callSucceeded({appKey: 'k', deviceID: 'd1', serviceID: 'notesService', actionName: 'save'});
+      assert.ok(await until(() => got[0].length === 2 && got[1].length === 2));
+      assert.strictEqual(resolves, 1, 'two listeners of one view, twenty identical calls: one resolve');
+      // calls while that round runs wait for the next one
+      for (let n = 0; n < 3; n++) {
+        h.callSucceeded({appKey: 'k', deviceID: 'd1', serviceID: 'notesService', actionName: 'save'});
+        await tick(20);
+      }
+      assert.ok(await until(() => got[0].length === 4));
+      assert.strictEqual(most, 1, 'two rounds ran at once');
+    });
+
     it('a closed subscription is sent nothing', async() => {
       see('k', null, U1, 'd1', ['notesService.save']);
       const l = listener(5, {resourceSubscriptions: [U1]});
@@ -200,6 +242,31 @@ describe('M8: the listen hub, resources and prompts', function() {
       called('k', 'd1', 'notesService', 'save');
       await tick(60);
       assert.deepStrictEqual(l.got, []);
+    });
+  });
+
+  // the hub's own reads of a listener's lists (lib/route-manager.js, with
+  // wholeList) resolve its identity and never spend its rate limit: a key at
+  // its limit still has its lists compared, and a change is never skipped
+  describe('the lists the hub reads', () => {
+    const options = require('../../lib/cli-options');
+    const gateway = require('../../lib/mcp/gateway');
+    const KEY = 'hub-lists-key';
+    const META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
+    let saved;
+    before(() => { saved = {debug: options.debug, debugKey: options.debugKey}; options.debug = true; options.debugKey = KEY; });
+    after(() => { options.debug = saved.debug; options.debugKey = saved.debugKey; });
+    // an interface whose rate limit is spent, with no module loaded
+    const spent = {rateLimit: (key, cb) => cb(null, {limited: true}), deviceManager: {getAllDeviceSpecs: () => ({}), deviceMap: {}}};
+    const ask = (method, opts) => new Promise((resolve) => gateway.handle({jsonrpc: '2.0', id: 1, method, params: {_meta: META}}, spent, KEY,
+      (err, res) => resolve(res), opts));
+    it('a client\'s resources/list at its limit is refused; the hub\'s whole-list read is answered', async() => {
+      for (const method of ['resources/list', 'resources/templates/list']) {
+        const asked = await ask(method, {});
+        assert.ok(asked.error != null && /rate limit/.test(asked.error.message), JSON.stringify(asked));
+        const hubs = await ask(method, {wholeList: true});
+        assert.ok(hubs.result != null, JSON.stringify(hubs));
+      }
     });
   });
 });
