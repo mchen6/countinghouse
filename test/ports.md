@@ -19,6 +19,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9740–9749 | C |
 | 9750–9754 | A: lean worker step 3 |
 | 9790–9799 | B (2026-11-14) |
+| 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
 

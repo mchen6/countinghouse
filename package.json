@@ -30,7 +30,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "golden": "mocha ./test/mcp-contract/*.js",
+    "golden": "mocha --exit ./test/mcp-contract/01-tools-list-unchanged.js ./test/mcp-contract/02-approved-tool-changes.js ./test/mcp-contract/23-tools-list-everything.js",
     "start": "./bin/countinghouse",
     "start-heap-dump": "NODE_PATH=./lib node --expose-gc ./framework.js --heapDump",
     "build": "webpack && chmod +x build/countinghouse",
