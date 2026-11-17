@@ -221,6 +221,14 @@ describe('questions 07: a part\'s ctx.ask, through composition (MCP completeness
       assert.deepStrictEqual(seen.sort(), [OTHER.deviceID, OUTER.deviceID, PART.deviceID].sort());
     });
 
+    // the reviewer's deep review of #330, 3: the target bound, on its own: one module declaring more targets than it
+    it('one module declaring more targets than the walk looks at is taken as one that can ask', () => {
+      // every target on one device (actions a0, a1, ...), so the module bound is never reached: only the target bound
+      const many = Array.from({length: ask.MAX_REACH * 8 + 1}, (unused, i) => ({deviceID: 'one', serviceID: 's', actionName: `a${i}`}));
+      assert.strictEqual(ask.canAsk(at(OUTER), world([], {[OUTER.deviceID]: many})), true);
+      assert.strictEqual(ask.canAsk(at(OUTER), world([], {[OUTER.deviceID]: many.slice(0, ask.MAX_REACH * 8)})), false, 'at the bound: walked, and none asks');
+    });
+
     it('the walk is bounded: past its bound, or when a lookup fails, the call is taken as one that can', () => {
       // a chain of modules longer than the bound, none of which asks
       const chain = {};

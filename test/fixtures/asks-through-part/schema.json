@@ -17,6 +17,11 @@
               "pass",
               "catch"
             ]
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000
           }
         },
         "required": [

@@ -10,6 +10,11 @@
           "id": {
             "type": "string",
             "maxLength": 64
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5000
           }
         },
         "required": [

@@ -10,6 +10,6 @@ module.exports = async (input, ctx) => {
     }
     return {output: {caught: 'nothing'}};
   }
-  const got = await ctx.call('asks-part/partService.store', {id: input.id});
+  const got = await ctx.call('asks-part/partService.store', Object.assign({id: input.id}, Number.isInteger(input.wait) ? {wait: input.wait} : {}));
   return {output: {part: got.output}};
 };

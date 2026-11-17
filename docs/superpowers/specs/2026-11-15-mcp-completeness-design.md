@@ -340,6 +340,7 @@ It's unavoidable because a question arises in the middle of a handler, from what
 - **The schema** is within MCP's form subset: a flat object of string, number, integer, boolean and enum properties, at most 8.
 - **The message** is at most 500 characters, with `{name}` placeholders. `ctx.ask` supplies the values: strings (cut to 200 characters and cleaned of control and bidi characters, as output lines are), numbers and booleans.
 - **The runtime composes the dialog:** `<module name>: <message>`, at most 1000 characters. So the sentence a user reads was reviewed at install, and the user sees which third-party module is asking.
+  - **Over composition (the reviewer's ruling, 2026-11-16):** `<module name>` is always the called, LISTED module's, the one whose tool the user called, whoever in the chain asks. An unlisted part is never named to the client, as M9 never names one. The runtime's own log line and usage record (`askedBy`) name the part that asked. So a scenario vouches for its parts' declared questions: whoever reviews a scenario reviews its parts' `questions` too.
 - **Limits.** At most 4 questions per action. Validate warns when a property's name or title reads like a credential (password, token, key, secret, card): the spec forbids asking for one in a form.
 
 **How a handler waits across a stateless transport: it runs again.**
@@ -499,7 +500,7 @@ One acceptance test in ch-local proves it through the real shim: progress frames
 - A module author who reads files from a variable must guard it themselves, as for any input; the docs say so.
 - `countinghouse://r/` and `countinghouse://m/` are the only forms read. Any other scheme is "not found", and the runtime never fetches a URL.
 
-**Dialogs.** Form mode only. The text is the declared sentence with bounded, cleaned values, prefixed with the module's name. At most 8 rounds per call, 3 per question. Rate limited per key.
+**Dialogs.** Form mode only. The text is the declared sentence with bounded, cleaned values, prefixed with the called, listed module's name (a part's question too: section 8, the ruling of 2026-11-16). At most 8 rounds per call, 3 per question. Rate limited per key.
 
 **Prompt text** is declared and reviewed. An argument is substituted once, as text, and bounded.
 

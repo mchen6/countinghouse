@@ -890,6 +890,9 @@ bounds it:
   that is gone, or no longer declares the question, gets no answer. The
   dialog carries the listed module's name; an unlisted part is never
   named to the client, only in the runtime's own log and usage record.
+  So a scenario vouches for its parts' declared questions: when you review
+  a scenario, review its parts' `questions` too, since the user reads each
+  under the scenario's name.
 - **A call cancelled while its form is made gets no state.** None is
   minted, so none can be presented later.
 

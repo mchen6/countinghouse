@@ -153,6 +153,10 @@ named to the client). The scenario's `ctx.call` then rejects with
 for the whole chain: a scenario that calls a part that asks should call it
 before anything it cannot do twice.
 
+The user reads a part's question under the scenario's name. So a scenario
+vouches for its parts' declared questions: review a part's `questions` when
+you review the scenario.
+
 ## Roles: scenarios and parts
 
 `package.json` `countinghouse.role` is `"scenario"` or `"part"`. Without a role,
