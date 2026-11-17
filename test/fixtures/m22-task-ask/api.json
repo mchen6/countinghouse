@@ -1,0 +1,40 @@
+{
+  "device": {
+    "friendlyName": "m22-task-ask",
+    "manufacturer": "countinghouse-test",
+    "modelDescription": "a long-running action whose handler asks its user a declared question from inside a task (MCP completeness M22)",
+    "serviceList": {
+      "urn:countinghouse-test:serviceID:askService": {
+        "actionList": [
+          {
+            "name": "probe",
+            "description": "Asks whether to do a thing, and says what came of asking.",
+            "input": {
+              "schema": "/askService/probe/input"
+            },
+            "output": {
+              "schema": "/askService/probe/output"
+            },
+            "questions": {
+              "confirm": {
+                "message": "Do {what}?",
+                "schema": "/askService/probe/questions/confirm"
+              }
+            },
+            "longRunning": true
+          },
+          {
+            "name": "peek",
+            "description": "Reads, then tries to write, a key named for a task's question through ctx.redis, and says what it saw.",
+            "input": {
+              "schema": "/askService/peek/input"
+            },
+            "output": {
+              "schema": "/askService/peek/output"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

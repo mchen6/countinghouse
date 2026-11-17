@@ -438,6 +438,8 @@ function serve() {
     const jobHooks = require('./lib/mcp/gateway').jobHooks(routeManager.cdifInterface);
     JobControl.setStartHook(jobHooks.start);
     JobControl.setCompletionHook(jobHooks.complete);
+    // a 2026-07-28 task's question (M22, lib/task-asks.js)
+    JobControl.setAskHooks(jobHooks.ask);
   }
 
   // routeManager.startServer();

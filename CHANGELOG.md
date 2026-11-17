@@ -10,6 +10,47 @@ the auth config.
 
 ## Unreleased
 
+### Removed — flags that did nothing, or let a failing module load
+
+- **`--verifyModule`** is gone. With it, the loader carried on past a
+  module's failed interface check, `DEVICE_SPEC_VALIDATION_FAIL`,
+  `INVALID_MODULE_INSTANCE` and even `DEVICE_OBJECT_CONFLICT`, and
+  registered the device anyway. A module that fails a check is now refused
+  whatever the options (`test/module-loading/37`). `countinghouse-validate`
+  is the way to check a module.
+- **`--apiMonitor`** is gone, with the Redis client it opened: it wrote a
+  per-call API log that nothing read.
+- **`--centralPortalUrl`**, **`--wetty`** and **`--validateData`** are gone:
+  nothing read them.
+- **`--heapDump`** stays (a dev aid), and no longer throws every minute when
+  Node runs without `--expose-gc`: it says once that it needs it
+  (`bin/countinghouse` and `npm run start-heap-dump` pass it) and does
+  nothing.
+
+### Added — resource and prompt change notices on a listen (MCP completeness, M8)
+
+- **`subscriptions/listen` agrees to `resourcesListChanged`,
+  `promptsListChanged` and `resourceSubscriptions`**, on HTTP (the SSE
+  stream), stdio and a shared runtime's session, beside `toolsListChanged`.
+  A settled change that moves the resources (or templates) or the prompts a
+  listener is shown sends one `notifications/resources/list_changed` or
+  `notifications/prompts/list_changed`; a reload that lists the same says
+  nothing. `server/discover` declares `resources: {listChanged: true,
+  subscribe: true}` and `prompts: {listChanged: true}` where a listen is
+  served.
+- **`resourceSubscriptions`**: of the URIs asked, the acknowledgement agrees
+  to those the caller can read (a module resource its key, and its session,
+  are listed), in order, at most 64, each at most 2048 bytes; the rest are
+  left out. After a call to an action a subscribed resource names in
+  `changesWith` succeeds, by any entry path, each of the calling key's
+  subscriptions naming one of its URIs is sent
+  `notifications/resources/updated`, once per URI per quarter second. On a
+  shared runtime a per-session module's change reaches only the calling
+  session. A call with no key (`--debug` without `--debugKey`) is not
+  recorded, so it announces nothing. An HTTP listen whose client leaves
+  more than 1 MiB unread is closed (the listen is cancelled). A resource's
+  `changesWith` naming its own read action refuses the load.
+
 Upgrading from 7.x: [`docs/upgrading-to-8.md`](docs/upgrading-to-8.md)
 groups everything below by what an operator has to do. Measured cost of the
 file broker on the maintainer's 2-CPU VM (at `9246db1`): 250 rounds of a 4 KB
@@ -17,6 +58,34 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
 `--moduleSandbox off` and 1.9 s under `enforce`; a module restart takes about
 1.3 s (at `cd411ee`), against about 4.2 s on 7.1.2
 ([benchmarks](docs/benchmarks/sandbox-part2.md)).
+
+### Added — completion for resource templates, and completion actions (MCP completeness, M11)
+
+- **`completion/complete` takes `ref/resource`**: one of the caller's listed
+  resource templates, by its URI template; the variable's candidates are
+  the input property's `enum`, then its `examples`, derived at load and
+  matched as a prompt argument's are.
+- **A prompt or a resource may name a completion action**
+  (`"completion": {"<argument>": "<service>.<action>"}`): called with
+  `{argument, value, context}`, it answers `{values: string[]}` (100 kept,
+  of at most 256 characters). It runs as a call of that action, authorized
+  and rate limited, is not billed and is recorded in usage as
+  `completion/complete`; it is not listed as a tool. If it fails, answers
+  no values or takes more than 2 s, the schema's candidates are offered,
+  and a run past 2 s is cancelled as a cancelled call is.
+
+### Fixed — a 2026-07-28 task's status mirrors the inline answer
+
+- **A task whose module was unloaded, reloaded or suspended while it ran**
+  is now `completed`, its result the isError result the same `tools/call`
+  gets inline, with the code in `_meta["countinghouse/code"]`
+  (`MODULE_UNLOADED`, `MODULE_RELOADING`, `MODULE_SUSPENDED`). It was
+  `failed`. The tasks extension uses `failed` only for a request that fails
+  with a JSON-RPC error, and a tool result with `isError` is `completed`
+  (`tasks.md` l.157-158, l.835-837). A task is still `failed`, with its
+  JSON-RPC `error`, when its run left no answer: the runner's
+  `--jobTimeout`, or the owner's access refused when the run starts.
+  Legacy-era tasks are unchanged.
 
 ### Changed — the module sandbox's checks run on intrinsics captured at load; `path`, `url` and `URL` are fixed
 
@@ -49,6 +118,20 @@ write, read, stat and unlink take about 30 ms with no broker, 1.2 s under
   binary output field that is not under `properties` or an array's `items`
   (it was served as a plain string), and `x-mcp-header` anywhere in an input
   schema (the server's side of it is not built).
+
+### Added — a task may ask its user a module's question (MCP completeness, M22)
+
+A long-running action run as a 2026-07-28 task may now use `ctx.ask`, when
+the request that made the task declared form elicitation. The pass that
+asks ends; the task reads `input_required`, with the form in
+`inputRequests` and the status message "waiting for an answer"; the client
+answers with `tasks/update`, and the handler runs again under the same
+`taskId`. The question is held on the server, outside every module's
+reach, never in a requestState. The pass that asks is not billed and
+spends no attempt. A question waits at most an hour, then the task fails
+with the new code `ASK_EXPIRED`; at most 64 of a key's tasks (10,000 in
+all) wait on a question at once, past which `ctx.ask` is
+`ASK_UNAVAILABLE`.
 
 ### Added — a module may ask its user a declared question: `ctx.ask` (MCP completeness, M13)
 

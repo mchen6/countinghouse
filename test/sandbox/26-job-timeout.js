@@ -41,7 +41,7 @@ describe('sandbox 26: --jobTimeout bounds a job that sets no timeout', function(
         return b.state === 'failed' ? b : null;
       }, 15000, 'the job to time out');
       const ms = Date.now() - started;
-      assert.match(job.job.failedReason, /timed out after 2000 milliseconds/);
+      assert.match(job.job.failedReason, /^JOB_TIMEOUT: The job did not finish within its timeout \(2 s\), so it failed/);
       assert.ok(ms >= 1500 && ms < 8000, `failed after ${ms} ms`);
     });
 
@@ -53,7 +53,7 @@ describe('sandbox 26: --jobTimeout bounds a job that sets no timeout', function(
         const b = await jobState(PORT, added.body.id);
         return b.state === 'failed' ? b : null;
       }, 10000, 'the job to time out at its own 5 s');
-      assert.match(job.job.failedReason, /timed out after 5000 milliseconds/);
+      assert.match(job.job.failedReason, /^JOB_TIMEOUT: The job did not finish within its timeout \(5 s\), so it failed/);
     });
   });
 
