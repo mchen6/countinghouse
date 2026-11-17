@@ -36,6 +36,24 @@ constraint, and encoding it is most of the value they came for.
   an LLM reads to decide whether to call it, and an action with no description
   is skipped entirely when `tools/list` is built.
 
+## If it must ask the user: ask first, act after
+
+An action may declare questions (`api.json`'s `questions`) and ask one with
+`ctx.ask(name, values)`. The handler does not wait: with no answer it ends
+(`ASK_PENDING`), and the client's retry runs it again from the top. So put
+every `ctx.ask` **before** anything the handler cannot do twice:
+
+- every `ctx.call` before the ask runs again on the retry and is **billed
+  again**;
+- a message sent, a record written or a payment made before the ask
+  **happens twice**, and has happened once even if the user declines.
+
+Never catch `ASK_PENDING` (from your own ask, or a part's through
+`ctx.call`): let it pass. Catch `ASK_UNAVAILABLE` to fall back when there is
+no one to ask. Keep a question's values the same on every run, and never
+treat an answer as proof of a person. Validate cannot check any of this;
+say it to the user when you show the split.
+
 ## Show the split before writing files
 
 Present the proposed device, services, actions and — most importantly — what

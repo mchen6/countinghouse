@@ -100,8 +100,11 @@ The question is declared in `api.json`, never written by the handler:
 
 `values` fills the message's `{name}` placeholders with strings (cut to 200
 characters), numbers and booleans. The user reads
-`<your module's name>: <the message>`, and answers a form made from the
-schema (see [`api.json`](#apijson) for what a form may hold).
+`<module name>: <the message>`, and answers a form made from the
+schema (see [`api.json`](#apijson) for what a form may hold). The name is
+the module whose tool the user called: your own, or, when your action is a
+part reached through a scenario's `ctx.call`, the scenario's. A part is
+never named to the client; the runtime's log and usage record name it.
 
 **The handler runs again.** MCP is stateless here, so the first time
 `ctx.ask` has no answer it rejects with `ASK_PENDING`, which ends your
@@ -110,20 +113,38 @@ made again and your handler runs **from the top**, where `ctx.ask` returns
 the answer at once. So:
 
 - **Ask first, act after.** Whatever your handler did before the ask is
-  done again on the second run: a `ctx.call` is made and billed twice, a
-  message is sent twice, a record is written twice. If the user declines,
-  the first one has still happened.
+  done again on the second run, and costs again:
+  - **Every hop made before the ask is made again, and billed again.** A
+    handler that calls three parts and then asks pays for six part calls
+    when the user answers. The call itself is billed once, when it
+    completes.
+  - **A non-idempotent action before an ask happens twice**: a message is
+    sent twice, a record written twice, a card charged twice. If the user
+    declines, the first one has still happened.
+  - `countinghouse-validate` cannot see either: whether a handler acts
+    before it asks is in its code. The usage record of a pass that asked
+    shows its round, so an operator can see a module that asks late.
 - **Let `ASK_PENDING` pass.** Do not catch it. If you do and return a
   result, that result is the call's answer and the question is dropped.
+  This holds through composition too: a part's question rejects the
+  calling handler's `ctx.call` with `ASK_PENDING`, and the caller should
+  let it pass; on the retry both run again and the part's `ctx.ask` gets
+  its answer.
+- **A part asks only its own action's questions.** Which module and action
+  ask is the runtime's to know, never the message's. A call has one set of
+  rounds, whoever in its chain asks: one question a round, three rounds of
+  one question, eight in all.
 - **An answer is for the exact text asked.** `ctx.ask('overwrite', {id: 'a'})`
   and `ctx.ask('overwrite', {id: 'b'})` are two questions, and each needs
   its own answer.
 - **`ASK_UNAVAILABLE` means there is no one to ask**, and you may catch it
   to fall back: the client offered no form, the call came by HTTP
   `invoke-action` or as a task, the operator turned questions off
-  (`--moduleQuestions off`), your action was reached through another
-  module's `ctx.call`, three rounds brought no valid answer, or the call
-  has had eight rounds in all already (every question's together).
+  (`--moduleQuestions off`), the outer call (when your action is a part)
+  has no one to ask for any of these reasons, three rounds brought no valid
+  answer, or the call has had eight rounds in all already (every
+  question's together). A part reached in single-thread mode
+  (`--no-workerThread`) has no one to ask either.
 - **Keep a question's values the same on every run.** A time or a counter
   in `values` makes a new question each time, and the answer the user gave
   is for the old one.
