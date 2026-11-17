@@ -103,6 +103,20 @@ describe('sessions 01: the wire (contract 2)', () => {
       assert.strictEqual(handshake.macEquals(ms, ms.subarray(1)), false);
     });
 
+    it('the GitHub token order\'s vectors follow their rule: start, the daemon and the conditions check agree, and the outcome follows from them', () => {
+      for (const c of V.githubTokenPrecedence.cases) {
+        const {env, stored, ghLogin, daemonHolds} = c.input;
+        const storedOk = stored === true;
+        const start = env.includes('COUNTINGHOUSE_GITHUB_TOKEN') ? 'environment' : storedOk ? 'stored' : ghLogin ? 'gh' : env.includes('GITHUB_TOKEN') ? 'GITHUB_TOKEN' : null;
+        const daemon = storedOk ? 'stored' : ghLogin ? 'gh' : null;
+        const conditions = start === 'environment' ? 'mac(env)' : start === 'stored' ? 'mac(stored)' : start === 'GITHUB_TOKEN' ? 'mac(GITHUB_TOKEN)' : null;
+        // null is "the daemon's", whatever it holds (listener.js); a hash
+        // shares only when it is the daemon's own token's
+        const shares = conditions === null || (conditions === 'mac(stored)' && daemonHolds === 'stored');
+        assert.deepStrictEqual([c.start, c.daemon, c.conditions, c.outcome], [start, daemon, conditions, shares ? 'shares' : 'own-runtime (token)'], c.why);
+      }
+    });
+
     it('the pack messages\' vectors are consistent: every accepted pack fits the pattern and a load or reload carries a boolean global; every refused case names one of the three reasons', () => {
       const P = V.packMessages;
       const pattern = new RegExp(P.packPattern);
@@ -128,6 +142,11 @@ describe('sessions 01: the wire (contract 2)', () => {
 
     it('makes the token MAC as the vectors have it', () => {
       assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
+    });
+
+    it('makes a pack credential\'s MAC as the vectors have it', () => {
+      assert.strictEqual(handshake.credentialMac(secret, V.credentialMac.name, V.credentialMac.value).toString('base64'), V.credentialMac.macB64);
+      assert.deepStrictEqual(JSON.parse(V.control.clientCredentials.json).credentials, {[V.credentialMac.name]: V.credentialMac.macB64});
     });
 
     it('reads the accepted secret files and refuses the others', () => {
