@@ -293,7 +293,68 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       sessionPacks.setGlobal('other', false);   // a changed(null): the owners rebuilt at the next question
       await packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-ci', pack: 'ci'});
       assert.deepStrictEqual(seenMidUnload, [false], 'hidden from B while it unloads');
+      // and no orphan left once its supervisor has no record (F1-3): sessionPacks.none() keeps its fast path
       assert.deepStrictEqual(packsInPlace.packRecords(mm), [], 'and gone once unloaded');
+    });
+
+    // F1-3, the reload's side: a part the new version drops is unloaded even while out of the module map
+    // (restarting after a crash), and stays owned by the orphans' pack; a pack that loads it again takes it back
+    it('a reload that drops a restarting part unloads it all the same, and no session lists it after', async() => {
+      const packsInPlace = require('../../lib/packs-in-place');
+      const unloaded = [];
+      // the backstop: the part's supervisor record survives its unload (as no unload leaves it), so a restart
+      // could still register it, with no owner
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+        supervisor: {status: (name) => (name === '@countinghouse/ch-step-x' ? {state: 'restarting'} : null)},
+        loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
+        unloadModuleExternal: (name, cb) => { unloaded.push(name); delete mm.modules[name]; cb(); }};
+      sessionPacks.configure({records: () => packsInPlace.packRecords(mm), moduleOf: () => null,
+        overridesOf: settings.packOverridesOf, onOverrideChange: settings.onChange, openSessions: () => [...open], isOpen: (id) => open.has(id),
+        shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
+      on(A, 'two');
+      const scenario = path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two');
+      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
+      // the part crashed: out of the module map, its supervisor's restart pending
+      delete mm.modules['@countinghouse/ch-step-x'];
+      // the new version calls no part
+      fs.writeFileSync(path.join(scenario, 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-two', version: '1.0.0', countinghouse: {role: 'scenario'}}));
+      await packsInPlace.reloadPack(mm, {type: 'reload', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
+      assert.deepStrictEqual(unloaded, ['@countinghouse/ch-step-x'], 'unloaded, though out of the module map (its supervisor\'s record cleared)');
+      assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'two', modules: ['@countinghouse/ch-pack-two']}, {pack: packsInPlace.ORPHANED, modules: ['@countinghouse/ch-step-x']}]);
+      sessionPacks.setGlobal('other', false);   // the views rebuilt
+      assert.deepStrictEqual([A, B].map((id) => sessionPacks.listsModule(id, '@countinghouse/ch-step-x')), [false, false], 'A has two on, but not the part it dropped');
+      // the old version again: the part is the pack's once more, and A lists it
+      fs.writeFileSync(path.join(scenario, 'package.json'), JSON.stringify({name: '@countinghouse/ch-pack-two', version: '1.0.0', countinghouse: {role: 'scenario', calls: ['ch-step-x/svc.run']}}));
+      await packsInPlace.reloadPack(mm, {type: 'reload', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
+      assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'two', modules: ['@countinghouse/ch-pack-two', '@countinghouse/ch-step-x']}]);
+      sessionPacks.setGlobal('other', false);
+      assert.deepStrictEqual([A, B].map((id) => sessionPacks.listsModule(id, '@countinghouse/ch-step-x')), [true, false]);
+    });
+
+    // the review of F1-3: the unload no longer skips a module out of the module map, so it must skip one another
+    // pack's load is bringing up (mid-spawn, out of the map), but not one another pack's unload is taking out
+    it('an unload leaves a shared module to another pack\'s load under way, and two unloads of a shared module unload it once', async() => {
+      const packsInPlace = require('../../lib/packs-in-place');
+      const unloaded = [];
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+        loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
+        unloadModuleExternal: (name, cb) => { unloaded.push(name); delete mm.modules[name]; setImmediate(cb); }};
+      const scenario = path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two');
+      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
+      // another pack's load holding ch-step-x is under way (its worker out of the module map)
+      mm.packsLoading.set('@countinghouse/ch-pack-other', {pack: 'other', modules: ['@countinghouse/ch-step-x'], unloading: false});
+      delete mm.modules['@countinghouse/ch-step-x'];
+      await packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
+      assert.deepStrictEqual(unloaded, ['@countinghouse/ch-pack-two'], 'ch-step-x left to the load under way');
+      mm.packsLoading.delete('@countinghouse/ch-pack-other');
+      // two packs holding ch-step-x, unloaded at once: it is unloaded, once
+      unloaded.length = 0;
+      await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario, pack: 'two', global: false}, {});
+      mm.packsInPlace.set('@countinghouse/ch-pack-other', {scenario: '/o', pack: 'other', modules: new Map([['@countinghouse/ch-step-x', {version: '1.0.0'}]]), tools: new Set(), prompts: new Set()});
+      await Promise.all([packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'}),
+        packsInPlace.unloadPack(mm, {type: 'unload', name: '@countinghouse/ch-pack-other', pack: 'other'})]);
+      assert.deepStrictEqual(unloaded.sort(), ['@countinghouse/ch-pack-two', '@countinghouse/ch-step-x']);
+      assert.deepStrictEqual(packsInPlace.packRecords(mm), []);
     });
 
     it('B can\'t see A\'s pack between its devices\' registration and the load\'s answer', async() => {
