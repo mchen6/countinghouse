@@ -543,7 +543,7 @@
     "json": "{\"jsonrpc\":\"2.0\",\"id\":7,\"error\":{\"code\":-32603,\"message\":\"the answer is larger than this connection carries\",\"data\":{\"countinghouse/code\":\"OUTPUT_TOO_LARGE\",\"retryable\":false}}}"
   },
   "conditionsWhy": {
-    "rule": "on a status-ok client line whose conditions is \"no\", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is \"~/\" and a path under the user's home with no \"..\" segment, at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown",
+    "rule": "on a status-ok client line whose conditions is \"no\", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is \"~/\" and a path under the user's home, its segments split on \"/\" with none empty and none \"..\", no backslash anywhere (a separator on Windows), at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown",
     "hiddenClass": "\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2069\\u2800\\u3164\\ud800-\\udfff\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff9-\\ufffb\\u{1d173}-\\u{1d17a}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}",
     "reasons": [
       "client hook present",
@@ -670,6 +670,27 @@
           "reason": "client hook present",
           "at": "~/.claude/settings.json",
           "path": "/home/example"
+        }
+      },
+      {
+        "why": "a backslash, a separator on Windows, where split on \"/\" sees no ..",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/..\\..\\Users\\example\\.claude\\settings.json"
+        }
+      },
+      {
+        "why": "an empty segment after ~/, which some path joins read as absolute",
+        "value": {
+          "reason": "client hook present",
+          "at": "~//home/example/x"
+        }
+      },
+      {
+        "why": "an empty segment inside the path",
+        "value": {
+          "reason": "client hook present",
+          "at": "~/a//b"
         }
       }
     ]

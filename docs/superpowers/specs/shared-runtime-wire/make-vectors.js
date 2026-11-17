@@ -215,7 +215,7 @@ const out = {
   // runtime, for the latch's refusal text (B2). Text that reaches the agent,
   // so a closed reason and, at most, a path under the user's home.
   conditionsWhy: {
-    rule: 'on a status-ok client line whose conditions is "no", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is "~/" and a path under the user\'s home with no ".." segment, at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown',
+    rule: 'on a status-ok client line whose conditions is "no", an optional why: exactly {reason} or {reason, at}. reason is one of reasons; at is "~/" and a path under the user\'s home, its segments split on "/" with none empty and none "..", no backslash anywhere (a separator on Windows), at most 200 characters, with no character of hiddenClass (control, line-separator, bidi, zero-width, soft-hyphen, interlinear, tag, variation-selector, filler, lone-surrogate). A path outside the home is never sent. A why that breaks the rule is ignored (the refusal says no why), never shown',
     // the one definition of a hidden character (a RegExp class body, with
     // the u flag): ch-local's cleaner and each rule check use it
     hiddenClass: HIDDEN_CLASS,
@@ -239,7 +239,10 @@ const out = {
       {why: 'a bidi override in the path', value: {reason: 'client hook present', at: '~/.claude/set\u202etings.json'}},
       {why: 'a tag character in the path', value: {reason: 'client hook present', at: '~/.claude/settings\u{e0041}.json'}},
       {why: 'a path that is not a string', value: {reason: 'client hook present', at: 7}},
-      {why: 'a key beside reason and at', value: {reason: 'client hook present', at: '~/.claude/settings.json', path: '/home/example'}}
+      {why: 'a key beside reason and at', value: {reason: 'client hook present', at: '~/.claude/settings.json', path: '/home/example'}},
+      {why: 'a backslash, a separator on Windows, where split on "/" sees no ..', value: {reason: 'client hook present', at: '~/..\\..\\Users\\example\\.claude\\settings.json'}},
+      {why: 'an empty segment after ~/, which some path joins read as absolute', value: {reason: 'client hook present', at: '~//home/example/x'}},
+      {why: 'an empty segment inside the path', value: {reason: 'client hook present', at: '~/a//b'}}
     ]
   },
   // ch-local's pack messages on the control channel (B3, "For C" in

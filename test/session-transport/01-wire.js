@@ -109,7 +109,7 @@ describe('sessions 01: the wire (contract 2)', () => {
       const ok = (w) => w != null && typeof(w) === 'object' && !Array.isArray(w) && W.reasons.includes(w.reason)
         && Object.keys(w).every((k) => k === 'reason' || k === 'at')
         && (w.at === undefined || (typeof(w.at) === 'string' && w.at.startsWith('~/') && Array.from(w.at).length <= 200 && !hidden.test(w.at)
-          && !w.at.split('/').includes('..')));
+          && !w.at.includes('\\') && w.at.slice(2).split('/').every((seg) => seg !== '' && seg !== '..')));
       for (const {why, value} of W.accepted) assert.strictEqual(ok(value), true, why);
       for (const {why, value} of W.refused) assert.strictEqual(ok(value), false, why);
     });
