@@ -10,6 +10,16 @@ the auth config.
 
 ## Unreleased
 
+### Changed — `--settingsFile` outside the single-identity profile stops the start
+
+- **`--settingsFile` is refused (exit 2) outside the single-identity
+  profile**, as `--controlChannel` and `--sessionSocket` are:
+  `countinghouse_settings` is served only there (ch-local start). Given on a
+  hosted server, or with `--authConfigPath` or `--authProvider`, it used to be
+  accepted and half-applied: the tool was not served, yet a size cap's error
+  told the agent to raise the cap with it. ch-local passes it only in that
+  profile.
+
 ### Fixed — modules load on Windows when the install is run by an 8.3 short name
 
 An install run by a short-name spelling (`C:\Users\RUNNER~1\...`, as
