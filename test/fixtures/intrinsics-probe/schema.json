@@ -11,9 +11,14 @@
           "builtins": {"type": "array", "items": {"type": "string"}},
           "runtimeFile": {"type": "string"},
           "outsidePath": {"type": "string"},
-          "port": {"type": "integer"}
+          "host": {"type": "string"},
+          "rethrow": {"type": "boolean"},
+          "route": {"type": "string"},
+          "hostFile": {"type": "string"},
+          "hostDir": {"type": "string"},
+          "realFd": {"type": "integer"}
         },
-        "required": ["change", "builtins", "runtimeFile", "outsidePath", "host"]
+        "required": ["change"]
       },
       "output": {
         "type": "object"

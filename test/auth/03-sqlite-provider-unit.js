@@ -64,14 +64,40 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
       }. The sqlite AuthProvider backend and bin/countinghouse-auth-sqlite.js ` +
       `are unusable here; the file and couchdb backends are unaffected.]`
     : ''}`,
-  () => {
-  const dbPath = `/tmp/countinghouse-test-auth-03-${process.pid}.sqlite3`;
+  function() {
+  // #362: on a slow runner the first case timed out at mocha's 2 s, and its
+  // provider's queued schema statements (run with no callback, so a failure
+  // is the database's 'error' event, uncaught) then ran against the file the
+  // next hook had unlinked: SQLITE_READONLY in every later case and hook. So:
+  // the native binding is loaded before any case, its own time apart; the
+  // cases get 10 s; each case has its own file; and each case's databases are
+  // closed, their late errors kept to it, before its file goes.
+  this.timeout(10000);
+  const os = require('os');
+  let dbPath = null;
+  let made = 0;
+  let open = [];      // this case's databases (a provider's, or a raw one)
+  const track = (db) => { open.push(db); return db; };
+  const makeProvider = () => { const p = new SqliteAuthProvider({dbPath: dbPath}); track(p.db); return p; };
+
+  before(function() {
+    this.timeout(60000);
+    require('sqlite3');
+  });
 
   beforeEach(() => {
+    dbPath = require('path').join(os.tmpdir(), `countinghouse-test-auth-03-${process.pid}-${++made}.sqlite3`);
     try { fs.unlinkSync(dbPath); } catch (e) {}
   });
 
-  afterEach(() => {
+  afterEach(async function() {
+    this.timeout(30000);   // a case's timeout leaves its teardown room
+    const dbs = open;
+    open = [];
+    await Promise.all(dbs.map((db) => new Promise((resolve) => {
+      db.on('error', () => {});   // a statement still queued fails here, in this case's teardown
+      try { db.close(() => resolve()); } catch (e) { resolve(); }
+    })));
     try { fs.unlinkSync(dbPath); } catch (e) {}
   });
 
@@ -89,7 +115,7 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   }
 
   it('creates the users/user_devices schema on first use and starts empty', (done) => {
-    const provider = new SqliteAuthProvider({dbPath: dbPath});
+    const provider = makeProvider();
     provider.authenticate('nobody', 'some-device', null, null, (err, result) => {
       assertDenied(err, result, 'SYSTEM_ERROR_UNKNOWN_USER', 'a fresh db should authorize nobody');
       done();
@@ -97,7 +123,7 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   });
 
   it('authenticate: denies an unknown apiKey, denies a known key for an ungranted device, allows a granted device', (done) => {
-    const provider = new SqliteAuthProvider({dbPath: dbPath});
+    const provider = makeProvider();
 
     provider.db.serialize(() => {
       provider.db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['scoped-key', 'scoped-user']);
@@ -119,7 +145,7 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   });
 
   it('a "*" device grant authorizes every deviceID, same convention as FileAuthProvider', (done) => {
-    const provider = new SqliteAuthProvider({dbPath: dbPath});
+    const provider = makeProvider();
 
     provider.db.serialize(() => {
       provider.db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['wildcard-key', 'wildcard-user']);
@@ -133,7 +159,7 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   });
 
   it('admin column defaults to false and is independent of device grants', (done) => {
-    const provider = new SqliteAuthProvider({dbPath: dbPath});
+    const provider = makeProvider();
 
     provider.db.serialize(() => {
       provider.db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['plain-key', 'plain-user']);
@@ -162,13 +188,13 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     // this guards: a naive PRAGMA-table_info-then-conditional-ALTER
     // implementation can lose that race against an immediate call).
     const sqlite3 = require('sqlite3');
-    const rawDb = new sqlite3.Database(dbPath);
+    const rawDb = track(new sqlite3.Database(dbPath));
     rawDb.serialize(() => {
       rawDb.run('CREATE TABLE users (apiKey TEXT PRIMARY KEY, userName TEXT)');
       rawDb.run('CREATE TABLE user_devices (apiKey TEXT NOT NULL, deviceID TEXT NOT NULL, PRIMARY KEY (apiKey, deviceID))');
       rawDb.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['legacy-key', 'legacy-user'], () => {
         rawDb.close(() => {
-          const provider = new SqliteAuthProvider({dbPath: dbPath});
+          const provider = makeProvider();
           // No setTimeout/delay -- immediate call is the point of this test.
           provider.authenticate('legacy-key', null, null, null, (err, result) => {
             assertOk(err, result, 'legacy-key from a pre-migration db should still authenticate');
@@ -181,7 +207,7 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
   });
 
   it('listDevices returns exactly the granted rows for an apiKey', (done) => {
-    const provider = new SqliteAuthProvider({dbPath: dbPath});
+    const provider = makeProvider();
 
     provider.db.serialize(() => {
       provider.db.run('INSERT INTO users (apiKey, userName) VALUES (?, ?)', ['multi-key', 'multi-user']);
@@ -208,7 +234,7 @@ const SqliteAuthProvider = require('../../lib/auth/sqlite-provider');
     const CLI = path.join(__dirname, '..', '..', 'bin', 'countinghouse-auth-sqlite.js');
     const cli = (args) => spawnSync(process.execPath, [CLI, '--dbPath', dbPath].concat(args), {encoding: 'utf8', timeout: 20000});
     const lookup = (name) => new Promise((resolve, reject) => {
-      const provider = new SqliteAuthProvider({dbPath: dbPath});
+      const provider = makeProvider();
       provider.identityForModule(name, (err, r) => (err ? reject(err) : resolve(r.apiKey)));
     });
     const KEY = `bind-key-${process.pid}`;
