@@ -111,7 +111,7 @@ one) as well as the ports it binds.
 | `test/mcp-contract/34-declared-text-cleaned.js` | 9755–9756 |
 | `test/mcp-contract/28-task-ask.js` | 9690–9692 |
 | `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
-| `test/mcp-contract/37-task-notifications.js` | 9671, 9672 |
+| `test/mcp-contract/37-task-notifications.js` | 9671, 9672, 9673 |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
 | `test/module-authoring/03-authoring-tools-gating.js` | 9550–9552 |

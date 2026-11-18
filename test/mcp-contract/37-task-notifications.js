@@ -30,21 +30,83 @@ const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
 describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)', () => {
   // a hub with a clock the test moves, and tasks the test sets
-  function rig({noticeMs = 1000} = {}) {
+  // fail(taskId): the view's answer instead of the task's, when it returns
+  // one (a rejection is transient; {revoked: true} the key gone)
+  function rig({noticeMs = 1000, fail = () => undefined} = {}) {
     let clock = 1000;
     const tasks = new Map();
     const views = [];
     const hub = createHub({lists: {}, taskNoticeMs: noticeMs, now: () => clock});
-    const view = (taskId) => { views.push(taskId); return Promise.resolve(tasks.has(taskId) ? JSON.parse(JSON.stringify(tasks.get(taskId))) : null); };
+    const view = (taskId) => {
+      views.push(taskId);
+      const f = fail(taskId);
+      if (f !== undefined) return f instanceof Error ? Promise.reject(f) : Promise.resolve(f);
+      return Promise.resolve(tasks.has(taskId) ? JSON.parse(JSON.stringify(tasks.get(taskId))) : null);
+    };
     const open = (ids, id = 7) => {
       const out = [];
-      const opened = hub.open({id, appKey: 'k', filter: {taskIds: ids}, write: (m) => out.push(m), finish: () => {}, taskView: view});
+      const ended = {count: 0};
+      const opened = hub.open({id, appKey: 'k', filter: {taskIds: ids}, write: (m) => out.push(m), finish: () => { ended.count += 1; }, taskView: view});
       assert.ok(opened.ok);
-      return {out, opened, sent: () => out.map((m) => `${m.params.taskId} ${m.params.status}${m.params.statusMessage != null ? ` ${m.params.statusMessage}` : ''}`)};
+      return {out, opened, ended, sent: () => out.map((m) => `${m.params.taskId} ${m.params.status}${m.params.statusMessage != null ? ` ${m.params.statusMessage}` : ''}`)};
     };
     return {hub, tasks, views, open, advance: (ms) => { clock += ms; }, set: (id, status, extra = {}) => tasks.set(id, Object.assign({taskId: id, status}, extra))};
   }
   const settle = () => tick(5);
+
+  // the high review of #433, 1: a transient failure keeps the id, tried again
+  it('a view that fails transiently keeps the task: tried again after the window, and told', async () => {
+    let failing = true;
+    const r = rig({noticeMs: 30, fail: () => (failing ? new Error('the store blinked') : undefined)});
+    r.set('t-1', 'working');
+    const l = r.open(['t-1']);
+    r.set('t-1', 'completed', {result: {content: []}});
+    r.hub.taskChanged('t-1', 'completed');
+    await settle();
+    assert.deepStrictEqual(l.sent(), [], 'nothing yet');
+    assert.strictEqual(r.hub.count('k'), 1, 'kept');
+    failing = false;
+    await tick(60);
+    assert.deepStrictEqual(l.sent(), ['t-1 completed']);
+  });
+
+  // the high review of #433, 1 and 3: a revoked key ends the listen, and a
+  // taskIds-only listen with nothing left ends, its slot freed
+  it('a revoked key ends its listen at once; a listen whose every task is done ends too', async () => {
+    const r = rig({fail: (t) => (t === 't-revoked' ? {revoked: true} : undefined)});
+    r.set('t-a', 'working');
+    r.set('t-b', 'working');
+    const gone = r.open(['t-a', 't-revoked'], 8);
+    r.hub.taskChanged('t-revoked', 'progress');
+    await settle();
+    assert.strictEqual(gone.ended.count, 1, 'ended');
+    assert.deepStrictEqual(gone.sent(), []);
+    const done = r.open(['t-a', 't-b'], 9);
+    r.set('t-a', 'completed', {result: {content: []}});
+    r.hub.taskChanged('t-a', 'completed');
+    await settle();
+    assert.strictEqual(done.ended.count, 0, 't-b still pending');
+    r.tasks.delete('t-b');   // gone: tasks/get would say -32602
+    r.hub.taskChanged('t-b', 'failed');
+    await settle();
+    assert.strictEqual(done.ended.count, 1, 'nothing left: ended');
+    assert.strictEqual(r.hub.count('k'), 0, 'every slot freed');
+  });
+
+  // the high review of #433, 10: a change builds only for the listeners that hold it
+  it('a task\'s change builds views only for the listeners holding its id', async () => {
+    const r = rig();
+    r.set('t-1', 'working');
+    r.set('t-2', 'working');
+    r.open(['t-1'], 11);
+    r.open(['t-2'], 12);
+    await settle();
+    r.views.length = 0;
+    r.set('t-1', 'working', {statusMessage: '10%'});
+    r.hub.taskChanged('t-1', 'progress');
+    await settle();
+    assert.deepStrictEqual(r.views, ['t-1']);
+  });
 
   it('a change is sent as the view builds the task, with the listen\'s subscription id; the event\'s kind decides nothing', async () => {
     const r = rig();
@@ -389,18 +451,25 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       assert.ok(await until(() => f.ended && u.ended), 'agreeing to nothing holds no stream open');
     });
 
+    // the progress is reported only after the listen's ack: M22's probe asks
+    // first and reports on its answered pass, which the test answers once the
+    // listen has its ack (the high review of #433, 4: a slow runner or a fast
+    // one can no longer race the listen)
     it('progress is notified working "NN%", coalesced; then completed with tasks/get\'s result, once; nothing after', async () => {
-      const t = await task(KEY_A, 'progress', {values: [10, 50, 90], gapMs: 300, holdMs: 1500});
-      const s = await open(KEY_A, {taskIds: [t]});
-      assert.ok(await until(() => notices(s).some((n) => n.status === 'completed')), JSON.stringify(s.events));
+      const t = await askingTask({what: 'it', values: [10, 50, 90], gapMs: 300, afterMs: 1500});
+      const s = await open(KEY_A, {taskIds: [t]}, {forms: true});
+      assert.ok(await until(() => ackOf(s) != null && notices(s).some((n) => n.status === 'input_required'), 20000), JSON.stringify(s.events));
+      const form = (await get(KEY_A, t, {forms: true})).inputRequests;
+      await post(port, KEY_A, 'tasks/update', {taskId: t, inputResponses: {[Object.keys(form)[0]]: {action: 'accept', content: {yes: true}}}}, {forms: true});
+      assert.ok(await until(() => notices(s).some((n) => n.status === 'completed'), 20000), JSON.stringify(s.events));
       const got = await get(KEY_A, t);
       await tick(1500);
       const all = notices(s);
       const working = all.filter((n) => n.status === 'working');
-      const done = all.filter((n) => n.status !== 'working');
+      const done = all.filter((n) => ['completed', 'failed', 'cancelled'].includes(n.status));
       assert.deepStrictEqual(done.map((n) => n.status), ['completed'], 'once, and nothing after');
       assert.deepStrictEqual(done[0].result, got.result, 'tasks/get\'s own result');
-      assert.ok(working.length >= 1 && working.length <= 3, JSON.stringify(working));
+      assert.ok(working.length >= 1 && working.length <= 4, JSON.stringify(working));
       assert.strictEqual(working[working.length - 1].statusMessage, '90%', 'the latest');
       for (const n of all) assert.strictEqual(n._meta[SUBSCRIPTION_ID_KEY], 50);
     });
@@ -527,3 +596,46 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
 spawnedSuite('--store local', ['--store', 'local'], testPort(9671));
 // the Redis runner's QueueEvents: the change paths again (run-local's private Redis)
 spawnedSuite('--store redis', [], testPort(9672), {full: false});
+
+// the high review of #433, 5: each id a listen agrees to spends one of the
+// caller's rate-limit tokens, so a listen of many ids costs what as many
+// polls would; an id the budget no longer covers is not agreed
+describe('mcp-contract 37: a listen\'s task ids spend the caller\'s rate limit, one each', function() {
+  this.timeout(120000);
+  const port = testPort(9673);
+  let server = null;
+  let dir = null;
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-mcp-37rl-'));
+    const auth = path.join(dir, 'auth.json');
+    fs.writeFileSync(auth, JSON.stringify(KEYS));
+    // three tokens a second per key (lib/store.js: a one-second rolling
+    // window), under --store redis, whose metering builds the limiter
+    // whenever --apiKeyRateLimit is set (the local store's only when it meters)
+    server = await startServer(port, ['--workerThread', '--apiKeyRateLimit', '3', '--jobTimeout', '5',
+      '--moduleDataPath', path.join(dir, 'module_data'), '--authConfigPath', auth, '--loadModule', path.join(ROOT, 'test', 'fixtures', 'm15-tasks')]);
+  });
+  after(() => {
+    stopServer(server);
+    if (dir != null) fs.rmSync(dir, {recursive: true, force: true});
+  });
+  it('a listen of three ids within one second agrees to the two its budget covers after the listen\'s own token', async () => {
+    const ids = [];
+    for (let i = 0; i < 3; i++) {
+      // each call in a window of its own
+      await tick(1100);
+      const r = await post(port, KEY_A, 'tools/call', {name: tool('slow'), arguments: {ms: 4000}});
+      assert.match(String(r.result && r.result.taskId), /^t-/, JSON.stringify(r));
+      ids.push(r.result.taskId);
+    }
+    await tick(1100);
+    const s = await listen(port, KEY_A, {taskIds: ids});
+    try {
+      assert.ok(await until(() => s.events.length > 0), s.raw);
+      // the listen spends one token, then one per id: three in the second
+      assert.deepStrictEqual(s.events[0].params.notifications.taskIds, ids.slice(0, 2));
+    } finally {
+      s.req.destroy();
+    }
+  });
+});

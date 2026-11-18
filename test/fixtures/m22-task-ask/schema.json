@@ -20,6 +20,18 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 5000
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 10
+          },
+          "gapMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000
           }
         },
         "required": [
