@@ -106,6 +106,26 @@ for the full list.
   publish the port to nothing but the ingress's network, so the exposure is
   the same.
 
+## Module settings
+
+A module can declare settings (see
+[Module settings](module-development.md#module-settings)). On a server you
+run, give their values in one file with `--moduleSettings <file>`:
+
+```json
+{"@acme/weather-tool": {"units": "imperial", "defaultRepo": "acme/api"}}
+```
+
+- The file is read at each module load and reload, and never written by the
+  runtime. Mount it read-only beside the policy file.
+- Each value is checked against the module's declaration. A `hostname` or
+  `url` value must be inside the module's granted `permissions.net`.
+- A setting the module declares `required` and the file leaves unset refuses
+  that module's load, and the log says which setting.
+- No module can read the file, as with `--modulePolicy`.
+- A file that cannot be read, or is not an object of objects, stops the start
+  (exit 2).
+
 ## Reference: Docker Compose
 
 A sketch to adapt, not a supported image. It assumes the repository checked
