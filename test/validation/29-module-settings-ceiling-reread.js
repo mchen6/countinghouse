@@ -460,35 +460,50 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(logged.some((l) => /uid 1000/.test(l)), logged.join('\n'));
     });
 
-    it('a module coming up (not in the map yet) is caught up when it registers, from its own pinned package.json and net', async () => {
+    it('a module coming up (not in the map yet) takes its state as it registers, by the one rule, from its own pinned package.json and net', async () => {
       const mm = manager();
-      const reread_ = require('../../lib/settings-reread');
       const mmLib = require('../../lib/module-manager');
       // w restarting: its spawn made its state before the file changed
-      const spawned = reread_.markMade(ms.stateFor('w', W, {operator: true, net: []}));
+      const spawned = ms.stateFor('w', W, {operator: true, net: []});
       delete mm.modules.w;
       write({'module.w.units': 'metric', 'module.w.n': 9, 'module.r.region': 'eu'});
       await rr(mm);
       const wm = proxy('w');
       wm.settings = spawned;
-      mmLib.catchUpSettings(mm, 'w', wm);
+      mmLib.settleSettings(mm, 'w', wm);
       assert.deepStrictEqual(Object.assign({}, wm.settings.values), {units: 'metric', n: 9});
       assert.strictEqual(mm.lastSettings.get('w'), wm.settings, 'the restart\'s copy too');
-      // made after the last reread: kept as it is
-      const fresh = reread_.markMade(ms.stateFor('w', W, {operator: true, net: []}));
+      // made from the file as it is: kept as it is
+      const fresh = wm.settings;
       const wm2 = proxy('w');
       wm2.settings = fresh;
-      mmLib.catchUpSettings(mm, 'w', wm2);
+      mmLib.settleSettings(mm, 'w', wm2);
       assert.strictEqual(wm2.settings, fresh);
       // a new version (another declaration): made from its own package.json, never the old state's
       const W2 = pkgOf('w', {units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}, extra: {type: 'boolean', default: true}});
-      const v2 = ms.stateFor('w', W2, {operator: true, net: []});
-      await rr(mm);
       const wm3 = proxy('w');
-      wm3.settings = v2;
-      mmLib.catchUpSettings(mm, 'w', wm3);
+      wm3.settings = ms.stateFor('w', W2, {operator: true, net: []});
+      mmLib.settleSettings(mm, 'w', wm3);
       assert.deepStrictEqual(Object.keys(wm3.settings.settings).sort(), ['extra', 'units']);
       assert.strictEqual(wm3.settings.made.pkg, W2);
+      // a value refused while it came up: the rule's, as a running sibling's (kept whole, recorded)
+      write({'module.w.units': 'kelvin', 'module.w.n': 4, 'module.r.region': 'eu'});
+      const wm4 = proxy('w');
+      wm4.settings = fresh;
+      mmLib.settleSettings(mm, 'w', wm4);
+      assert.deepStrictEqual(Object.assign({}, wm4.settings.values), {units: 'metric', n: 9}, 'kept whole, as reread keeps it');
+    });
+
+    it('next: a load (no previous) is stateFor\'s; a restart under a ceiling refusal refuses (ceilingRefuses); a running module keeps its state', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const c = trusted(parsed({moduleSettings: {'w.n': {fixed: 50}}}).ceiling);
+      const load = reread_.next('w', {pkg: W, net: []}, {ceiling: {state: 'none'}});
+      assert.strictEqual(load.refusal, null);
+      const restart = reread_.next('w', {pkg: W, net: []}, {previous: load.state, ceiling: c, ceilingRefuses: true});
+      assert.strictEqual(restart.state, null);
+      assert.match(restart.refusal.message, /ceiling fixes n/);
+      const running = reread_.next('w', {pkg: W, net: []}, {previous: load.state, ceiling: c});
+      assert.strictEqual(running.state.values, load.state.values);
     });
 
     it('a refusal of the whole module is said once while it stays the same', async () => {
