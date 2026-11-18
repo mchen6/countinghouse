@@ -670,6 +670,30 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.strictEqual(logged.filter((l) => /cannot be read/.test(l)).length, 1, 'said once');
     });
 
+    it('one ceiling rule: any caller of next() with the file unreadable takes the ceiling\'s fixed values (a registration too)', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const r = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: trusted(parsed({moduleSettings: {'w.n': {fixed: 5}}}).ceiling)});
+      assert.ok(r.applied);
+      assert.strictEqual(r.state.values.n, 5, 'the new fixed value binds though the file cannot be read');
+      assert.strictEqual(r.state.values.units, ran.values.units, 'nothing else changed');
+    });
+
+    it('a refusal said while the file is unreadable is cleared by a success, so a later one is said again', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const lines = [];
+      const bad = trusted(parsed({moduleSettings: {'w.n': {fixed: 500}}}).ceiling);
+      const a = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad, log: (l) => lines.push(l)});
+      const b = reread_.next('w', {pkg: W, net: []}, {previous: a.state, ceiling: bad, log: (l) => lines.push(l)});
+      assert.strictEqual(lines.filter((l) => /does not accept/.test(l)).length, 1, 'said once');
+      const ok = reread_.next('w', {pkg: W, net: []}, {previous: b.state, ceiling: {state: 'none'}, log: (l) => lines.push(l)});
+      reread_.next('w', {pkg: W, net: []}, {previous: ok.state, ceiling: bad, log: (l) => lines.push(l)});
+      assert.strictEqual(lines.filter((l) => /does not accept/.test(l)).length, 2, 'said again after a success');
+    });
+
     it('single-thread mode: the manager\'s own copy', async () => {
       const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
       // the serving instance's ticket, which its devices read
