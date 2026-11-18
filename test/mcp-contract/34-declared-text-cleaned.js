@@ -425,6 +425,28 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     assert.strictEqual(u({type: 'object', $defs: {n: {type: 'string'}}, properties: {a: {$ref: '#/$defs/n'}}}), false, 'a pointer that resolves');
   });
 
+  // #400's rulings: at the load a ref to a boolean schema with sibling keywords
+  // is judged against the whole document (usable, as the gateway resolves it);
+  // an anchor declared elsewhere in schema.json is refused, its warning saying
+  // why; a mark from a walk of an earlier decision is dropped
+  it('the load names why an anchor ref is refused; a boolean $ref with siblings is usable; a mark of a version no longer serving is dropped', () => {
+    const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
+      {name: 'a', description: 'A.', input: {schema: '/s/a/input'}}, {name: 'b', description: 'B.', input: {schema: '/s/b/input'}}]}}}};
+    const checked = require('../../lib/declarations').check(api, {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+      $defs: {Any: true, Addr: {$anchor: 'Addr', type: 'string', description: `x${ZWSP}`}},
+      s: {a: {input: {type: 'object', properties: {p: {$ref: '#/$defs/Any', description: 'any'}}}},
+        b: {input: {type: 'object', properties: {q: {$ref: '#Addr'}}}}}});
+    assert.deepStrictEqual(checked.hiddenUnlisted, [['urn:t:serviceID:s', 'b']], JSON.stringify(checked.warnings));
+    assert.ok(checked.warnings.some((w) => /an anchor ref outside the advertised schema/.test(w.message)), JSON.stringify(checked.warnings));
+    const verdict = require('../../lib/hidden-text-verdict');
+    verdict.set('d-gen', []);
+    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, () => false);
+    assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), false, 'a walk of a version no longer serving marks nothing');
+    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, () => true);
+    assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), true);
+    verdict.set('d-gen', []);
+  });
+
   // #378's review (7): cut first, then cleaned, so no kept joiner is left
   // dangling at the cut
   it('a question\'s dialog cut at its limit ends in no hidden character', () => {
@@ -487,7 +509,15 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
           {name: 'blank', description: `${ZWSP}\u2060`, input: {schema: `/${svc}/blank/input`}, output: {schema: `/${svc}/blank/output`}},
           {name: 'blob', description: 'A file.', input: {schema: `/${svc}/blob/input`}, output: {schema: `/${svc}/blob/output`}},
           {name: 'all', description: 'Every item.', output: {schema: `/${svc}/all/output`}, annotations: {readOnlyHint: true},
-            resource: {uriTemplate: 'items', name: 'items', title: `All${LRI} items`}}
+            resource: {uriTemplate: 'items', name: 'items', title: `All${LRI} items`}},
+          // #400: a resource action, and a completion action, its declared
+          // text leaves unusable: refused on resources/read, never run for
+          // completion/complete (the reviewer's ruling)
+          {name: 'stuckItem', description: 'A stuck item.', input: {schema: `/${svc}/stuckItem/input`}, output: {schema: `/${svc}/item/output`},
+            annotations: {readOnlyHint: true}, resource: {uriTemplate: 'stuck/{id}', name: 'stuck-item'}},
+          {name: 'pick', description: 'A picked item.', input: {schema: `/${svc}/item/input`}, output: {schema: `/${svc}/item/output`},
+            annotations: {readOnlyHint: true}, resource: {uriTemplate: 'pick/{id}', name: 'pick', completion: {id: `${svc}.stuckComplete`}}},
+          {name: 'stuckComplete', description: 'Completes, but is stuck.', input: {schema: `/${svc}/stuckComplete/input`}, output: {schema: `/${svc}/completeId/output`}}
         ]}},
         promptList: [{name: 'greet', title: `Greet${ZWSP}`, description: `Says${LRI} hello`, arguments: {schema: '/prompts/greet/arguments'},
           messages: [{role: 'user', text: `Hello {{who}}${ZWSP}!\nLine two\tends ${FAMILY} ${HEART} a${ZWJ}b 1${ZWJ}2`}]},
@@ -511,6 +541,8 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
         blank: {input: {type: 'object'}, output: {type: 'object'}},
         blob: {input: {type: 'object'}, output: {type: 'object', properties: {file: {type: 'string', contentEncoding: 'base64', contentMediaType: 'application/octet-stream',
           description: `Report${LRI} file`}}}},
+        stuckItem: {input: {type: 'object', properties: {id: {type: 'string', enum: ['1', `2${ZWSP}`]}}}},
+        stuckComplete: {input: {type: 'object', properties: {argument: {type: 'string', enum: ['id', `i${ZWSP}d`]}, value: {type: 'string'}, context: {type: 'object'}}}},
         completeId: {input: {type: 'object', properties: {argument: {type: 'string'}, value: {type: 'string'}, context: {type: 'object'}}, required: ['argument', 'value']},
           output: {type: 'object', properties: {values: {type: 'array', items: {type: 'string'}}}, required: ['values']}}},
         prompts: {greet: {arguments: {type: 'object', properties: {who: {type: 'string', description: `Who${ZWSP} to greet\nby name`, enum: ['ann', `b${ZWSP}ob`, 'bea']}}, required: ['who']}},
@@ -528,6 +560,9 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'blank.js'), 'module.exports = async () => ({output: {}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'blob.js'), 'module.exports = async () => ({output: {file: Buffer.alloc(4096, 7).toString(\'base64\')}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'completeId.js'), `module.exports = async () => ({output: {values: ['i-1', 'i-${ZWSP}2', 'i-3']}});\n`);
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'stuckItem.js'), 'module.exports = async () => ({output: {id: "s"}});\n');
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'pick.js'), 'module.exports = async () => ({output: {id: "p"}});\n');
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'stuckComplete.js'), 'module.exports = async () => ({output: {values: ["p-from-the-action"]}});\n');
       const auth = path.join(dir, 'auth.json');
       fs.writeFileSync(auth, JSON.stringify({[KEY]: {userName: 'k', devices: ['*']}}));
       server = await startServer(PORT, ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--moduleDataPath', path.join(dir, 'module_data'),
@@ -762,6 +797,21 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       const name = (await modern('prompts/list')).result.prompts.find((p) => /greet$/.test(p.name)).name;
       const got = await modern('completion/complete', {ref: {type: 'ref/prompt', name}, argument: {name: 'who', value: ''}});
       assert.deepStrictEqual(got.result.completion.values, ['ann', 'bea'], JSON.stringify(got));
+    });
+
+    // #400 (the reviewer's ruling): every route takes the load's decision
+    it('resources/read refuses a resource action its declared text leaves unusable; completion never runs such a completion action', async () => {
+      const uri = 'countinghouse://m/hidden_text/stuck/1';
+      const read = (await request(`http://127.0.0.1:${PORT}`).post('/mcp').set('Content-Type', 'application/json')
+        .set('Accept', 'application/json, text/event-stream').set('X-CH-Key', KEY).set('MCP-Protocol-Version', V).set('Mcp-Method', 'resources/read').set('Mcp-Name', uri)
+        .send({jsonrpc: '2.0', id: 1, method: 'resources/read', params: {_meta: {'io.modelcontextprotocol/protocolVersion': V, 'io.modelcontextprotocol/clientCapabilities': {}}, uri}})).body;
+      // not listed, so read as an unknown resource (never its handler's answer)
+      assert.ok(read.error != null || (read.result != null && read.result.isError === true), JSON.stringify(read).slice(0, 600));
+      assert.ok(!JSON.stringify(read).includes('"id":"s"'), JSON.stringify(read).slice(0, 600));
+      const templates = (await modern('resources/templates/list')).result.resourceTemplates.map((t) => t.uriTemplate);
+      assert.ok(!templates.some((t) => /\/stuck\/\{id\}$/.test(t)) && templates.some((t) => /\/pick\/\{id\}$/.test(t)), JSON.stringify(templates));
+      const got = await modern('completion/complete', {ref: {type: 'ref/resource', uri: 'countinghouse://m/hidden_text/pick/{id}'}, argument: {name: 'id', value: ''}});
+      assert.ok(got.result != null && !JSON.stringify(got.result).includes('p-from-the-action'), JSON.stringify(got).slice(0, 600));
     });
 
     it('completion: a completion action\'s value with a hidden character is left out too (M11)', async () => {
