@@ -152,6 +152,14 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const outer = gate.claimAnswer(hop, dm, idOf('top'), undefined, true);
       assert.strictEqual(outer.code, 'SETTING_NOT_READY');
       assert.ok(/top/.test(outer.message) && !/part/.test(outer.message), outer.message);
+      // the outer module not known (left the map, no lookup names it): the
+      // catalogue's text, "this tool", never the hop's message
+      const gone = Object.assign({}, dm, {deviceMap: Object.assign({}, dm.deviceMap), moduleOfDevice: () => null});
+      delete gone.deviceMap[idOf('top')];
+      gone.deviceMap[idOf('top')] = Object.assign(Object.create(WorkerMessage.prototype), {settings: null, bindings: top.bindings});
+      const unnamed = gate.claimAnswer(hop, gone, idOf('top'), undefined, true);
+      assert.strictEqual(unnamed.code, 'SETTING_NOT_READY');
+      assert.match(unnamed.message, /The settings of this tool are not ready yet/);
       // one a module makes up, with no module behind it that declares settings: a module fault
       const forged = gate.claimAnswer(gate.requiredRefusal(dm, idOf('part'), false), dm, idOf('part'), undefined, true);
       assert.strictEqual(forged.code, 'DEVICE_INVOKE_EXCEPTION');
