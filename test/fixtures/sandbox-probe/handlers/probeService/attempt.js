@@ -74,12 +74,28 @@ const ATTEMPTS = {
       filenameThrows: () => Object.defineProperty({}, 'filename', {get() { throw new Error('the module\'s own throw'); }})
     };
     if (arg === 'builtinModule') return M._load('module', Object.assign(agreeing(ownDir), {path: libDir}), false);
+    if (arg === 'relativeFilename') return M._load('./bind-address', {filename: 'decoy.js'}, false);
+    if (arg === 'nonObject') return M._load('./bind-address', 5, false);
+    // Node's path cache, keyed by the request and the directory it is looked
+    // up in: an entry for the runtime's first './bind-address' from lib/
+    if (arg === 'pathCache') {
+      M._pathCache[`./bind-address\u0000${libDir}`] = path.join(__dirname, '..', '..', 'lib', 'v', 'dirname', 'bind-address.js');
+      return undefined;
+    }
+    const decoy = (got) => {
+      if (got == null || typeof(got.hostIp) !== 'function' || got.hostIp() !== 'POISONED') throw Object.assign(new Error('the decoy did not load'), {code: 'NOT_LOADED'});
+    };
+    // no parent: passed through as given, and loads
+    if (arg === 'nullParent' || arg === 'undefinedParent') {
+      return decoy(M._load(path.join(__dirname, '..', '..', 'lib', 'v', 'dirname', 'bind-address.js'), arg === 'nullParent' ? null : undefined, false));
+    }
     if (arg === 'objectRequest') {
       const p = agreeing(ownDir);
       return M._load({toString() { p.path = libDir; return './bind-address'; }}, p, false);
     }
     if (arg === 'isMain') return M._load(path.join(ownDir, 'bind-address.js'), null, true);
-    return M._load('./bind-address', variants[arg](), false);
+    // each loads its own decoy (from its own directory, under its own key)
+    return decoy(M._load('./bind-address', variants[arg](), false));
   },
   createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
   // nothing of the caller's is touched for linkage: an own parent accessor

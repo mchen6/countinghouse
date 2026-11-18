@@ -171,16 +171,23 @@ you have to do. What the sandbox does and does not protect is in
 
 - **Breaking, under the sandbox (`audit` and `enforce`): `module.parent` and
   `module.children` are not kept.** A file a module requires has
-  `module.parent === undefined`, and the requiring file's `module.children`
-  is not updated. (Node itself has deprecated `module.parent` since 14.)
-  Behind this, the loader is never handed a parent module code can change:
-  Node's relative-resolve cache is keyed by the parent's directory before
-  any check runs, and a forged parent could poison what countinghouse's own
-  later requires got. Also under the sandbox, `Module._load` takes only a
-  string request and never makes a main module; a dependency that replaces
-  `Module._load` or `Module._resolveFilename` (proxyquire, mock-require,
-  some APM agents) works under `audit`, where each replacement is reported,
-  and is refused under `enforce`. Such a module needs `--moduleSandbox off`.
+  `module.parent === undefined` (under `--pending-deprecation`, a frozen
+  stand-in), and the requiring file's `module.children` is not updated.
+  (Node itself has deprecated `module.parent` since 14.) Behind this, the
+  loader is never handed a parent module code can change: Node's
+  relative-resolve cache is keyed by the parent's directory before any
+  check runs, and a forged parent could poison what countinghouse's own
+  later requires got. Also under the sandbox, in `audit` too:
+  - `Module._load` takes only a string request, never makes a main module,
+    and takes only a parent whose `filename` is absolute (as Node writes
+    one);
+  - `Module._pathCache` reads as empty.
+
+  A dependency that replaces `Module._load`, `Module._resolveFilename`,
+  `Module.prototype.load` or the `.js`/`.json` handlers (proxyquire,
+  mock-require, some APM agents) works under `audit`, where each
+  replacement is reported, and is refused under `enforce`. Such a module
+  needs `--moduleSandbox off`.
 - **Breaking: `ctx.job` is never `null`.** Outside a task it is now
   `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
   is the call's own progress, sent to an MCP client that asked for it

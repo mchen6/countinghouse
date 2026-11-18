@@ -147,8 +147,7 @@ describe('sandbox 05: worker lockdown', function() {
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });
-    it('no linkage is emulated: nothing of the caller\'s runs, and a child has no parent, at load and after', async () => {
-      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageSpy'})), {outcome: 'allowed', code: null});
+    it('no linkage is emulated: a child has no parent, at its load and after', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageNone'})), {outcome: 'allowed', code: null});
     });
     if (mode === 'audit') {
@@ -185,15 +184,22 @@ describe('sandbox 05: worker lockdown', function() {
     const port = testPort(9773 + i);
     before(async () => { server = await startServer(port, serverArgs(mode)); });
     after(() => stopServer(server));
-    it('none poisons the runtime; a request that is no string, isMain and a throwing filename are refused, each with its line', async () => {
-      const refused = {objectRequest: 'a request that is no string', isMain: 'as the main module', filenameThrows: 'a parent whose filename could not be read'};
-      for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'builtinModule', 'objectRequest', 'isMain', 'filenameThrows']) {
+    it('none poisons the runtime\'s first require (each decoy loads as its own); the refused ones are each said; nothing of the runtime\'s runs module code', async () => {
+      const refused = {objectRequest: 'a request that is no string', isMain: 'as the main module', filenameThrows: 'a parent whose filename could not be read',
+        relativeFilename: 'a parent with no absolute filename', nonObject: 'a parent that is no object'};
+      for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'builtinModule', 'nullParent', 'undefinedParent', 'pathCache',
+        'objectRequest', 'isMain', 'filenameThrows', 'relativeFilename', 'nonObject']) {
         const from = server.output.length;
         const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'forgeParent', arg: variant}));
-        if (refused[variant] == null) continue;
+        if (refused[variant] == null) {
+          assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, variant);
+          continue;
+        }
         assert.strictEqual(r.outcome, 'blocked', `${variant}: ${JSON.stringify(r)}`);
         await waitFor(() => server.output.slice(from).includes(`(${refused[variant]})`), 20000, `${variant}'s violation line`);
       }
+      // the runtime's first './bind-address' (a fresh load): nothing of its own Module runs module code
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageSpy'})), {outcome: 'allowed', code: null});
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null}, 'the runtime got the decoy');
     });
   }));

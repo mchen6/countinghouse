@@ -239,9 +239,12 @@ any module code). Stops:
   require of the same name. Node gets a frozen stand-in built from the
   parent's filename alone (read once, absolute), so the key, the URL the
   hooks see and the resolution all come from one string; `module.parent`
-  and `module.children` are then not kept (a deprecated API). Under `audit`,
-  replacing `Module._load` or `Module._resolveFilename` is reported; under
-  `enforce` both are locked. (What a forged parent with a countinghouse
+  and `module.children` are then not kept (a deprecated API). Node's path
+  cache, keyed the same way, reads as empty. Under `audit`, replacing
+  `Module._load`, `Module._resolveFilename`, `Module.prototype.load` or the
+  `.js`/`.json` handlers is reported; under `enforce` they are locked, and
+  the lockdown doesn't start on a Node line where it can't find how Node
+  stores a parent's URL. (What a forged parent with a countinghouse
   filename may load, and the other routes into Node's loader, are #194's:
   see its design.)
 - other routes to files: `module.enableCompileCache`, `process.report`'s
