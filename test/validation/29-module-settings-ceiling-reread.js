@@ -11,7 +11,7 @@
 //   settings (a supervised restart keeps what it ran with).
 // - reread (lib/settings-reread.js): each loaded module's state again, with
 //   a new version, on its worker's proxy, its per-session record, every
-//   session's worker, the restart's copy and single-thread mode's; atomic
+//   session's worker and the restart's copy; atomic
 //   per module (any refused value: that module keeps ALL its old values,
 //   the others apply); a refusal is a notice and a history line; a settings
 //   change never unloads.
@@ -540,33 +540,6 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.deepStrictEqual(notices.take('w'), []);
     });
 
-    it('single-thread mode\'s in-process devices (no host module) by their package.json; a module of two devices told once on any result', async () => {
-      const callAddress = require('../../lib/call-address');
-      const PART = pkgOf('@acme/region-part', {region: {type: 'string', maxLength: 4}});
-      PART.countinghouse.role = 'part';
-      const TOP = {name: '@acme/hopper', version: '1.0.0', countinghouse: {calls: ['region-part/partService.run']}};
-      // in-process devices: no host module; their package.json says whose
-      const deviceMap = {};
-      for (const [friendly, pkg] of [['region-part', PART], ['hopper', TOP], ['weather', W], ['weather2', W], ['regions', R]]) {
-        deviceMap[callAddress.deviceIDForName(friendly)] = {spec: {device: {friendlyName: friendly}}, packageInfo: pkg};
-      }
-      const dm = {deviceMap, moduleOfDevice: () => null};
-      const mm = manager();
-      mm.unlisted = new Set(['@acme/region-part']);
-      mm.manifestPins = {pinnedOf: (n) => ({'@acme/region-part': PART, '@acme/hopper': TOP, w: W, r: R})[n] || null};
-      mm.modules['@acme/region-part'] = proxy('@acme/region-part');
-      mm.modules['@acme/region-part'].settings = ms.stateFor('@acme/region-part', PART, {operator: true});
-      mm.modules['@acme/hopper'] = proxy('@acme/hopper');
-      write({'module.w.units': 'kelvin', 'module.w.n': 3, 'module.r.region': 'eu', 'module.@acme/region-part.region': 'toolong'});
-      await rr(mm, {dm});
-      // the next result (hopper's): the part's notice, and w's, which has two
-      // devices and so comes with the next result whatever its module, once
-      const said = notices.take('hopper');
-      assert.ok(said.some((t) => /a part of @acme\/hopper/.test(t)), JSON.stringify(said));
-      assert.strictEqual(said.filter((t) => /units not applied/.test(t)).length, 1, JSON.stringify(said));
-      assert.deepStrictEqual(notices.take('weather'), [], 'said once');
-    });
-
     it('a module coming up (not in the map yet) takes its state as it registers, by the one rule, from its own pinned package.json and net', async () => {
       const mm = manager();
       const mmLib = require('../../lib/module-manager');
@@ -728,16 +701,6 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
         options.settingsTool = saved3;
         tool.ceilingForControl(() => tool.cachedCeiling(() => require('../../lib/settings-ceiling').readCeiling()));
       }
-    });
-
-    it('single-thread mode: the manager\'s own copy', async () => {
-      const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
-      // the serving instance's ticket, which its devices read
-      mm.singleThreadSettings.set('w', {state: ms.stateFor('w', W, {operator: true})});
-      write({'module.w.units': 'metric'});
-      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
-      assert.deepStrictEqual(reply, {applied: 1, refused: []});
-      assert.strictEqual(mm.singleThreadSettings.get('w').state.values.units, 'metric');
     });
 
     it('refused whole, nothing changed: another "what", or a settings file that cannot be read', async () => {
