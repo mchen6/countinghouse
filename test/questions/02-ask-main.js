@@ -115,6 +115,53 @@ describe('questions 02: the main thread\'s answer to ctx.ask (MCP completeness M
     refusedWith('ASK_NOT_DECLARED', () => ask.answer({token: call(unknown, {module: 'gone'}), name: 'overwrite', values: {id: 'first'}}, 'w1'));
   });
 
+  // F2-3 (the Fable pass over asks): a value is cut to 1000 UTF-16 code units before anything reads it on the main
+  // thread (the worker cuts it so, but module code can post __ask itself), and each named value is made once
+  describe('an ask\'s values on the main thread (F2-3)', () => {
+    const outputLines = require('../../lib/output-lines');
+    let cleaned;
+    let saved;
+    beforeEach(() => {
+      cleaned = [];
+      saved = outputLines.clean;
+      outputLines.clean = (s) => { cleaned.push(String(s).length); return saved(s); };
+    });
+    afterEach(() => { outputLines.clean = saved; });
+
+    it('a 16 MiB value is cut before it is cleaned, and the dialog says its first 200 characters', () => {
+      const state = ask.newState({askable: true});
+      const token = call(state);
+      const huge = 'x'.repeat(16 * 1024 * 1024);
+      refusedWith('ASK_PENDING', () => ask.answer({token, name: 'overwrite', values: {id: huge}}, 'w1'));
+      assert.ok(cleaned.length > 0 && Math.max(...cleaned) <= 1000, `nothing over the cut was cleaned (${Math.max(...cleaned)})`);
+      assert.ok(state.pending != null && state.pending.text.includes('x'.repeat(200)) && !state.pending.text.includes('x'.repeat(201)), 'the dialog has the first 200');
+    });
+
+    it('a value named under many placeholders is made once', () => {
+      const message = Array.from({length: 166}, () => '{v}').join(' ');
+      const text = questions.composed('m', message, {v: 'y'.repeat(5000)});
+      assert.ok(text.length <= 1000, 'the dialog is cut as before');
+      // once for the value, once for the module's name (the dialog as it leaves goes through client-text)
+      assert.strictEqual(cleaned.length, 2, `cleaned ${cleaned.length} times`);
+      assert.ok(Math.max(...cleaned) <= 1000);
+    });
+
+    it('a cut never splits a character in two: a pair at the 1000th unit goes whole or not at all', () => {
+      const v = `${'a'.repeat(999)}\u{1F600}`;
+      const [kept] = Object.values(questions.boundedValues({v}));
+      assert.strictEqual(kept, 'a'.repeat(999));
+      const text = questions.composed('m', '{v}', {v: `${'\u0001'.repeat(999)}\u{1F600}`});
+      assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(text), 'no lone high surrogate');
+    });
+
+    it('values as the main thread takes them: at most 64, plain ones only, as the worker sends them', () => {
+      const many = Object.fromEntries(Array.from({length: 100}, (_, i) => [`k${i}`, i]));
+      assert.strictEqual(Object.keys(questions.boundedValues(many)).length, 64);
+      assert.deepStrictEqual(Object.assign({}, questions.boundedValues({a: 'x', b: 2, c: true, d: {}, e: NaN, f: null})), {a: 'x', b: 2, c: true, d: null, e: null, f: null});
+      assert.deepStrictEqual(Object.assign({}, questions.boundedValues('not an object')), {});
+    });
+  });
+
   // (the review of #330: the latest ask is the one pending, so a caught one is never the one shown)
   it('one question a round: a second, different one asked after the first was caught is the one pending', () => {
     const state = ask.newState({askable: true});
