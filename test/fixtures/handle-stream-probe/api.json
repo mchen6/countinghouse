@@ -1,0 +1,5 @@
+{"device": {"friendlyName": "handle-stream-probe", "manufacturer": "countinghouse-test",
+  "modelDescription": "leaves a file handle's stream while a read is in flight",
+  "serviceList": {"urn:countinghouse-test:serviceID:probeService": {"actionList": [
+    {"name": "leave", "description": "Leave a file handle's stream mid-read.", "input": {"schema": "/probeService/leave/input"}, "output": {"schema": "/probeService/leave/output"}}
+  ]}}}}
