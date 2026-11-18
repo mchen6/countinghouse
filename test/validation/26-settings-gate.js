@@ -132,7 +132,8 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const live = dm.moduleManager.lifecycle;
       dm.moduleManager.lifecycle = {live: () => null};
       assert.strictEqual(dm.moduleOfDevice(idOf('part')), null);
-      assert.ok(!require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')), 'no stale pin');
+      assert.ok(!require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part', {live: true})), 'no stale pin for the gate');
+      assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')), 'a listing still takes the pin it holds');
       dm.moduleManager.lifecycle = live;
       require('../../lib/tool-generation').bump();
       assert.strictEqual(gate.requiredRefusal(dm, idOf('top'), true), null, 'not refused: the hop answers for it');
