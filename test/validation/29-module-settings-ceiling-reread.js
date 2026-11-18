@@ -694,6 +694,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.strictEqual(lines.filter((l) => /does not accept/.test(l)).length, 2, 'said again after a success');
     });
 
+    it('a reread refused for its file carries the stamp taken before the read (the watch compares that)', async () => {
+      const mm = manager();
+      fs.writeFileSync(options.settingsFile, '{not json');
+      let stamp = null;
+      await assert.rejects(rr(mm), (e) => { stamp = e.stamp; return e.fileProblem === true; });
+      assert.ok(typeof(stamp) === 'string' && stamp.includes(options.settingsFile), String(stamp));
+    });
+
     it('single-thread mode: the manager\'s own copy', async () => {
       const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
       // the serving instance's ticket, which its devices read
