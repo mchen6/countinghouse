@@ -3,10 +3,12 @@
 // under enforce, so countinghouse's own worker code is proven not to trip the
 // built-in block.
 const assert = require('assert');
+const fs     = require('fs');
+const os     = require('os');
 const path   = require('path');
 const Module = require('module');
 const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTIN_IDS} = require('../../lib/module-lockdown');
-const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
@@ -56,6 +58,16 @@ async function handleIsNotAdoption(port, server) {
   assert.ok(!since.includes('violation descriptor'), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
 }
 
+// F4-2: nothing logged for a call (a "violation report <what>" line) up to a
+// known violation made after it, read up to its line (L1 round 5's pattern)
+async function noReportViolation(port, server, from, what) {
+  const name = `ch-05-mark-${process.pid}-${Date.now()}`;
+  await mcpCall(port, KEY, TOOL, {what: 'loadFileOutside', arg: `/nonexistent/${name}`});
+  await waitFor(() => server.output.indexOf(name, from) !== -1, 20000, 'the loadFile violation line');
+  const since = server.output.slice(from, server.output.indexOf(name, from));
+  assert.ok(!since.includes(`violation report ${what}`), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
+}
+
 describe('sandbox 05: worker lockdown', function() {
   this.timeout(120000);
 
@@ -73,9 +85,15 @@ describe('sandbox 05: worker lockdown', function() {
     });
 
     it('detect-libc\'s steps (excludeNetwork set around getReport, then put back) are never refused, and leak nothing', async () => {
+      const from = server.output.length;
       const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'detectLibc'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
-      assert.ok(!/violation report excludeNetwork/.test(server.output), 'and no violation');
+      await noReportViolation(testPort(9608), server, from, 'excludeNetwork');
+    });
+
+    it('a report setting is a boolean, as Node\'s own: anything else is a TypeError, ERR_INVALID_ARG_TYPE', async () => {
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'reportCompactNotBoolean'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
     });
 
     ROUTES.forEach(([what, arg]) => {
@@ -140,9 +158,25 @@ describe('sandbox 05: worker lockdown', function() {
     });
 
     it('detect-libc\'s steps leak nothing under audit either, and are not violations', async () => {
+      const from = server.output.length;
       const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'detectLibc'});
       assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
-      assert.ok(!/violation report excludeNetwork/.test(server.output), 'and no violation');
+      await noReportViolation(testPort(9609), server, from, 'excludeNetwork');
+    });
+
+    it('a report written under audit holds no environment, in the module\'s own compact', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-05-report-'));
+      try {
+        for (const compact of [true, false]) {
+          const file = path.join(dir, `r-${compact}.json`);
+          const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'writeReportTo', arg: JSON.stringify({file, compact})});
+          assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+          const text = fs.readFileSync(file, 'utf8');
+          const report = JSON.parse(text);
+          assert.strictEqual(report.environmentVariables, undefined, `${compact}: the environment was written`);
+          assert.strictEqual(text.trim().includes('\n'), !compact, `${compact}: compact ${compact} as the module set it`);
+        }
+      } finally { fs.rmSync(dir, {recursive: true, force: true}); }
     });
 
     it('process.loadEnvFile reads through the broker', async () => {
@@ -165,6 +199,20 @@ describe('sandbox 05: worker lockdown', function() {
       await mcpCall(testPort(9609), KEY, TOOL, {what: 'v8'});
       const lines = server.output.split('\n').filter((l) => l.includes('module sandbox: sandbox-probe violation builtin v8'));
       assert.strictEqual(lines.length, 1, lines.join('\n'));
+    });
+
+    // last of the block: it restarts the probe
+    it('a module\'s compact is its own: the process\'s is unchanged, as a restarted worker finds it', async () => {
+      const set = await mcpCall(testPort(9609), KEY, TOOL, {what: 'reportCompactSet'});
+      assert.deepStrictEqual(toolOutput(set), {outcome: 'allowed', code: null}, JSON.stringify(set));
+      await post(testPort(9609), KEY, '/restart-module', {name: 'sandbox-probe'});
+      // (until the restart answers, the old worker still says its own compact: COMPACT_true)
+      let last = null;
+      await waitFor(async () => {
+        const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'reportCompactIsFalse'});
+        last = toolOutput(r);
+        return r.isError === false && last != null && last.outcome === 'allowed' && last.code === null;
+      }, 30000, 'the restarted probe to find the process\'s compact false', () => JSON.stringify(last));
     });
   });
 

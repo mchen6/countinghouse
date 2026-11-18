@@ -150,6 +150,26 @@ const ATTEMPTS = {
   },
   // a setting that writes where a report goes (re-set to itself: audit changes nothing)
   reportDirectory:  () => { process.report.directory = process.report.directory; },
+  // a report written to {file, compact} (arg as JSON) in the module's own compact (audit only: refused under enforce)
+  writeReportTo:    (arg) => {
+    const {file, compact} = JSON.parse(arg);
+    const was = process.report.compact;
+    process.report.compact = compact === true;
+    try { process.report.writeReport(file); } finally { process.report.compact = was; }
+  },
+  // compact is the module's own: set here, the process's is unchanged (a new worker starts from it)
+  reportCompactSet: () => {
+    process.report.compact = true;
+    if (process.report.compact !== true) throw Object.assign(new Error('not set'), {code: 'NOT_SET'});
+  },
+  reportCompactIsFalse: () => {
+    if (process.report.compact !== false) throw Object.assign(new Error(`compact is ${process.report.compact}`), {code: `COMPACT_${process.report.compact}`});
+  },
+  // a view of Node's own: a setting is a boolean, as Node checks
+  reportCompactNotBoolean: () => {
+    try { process.report.compact = 'yes'; } catch (e) { if (e instanceof TypeError && e.code === 'ERR_INVALID_ARG_TYPE') return; throw e; }
+    throw Object.assign(new Error('a non-boolean was taken'), {code: 'TAKEN'});
+  },
   compileCache:     () => module.constructor.enableCompileCache('/nonexistent-ch-probe/cc'),
   sourceMaps:       () => process.setSourceMapsEnabled(true),
   repl:             () => require('repl'),
