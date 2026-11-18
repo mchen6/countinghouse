@@ -32,6 +32,27 @@ const ATTEMPTS = {
   loadSkipHooks:    () => module.constructor._load('node:child_process', null, false, {shouldSkipModuleHooks: true}),
   // (worker_threads: a target of its own, so its report is told apart)
   loadResolved:     () => module.constructor._load('worker_threads', null, false, {resolved: {filename: 'worker_threads', url: 'node:worker_threads', format: 'builtin'}}),
+  // #406's second review: Node's relative-resolve cache is keyed by the
+  // parent's path, answered before any hook. A parent with countinghouse's
+  // lib/ as its path and the module's own file as its filename records the
+  // module's decoy lib/bind-address.js under the lib's key; the runtime's
+  // first getHostIp then requires './bind-address' from lib/ and gets it.
+  poisonRelative:   () => {
+    const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
+    if (key == null) throw new Error('no countinghouse-util in the cache');
+    const path = require('path');
+    const forged = {id: 'forged', path: path.dirname(key), filename: path.join(__dirname, '..', '..', 'lib', 'decoy.js'), paths: [], children: []};
+    module.constructor._load('./bind-address', forged, false);
+    if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
+  },
+  hostIpClean:      () => {
+    if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
+  },
+  // under audit, a module that replaces the loader is reported
+  replaceLoad:      () => {
+    const prev = module.constructor._load;
+    module.constructor._load = function(...args) { return prev.apply(this, args); };
+  },
   // whether the cache holds source compiled under that filename (what
   // loadSource's internal argument did before B1's fix)
   compiledInCache:  (arg) => {

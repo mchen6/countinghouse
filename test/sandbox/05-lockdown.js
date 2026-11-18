@@ -134,6 +134,24 @@ describe('sandbox 05: worker lockdown', function() {
         await waitFor(() => reportedSince(from, target), 20000, `${target}'s violation line`);
       });
     }
+    // #406's second review: a parent whose path is lib/ and whose filename is
+    // the module's own poisoned Node's relative-resolve cache, so the
+    // runtime's first getHostIp got the module's decoy: refused in both modes
+    it('a parent whose path, paths and filename disagree is refused and reported, and the runtime\'s later require is not poisoned', async () => {
+      const from = server.output.length;
+      const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'poisonRelative'}));
+      assert.strictEqual(r.outcome, 'blocked', JSON.stringify(r));
+      await waitFor(() => server.output.slice(from).includes('violation require ./bind-address (a parent whose path, paths and filename disagree)'), 20000,
+        'the forged parent\'s violation line');
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null});
+    });
+    if (mode === 'audit') {
+      it('a module that replaces Module._load is reported', async () => {
+        const from = server.output.length;
+        assert.strictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})).outcome, 'allowed');
+        await waitFor(() => server.output.slice(from).includes('violation require _load replaced'), 20000, 'the replacement\'s violation line');
+      });
+    }
     it(`loadSource: no source compiled under a countinghouse filename; ${mode === 'enforce' ? 'the path is invisible' : 'the real file, reported'}`, async () => {
       const from = server.output.length;
       const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'loadSource', arg: OUTSIDE_FILE}));
