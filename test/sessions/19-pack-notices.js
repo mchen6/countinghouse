@@ -30,10 +30,11 @@ const until = async(test, ms = 3000) => {
   return test();
 };
 
-// What lib/packs-in-place.js asks of a manager for a unit loaded in place
-// (ModuleManager.prototype.holdDiscovery): these fakes' loads never
-// acknowledge, so a unit has nothing to wait for.
-const UNITS = {holdDiscovery: (names) => ({names: new Set(names), loaded: new Set(), registered: new Set(), changed: null}), releaseDiscovery: () => {}};
+// What lib/packs-in-place.js asks of a manager for a unit loaded in place:
+// ModuleManager's own methods (these fakes' loads never acknowledge, so a
+// unit has nothing to wait for).
+const MMP = require('../../lib/module-manager').prototype;
+const UNITS = {holdDiscovery: MMP.holdDiscovery, releaseDiscovery: MMP.releaseDiscovery, isHeld: MMP.isHeld, unitLoaded: MMP.unitLoaded, unitRegistration: MMP.unitRegistration, unitNote: MMP.unitNote};
 
 describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is told (shared runtime B3, Task 6)', () => {
   const A = 'a'.repeat(32);

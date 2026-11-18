@@ -49,7 +49,7 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
     const unit = mm.holdDiscovery(['s', 'p']);
     mm.emit('moduleload', 's', {name: 's'}, '1.0.0');
     mm.emit('moduleload', 'p', {name: 'p'}, '1.0.0');
-    const waited = packs.unitRegistered(unit, 2000);
+    const waited = packs.unitRegistered(unit, ['s', 'p'], 2000);
     mm.emit('moduleload', 'other', {name: 'other'}, '1.0.0');
     await waited;
     await tick(20);
@@ -61,6 +61,18 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
     assert.strictEqual(rec.passes, 2, 'once released, a load runs its pass again');
   });
 
+  it('a held load opens no discovery window (allDevicesLoaded is left as it is); a load outside the unit does', async () => {
+    const {mm} = manager();
+    let windows = 0;
+    mm.on('modulediscovering', () => { windows += 1; });
+    const unit = mm.holdDiscovery(['s']);
+    mm.emit('moduleload', 's', {name: 's'}, '1.0.0');
+    assert.strictEqual(windows, 0);
+    mm.emit('moduleload', 'other', {name: 'other'}, '1.0.0');
+    assert.strictEqual(windows, 1);
+    mm.releaseDiscovery(unit);
+  });
+
   it('a refused registration is an outcome too: the unit does not wait for it', async () => {
     const {mm} = manager();
     // a registration the device manager refuses (DEVICE_OBJECT_CONFLICT) still ends
@@ -68,7 +80,7 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
     const unit = mm.holdDiscovery(['s']);
     mm.emit('moduleload', 's', {name: 's'}, '1.0.0');
     const t0 = Date.now();
-    await packs.unitRegistered(unit, 2000);
+    await packs.unitRegistered(unit, ['s'], 2000);
     assert.ok(Date.now() - t0 < 1000, `waited ${Date.now() - t0} ms`);
   });
 
@@ -76,13 +88,20 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
     const {mm} = manager();
     const unit = mm.holdDiscovery(['s']);
     unit.loaded.add('s');   // loaded, its registration never comes
-    await assert.rejects(packs.unitRegistered(unit, 100), (err) => err.code === 'CONTROL_FAILED' && /s: loaded, but not registered/.test(err.message));
+    await assert.rejects(packs.unitRegistered(unit, ['s'], 100), (err) => err.code === 'CONTROL_FAILED' && /s: loaded, but not registered/.test(err.message));
   });
 
   it('a stub that never acknowledges a load is not waited for', async () => {
     const {mm} = manager();
     const unit = mm.holdDiscovery(['s']);
-    await packs.unitRegistered(unit, 2000);
+    await packs.unitRegistered(unit, ['s'], 2000);
+  });
+
+  it('a restart of a module the unit holds, not loaded by the operation, is not waited for', async () => {
+    const {mm} = manager();
+    const unit = mm.holdDiscovery(['s', 'kept']);
+    unit.loaded.add('kept');   // its supervisor's restart, whose registration has not come
+    await packs.unitRegistered(unit, ['s'], 2000);
   });
 
   it('single-thread mode: the unit waits for its module\'s discovery, and the held load runs no pass', async () => {
@@ -90,7 +109,7 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
     const unit = mm.holdDiscovery(['s']);
     mm.emit('moduleload', 's', reporting(), '1.0.0');
     assert.strictEqual(unit.registered.has('s'), false, 'not before its discovery');
-    await packs.unitRegistered(unit, 2000);
+    await packs.unitRegistered(unit, ['s'], 2000);
     assert.ok(unit.registered.has('s'));
     await tick(20);
     assert.strictEqual(rec.passes, 0);
