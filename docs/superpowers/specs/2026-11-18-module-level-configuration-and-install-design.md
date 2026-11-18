@@ -1946,31 +1946,20 @@ code, these parts are larger:
 | Bridges between the repositories | – | 1 | Above. |
 | Overlap already counted | −3 | −2.5 | |
 
-## 17. Open questions for the maintainer
+## 17. The maintainer's answers (2026-11-18)
 
-1. **A credential from a client's environment.** Today the GitHub token can
-   come from `COUNTINGHOUSE_GITHUB_TOKEN` or `GITHUB_TOKEN` in the
-   environment a client starts ch-local with, and the install documents
-   describe it. The decisions name a terminal and standard input only. An
-   environment variable cannot be bound to a module, and the origin list
-   that used to bound it is removed, so this design removes the route
-   (section 6.9). Headless and CI use becomes
-   `… | ch-local credentials add <module>`. **Recommended: remove it.** If
-   it should stay, it becomes a third source, bound at a terminal
-   (`ch-local credentials add <module> --from-env <NAME>`: the binding is
-   stored, the value is read from that variable at each start), for about
-   1.5 more days; it keeps a session's own token and the "runs its own
-   runtime" path alive.
-2. **Withdrawal by module.** A module that no pack of the running release
-   lists is not started (section 9.7), in place of "a withdrawn pack is not
-   started". This was asked when the decisions were made and not answered.
-   **Recommended: yes**, as designed.
-3. **0.x versions.** The update rule speaks of a major version. Every
-   module of pack 1 is 0.x, where semver lets a minor version break.
-   ch-local's own upgrade already treats a 0.x minor (and a 0.0.x patch) as
-   a major. **Recommended: the same rule for modules**, as designed. The
-   cost: while modules are 0.x, a release that raises a called module's
-   minor version is not taken automatically.
+All three open questions were answered as recommended:
+1. **No credential from a client's environment.** Keys come only from
+   `ch-local credentials add <module>` (typed, from standard input, or from
+   the gh login after a yes). The `COUNTINGHOUSE_GITHUB_TOKEN` /
+   `GITHUB_TOKEN` client source is removed; headless and CI setups pipe the
+   key on standard input. The docs say so.
+2. **Withdrawal is per module.** A module that no pack of the running
+   release lists is not started, and the user is told; nothing is deleted,
+   and it comes back with an upgrade that lists it again.
+3. **A 0.x minor counts as breaking.** For the update question, `0.3 -> 0.4`
+   is treated like a major bump (ch-local's own rule), so it asks, and
+   automatic upgrades hold back on it.
 
 ## 18. Choices made here that the review should check
 
