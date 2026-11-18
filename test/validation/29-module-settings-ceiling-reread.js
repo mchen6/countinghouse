@@ -161,7 +161,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       const st = ms.stateFor('w', pkg, {operator: true, ceiling: c, log: (l) => lines.push(l)});
       assert.strictEqual(st.refused, null);
       assert.strictEqual(st.values.units, 'metric');
-      assert.ok(lines.some((l) => /oldFlag/.test(l) && /ignored/.test(l)), lines.join('\n'));
+      assert.ok(lines.some((l) => l.includes('moduleSettings "w.oldFlag"') && /ignored/.test(l)), lines.join('\n'));
     });
 
     it('a state carries what it was made from (not enumerable)', () => {
@@ -371,10 +371,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(!/module\.w\.gone/.test(history), history);
     });
 
-    it('a runtime with no --settingsFile: refused whole', async () => {
+    it('a runtime with no --settingsFile: refused whole, and under --moduleSettings saying why', async () => {
       const mm = manager();
       options.settingsFile = null;
       await assert.rejects(reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})}), (e) => e.code === 'CONTROL_FAILED');
+      // under --moduleSettings, saying why
+      options.moduleSettings = path.join(dir, 'operator.json');
+      await assert.rejects(reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})}),
+        (e) => e.code === 'CONTROL_FAILED' && /--settingsFile only/.test(e.message) && /--moduleSettings/.test(e.message));
     });
 
     it('single-thread mode: the manager\'s own copy', async () => {
