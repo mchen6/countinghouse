@@ -258,8 +258,47 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
         LOG.E = realE;
       }
       assert.ok(view != null && typeof(view.reserve) === 'function');
+      await spawn(A);   // its share made now, after the failed build
+      assert.strictEqual(quota().knows(A), false, 'a partition the failed walk didn\'t reach is unknown, never falsely known');
       await end(A);
       assert.ok(!has(A));
+    });
+
+    it('a write still in flight when its session ends settles into nothing: its bytes are never given back twice', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'f'), Buffer.alloc(3000));
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
+      await spawn(B);
+      const viewA = await spawn(A);
+      viewA.reserve(1000, 1, 'write', '/data/g');   // in flight across the end
+      await end(A);
+      assert.strictEqual(quota().bytes, 2000, 'A\'s share, its reservation too, given back');
+      viewA.settle(1000, 1, 0, 0);   // the write then failed
+      viewA.settle(0, 0, 700, 1);   // or another grew
+      viewA.reserve(500, 1, 'write', '/data/h');
+      assert.strictEqual(quota().bytes, 2000, 'B\'s 2000 untouched');
+    });
+
+    it('a session\'s end removes its other modules\' partitions while one module\'s build still walks', async () => {
+      mm.modules.ps2 = new SessionModuleRecord({name: 'ps2', version: '1.0.0', modulePath: '/m2', moduleSpec: null});
+      try {
+        await make(A);
+        await make(B);
+        await partition.ensure(env.dataRoot, 'ps2', A);
+        const slow = slowBuild(B);
+        const spawning = spawn(A);
+        await new Promise((r) => setImmediate(r));
+        const ending = end(A);
+        assert.ok(await (async () => { for (let i = 0; i < 40; i++) { if (!fs.existsSync(path.join(env.dataRoot, 'ps2', 'sessions', A))) return true; await new Promise((r) => setTimeout(r, 25)); } return false; })(),
+          'ps2\'s partition removed while ps\'s build walks');
+        slow.release();
+        await spawning;
+        await ending;
+        assert.ok(!has(A));
+      } finally {
+        delete mm.modules.ps2;
+      }
     });
 
     it('a session\'s end stops its workers before it waits for a slow build walk', async () => {
