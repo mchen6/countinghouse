@@ -1,6 +1,6 @@
 'use strict';
 // reread on the control channel, spawned (the module-level configuration
-// design, sections 4.3 and 7.3; M2a), worker and single-thread mode: ch-local
+// design, sections 4.3 and 7.3; M2a), worker mode (module settings run only with worker threads): ch-local
 // has written a module.* value of --settingsFile and sends
 // {type: 'reread', what: 'module-settings'}; the next call has the new
 // values. A module with any refused value keeps all of its old ones, and the
@@ -29,7 +29,9 @@ function writeModule(dir, {name, settings, service, action}) {
   return dir;
 }
 
-for (const [mode, thread] of [['worker mode', '--workerThread'], ['single-thread mode', '--no-workerThread']]) {
+// worker mode only: module settings run only with worker threads (a module
+// that declares them is refused in single-thread mode: module-loading 44)
+for (const [mode, thread] of [['worker mode', '--workerThread']]) {
   describe(`stdio 46: reread of the module settings, ${mode}`, function() {
     this.timeout(120000);
     let home = null;

@@ -1559,7 +1559,11 @@ and the short list of what the in-process sandbox cannot give.
   modules is kept from them there: a call's `Session`, including the
   shared runtime's session id on it, its call tokens and every other main-
   thread state are in reach. It is for debugging modules
-  ([differences](module-development.md)).
+  ([differences](module-development.md)). Module settings run only with
+  worker threads: there a module that declares settings is refused at its
+  load and at a reload (`SETTINGS_NEED_WORKER_THREADS`), so no settings
+  state, and no ceiling's fixed value, ever has to be kept in the main
+  thread a module shares.
 - **No OS-level isolation.** `worker_threads` share the same process, same
   OS user and same network stack as the main thread. Outside `--hardened`
   the main thread can open any file the OS user can.

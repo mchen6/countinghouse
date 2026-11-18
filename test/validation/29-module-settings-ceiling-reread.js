@@ -11,7 +11,7 @@
 //   settings (a supervised restart keeps what it ran with).
 // - reread (lib/settings-reread.js): each loaded module's state again, with
 //   a new version, on its worker's proxy, its per-session record, every
-//   session's worker, the restart's copy and single-thread mode's; atomic
+//   session's worker and the restart's copy; atomic
 //   per module (any refused value: that module keeps ALL its old values,
 //   the others apply); a refusal is a notice and a history line; a settings
 //   change never unloads.
@@ -525,9 +525,10 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
     it('a part still spawning (no device registered) is found by its pinned device IDs', () => {
       const reread_ = require('../../lib/settings-reread');
       const callAddress = require('../../lib/call-address');
-      const dm = {deviceMap: {}, moduleOfDevice: () => null};
-      const mm = {pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])};
-      assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm, mm), '@acme/region-part');
+      // the device manager's own lookup, over the manager's pins
+      const dm = {deviceMap: {}, moduleManager: {modules: {}, lifecycle: {live: () => ({})}, pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])}};
+      dm.moduleOfDevice = require('../../lib/device-manager').prototype.moduleOfDevice.bind(dm);
+      assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm), '@acme/region-part');
     });
 
     it('a notice is keyed by the friendlyName the module\'s own api.json gives, before its devices register', async () => {
@@ -538,33 +539,6 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       await rr(mm, {dm: {deviceMap: {}, moduleOfDevice: () => null}});
       assert.strictEqual(notices.take('weather').filter((t) => /units not applied/.test(t)).length, 1);
       assert.deepStrictEqual(notices.take('w'), []);
-    });
-
-    it('single-thread mode\'s in-process devices (no host module) by their package.json; a module of two devices told once on any result', async () => {
-      const callAddress = require('../../lib/call-address');
-      const PART = pkgOf('@acme/region-part', {region: {type: 'string', maxLength: 4}});
-      PART.countinghouse.role = 'part';
-      const TOP = {name: '@acme/hopper', version: '1.0.0', countinghouse: {calls: ['region-part/partService.run']}};
-      // in-process devices: no host module; their package.json says whose
-      const deviceMap = {};
-      for (const [friendly, pkg] of [['region-part', PART], ['hopper', TOP], ['weather', W], ['weather2', W], ['regions', R]]) {
-        deviceMap[callAddress.deviceIDForName(friendly)] = {spec: {device: {friendlyName: friendly}}, packageInfo: pkg};
-      }
-      const dm = {deviceMap, moduleOfDevice: () => null};
-      const mm = manager();
-      mm.unlisted = new Set(['@acme/region-part']);
-      mm.manifestPins = {pinnedOf: (n) => ({'@acme/region-part': PART, '@acme/hopper': TOP, w: W, r: R})[n] || null};
-      mm.modules['@acme/region-part'] = proxy('@acme/region-part');
-      mm.modules['@acme/region-part'].settings = ms.stateFor('@acme/region-part', PART, {operator: true});
-      mm.modules['@acme/hopper'] = proxy('@acme/hopper');
-      write({'module.w.units': 'kelvin', 'module.w.n': 3, 'module.r.region': 'eu', 'module.@acme/region-part.region': 'toolong'});
-      await rr(mm, {dm});
-      // the next result (hopper's): the part's notice, and w's, which has two
-      // devices and so comes with the next result whatever its module, once
-      const said = notices.take('hopper');
-      assert.ok(said.some((t) => /a part of @acme\/hopper/.test(t)), JSON.stringify(said));
-      assert.strictEqual(said.filter((t) => /units not applied/.test(t)).length, 1, JSON.stringify(said));
-      assert.deepStrictEqual(notices.take('weather'), [], 'said once');
     });
 
     it('a module coming up (not in the map yet) takes its state as it registers, by the one rule, from its own pinned package.json and net', async () => {
@@ -691,6 +665,36 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.strictEqual(r.state.values.units, ran.values.units, 'nothing else changed');
     });
 
+    it('the file unreadable: a restart (ceilingRefuses) under a rejected fixed value is refused, marked the ceiling\'s; a running module says it once but always names it', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const bad = trusted(parsed({moduleSettings: {'w.n': {fixed: 500}}}).ceiling);
+      const restart = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad, ceilingRefuses: true});
+      assert.strictEqual(restart.state, null);
+      assert.ok(reread_.isCeilingRefusal(restart.refusal));
+      const a = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad});
+      const b = reread_.next('w', {pkg: W, net: []}, {previous: a.state, ceiling: bad});
+      assert.deepStrictEqual(b.refused.map((r) => r.code), ['SETTING_INVALID', 'SETTING_NOT_APPLIED'], 'said already, still in the reply');
+    });
+
+    it('the file unreadable: a refusal not by the ceiling (values over 32 KiB) is never marked the ceiling\'s', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const decl = {};
+      for (let i = 0; i < 32; i += 1) decl[`s${i}`] = {type: 'string', maxLength: 1024};
+      const BIG = pkgOf('big', decl);
+      // a previous state over 32 KiB together (made as it ran: its values set by hand)
+      const ran = ms.stateFor('big', BIG, {operator: true});
+      const values = Object.create(null);
+      for (let i = 0; i < 32; i += 1) values[`s${i}`] = 'a'.repeat(1024);
+      const prev = Object.assign({}, ran, {values: Object.freeze(values)});
+      Object.defineProperty(prev, 'made', {value: ran.made});
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const r = reread_.next('big', {pkg: BIG, net: null}, {previous: prev, ceiling: {state: 'none'}, ceilingRefuses: true});
+      assert.ok(r.state != null, 'kept, not refused');
+      assert.ok(r.refusal == null || !reread_.isCeilingRefusal(r.refusal));
+    });
+
     it('a refusal said while the file is unreadable is cleared by a success, so a later one is said again', () => {
       const reread_ = require('../../lib/settings-reread');
       const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
@@ -728,16 +732,6 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
         options.settingsTool = saved3;
         tool.ceilingForControl(() => tool.cachedCeiling(() => require('../../lib/settings-ceiling').readCeiling()));
       }
-    });
-
-    it('single-thread mode: the manager\'s own copy', async () => {
-      const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
-      // the serving instance's ticket, which its devices read
-      mm.singleThreadSettings.set('w', {state: ms.stateFor('w', W, {operator: true})});
-      write({'module.w.units': 'metric'});
-      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
-      assert.deepStrictEqual(reply, {applied: 1, refused: []});
-      assert.strictEqual(mm.singleThreadSettings.get('w').state.values.units, 'metric');
     });
 
     it('refused whole, nothing changed: another "what", or a settings file that cannot be read', async () => {

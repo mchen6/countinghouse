@@ -71,21 +71,10 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.stateOf({moduleManager: {}}, modulesOwn), null);
     });
 
-    it('single-thread mode: a device reads its own instance\'s state (its ticket), never another instance\'s of the same name', () => {
-      const serving = stateWith({u: {type: 'string'}});
-      const loading = stateWith({u: {type: 'string'}, w: {type: 'boolean'}});
-      const oldDevice = {moduleName: 'm'};
-      const newDevice = {moduleName: 'm'};
-      const mm = {deviceTickets: new WeakMap([[oldDevice, {state: serving}], [newDevice, {state: loading}]])};
-      assert.strictEqual(gate.stateOf({moduleManager: mm}, oldDevice), serving);
-      assert.strictEqual(gate.stateOf({moduleManager: mm}, newDevice), loading);
-      assert.strictEqual(gate.stateOf({moduleManager: mm}, {moduleName: 'm'}), null, 'a device with no ticket');
-    });
-
     it('a module that declares settings, with no state here: refused SETTING_NOT_READY, never run unchecked', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       const device = {moduleName: 'm'};
-      const dm = {deviceMap: {[idOf('m')]: device}, moduleManager: {deviceTickets: new WeakMap()},
+      const dm = {deviceMap: {[idOf('m')]: device}, moduleManager: {},
         packageOfModule: (n) => (n === 'm' ? {name: 'm', countinghouse: {settings: {u: {type: 'string'}}}} : {name: n})};
       require('../../lib/tool-generation').bump();
       const err = gate.requiredRefusal(dm, idOf('m'), true);
@@ -96,16 +85,58 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
     });
 
-    it('a declaring part not registered yet (still spawning) is not ready; a client\'s call names its top-level module, never the part', () => {
+    it('whether a module declares settings is read once per tool-set generation', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
+      let reads = 0;
+      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {},
+        packageOfModule: (n) => { reads += 1; return {name: n, countinghouse: {settings: {u: {type: 'string'}}}}; }};
+      require('../../lib/tool-generation').bump();
+      gate.requiredRefusal(dm, idOf('m'), true);
+      gate.requiredRefusal(dm, idOf('m'), true);
+      assert.strictEqual(reads, 1, 'kept within a generation');
+      require('../../lib/tool-generation').bump();
+      gate.requiredRefusal(dm, idOf('m'), true);
+      assert.strictEqual(reads, 2, 'read again after a bump');
+    });
+
+    it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const DeviceManager = require('../../lib/device-manager');
       const top = {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}};
-      const dm = {deviceMap: {[idOf('top')]: top}, moduleOfDevice: () => null,
-        moduleManager: {deviceTickets: new WeakMap([[top, {state: stateWith({})}]]), pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']])},
-        packageOfModule: (n) => (n === '@acme/part' ? {name: n, countinghouse: {settings: {r: {type: 'string', required: true}}}} : {name: n})};
+      const pins = {'@acme/part': {name: '@acme/part', countinghouse: {role: 'part', settings: {r: {type: 'string', required: true}}}}, top: {name: 'top'}};
+      const dm = {deviceMap: {[idOf('top')]: top},
+        // the part spawning: a live spawn (lifecycle)
+        moduleManager: {modules: {}, lifecycle: {live: (n) => (n === '@acme/part' ? {} : null)},
+          pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']]), manifestPins: {pinnedOf: (n) => pins[n]}}};
+      dm.moduleOfDevice = DeviceManager.prototype.moduleOfDevice.bind(dm);
+      dm.packageOfModule = DeviceManager.prototype.packageOfModule.bind(dm);
+      // the device manager knows the spawning part by its pins (unstubbed)
+      assert.strictEqual(dm.moduleOfDevice(idOf('part')), '@acme/part');
+      assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')));
+      // a spawn that failed (nothing live): no answer from its pins
+      const live = dm.moduleManager.lifecycle;
+      dm.moduleManager.lifecycle = {live: () => null};
+      assert.strictEqual(dm.moduleOfDevice(idOf('part')), null);
+      dm.moduleManager.lifecycle = live;
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(gate.requiredRefusal(dm, idOf('top'), true), null, 'not refused: the hop answers for it');
+      // registered and serving with no state: refused, the top-level module named, never the part
+      dm.deviceMap[idOf('part')] = {moduleName: '@acme/part'};
       require('../../lib/tool-generation').bump();
       const err = gate.requiredRefusal(dm, idOf('top'), true);
       assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
       assert.ok(/top/.test(err.message) && !/part/.test(err.message), err.message);
+      // a hop's: a claim naming no module, for its calling module
+      const hop = gate.requiredRefusal(dm, idOf('part'), false);
+      assert.strictEqual(hop.code, 'SETTING_NOT_READY');
+      assert.strictEqual(hop.message, 'not ready');
+      // passed on by the calling module: the outer call's words, the top named
+      const outer = gate.claimAnswer(hop, dm, idOf('top'), undefined, true);
+      assert.strictEqual(outer.code, 'SETTING_NOT_READY');
+      assert.ok(/top/.test(outer.message) && !/part/.test(outer.message), outer.message);
+      // one a module makes up, with no module behind it that declares settings: a module fault
+      const forged = gate.claimAnswer(gate.requiredRefusal(dm, idOf('part'), false), dm, idOf('part'), undefined, true);
+      assert.strictEqual(forged.code, 'DEVICE_INVOKE_EXCEPTION');
     });
   });
 
@@ -224,18 +255,6 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.requiredRefusal(dm, dm.idOf('top'), true), null, 'kept: the same generation');
       require('../../lib/tool-generation').bump();
       assert.ok(gate.requiredRefusal(dm, dm.idOf('top'), true) != null, 'walked again after the bump');
-    });
-
-    it('a device with no verified bindings (single-thread mode) is walked over its declared calls', () => {
-      const idOf = (n) => callAddress.deviceIDForName(n);
-      const partDevice = {moduleName: 'part'};
-      const dm = {deviceMap: {
-        [idOf('top')]: {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}},
-        [idOf('part')]: partDevice,
-      }, moduleManager: {deviceTickets: new WeakMap([[partDevice, {state: stateWith({r: {type: 'string', required: true}})}]])}};
-      require('../../lib/tool-generation').bump();
-      const err = gate.requiredRefusal(dm, idOf('top'), true);
-      assert.ok(err != null && /top needs a setting: a module this tool calls/.test(err.message), String(err && err.message));
     });
 
     it('module text cannot forge the stored setting names: the separator never survives in it', () => {
