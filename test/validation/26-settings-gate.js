@@ -77,9 +77,9 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const loading = stateWith({u: {type: 'string'}, w: {type: 'boolean'}});
       const mm = {singleThreadSettings: new Map([['m', serving]]), singleThreadPending: new Map()};
       assert.strictEqual(gate.stateOf({moduleManager: mm}, device), serving);
-      mm.singleThreadPending.set('m', loading);
+      mm.singleThreadPending.set('m', {state: loading});
       assert.strictEqual(gate.stateOf({moduleManager: mm}, device), loading);
-      mm.singleThreadPending.set('m', null);
+      mm.singleThreadPending.set('m', {state: null});
       assert.strictEqual(gate.stateOf({moduleManager: mm}, device), null, 'a loading version that declares none');
     });
   });
