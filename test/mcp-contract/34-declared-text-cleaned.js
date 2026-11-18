@@ -359,8 +359,10 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
   // decision; single-thread mode assembles the spec it decided on
   it('tools/list\'s finding is recorded; updateDeviceSpec decides again; a decision is taken when its spec serves; one read of api.json', () => {
     const verdict = require('../../lib/hidden-text-verdict');
-    verdict.markAt('d-late', 'urn:t:serviceID:s', 'late');
+    verdict.set('d-late', []);
+    verdict.markAt('d-late', 'urn:t:serviceID:s', 'late', null, verdict.tokenOf('d-late'));
     assert.strictEqual(verdict.unusableAt('d-late', 'urn:t:serviceID:s', 'late'), true);
+    verdict.forget('d-late');
     const CHDevice = require('../../lib/countinghouse-device');
     const schemaDoc = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
       s: {fine: {input: {type: 'object'}}, added: {input: {type: 'object', properties: {c: {enum: [`x${ZWSP}`]}}}}}};
@@ -370,13 +372,32 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       {name: 'fine', description: 'Fine.', input: {schema: '/s/fine/input'}}, {name: 'added', description: 'Added.', input: {schema: '/s/added/input'}}]}}}};
     device.updateDeviceSpec(next);
     assert.deepStrictEqual(['fine', 'added'].map((a) => verdict.unusableAt('d-update', 'urn:t:serviceID:s', a)), [false, true]);
+    // (#400's high review, 2) another device under the ID that doesn't own its
+    // decision (a refused DEVICE_OBJECT_CONFLICT, a reload's later refused)
+    // replacing its spec with a clean one never touches the owner's
+    const other = Object.create(CHDevice.prototype);
+    Object.assign(other, {deviceID: 'd-update', schemaDoc, spec: {device: {friendlyName: 'u', serviceList: {}}}, initServices: () => {}});
+    other.updateDeviceSpec({device: {friendlyName: 'u', manufacturer: 't', modelDescription: 'u', serviceList: {'urn:t:serviceID:s': {actionList: [
+      {name: 'fine', description: 'Fine.', input: {schema: '/s/fine/input'}}]}}}});
+    assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true, 'the owner\'s decision stands');
     // a load's decision is taken when its spec serves: one refused on the way
     // (pended, never adopted) leaves the serving version's as it was
     const refusedSpec = {device: {friendlyName: 'u'}};
     verdict.pend(refusedSpec, []);
     assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true);
-    verdict.adopt('d-update', refusedSpec);
+    verdict.set('d-update', [['urn:t:serviceID:s', 'added']], null, device);
+    verdict.adopt('d-update', refusedSpec, undefined, other);
     assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), false, 'adopted: its decision now');
+    // (8) a purged device's decision goes, only its owner's, and not while it
+    // is coming back (restarting: its spec stays listed)
+    verdict.set('d-update', [['urn:t:serviceID:s', 'added']], null, other);
+    const DeviceManager = require('../../lib/device-manager');
+    DeviceManager.prototype.forgetDecision.call({moduleManager: {endedDevices: {'d-update': {code: 'MODULE_RESTARTING'}}}}, 'd-update', other);
+    assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true, 'restarting: kept');
+    DeviceManager.prototype.forgetDecision.call({moduleManager: {endedDevices: {}}}, 'd-update', device);
+    assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true, 'another owner\'s purge: kept');
+    DeviceManager.prototype.forgetDecision.call({moduleManager: {endedDevices: {}}}, 'd-update', other);
+    assert.strictEqual(verdict.tokenOf('d-update'), null, 'its owner purged: gone');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-34-checked-'));
     try {
       fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'x', serviceList: {}}}));
@@ -419,7 +440,14 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     const u = (s) => clientText.schema(s).unusable;
     assert.strictEqual(u({type: 'object', properties: {a: {$ref: '#/nowhere'}}}), true, 'a pointer to nothing');
     assert.strictEqual(u({type: 'object', properties: {a: {$ref: '#node'}}}), true, 'an anchor no one keeps');
-    assert.strictEqual(u({type: 'object', $defs: {n: {$anchor: 'node', type: 'string'}}, properties: {a: {$ref: '#node'}}}), false, 'a kept anchor');
+    // (any $ref that is no local pointer: the load refuses it, lib/schema-safety.js)
+    assert.strictEqual(u({type: 'object', $defs: {n: {$anchor: 'node', type: 'string'}}, properties: {a: {$ref: '#node'}}}), true, 'an anchor ref');
+    assert.strictEqual(u({type: 'object', 'x-hidden': {$dynamicAnchor: 'node', enum: [`x${ZWSP}`]}, properties: {a: {$dynamicRef: '#node'}}}), true, 'a $dynamicRef to an anchor left out');
+    assert.strictEqual(u({type: 'object', properties: {a: {$dynamicRef: '#node'}}}), false, 'a $dynamicRef, its anchor the document\'s');
+    // (high review 7) a ref through an alias into what is left out: followed
+    // as the load resolves a ref
+    assert.strictEqual(u({type: 'object', $defs: {alias: {$ref: '#/$defs/real'}, real: {type: 'object', 'x-note': {enum: [`a${ZWSP}`]}}},
+      properties: {p: {$ref: '#/$defs/alias/x-note'}}}), true, 'through an alias, into what is left out');
     assert.strictEqual(u({type: 'object', 'x-hidden': {$anchor: 'node', enum: [`x${ZWSP}`]}, properties: {a: {$ref: '#node'}}}), true, 'an anchor left out');
     assert.strictEqual(u({type: 'object', properties: {a: {$ref: 'https://elsewhere.example.invalid/s.json'}}}), true, 'another document');
     assert.strictEqual(u({type: 'object', $defs: {n: {type: 'string'}}, properties: {a: {$ref: '#/$defs/n'}}}), false, 'a pointer that resolves');
@@ -429,7 +457,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
   // is judged against the whole document (usable, as the gateway resolves it);
   // an anchor declared elsewhere in schema.json is refused, its warning saying
   // why; a mark from a walk of an earlier decision is dropped
-  it('the load names why an anchor ref is refused; a boolean $ref with siblings is usable; a mark of a version no longer serving is dropped', () => {
+  it('an anchor ref is refused; a boolean $ref with siblings is usable; a mark of a decision since replaced is dropped', () => {
     const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
       {name: 'a', description: 'A.', input: {schema: '/s/a/input'}}, {name: 'b', description: 'B.', input: {schema: '/s/b/input'}}]}}}};
     const checked = require('../../lib/declarations').check(api, {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
@@ -437,14 +465,69 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       s: {a: {input: {type: 'object', properties: {p: {$ref: '#/$defs/Any', description: 'any'}}}},
         b: {input: {type: 'object', properties: {q: {$ref: '#Addr'}}}}}});
     assert.deepStrictEqual(checked.hiddenUnlisted, [['urn:t:serviceID:s', 'b']], JSON.stringify(checked.warnings));
-    assert.ok(checked.warnings.some((w) => /an anchor ref outside the advertised schema/.test(w.message)), JSON.stringify(checked.warnings));
     const verdict = require('../../lib/hidden-text-verdict');
     verdict.set('d-gen', []);
-    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, () => false);
-    assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), false, 'a walk of a version no longer serving marks nothing');
-    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, () => true);
-    assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), true);
+    const walked = verdict.tokenOf('d-gen');
     verdict.set('d-gen', []);
+    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, walked);
+    assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), false, 'a walk of a decision since replaced marks nothing');
+    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, verdict.tokenOf('d-gen'));
+    assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), true);
+    verdict.forget('d-gen');
+  });
+
+  // #400's high review (1): the load decides every reason the gateway
+  // applies, its depth too: a document with no hidden character whose refs
+  // nest a part past the walk's depth is walked, not passed by the fast path
+  it('a part its refs nest past the depth walked is unusable at the load, though the document holds no hidden character', () => {
+    const defs = {};
+    for (let i = 0; i < 300; i++) defs[`d${i}`] = {type: 'object', properties: {n: {$ref: `#/$defs/d${i + 1}`}}};
+    defs.d300 = {type: 'string'};
+    const doc = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', $defs: defs, s: {deep: {input: {$ref: '#/$defs/d0'}}}};
+    assert.strictEqual(clientText.holdsHidden(doc), false, 'the premise: no hidden character');
+    const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
+      {name: 'deep', description: 'Deep.', input: {schema: '/s/deep/input'}}]}}}};
+    assert.deepStrictEqual(require('../../lib/declarations').check(api, doc).hiddenUnlisted, [['urn:t:serviceID:s', 'deep']]);
+  });
+
+  // #400's high review (3, the reviewer's ruling): the schema route answers
+  // only what tools/list advertises: a usable action's declared schema as it
+  // shows it, by its pointer and through its own properties; above, a
+  // container of only those; anything else names nothing
+  it('the schema route answers only the advertised, cleaned schemas', () => {
+    const {answer} = require('../../lib/schema-answer');
+    const svc = 'urn:t:serviceID:s';
+    const spec = {device: {serviceList: {[svc]: {actionList: [{name: 'a', description: 'A.', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}},
+      {name: 'b', description: 'B.', input: {schema: '/s/b/input'}},
+      // (no tool: a resource action, which tools/list never lists)
+      {name: 'r', description: 'R.', input: {schema: '/s/r/input'}, resource: {uriTemplate: 'r/{id}', name: 'r'}}]}}}};
+    const doc = {$defs: {Shared: {type: 'string', title: 'One\ntwo', description: `d${ZWSP}`}},
+      s: {a: {input: {type: 'object', properties: {x: {$ref: '#/$defs/Shared'}}, 'x-note': {a: 'visible', b: '\u202e'}, examples: ['ok', '\u202e']},
+        output: {type: 'object'}}, b: {input: {type: 'object', description: 'B only', properties: {y: {$ref: '#/$defs/Shared'}}}},
+        r: {input: {type: 'object', description: 'R only'}}}};
+    const unusable = (serviceID, actionName) => actionName === 'b';
+    const at = (...tokens) => answer(doc, spec, tokens, unusable);
+    const shared = {type: 'string', title: clientText.line('One\ntwo'), description: 'd '};
+    assert.deepStrictEqual(at('s', 'a', 'input'), {value: {type: 'object', properties: {x: shared}}}, 'as tools/list shows it');
+    assert.ok(!shared.title.includes('\n'), 'a title one line');
+    assert.deepStrictEqual(at('s', 'a', 'input', 'properties', 'x', 'description'), {value: 'd '});
+    for (const left of [['s', 'a', 'input', 'x-note', 'a'], ['s', 'a', 'input', 'examples', '0'], ['s', 'a', 'input', 'properties', 'x', 'description', '0'],
+      ['$defs', 'Shared'], ['$defs'], ['s', 'a', 'nothing']]) {
+      assert.deepStrictEqual(at(...left), {refused: 'POINTER_DEREF_ERROR'}, left.join('/'));
+    }
+    assert.deepStrictEqual(at('s', 'b', 'input'), {refused: 'MODULE_NOT_LISTED'});
+    assert.deepStrictEqual(at('s', 'b', 'input', 'description'), {refused: 'MODULE_NOT_LISTED'});
+    assert.deepStrictEqual(at(), {value: {s: {a: {input: {type: 'object', properties: {x: shared}}, output: {type: 'object'}}}}}, 'the document: only the usable ones');
+    assert.deepStrictEqual(at('s', 'b'), {refused: 'POINTER_DEREF_ERROR'}, 'nothing shown there: as a path that names nothing');
+    assert.deepStrictEqual(at('s', 'r', 'input'), {refused: 'POINTER_DEREF_ERROR'}, 'no tool');
+    // a tool whose output is unusable is shown nowhere, its input neither (as tools/list leaves it out)
+    const both = {s: {c: {input: {type: 'object'}, output: {type: 'object', properties: {k: {enum: [`x${ZWSP}`]}}}}}};
+    const cSpec = {device: {serviceList: {[svc]: {actionList: [{name: 'c', description: 'C.', input: {schema: '/s/c/input'}, output: {schema: '/s/c/output'}}]}}}};
+    assert.deepStrictEqual(answer(both, cSpec, ['s', 'c', 'input'], () => false), {refused: 'MODULE_NOT_LISTED'});
+    // an answer is a copy: changing it changes nothing kept
+    const first = at('s', 'a', 'input').value;
+    first.type = 'changed';
+    assert.strictEqual(at('s', 'a', 'input').value.type, 'object');
   });
 
   // #378's review (7): cut first, then cleaned, so no kept joiner is left
@@ -674,28 +757,32 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
           assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route} ${actionName}: ${res.status} ${JSON.stringify(res.body).slice(0, 400)}${log()}`);
         }
       }
-      // nor its schema by any path that reaches it (the schema route judges
-      // what it answers, as tools/list does): its own is refused; a parent's
-      // or the root's answer, if sent at all, holds no hidden character (an
-      // unknown keyword holding one, such as an action's input under its
-      // service, is left out)
-      const own = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema/textService/stuck/input`).set('X-CH-Key', KEY);
-      assert.strictEqual(own.body && own.body.code, 'MODULE_NOT_LISTED', JSON.stringify(own.body).slice(0, 400));
-      for (const at of ['/textService/stuck', '/textService', '/']) {
-        const schemaAt = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema${at}`).set('X-CH-Key', KEY);
-        const text = JSON.stringify(schemaAt.body);
-        assert.ok((schemaAt.body && schemaAt.body.code === 'MODULE_NOT_LISTED') || clientText.message(text) === text, `${at}: ${text.slice(0, 400)}`);
+      // nor its schema (the schema route answers only what tools/list
+      // advertises): its own is refused; a parent's or the root's holds only
+      // the usable ones, cleaned
+      const schemaAt = async (at) => (await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema${at}`).set('X-CH-Key', KEY)).body;
+      for (const at of ['/textService/stuck/input', '/textService/stuck/input/properties', '/textService/stuck/input/properties/mode/enum']) {
+        assert.strictEqual((await schemaAt(at) || {}).code, 'MODULE_NOT_LISTED', at);
       }
-      // a value that is no schema (a string, a list) holding a hidden character
-      // is refused too, wherever it is; a path under the unusable action's own
-      for (const at of ['/textService/show/input/properties/mood/default', '/textService/stuck/input/properties/mode/enum', '/textService/stuck/input/properties']) {
-        const v = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema${at}`).set('X-CH-Key', KEY);
-        assert.strictEqual(v.body && v.body.code, 'MODULE_NOT_LISTED', `${at}: ${JSON.stringify(v.body).slice(0, 400)}`);
+      assert.strictEqual((await schemaAt('/textService/stuck') || {}).code, 'POINTER_DEREF_ERROR', 'nothing shown there');
+      for (const at of ['/textService', '/']) {
+        const body = await schemaAt(at);
+        const text = JSON.stringify(body);
+        const service = at === '/' ? (body || {}).textService : (at === '/textService' ? body : null);
+        assert.ok(body != null && body.code == null && clientText.message(text) === text, `${at}: ${text.slice(0, 400)}`);
+        if (service != null) assert.ok(!Object.hasOwn(service, 'stuck') && !Object.hasOwn(service, 'outStuck'), `${at}: ${text.slice(0, 400)}`);
       }
-      // a usable one is sent, cleaned (its annotations with a hidden character left out)
-      const schemaShown = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema/textService/show/input`).set('X-CH-Key', KEY);
-      assert.notStrictEqual(schemaShown.body && schemaShown.body.code, 'MODULE_NOT_LISTED', JSON.stringify(schemaShown.body).slice(0, 400));
-      assert.ok(clientText.message(JSON.stringify(schemaShown.body)) === JSON.stringify(schemaShown.body), JSON.stringify(schemaShown.body).slice(0, 400));
+      const root = await schemaAt('/');
+      assert.ok(root.textService != null && root.textService.show != null && root.textService.show.input != null && !Object.hasOwn(root.textService, 'stuck'), JSON.stringify(root).slice(0, 400));
+      // what tools/list leaves out, a character of a string, and a path that
+      // is no declared schema name nothing
+      for (const at of ['/textService/show/input/properties/mood/default', '/textService/show/input/properties/what/description/0', '/textService/show%2Finput', '/type']) {
+        assert.strictEqual((await schemaAt(at) || {}).code, 'POINTER_DEREF_ERROR', at);
+      }
+      // a usable one is sent as tools/list shows it
+      const listed = (await modern('tools/list')).result.tools.find((t) => /textservice_show$/.test(t.name));
+      assert.deepStrictEqual(await schemaAt('/textService/show/input'), listed.inputSchema);
+      assert.deepStrictEqual(Object.keys(await schemaAt('/textService/show/input/properties')).sort(), ['mood', 'what']);
       // nor shown in get-spec's spec (as tools/list leaves it out)
       const got = (await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/get-spec`).set('X-CH-Key', KEY)).body;
       const names = (got && got.device && got.device.serviceList ? got.device.serviceList[serviceID].actionList : []).map((a) => a.name);
