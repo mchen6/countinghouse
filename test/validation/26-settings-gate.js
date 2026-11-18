@@ -85,23 +85,37 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
     });
 
-    it('a declaring part not registered yet (still spawning) is not ready, by the device manager\'s own pins (unstubbed); a client\'s call names its top-level module, never the part', () => {
+    it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       const DeviceManager = require('../../lib/device-manager');
       const top = {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}};
-      // the real moduleOfDevice and packageOfModule, over a manager whose
-      // part has spawned (pinned) and registered no device yet
       const pins = {'@acme/part': {name: '@acme/part', countinghouse: {role: 'part', settings: {r: {type: 'string', required: true}}}}, top: {name: 'top'}};
       const dm = {deviceMap: {[idOf('top')]: top},
         moduleManager: {modules: {}, pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']]), manifestPins: {pinnedOf: (n) => pins[n]}}};
       dm.moduleOfDevice = DeviceManager.prototype.moduleOfDevice.bind(dm);
       dm.packageOfModule = DeviceManager.prototype.packageOfModule.bind(dm);
+      // the device manager knows the spawning part by its pins (unstubbed)
       assert.strictEqual(dm.moduleOfDevice(idOf('part')), '@acme/part');
-      assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')), 'the pin, with no live package.json');
+      assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')));
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(gate.requiredRefusal(dm, idOf('top'), true), null, 'not refused: the hop answers for it');
+      // registered and serving with no state: refused, the top-level module named, never the part
+      dm.deviceMap[idOf('part')] = {moduleName: '@acme/part'};
       require('../../lib/tool-generation').bump();
       const err = gate.requiredRefusal(dm, idOf('top'), true);
       assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
       assert.ok(/top/.test(err.message) && !/part/.test(err.message), err.message);
+      // a hop's: a claim naming no module, for its calling module
+      const hop = gate.requiredRefusal(dm, idOf('part'), false);
+      assert.strictEqual(hop.code, 'SETTING_NOT_READY');
+      assert.strictEqual(hop.message, 'not ready');
+      // passed on by the calling module: the outer call's words, the top named
+      const outer = gate.claimAnswer(hop, dm, idOf('top'), undefined, true);
+      assert.strictEqual(outer.code, 'SETTING_NOT_READY');
+      assert.ok(/top/.test(outer.message) && !/part/.test(outer.message), outer.message);
+      // one a module makes up, with no module behind it that declares settings: a module fault
+      const forged = gate.claimAnswer(gate.requiredRefusal(dm, idOf('part'), false), dm, idOf('part'), undefined, true);
+      assert.strictEqual(forged.code, 'DEVICE_INVOKE_EXCEPTION');
     });
   });
 
