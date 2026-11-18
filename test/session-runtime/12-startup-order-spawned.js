@@ -8,8 +8,9 @@
 //   once;
 // - per-session-module is a SessionModuleRecord (no worker until a session
 //   calls it), the case A asked to cover.
-// The one-at-a-time start is the same runtime with
-// COUNTINGHOUSE_TEST_STARTUP_LIMIT=1 (read only under the test flag).
+// The two starts are the same runtime with COUNTINGHOUSE_TEST_STARTUP_LIMIT
+// 2 and 1 (read only under the test flag): the default is 1 on a 2-CPU
+// machine, as CI's runners are.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -66,7 +67,7 @@ describe('session-runtime 12: startup loads at once, listed as one at a time lis
   const answeredAt = (log, dir) => log.indexOf(`load local module from path: ${dir}`);
 
   it('the module after a slow one finishes first; the list is byte for byte the one-at-a-time start\'s; discovery ends once', async () => {
-    const atOnce = await started(null);
+    const atOnce = await started(2);   // the default is 1 on a 2-CPU machine
     const inSeries = await started(1);
     // completion reversed only when several load at once
     const at = (run, name) => answeredAt(run.log, path.join(run.home, 'pack', name));

@@ -1,6 +1,6 @@
 'use strict';
 // The startup levers' (2): the startup list's modules load several at once
-// under --workerThread (at most max(2, min(4, CPUs - 1))), and each is still
+// under --workerThread (at most max(1, min(4, CPUs - 1))), and each is still
 // handed on to registration in the list's order, so what every reader of the
 // device map sees is what a one-at-a-time start gave (tools/list and its
 // deduped names, a deviceID's first holder). Server-free: the order itself
@@ -134,29 +134,52 @@ describe('module-loading 39: startup loads several at once, registered in the li
       await tick(50);
       return rec;
     }
-    const limit = Math.max(2, Math.min(4, os.cpus().length - 1));
+    // the machine's CPU count, as startupLoadLimit reads it (os.cpus())
+    let realCpus = null;
+    const withCpus = (n) => { os.cpus = () => new Array(n).fill({model: 'test', speed: 0}); };
+    before(() => { realCpus = os.cpus; });
+    afterEach(() => { os.cpus = realCpus; });
 
-    it(`at most ${limit} at once, more than one, and registered in the list's order though they finish in reverse`, async () => {
+    it('8 CPUs: 4 at once (min(4, CPUs - 1)), registered in the list\'s order though they finish in reverse', async () => {
+      withCpus(8);
       const names = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'];
       const rec = await start(names);
-      assert.strictEqual(rec.max, limit, `${rec.max} at once`);
+      assert.strictEqual(rec.max, 4, `${rec.max} at once`);
       assert.deepStrictEqual(rec.registered, names);
       assert.strictEqual(rec.discovered, 1, 'discovery ends once');
     });
 
+    it('3 CPUs: 2 at once', async () => {
+      withCpus(3);
+      const rec = await start(['m1', 'm2', 'm3', 'm4']);
+      assert.strictEqual(rec.max, 2);
+      assert.deepStrictEqual(rec.registered, ['m1', 'm2', 'm3', 'm4']);
+    });
+
+    it('2 CPUs: one at a time (two boots would share the one free core)', async () => {
+      withCpus(2);
+      const rec = await start(['m1', 'm2', 'm3', 'm4']);
+      assert.strictEqual(rec.max, 1);
+      assert.deepStrictEqual(rec.registered, ['m1', 'm2', 'm3', 'm4']);
+      assert.strictEqual(rec.discovered, 1);
+    });
+
     it('a loaded module is in the module map at once, though its devices wait for its turn', async () => {
+      withCpus(8);
       const names = ['m1', 'm2', 'm3', 'm4'];
       const rec = await start(names);
       assert.deepStrictEqual(rec.inMapAtOnce.slice().sort(), names);
     });
 
     it('one taken off while it waits (a crash, an unload): not registered, the rest are, discovery still ends', async () => {
+      withCpus(8);
       const rec = await start(['m1', 'm2', 'm3', 'm4'], {unloadedWhileWaiting: 'm3'});
       assert.deepStrictEqual(rec.registered, ['m1', 'm2', 'm4']);
       assert.strictEqual(rec.discovered, 1);
     });
 
     it('one failing mid-way: the others are registered, in order', async () => {
+      withCpus(8);
       const rec = await start(['m1', 'm2', 'm3', 'm4'], {fails: 'm2'});
       assert.deepStrictEqual(rec.registered, ['m1', 'm3', 'm4']);
       assert.strictEqual(rec.discovered, 1);
@@ -168,6 +191,7 @@ describe('module-loading 39: startup loads several at once, registered in the li
     });
 
     it('the same name twice in the list: one at a time (no order to keep between two loads of one module)', async () => {
+      withCpus(8);
       const rec = await start(['m1', 'm2', 'm1']);
       assert.strictEqual(rec.max, 1);
     });
