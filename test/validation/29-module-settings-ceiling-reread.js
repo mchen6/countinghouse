@@ -665,6 +665,19 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.strictEqual(r.state.values.units, ran.values.units, 'nothing else changed');
     });
 
+    it('the file unreadable: a restart (ceilingRefuses) under a rejected fixed value is refused, marked the ceiling\'s; a running module says it once but always names it', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const bad = trusted(parsed({moduleSettings: {'w.n': {fixed: 500}}}).ceiling);
+      const restart = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad, ceilingRefuses: true});
+      assert.strictEqual(restart.state, null);
+      assert.ok(reread_.isCeilingRefusal(restart.refusal));
+      const a = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad});
+      const b = reread_.next('w', {pkg: W, net: []}, {previous: a.state, ceiling: bad});
+      assert.deepStrictEqual(b.refused.map((r) => r.code), ['SETTING_INVALID', 'SETTING_NOT_APPLIED'], 'said already, still in the reply');
+    });
+
     it('a refusal said while the file is unreadable is cleared by a success, so a later one is said again', () => {
       const reread_ = require('../../lib/settings-reread');
       const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
