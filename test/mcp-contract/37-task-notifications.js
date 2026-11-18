@@ -286,8 +286,10 @@ function raw(port, key, route, body) {
 }
 // a listen: resolves once the response starts; events (each SSE data line,
 // parsed) arrive in `events`; a JSON answer (an error) in `answer`
-function listen(port, key, notifications, {ext = true, id = 50} = {}) {
-  const data = JSON.stringify({jsonrpc: '2.0', id, method: 'subscriptions/listen', params: {_meta: META(ext), notifications}});
+// forms: the listen declares form elicitation in its own request, as a
+// waiting task's form needs (F2-5)
+function listen(port, key, notifications, {ext = true, id = 50, forms = false} = {}) {
+  const data = JSON.stringify({jsonrpc: '2.0', id, method: 'subscriptions/listen', params: {_meta: META(ext, forms), notifications}});
   return new Promise((resolve, reject) => {
     const req = http.request({host: '127.0.0.1', port, path: '/mcp', method: 'POST', headers: {'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream', 'Content-Length': Buffer.byteLength(data), 'X-CH-Key': key, 'MCP-Protocol-Version': V,
@@ -357,7 +359,7 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       assert.match(String(r.result && r.result.taskId), /^t-/, JSON.stringify(r));
       return r.result.taskId;
     };
-    const get = async (key, taskId) => (await post(port, key, 'tasks/get', {taskId})).result;
+    const get = async (key, taskId, opts) => (await post(port, key, 'tasks/get', {taskId}, opts)).result;
     const ackOf = (s) => s.events.find((e) => e.method === 'notifications/subscriptions/acknowledged');
 
     each('the ack lists only the caller\'s own tasks; another key\'s, an unknown and a malformed id are left out alike', async () => {
@@ -423,11 +425,11 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it', beforeMs: 1500}}, {forms: true});
       const t = r.result && r.result.taskId;
       assert.match(String(t), /^t-/, JSON.stringify(r));
-      const s = await open(KEY_A, {taskIds: [t]});
+      const s = await open(KEY_A, {taskIds: [t]}, {forms: true});
       assert.ok(await until(() => notices(s).some((n) => n.status === 'input_required'), 20000), JSON.stringify(s.events));
       const asked = notices(s).find((n) => n.status === 'input_required');
       assert.strictEqual(asked.statusMessage, 'waiting for an answer');
-      const got = await get(KEY_A, t);
+      const got = await get(KEY_A, t, {forms: true});
       assert.strictEqual(got.status, 'input_required', JSON.stringify(got));
       assert.deepStrictEqual(asked.inputRequests, got.inputRequests, 'tasks/get\'s own form');
       const key = Object.keys(asked.inputRequests)[0];
@@ -459,14 +461,36 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       const t = r.result && r.result.taskId;
       assert.match(String(t), /^t-/, JSON.stringify(r));
       assert.ok(await until(async () => (await get(KEY_A, t)).status === 'input_required'), 'it asked');
-      const s = await open(KEY_A, {taskIds: [t]});
+      const s = await open(KEY_A, {taskIds: [t]}, {forms: true});
       assert.ok(await until(() => notices(s).length > 0), JSON.stringify(s.events));
       assert.strictEqual(s.events[0].method, 'notifications/subscriptions/acknowledged', 'the ack first');
       assert.deepStrictEqual(notices(s).map((n) => n.status), ['input_required']);
-      assert.deepStrictEqual(notices(s)[0].inputRequests, (await get(KEY_A, t)).inputRequests, 'tasks/get\'s own form');
+      assert.deepStrictEqual(notices(s)[0].inputRequests, (await get(KEY_A, t, {forms: true})).inputRequests, 'tasks/get\'s own form');
       const key = Object.keys(notices(s)[0].inputRequests)[0];
       await post(port, KEY_A, 'tasks/update', {taskId: t, inputResponses: {[key]: {action: 'decline'}}}, {forms: true});
       assert.ok(await until(() => notices(s).some((n) => n.status === 'completed'), 20000), JSON.stringify(s.events));
+    });
+
+    // F2-5 on the listen stream: a listen that did not declare form
+    // elicitation hears the task as tasks/get tells such a request, no form
+    it('a listen without form elicitation hears a waiting task without its form, as tasks/get says it', async () => {
+      assert.ok(await until(async () => {
+        const l = await post(port, KEY_A, 'tools/list', {});
+        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
+      }, 30000), 'the M22 fixture never listed');
+      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it'}}, {forms: true});
+      const t = r.result && r.result.taskId;
+      assert.match(String(t), /^t-/, JSON.stringify(r));
+      assert.ok(await until(async () => (await get(KEY_A, t)).status === 'input_required'), 'it asked');
+      const s = await open(KEY_A, {taskIds: [t]});
+      assert.ok(await until(() => notices(s).length > 0), JSON.stringify(s.events));
+      const n = notices(s)[0];
+      const plain = await get(KEY_A, t);
+      assert.deepStrictEqual([n.status, n.statusMessage, n.inputRequests], [plain.status, plain.statusMessage, plain.inputRequests]);
+      assert.deepStrictEqual(n.inputRequests, {}, 'no form');
+      const form = (await get(KEY_A, t, {forms: true})).inputRequests;
+      await post(port, KEY_A, 'tasks/update', {taskId: t, inputResponses: {[Object.keys(form)[0]]: {action: 'decline'}}}, {forms: true});
+      assert.ok(await until(() => notices(s).some((x) => x.status === 'completed'), 20000), JSON.stringify(s.events));
     });
 
     // /code-review medium of T2: each send resolves the caller again
