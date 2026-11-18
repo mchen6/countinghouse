@@ -65,6 +65,22 @@ describe('sandbox 06: module supervisor', () => {
     assert.strictEqual(h.sup.errorForDevice('other'), null);
   });
 
+  it('keeps the package.json given at an exit, and the last one through an exit with none (F3-5)', () => {
+    const h = harness();
+    const pkg = {name: 'm', version: '1.0.0', countinghouse: {role: 'part'}};
+    h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
+    h.sup.exited('m', 'crash: boom', SPECS, pkg);
+    assert.strictEqual(h.sup.packageInfoOf('m'), pkg);
+    // a worker that exited before its devices registered has none: the last one stays
+    h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
+    h.sup.exited('m', 'crash: again', SPECS, null);
+    assert.strictEqual(h.sup.packageInfoOf('m'), pkg);
+    // an operator's restart, reload or upgrade clears the record, and it
+    h.sup.clear('m');
+    assert.strictEqual(h.sup.packageInfoOf('m'), null);
+    assert.strictEqual(h.sup.packageInfoOf('never'), null);
+  });
+
   it('clear() cancels a pending restart and resets the history', () => {
     const h = harness();
     h.sup.track('m', {modulePath: '/m', version: '1.0.0'});
