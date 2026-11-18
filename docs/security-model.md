@@ -1485,6 +1485,35 @@ the main thread's, not the module's (spec:
   all (`REMOTE_CREDENTIAL_NOT_ALLOWED`). Without the option no credential
   is ever read. The client packs' `ch-local install` writes the file from
   its allowlist, so for the single local user the user is the operator.
+- **Bound to one module (version 2 of the file, #413 section 6.5).** A key
+  is bound to (module, variable, origin) and read from a slot,
+  `COUNTINGHOUSE_CREDENTIAL_<n>`: a prefix the runtime never hands to a
+  worker, and the only names the file accepts, so it cannot send the
+  identity secret or any other variable of the runtime's environment
+  anywhere. The start's file fixes each slot for the life of the process;
+  a later entry may only repeat one. Another module that declares the same
+  variable and origin gets nothing, and so does a version of the bound
+  module that sends it to another origin or under another name.
+- **Never in a worker's environment** (under `--moduleSandbox audit` and
+  `enforce`; with the sandbox off, or in single-thread mode, a module shares
+  the runtime's environment and this does not hold). A variable a
+  credentials allowance in force reads -- version 1's listed names; version
+  2's slots and every variable name the file binds, since the operator's
+  own variable of that name may still be exported -- is never copied from
+  the runtime's environment into a worker, even when a module declares it
+  in `permissions.env` (before, under audit, a declared `GITHUB_TOKEN` was
+  handed over). Only a value the operator's
+  `--modulePolicy` sets for that module under that name is given: it is the
+  operator's own value, not the runtime's credential. The names are those
+  in force at the spawn: a worker spawned before a pack loaded in place
+  added a version 1 name keeps its environment until its next spawn (until
+  version 1 leaves a runtime with a control channel).
+- **Pinned.** A module's remotes join its manifest pin: a supervised
+  restart uses the remotes the last operator action took, and a
+  `package.json` rewritten since (under audit, by a route the file broker
+  does not see) changes nothing until an operator's reload; each
+  difference is logged as an error, saying each remote's name, origin and
+  variable only (never a URL's user info, path or query, nor a header).
 - **What a remote can reach.**
   - https only (http only to a loopback host under `--debug`, for tests);
   - a redirect followed only within the same origin (the exact scheme,
