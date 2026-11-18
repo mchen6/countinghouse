@@ -2,7 +2,10 @@
 // (test/sandbox/66): loaded by countinghouse_validate_module, after that
 // worker's lockdown, it makes a load with a runtime Module as its parent at
 // its top level, which the probe must record there too.
-const parent = Object.values(require.cache).find((m) => m != null && typeof(m.filename) === 'string' && /[\\/]lib[\\/]logger\.js$/.test(m.filename));
+// (the runtime Module from the test's probe: module code reaches none since
+// #194's PR 2, lib/lean-worker.js)
+const handle = globalThis[Symbol.for('countinghouse.test.runtime')];
+const parent = handle != null ? handle.module : null;
 if (parent != null) { try { module.constructor._load('path', parent); } catch (e) { /* recorded first */ } }
 // and a request at load: a validation worker sends none (refused, in both
 // modes), so postman-request is never loaded there late

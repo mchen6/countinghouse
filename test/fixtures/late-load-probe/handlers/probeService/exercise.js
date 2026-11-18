@@ -12,14 +12,14 @@ const URL_DECLARED = 'http://late-load.example.invalid/';
 const ended = (err) => (err == null ? 'ok' : (/module sandbox/.test(String(err.message))
   ? `refused: ${(/network access to (\S+) is not allowed/.exec(String(err.message)) || [])[1]}`
   : `error: ${String(err.code || err.message).slice(0, 120)}`));
-// a runtime Module, reached as module code can (require.cache)
-const runtimeModule = () => Object.values(require.cache).find((m) => m != null && typeof(m.filename) === 'string' && /[\\/]lib[\\/]logger\.js$/.test(m.filename));
-// a runtime function that calls what it is handed (lib/lazy-require.js
-// orCallback): the caller of a hook the probe tells apart by its stack
-const runtimeCaller = () => {
-  const m = Object.values(require.cache).find((x) => x != null && typeof(x.filename) === 'string' && /[\\/]lib[\\/]lazy-require\.js$/.test(x.filename));
-  return m != null ? m.exports.orCallback : null;
-};
+// a runtime Module, and a runtime function that calls what it is handed
+// (lib/lazy-require.js orCallback: the caller of a hook the probe tells
+// apart by its stack): module code reaches neither since #194's PR 2, so
+// the test's probe hands them over (lib/lean-worker.js, a test-only global
+// it defines only when the probe is on)
+const handle = () => globalThis[Symbol.for('countinghouse.test.runtime')] || null;
+const runtimeModule = () => (handle() != null ? handle().module : null);
+const runtimeCaller = () => (handle() != null ? handle().caller : null);
 
 const STEPS = {
   // CHUtil.request to a declared host: postman-request (preloaded with net)
@@ -134,7 +134,7 @@ const STEPS = {
   // parent or caller after the lockdown, which the probe must record
   control: async () => {
     const parent = runtimeModule();
-    if (parent == null) throw new Error('late-load-probe: no runtime Module in require.cache');
+    if (parent == null) return 'no runtime Module';
     const M = module.constructor;
     try { M._load('path', parent); } catch (e) { /* recorded first */ }
     try { M._resolveFilename('path', parent); } catch (e) { /* recorded first */ }

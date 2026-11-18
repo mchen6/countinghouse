@@ -122,6 +122,11 @@ after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
     this.timeout(120000);
     let base = null;
     let server = null;
+    let savedProbe;
+    // (the test's probe on: since #194's PR 2 the runtime's files are listed
+    // to the fixture by its hand-over, require.cache showing module files only)
+    before(() => { savedProbe = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+    after(() => { if (savedProbe === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedProbe; });
     before(async () => {
       base = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-lean-43-'));
       server = await startServer(PORT, ['--workerThread', '--debug', '--debugKey', 'k', '--moduleSandbox', 'audit'].concat(flags, [

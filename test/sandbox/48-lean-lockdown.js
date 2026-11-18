@@ -83,19 +83,16 @@ describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)
   // itself; a request through it goes the runtime's own checked route, and
   // the lockdown refuses it. (That an attach with no route refuses every
   // request is the server-free case below.)
-  it('countinghouse-util is attached at boot: module code\'s attach is refused, and its request goes the checked route, refused there', async () => {
+  it('countinghouse-util is out of module code\'s reach: no module object of the runtime\'s in require.cache to attach it through (#194\'s PR 2)', async () => {
     const mark = server.output.length;
     const r = await post(PORT, KEY, `/devices/${deviceIDForName('lean-attach-probe')}/invoke-action`,
       {serviceID: 'urn:countinghouse-test:serviceID:attachService', actionName: 'attach', input: {url: 'http://127.0.0.1:9'}});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
     const out = r.body.output;
-    assert.strictEqual(out.facadeInCache, true, JSON.stringify(out));
-    assert.match(String(out.attached), /already attached/, JSON.stringify(out));
-    assert.strictEqual(out.handed, 'undefined', `the attach handed out a ${out.handed}`);
-    assert.deepStrictEqual(out.request, {outcome: 'error', code: 'ERR_ACCESS_DENIED'}, JSON.stringify(out));
-    // refused by the lockdown's host check, the checked route
-    for (let i = 0; i < 50 && !/lean-attach-probe violation net 127\.0\.0\.1:9/.test(server.output.slice(mark)); i++) await new Promise((res) => setTimeout(res, 100));
-    assert.match(server.output.slice(mark), /lean-attach-probe violation net 127\.0\.0\.1:9/);
+    // (since #194's PR 2 the route itself is gone: the runtime's entries are
+    // out of require.cache, so module code never reaches the facade's
+    // module object to attach countinghouse-util through)
+    assert.strictEqual(out.facadeInCache, false, JSON.stringify(out));
   });
 
   it('a handler file that requires a refused built-in while it loads: the load fails, naming the file', async () => {

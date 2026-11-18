@@ -258,13 +258,15 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
 
   // without CH_TEST_LATE_LOADS the probe is never installed: its control
   // records nothing
-  it('a normal start has no probe: its control records nothing', async () => {
+  // (and module code has no runtime Module to make one with: the probe's
+  // hand-over is the test's alone, #194's PR 2)
+  it('a normal start has no probe: its control has no runtime Module, and records nothing', async () => {
     delete process.env.CH_TEST_LATE_LOADS;
     const port = testPort(9775);
     const server = await startServer(port, args('enforce'));
     try {
       const r = await mcpCall(port, KEY, TOOL, {step: 'control'});
-      assert.strictEqual(detail(r), 'ran', JSON.stringify(r).slice(0, 800));
+      assert.strictEqual(detail(r), 'no runtime Module', JSON.stringify(r).slice(0, 800));
       await settle();
       assert.ok(!server.output.includes('late runtime '), server.output.slice(-2000));
     } finally {

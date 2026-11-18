@@ -1,0 +1,5 @@
+{"device": {"friendlyName": "isolation-probe", "manufacturer": "countinghouse-test",
+  "modelDescription": "reports what of the runtime a module's worker shows module code",
+  "serviceList": {"urn:countinghouse-test:serviceID:probeService": {"actionList": [
+    {"name": "inspect", "description": "Report one thing module code can see.", "input": {"schema": "/probeService/inspect/input"}, "output": {"schema": "/probeService/inspect/output"}}
+  ]}}}}

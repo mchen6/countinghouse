@@ -1,0 +1,4 @@
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "#/", "type": "object",
+  "probeService": {"inspect": {
+    "input": {"type": "object", "properties": {"step": {"type": "string"}}, "required": ["step"]},
+    "output": {"type": "object", "properties": {"step": {"type": "string"}, "detail": {"type": "string"}}}}}}

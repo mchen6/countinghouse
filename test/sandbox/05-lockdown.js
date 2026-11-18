@@ -175,14 +175,11 @@ describe('sandbox 05: worker lockdown', function() {
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });
-    it(`a new extension ${mode === 'enforce' ? 'can\'t be added to the table' : 'is reported at the next load'}`, async () => {
-      const from = server.output.length;
+    // (in both modes since #194's PR 2: the loader's statics locked, the
+    // extensions table taking no new key, audit's reported accessors aside)
+    it('a new extension can\'t be added to the table', async () => {
       const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'newExtension'}));
-      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
-      else {
-        assert.deepStrictEqual(r, {outcome: 'allowed', code: 'ADDED'});
-        await waitFor(() => server.output.slice(from).includes('violation require Module._extensions[.min.js] added'), 20000, 'the added extension\'s line');
-      }
+      assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
     });
     it(`each property #406 holds ${mode === 'enforce' ? 'can\'t be replaced' : 'is replaced and reported'}`, async () => {
       const names = {protoLoad: 'Module.prototype.load', jsHandler: 'Module._extensions[\'.js\']', jsonHandler: 'Module._extensions[\'.json\']',
