@@ -163,6 +163,96 @@ describe('M8: the listen hub, resources and prompts', function() {
       assert.ok(await until(() => got.length === 1), 'another icon');
     });
 
+    it('an item JSON makes nothing of counts as null, as before: its listener is still told of later changes (F3-2)', async() => {
+      let tools = [{name: 'a'}, undefined];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      tools = [{name: 'b'}, undefined];
+      h.changed();
+      assert.ok(await until(() => got.length === 1));
+    });
+
+    it('an icon carrying the registry\'s digest counts by it, never by its data (F3-2)', async() => {
+      const D = Symbol.for('countinghouse.iconDigest');
+      const icon = (data, digest) => { const i = {src: `data:image/png;base64,${data}`, mimeType: 'image/png'}; i[D] = digest; return [i]; };
+      let tools = [{name: 'a', icons: icon('AAAA', 'sha256:one')}];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      tools = [{name: 'a', icons: icon('BBBB', 'sha256:one')}];
+      h.changed();
+      await tick(60);
+      assert.deepStrictEqual(got, [], 'the same digest: no change, whatever the data');
+      tools = [{name: 'a', icons: icon('BBBB', 'sha256:two')}];
+      h.changed();
+      assert.ok(await until(() => got.length === 1));
+    });
+
+    it('a pending settle is never left behind by a round\'s end: changes made while a round runs are settled, then told once (F3-7)', async() => {
+      let tools = [{name: 'a'}];
+      let gate = null;
+      // (a listing returns the list as it was when it was asked for)
+      const h = createHub({lists: {tools: async() => { const now = tools; if (gate != null) await gate; return now; }}, settleMs: 80, maxWaitMs: 1000});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      // R1 runs (its listing held by the gate)
+      let release;
+      gate = new Promise((r) => { release = r; });
+      tools = [{name: 'b'}];
+      h.changed();
+      await tick(120);
+      // T1 pending while R1 runs, then more changes in a burst
+      tools = [{name: 'c'}];
+      h.changed();
+      await tick(100);
+      h.changed();
+      gate = null;
+      release();
+      await tick(30);
+      // R1 has ended; the follow-up waits its settle, not running at once
+      const atEnd = got.length;
+      await tick(500);
+      assert.ok(atEnd <= 1, `no follow-up round straight off (${atEnd})`);
+      assert.strictEqual(got.length, 2, `R1's change, then the burst's, once (${got.length})`);
+    });
+
+    it('a resource\'s read never makes resources/updated, even named in a changesWith (F3-4)', async() => {
+      const h2 = createHub({lists: {}, settleMs: 5, perSession: () => false,
+        resolveUris: async() => new Map([[U1, {deviceID: 'd', changesWith: ['notes.read', 'notes.save']}]]),
+        isRead: (call) => call.deviceID === 'd' && call.serviceID === 'notes' && call.actionName === 'read'});
+      const got = [];
+      h2.open({id: 1, appKey: 'k', filter: {resourceSubscriptions: [U1]}, write: (m) => got.push(m), finish: () => {}});
+      h2.callSucceeded({appKey: 'k', deviceID: 'd', serviceID: 'notes', actionName: 'read', session: null});
+      await tick(60);
+      assert.deepStrictEqual(got, [], 'the read: nothing');
+      h2.callSucceeded({appKey: 'k', deviceID: 'd', serviceID: 'notes', actionName: 'save', session: null});
+      assert.ok(await until(() => got.length === 1), 'the save: updated');
+    });
+
+    it('the device manager knows a resource\'s read by the device\'s spec now: worker or in-process, retained while it restarts, by full service URN (F3-4)', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const spec = {device: {friendlyName: 'n', serviceList: {
+        'urn:a:serviceID:notes': {actionList: [{name: 'get', description: 'g', resource: {uriTemplate: 'notes/{id}', name: 'note'}}, {name: 'save', description: 's'}]},
+        'urn:b:serviceID:notes': {actionList: [{name: 'get', description: 'a write that shares the short name'}]}}}};
+      const supervisor = {retainedSpecs: () => ({gone: spec})};
+      const dm = Object.assign(Object.create(DeviceManager.prototype), {moduleManager: {supervisor},
+        deviceMap: {w: {deviceList: {w: spec}}, inproc: {spec}}});
+      for (const id of ['w', 'inproc', 'gone']) {
+        assert.strictEqual(dm.isReadAction(id, 'urn:a:serviceID:notes', 'get'), true, `${id}: the read`);
+        assert.strictEqual(dm.isReadAction(id, 'urn:a:serviceID:notes', 'save'), false, `${id}: a write`);
+        assert.strictEqual(dm.isReadAction(id, 'urn:b:serviceID:notes', 'get'), false, `${id}: another service of the same short name`);
+      }
+      assert.strictEqual(dm.isReadAction('never', 'urn:a:serviceID:notes', 'get'), false);
+      // a spec changed in place, the generation moved: read again
+      spec.device.serviceList['urn:a:serviceID:notes'].actionList[1].resource = {uriTemplate: 'saved/{id}', name: 'saved'};
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(dm.isReadAction('w', 'urn:a:serviceID:notes', 'save'), true, 'the spec as it is now');
+    });
+
     it('a round never starts while the last one runs; the one due meanwhile runs after it (F3-7)', async() => {
       let tools = [{name: 'a'}];
       let running = 0;
