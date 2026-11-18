@@ -525,9 +525,10 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
     it('a part still spawning (no device registered) is found by its pinned device IDs', () => {
       const reread_ = require('../../lib/settings-reread');
       const callAddress = require('../../lib/call-address');
-      const dm = {deviceMap: {}, moduleOfDevice: () => null};
-      const mm = {pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])};
-      assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm, mm), '@acme/region-part');
+      // the device manager's own lookup, over the manager's pins
+      const dm = {deviceMap: {}, moduleManager: {modules: {}, pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])}};
+      dm.moduleOfDevice = require('../../lib/device-manager').prototype.moduleOfDevice.bind(dm);
+      assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm), '@acme/region-part');
     });
 
     it('a notice is keyed by the friendlyName the module\'s own api.json gives, before its devices register', async () => {

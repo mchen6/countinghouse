@@ -85,12 +85,19 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
     });
 
-    it('a declaring part not registered yet (still spawning) is not ready; a client\'s call names its top-level module, never the part', () => {
+    it('a declaring part not registered yet (still spawning) is not ready, by the device manager\'s own pins (unstubbed); a client\'s call names its top-level module, never the part', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
+      const DeviceManager = require('../../lib/device-manager');
       const top = {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}};
-      const dm = {deviceMap: {[idOf('top')]: top}, moduleOfDevice: () => null,
-        moduleManager: {pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']])},
-        packageOfModule: (n) => (n === '@acme/part' ? {name: n, countinghouse: {settings: {r: {type: 'string', required: true}}}} : {name: n})};
+      // the real moduleOfDevice and packageOfModule, over a manager whose
+      // part has spawned (pinned) and registered no device yet
+      const pins = {'@acme/part': {name: '@acme/part', countinghouse: {role: 'part', settings: {r: {type: 'string', required: true}}}}, top: {name: 'top'}};
+      const dm = {deviceMap: {[idOf('top')]: top},
+        moduleManager: {modules: {}, pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']]), manifestPins: {pinnedOf: (n) => pins[n]}}};
+      dm.moduleOfDevice = DeviceManager.prototype.moduleOfDevice.bind(dm);
+      dm.packageOfModule = DeviceManager.prototype.packageOfModule.bind(dm);
+      assert.strictEqual(dm.moduleOfDevice(idOf('part')), '@acme/part');
+      assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')), 'the pin, with no live package.json');
       require('../../lib/tool-generation').bump();
       const err = gate.requiredRefusal(dm, idOf('top'), true);
       assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
