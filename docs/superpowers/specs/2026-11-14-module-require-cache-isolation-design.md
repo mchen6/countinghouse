@@ -755,3 +755,143 @@ The window and interop tests land **with PR 2**, not PR 3.
 About 5.5 d in all. The extra time over Revision 3 comes from rulings 1–3,
 which turn three private-loader families into boot work, and from the
 function-object window tests. Deep review on each.
+
+## Revision 5: the second design review's rulings (implementer C, 2026-11-17)
+
+Status: for the reviewer's approval before PR 0. A second review of
+Revision 4 found three blocking issues. B1 was an escape open on master
+and ships first as PR 00 (`Module._load`'s internal argument). B2 and B3
+change the design as ruled below. Revision 4 stands where this doesn't
+change it.
+
+### PR 00 (B1, shipped first)
+
+`Module._load(request, parent, isMain, internalOptions)` skips the resolve
+hooks when `internalOptions.shouldSkipModuleHooks` is set. From Node 24.21
+it also honours a `resolved` resolution and `source` to compile. The
+built-in gate and the file broker's bound both live in the resolve hook,
+so a module could load the real `child_process` under enforce, and audit
+reported nothing. In both modes the lockdown now replaces `_load` with a
+wrapper that forwards exactly `(request, parent, isMain)`, and locks it.
+Node's own callers that pass the argument (an imported CommonJS file, from
+the ESM translators) then run the hooks again. The file broker's lasting
+branch answers them (fs-broker 12's esm-probe case). The tests (sandbox 05)
+run all three forms under both modes on every Node line in CI. Only the
+first form is red on master below Node 24.21, since older lines ignore
+`resolved` and `source`.
+
+### No private first-loads (B2's ruling)
+
+`Module.wrap` and `Module.wrapper` are non-configurable accessors, so they
+can't be locked. A `_compile` captured earlier still wraps source with
+whatever `Module.wrap` holds when it runs. So a private loader that
+compiles anything after the lockdown would hand its `require` and `Module`
+to module code that set `Module.wrap` during the window.
+
+**Ruling: after the lockdown, `load` compiles nothing.** It returns only
+exports captured at the lockdown (a `Map` from filename to exports, filled
+once). Anything else is refused, in both modes, with the net's line. There
+is no private compile path. So:
+
+- **Revision 4's 21-site list becomes a must-preload list.** Everything the
+  runtime needs after the lockdown is loaded before it:
+  - the worker logger (bunyan-free);
+  - redis-api;
+  - the live-options file;
+  - bind-address;
+  - the patch's built-ins;
+  - postman-request (always under audit; under enforce when the module
+    declares `net`);
+  - the validator closure (on `validateOnly`);
+  - each re-require, hoisted;
+  - `reachesLib`'s lookup (below).
+- **No runtime resolution after the lockdown at all.** Every runtime
+  `require` after it is either a captured export (served by `load` from the
+  map) or refused. So the captured `_resolveFilename` is used only for
+  module requests (F4-1's fix 2). There it still calls identity's `_findPath`
+  enforce wrapper (loader.js:1557). That wrapper's `allowed()` drops the code
+  roots for those requests (Revision 4, closed with `bound()`'s
+  `!fromModule` branch), which is right, since no runtime request is
+  resolved that way any more. A test pins it: after the lockdown, under
+  both modes, the runtime makes no `Module._load` with a runtime parent
+  while each late path runs (a log line, the first request, redis, live
+  options, `getHostIp`, `loadFile`, `readLines`, validate-module). It is
+  recorded by a test-only probe installed before the lockdown.
+- **`reachesLib`** (module-lockdown.js:189, called at :1230) is a runtime
+  `require.resolve` after the lockdown. It becomes a lookup in a set of
+  lib file names listed at boot, with no resolution.
+- **Identity tags a lib-reaching not-found itself** (from PR 0's run):
+  identity's resolve hook runs ahead of the lockdown's. Since F4-1's fix 2,
+  the lockdown's catch never sees a module request's not-found, so under
+  enforce identity tags it (the sandbox's refusal, with `reachesLib`). Under
+  audit an untagged not-found stays, as Node words it.
+
+### `_pathCache` (B3's ruling)
+
+A frozen `_pathCache` breaks the next resolution, because Node writes to
+it. **It becomes a locked Proxy that reads as empty and drops every
+write.** Resolution then does its full lookup each time, which is the cost
+of a planted entry being impossible. The test plants an entry before and
+after the lockdown, then resolves: the planted path is never used.
+
+### The rest of the review (accepted)
+
+1. The three runtime loads of module files (lean-dispatcher.js:36,
+   countinghouse-util.js:90, module-validator.js:31) get a null parent.
+   Every runtime `Module` gets `parent` undefined and empty `children`. The
+   test checks `module.parent` at all three sites.
+2. The cache Proxy (A) has every trap: `get`, `set`, `has`, `deleteProperty`,
+   `ownKeys`, `getOwnPropertyDescriptor`, `defineProperty` (which wrote
+   through), `getPrototypeOf`, `setPrototypeOf`, `isExtensible` and
+   `preventExtensions`. Each is tested.
+3. Under audit, postman-request is always preloaded (audit allows a request
+   enforce would refuse, so it's always reachable there).
+4. A genuine-parent out-of-root load is refused under audit too: audit's
+   private cache (Revision 4, A) holds only module-root files, and there is
+   no out-of-root runtime load to serve under B2.
+5. `reachesLib` is on the must-preload list (above).
+6. `_stat` and `_readPackage` are locked by value (a non-writable data
+   property), since a setter would still hook a lock by accessor.
+   `_resolveLookupPaths`' wrapper filters for any parent, not only virtual
+   ones (identity.js:537).
+7. F4-1's fix 2 builds its parent from own data properties only (a
+   null-prototype object literal), so a `Module.prototype.filename`
+   accessor can't steer it. PR 0 already does this; a test pins it.
+8. The dead code-root grant in `load` goes in PR 2. Under B2 no runtime
+   file is read after the lockdown.
+
+### Tests added (to Revision 4's)
+
+- B1's three forms on every CI Node line, under both modes (PR 00).
+- `Module.wrap` set during the window, then each late path run: no
+  `require` or `Module` reaches module code (there is no compile after the
+  lockdown).
+- A planted `_pathCache` entry is never used.
+- `_stat` checked by behaviour: replacing it is refused, and a stat of a
+  runtime path from module code answers missing.
+- `defineProperty` on the cache view is refused or lands in the view, never
+  in the real cache.
+- `module.parent` at the three runtime-load sites.
+- An all-strict pin: every file under `lib/` starts with `'use strict'`
+  (no sloppy runtime frame).
+- A request with no `net` under audit: allowed and reported, through the
+  preloaded postman-request.
+
+### PRs and estimate, revised
+
+00. B1, `Module._load`. About 0.3 d, in review.
+0. F4-1, plus identity tagging lib-reaching not-founds and the
+   own-data-parent pin. About 0.5 d.
+1. The must-preload list: the worker logger, postman-request, the
+   validator closure, redis-api, live options, bind-address, the
+   built-ins, the hoists, `reachesLib`'s set, and null parents at the three
+   sites, each into `fixOwn`. About 1.5 d.
+2. P: `load` serving only captured exports; A with every trap; C; S with
+   `_pathCache` as the empty Proxy and `_stat`/`_readPackage` by value; the
+   net and its test; BroadcastChannel; the window and interop tests,
+   `Module.wrap` included. About 2.5 d (smaller than Revision 4's 3 d: no
+   private compile path).
+3. F4-7, F4-8, the compatibility table, docs, the residuals, and the
+   Windows legs. About 1 d.
+
+About 5.8 d in all, with PR 00.
