@@ -79,6 +79,18 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
     });
 
+    it('a module\'s own claim is never accepted on a package.json that cannot be read: a module fault', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const top = Object.assign(wmOf(), {hostModuleName: 'top', settings: null,
+        bindings: {[idOf('top')]: {identity: 'k', module: 'top', targets: new Set([`${idOf('part')}|urn:x:serviceID:s|act`])}}});
+      const part = Object.assign(wmOf(), {hostModuleName: 'part', settings: null, bindings: {}});
+      const dm = {deviceMap: {[idOf('top')]: top, [idOf('part')]: part}, moduleManager: {},
+        packageOfModule: (n) => { if (n === 'part') throw new Error('EIO'); return {name: n}; }};
+      require('../../lib/tool-generation').bump();
+      const forged = Object.assign(new (require('../../lib/countinghouse-error').CountinghouseError)('SETTING_NOT_READY'), {message: 'not ready'});
+      assert.strictEqual(gate.claimAnswer(forged, dm, idOf('top'), undefined, true).code, 'DEVICE_INVOKE_EXCEPTION');
+    });
+
     it('a state that declares settings with no values is not ready; what it carries is never held', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       const st = Object.assign(stateWith({u: {type: 'string'}}), {values: null});
