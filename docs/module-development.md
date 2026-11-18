@@ -391,7 +391,11 @@ client that declares the `io.modelcontextprotocol/tasks` extension (with
 `--workerThread`): the call is answered at once with a `taskId`, and the
 client polls `tasks/get` for the result your action returns. Anyone else's
 call to it runs inline, as any action's does. Your handler is the same
-either way.
+either way. While it runs, `ctx.job.progress(n)` (1–100) is the task's
+`statusMessage` on `tasks/get`, as `"NN%"`, rounded. A progress of 0 shows
+none, since every task starts at 0. A task that failed without an answer
+shows its code (`JOB_TIMEOUT` when it ran past `--jobTimeout`), never your
+handler's text.
 
 A task may ask, as a call does (see [Asking the user](#asking-the-user-ctxask)), when the request
 that made it declared form elicitation: the pass that asks ends, the task
@@ -402,7 +406,11 @@ first, act after; three rounds of a question, eight in all. The pass that
 asks is not billed and spends none of the task's attempts. A question waits
 at most an hour; after that the task fails (`ASK_EXPIRED`) and nothing
 more of it runs. At most 64 of a key's tasks wait on a question at once
-(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once.
+(10,000 in all); past that, `ctx.ask` is `ASK_UNAVAILABLE` at once. While
+it waits its `statusMessage` is `waiting for an answer`, and a client that
+listens for the task is told each change as for a working one: waiting,
+working again once answered, then its end (or `ASK_EXPIRED` when the hour
+is up).
 
 Text you declare for the client (titles, descriptions, a prompt's messages, a
 question's message) reaches it with any hidden character as a space: a

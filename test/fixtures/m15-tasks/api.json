@@ -12,6 +12,8 @@
            "input": {"schema": "/taskService/scalar/input"}, "output": {"schema": "/taskService/scalar/output"}},
           {"name": "fails", "description": "Always fails.", "longRunning": true,
            "input": {"schema": "/taskService/fails/input"}, "output": {"schema": "/taskService/fails/output"}},
+          {"name": "progress", "description": "Reports each of input.values as its progress, then answers input.holdMs later.", "longRunning": true,
+           "input": {"schema": "/taskService/progress/input"}, "output": {"schema": "/taskService/progress/output"}},
           {"name": "quick", "description": "Answers at once; not long-running.",
            "input": {"schema": "/taskService/quick/input"}, "output": {"schema": "/taskService/quick/output"}},
           {"name": "exit", "description": "Answers, then ends its worker 50 ms later: a crash, for the supervisor's count.",
