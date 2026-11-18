@@ -41,7 +41,7 @@ function pack(home, scenario, part, tool) {
     actions: {[tool]: `module.exports = async (input, ctx) => { const p = await ctx.call('${part}/stepService.run', {}); return {output: {via: p.output.part}}; };\n`}});
 }
 
-describe('stdio 36: a module going on or off is hidden (M4 Task 1)', function() {
+describe('stdio 42: a module going on or off is hidden (M4 Task 1)', function() {
   this.timeout(120000);
   let io = null;
   let home = null;

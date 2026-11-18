@@ -66,6 +66,19 @@ describe('fs-broker 12: virtual identity', function() {
     assert.strictEqual(r.depFile, path.join(fs.realpathSync(ROOT), 'test', 'fixtures', 'esm-probe', 'node_modules', 'plain-dep', 'where.js'));
   });
 
+  // #406's high review: under enforce `module` is the lockdown's reduced one,
+  // which an ES module's import must reach on every Node line (from 24.21
+  // the CommonJS translator loaded it through Module._load with no parent,
+  // which no hook knew once the lockdown dropped _load's internal argument);
+  // under audit, the real one
+  ['enforce', 'audit'].forEach((mode) => {
+    it(`${mode}: an ES module imports the module built-in by both names`, async () => {
+      server = await start(mode, 'esm-probe');
+      const res = await mcpCall(testPort(9630), 'k', 'esm_probe_probeservice_moduleimport', {});
+      assert.deepStrictEqual(toolOutput(res), {named: 'function', prefixed: 'function', byDefault: 'function', reduced: mode === 'enforce', linked: true}, JSON.stringify(res));
+    });
+  });
+
   // Review C2's cases, restated for decision 12: countinghouse's own code is
   // never under /app (refused below), so a parent under /app is the module's.
   // POSIX host paths in file URLs; on Windows file:///opt/... is no path.

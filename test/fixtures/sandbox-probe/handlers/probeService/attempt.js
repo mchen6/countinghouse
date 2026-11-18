@@ -40,6 +40,68 @@ const ATTEMPTS = {
   worker_threads:   () => require('worker_threads'),
   v8:               () => require('v8'),
   registerHooks:    () => module.constructor.registerHooks({resolve: (s, c, n) => n(s, c)}),
+  // Module._load's fourth, internal argument skips the resolve hooks, where
+  // the built-in gate and the file broker's bound live (#194's review, B1):
+  // the flag itself, a resolution handed over (24.21 and later), and source
+  // compiled under a filename of the module's choosing (24.21 and later)
+  loadSkipHooks:    () => module.constructor._load('node:child_process', null, false, {shouldSkipModuleHooks: true}),
+  // (worker_threads: a target of its own, so its report is told apart)
+  loadResolved:     () => module.constructor._load('worker_threads', null, false, {resolved: {filename: 'worker_threads', url: 'node:worker_threads', format: 'builtin'}}),
+  // B1's own checks (#406): a request that is no string, and isMain
+  forgeParent:      (arg) => {
+    const M = module.constructor;
+    if (arg === 'objectRequest') return M._load({toString() { return './attempt'; }}, module, false);
+    if (arg === 'isMain') return M._load(__filename, null, true);
+    throw new Error(`unknown variant ${arg}`);
+  },
+  createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
+  // under audit an assignment of load on one Module is that Module's own
+  instanceLoad:     () => {
+    const M = module.constructor;
+    const before = M.prototype.load;
+    const one = new M('/app/one.js', null);
+    const mine = function() {};
+    one.load = mine;
+    if (M.prototype.load !== before) throw Object.assign(new Error('worker-wide'), {code: 'WORKER_WIDE'});
+    if (Object.hasOwn(one, 'load') && one.load === mine) throw Object.assign(new Error('own'), {code: 'OWN'});
+  },
+  // each loader property #406 holds: whether a replacement takes (put back
+  // at once where it does, under audit, where it is reported)
+  replaceHeld:      (arg) => {
+    const M = module.constructor;
+    const [obj, key] = {protoLoad: [M.prototype, 'load'], jsHandler: [M._extensions, '.js'], jsonHandler: [M._extensions, '.json'],
+      resolveFilename: [M, '_resolveFilename']}[arg];
+    const prev = obj[key];
+    const mine = function(...a) { return prev.apply(this, a); };
+    try { obj[key] = mine; } catch (e) { /* refused */ }
+    if (obj[key] !== mine) return;
+    obj[key] = prev;
+    throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  // a new, longer extension would take over a file the runtime asks for
+  // (Node picks the longest): whether it takes (taken out at once where it
+  // does, after a load that reports it, under audit)
+  newExtension:     () => {
+    const exts = module.constructor._extensions;
+    try { exts['.min.js'] = exts['.js']; } catch (e) { /* refused */ }
+    if (!Object.hasOwn(exts, '.min.js')) return;
+    require('path');
+    delete exts['.min.js'];
+    throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
+  // under audit, a module that replaces the loader is reported
+  replaceLoad:      () => {
+    const prev = module.constructor._load;
+    module.constructor._load = function(...args) { return prev.apply(this, args); };
+  },
+  // whether the cache holds source compiled under that filename (what
+  // loadSource's internal argument did before B1's fix)
+  compiledInCache:  (arg) => {
+    const entry = require.cache[arg];
+    if (entry != null && entry.exports != null && entry.exports.compiled === true) throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
+  },
+  loadSource:       (arg) => module.constructor._load(arg, null, false,
+    {resolved: {filename: arg, url: require('url').pathToFileURL(arg).href, format: 'commonjs'}, source: 'module.exports = {compiled: true};'}),
   nodePath:         () => require('cli-options'),
   loadFileOutside:  (arg) => CHUtil.loadFile(arg),
   request:          (arg) => new Promise((resolve, reject) => {
