@@ -11,9 +11,11 @@ const scan = require('../../scan');
 // MessagePort.prototype.on is hooked, and every port the runtime starts
 // listening on gets this part's listener beside the runtime's: it sees each
 // invoke as it crosses, whatever the callee answers. A port it posts a
-// 'peer-reply' on (a refusal) is listened to as well. The port to the main
-// thread is pinned under audit and enforce, so only peer ports are seen
-// there.
+// 'peer-reply' on (a refusal) is listened to as well. Since PR-c the runtime
+// listens and posts with port methods it took at load, and under audit and
+// enforce the lockdown fixes them at boot: the hooks then do not take
+// (hooksTook says which did, so a zero below is never a hook that was not
+// there), and under off they are installed but the runtime never calls them.
 const portSeen = globalThis.__keyDumpPortSeen || (globalThis.__keyDumpPortSeen = {messages: [], ports: new WeakSet(), hooked: false});
 const listen = (port) => {
   if (port == null || portSeen.ports.has(port)) return;
@@ -25,17 +27,19 @@ if (!portSeen.hooked && typeof(globalThis.MessagePort) === 'function') {
   const proto = globalThis.MessagePort.prototype;
   const on = proto.on;
   if (typeof(on) === 'function') {
-    proto.on = function(event, ...rest) {
+    const ourOn = function(event, ...rest) {
       const r = on.call(this, event, ...rest);
       try { if (event === 'message') listen(this); } catch (e) { /* never break the worker */ }
       return r;
     };
+    portSeen.onTook = Reflect.set(proto, 'on', ourOn) && proto.on === ourOn;
   }
   const post = proto.postMessage;
-  proto.postMessage = function(m, ...rest) {
+  const ourPost = function(m, ...rest) {
     try { if (m != null && m.category === 'peer-reply') listen(this); } catch (e) { /* never break the worker */ }
     return post.call(this, m, ...rest);
   };
+  portSeen.postTook = Reflect.set(proto, 'postMessage', ourPost) && proto.postMessage === ourPost;
 }
 function listenOnPorts() { /* the hook above attaches as replies are posted */ }
 
@@ -58,7 +62,7 @@ module.exports = async (input, ctx) => {
     roots.recordUsage = await new Promise((ok) => ctx.recordUsage('key-dump', 0, (e, r) => ok(e != null ? null : r)));
   }
   const r = scan(roots, input.reversed, ['redisUrl']);
-  return {output: {caller: (ctx != null) ? ctx.caller : null, portMessages: portSeen.messages.length,
+  return {output: {caller: (ctx != null) ? ctx.caller : null, portMessages: portSeen.messages.length, hooksTook: {on: portSeen.onTook === true, post: portSeen.postTook === true},
     roots: Object.keys(roots).filter((k) => !k.startsWith('require.cache[')),
     inputArrived: input != null && Array.isArray(input.reversed) && input.reversed.length > 0, hitCount: r.hits.length, hits: r.hits.slice(0, 40),
     accessorCount: r.accessors.length, accessors: r.accessors.slice(0, 200), budgetExhausted: r.budgetExhausted,

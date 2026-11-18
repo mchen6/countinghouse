@@ -13,7 +13,7 @@ const {ROOT} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {startRemoteServer} = require('../helpers/remote-mcp-server');
 const {createUsage} = require('../../lib/usage');
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 
 const REMOTE = testPort(9728);
 const KEY = 'remote-counting-key';
@@ -165,8 +165,9 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       cli.setOptions({workerThread: false, debug: true, directPeerChannels: true});
       client.invoke({actionName: 'act', input: {a: 1}, usageCall: 5}, () => {});
       cli.setOptions({workerThread: false, debug: true});
-      assert.deepStrictEqual(seen.routed, {input: {a: 1}, usageCall: 5});
-      assert.deepStrictEqual(seen.peer, {input: {a: 1}});
+      // (the service client's copies have no prototype, by design: compared by their fields)
+      assert.deepStrictEqual({...seen.routed}, {input: {a: 1}, usageCall: 5});
+      assert.deepStrictEqual({...seen.peer}, {input: {a: 1}});
     });
 
     it('a worker\'s remote message carries the id', async () => {

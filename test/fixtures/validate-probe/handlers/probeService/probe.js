@@ -7,11 +7,18 @@ const seen = {};
 seen.secret = process.env.COUNTINGHOUSE_TEST_SECRET != null ? 'visible' : 'hidden';
 seen.outside = (() => { try { require('fs').readFileSync('/etc/hostname'); return 'read'; } catch (e) { return e.code; } })();
 if (typeof(CHUtil) !== 'undefined' && CHUtil.redis != null && CHUtil.redis.clientInstance != null) {
-  const wm = CHUtil.redis.clientInstance;
-  wm.sendRedisCommandToParent({op: 'get', data: ['validate-probe']}, () => {});
-  if (typeof(wm.sendActiveMessageToParent) === 'function') {
-    wm.sendActiveMessageToParent({command: 'invokeforeignaction', data: {deviceID: 'x', serviceID: 'y', actionName: 'z', appKey: 'stolen'}}, () => {});
+  CHUtil.redis.clientInstance.sendRedisCommandToParent({op: 'get', data: ['validate-probe']}, () => {});
+  // CHUtil's redis client sends redis commands only (PR-c). What module code
+  // sharing the worker's realm still reaches is lib/worker-message.js in
+  // require.cache: a WorkerMessage of its own posts on the worker's port,
+  // so an invoke can be forged, and the main thread must refuse it.
+  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]worker-message\.js$/.test(k) && !k.startsWith('/app/'));
+  const WorkerMessage = (key != null) ? require.cache[key].exports : null;
+  if (WorkerMessage != null) {
+    new WorkerMessage(null).sendActiveMessageToParent({command: 'invokeforeignaction', data: {deviceID: 'x', serviceID: 'y', actionName: 'z', appKey: 'stolen'}}, () => {});
+    seen.forged = 'sent';
+  } else {
+    seen.forged = 'unreachable';
   }
-  seen.forged = 'sent';
 }
 throw new Error(`VALIDATE-PROBE ${JSON.stringify(seen)}`);

@@ -39,6 +39,11 @@ if (options.stdioWithPort === true) {
   console.error('--stdio and --port: choose one');
   process.exit(2);
 }
+// --partDir (M4): parts of a start confined to --modulesRoot
+if (Array.isArray(options.partDir) && options.partDir.length > 0 && !(Array.isArray(options.modulesRoot) && options.modulesRoot.length > 0)) {
+  console.error('--partDir is only for a start given --modulesRoot');
+  process.exit(2);
+}
 // --sessionSocket (the shared runtime, C1): ch-local daemon's runtime
 {
   var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
@@ -136,6 +141,20 @@ if (options.controlChannel != null) {
     console.error('--controlChannel ' + controlRefusal + ' (got ' + JSON.stringify(String(options.controlChannel)) + ')');
     process.exit(2);
   }
+}
+// --settingsFile names the file countinghouse_settings changes, and the tool
+// is served only in the single-identity profile (ch-local start): anywhere
+// else the flag would half-apply (its options.settingsTool on, the tool not
+// served, so a size cap's hint would name a tool that is not there).
+// Refused as --controlChannel and --sessionSocket are.
+if (options.settingsFileInvalid === true) {
+  console.error('--settingsFile needs a path (--settingsFile <file>)');
+  process.exit(2);
+}
+if (options.settingsFile != null && options.singleIdentity !== true) {
+  console.error('--settingsFile is only for the single-identity profile (ch-local start), where countinghouse_settings is served (got ' +
+    JSON.stringify(String(options.settingsFile)) + ')');
+  process.exit(2);
 }
 // --remoteOriginMap moves where a credential goes, so it is honoured only
 // with COUNTINGHOUSE_ACCEPTANCE=1 in this process's own environment (which a
@@ -265,7 +284,7 @@ if (process.permission != null) {
 }
 
 var logger = require('./lib/logger');
-logger.createLogger(options.logStream);
+logger.createLogger();
 
 // Module sandbox mode checks. An explicit mode that cannot work is a startup
 // error; the default quietly downgrades (lib/cli-options.js).
@@ -319,6 +338,26 @@ if (options.modulePolicy != null) {
     require('./lib/module-policy').load(options.modulePolicy);
   } catch (e) {
     console.error(e.message);
+    process.exit(2);
+  }
+}
+
+// --moduleSettings: an operator's modules' settings (lib/module-settings.js),
+// read at each load; checked here, so a file that cannot be read stops the
+// start rather than refusing every module. ch-local's settings are its
+// --settingsFile's: one source or the other.
+if (options.moduleSettingsInvalid === true) {
+  console.error('--moduleSettings needs one path (--moduleSettings <file>, given once)');
+  process.exit(2);
+}
+if (options.moduleSettings != null) {
+  if (options.settingsFile != null) {
+    console.error('--moduleSettings and --settingsFile: choose one (ch-local\'s settings file holds its modules\' settings)');
+    process.exit(2);
+  }
+  const read = require('./lib/module-settings').readModuleSettings(options.moduleSettings);
+  if (read.problem != null) {
+    console.error(read.problem);
     process.exit(2);
   }
 }
@@ -387,6 +426,12 @@ try {
   logger.E(new Error('cannot access module folder: ' + e.message));
   process.exit(-1);
 }
+
+// With modules to load, the validators boot now, beside the rest of the main
+// thread's boot, not when the first module's spec is checked
+// (lib/validator-pool.js startEarly). Every synchronous refusal of the start
+// has run by here; the id index's (identityReady, below) is the one left.
+require('./lib/validator-pool').startEarly();
 
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
 // ModuleManager.prototype.loadAllModules's registry-lookup branch, and only

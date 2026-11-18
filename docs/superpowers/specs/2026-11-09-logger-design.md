@@ -121,7 +121,8 @@ of mine):
 - **Levels and format.** `--logLevel error|warn|info|debug` (default info).
   `--logFormat json|pretty`: pretty when stdout is a TTY, json otherwise.
   `--logStream`, which does nothing today, becomes a deprecated alias that
-  warns once.
+  warns once. (Superseded 2026-11-17, #383: removed outright with no alias,
+  as #382's flags were; it changed nothing.)
 
 **Pretty mode** (one line per record; colour only on a TTY):
 
@@ -644,7 +645,7 @@ user.
   (item 9; session.js:196-222).
 - The redis devicelog lists (item 8).
 - `CHError` and `DeviceError`, classes and globals (in step 1, section 5.1).
-- `--logStream` (after one release as a warning alias).
+- `--logStream` (after one release as a warning alias; superseded: removed in #383).
 - The two `error-info.*.json` files (replaced by the catalogue).
 
 ## 9. Landing plan (the reviewer's call)
@@ -737,7 +738,7 @@ the file-broker spec's proposal 5 being kept.
   destinations, `--logFile` and logrotate, the restart policy, where module
   authors find their logs, and the admin readback.
 - `docs/cli-and-api-reference.md`: `--logLevel`, `--logFormat`, `--logFile`,
-  `--logStream` (deprecated), `--apiMonitor` (removed), `GET /admin/logs` and
+  `--logStream` (removed, #383), `--apiMonitor` (removed), `GET /admin/logs` and
   `countinghouse_logs`.
 - `docs/module-development.md` and the countinghouse-module skill:
   `ctx.error`, the codes rule (a module's codes are its own; it never raises

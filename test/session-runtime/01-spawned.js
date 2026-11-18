@@ -69,8 +69,11 @@ function runtime(home, extra = [], {dirMode = 0o700, socketName = 's', socketPat
 const secretOf = (r) => {
   try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
 };
+// the runtime's own 'listening' tell (after its start's checks), not its
+// socket file: a first connect then raced it (ECONNREFUSED, a CI-like loaded
+// run, as session-runtime 11's did); or its exit
 const listening = async(r) => {
-  await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+  await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);
   return secretOf(r);
 };
 let nextSeq = 1;

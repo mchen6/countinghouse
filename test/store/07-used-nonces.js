@@ -96,22 +96,33 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
       assert.deepStrictEqual(race.slice().sort(), [false, false, true]);
     });
 
-    it('a nonce is kept until its own expiry, then dropped from the file; it never grows without bound', async () => {
+    // Independent of the runner's speed (#385: on a loaded runner the first
+    // use's write took past a 300 ms expiry, so the next use swept it before
+    // the file was read). A use writes before it answers, so a short real
+    // margin can be spent by the writes: the short expiry is a minute out,
+    // and the child's clock (Date.now, which the part and the file read)
+    // then jumps past it. It runs on real time otherwise, so the store
+    // lock's own deadlines still hold.
+    it('a nonce is kept until its own expiry; the next use after it drops every expired one from the file', async () => {
       dir = mkdtemp('ch-store07-');
       const out = await inChild(`
+        const real = Date.now;
+        let jump = 0;
+        Date.now = () => real() + jump;
         const fs = require('fs');
         const file = require('path').join(process.env.STORE_DIR, 'used-nonces.json');
         const used = lib('store').createStore({store: 'local', storePath: process.env.STORE_DIR}).usedNonces;
         const keys = () => Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).sort();
-        await used.use('n-short', Date.now() + 300);
-        await used.use('n-long', Date.now() + 60000);
+        const short = Date.now() + 60000;
+        const firsts = [await used.use('n-long', Date.now() + 600000), await used.use('n-short', short), await used.use('n-gone', short)];
         const before = keys();
-        await new Promise((r) => setTimeout(r, 450));
-        // past its expiry its state is refused as expired; the name is free, and the next use sweeps it out
+        jump = short + 1 - real();
+        // past its expiry its state is refused as expired; the name is free,
+        // and the next use sweeps out every other expired one (n-gone)
         const again = await used.use('n-short', Date.now() + 60000);
         await used.use('n-third', Date.now() + 60000);
-        return {before, again, after: keys()};`, {STORE_DIR: dir});
-      assert.deepStrictEqual(out, {before: ['n-long', 'n-short'], again: true, after: ['n-long', 'n-short', 'n-third']});
+        return {firsts, before, again, after: keys()};`, {STORE_DIR: dir});
+      assert.deepStrictEqual(out, {firsts: [true, true, true], before: ['n-gone', 'n-long', 'n-short'], again: true, after: ['n-long', 'n-short', 'n-third']});
     });
 
     it('a store it cannot write rejects: never a first use by default', async function() {
@@ -179,18 +190,20 @@ describe('store 07: the used nonces of a requestState (MCP completeness M12)', f
         const one = lib('store').createStore({store: 'redis', redisUrl: process.env.TEST_REDIS}).usedNonces;
         const two = lib('store').createStore({store: 'redis', redisUrl: process.env.TEST_REDIS}).usedNonces;
         const n = ${JSON.stringify(n)};
-        const until = Date.now() + 1500;
+        // a margin the round trips can't spend (#385's lesson), and the wait
+        // is until past it, not a fixed time
+        const until = Date.now() + 5000;
         const first = await one.use(n, until);
         const again = await one.use(n, until);
         const elsewhere = await two.use(n, until);
         const client = raw();
         const ttl = await call(client, 'pttl', 'requeststate:nonce:' + n);
         const value = await call(client, 'get', 'requeststate:nonce:' + n);
-        await new Promise((r) => setTimeout(r, 1700));
+        while (Date.now() <= until + 100) await new Promise((r) => setTimeout(r, until + 101 - Date.now()));
         const kept = await call(client, 'exists', 'requeststate:nonce:' + n);
         // past its expiry a state is refused as expired; its nonce need not be known
         const late = await one.use(n, until);
-        return {first, again, elsewhere, ttlOk: ttl > 0 && ttl <= 1500, value, kept, late};`);
+        return {first, again, elsewhere, ttlOk: ttl > 0 && ttl <= 5000, value, kept, late};`);
       assert.deepStrictEqual(out, {first: true, again: false, elsewhere: false, ttlOk: true, value: '1', kept: 0, late: false});
     });
 

@@ -7,21 +7,24 @@
 // the runtime's ci reads as undefined (lean worker step 3), and a throw is
 // the refusal.
 function runtime() {
-  const key = Object.keys(require.cache).find((k) => k.endsWith('/lib/countinghouse-util.js') && !k.startsWith('/app/'));
-  return (key != null) ? require.cache[key].exports : {};
+  const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k) && !k.startsWith('/app/'));
+  return (key != null) ? require.cache[key].exports : null;
 }
 const outcome = (e) => (e != null ? `error: ${e.code || e.message}` : 'ok');
 
 module.exports = {
   forgeService: {
     credit: async (input) => {
-      const ci = runtime().ci;
+      // reached: the runtime's own file was found, so a refusal below is its
+      // own (auth 40 asserts it), never a lookup that missed
+      const util = runtime();
+      const ci = (util != null) ? util.ci : undefined;
       const attempt = (fn) => new Promise((resolve) => {
         try { fn((e) => resolve(outcome(e))); } catch (e) { resolve(outcome(e)); }
       });
       const recordCall = await attempt((cb) => ci.recordCall(input.key, 'forged', -100, cb));
       const checkBalance = await attempt((cb) => ci.checkBalance(input.key, cb));
-      return {output: {recordCall, checkBalance, provider: (ci == null || ci.meteringProvider == null) ? 'none' : 'present'}};
+      return {output: {recordCall, checkBalance, provider: (ci == null || ci.meteringProvider == null) ? 'none' : 'present', reached: util != null}};
     }
   }
 };

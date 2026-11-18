@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {PACK_NAME, insideRoots, linkOut, chLocalPackOf, ceilingRefusal} = require('../../lib/packs-in-place');
+const {PACK_NAME, insideRoots, linkOut, chLocalPackOf, ceilingRefusal} = require('../../lib/modules-in-place');
 const settingsTool = require('../../lib/settings-tool');
 const {mergedAllowance, START_ALLOWANCE} = require('../../lib/module-manager');
 

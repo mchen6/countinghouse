@@ -116,42 +116,53 @@ describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function
     assert.strictEqual((await ping()).status, 200);
   });
 
-  // the reviewer, 2026-11-13: the callee's worker made the bytes, and under
-  // audit a module there can post its own. The caller only ever decodes
-  // bytes a validator passed, within the cap.
+  // the reviewer, 2026-11-13 and 2026-11-17: the callee's worker made the
+  // bytes, and a module there can post its own. The caller only ever decodes
+  // bytes a validator passed, within the cap. Since PR-c a module can no
+  // longer replace its worker's reply send; it can still post a reply of its
+  // own through worker-message's module-level post (forge.js: to each id it
+  // can guess), and the main thread must refuse what it did not ask for.
   describe('a callee that posts hand-made bytes', () => {
-    for (const [kind, n, codes] of [
-      ['garbage', 0, ['DEVICE_INVOKE_EXCEPTION']],
-      ['invalid', 0, ['OUTPUT_DATA_VALIDATION_FAIL']],
-      ['deep', 0, ['DEVICE_INVOKE_EXCEPTION', 'VALIDATION_TIMEOUT', 'OUTPUT_DATA_VALIDATION_FAIL']],
-      ['huge', CAP + 1, ['OUTPUT_TOO_LARGE']]
+    it('its worker\'s reply send cannot be replaced (fixed at boot): the module\'s own answer is the one sent', async () => {
+      const r = await odd('forge', {kind: 'replace'});
+      assert.deepStrictEqual(r.body.output && r.body.output.result, {output: {ok: true, replaced: false}}, JSON.stringify(r.body).slice(0, 500));
+    });
+
+    for (const [kind, codes] of [
+      ['garbage', ['DEVICE_INVOKE_EXCEPTION']],
+      ['deep', ['DEVICE_INVOKE_EXCEPTION', 'VALIDATION_TIMEOUT', 'OUTPUT_DATA_VALIDATION_FAIL']]
     ]) {
-      it(`${kind}: the caller's call is refused (${codes.join(' or ')}), and the caller goes on`, async () => {
+      it(`${kind}, posted as its own replies: the caller's call is refused (${codes.join(' or ')}), and the caller goes on`, async () => {
         const forgedBefore = (await odd('odd', {})).body.output.forged;
         const started = Date.now();
-        const r = await odd('forge', {kind: kind, n: n});
+        const r = await odd('forge', {kind: kind});
         assert.ok(codes.includes(r.body.output && r.body.output.code), `${JSON.stringify(r.body).slice(0, 500)}\n${server.output.slice(-2000)}`);
         assert.ok(Date.now() - started < 5000 + 2000, `${Date.now() - started} ms`);
         assert.strictEqual((await ping()).status, 200);
         const after = (await odd('odd', {})).body.output;
         assert.deepStrictEqual(after.types.date, true, 'the caller still decodes a real result');
         // the reply the main thread refused was forge.js's hand-made bytes, not
-        // a failure of the fixture itself (the merge check of #184): its hook
-        // replaced exactly this one
+        // a failure of the fixture itself (the merge check of #184)
         assert.strictEqual(after.forged, forgedBefore + 1, 'the forged bytes were not the ones posted');
       });
     }
 
-    it('bytes forged over the cap are refused from their length on the main thread, never validated', async () => {
+    // what a module can still send by answering: its own output
+    it('invalid, its own output: the caller\'s call is refused (OUTPUT_DATA_VALIDATION_FAIL), and the caller goes on', async () => {
+      const r = await odd('forge', {kind: 'invalid'});
+      assert.strictEqual(r.body.output && r.body.output.code, 'OUTPUT_DATA_VALIDATION_FAIL', JSON.stringify(r.body).slice(0, 500));
+      assert.strictEqual((await ping()).status, 200);
+    });
+
+    it('an output over the cap is refused from its length (OUTPUT_TOO_LARGE), never validated', async () => {
       const t = Date.now();
       const r = await odd('forge', {kind: 'huge', n: CAP + 1});
       assert.strictEqual(r.body.output.code, 'OUTPUT_TOO_LARGE', JSON.stringify(r.body).slice(0, 500));
-      // the module's own answer was {ok: true}: only the main thread's length check saw these bytes
       assert.match(r.body.output.message, /^main-checked\/forge: its output is \d+ bytes, over the 67108864-byte limit/);
       assert.ok(Date.now() - t < 5000, `${Date.now() - t} ms`);
+      assert.strictEqual((await ping()).status, 200);
     });
   });
-
 });
 
 describe('sandbox 42: a hop\'s result that arrives after the caller\'s timeout', function() {

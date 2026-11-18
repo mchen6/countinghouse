@@ -23,7 +23,11 @@ describe('sandbox 48: lib/hop-input.js, server-free', () => {
     assert.deepStrictEqual(transfer, [args.inputBytes]);
     assert.ok(!Object.prototype.hasOwnProperty.call(args, 'input'), 'no value beside the bytes');
     assert.deepStrictEqual([args.token, args.usageCall], ['t', 3]);
-    assert.deepStrictEqual(hopInput.decodeArgs(args), {token: 't', usageCall: 3, input: {s: 'abc', n: [1, 2]}});
+    const decoded = hopInput.decodeArgs(args);
+    // (no prototype: a field it lacks is never read through a getter module
+    // code put on Object.prototype)
+    assert.strictEqual(Object.getPrototypeOf(decoded), null);
+    assert.deepStrictEqual({...decoded}, {token: 't', usageCall: 3, input: {s: 'abc', n: [1, 2]}});
   });
 
   it('an input structured clone cannot carry throws in the calling worker, as postMessage would; so does shared memory', () => {

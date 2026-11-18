@@ -1,6 +1,6 @@
 # One shared runtime per user, many client sessions
 
-Status: revision 5, FROZEN (contract 2). Revision 3 was READY after the security review. Revision 4 followed Matt's decision (2026-11-15): the shim is a small native program, written in Rust by implementer A, and this document fixes its wire contract so the two sides can be built and tested apart (section 1, and the vectors in `shared-runtime-wire/`). Revision 5 makes the contract review's seven edits. No code yet.
+Status: revision 5, FROZEN (contract 2). Revision 3 was READY after the security review. Revision 4 followed the maintainer's decision (2026-11-15): the shim is a small native program, written in Rust by implementer A, and this document fixes its wire contract so the two sides can be built and tested apart (section 1, and the vectors in `shared-runtime-wire/`). Revision 5 makes the contract review's seven edits. No code yet.
 Author: implementer C, 2026-11-15, against countinghouse master 842c5525 and ch-local main.
 It spans countinghouse (the runtime: sessions, per-session settings, the session transport) and ch-local (the daemon, the shim, the lifecycle).
 
@@ -8,7 +8,7 @@ It spans countinghouse (the runtime: sessions, per-session settings, the session
 
 Today every client session (each Claude Code window, each Cursor workspace) launches its own `ch-local start --stdio`. Each of those spawns its own runtime, with its own module workers and validators. Ten sessions are ten runtimes, at roughly 350–430 MB each, mostly the same modules loaded ten times over.
 
-Matt wants one runtime per user in release 1, shared by every session. To make that work, this design settles:
+The maintainer wants one runtime per user in release 1, shared by every session. To make that work, this design settles:
 - what a session is once it's no longer a process;
 - whose settings a session may change;
 - how a session reaches the runtime, and how it knows it reached the real one;
@@ -28,7 +28,7 @@ Matt wants one runtime per user in release 1, shared by every session. To make t
 ## Non-goals
 
 - More than one OS user per runtime. Multi-user stays the HTTP hosting profile, with API keys.
-- Hosting third-party servers in release 1 (Matt).
+- Hosting third-party servers in release 1 (maintainer's decision).
 - Remote clients. The transport is local only, and section 1 says how a remote attempt fails.
 
 ## The shape
@@ -346,7 +346,7 @@ R2-1 made `ctx.caller.id` *the user*, so a module's per-user data stays together
 
 ## 4a. Modules with per-session state (the maintainer's rule 3)
 
-> **Documented for authors and operators:** `docs/module-development.md`, "Modules that keep state per session", and `docs/security-model.md`, how a per-session module's worker is chosen and what a shared module is trusted with (R1 Task 7).
+> Documented for authors in [module development, "Modules that keep state per session"](../../module-development.md#modules-that-keep-state-per-session) and for operators in [the security model](../../security-model.md#modules-that-keep-state-per-session). As built (R1, plan docs/superpowers/plans/2026-11-16-shared-runtime-r1-per-session-modules.md): hops into a per-session module always take the main-thread route, never a direct peer channel.
 
 Modules are shared by default: one worker per module, as today. A module that **declares** per-session state gets a worker of its own per session, and its store and files partitioned by session.
 
@@ -696,7 +696,7 @@ A few MB per shim, measured later. A measures the Rust shim's memory. The Node r
 
 ## 10. Migration and the per-session mode
 
-- **`ch-shim` is the new client entry,** where a binary exists for the platform: Linux, macOS and Windows, each x64 and arm64 (Matt's six targets). Client snippets and `ch-local install` write it, with `<home>/shim.json`.
+- **`ch-shim` is the new client entry,** where a binary exists for the platform: Linux, macOS and Windows, each x64 and arm64 (the maintainer's six targets). Client snippets and `ch-local install` write it, with `<home>/shim.json`.
 - **No binary for the platform:** `ch-local install` writes `ch-local start --stdio` and says the platform runs one runtime per session. There is no Node shim.
 - **Existing configs keep working.** A client config that launches `ch-local start --stdio` execs the shim when one is installed, and otherwise runs today's per-session runtime, saying so. So no user has to edit a client config.
 - **`runtime: own` stays through release 1** (§11 answer 3). It's set with the terminal command, or per launch with `--own-runtime`, and gives today's behaviour exactly. It's also finding 3's fallback for a shim with flags or a token of its own.

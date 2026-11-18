@@ -76,19 +76,26 @@ describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)
     assert.deepStrictEqual(out, {outcome: 'ok', tool: 'tool'});
   });
 
-  // #177's re-review, item 2: module code that reaches countinghouse-util
-  // through chutil-facade's module object (require.cache, which the
-  // lockdown does not close: spec section 3's residual) and attaches it
-  // before the facade has gets nothing back, and its requests through it
-  // are refused, never sent unchecked.
-  it('countinghouse-util attached by module code hands out nothing, and its requests are refused', async () => {
+  // #177's re-review, item 2, as PR-c leaves it: the facade attaches
+  // countinghouse-util at the worker's boot, before any module code, so
+  // module code that reaches it through chutil-facade's module object
+  // (require.cache: spec section 3's residual) can no longer attach it
+  // itself; a request through it goes the runtime's own checked route, and
+  // the lockdown refuses it. (That an attach with no route refuses every
+  // request is the server-free case below.)
+  it('countinghouse-util is attached at boot: module code\'s attach is refused, and its request goes the checked route, refused there', async () => {
+    const mark = server.output.length;
     const r = await post(PORT, KEY, `/devices/${deviceIDForName('lean-attach-probe')}/invoke-action`,
       {serviceID: 'urn:countinghouse-test:serviceID:attachService', actionName: 'attach', input: {url: 'http://127.0.0.1:9'}});
     assert.strictEqual(r.status, 200, JSON.stringify(r.body));
     const out = r.body.output;
     assert.strictEqual(out.facadeInCache, true, JSON.stringify(out));
+    assert.match(String(out.attached), /already attached/, JSON.stringify(out));
     assert.strictEqual(out.handed, 'undefined', `the attach handed out a ${out.handed}`);
     assert.deepStrictEqual(out.request, {outcome: 'error', code: 'ERR_ACCESS_DENIED'}, JSON.stringify(out));
+    // refused by the lockdown's host check, the checked route
+    for (let i = 0; i < 50 && !/lean-attach-probe violation net 127\.0\.0\.1:9/.test(server.output.slice(mark)); i++) await new Promise((res) => setTimeout(res, 100));
+    assert.match(server.output.slice(mark), /lean-attach-probe violation net 127\.0\.0\.1:9/);
   });
 
   it('a handler file that requires a refused built-in while it loads: the load fails, naming the file', async () => {
@@ -97,5 +104,35 @@ describe('sandbox 48: a lean worker\'s handlers are under the lockdown (enforce)
     assert.strictEqual(r.body.code, 'LOAD_MODULE_FAIL', JSON.stringify(r.body));
     assert.match(r.body.message, /handlers\/loadService\/ping\.js/);
     assert.match(r.body.message, /worker_threads/);
+  });
+});
+
+// The guarantee module code meets if it attaches countinghouse-util before
+// any facade has (a worker with no facade, as no lean worker is since PR-c):
+// it gets nothing back, and with no route a request is refused, never sent
+// unchecked (#177's re-review, item 2). Server-free: a worker thread of its own.
+describe('sandbox 48: countinghouse-util attached with no route, in a worker', function() {
+  this.timeout(30000);
+  it('an attach with outbound null hands back nothing, and every request is refused ERR_ACCESS_DENIED, no checked route', async () => {
+    const {Worker} = require('worker_threads');
+    const code = `
+      const {parentPort, workerData} = require('worker_threads');
+      const path = require('path');
+      require(path.join(workerData.LIB, 'cli-options')).setOptions({workerThread: false});
+      const util = require(path.join(workerData.LIB, 'countinghouse-util'));
+      const handed = util.__attach({dm: null, ci: null, redis: null, outbound: null});
+      let again = null;
+      try { util.__attach({dm: null, ci: null, redis: null, outbound: () => {}}); } catch (e) { again = e.message; }
+      util.request({url: 'http://127.0.0.1:9', timeout: 1000}, (err) => parentPort.postMessage({handed: typeof(handed), again,
+        code: err != null ? err.code : null, message: err != null ? err.message : null}));
+    `;
+    const got = await new Promise((resolve, reject) => {
+      const w = new Worker(code, {eval: true, workerData: {LIB: path.join(ROOT, 'lib')}});
+      w.once('message', (m) => { w.terminate(); resolve(m); });
+      w.once('error', reject);
+    });
+    assert.deepStrictEqual([got.handed, got.code], ['undefined', 'ERR_ACCESS_DENIED'], JSON.stringify(got));
+    assert.match(got.message, /no checked route/);
+    assert.match(String(got.again), /already attached/, 'a second attach, with a route, is refused');
   });
 });

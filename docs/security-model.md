@@ -91,10 +91,50 @@ objects a module can reach is fixed at the lockdown instead, in audit and
 enforce: every function of the `path`, `path.posix`, `path.win32` and `url`
 exports, `URL.prototype`'s accessors and methods, and `module.isBuiltin`
 are non-writable and non-configurable, so a module cannot show the loader
-or a check one path and have another one used. A module that patches
-`path`, `url` or `URL` runs only under `off`.
+or a check one path and have another one used. So are a port's
+methods and its event targets' (`MessagePort.prototype`, the
+`NodeEventTarget` behind it and `EventTarget.prototype`): Node's own set-up
+of a port that reaches a worker after module code has loaded (a peer
+channel's) calls `this.on`, so a replaced method would be handed the port
+before the runtime holds it. The keys Node assigns on a port it sets up
+(`kEvents`, `kHandlers`, the listener limits, `kCurrentlyReceivingPorts`)
+have accessors of their own on those prototypes that make the value the
+port's own, so a setter module code puts on `Object.prototype` for one is
+never reached. A module that patches `path`, `url`, `URL`,
+`EventTarget`, `NodeEventTarget` or `MessagePort` runs only under `off`.
+Since the inherited properties are non-writable, an assignment on an
+instance (`target.addEventListener = fn`) throws in strict code; accessors
+(`port.onmessage = fn`), subclasses and `Object.defineProperty` on an
+instance still work. These are fixed under `audit` as under `enforce`:
+audit reports a module's other attempts and allows them, but a patch to
+one of these simply fails, with nothing reported.
+
+A worker loads everything its calls go through at boot, before module
+code: call limits, a hop's input, peer channels, the service client, the
+device query and `countinghouse-util` (attached to the worker then). A
+`require` on a call path after that would return whatever module code had
+put in `require.cache`, so there is none. The exports of those files and
+their classes' prototypes are fixed at boot too, so module code that
+reaches them through `require.cache` can replace nothing the runtime calls.
+A call's token, the queues of calls waiting for a peer channel and the
+callbacks waiting for replies are kept in containers written as own
+properties and walked by index, with intrinsics taken at boot, so a method
+or setter module code puts on a shared prototype is never handed one.
+What the runtime still loads on first use carries no call's token: a
+library for the module's own requests, the logger, live settings and the
+Redis bridge, which is handed only its own send.
 
 Known limits of this rule:
+- **A module in the same realm can still post a message through
+  worker-message's module-level post, and the main thread must refuse what
+  it did not ask for.** Module code reaches `lib/worker-message.js` in
+  `require.cache`; it cannot change the runtime's instance or its
+  prototype, but a `WorkerMessage` of its own posts on the worker's port.
+  So a module can send a request the main thread does not serve for it (a
+  validation's worker is refused every one, by name: test/sandbox/21) and a
+  reply to an id it guesses, as bytes it made by hand (refused, or checked
+  by a validator before any caller decodes them: test/sandbox/42). Nothing
+  the main thread acts on is taken on the message's word.
 - **`CHUtil.request`'s redirects** are followed inside postman-request,
   whose redirect handling looks methods up when it runs: the lockdown's
   `followRedirect` check runs on its own captured functions, but what
@@ -139,8 +179,8 @@ drive-qualified path as outside the namespace. Under `enforce` such a path is
 refused (ENOENT): it fails closed. The module gets its own `/data` and
 `/tmp`.
 
-**Under `audit` a module changes nothing outside its own area** (Matt,
-2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
+**Under `audit` a module changes nothing outside its own area**
+(maintainer's decision, 2026-11-15). Its own area for writes is its `/data`, its `/tmp` and what it
 declared `rw`. Every write-class operation aimed anywhere else is refused
 `EACCES` and recorded as a denial: an open for writing, a create or truncate,
 `writeFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink`, `rename` or
@@ -188,10 +228,45 @@ any module code). Stops:
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
   the module's directory); `module.registerHooks`/`register` are locked so no
-  later hook can run ahead of the boundary;
+  later hook can run ahead of the boundary; and `Module._load`, which module
+  code reaches as `module.constructor._load`, forwards only its request,
+  parent and isMain, so its internal fourth argument (which skips the
+  resolve hooks, or hands over a resolution or source) never skips them.
+  Under `enforce` it takes only a string request and never makes a main
+  module; it, `Module._resolveFilename`, `Module.prototype.load` and the
+  extension handlers are locked, and the extensions table takes no new
+  extension. Under `audit` each replacement is reported. **Until #194's
+  next step (no lazy runtime load after the lockdown), other routes into
+  what the runtime loads later are one assignment away for module code:**
+  a planted `require.cache` entry or `Module._cache` replaced; Node's
+  relative-resolve cache poisoned through a parent module code forges (its
+  path a countinghouse directory, its filename the module's own);
+  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced; an
+  accessor on `Module.prototype` for Node's internal URL symbol; and, under
+  `audit` even with the file broker, `_findPath` and `_stat`. #194's later
+  steps close them (the runtime loads nothing after the lockdown; the cache
+  moved out of reach; every loader static locked);
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
-  `process.loadEnvFile` goes through the file broker;
+  `process.loadEnvFile` goes through the file broker. Of `process.report`'s
+  settings, `compact`, `excludeNetwork` and `excludeEnv` are the worker's
+  own values, which a module may read and set (a boolean, as Node checks)
+  and which never reach the process's (the worker's real `excludeEnv` and
+  `excludeNetwork` are on from its start, so a report it writes under
+  `audit` holds no environment; such a report is in the process's
+  `compact`, not the module's); every other one (`directory`, `filename`,
+  `signal`, the `reportOn*` triggers, and any a later Node adds) is locked;
+- `process.report.getReport()`, in every mode: Node builds a report from the
+  process, not the worker, so it would hold the server's own environment and
+  command line (its database and Redis passwords, its debug key, any token
+  in its environment) whatever env the worker was given. A module is served
+  only what an allowlist keeps: of the header, the runtime's versions, word
+  size, arch, platform, glibc and OS name; the JavaScript heap, resource use
+  and limits; and of the shared objects only libc's and the dynamic loader's
+  names, which native-addon loaders (detect-libc) read to pick a binary. The
+  environment, command line, working directory, host, network, OS release,
+  version, machine and CPUs, the libuv handles, worker reports, both stacks,
+  and any field a later Node adds are left out;
 - adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
   `net.connect({fd})` and `net.createConnection({fd})`, which an `http`
   request given an `fd` reaches through the agent (`https` goes through
@@ -334,7 +409,7 @@ directories, is another path and is not refused. A module cannot make one
 `enforce` a module whose `/data` or `/tmp` holds one does not start); the
 limit is a link that an operator, or other software on the machine, left
 where a module may read. A pack loaded in place may come with a credentials
-file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+file of its own, read when the pack is loaded (`lib/modules-in-place.js`):
 that file is no option of the runtime's, so it is not a protected path by
 itself; ch-local writes it under `run/` in its home, which is protected as
 a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
@@ -523,6 +598,11 @@ the key's fingerprint (a full, domain-separated sha256). The seeding
 command, `countinghouse-meter`, reads the key from
 `COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
 fingerprint.
+
+The store's files are written back every 5 seconds, and at a clean stop. So
+a runtime killed without one (SIGKILL, a power loss) can lose up to the
+last 5 seconds of `ctx.redis` writes, per-session or not. Redis has its own
+persistence settings.
 
 In the single-identity profile (`--store local --stdio` without
 `--authConfigPath` or `--authProvider`) no auth file exists. The one key is
@@ -855,6 +935,27 @@ module has no way to it.
 A `--stdio` runtime has the one store and the one start it always had, and
 is outside the window.
 
+### Declared text, as it reaches the client
+
+What a module declares and a client shows or a model reads is cleaned as it
+leaves, never refused or changed at load. That covers a tool's title and
+description, a prompt's title, description, arguments' descriptions and
+messages, a resource's and a template's title and description, and a
+question's dialog. Each hidden character becomes a space, so no two words
+are joined by what was hidden between them. These are characters a model
+reads and a person doesn't see: controls, line separators, bidi controls,
+zero-width characters, tags, variation selectors and fillers. They form
+countinghouse's one class, `lib/conditions-why.json`'s `hiddenClass`, the
+same one ch-local checks.
+- A prompt's message keeps its `\n` and `\t`.
+- An emoji keeps its joiner (U+200D between two pictographic characters)
+  and its VS-16 (right after one).
+- A resource's name is an identifier, by the meta-schema.
+- A completion candidate is a value the client sends back, so one with a
+  hidden character is left out rather than changed.
+- A prompt's arguments are the client's own, and go into its messages as
+  the client sent them.
+
 ### A module's question to the user (`ctx.ask`)
 
 A module's handler may put a question to the user of an MCP client
@@ -880,14 +981,18 @@ bounds it:
   with a question only from the main thread's own record that the handler
   asked one. Nothing a module returns or throws can produce that answer.
 - **The retry's `requestState`** is the client's to send, so the
-  attacker's to write. It is `v1.<payload>.<mac>`: an HMAC-SHA256 under a
-  key derived from the identity secret, over the payload and the call it
-  is good for (the caller's opaque id, the session, the method, the tool
-  and a hash of the arguments). It lasts five minutes and is used once.
-  **The payload is readable, not private:** it holds a nonce, the expiry,
-  the question's key and declared name, the round and the earlier rounds'
-  answers, which the client already has. Nothing secret may ever be put
-  in it.
+  attacker's to write. It is `v2.<sealed payload>.<mac>`: an HMAC-SHA256
+  under a key derived from the identity secret, over the sealed payload and
+  the call it is good for (the caller's opaque id, the session, the method,
+  the tool and a hash of the arguments). It lasts five minutes and is used
+  once. **The payload is sealed:** AES-256-GCM under a key derived from the
+  MAC key, a key of its own for each state (a fresh salt), checked by the
+  MAC before it is opened. It holds a nonce, the expiry, the question's key
+  (which names the question and the module that asked, an unlisted part
+  included), the round and the earlier rounds' answers. It is padded to a
+  length set by the answers alone, which the client already has, so its
+  length says nothing of who asked. A `v1` state, whose payload was in the
+  clear, is refused.
 - **One refusal.** A state that is not this call's, has expired or was
   already used gets one answer with one text (`ASK_STATE_INVALID`); which
   it was is in the runtime's own log line only. A store that cannot say
@@ -953,7 +1058,11 @@ bounds it:
   it. The record keeps the task's owner and its session's hash, never the
   session's id. `tasks/update` finds the task as `tasks/get` does (the
   caller's own, in its session: anyone else's is the one unknown-task
-  error), and the record's own session is checked again. Outside shared
+  error), and the record's own session is checked again. Answers come only
+  from a request that declares form elicitation, as only such a poll is
+  handed the form: a `tasks/update` with `inputResponses` from any other
+  is refused `-32021` before the task is looked up, so the refusal says
+  nothing of one. Outside shared
   mode the owner key decides, so a key that may read another owner's task
   (an admin, as M15 rules for `tasks/get` and `tasks/cancel`) may also
   answer its question. Only the waiting
@@ -1102,6 +1211,113 @@ These events are **not recorded in this release**:
 - how far a cancelled call had run (only its time and bytes);
 - a list cursor refused.
 
+### Modules loaded in place, by module (ch-local's control channel)
+
+ch-local loads, reloads and unloads modules while the runtime serves
+(`lib/modules-in-place.js`; #413 section 7). In the module form a message
+names a top-level module by its package name and gives `dirs`, the
+directory of each module of its closure:
+
+- **Only the module store.** Every directory a message gives, and every
+  `--loadModule` and `--partDir` directory of a start given `--modulesRoot`,
+  must lie inside `--modulesRoot` by real path, with no link leading out
+  anywhere in it, and hold the package its key names. A module calls its
+  parts only among the directories given: there is no `node_modules`
+  search, so a package planted in `~/node_modules`, or beside a module, with
+  a part's friendly name is never loaded as that part (`PART_MISSING`).
+- **Hidden while it changes.** What a load newly brings in is in no list
+  and reached by no call, hop, direct peer channel or job run until every
+  module of it is up; what an unload takes away is hidden from its start.
+  A module whose unload fails (still in the module map) stays hidden until
+  the runtime ends, and a load whose closure holds it is refused
+  (`lib/module-visibility.js`).
+- **The ceiling by module.** A trusted ceiling's `modules` list must name
+  every module of a closure, parts included (`SETTING_FORBIDDEN_BY_CEILING`
+  for one it leaves out). A ceiling that still lists `packs` and no
+  `modules` refuses every module-form load (fail closed).
+- **Credentials by repetition only.** A load's `credentials` may only
+  repeat a binding the start's `--remoteCredentials` file fixed (the same
+  slot for the same module, origin and variable): a message can never bind
+  a key anew.
+- **A module the runtime gives up on.** On a runtime with a control
+  channel, a module the supervisor would suspend (three exits within ten
+  minutes, or a restart the sandbox refuses) has every unit that holds it
+  unloaded by the runtime itself, on the channel's own chain; only once
+  nothing of it is left is ch-local told `module-stopped`, so ch-local and
+  the runtime never disagree about what is loaded. A top-level module the
+  start refused is told the same way, with `when: "start"`. Without a
+  control channel a suspended module stays suspended and listed until
+  `POST /restart-module`.
+
+The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
+is still taken until it is removed, never mixed with the module form in one
+message.
+
+### Modules that keep state per session
+
+On the shared runtime, a module that declares
+`"countinghouse": {"state": "per-session"}` runs in one worker per session
+that uses it, with that session's own `ctx.redis` keys, `/data` and `/tmp`
+([module development](module-development.md#modules-that-keep-state-per-session)).
+What keeps one session out of another's:
+
+- **The worker is never the caller's choice.** Every call carries a call
+  token the runtime issues and binds to the session it was made in. A
+  direct call, a hop (`ctx.call`) or a task run reaches the worker of the
+  session its token names, which the main thread looks up for each call. A
+  session, or a module acting for it, reaches only its own session's
+  worker and storage. A call whose session has ended reaches none: it is
+  answered as a device that was never hosted, and nothing runs.
+- **Never over a direct peer channel, under any profile.** Hops into a
+  per-session module always go through the main thread, routed by each
+  call's own token, and the runtime never opens a direct channel to one.
+  A caller's peer channels are keyed by the device they lead to, not by
+  session (a module never sees a session id), so a channel opened for one
+  session's call would carry another session's later hop into the first
+  session's worker. The broker answers a request for one with "route
+  through the main thread"; and were a channel to a session's worker ever
+  to exist, an invoke on it by another session's call is refused. On the
+  shared runtime peer channels are off anyway (it is the single-identity
+  profile), but the guarantee doesn't rest on that.
+- **No session id reaches the module**: not in its options, environment,
+  `ctx`, paths (its `/data` is mapped on the main thread) or error texts.
+- **Shared modules are trusted with every session's data.** A shared module
+  is reached by every session by design. While it serves two sessions'
+  calls at once it holds both tokens, so it could hop into either session's
+  per-session worker. Only load as shared a module you would trust with
+  all of the user's sessions. That is the case already: on the shared
+  runtime every session is the same user.
+- **With session packs (B3),** a session sees and calls only the modules in
+  packs that are on for it (the global ones and its own). A module it
+  doesn't list answers like a missing one, and its per-session workers stop
+  when the session turns its pack off.
+- **The memory bound is the operator's.** `--maxSessionWorkers` (default
+  16, in all) is a terminal flag only, not a setting a session can change.
+  It bounds their memory at about 15 MB once plus about 24 MB per
+  per-session worker (measured, Node 24, a small module; a heavier module
+  adds its own heap): the default cap is about 400 MB at most
+  ([benchmarks](benchmarks/lean-worker.md)).
+  At the cap only an idle worker is retired, never one with a call still
+  within its timeout. A call past its timeout and a 5-second margin has
+  been answered (its own timeout did that) and no longer counts, so a
+  handler that never answers can't hold a slot for good: its worker may be
+  retired mid-handler. A session that can't get a worker is refused
+  `SESSION_WORKERS_BUSY`; nothing is queued.
+  Residual: a task whose handler never answers holds its slot until the
+  task's timeout: its own, when it was added with one, or else
+  `--jobTimeout` (1 hour by default; an operator who sets 0 has chosen no
+  bound). The timeout counted is the one at the send:
+  a session that tightens its timeout during a call, or cancels it, frees
+  the slot only at the original timeout (a follow-up after R1).
+- **Storage ends with the session.** A session's partitions are removed
+  when it ends for good (it leaves, its reconnect window passes, or a resume
+  never settles), after its workers stop; and at a start, once the runtime
+  listens, in the background, for every session neither restored nor open.
+  What a session's partitions held leaves its module's shared disk quota
+  with them: the session's own share, exactly. Removal never follows a link out of the module's data
+  directory, and a partition that can't be removed doesn't stop the runtime
+  from starting.
+
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
 The following are known, accepted, and not hidden by the layers above.
@@ -1131,12 +1347,53 @@ and the short list of what the in-process sandbox cannot give.
   still use modules countinghouse loaded before the lockdown, and read
   countinghouse's own code files. `CHUtil` and everything else loaded before
   lockdown stay part of the review checklist for every change to
-  `lib/countinghouse-util.js`. postman-request, behind `CHUtil.request` and
-  a remote service client, loads on its first use instead
-  (`lib/lazy-require.js`), after module code has run, so a module can plant
-  `require.cache` entries for it in its own worker first. That reaches only calls made in that worker, which carry the
-  keys the module itself passes; the library is loaded once and kept, so
-  nothing planted after its first use is read.
+  `lib/countinghouse-util.js`. Nothing of the runtime's own loads or
+  resolves after the lockdown (#194's PR 1): what it used to load on first
+  use (the worker logger, redis-api, bind-address, the live options, the
+  file broker's built-ins, the validator's files in a validation worker) is
+  loaded at a worker's boot, so a `require.cache` entry or a relative
+  resolution module code plants has no runtime load to reach.
+  test/sandbox/66 records every runtime `_load`, `_resolveFilename`,
+  `createRequire` and `getBuiltinModule` after the lockdown on each of
+  those paths, and test/sandbox/67 pins the boot closure, dependencies
+  included, against a `require` inside a function. postman-request, behind
+  `CHUtil.request` and a remote service client, is loaded at set-options,
+  before the lockdown, when the module declares `net`, in both modes. A
+  module with no `net` under `enforce` has every request refused before
+  the library is reached. Under `audit` such a request is allowed and
+  reported, and postman-request then loads after the lockdown, so a module
+  can plant `require.cache` entries for it first: audit isn't a boundary,
+  and the request carries only the options the module itself passes, so
+  the late load exposes nothing it didn't already hold (preloading it on
+  every audit worker would cost about 240 files at each boot).
+  bcrypt-pbkdf, which sshpk requires on the first encrypted OpenSSH key
+  (the `httpSignature` option), is warmed with postman-request, so that
+  require is a hit in Node's cache however the option arrives. The options
+  are put together as postman-request does (a second options argument
+  included): enforce hands on only their checked own keys, with no
+  prototype; audit hands on postman-request's own copy (own and inherited
+  keys, each read once) and reports over that same copy. A module file the
+  runtime loads (a handler, `CHUtil.loadFile`) has the module's own anchor
+  as parent, a `Module` whose file is inside the module root, never a
+  runtime `Module` (and never null, which would read as a main module).
+  Everything a call's token goes through is loaded at a worker's boot, and
+  its exports and classes' prototypes are fixed there (above), so what
+  module code reaches this way it can read, not change.
+- **A module can obtain a peer port transferred into its worker.** Node
+  writes the array of ports a message transferred natively, index by index,
+  before any JavaScript runs, so a setter module code puts on an index of
+  `Array.prototype` or `Object.prototype` is handed a peer channel's port
+  as it arrives. This gives it nothing beyond posting on its own end of the
+  channel: tokens, targets and input never cross the port (they go to the
+  main thread in the caller's announcement), and each invoke is checked
+  against the main thread's announcement before it is served, so a forged
+  or replayed invoke is refused unserved (test/sandbox/63). An index
+  accessor on `Array.prototype` would close it at the cost of every array's
+  holes and V8's fast path in the module's worker, which is worse.
+- **`BroadcastChannel` reaches past the envelope.** The global lets module
+  code in two workers send each other messages directly, unmetered and
+  outside the main thread's bounds. Refusing it to module code under
+  `enforce` is planned with the require-cache isolation work (#194).
 - **Module code can talk to the main thread as if it were countinghouse.**
   The worker's own channel to the main thread is reachable from module code
   (through `require.cache`, `CHUtil.redis.clientInstance`; the global
@@ -1309,6 +1566,35 @@ the main thread's, not the module's (spec:
   all (`REMOTE_CREDENTIAL_NOT_ALLOWED`). Without the option no credential
   is ever read. The client packs' `ch-local install` writes the file from
   its allowlist, so for the single local user the user is the operator.
+- **Bound to one module (version 2 of the file, #413 section 6.5).** A key
+  is bound to (module, variable, origin) and read from a slot,
+  `COUNTINGHOUSE_CREDENTIAL_<n>`: a prefix the runtime never hands to a
+  worker, and the only names the file accepts, so it cannot send the
+  identity secret or any other variable of the runtime's environment
+  anywhere. The start's file fixes each slot for the life of the process;
+  a later entry may only repeat one. Another module that declares the same
+  variable and origin gets nothing, and so does a version of the bound
+  module that sends it to another origin or under another name.
+- **Never in a worker's environment** (under `--moduleSandbox audit` and
+  `enforce`; with the sandbox off, or in single-thread mode, a module shares
+  the runtime's environment and this does not hold). A variable a
+  credentials allowance in force reads -- version 1's listed names; version
+  2's slots and every variable name the file binds, since the operator's
+  own variable of that name may still be exported -- is never copied from
+  the runtime's environment into a worker, even when a module declares it
+  in `permissions.env` (before, under audit, a declared `GITHUB_TOKEN` was
+  handed over). Only a value the operator's
+  `--modulePolicy` sets for that module under that name is given: it is the
+  operator's own value, not the runtime's credential. The names are those
+  in force at the spawn: a worker spawned before a pack loaded in place
+  added a version 1 name keeps its environment until its next spawn (until
+  version 1 leaves a runtime with a control channel).
+- **Pinned.** A module's remotes join its manifest pin: a supervised
+  restart uses the remotes the last operator action took, and a
+  `package.json` rewritten since (under audit, by a route the file broker
+  does not see) changes nothing until an operator's reload; each
+  difference is logged as an error, saying each remote's name, origin and
+  variable only (never a URL's user info, path or query, nor a header).
 - **What a remote can reach.**
   - https only (http only to a loopback host under `--debug`, for tests);
   - a redirect followed only within the same origin (the exact scheme,

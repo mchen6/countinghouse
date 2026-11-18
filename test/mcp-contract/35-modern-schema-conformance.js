@@ -10,8 +10,10 @@
 // Spawned, --stdio (the schema's concern is the message, not the
 // transport): the bundled modules, the module that declares everything,
 // and the fixtures for result shapes (mcp-conformance-module), a question
-// (asks-questions), progress (progress-part) and tasks (m15-tasks), with
-// --listPageSize 10 so the tools list has pages. The tasks extension's
+// (asks-questions), progress (progress-part), tasks (m15-tasks), resource
+// notices (notes-notices), completion by a template and an action
+// (completion-actions) and a task's question (m22-task-ask), with
+// --listPageSize 10 so the lists have pages. The tasks extension's
 // results are checked against its own schema (ext-tasks).
 const assert = require('assert');
 const fs = require('fs');
@@ -23,7 +25,7 @@ const tmp = require('../helpers/test-tmp');
 
 const ROOT = path.join(__dirname, '..', '..');
 const FX = path.join(ROOT, 'test', 'fixtures');
-const FIXTURES = ['declares-everything', 'mcp-conformance-module', 'asks-questions', 'progress-part', 'm15-tasks'];
+const FIXTURES = ['declares-everything', 'mcp-conformance-module', 'asks-questions', 'progress-part', 'm15-tasks', 'notes-notices', 'completion-actions', 'm22-task-ask'];
 const KEY = 'stdio-test-key';
 const CORE = require('../fixtures/mcp-schema/2026-07-28/schema.json');
 const TASKS = require('../fixtures/mcp-schema/ext-tasks-2026-07-28/schema.json');
@@ -82,6 +84,23 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
     }
     throw new Error('the tools list never ended');
   };
+  // a bare name (a scenario's) first, then by its suffix
+  const toolNamed = async (suffix) => {
+    const tools = await allTools();
+    return (tools.find((t) => t.name === suffix) || tools.find((t) => t.name.endsWith(`_${suffix}`))).name;
+  };
+  // every page of a list, each conforming to its result
+  const allOf = async (method, field, def) => {
+    const out = [];
+    let cursor;
+    for (let page = 0; page < 50; page++) {
+      const r = conforms(await ask(method, cursor != null ? {cursor} : {}), def);
+      out.push(...r[field]);
+      if (r.nextCursor == null) return out;
+      cursor = r.nextCursor;
+    }
+    throw new Error(`${method} never ended`);
+  };
 
   before(async () => {
     home = tmp.mkdtemp('ch-mcp-35-');
@@ -94,11 +113,13 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
       // used-nonce store need one that answers
       '--store', 'local', '--storePath', path.join(home, 'store'), '--moduleDataPath', path.join(home, 'module_data')], {env: {COUNTINGHOUSE_API_KEY: KEY}});
     // (a scenario's tools are listed by their bare names: asks-questions' probe)
-    const wanted = ['notesservice_savenote', 'shapeservice_binary_out', 'probe', 'partservice_work', 'taskservice_slow'];
+    const wanted = ['notesservice_savenote', 'shapeservice_binary_out', 'probe', 'partservice_work', 'taskservice_slow', 'notesservice_save', 'pickservice_lastlate',
+      'askservice_probe'];
     let missing = wanted;
     for (let i = 0; i < 120; i++) {
       const tools = await allTools().catch(() => []);
-      missing = wanted.filter((n) => !tools.some((t) => t.name === n || t.name.endsWith(`_${n}`)));
+      // (a bare name, a scenario's, only as itself: m22-task-ask's probe ends like it)
+      missing = wanted.filter((n) => !tools.some((t) => t.name === n || (n.includes('_') && t.name.endsWith(`_${n}`))));
       if (missing.length === 0) return;
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -147,6 +168,39 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
     });
   });
 
+  describe('resource notices on a listen (M8)', () => {
+    const SUB = 'io.modelcontextprotocol/subscriptionId';
+    const BASE = 'countinghouse://m/notes_notices';
+    const seen = (from, test) => io.lines.slice(from).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((m) => m != null && test(m));
+    const subOf = (m) => (m.params != null && m.params._meta != null ? m.params._meta[SUB] : undefined);
+    it('the listen\'s acknowledgement is a SubscriptionsAcknowledgedNotification; a change, a ResourceUpdatedNotification', async () => {
+      const from = io.lines.length;
+      const listenId = id++;
+      io.notify({jsonrpc: '2.0', id: listenId, method: 'subscriptions/listen', params: {_meta: Object.assign({}, META, {'io.modelcontextprotocol/clientCapabilities': {}}),
+        notifications: {resourcesListChanged: true, promptsListChanged: true, resourceSubscriptions: [`${BASE}/notes/a`]}}});
+      const until = async (test) => {
+        for (let i = 0; i < 300 && !test(); i++) await new Promise((r) => setTimeout(r, 50));
+        return test();
+      };
+      try {
+        const ours = () => seen(from, (m) => subOf(m) === listenId);
+        const acks = () => ours().filter((m) => m.method === 'notifications/subscriptions/acknowledged');
+        assert.ok(await until(() => acks().length === 1), withoutRedisNoise(io.err, 1500));
+        conformsAsNotification(acks()[0], 'SubscriptionsAcknowledgedNotification');
+        conforms(await ask('tools/call', {name: await toolNamed('notesservice_save'), arguments: {id: 'a', text: 'A.'}}), 'CallToolResult');
+        const updated = () => ours().filter((m) => m.method === 'notifications/resources/updated');
+        assert.ok(await until(() => updated().length > 0), 'no notifications/resources/updated');
+        for (const n of updated()) conformsAsNotification(n, 'ResourceUpdatedNotification');
+        // the acknowledgement first on the listen (the schema's MUST), and an
+        // update only for what was subscribed
+        assert.strictEqual(ours()[0].method, 'notifications/subscriptions/acknowledged', JSON.stringify(ours().map((m) => m.method)));
+        assert.deepStrictEqual([...new Set(updated().map((n) => n.params.uri))], [`${BASE}/notes/a`]);
+      } finally {
+        io.notify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: listenId}});
+      }
+    });
+  });
+
   describe('prompts and completion (M10, M11)', () => {
     it('prompts/list, prompts/get and completion/complete', async () => {
       const prompts = conforms(await ask('prompts/list'), 'ListPromptsResult').prompts;
@@ -157,7 +211,19 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
     });
   });
 
-  const toolNamed = async (suffix) => (await allTools()).find((t) => t.name === suffix || t.name.endsWith(`_${suffix}`)).name;
+  describe('completion of a resource template, and by a module\'s action (M11)', () => {
+    it('a template\'s argument and an action\'s answer are CompleteResults', async () => {
+      const templates = await allOf('resources/templates/list', 'resourceTemplates', 'ListResourceTemplatesResult');
+      const items = templates.find((t) => /completion_actions\/items\/\{id\}$/.test(t.uriTemplate));
+      assert.ok(items != null, JSON.stringify(templates));
+      const byResource = conforms(await ask('completion/complete', {ref: {type: 'ref/resource', uri: items.uriTemplate}, argument: {name: 'id', value: ''}}), 'CompleteResult');
+      assert.ok(byResource.completion.values.includes('item-1'), JSON.stringify(byResource));
+      const pick = (await allOf('prompts/list', 'prompts', 'ListPromptsResult')).find((p) => /completion_actions.*pick$/.test(p.name));
+      assert.ok(pick != null, 'completion-actions\' prompt is listed');
+      const byAction = conforms(await ask('completion/complete', {ref: {type: 'ref/prompt', name: pick.name}, argument: {name: 'colour', value: 'c'}}), 'CompleteResult');
+      assert.ok(byAction.completion.values.includes('crimson'), JSON.stringify(byAction));
+    });
+  });
 
   describe('tool results (M3, M4, M5, M20)', () => {
     it('results of every shape are CallToolResults: an object, an array, a string, null, binary values as image, audio and resource blocks, an error', async () => {
@@ -222,6 +288,8 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
       }
       assert.strictEqual(got.status, 'completed', JSON.stringify(got));
       conforms(await task('tasks/update', {taskId: made.taskId, inputResponses: {}}), 'tasks:UpdateTaskResult');
+      // an answer from a request that declares no form elicitation: an error (F2-5)
+      conformsAsError(await task('tasks/update', {taskId: made.taskId, inputResponses: {q: {action: 'decline'}}}));
       const failing = conforms(await task('tools/call', {name: await toolNamed('taskservice_fails'), arguments: {}}), 'tasks:CreateTaskResult', 'task');
       for (let i = 0; i < 100; i++) {
         got = conforms(await task('tasks/get', {taskId: failing.taskId}), 'tasks:GetTaskResult');
@@ -232,6 +300,28 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
       conforms(await task('tasks/cancel', {taskId: long.taskId}), 'tasks:CancelTaskResult');
       conforms(await task('tasks/get', {taskId: long.taskId}), 'tasks:GetTaskResult');
       conformsAsError(await task('tasks/get', {taskId: `t-${'0'.repeat(32)}`}));
+    });
+
+    // M22: a task's question, held on the server
+    it('a task that asks: tasks/get input_required, tasks/update, then completed, each against the extension\'s schema', async () => {
+      const ASKING = {extensions: {[TASKS_EXT]: {}}, elicitation: {form: {}}};
+      const made = conforms(await ask('tools/call', {name: await toolNamed('askservice_probe'), arguments: {what: 'it'}}, ASKING), 'tasks:CreateTaskResult', 'task');
+      let got = null;
+      for (let i = 0; i < 100; i++) {
+        got = conforms(await ask('tasks/get', {taskId: made.taskId}, ASKING), 'tasks:GetTaskResult');
+        if (got.status !== 'working') break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.strictEqual(got.status, 'input_required', JSON.stringify(got));
+      const key = Object.keys(got.inputRequests)[0];
+      conforms(await ask('tasks/update', {taskId: made.taskId, inputResponses: {[key]: {action: 'accept', content: {yes: true}}}}, ASKING), 'tasks:UpdateTaskResult');
+      for (let i = 0; i < 100; i++) {
+        got = conforms(await ask('tasks/get', {taskId: made.taskId}, ASKING), 'tasks:GetTaskResult');
+        if (got.status !== 'working' && got.status !== 'input_required') break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.strictEqual(got.status, 'completed', JSON.stringify(got));
+      assert.deepStrictEqual(got.result.structuredContent.answer, {yes: true});
     });
   });
 });

@@ -63,6 +63,21 @@
         }
       }
     },
+    "die": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        }
+      },
+      "output": {
+        "type": "object"
+      }
+    },
     "readCount": {
       "input": {
         "type": "object",

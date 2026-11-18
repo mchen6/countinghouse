@@ -121,6 +121,32 @@ describe('--stdio, spawned', function() {
     assert.ok(!/countinghouse listen on/.test(io.err), 'it started the HTTP server');
   });
 
+  // countinghouse_settings is served only in the single-identity profile:
+  // --settingsFile anywhere else stops the start, as --controlChannel and
+  // --sessionSocket do, rather than half-apply (a size cap's hint naming a
+  // tool that is not served).
+  it('--settingsFile outside the single-identity profile is refused, naming the flag; a bare one is refused too', () => {
+    const dir = tmp.mkdtemp('ch-stdio-02-sf-');
+    try {
+      const auth = path.join(dir, 'auth.json');
+      fs.writeFileSync(auth, '{}');
+      const common = ['--workerThread', '--store', 'local', '--storePath', path.join(dir, 'store'), '--modulePath', path.join(dir, 'modules'),
+        '--moduleDataPath', path.join(dir, 'module_data'), '--settingsFile', path.join(dir, 'settings.json')];
+      for (const [entry, extra, why] of [[ENTRY, ['--authConfigPath', auth], 'stdio with an auth file'],
+        [path.join(ROOT, 'framework.js'), ['--port', String(testPort(9748))], 'a hosted (HTTP) start']]) {
+        const r = spawnSync(process.execPath, [entry, ...common, ...extra], {encoding: 'utf8', timeout: 30000, input: ''});
+        assert.strictEqual(r.status, 2, `${why}: ${r.stderr}`);
+        assert.match(r.stderr, /--settingsFile is only for the single-identity profile/, why);
+      }
+      // with no path (a shell variable unset), inside the profile or out
+      const bare = spawnSync(process.execPath, [ENTRY, ...common.slice(0, -2), '--settingsFile'], {encoding: 'utf8', timeout: 30000, input: ''});
+      assert.strictEqual(bare.status, 2, bare.stderr);
+      assert.match(bare.stderr, /--settingsFile needs a path/);
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   it('--stdio with --port is refused: choose one', () => {
     const r = spawnSync(process.execPath, [ENTRY, '--workerThread', '--port', String(testPort(9748))], {encoding: 'utf8', timeout: 30000});
     assert.strictEqual(r.status, 2, r.stderr);

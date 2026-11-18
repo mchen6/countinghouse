@@ -6,7 +6,7 @@
     "credit": {
       "input": {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
       "output": {"type": "object", "properties": {"recordCall": {"type": "string"}, "checkBalance": {"type": "string"},
-        "provider": {"type": "string"}}}
+        "provider": {"type": "string"}, "reached": {"type": "boolean"}}}
     }
   }
 }

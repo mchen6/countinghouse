@@ -18,7 +18,7 @@ const assert = require('assert');
 const EventEmitter = require('events');
 const options = require('../../lib/cli-options');
 options.setOptions({redisUrl: 'redis://127.0.0.1:1'});   // port 1: nothing listens there, a private Redis included
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const callTokens = require('../../lib/call-tokens');
 const sessions = require('../../lib/sessions');
 const sessionPacks = require('../../lib/session-packs');

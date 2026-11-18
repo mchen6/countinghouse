@@ -11,106 +11,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {spawn} = require('child_process');
-const handshake = require('../../lib/session-transport/handshake');
-const shim = require('../session-transport/helpers/shim');
-
-const ROOT = path.join(__dirname, '..', '..');
-const FRAMEWORK = path.join(ROOT, 'framework.js');
-const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'per-session-module');
-const NAME = 'per-session-module';
-const META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
-const RESET = `${NAME}'s in-memory state was reset; its files were kept`;
-const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
-const until = async(test, ms = 30000) => {
-  const end = Date.now() + ms;
-  while (!(await test()) && Date.now() < end) await tick(100);
-  return test();
-};
-
-// the fixture as a scenario (the single-identity profile lists scenarios),
-// copied into the test's home; `edit` changes its touch handler (a reload's
-// new code)
-function perSession(home, {dir = path.join(home, 'pack', NAME), version = '1.0.0', edit = null, role = 'scenario'} = {}) {
-  fs.cpSync(FIXTURE, dir, {recursive: true});
-  const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-  pkg.version = version;
-  pkg.countinghouse = Object.assign({}, pkg.countinghouse, {role});
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
-  if (edit != null) {
-    const f = path.join(dir, 'handlers', 'stateService', 'touch.js');
-    fs.writeFileSync(f, edit(fs.readFileSync(f, 'utf8')));
-  }
-  return dir;
-}
-// a shared scenario that hops into the per-session module (P1: fails closed
-// until Task 5 routes a hop to the session's worker); the part it calls is
-// installed beside it, as a pack's are
-function caller(home) {
-  const dir = path.join(home, 'hop', 'node_modules', 'ps-caller');
-  const svc = 'callerService';
-  fs.mkdirSync(path.join(dir, 'handlers', svc), {recursive: true});
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: 'ps-caller', version: '1.0.0', license: 'Apache-2.0',
-    countinghouse: {role: 'scenario', calls: [`${NAME}/stateService.touch`]}}));
-  fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'ps-caller', manufacturer: 'countinghouse-test', modelDescription: 'hops',
-    serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [{name: 'hop', description: 'hops into the per-session module',
-      input: {schema: `/${svc}/hop/input`}, output: {schema: `/${svc}/hop/output`}}]}}}}));
-  fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
-    [svc]: {hop: {input: {type: 'object'}, output: {type: 'object'}}}}));
-  fs.writeFileSync(path.join(dir, 'handlers', svc, 'hop.js'),
-    `module.exports = async (input, ctx) => {
-  try { await ctx.call('${NAME}/stateService.touch', {}); return {output: {code: null}}; }
-  catch (e) { return {output: {code: (e && e.code) || null, message: String(e && e.message).slice(0, 200)}}; }
-};\n`);
-  return dir;
-}
-
-function runtime(home, extra = [], {restore = true} = {}) {
-  const run = path.join(home, 'run', 'daemon');
-  fs.mkdirSync(run, {recursive: true});
-  fs.chmodSync(path.join(home, 'run'), 0o700);
-  fs.chmodSync(run, 0o700);
-  const socket = path.join(run, 's');
-  const child = spawn(process.execPath, [FRAMEWORK, '--workerThread', '--store', 'local', '--storePath', path.join(home, 'store'),
-    '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'), '--controlChannel', 'ipc',
-    '--sessionSocket', socket, ...extra], {stdio: ['pipe', 'pipe', 'pipe', 'ipc'], env: Object.assign({}, process.env, {COUNTINGHOUSE_GITHUB_TOKEN: '', GITHUB_TOKEN: ''})});
-  const r = {child, socket, run, err: '', out: '', code: undefined};
-  const replies = new Map();
-  let nextControl = 1;
-  child.on('message', (m) => {
-    if (m != null && m.type === 'ready' && restore) child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
-    const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
-  });
-  r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });
-  child.stderr.on('data', (d) => { r.err += d; });
-  child.stdout.on('data', (d) => { r.out += d; });
-  r.exited = new Promise((res) => child.on('exit', (code, signal) => { r.code = code; res({code, signal}); }));
-  child.on('error', () => {});
-  r.log = () => r.out + r.err;
-  return r;
-}
-const secretOf = (r) => {
-  try { return handshake.parseSecret(fs.readFileSync(path.join(r.run, 'secret'), 'utf8')); } catch (e) { return null; }
-};
-let nextSeq = 1;
-// one request; its answer (or null). `onSent` runs once it is written.
-async function request(c, method, params = {}) {
-  const seq = nextSeq++;
-  shim.message(c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method, params: Object.assign({_meta: META}, params)}));
-  for (;;) {
-    const m = await shim.readM(c, 60000);
-    if (m == null) return null;
-    if (m.header != null && m.header.seq === seq) return JSON.parse(m.line.toString('utf8'));
-  }
-}
-const texts = (res) => (res != null && res.result != null && Array.isArray(res.result.content)) ? res.result.content.map((b) => b.text || '').join('\n') : JSON.stringify(res);
-function outOf(res) {
-  assert.ok(res != null && res.result != null && res.result.isError !== true, JSON.stringify(res).slice(0, 800));
-  if (res.result.structuredContent != null) return res.result.structuredContent;
-  return JSON.parse(res.result.content[0].text);
-}
-// how many session workers came up and ended, by the runtime's own lines
-const counts = (r) => ({up: (r.log().match(/a session's worker is up/g) || []).length, ended: (r.log().match(/a session's worker ended/g) || []).length});
+const {NAME, RESET, tick, until, perSession, caller, runtime, secretOf, request, texts, outOf, counts, shim} = require('./helpers/per-session');
 
 describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
   this.timeout(180000);
@@ -127,7 +28,7 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
   // the runtime up with `extra`, and two sessions with the touch tool listed
   async function twoSessions(extra = [], modules = [perSession(home)], wanted = ['touch']) {
     r = runtime(home, [...modules.flatMap((m) => ['--loadModule', m]), ...extra]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);   // its 'listening' tell, not the socket file (a first connect raced it)
     const secret = secretOf(r);
     assert.ok(secret != null, `no secret: ${r.log().slice(-3000)}`);
     const out = {};
@@ -191,6 +92,60 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     assert.strictEqual(counts(r).ended, 0, 'A\'s worker was never taken');
   });
 
+  // The security pass of 11-17: a call that never answers pinned its worker's
+  // slot for good (busy counted every request still in msgQueue). Past its
+  // own timeout and the margin (STALE_CALL_MARGIN_MS, 5 s), it doesn't: B gets
+  // a worker by evicting A's, A is told, and A's call is answered once, by its
+  // timeout, never again by the eviction, and counted once.
+  it('a call that never answers stops pinning its slot past its timeout and the margin: B gets a worker, A is told, A\'s call answered and counted once', async() => {
+    const s = await twoSessions(['--maxSessionWorkers', '1', '--requestTimeout', '2']);
+    outOf(await s.call('A', 'touch'));
+    const META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}};
+    const seq = 900001;
+    const sent = Date.now();
+    shim.message(s.A.c, {seq}, JSON.stringify({jsonrpc: '2.0', id: seq, method: 'tools/call', params: {_meta: META, name: s.tool('hold'), arguments: {ms: 60000}}}));   // (its schema's most: past this case's end)
+    const answersTo = async(ms) => {
+      const got = [];
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        const m = await shim.readM(s.A.c, Math.max(50, end - Date.now()));
+        if (m != null && m.header != null && m.header.seq === seq) got.push(JSON.parse(m.line.toString('utf8')));
+      }
+      return got;
+    };
+    const first = await answersTo(4000);
+    assert.strictEqual(first.length, 1, JSON.stringify(first).slice(0, 600));
+    assert.ok(/DEVICE_NOT_RESPONDING|did not respond|not responding/i.test(JSON.stringify(first[0])), JSON.stringify(first[0]).slice(0, 600));
+    // B, before the margin has passed: still busy
+    const early = await s.call('B', 'touch');
+    assert.ok(/SESSION_WORKERS_BUSY|per-session module workers are busy/.test(JSON.stringify(early)), JSON.stringify(early).slice(0, 600));
+    // past the margin, B gets a worker. The server's deadline starts after
+    // the client's send (parse, auth, a store round trip), so B is polled
+    // from the client's earliest moment, bounded 15 s past it, every answer
+    // kept for the failure's message (the review of #416)
+    await tick(Math.max(0, sent + 2000 + 5000 - Date.now()));
+    const seen = [];
+    let gotB = null;
+    const giveUp = sent + 2000 + 5000 + 15000;
+    while (gotB == null && Date.now() < giveUp) {
+      const b = await s.call('B', 'touch');
+      if (/SESSION_WORKERS_BUSY|per-session module workers are busy/.test(JSON.stringify(b))) { seen.push('busy'); await tick(250); continue; }
+      gotB = b;
+    }
+    assert.ok(gotB != null, `B never got a worker in 15 s past the margin: ${seen.length} busy answers`);
+    assert.deepStrictEqual(outOf(gotB), {file: 1, store: 1, memory: 1}, `B got a worker (after ${seen.length} busy answers)`);
+    await until(async() => counts(r).ended === 1, 10000);
+    assert.deepStrictEqual(counts(r), {up: 2, ended: 1}, 'A\'s worker was evicted for it');
+    assert.deepStrictEqual(await answersTo(1500), [], 'no second answer to A\'s call from the eviction');
+    const a = await s.call('A', 'touch');
+    assert.deepStrictEqual(outOf(a), {file: 2, store: 2, memory: 1});
+    assert.ok(texts(a).includes(RESET), texts(a));
+    // counted once: A's own usage holds one error, the timeout
+    const report = await request(s.A.c, 'tools/call', {name: 'countinghouse_usage_report', arguments: {}});
+    const errors = report.result.structuredContent.profile.errors.calls;
+    assert.strictEqual(Object.values(errors).reduce((x, y) => x + y, 0), 1, JSON.stringify(errors));
+  });
+
   it('a crash of A\'s worker: A\'s next call starts a fresh one and is told; B\'s worker, state and the listing are untouched', async() => {
     const s = await twoSessions();
     outOf(await s.call('A', 'touch'));
@@ -241,18 +196,7 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     assert.deepStrictEqual(counts(r), c, 'nothing started after the unload');
   });
 
-  // On the shared runtime peer channels are always off (it is the
-  // single-identity profile: lib/local-profile.js), so a hop takes the
-  // main-thread route; Task 5 routes it to the session's worker.
-  it('a path not yet routed to a session\'s worker (Task 5) fails closed: a hop into it is DEVICE_NOT_FOUND, no TypeError, no hang', async() => {
-    const part = perSession(home, {dir: path.join(home, 'hop', 'node_modules', NAME), role: 'part'});
-    const s = await twoSessions([], [part, caller(home)], ['hop']);
-    const hop = await request(s.A.c, 'tools/call', {name: s.tools.find((t) => /hop$/.test(t)), arguments: {}});
-    const out = outOf(hop);
-    assert.strictEqual(out.code, 'DEVICE_NOT_FOUND', JSON.stringify(out));
-    assert.ok(!/TypeError|is not a function|Cannot read/.test(r.log()), r.log().slice(-3000));
-    assert.deepStrictEqual(counts(r), {up: 0, ended: 0}, 'no session worker was started for a hop');
-  });
+  // A hop into it: test/session-runtime/10-per-session-routing.js (Task 5).
 
   it('its resource (M7): resources/read goes the call path\'s way, to the reading session\'s own worker and files', async() => {
     const s = await twoSessions();

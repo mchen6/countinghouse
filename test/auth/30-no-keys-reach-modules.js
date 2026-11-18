@@ -53,7 +53,16 @@ function assertClean(view, label) {
   assert.strictEqual(view.caller.isAdmin, false);
 }
 
-[['direct peer channels', []], ['routed through the main thread', ['--no-directPeerChannels']]].forEach(([label, flags]) => {
+// port: what the peer-port case asserts. 'locked': the sandbox fixes the
+// port methods at boot and the runtime listens and posts with those it took
+// (PR-c, lib/port-scope.js), so no part's hook on MessagePort.prototype sees
+// a runtime port; 'sees': under --moduleSandbox off the runtime posts with
+// the method as the port has it, so the calling composite's hook sees each
+// invoke it posts, and none carries a key (what crosses is the same in every
+// mode: since lean worker step 4 only {id, command}, the input and the
+// answer going through the main thread); 'none': a routed hop crosses no port.
+[['direct peer channels', [], 'locked'], ['direct peer channels, sandbox off', ['--moduleSandbox', 'off'], 'sees'],
+  ['routed through the main thread', ['--no-directPeerChannels'], 'none']].forEach(([label, flags, port]) => {
 describe(`auth 30: no API key, user name or Redis URL reaches a module (${label})`, function() {
   this.timeout(120000);
   let base = null;
@@ -106,14 +115,26 @@ describe(`auth 30: no API key, user name or Redis URL reaches a module (${label}
   // #153's review (1): a part listening on its own peer channel's port sees
   // every invoke that crosses it; none carries a key. The first call opens
   // the channel and starts the listener; the second crosses it.
-  // a routed hop crosses no peer port
-  (flags.length === 0 ? it : it.skip)('on the peer channel\'s port, as a part listening on it sees each invoke', async () => {
+  (port === 'none' ? it.skip : it)(port === 'locked' ? 'on the peer channel\'s port: a part\'s hook on the port methods never sees it (they were fixed at boot)'
+    : 'on the peer channel\'s port, as a part listening on it sees each invoke', async () => {
     await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
     const r = await mcp(ALICE, 'tools/call', {name: VIA, arguments: {reversed}});
     assert.strictEqual(r.result && r.result.isError, false, JSON.stringify(r).slice(0, 500));
     const out = r.result.structuredContent || JSON.parse(r.result.content[0].text);
-    assert.ok(out.callee.portMessages > 0, `the listener saw no message: ${JSON.stringify(out.callee).slice(0, 300)}`);
-    assertClean(out.callee, 'peer port');
+    assert.strictEqual(out.callee.inputArrived, true, `the invoke never arrived: ${JSON.stringify(out.callee).slice(0, 300)}`);
+    const seen = {heard: out.callee.portMessages, posted: out.self.portPosted};
+    if (port === 'locked') {
+      // the hooks never took (fixed at boot): the zeros are no hook's
+      assert.deepStrictEqual([out.callee.hooksTook, out.self.hooksTook], [{on: false, post: false}, {on: false, post: false}], JSON.stringify(seen));
+      assert.deepStrictEqual(seen, {heard: 0, posted: 0}, 'a part\'s hook saw the runtime\'s port');
+    } else {
+      // installed, and the runtime posts with the method as the port has it
+      // now: what crosses is seen, and scanned below
+      assert.strictEqual(out.self.hooksTook.post, true, JSON.stringify(out.self.hooksTook));
+      assert.ok(seen.posted > 0, `the composite's hook saw no invoke posted: ${JSON.stringify(seen)}`);
+    }
+    assertClean(out.callee, 'peer port (the callee)');
+    assertClean(out.self, 'peer port (the composite, with what it posted)');
   });
 
   it('through a peer hop from a composite bound to an internal identity, and in the composite itself', async () => {
