@@ -265,7 +265,12 @@ describe('stdio 39: a module being switched keeps its tools listed', () => {
     assert.deepStrictEqual(specs({deviceMap: {'d-renamed': {spec: fresh, moduleName: '@t/ch-pack-quick'}}, moduleManager: mm}), {'d-renamed': fresh}, 'registered again: nothing kept beside it');
     // its package.json too, so its tools keep their names (a scenario's bare)
     assert.strictEqual(DeviceManager.prototype.packageOfModule.call({moduleManager: Object.assign({modules: {}}, mm)}, '@t/ch-pack-quick').countinghouse.role, 'scenario');
+    // its hidden-text decisions (#400) stay while it is kept, so an action
+    // its text leaves unusable stays out through the switch
+    assert.strictEqual(DeviceManager.prototype.keepsDecision.call({deviceMap: {}, moduleManager: mm}, 'd-quick'), true);
+    assert.strictEqual(DeviceManager.prototype.keepsDecision.call({deviceMap: {}, moduleManager: mm}, 'd-other'), false);
     mm.switchingSpecs.clear();
     assert.deepStrictEqual(specs({deviceMap: {}, moduleManager: mm}), {}, 'switch over: nothing kept');
+    assert.strictEqual(DeviceManager.prototype.keepsDecision.call({deviceMap: {}, moduleManager: mm}, 'd-quick'), false, 'and its decision may go');
   });
 });
