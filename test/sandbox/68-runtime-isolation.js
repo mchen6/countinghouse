@@ -97,9 +97,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
-      it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths', async () => {
+      it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
-        assert.strictEqual(detail(r), 'same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
     }
     it(`a require made for a runtime file by createRequire is module code's: ${mode === 'enforce' ? 'the reduced module' : 'its watched built-in reported'}`, async () => {

@@ -70,6 +70,16 @@ const STEPS = {
     }
     const like = (dir) => ({length: 1, 0: dir});
     out.push(same(() => M._findPath('sshpk', like(nm)), () => M._findPath('no-such-isolation-pkg', like(nm))));
+    // a primitive parent, whose filename Node would read off its prototype
+    // (the review of e0f39de9): a number, a string, a boolean
+    for (const [proto, prim] of [[Number.prototype, 1], [String.prototype, 'x'], [Boolean.prototype, true]]) {
+      const run = (pkg) => {
+        Object.defineProperty(proto, 'filename', {configurable: true, value: path.join(nm, pkg, 'lib', 'x.js')});
+        Object.defineProperty(proto, 'paths', {configurable: true, value: M._nodeModulePaths(path.join(nm, pkg, 'lib'))});
+        try { return M._resolveFilename(`${pkg}/no-such-export`, prim); } finally { delete proto.filename; delete proto.paths; }
+      };
+      out.push(same(() => run('es-errors'), () => run('no-such-isolation-pkg'), 'es-errors'));
+    }
     return out.join(' ');
   },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
