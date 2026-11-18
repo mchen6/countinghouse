@@ -326,6 +326,30 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     });
   });
 
+  // #400: a job's run (a task's, its re-run's, add-job's) takes the load's
+  // decision too, by the spec loaded when it runs (a worker's, kept in its
+  // deviceList; single-thread mode's, the device's own): a marked action's
+  // never reaches its worker; marks are by service key, never short name
+  it('a job of an action its declared text leaves unusable never runs (invokeJobsNow), in either device shape', async () => {
+    const verdict = require('../../lib/hidden-text-verdict');
+    const DeviceManager = require('../../lib/device-manager');
+    const spec = {device: {serviceList: {'urn:a:serviceID:s': {actionList: [{name: 'stuck'}, {name: 'fine'}]},
+      'urn:b:serviceID:s': {actionList: [{name: 'stuck'}]}}}};
+    verdict.mark(spec, [['urn:a:serviceID:s', 'stuck']]);
+    for (const entry of [{deviceList: {d: spec}}, {spec}]) {
+      const sent = [];
+      const dm = {deviceMap: {d: entry}, ensureDeviceState: (id, cb) => sent.push(id), discoveredTag: (e) => e};
+      const refused = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 'urn:a:serviceID:s', 'stuck', {}, 'j1', (err) => resolve(err)));
+      assert.strictEqual(refused && refused.code, 'MODULE_NOT_LISTED');
+      // the other service of the same short name, and a listed action: not refused
+      DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 'urn:b:serviceID:s', 'stuck', {}, 'j2', () => sent.push('refused'));
+      DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 'urn:a:serviceID:s', 'fine', {}, 'j3', () => sent.push('refused'));
+      assert.deepStrictEqual(sent, ['d', 'd']);
+      // anything but strings names no action
+      assert.strictEqual(verdict.unusableAt(dm, 'd', ['urn:a:serviceID:s'], 'stuck'), false);
+    }
+  });
+
   // #378's review (7): cut first, then cleaned, so no kept joiner is left
   // dangling at the cut
   it('a question\'s dialog cut at its limit ends in no hidden character', () => {
@@ -485,6 +509,62 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
         assert.match(JSON.stringify(asTask.result), /MODULE_NOT_LISTED/, JSON.stringify(asTask).slice(0, 800));
         assert.strictEqual(asTask.result.task, undefined, JSON.stringify(asTask).slice(0, 800));
       }
+    });
+
+    // #400 in single-thread mode: the load marks the spec it assembles on the
+    // main thread, and every route takes it as in worker mode
+    it('single-thread mode: tools/call, invoke-action and add-job refuse a tool its declared text leaves unusable', async () => {
+      const port = testPort(9756);
+      const mod = path.join(dir, 'hidden-text');
+      const auth = path.join(dir, 'auth.json');
+      const single = await startServer(port, ['--no-workerThread', '--store', 'local', '--storePath', path.join(dir, 'store-single'),
+        '--moduleDataPath', path.join(dir, 'module_data-single'), '--authConfigPath', auth, '--loadModule', mod]);
+      try {
+        const at = `http://127.0.0.1:${port}`;
+        let list = null;
+        for (let i = 0; i < 300; i++) {
+          list = (await request(at).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
+            .set('X-CH-Key', KEY).set('MCP-Protocol-Version', '2025-11-25').send({jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}})).body;
+          if (list.result != null && list.result.tools.some((t) => /hidden_text_textservice_show$/.test(t.name))) break;
+          await new Promise((res) => setTimeout(res, 100));
+        }
+        const names = list.result.tools.map((t) => t.name);
+        assert.ok(!names.some((n) => /textservice_stuck$/.test(n)), JSON.stringify(names));
+        const prefix = names.find((n) => /textservice_show$/.test(n)).replace(/show$/, '');
+        const called = (await request(at).post('/mcp').set('Content-Type', 'application/json').set('Accept', 'application/json, text/event-stream')
+          .set('X-CH-Key', KEY).set('MCP-Protocol-Version', '2025-11-25')
+          .send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: `${prefix}stuck`, arguments: {}}})).body;
+        assert.match(JSON.stringify(called.result), /MODULE_NOT_LISTED/, JSON.stringify(called).slice(0, 600));
+        const devices = (await request(at).get('/device-list').set('X-CH-Key', KEY)).body;
+        const device = devices.find((d) => d.device != null && d.device.friendlyName === 'hidden-text');
+        for (const route of ['invoke-action', 'add-job']) {
+          const res = await request(at).post(`/devices/${device.device.deviceID}/${route}`).set('X-CH-Key', KEY)
+            .send({serviceID: 'urn:countinghouse-test:serviceID:textService', actionName: 'stuck', input: {}});
+          assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route}: ${JSON.stringify(res.body).slice(0, 400)}`);
+        }
+      } finally {
+        stopServer(single);
+      }
+    });
+
+    // #400: the load's one decision on the action, so the HTTP routes refuse
+    // it as tools/call does (and a listed action of the same module runs)
+    it('HTTP invoke-action and add-job refuse a tool its declared text leaves unusable', async () => {
+      const list = (await request(`http://127.0.0.1:${PORT}`).get('/device-list').set('X-CH-Key', KEY)).body;
+      const device = list.find((d) => d.device != null && d.device.friendlyName === 'hidden-text');
+      assert.ok(device != null && typeof(device.device.deviceID) === 'string', JSON.stringify(list).slice(0, 800));
+      const serviceID = 'urn:countinghouse-test:serviceID:textService';
+      for (const route of ['invoke-action', 'add-job']) {
+        for (const actionName of ['stuck', 'outStuck']) {
+          const res = await request(`http://127.0.0.1:${PORT}`).post(`/devices/${device.device.deviceID}/${route}`).set('X-CH-Key', KEY)
+            .send({serviceID, actionName, input: {}});
+          assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route} ${actionName}: ${res.status} ${JSON.stringify(res.body).slice(0, 400)}${log()}`);
+        }
+      }
+      // a listed action of the same module is not refused for it
+      const shown = await request(`http://127.0.0.1:${PORT}`).post(`/devices/${device.device.deviceID}/invoke-action`).set('X-CH-Key', KEY)
+        .send({serviceID, actionName: 'show', input: {what: 'x'}});
+      assert.notStrictEqual(shown.body && shown.body.code, 'MODULE_NOT_LISTED', JSON.stringify(shown.body).slice(0, 400));
     });
 
     it('a question\'s form: its text cleaned, each enumNames label one line; a hidden enum member makes it unavailable', async () => {

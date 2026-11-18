@@ -145,11 +145,11 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
     };
 
     it('a module that declares nothing new has no problem and no warning', () => {
-      assert.deepStrictEqual(checked(), {problems: [], warnings: []});
+      assert.deepStrictEqual(checked(), {problems: [], warnings: [], hiddenUnlisted: []});
       // nor does one with no schema.json at all, or a spec that is not one
-      assert.deepStrictEqual(declarations.check(specOf(), null), {problems: [], warnings: []});
+      assert.deepStrictEqual(declarations.check(specOf(), null), {problems: [], warnings: [], hiddenUnlisted: []});
       for (const junk of [null, 7, 'x', {}, {device: null}, {device: {serviceList: 7}}, {device: {serviceList: {[SERVICE]: {actionList: 'x'}}}}]) {
-        assert.deepStrictEqual(declarations.check(junk, {}), {problems: [], warnings: []}, JSON.stringify(junk));
+        assert.deepStrictEqual(declarations.check(junk, {}), {problems: [], warnings: [], hiddenUnlisted: []}, JSON.stringify(junk));
       }
     });
 
@@ -871,7 +871,7 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
     it('is accepted by the meta-schema, by every declaration check, by validate and by the load\'s refusal check', async () => {
       const api = read('api.json');
       await accepted(api, 'the meta-schema');
-      assert.deepStrictEqual(declarations.check(api, read('schema.json')), {problems: [], warnings: []});
+      assert.deepStrictEqual(declarations.check(api, read('schema.json')), {problems: [], warnings: [], hiddenUnlisted: []});
       assert.deepStrictEqual(icons.problems(FIXTURE, api), []);
       const result = await new Promise((resolve, reject) => require('../../lib/module-validator').validateModule(FIXTURE, (err, r) => (err ? reject(err) : resolve(r))));
       assert.deepStrictEqual(result.problems, []);

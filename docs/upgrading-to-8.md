@@ -522,6 +522,14 @@ says how to write a module for this.
   `kind` and `origin` beside them. Match on `code`.
 - The request-body limits, `application/json` for JSON, and the browser
   origin check are in [Before you upgrade](#before-you-upgrade).
+- **Breaking: an action whose declared schemas make it unusable is refused
+  here too.** A tool whose input schema, or output schema as advertised,
+  holds a hidden character where nothing can be left out (an enum or const
+  member, a property name, a required entry, a pattern...) is not listed
+  and not callable over MCP. `invoke-action` and `add-job` now refuse it as
+  well, with `MODULE_NOT_LISTED`, and a task already queued for it ends
+  with that code instead of running. It is decided once, when the module
+  loads, and the load's warning names each such action.
 
 ## What operators get
 
