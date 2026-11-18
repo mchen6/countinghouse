@@ -32,6 +32,12 @@ const ATTEMPTS = {
   loadSkipHooks:    () => module.constructor._load('node:child_process', null, false, {shouldSkipModuleHooks: true}),
   // (worker_threads: a target of its own, so its report is told apart)
   loadResolved:     () => module.constructor._load('worker_threads', null, false, {resolved: {filename: 'worker_threads', url: 'node:worker_threads', format: 'builtin'}}),
+  // whether the cache holds source compiled under that filename (what
+  // loadSource's internal argument did before B1's fix)
+  compiledInCache:  (arg) => {
+    const entry = require.cache[arg];
+    if (entry != null && entry.exports != null && entry.exports.compiled === true) throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
+  },
   loadSource:       (arg) => module.constructor._load(arg, null, false,
     {resolved: {filename: arg, url: require('url').pathToFileURL(arg).href, format: 'commonjs'}, source: 'module.exports = {compiled: true};'}),
   nodePath:         () => require('cli-options'),

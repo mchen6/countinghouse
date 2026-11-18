@@ -8,6 +8,11 @@
       "output": {"type": "object", "properties": {"name": {"type": "string"}, "real": {"type": "string"}}}
     },
 
+    "moduleImport": {
+      "input": {"type": "object"},
+      "output": {"type": "object", "properties": {"named": {"type": "string"}, "prefixed": {"type": "string"}, "byDefault": {"type": "string"}}}
+    },
+
     "where": {
       "input": {"type": "object"},
       "output": {"type": "object", "properties": {"url": {"type": "string"}, "dirname": {"type": "string"}, "helper": {"type": "string"}, "dep": {"type": "string"}, "depFile": {"type": "string"}}}

@@ -114,22 +114,40 @@ describe('sandbox 05: worker lockdown', function() {
   });
 
   // #194's review, B1: Module._load's internal argument skipped the hooks,
-  // so under audit such a load was never reported. On a server of its own,
-  // so no earlier route has already reported the same target (once each).
-  describe('audit: Module._load\'s internal argument', () => {
+  // so a load through it was neither refused nor reported. Each mode on a
+  // server of its own, so no earlier route has reported the same target
+  // (a report is once per target), and each form's own line is looked for
+  // in what was written after its call (#406's high review).
+  ['enforce', 'audit'].forEach((mode, i) => describe(`${mode}: Module._load's internal argument`, () => {
     let server = null;
-    before(async () => { server = await startServer(testPort(9611), serverArgs('audit')); });
+    const port = testPort(9611 + i);
+    before(async () => { server = await startServer(port, serverArgs(mode)); });
     after(() => stopServer(server));
-    it('each form runs the hooks, so each load is reported: each built-in, and the file outside (a target each)', async () => {
-      for (const [what, arg] of [['loadSkipHooks'], ['loadResolved'], ['loadSource', OUTSIDE_FILE]]) {
-        const r = await mcpCall(testPort(9611), KEY, TOOL, arg != null ? {what, arg} : {what});
-        assert.strictEqual(toolOutput(r).outcome, 'allowed', `${what}: ${JSON.stringify(r)}`);
+    const reportedSince = (from, target) => server.output.slice(from).split('\n')
+      .some((l) => l.includes('module sandbox: sandbox-probe violation') && l.includes(target));
+    for (const [what, target] of [['loadSkipHooks', 'child_process'], ['loadResolved', 'worker_threads']]) {
+      it(`${what}: runs the hooks, so ${target} is ${mode === 'enforce' ? 'refused' : 'loaded'} and reported`, async () => {
+        const from = server.output.length;
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what}));
+        assert.strictEqual(r.outcome, mode === 'enforce' ? 'blocked' : 'allowed', JSON.stringify(r));
+        await waitFor(() => reportedSince(from, target), 20000, `${target}'s violation line`);
+      });
+    }
+    it(`loadSource: no source compiled under a countinghouse filename; ${mode === 'enforce' ? 'the path is invisible' : 'the real file, reported'}`, async () => {
+      const from = server.output.length;
+      const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'loadSource', arg: OUTSIDE_FILE}));
+      // (under enforce a path outside is invisible: the file broker's
+      // _findPath answers it missing, and Node's own not-found is what the
+      // module sees)
+      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: 'MODULE_NOT_FOUND'});
+      else {
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
+        await waitFor(() => reportedSince(from, 'cli-options'), 20000, 'the require\'s violation line');
       }
-      const lines = () => server.output.split('\n').filter((l) => l.includes('module sandbox: sandbox-probe violation'));
-      await waitFor(() => ['child_process', 'worker_threads', 'cli-options'].every((t) => lines().some((l) => l.includes(t))), 20000,
-        `the _load violation lines: ${lines().join(' | ')}`);
+      const cached = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'compiledInCache', arg: OUTSIDE_FILE}));
+      assert.deepStrictEqual(cached, {outcome: 'allowed', code: null}, 'the cache holds compiled source under that filename');
     });
-  });
+  }));
 
   describe('audit', () => {
     let server = null;
