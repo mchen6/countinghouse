@@ -14,6 +14,19 @@ const Module = require('module');
 const espree = require('espree');
 
 const ROOT = path.join(__dirname, '..', '..');
+// a file's name as the reviewed entries spell it: relative to the repo, and a
+// dependency as node_modules/..., also where node_modules is a link to
+// another tree (a worktree's), by its real path
+const NODE_MODULES = (() => {
+  try { return fs.realpathSync(path.join(ROOT, 'node_modules')); } catch (e) { return path.join(ROOT, 'node_modules'); }
+})();
+const relOf = (file) => {
+  let real = file;
+  try { real = fs.realpathSync(file); } catch (e) { /* as given */ }
+  const fromModules = path.relative(NODE_MODULES, real);
+  if (!fromModules.startsWith('..') && !path.isAbsolute(fromModules)) return path.join('node_modules', fromModules).split(path.sep).join('/');
+  return path.relative(ROOT, file).split(path.sep).join('/');
+};
 // what a worker boots from: the lean worker; the lockdown, loaded at
 // set-options, whose wrappers run after it; a validation worker's
 // validator; postman-request, loaded at set-options for a module that
@@ -217,10 +230,10 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
       if (seen.has(file) || !file.endsWith('.js') && !file.endsWith('.cjs') && !file.endsWith('.mjs')) continue;
       seen.add(file);
       const ast = parse(file);
-      if (ast == null) { unparsed.push(path.relative(ROOT, file)); continue; }
+      if (ast == null) { unparsed.push(relOf(file)); continue; }
       for (const r of requiresOf(ast)) {
         if (Module.isBuiltin(r.request) && !r.inFunction) continue;
-        const rel = path.relative(ROOT, file);
+        const rel = relOf(file);
         const at = r.inFunction ? REVIEWED.findIndex(([f, q]) => f.test(rel) && q.test(r.request)) : -1;
         if (r.inFunction) {
           if (at < 0) findings.push(`${rel}:${r.line}: ${r.kind}('${r.request}')`);
@@ -233,7 +246,7 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
         let target = null;
         try { target = require.resolve(r.request, {paths: [path.dirname(file)]}); } catch (e) { continue; }
         if (!Module.isBuiltin(target)) {
-          if (!via.has(target)) via.set(target, `${path.relative(ROOT, file)}:${r.line}${r.inFunction ? ' (in a function)' : ''}`);
+          if (!via.has(target)) via.set(target, `${relOf(file)}:${r.line}${r.inFunction ? ' (in a function)' : ''}`);
           queue.push(target);
         }
       }

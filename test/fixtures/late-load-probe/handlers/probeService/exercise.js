@@ -45,10 +45,13 @@ const STEPS = {
     return [attempt(`${lib}${sep}settings-tool.js`), attempt(`${lib}${sep}..${sep}node_modules${sep}json-stringify-safe${sep}stringify.js`)].join(' ');
   },
   // FileHandle.readLines: the file broker's readline
+  // (read to the end: leaving the loop early, then closing the handle while
+  // a read is in flight, is a broker case of its own, followed up apart)
   readLines: async () => {
     const h = await fs.promises.open(__filename);
-    try { for await (const line of h.readLines()) { if (line != null) return 'read'; } } finally { await h.close(); }
-    return 'empty';
+    let n = 0;
+    try { for await (const line of h.readLines()) { if (line != null) n += 1; } } finally { await h.close(); }
+    return n > 0 ? 'read' : 'empty';
   },
   // a bare name of a file in countinghouse's lib/: the lockdown's refusal
   // judges it (reachesLib), by names listed at boot, resolving nothing

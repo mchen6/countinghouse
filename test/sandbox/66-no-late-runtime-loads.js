@@ -108,8 +108,10 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     it('the probe records a runtime-parented load in a validation worker (its control)', async () => {
       await mcpCall(port, KEY, 'countinghouse_validate_module', {path: CONTROL});
       assert.ok(await waitFor(server, /late runtime load: path from .*[\\/]lib[\\/]logger\.js/), server.output.slice(-2000));
-      // its request at load: refused there, in both modes, and nothing loaded
-      assert.ok(await waitFor(server, /late-load-control request: ERR_ACCESS_DENIED/), server.output.slice(-2000));
+      // its request at load: nothing of postman-request loaded late (the
+      // refusal itself, answered on the next tick, can outlive the worker,
+      // which is discarded once it has answered: proved in a worker of its
+      // own below)
       assert.ok(!/late runtime \w+: [^\n]*postman-request/.test(server.output), server.output.slice(-2000));
     });
     it('the probe records each hook with a runtime parent or caller in the module\'s worker (its control)', async () => {
@@ -123,6 +125,22 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       assert.match(lines, /late runtime createRequire: undefined from .*[\\/]lib[\\/]lazy-require\.js/);
       if (typeof(process.getBuiltinModule) === 'function') assert.match(lines, /late runtime getBuiltinModule: undefined from .*[\\/]lib[\\/]lazy-require\.js/);
     });
+  }));
+
+  // a worker that only validates sends no request (noRequests), in either
+  // mode: refused with the sandbox's error, reported, and the library's
+  // request never reached (#425's final review)
+  ['enforce', 'audit'].forEach((mode) => it(`${mode}: a validation worker's CHUtil.request is refused`, () => {
+    const {inWorker, install} = require('../helpers/lockdown-worker');
+    const out = inWorker(`
+      let reached = false;
+      global.CHUtil = {request: (uri, options, callback) => { reached = true; (typeof(options) === 'function' ? options : callback)(null); }};
+      ${install({mode, noRequests: true, net: [{host: 'late-load.example.invalid'}]})}
+      const err = await new Promise((resolve) => CHUtil.request('http://late-load.example.invalid/', (e) => resolve(e)));
+      return {code: err != null ? err.code : null, reached, reports};
+    `);
+    assert.deepStrictEqual([out.code, out.reached], ['ERR_ACCESS_DENIED', false], JSON.stringify(out));
+    assert.ok(out.reports.includes('net a request while validating'), JSON.stringify(out.reports));
   }));
 
   // the runtime's loads of module files (the dispatcher's, CHUtil.loadFile's)
