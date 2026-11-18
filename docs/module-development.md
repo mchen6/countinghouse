@@ -589,7 +589,71 @@ ignores any other one.
 | `permissions` | `{fs, net, env, limits}` | What its worker may reach under the sandbox: paths, hosts, environment variables, and memory, blocking and disk limits ([Declaring permissions](#declaring-permissions)). |
 | `remotes` | `[{name, transport, url, headers, credential}]` | The remote MCP server it calls, one per module in this version ([Calling a remote MCP server](#calling-a-remote-mcp-server)). |
 | `role` | `"scenario"` or `"part"` | A scenario is listed and loads its parts. A part loaded by a scenario is not listed ([Roles](module-authoring.md#roles-scenarios-and-parts)). Any other value counts as no role. In the single-identity profile (`--stdio`, the shared runtime) only scenarios are listed; on a hosted server a module with no role is listed as any module is. |
+| `settings` | `{"<name>": {type, values, min, max, maxLength, format, default, required, confirm, title, description}}` | The settings a user may choose for your module, such as units or a default repository ([Module settings](#module-settings)). An invalid declaration refuses the load (`SETTINGS_DECLARATION_INVALID`). |
 | `state` | `"shared"` (the default) or `"per-session"` | Whether the module keeps state per user session. `per-session` gives it, on the shared runtime, a worker, `ctx.redis` keys and `/data` and `/tmp` of its own per session. It is refused on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`); under `--stdio`, one session, it runs as a shared module. Any other value refuses the load (`MODULE_STATE_INVALID`); a reload that changes it is refused (`MODULE_STATE_CHANGED`). |
+
+## Module settings
+
+A module can declare settings that a user chooses: units, a default
+repository, a page size. Declare them in `package.json`, beside `calls` and
+`permissions`:
+
+```json
+"countinghouse": {
+  "settings": {
+    "units":       {"type": "enum", "values": ["metric", "imperial"], "default": "metric",
+                    "title": "Units", "description": "Units used in forecasts."},
+    "defaultRepo": {"type": "string", "format": "repo", "title": "Default repository",
+                    "description": "owner/name used when a call names no repository."},
+    "maxResults":  {"type": "integer", "min": 1, "max": 100, "default": 20,
+                    "title": "Results per call"},
+    "shareStats":  {"type": "boolean", "default": false, "confirm": true,
+                    "title": "Send anonymous usage statistics"}
+  }
+}
+```
+
+The vocabulary is small and closed. It is not JSON Schema.
+
+| Field | Rules |
+|---|---|
+| the name (the key) | `[a-z][a-zA-Z0-9_]{0,63}`, with no dot, and not the name of an `Object.prototype` member (`constructor`, `toString`, ...). At most 32 settings. |
+| `type` | `string`, `integer`, `number`, `boolean` or `enum`. |
+| `values` | For an `enum` only: 1 to 64 distinct strings, each 1 to 64 characters of letters, digits, space and `_.:/@+-`. |
+| `min`, `max` | For an `integer` or a `number`: finite bounds (whole numbers for an `integer`). |
+| `maxLength` | For a `string`: 1 to 1024 characters (256 by default), counted in code points. |
+| `format` | For a `string`, optional: `slug`, `repo` (`owner/name`, GitHub's grammar), `email`, `hostname` or `url` (https only, no user info, kept in canonical form). There is no `pattern` and no `path`. |
+| `default` | Optional; it must be a valid value. A setting with no default and no value is **unset**, and so is an empty string. |
+| `required` | `true`: a call while the setting is unset fails before your handler runs. |
+| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. |
+| `title`, `description` | Shown to the user and the agent: at most 64 and 512 characters. |
+
+- **The declaration is at most 16 KiB**, and a module that declares settings
+  has an npm package name.
+- **A value with a hidden character is refused**, never cleaned.
+- **A `hostname` or `url` value must be inside your module's granted
+  `permissions.net`**, as the operator's policy narrowed it, or it is
+  refused as out of bounds. A default outside it is treated as unset, with
+  a warning at load.
+- **Settings are not secrets.** A value can be shown and set in
+  conversation. A key goes in a credential, never a setting.
+  `countinghouse-validate` warns on a name or title that looks like one
+  (`password`, `token`, `secret`, `apiKey`, `credential`).
+- **The values your module gets** are its defaults, then the values the
+  user stored, then any the operator fixes. A stored value your loaded
+  version does not accept (a removed setting, a narrowed enum, a tighter
+  bound) is not applied: the default applies, the log says so once per load
+  (naming the setting, never the value), and the stored value comes back
+  with a version that accepts it.
+- **The declaration is pinned when an operator loads your module**, as
+  `calls` is: a module that rewrites its `package.json` and restarts under
+  supervision keeps the declaration it was loaded with.
+
+`countinghouse-validate` checks the declaration, by position and field, and
+prints how each setting is changed in conversation (on request, or only with
+the user's confirmation), so you see what your users will be asked. The load
+makes the same checks; an invalid declaration refuses it
+(`SETTINGS_DECLARATION_INVALID`).
 
 ## Loading your module
 
