@@ -526,7 +526,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       const reread_ = require('../../lib/settings-reread');
       const callAddress = require('../../lib/call-address');
       // the device manager's own lookup, over the manager's pins
-      const dm = {deviceMap: {}, moduleManager: {modules: {}, pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])}};
+      const dm = {deviceMap: {}, moduleManager: {modules: {}, lifecycle: {live: () => ({})}, pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])}};
       dm.moduleOfDevice = require('../../lib/device-manager').prototype.moduleOfDevice.bind(dm);
       assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm), '@acme/region-part');
     });

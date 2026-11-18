@@ -105,12 +105,19 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const top = {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}};
       const pins = {'@acme/part': {name: '@acme/part', countinghouse: {role: 'part', settings: {r: {type: 'string', required: true}}}}, top: {name: 'top'}};
       const dm = {deviceMap: {[idOf('top')]: top},
-        moduleManager: {modules: {}, pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']]), manifestPins: {pinnedOf: (n) => pins[n]}}};
+        // the part spawning: a live spawn (lifecycle)
+        moduleManager: {modules: {}, lifecycle: {live: (n) => (n === '@acme/part' ? {} : null)},
+          pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']]), manifestPins: {pinnedOf: (n) => pins[n]}}};
       dm.moduleOfDevice = DeviceManager.prototype.moduleOfDevice.bind(dm);
       dm.packageOfModule = DeviceManager.prototype.packageOfModule.bind(dm);
       // the device manager knows the spawning part by its pins (unstubbed)
       assert.strictEqual(dm.moduleOfDevice(idOf('part')), '@acme/part');
       assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/part')));
+      // a spawn that failed (nothing live): no answer from its pins
+      const live = dm.moduleManager.lifecycle;
+      dm.moduleManager.lifecycle = {live: () => null};
+      assert.strictEqual(dm.moduleOfDevice(idOf('part')), null);
+      dm.moduleManager.lifecycle = live;
       require('../../lib/tool-generation').bump();
       assert.strictEqual(gate.requiredRefusal(dm, idOf('top'), true), null, 'not refused: the hop answers for it');
       // registered and serving with no state: refused, the top-level module named, never the part
