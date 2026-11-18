@@ -25,15 +25,18 @@ const JobControl = require('../../lib/job-control');
 const envelope = require('../../lib/message-envelope');
 const LOG = require('../../lib/logger');
 
+const {performance} = require('perf_hooks');
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
-function worker({rate = 1000, tokens = 1000} = {}) {
+function worker({rate = 1000, tokens = 1000, progress = 1000} = {}) {
   const posted = [];
   const ended = [];
   const wm = new WorkerMessage({on() {}, postMessage: (m) => posted.push(m), terminate: () => { ended.push(true); return Promise.resolve(); }});
   wm.messageRate = rate;
   wm.rateTokens = tokens;
-  wm.rateRefillAt = Date.now();
+  wm.rateRefillAt = performance.now();
+  wm.progressTokens = progress;
+  wm.progressRefillAt = performance.now();
   return {wm, posted, ended};
 }
 
@@ -49,10 +52,10 @@ function handled(wm) {
 }
 
 describe('sandbox 65: progress messages and a worker\'s bytes, on the main thread (F4-3, F4-4)', () => {
-  describe('F4-3: progress spends the message rate', () => {
-    it('jobprogress and callprogress with the bucket empty are dropped quietly: no handler, no answer', () => {
+  describe('F4-3: progress spends a bucket of its own', () => {
+    it('jobprogress and callprogress with their bucket empty are dropped quietly (counted): no handler, no answer', () => {
       for (const id of ['jobprogress', 'callprogress']) {
-        const {wm, posted} = worker({rate: 1, tokens: 0});
+        const {wm, posted} = worker({rate: 1, tokens: 1, progress: 0});
         let seen = false;
         wm.on(id, () => { seen = true; });
         wm.onWorkerMessage({id, data: {jobID: 'j1', progress: 5}});
@@ -61,11 +64,18 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       }
     });
 
-    it('each spends one message', () => {
-      const {wm} = worker({rate: 1000, tokens: 10});
-      wm.on('jobprogress', () => {});
+    it('each spends one of its own, never the requests\'; with the requests\' bucket empty, progress still flows', () => {
+      const {wm} = worker({rate: 1000, tokens: 0, progress: 10});
+      let seen = 0;
+      wm.on('jobprogress', () => { seen += 1; });
       wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: 5}});
-      assert.ok(wm.rateTokens < 10 && wm.rateTokens >= 9, String(wm.rateTokens));
+      assert.strictEqual(seen, 1);
+      assert.ok(wm.progressTokens < 10 && wm.progressTokens >= 9, String(wm.progressTokens));
+      assert.ok(wm.rateTokens < 1, 'the requests\' bucket untouched');
+      assert.strictEqual(wm.progressDropped, 0);
+      const {wm: empty} = worker({progress: 0});
+      empty.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: 5}});
+      assert.strictEqual(empty.progressDropped + (empty.progressDroppedLoggedAt != null ? 1 : 0) >= 1, true, 'counted');
     });
   });
 
@@ -100,6 +110,39 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
         await tick(400);
         assert.deepStrictEqual(h.updates.filter(([j]) => j === 'j1').pop(), ['j1', 77]);
       } finally { h.restore(); }
+    });
+
+    it('two runs of one job on one worker keep their progress apart (keyed by run); a run\'s end writes its own, bounded', async () => {
+      const callTokens = require('../../lib/call-tokens');
+      const {wm} = worker();
+      wm.workerId = 'w-65';
+      wm.jobsInFlight = new Map([['j1', 2]]);
+      const runToken = () => callTokens.issue({billingKey: 'k', workerId: 'w-65', jobID: 'j1', ttlMs: 60000});
+      const [a, b] = [runToken(), runToken()];
+      const h = handled(wm);
+      try {
+        wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: 30, token: a}});
+        wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: 60, token: b}});
+        // a token that is no live run of this job's is the job's own key
+        wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: 90, token: 'made-up'}});
+        assert.strictEqual(wm.progressPending.size, 3);
+        assert.ok(wm.progressPending.has(DeviceManager.runKey('j1', null)), 'the made-up token is the job\'s');
+        // run a ends: its own written now, and the job's own; b's left for the flush
+        await DeviceManager.runProgressWritten(wm, DeviceManager.runKey('j1', a), 2000);
+        assert.deepStrictEqual(h.updates.sort(), [['j1', 30], ['j1', 90]].sort());
+        assert.strictEqual(wm.progressPending.size, 1);
+      } finally { wm.endWith('MODULE_UNLOADED', 'm', 'test end'); h.restore(); callTokens.drop(a); callTokens.drop(b); }
+      // a stalled store: the run's end waits no longer than its bound
+      const {wm: w2} = worker();
+      w2.jobsInFlight = new Map([['j2', 1]]);
+      const h2 = handled(w2);
+      JobControl.updateJobProgress = () => new Promise(() => {});
+      try {
+        w2.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j2', progress: 10}});
+        const start = Date.now();
+        await DeviceManager.runProgressWritten(w2, DeviceManager.runKey('j2', null), 150);
+        assert.ok(Date.now() - start < 1000, 'bounded');
+      } finally { w2.endWith('MODULE_UNLOADED', 'm', 'test end'); h2.restore(); }
     });
 
     it('for a job not its own: never reaches the queue, and is logged once for the worker', async () => {
@@ -148,7 +191,7 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       const {wm, ended, decoded} = decoding();
       for (const e of copies(6)) wm.onEnvelope(e);
       assert.strictEqual(decoded.length, 4, 'a burst of four caps decoded at once');
-      assert.strictEqual(wm.held.length, 2, 'the rest held, not decoded');
+      assert.strictEqual(wm.heldCount(), 2, 'the rest held, not decoded');
       await tick(800);
       assert.strictEqual(decoded.length, 6, 'decoded as the budget refilled');
       assert.strictEqual(ended.length, 0);
@@ -163,18 +206,59 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       assert.strictEqual(decoded.length, 4);
       assert.strictEqual(n, 9, 'four decoded, four held, the ninth ends it');
       assert.match(wm.killReason, /bytes a second of messages, and as much held/);
-      assert.strictEqual(wm.held.length, 0, 'what it held is dropped');
+      assert.strictEqual(wm.heldCount(), 0, 'what it held is dropped');
     });
 
-    it('the buffers an envelope carries count; an envelope over the cap is unwrap\'s to refuse, as before', () => {
+    it('a carried buffer counts up to the cap: one hop input over it is its own path\'s (INPUT_TOO_LARGE), never the end of the worker; a body over the cap is unwrap\'s to refuse, as before', () => {
       const a = decoding();
-      a.wm.onEnvelope({b: big().b, t: [new ArrayBuffer(5 * cap)]});
-      assert.strictEqual(a.ended.length, 1);
-      assert.match(a.wm.killReason, /carrying \d+ bytes, over \d+ a second/);
+      const hop = envelope.wrap({id: 1, category: 'child', command: 'invokeforeignaction', data: {deviceID: 'd'}}, cap).envelope;
+      a.wm.onEnvelope({b: hop.b, t: [new ArrayBuffer(5 * cap)]});
+      assert.strictEqual(a.ended.length, 0, 'not ended');
+      assert.strictEqual(a.decoded.length, 1, 'decoded, for its own path to refuse');
+      // a message of any other kind carrying buffers is a tampered worker's
+      const c = decoding();
+      c.wm.onEnvelope({b: big().b, t: [new ArrayBuffer(16)]});
+      assert.strictEqual(c.ended.length, 1);
+      assert.match(c.wm.killReason, /carrying buffers it may not/);
       const b = decoding();
       b.wm.onEnvelope({b: new ArrayBuffer(cap + 1)});
       assert.strictEqual(b.ended.length, 1);
       assert.match(b.wm.killReason, /a message of \d+ bytes, over \d+/);
+    });
+
+    it('a worker that ends with messages held reads them first: a reply that came is answered as it came', () => {
+      const {wm, ended} = worker();
+      wm.messageCap = cap;
+      const replies = [];
+      wm.msgQueue[42] = (err, data) => replies.push(err != null ? err.code : data);
+      // the budget spent (as by a burst just now): what comes next is held
+      wm.byteTokens = 0;
+      wm.byteRefillAt = performance.now();
+      wm.onEnvelope(envelope.wrap({id: 42, category: 'reply', data: 'x'.repeat(1000 * 1024)}, cap).envelope);
+      assert.strictEqual(wm.heldCount(), 1, 'premise: the reply is held');
+      wm.endWith('MODULE_CRASHED', 'm', 'exit code 1');
+      assert.deepStrictEqual(replies.map((r) => (typeof(r) === 'string' ? r.length : r)), [1000 * 1024], 'its real reply, not MODULE_CRASHED');
+      assert.strictEqual(ended.length, 0);
+    });
+
+    it('a held message that throws is its own: the rest are still read', async () => {
+      const {wm, decoded} = decoding();
+      const realOn = wm.onWorkerMessage;
+      wm.onWorkerMessage = (m) => { if (m != null && m.boom === true) throw new Error('boom'); return realOn(m); };
+      const savedE = LOG.E;
+      LOG.E = () => {};
+      try {
+        wm.byteTokens = 0;
+        wm.byteRefillAt = performance.now();
+        const [one, two] = copies(2);
+        wm.onEnvelope(one);
+        wm.onEnvelope(envelope.wrap({id: 1, category: 'child', command: 'log', data: 'x', boom: true}, cap).envelope);
+        wm.onEnvelope(two);
+        assert.strictEqual(wm.heldCount(), 3, 'premise: a copy, the throwing one and one after are held');
+        await tick(1200);
+        assert.strictEqual(wm.heldCount(), 0, 'all read');
+        assert.strictEqual(decoded.length, 2, 'the one after the throw too');
+      } finally { LOG.E = savedE; }
     });
 
     it('a worker with no message rate (not a module\'s) is not budgeted', () => {
