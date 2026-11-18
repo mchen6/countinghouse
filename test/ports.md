@@ -107,7 +107,7 @@ one) as well as the ports it binds.
 | `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
 | `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/27-tasks-modern.js` | 9637, 9639, 9660 |
-| `test/mcp-contract/34-declared-text-cleaned.js` | 9755 |
+| `test/mcp-contract/34-declared-text-cleaned.js` | 9755–9756 |
 | `test/mcp-contract/28-task-ask.js` | 9690–9692 |
 | `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
