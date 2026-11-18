@@ -170,10 +170,12 @@ you have to do. What the sandbox does and does not protect is in
 ## What modules will notice
 
 - **Breaking, under the sandbox (`audit` and `enforce`): `module.parent` and
-  `module.children` are not kept.** A file a module requires has
-  `module.parent === undefined` (under `--pending-deprecation`, a frozen
-  stand-in), and the requiring file's `module.children` is not updated.
-  (Node itself has deprecated `module.parent` since 14.) Behind this, the
+  `module.children` are not kept.** A file a module requires has as
+  `module.parent` a data-only stand-in named for the requiring file (its
+  `id`, `filename`, `path`, `paths`, and `children` of its own), not the
+  requiring Module (under `--pending-deprecation`, a frozen stand-in); `if
+  (!module.parent)` stays false. The requiring file's `module.children` is
+  not updated. (Node itself has deprecated `module.parent` since 14.) Behind this, the
   loader is never handed a parent module code can change: Node's
   relative-resolve cache is keyed by the parent's directory before any
   check runs, and a forged parent could poison what countinghouse's own
@@ -182,8 +184,10 @@ you have to do. What the sandbox does and does not protect is in
     module;
   - a parent's lookup paths are computed from its `filename`, so edits to
     `module.paths` (app-module-path) are ignored; a parent with no absolute
-    `filename` (require-from-string, a `new Module('')`) is refused under
-    `enforce`, and under `audit` reported and loaded as before;
+    `filename` (require-from-string, a `new Module('')`), a request that
+    is no string, or a main-module load is refused under `enforce`, and
+    under `audit` reported and loaded (a parent with no absolute filename
+    resolved as before, but never cached under a directory);
   - `Module._pathCache` reads as empty, and under `enforce` the
     `Module._extensions` table takes no new extension.
 

@@ -174,6 +174,9 @@ describe('sandbox 05: worker lockdown', function() {
       }
     });
     if (mode === 'audit') {
+      it('an assignment of load on one Module is that Module\'s own, never the worker\'s', async () => {
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'instanceLoad'})), {outcome: 'allowed', code: 'OWN'});
+      });
       it('a module that replaces Module._load is reported', async () => {
         const from = server.output.length;
         assert.strictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})).outcome, 'allowed');
@@ -209,12 +212,13 @@ describe('sandbox 05: worker lockdown', function() {
     after(() => stopServer(server));
     it('none poisons the runtime\'s first require (each decoy loads as its own); the refused ones are each said; nothing of the runtime\'s runs module code', async () => {
       const refused = {objectRequest: 'a request that is no string', isMain: 'as the main module', filenameThrows: 'a parent whose filename could not be read',
-        relativeFilename: 'a parent with no absolute filename', nonObject: 'a parent that is no object'};
-      // under audit a parent with no absolute filename is reported and handed
-      // to Node as it was (audit observes): said, not refused
-      const saidOnly = mode === 'audit' ? ['relativeFilename'] : [];
+        relativeFilename: 'a parent with no absolute filename', relativeWithPath: 'a parent with no absolute filename', nonObject: 'a parent that is no object'};
+      // under audit nothing is refused: each is said, and the load goes on
+      // (never with a parent Node could key on a runtime directory)
+      const saidOnly = mode === 'audit' ? Object.keys(refused) : [];
+      const said = new Set();
       for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'builtinModule', 'nullParent', 'undefinedParent', 'pathCache',
-        'objectRequest', 'isMain', 'filenameThrows', 'relativeFilename', 'nonObject']) {
+        'objectRequest', 'isMain', 'filenameThrows', 'relativeFilename', 'relativeWithPath', 'nonObject']) {
         const from = server.output.length;
         const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'forgeParent', arg: variant}));
         if (refused[variant] == null) {
@@ -222,6 +226,9 @@ describe('sandbox 05: worker lockdown', function() {
           continue;
         }
         assert.strictEqual(r.outcome, saidOnly.includes(variant) ? 'allowed' : 'blocked', `${variant}: ${JSON.stringify(r)}`);
+        // (a line is said once: two variants with the same request and reason share it)
+        if (said.has(refused[variant])) continue;
+        said.add(refused[variant]);
         await waitFor(() => server.output.slice(from).includes(`(${refused[variant]})`), 20000, `${variant}'s violation line`);
       }
       // the runtime's first './bind-address' (a fresh load): nothing of its own Module runs module code

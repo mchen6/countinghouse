@@ -75,6 +75,11 @@ const ATTEMPTS = {
     };
     if (arg === 'builtinModule') return M._load('module', Object.assign(agreeing(ownDir), {path: libDir}), false);
     if (arg === 'relativeFilename') return M._load('./bind-address', {filename: 'decoy.js'}, false);
+    // a relative filename that leads to the module's decoy, with lib/ as the
+    // path Node would key on (the medium review of 243abf5d)
+    if (arg === 'relativeWithPath') {
+      return M._load('./bind-address', {path: libDir, filename: path.relative(process.cwd(), path.join(ownDir, 'decoy.js')), paths: []}, false);
+    }
     if (arg === 'nonObject') return M._load('./bind-address', 5, false);
     // Node's path cache, keyed by the request and the directory it is looked
     // up in: an entry for the runtime's first './bind-address' from lib/
@@ -117,15 +122,27 @@ const ATTEMPTS = {
     }
     if (seen.length > 0) throw Object.assign(new Error(`linkage ran module code: ${seen.join(', ')}`), {code: 'SEEN'});
   },
-  // and none emulated (#406): the module's own require leaves its child with
-  // no parent, at load and after, and its own children as they were
+  // and none emulated (#406): the module's own require gives its child a
+  // data-only stand-in for a parent, named for this file (so "am I main" is
+  // still no), and leaves this module's own children as they were
   linkageNone:      () => {
     const before = module.children.length;
     const kid = require('../../lib/kid');
     const child = require.cache[require.resolve('../../lib/kid')];
-    if (kid.parentAtLoad !== undefined || child == null || child.parent !== undefined || module.children.length !== before) {
-      throw Object.assign(new Error('linked'), {code: 'LINKED'});
-    }
+    const p = kid.parentAtLoad;
+    const ok = child != null && kid.mainAtLoad === false && p != null && p !== module && p.filename === module.filename &&
+      Array.isArray(p.children) && child.parent === p && module.children.length === before;
+    if (!ok) throw Object.assign(new Error('linked'), {code: 'LINKED'});
+  },
+  // under audit an assignment of load on one Module is that Module's own
+  instanceLoad:     () => {
+    const M = module.constructor;
+    const before = M.prototype.load;
+    const one = new M('/app/one.js', null);
+    const mine = function() {};
+    one.load = mine;
+    if (M.prototype.load !== before) throw Object.assign(new Error('worker-wide'), {code: 'WORKER_WIDE'});
+    if (Object.hasOwn(one, 'load') && one.load === mine) throw Object.assign(new Error('own'), {code: 'OWN'});
   },
   hostIpClean:      () => {
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});

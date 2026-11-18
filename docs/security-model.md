@@ -238,13 +238,22 @@ any module code). Stops:
   record its own file under countinghouse's lib/ key for the runtime's later
   require of the same name. Node gets a frozen stand-in built from the
   parent's filename alone (read once, absolute), so the key, the URL the
-  hooks see and the resolution all come from one string; `module.parent`
-  and `module.children` are then not kept (a deprecated API). Node's path
+  hooks see and the resolution all come from one string; a required file's
+  `module.parent` is then a data-only stand-in named for the requiring
+  file, and the requiring file's `module.children` is not updated. Node's path
   cache, keyed the same way, reads as empty. Under `audit`, replacing
   `Module._load`, `Module._resolveFilename`, `Module.prototype.load` or the
-  `.js`/`.json` handlers is reported; under `enforce` they are locked, and
-  the lockdown doesn't start on a Node line where it can't find how Node
-  stores a parent's URL. (What a forged parent with a countinghouse
+  extension handlers is reported, and under `enforce` they are locked, the
+  extensions table takes no new extension, and the lockdown doesn't start
+  on a Node line where it can't find how Node stores a parent's URL. **Until
+  #194's next step (no lazy runtime load after the lockdown), other routes
+  into what the runtime loads later are one assignment away for module
+  code:** a planted `require.cache` entry or `Module._cache` replaced;
+  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced;
+  an accessor on `Module.prototype` for Node's internal URL symbol; and,
+  under `audit` even with the file broker, `_findPath` and `_stat`. #194's
+  later steps close them (the runtime loads nothing after the lockdown;
+  the cache moved out of reach; every loader static locked). (What a forged parent with a countinghouse
   filename may load, and the other routes into Node's loader, are #194's:
   see its design.)
 - other routes to files: `module.enableCompileCache`, `process.report`'s
