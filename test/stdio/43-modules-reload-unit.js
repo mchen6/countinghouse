@@ -36,7 +36,10 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   let root = null;
   let store = null;
   const at = (name, v) => path.join(store, ...name.split('/'), v);
-  before(() => {
+  // many fixture modules written at once: past mocha's 2 s on a slow
+  // Windows runner (#425's run), so a bound of its own
+  before(function() {
+    this.timeout(60000);
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-43-'));
     store = path.join(root, 'module-store');
     for (const v of ['1.0.0', '2.0.0']) {

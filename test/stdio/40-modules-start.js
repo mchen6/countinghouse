@@ -30,10 +30,13 @@ function writeModule(dir, {name, version = '1.0.0', role, calls, service, action
   for (const [a, src] of Object.entries(actions)) fs.writeFileSync(path.join(dir, 'handlers', service, `${a}.js`), src);
   return dir;
 }
+// every value put into a handler's source is a JSON string literal: a
+// Windows path's backslashes are escapes in a JS string ('\1' is \x01), so
+// a path is never written into source as it is (#429's Windows leg)
 const part = (dir, name) => writeModule(dir, {name, role: 'part', service: 'stepService',
-  actions: {run: `module.exports = async () => ({output: {part: '${dir}'}});\n`}});
+  actions: {run: `module.exports = async () => ({output: {part: ${JSON.stringify(dir)}}});\n`}});
 const scenario = (dir, name, tool, partName) => writeModule(dir, {name, role: 'scenario', calls: [`${partName}/stepService.run`], service: 'packService',
-  actions: {[tool]: `module.exports = async (input, ctx) => ({output: {via: (await ctx.call('${partName}/stepService.run', {})).output.part}});\n`}});
+  actions: {[tool]: `module.exports = async (input, ctx) => ({output: {via: (await ctx.call(${JSON.stringify(`${partName}/stepService.run`)}, {})).output.part}});\n`}});
 
 describe('stdio 40: a start under --modulesRoot (M4 Task 4)', function() {
   this.timeout(180000);
@@ -126,5 +129,30 @@ describe('stdio 40: a start under --modulesRoot (M4 Task 4)', function() {
     assert.deepStrictEqual(await listed(io), []);
     const again = await io.control({type: 'unload', name: '@countinghouse'});
     assert.strictEqual(again.ok, false, 'no unit is recorded as @countinghouse');
+  });
+});
+
+// #429's Windows leg: a directory with backslashes, as a Windows path has
+// (\1 and \t among them), comes back from the generated handler exactly, on
+// every OS
+describe('stdio 40: the fixture writes a path into a handler\'s source as a string literal', () => {
+  it('a backslash path is returned exactly', async () => {
+    const os = require('os');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-40b-'));
+    try {
+      const odd = 'C:\\Users\\RUNNER~1\\module-store\\@t\\ch-step-ok\\1.0.0\\tab\\x';
+      const dir = path.join(root, 'p');
+      writeModule(dir, {name: '@t/ch-step-odd', role: 'part', service: 'stepService',
+        actions: {run: `module.exports = async () => ({output: {part: ${JSON.stringify(odd)}}});\n`}});
+      const run = require(path.join(dir, 'handlers', 'stepService', 'run.js'));
+      assert.deepStrictEqual(await run(), {output: {part: odd}});
+      // and the fixture's own part helper, given a directory whose name holds
+      // backslashes (a separator on Windows, a character on POSIX: either way
+      // the helper must write it as a literal)
+      const made = part(path.join(root, 'q\\1.0.0\\tab'), '@t/ch-step-q');
+      assert.deepStrictEqual(await require(path.join(made, 'handlers', 'stepService', 'run.js'))(), {output: {part: made}});
+    } finally {
+      fs.rmSync(root, {recursive: true, force: true});
+    }
   });
 });
