@@ -446,3 +446,65 @@ rules; `--moduleSettings` on an HTTP server; the pack-1 migration.
 | 3 | ch-local | `ch-local settings modules/set/reset` for `module.*` (prompted values, validation by the installed reader, keeping unknown names), the outside-edits rules, pack 1's `defaultRepo` migration, docs | ~2.5 d |
 
 About **8–9 days**, after the sandbox release blockers.
+
+## Revision 3: after the re-check of revision 2 (2026-11-17)
+
+Where this section and the sections above disagree, this section holds.
+
+1. **No pack-1 migration.** ch-local's start derives `defaultRepo` from the
+   working directory's git origin at every non-shared start (lib/start.js),
+   so there is no stored value to move, and freezing the first project's
+   repository would be wrong. The device-config write stays in release 1.
+   If ci-failure-triage declares `defaultRepo`, an explicit value set by the
+   user wins over the derived one; unset, the derived one applies.
+2. **One `module` kind for forms.** A confirmation form's kind travels in a
+   session's exported state (locks, unanswered), which ch-local's
+   `session-table` checks against `KINDS`. Both repos and the shared wire
+   vectors gain one kind, `module`, for every module-setting form (the
+   user window's `lockAll` includes it). Values still never enter the
+   per-session layer.
+3. **Every `format` is a string.** It always needs confirmation in
+   conversation, `repo` and `email` included.
+4. **A part's missing setting.** An unlisted part's settings are never
+   named to the client, so `SETTING_REQUIRED` for a part says only that a
+   part of the scenario needs a setting made at the terminal: "run
+   `ch-local settings modules <scenario>`". Authors are told to declare the
+   settings a user should change in conversation on the scenario itself;
+   `countinghouse-validate` warns when a part declares a `required` setting.
+5. **`path` waits.** The `path` format is not in release 1 (its namespace on
+   Windows and against `/data` needs its own design). `url` is parsed with
+   WHATWG URL, https only, no user info, and stored in canonical form.
+6. **Budgets and notices.** On-request module-setting changes count against
+   the session's existing budget of 32 changes. `countinghouse-validate`
+   prints each setting's confirmation rule (on request, confirm, terminal
+   only), so an author sees exactly what a user will be asked.
+7. **Delivery, two corrections.** On a direct peer channel the snapshot
+   rides main's metering reply to the callee, never the caller's
+   announcement. A task's snapshot is held on main for the task's life (the
+   worker cache is not enough); a repeating schedule reads the current
+   values at each run.
+8. **History and outside edits.** ch-local's outside-edits check compares a
+   cut value by its SHA-256, so a long value is not reported as an outside
+   edit at every start.
+9. **Pins under audit.** Under audit a module can still rewrite its
+   `package.json`; the pin holds until the next start, which adopts the
+   file as an operator's load. Stated in security-model.md.
+10. **Defaults and grants.** A declared default outside a grant the
+    operator narrowed is treated as unset (with a load warning), not as a
+    load refusal.
+11. **`--moduleSettings` (HTTP).** A required setting the file leaves unset
+    refuses that module's load with an operator-facing reason; tenants never
+    see a ch-local hint.
+12. **Honest hints.** With the tested-client list empty at release, a
+    conversational change that needs confirmation ends at the terminal, so
+    the hint says so: "this change needs your confirmation; run
+    `ch-local settings set <module>.<setting>` at a terminal".
+13. **The ceiling.** A global `"moduleSettings": {"conversation": false}`
+    makes every module setting terminal-only. An untrusted ceiling already
+    loads no pack at all (ch-local's existing rule), so no module setting
+    applies then.
+14. **Timing tests.** Each `format` checker gets a 1024-character worst-case
+    timing test.
+
+Estimate: about **9–10 days** (one more for the `module` kind across both
+repos and the wire vectors).
