@@ -124,6 +124,15 @@ describe('module-loading 40: an invalid settings declaration is refused at load'
     }
   });
 
+  it('a refused uninstall keeps the module\'s last settings (its restart may still need them)', async () => {
+    const mm = new ModuleManager();
+    mm.lastSettings.set('kept-mod', {values: {}});
+    mm.supervisor = {status: () => ({state: 'running'}), recorded: () => null, clear: () => {}};
+    const err = await new Promise((resolve) => mm.uninstallModule('kept-mod', false, (e) => resolve(e)));
+    assert.strictEqual(err.code, 'MODULE_LOADED');
+    assert.ok(mm.lastSettings.has('kept-mod'));
+  });
+
   it('a good declaration loads as before', async () => {
     const m = moduleWith({units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}});
     const {err, spawned} = await load(m);

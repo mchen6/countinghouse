@@ -185,6 +185,18 @@ describe('composition 22: declarations pinned before the module runs, and every 
     assert.strictEqual(added(B, 'adopted').length, 0, lines.join('\n'));
   });
 
+  it('a validation\'s copy of another directory, found by package name, keeps the loaded file\'s settings declaration (module settings)', () => {
+    const p = pins();
+    const other = path.join(base, 'other');
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A], settings: {apiUrl: {type: 'string', format: 'url'}}}}));
+    p.forValidation(other);
+    write([A], {countinghouse: {calls: [A], settings: {units: {type: 'enum', values: ['metric']}}}});
+    assert.deepStrictEqual(p.wouldPin(mod, 'm').countinghouse.settings, {units: {type: 'enum', values: ['metric']}});
+    const pinned = p.pin('m', mod, true, p.plan('m', mod, true));
+    assert.deepStrictEqual(pinned.countinghouse.settings, {units: {type: 'enum', values: ['metric']}});
+  });
+
   it('a supervised restart keeps the settings declaration too; one changed on disk is logged, not adopted (module settings, section 4.1)', () => {
     const p = pins();
     const settings = (s) => ({countinghouse: {calls: [A], settings: s}});

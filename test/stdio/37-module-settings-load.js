@@ -68,14 +68,14 @@ describe('stdio 37: module settings read at a module\'s load', function() {
     }
   });
 
-  it('--moduleSettings given twice stops the start; an all-digit name is a path', () => {
+  it('--moduleSettings given twice stops the start; a number-like name is the text given', () => {
     const file = path.join(home, 'ms.json');
     fs.writeFileSync(file, '{}');
     const twice = exits(['--moduleSettings', file, '--moduleSettings', file]);
     assert.strictEqual(twice.status, 2, twice.stderr);
     assert.match(twice.stderr, /--moduleSettings needs one path/);
-    fs.writeFileSync(path.join(home, '123'), '[]');   // a number for minimist, a file here: read, and refused as not an object
-    const numeric = spawnSync(process.execPath, [ENTRY, ...base(), '--moduleSettings', '123'], {encoding: 'utf8', timeout: 30000, input: '', cwd: home});
+    fs.writeFileSync(path.join(home, '007'), '[]');   // 7 for minimist, the file 007 here: read, and refused as not an object
+    const numeric = spawnSync(process.execPath, [ENTRY, ...base(), '--moduleSettings', '007'], {encoding: 'utf8', timeout: 30000, input: '', cwd: home});
     assert.strictEqual(numeric.status, 2, numeric.stderr);
     assert.match(numeric.stderr, /--moduleSettings is an object/);
   });
