@@ -143,6 +143,17 @@ const ATTEMPTS = {
     obj[key] = prev;
     throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
   },
+  // a new, longer extension would take over a file the runtime asks for
+  // (Node picks the longest): whether it takes (taken out at once where it
+  // does, after a load that reports it, under audit)
+  newExtension:     () => {
+    const exts = module.constructor._extensions;
+    try { exts['.min.js'] = exts['.js']; } catch (e) { /* refused */ }
+    if (!Object.hasOwn(exts, '.min.js')) return;
+    require('path');
+    delete exts['.min.js'];
+    throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
   // under audit, a module that replaces the loader is reported
   replaceLoad:      () => {
     const prev = module.constructor._load;

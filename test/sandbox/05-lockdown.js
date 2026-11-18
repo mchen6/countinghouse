@@ -150,6 +150,15 @@ describe('sandbox 05: worker lockdown', function() {
     it('no linkage is emulated: a child has no parent, at its load and after', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageNone'})), {outcome: 'allowed', code: null});
     });
+    it(`a new extension ${mode === 'enforce' ? 'can\'t be added to the table' : 'is reported at the next load'}`, async () => {
+      const from = server.output.length;
+      const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'newExtension'}));
+      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
+      else {
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: 'ADDED'});
+        await waitFor(() => server.output.slice(from).includes('violation require Module._extensions[.min.js] added'), 20000, 'the added extension\'s line');
+      }
+    });
     it(`each property #406 holds ${mode === 'enforce' ? 'can\'t be replaced' : 'is replaced and reported'}`, async () => {
       const names = {protoLoad: 'Module.prototype.load', jsHandler: 'Module._extensions[\'.js\']', jsonHandler: 'Module._extensions[\'.json\']',
         resolveFilename: '_resolveFilename'};
@@ -201,6 +210,9 @@ describe('sandbox 05: worker lockdown', function() {
     it('none poisons the runtime\'s first require (each decoy loads as its own); the refused ones are each said; nothing of the runtime\'s runs module code', async () => {
       const refused = {objectRequest: 'a request that is no string', isMain: 'as the main module', filenameThrows: 'a parent whose filename could not be read',
         relativeFilename: 'a parent with no absolute filename', nonObject: 'a parent that is no object'};
+      // under audit a parent with no absolute filename is reported and handed
+      // to Node as it was (audit observes): said, not refused
+      const saidOnly = mode === 'audit' ? ['relativeFilename'] : [];
       for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'builtinModule', 'nullParent', 'undefinedParent', 'pathCache',
         'objectRequest', 'isMain', 'filenameThrows', 'relativeFilename', 'nonObject']) {
         const from = server.output.length;
@@ -209,7 +221,7 @@ describe('sandbox 05: worker lockdown', function() {
           assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, variant);
           continue;
         }
-        assert.strictEqual(r.outcome, 'blocked', `${variant}: ${JSON.stringify(r)}`);
+        assert.strictEqual(r.outcome, saidOnly.includes(variant) ? 'allowed' : 'blocked', `${variant}: ${JSON.stringify(r)}`);
         await waitFor(() => server.output.slice(from).includes(`(${refused[variant]})`), 20000, `${variant}'s violation line`);
       }
       // the runtime's first './bind-address' (a fresh load): nothing of its own Module runs module code

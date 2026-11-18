@@ -178,10 +178,14 @@ you have to do. What the sandbox does and does not protect is in
   relative-resolve cache is keyed by the parent's directory before any
   check runs, and a forged parent could poison what countinghouse's own
   later requires got. Also under the sandbox, in `audit` too:
-  - `Module._load` takes only a string request, never makes a main module,
-    and takes only a parent whose `filename` is absolute (as Node writes
-    one);
-  - `Module._pathCache` reads as empty.
+  - `Module._load` takes only a string request and never makes a main
+    module;
+  - a parent's lookup paths are computed from its `filename`, so edits to
+    `module.paths` (app-module-path) are ignored; a parent with no absolute
+    `filename` (require-from-string, a `new Module('')`) is refused under
+    `enforce`, and under `audit` reported and loaded as before;
+  - `Module._pathCache` reads as empty, and under `enforce` the
+    `Module._extensions` table takes no new extension.
 
   A dependency that replaces `Module._load`, `Module._resolveFilename`,
   `Module.prototype.load` or the `.js`/`.json` handlers (proxyquire,
