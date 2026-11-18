@@ -949,21 +949,25 @@ Node reads its `id`, `path`, `filename`, `paths` and an internal URL symbol
 at different moments, through prototypes module code can reach (three
 reviews of #406). So #406 never hands Node the caller's parent.
 
-**The shadow.** #406's wrapper reads `parent.filename` once and gives Node
-a shadow: a frozen null-prototype object it alone holds, with only own data
-derived from that one string (`id`, `filename`, `path`, `paths`, `loaded`,
-and Node's URL for it). It has no `children`. The key, the hooks' parentURL
-and the resolution all come from one string. #406 emulates no linkage and
-keeps no genuine set: a required file's `module.parent` is a data-only
-stand-in named for the requiring file, so `if (!module.parent)` stays
-false, and the caller's `children` are not updated. A test poisons the
-runtime's `./bind-address` (red on master, under both modes).
+**#406 shipped without a shadow.** Through several review rounds #406
+carried a shadow parent against this route: Node given a frozen stand-in
+built from the caller's filename alone, plus a data-only `module.parent`.
+The reviewer ruled it out. It protected only the runtime's lazy loads
+after the lockdown, while the same outcome stays one assignment away
+through a planted `require.cache` entry, which #406 can't close. It also
+changed `module.parent`, `paths` and `children` for every module, even
+under audit. **PR 1 makes it unnecessary:** with no runtime load after the
+lockdown, a poisoned key has no victim. #406 is B1 (the three-argument
+`_load`, string-only, `isMain` refused under enforce) plus the holds that
+change nothing a module sees (`Module.prototype.load`, the extension
+handlers, the extensions table closed under enforce and watched under
+audit).
 
 **Where Revision 5's item 4 lives.** It is a genuine-parent out-of-root
-load refused under audit. That belongs in this wrapper (the hook sees a
-URL, never the parent). PR 2 **adds** the genuine set (the runtime's
-Modules, taken at the lockdown) and checks it before shadowing: a genuine
-runtime parent passed from module code is refused there by the net.
+load refused under audit. That belongs in #406's `_load` wrapper (the hook
+sees a URL, never the parent). PR 2 **adds** the genuine set (the runtime's
+Modules, taken at the lockdown) and checks it there: a genuine runtime
+parent passed from module code is refused by the net.
 
 ### The rest of the review (rulings and accepted items)
 
@@ -1027,14 +1031,14 @@ runtime parent passed from module code is refused there by the net.
   among them).
 - Planted `require.cache` entries and an accessor for Node's URL symbol are
   closed only by PR 1 (no runtime lazy load to poison) plus the net ahead
-  of Node's cache (PR 2): neither the shadow nor S alone closes them.
+  of Node's cache (PR 2): S alone does not close them (#406 has no shadow).
 
 ### PRs and estimate, revised
 
-00. #406: `_load` with three arguments, the reduced module for imports,
-    the shadow parent (no linkage; a data-only `module.parent` stand-in),
-    the holds and their audit accessors, the closed extensions table. In
-    review.
+00. #406: `_load` with three arguments (string-only, `isMain` refused
+    under enforce), the reduced module for imports, and the holds and
+    their audit accessors, with the extensions table closed. No shadow:
+    PR 1 makes it unnecessary.
 0. F4-1, with identity tagging lib-reaching not-founds, the own-data
    parent, and item 9's test. About 0.5 d.
 1. The must-preload list (Revision 5's, plus item 3), `httpSignature`
@@ -1043,7 +1047,7 @@ runtime parent passed from module code is refused there by the net.
 2. P: the cache entries moved and the property locked (no Proxy); `load`
    serving only the `Map` by path arithmetic; C; S with `_pathCache` as
    the empty Proxy; the genuine set, added to #406's wrapper and checked
-   before shadowing, with the net there (by the parent object) and
+   there, with the net (by the parent object) and
    its tests; item 7; BroadcastChannel; the window, inspect and interop
    tests. About 2.5 d.
 3. F4-7, F4-8, the compatibility table, docs, residuals, the Windows legs.
