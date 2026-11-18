@@ -107,7 +107,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
 
     it('a latched session\'s locks are the three kinds, as ordinary locks (N1)', () => {
       sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null});
-      assert.deepStrictEqual(sessionState.exportOf(A).locks, ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(sessionState.exportOf(A).locks, ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
     });
 
     it('is the daemon\'s row: under its 64 KiB with every override a session may hold; none for a session that is not one', () => {
@@ -207,7 +207,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       a.stage(change(A, {next: 64 * MiB}));   // the second left for a third: the kind locks
       assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: ['maxOutputBytes'], formsLeft: 1});
       sources[B].emit('client', {status: 'ok', conditions: 'no', repo: null});
-      assert.deepStrictEqual(statesOf(B).pop().locks, ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(statesOf(B).pop().locks, ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
     });
 
     it('a default lowered at a terminal drops a session\'s looser value, and that is told (dropLooser)', () => {
@@ -322,7 +322,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.strictEqual(settings.effective(B, 'requestTimeout'), 20000);
       assert.deepStrictEqual(notices.take(null, B), ['your this-session loosening of maxOutputBytes was reset after a runtime restart',
         'this session\'s settings were restored after a runtime restart'], 'not "ask again": it is latched');
-      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
       // C: the default was lowered under what it was confirmed over
       options.requestTimeout = 20000;
       await resumed(C);
@@ -361,7 +361,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     it('the daemon\'s row is put right: what was not applied is told as the session\'s state now', async () => {
       sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB), tighten('requestTimeout', 20000)]}), row(B, {overrides: [tighten('requestTimeout', 20000)]})]));
       await resumed(A, {status: 'ok', conditions: 'no', repo: null});
-      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 3});
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'module', 'pack', 'requestTimeout'], formsLeft: 3});
       // a row applied whole is the daemon's row already: nothing is told again
       await resumed(B);
       assert.deepStrictEqual(statesOf(B), []);
@@ -493,7 +493,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       reg.emit('session', b);
       await sessionState.whenApplied(B);
       assert.strictEqual(settings.effective(B, 'requestTimeout'), 30000);
-      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
     });
 
     // the reviewer's high review of #300, (1)
@@ -542,7 +542,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 2})]));
       await resumed(A, {status: 'ok', conditions: 'no', repo: null});
       assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000);
-      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 2},
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'module', 'pack', 'requestTimeout'], formsLeft: 2},
         'the last thing told is the whole state, not the latch alone');
     });
 

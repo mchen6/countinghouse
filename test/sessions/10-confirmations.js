@@ -343,7 +343,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().count(kind), 0, kind);
       assert.deepStrictEqual(told, [], 'it is not a decline of the user\'s');
       // the locks, as a session's export carries them (Task 6)
-      assert.deepStrictEqual(a.locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(a.locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
     });
 
     it('a form pending when the latch falls is gone, uncounted', () => {
@@ -577,7 +577,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(confirm.confirmations(A).formsLeft(), 3, 'no form was ever shown');
       assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => h.change), ['not confirmed (locked in this session)', 'not confirmed (locked in this session)']);
-      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
       // a client frame that says no at the session's start, or at a reattach, latches too
       const s = openSession('f'.repeat(32), {status: 'ok', conditions: 'no', repo: null});
       assert.strictEqual(confirm.confirmations(s.id).declined('maxOutputBytes'), true);
@@ -591,7 +591,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // as C1's registry announces each frame; the session's own copy is then overwritten
       sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null});
       sources[A].emit('client', {status: 'ok', conditions: 'yes', repo: null});
-      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
       const before = asked.length;
       await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(asked.length, before, 'a latched session\'s shim is not asked');
