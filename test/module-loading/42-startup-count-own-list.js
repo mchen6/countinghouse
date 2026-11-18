@@ -44,7 +44,10 @@ describe('module-loading 42: the start\'s discovery counts its own list only', f
       rec.loaded.push(name);
       cb(null, {});
     }, 150);
-    mm.loadAllModules();
+    // one at a time, whatever the runner's CPUs (lib/module-manager.js
+    // startupLoadLimit; read only under the test flag)
+    process.env.COUNTINGHOUSE_TEST_STARTUP_LIMIT = '1';
+    try { mm.loadAllModules(); } finally { delete process.env.COUNTINGHOUSE_TEST_STARTUP_LIMIT; }
     return {mm, rec};
   }
   // a module loaded outside the startup list, as an in-place load's does
@@ -59,6 +62,37 @@ describe('module-loading 42: the start\'s discovery counts its own list only', f
     for (let i = 0; i < 100 && rec.discovered.length === 0; i++) await tick(10);
     assert.strictEqual(rec.discovered.length, 1, JSON.stringify(rec.discovered));
     assert.ok(rec.discovered[0].includes('a') && rec.discovered[0].includes('b'), `ended before the start's own: ${JSON.stringify(rec.discovered[0])}`);
+  });
+
+  it('one of the start\'s own loaded a second time meanwhile (a reload in place, a restart) counts once', async () => {
+    const {mm, rec} = start(['a', 'b', 'c']);
+    for (let i = 0; i < 100 && !rec.loaded.includes('a'); i++) await tick(5);
+    loadOther(mm, rec, 'a');   // a again, while b and c load
+    await tick(200);           // b has loaded, c has not
+    assert.deepStrictEqual(rec.discovered, [], `discovery ended early: ${JSON.stringify(rec.discovered)}`);
+    for (let i = 0; i < 100 && rec.discovered.length === 0; i++) await tick(10);
+    assert.strictEqual(rec.discovered.length, 1);
+    assert.ok(rec.discovered[0].includes('c'), `ended before c: ${JSON.stringify(rec.discovered[0])}`);
+  });
+
+  it('a start\'s module whose load fails is discovered too: discovery still ends', async () => {
+    options.workerThread = true;
+    options.localModulePath = ['/modules/a', '/modules/b'];
+    options.moduleRegistry = false;
+    const mm = new ModuleManager();
+    let discovered = 0;
+    mm.on('allmodulediscovered', () => { discovered += 1; });
+    mm.getModuleInfoFromPath = () => [{path: '/modules/a', name: 'a', version: '1.0.0'}, {path: '/modules/b', name: 'b', version: '1.0.0'}];
+    mm.loadModuleFromPath = (p, name, version, cb) => setTimeout(() => {
+      if (name === 'b') return cb(new Error('b failed'));
+      mm.emit('moduleload', name, {name}, version);
+      return cb(null, {});
+    }, 20);
+    process.env.COUNTINGHOUSE_TEST_STARTUP_LIMIT = '1';
+    try { mm.loadAllModules(); } finally { delete process.env.COUNTINGHOUSE_TEST_STARTUP_LIMIT; }
+    for (let i = 0; i < 100 && discovered === 0; i++) await tick(10);
+    await tick(30);
+    assert.strictEqual(discovered, 1);
   });
 
   it('after the start\'s discovery, every load re-runs it, as before', async () => {
