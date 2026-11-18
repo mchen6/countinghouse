@@ -23,7 +23,7 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
   before(() => {
     saved = {workerThread: options.workerThread};
     ModuleManager = require('../../lib/module-manager');
-    packs = require('../../lib/packs-in-place');
+    packs = require('../../lib/modules-in-place');
   });
   after(() => { options.workerThread = saved.workerThread; });
 
