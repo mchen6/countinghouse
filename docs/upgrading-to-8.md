@@ -544,8 +544,10 @@ says how to write a module for this.
   member, a property name, a required entry, a pattern...) is not listed
   and not callable over MCP. `invoke-action` and `add-job` now refuse it as
   well, with `MODULE_NOT_LISTED`, a task already queued for it ends
-  with that code instead of running, and `get-spec` leaves it out of the
-  spec it answers. It is decided once, when the module
+  with that code instead of running, `get-spec` leaves it out of the
+  spec it answers, and `schema` refuses its input and output schemas.
+  Every action is decided, a tool or not (a resource or completion
+  action, or one with no description, is refused over these routes too). It is decided once, when the module
   loads, and the load's warning names each such action.
 
 ## What operators get

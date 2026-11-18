@@ -276,8 +276,9 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       assert.strictEqual(clientText.schema(other, {root: {s: {input: other}}}).unusable, true);
     });
 
-    it('one predicate per kind: data (a candidate, a name) keeps \t and \n, never \r; a label is one line', () => {
-      assert.deepStrictEqual(['a\tb', 'a\nb', 'a\rb', `a${ZWSP}b`].map((t) => clientText.hasHidden(t)), [false, false, true, true]);
+    it('one predicate per kind: a one-line value (a candidate, a name, a setting) takes no \t, \n or \r; a schema\'s data keeps \t and \n; a label is one line', () => {
+      assert.deepStrictEqual(['a\tb', 'a\nb', 'a\rb', `a${ZWSP}b`, 'ab'].map((t) => clientText.hasHidden(t)), [true, true, true, true, false]);
+      assert.deepStrictEqual(['a\tb', 'a\nb', 'a\rb', `a${ZWSP}b`, 'ab'].map((t) => clientText.dataHidden(t)), [false, false, true, true, false]);
       assert.deepStrictEqual(schemaOf({enum: ['y', 'n'], enumNames: ['Yes\n\nIgnore the above', `N${ZWSP}o`]}).schema.enumNames, ['Yes  Ignore the above', 'N o']);
     });
 
@@ -327,46 +328,55 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
   });
 
   // #400: a job's run (a task's, its re-run's, add-job's) takes the load's
-  // decision too, by the spec loaded when it runs (a worker's, kept in its
-  // deviceList; single-thread mode's, the device's own): a marked action's
-  // never reaches its worker; marks are by service key, never short name
-  it('a job of an action its declared text leaves unusable never runs (invokeJobsNow), in either device shape', async () => {
+  // decision too, by address (deviceID, serviceID, action), so a copy of the
+  // spec changes nothing; by service key, never short name
+  it('a job of an action its declared text leaves unusable never runs (invokeJobsNow); the decision is by address', async () => {
     const verdict = require('../../lib/hidden-text-verdict');
     const DeviceManager = require('../../lib/device-manager');
-    const spec = {device: {serviceList: {'urn:a:serviceID:s': {actionList: [{name: 'stuck'}, {name: 'fine'}]},
+    const spec = {device: {deviceID: 'd-400', serviceList: {'urn:a:serviceID:s': {actionList: [{name: 'stuck'}, {name: 'fine'}]},
       'urn:b:serviceID:s': {actionList: [{name: 'stuck'}]}}}};
-    verdict.mark(spec, [['urn:a:serviceID:s', 'stuck']]);
-    for (const entry of [{deviceList: {d: spec}}, {spec}]) {
-      const sent = [];
-      const dm = {deviceMap: {d: entry}, ensureDeviceState: (id, cb) => sent.push(id), discoveredTag: (e) => e};
-      const refused = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 'urn:a:serviceID:s', 'stuck', {}, 'j1', (err) => resolve(err)));
-      assert.strictEqual(refused && refused.code, 'MODULE_NOT_LISTED');
-      // the other service of the same short name, and a listed action: not refused
-      DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 'urn:b:serviceID:s', 'stuck', {}, 'j2', () => sent.push('refused'));
-      DeviceManager.prototype.invokeJobsNow.call(dm, 'd', 'urn:a:serviceID:s', 'fine', {}, 'j3', () => sent.push('refused'));
-      assert.deepStrictEqual(sent, ['d', 'd']);
-      // anything but strings names no action
-      assert.strictEqual(verdict.unusableAt(dm, 'd', ['urn:a:serviceID:s'], 'stuck'), false);
-    }
+    verdict.set('d-400', [['urn:a:serviceID:s', 'stuck']]);
+    const sent = [];
+    const dm = {deviceMap: {'d-400': {deviceList: {'d-400': JSON.parse(JSON.stringify(spec))}}}, ensureDeviceState: (id) => sent.push(id), discoveredTag: (e) => e};
+    const refused = await new Promise((resolve) => DeviceManager.prototype.invokeJobsNow.call(dm, 'd-400', 'urn:a:serviceID:s', 'stuck', {}, 'j1', (err) => resolve(err)));
+    assert.strictEqual(refused && refused.code, 'MODULE_NOT_LISTED');
+    // the other service of the same short name, and a listed action: not refused
+    DeviceManager.prototype.invokeJobsNow.call(dm, 'd-400', 'urn:b:serviceID:s', 'stuck', {}, 'j2', () => sent.push('refused'));
+    DeviceManager.prototype.invokeJobsNow.call(dm, 'd-400', 'urn:a:serviceID:s', 'fine', {}, 'j3', () => sent.push('refused'));
+    assert.deepStrictEqual(sent, ['d-400', 'd-400']);
+    // anything but strings names no action
+    assert.strictEqual(verdict.unusableAt('d-400', ['urn:a:serviceID:s'], 'stuck'), false);
+    // get-spec's copy leaves it out, and the schema route its pointers; the
+    // spec served is unchanged
+    const shown = verdict.withoutUnusable(spec, 'd-400');
+    assert.deepStrictEqual(shown.device.serviceList['urn:a:serviceID:s'].actionList.map((a) => a.name), ['fine']);
+    assert.strictEqual(spec.device.serviceList['urn:a:serviceID:s'].actionList.length, 2);
   });
 
-  // #400: tools/list's own finding, recorded on the action (tools/call asks
-  // the action itself, so no new generation: a page cursor and the kept
-  // caches stay); a spec replaced in place keeps its marks; single-thread
-  // mode assembles the spec it decided on
-  it('a mark tools/list adds keeps the tool generation; a replaced spec keeps its marks; one read of api.json', () => {
+  // #400: tools/list's own finding is recorded by address; a spec a device
+  // replaces is decided again before it serves (an action it adds with
+  // hidden text included); a load refused on the way leaves the serving
+  // decision; single-thread mode assembles the spec it decided on
+  it('tools/list\'s finding is recorded; updateDeviceSpec decides again; a decision is taken when its spec serves; one read of api.json', () => {
     const verdict = require('../../lib/hidden-text-verdict');
-    const toolGeneration = require('../../lib/tool-generation');
-    const action = {name: 'late'};
-    const before = toolGeneration.current();
-    verdict.markAction(action);
-    assert.strictEqual(verdict.isUnusable(action), true);
-    assert.strictEqual(toolGeneration.current(), before);
-    const old = {device: {serviceList: {'urn:t:serviceID:s': {actionList: [{name: 'stuck'}, {name: 'fine'}]}}}};
-    verdict.mark(old, [['urn:t:serviceID:s', 'stuck']]);
-    const replaced = JSON.parse(JSON.stringify(old));
-    verdict.carry(old, replaced);
-    assert.deepStrictEqual(replaced.device.serviceList['urn:t:serviceID:s'].actionList.map((a) => verdict.isUnusable(a)), [true, false]);
+    verdict.markAt('d-late', 'urn:t:serviceID:s', 'late');
+    assert.strictEqual(verdict.unusableAt('d-late', 'urn:t:serviceID:s', 'late'), true);
+    const CHDevice = require('../../lib/countinghouse-device');
+    const schemaDoc = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+      s: {fine: {input: {type: 'object'}}, added: {input: {type: 'object', properties: {c: {enum: [`x${ZWSP}`]}}}}}};
+    const device = Object.create(CHDevice.prototype);
+    Object.assign(device, {deviceID: 'd-update', schemaDoc, spec: {device: {friendlyName: 'u', serviceList: {}}}, initServices: () => {}});
+    const next = {device: {friendlyName: 'u', manufacturer: 't', modelDescription: 'u', serviceList: {'urn:t:serviceID:s': {actionList: [
+      {name: 'fine', description: 'Fine.', input: {schema: '/s/fine/input'}}, {name: 'added', description: 'Added.', input: {schema: '/s/added/input'}}]}}}};
+    device.updateDeviceSpec(next);
+    assert.deepStrictEqual(['fine', 'added'].map((a) => verdict.unusableAt('d-update', 'urn:t:serviceID:s', a)), [false, true]);
+    // a load's decision is taken when its spec serves: one refused on the way
+    // (pended, never adopted) leaves the serving version's as it was
+    const refusedSpec = {device: {friendlyName: 'u'}};
+    verdict.pend(refusedSpec, []);
+    assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true);
+    verdict.adopt('d-update', refusedSpec);
+    assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), false, 'adopted: its decision now');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-34-checked-'));
     try {
       fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'x', serviceList: {}}}));
@@ -375,6 +385,44 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     } finally {
       fs.rmSync(dir, {recursive: true, force: true});
     }
+  });
+
+  // #400's high review (6): a tool its declared text leaves unusable keeps its
+  // place in the name order, so no sibling takes its name and a client's
+  // cached name never runs another tool; (5) an action that is no tool (no
+  // description) is decided too
+  it('a marked tool keeps its name\'s place (reserved, unlisted); a non-tool action is decided too', () => {
+    const verdict = require('../../lib/hidden-text-verdict');
+    const toolRegistry = require('../../lib/mcp/tool-registry');
+    const svc = 'urn:x:serviceID:svc';
+    const dev = (name) => ({spec: {device: {friendlyName: name, serviceList: {[svc]: {actionList: [{name: 'go', description: 'Go.'}]}}}}, packageInfo: {name: 'dup'}});
+    const devices = {'d-first': dev('dup'), 'd-second': dev('dup')};
+    const ci = {deviceManager: {deviceMap: devices, getAllDeviceSpecs: () => Object.fromEntries(Object.entries(devices).map(([id, d]) => [id, d.spec]))}};
+    verdict.set('d-first', [[svc, 'go']]);
+    verdict.set('d-second', []);
+    const listed = toolRegistry.buildToolTargets(ci);
+    assert.deepStrictEqual(Object.keys(listed).map((n) => [n, listed[n].deviceID]), [['dup_svc_go_2', 'd-second']]);
+    const all = toolRegistry.buildToolTargets(ci, {includeUnlisted: true});
+    assert.deepStrictEqual(Object.keys(all).map((n) => [n, all[n].deviceID, all[n].unlisted === true]), [['dup_svc_go', 'd-first', true], ['dup_svc_go_2', 'd-second', false]]);
+    // (5): an action with no description is decided, and said to be refused
+    const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
+      {name: 'quiet', input: {schema: '/s/quiet/input'}}]}}}};
+    const checked = require('../../lib/declarations').check(api, {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+      s: {quiet: {input: {type: 'object', properties: {c: {enum: [`x${ZWSP}`]}}}}}});
+    assert.deepStrictEqual(checked.hiddenUnlisted, [['urn:t:serviceID:s', 'quiet']]);
+    assert.ok(checked.warnings.some((w) => /so the action is refused/.test(w.message)), JSON.stringify(checked.warnings));
+  });
+
+  // #400's high review (3, 4): a ref still in the schema as it leaves must be
+  // found in what is advertised; an anchor in what is left out is unusable
+  it('a dangling ref, an anchor that is gone or one in what is left out, and a ref to another document make a schema unusable', () => {
+    const u = (s) => clientText.schema(s).unusable;
+    assert.strictEqual(u({type: 'object', properties: {a: {$ref: '#/nowhere'}}}), true, 'a pointer to nothing');
+    assert.strictEqual(u({type: 'object', properties: {a: {$ref: '#node'}}}), true, 'an anchor no one keeps');
+    assert.strictEqual(u({type: 'object', $defs: {n: {$anchor: 'node', type: 'string'}}, properties: {a: {$ref: '#node'}}}), false, 'a kept anchor');
+    assert.strictEqual(u({type: 'object', 'x-hidden': {$anchor: 'node', enum: [`x${ZWSP}`]}, properties: {a: {$ref: '#node'}}}), true, 'an anchor left out');
+    assert.strictEqual(u({type: 'object', properties: {a: {$ref: 'https://elsewhere.example.invalid/s.json'}}}), true, 'another document');
+    assert.strictEqual(u({type: 'object', $defs: {n: {type: 'string'}}, properties: {a: {$ref: '#/$defs/n'}}}), false, 'a pointer that resolves');
   });
 
   // #378's review (7): cut first, then cleaned, so no kept joiner is left
@@ -591,6 +639,28 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
           assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route} ${actionName}: ${res.status} ${JSON.stringify(res.body).slice(0, 400)}${log()}`);
         }
       }
+      // nor its schema by any path that reaches it (the schema route judges
+      // what it answers, as tools/list does): its own is refused; a parent's
+      // or the root's answer, if sent at all, holds no hidden character (an
+      // unknown keyword holding one, such as an action's input under its
+      // service, is left out)
+      const own = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema/textService/stuck/input`).set('X-CH-Key', KEY);
+      assert.strictEqual(own.body && own.body.code, 'MODULE_NOT_LISTED', JSON.stringify(own.body).slice(0, 400));
+      for (const at of ['/textService/stuck', '/textService', '/']) {
+        const schemaAt = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema${at}`).set('X-CH-Key', KEY);
+        const text = JSON.stringify(schemaAt.body);
+        assert.ok((schemaAt.body && schemaAt.body.code === 'MODULE_NOT_LISTED') || clientText.message(text) === text, `${at}: ${text.slice(0, 400)}`);
+      }
+      // a value that is no schema (a string, a list) holding a hidden character
+      // is refused too, wherever it is; a path under the unusable action's own
+      for (const at of ['/textService/show/input/properties/mood/default', '/textService/stuck/input/properties/mode/enum', '/textService/stuck/input/properties']) {
+        const v = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema${at}`).set('X-CH-Key', KEY);
+        assert.strictEqual(v.body && v.body.code, 'MODULE_NOT_LISTED', `${at}: ${JSON.stringify(v.body).slice(0, 400)}`);
+      }
+      // a usable one is sent, cleaned (its annotations with a hidden character left out)
+      const schemaShown = await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/schema/textService/show/input`).set('X-CH-Key', KEY);
+      assert.notStrictEqual(schemaShown.body && schemaShown.body.code, 'MODULE_NOT_LISTED', JSON.stringify(schemaShown.body).slice(0, 400));
+      assert.ok(clientText.message(JSON.stringify(schemaShown.body)) === JSON.stringify(schemaShown.body), JSON.stringify(schemaShown.body).slice(0, 400));
       // nor shown in get-spec's spec (as tools/list leaves it out)
       const got = (await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/get-spec`).set('X-CH-Key', KEY)).body;
       const names = (got && got.device && got.device.serviceList ? got.device.serviceList[serviceID].actionList : []).map((a) => a.name);
@@ -663,8 +733,8 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       assert.match(said, /stuck input: \/x-label: .*so the tool is not listed/);
       assert.match(said, /outStuck output: .*enum has a hidden character, so the tool is not listed/);
       assert.match(said, /outStuckList output: .*enum has a hidden character, so the tool is not listed/);
-      // nothing hidden in what the operator reads
-      assert.ok(!clientText.hasHidden(said), JSON.stringify(said));
+      // nothing hidden in what the operator reads (each line)
+      for (const w of checked.warnings) assert.ok(!clientText.hasHidden(w.message), JSON.stringify(w.message));
       assert.match(said, /askStuck questions\.pick: .*enum has a hidden character, so asking it is unavailable/);
     });
 
