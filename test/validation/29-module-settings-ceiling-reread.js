@@ -482,6 +482,20 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(r.state.version > ran.version);
     });
 
+    it('a restart never writes a load\'s history lines, its previous state set aside or not', () => {
+      const reread_ = require('../../lib/settings-reread');
+      write({'module.w.units': 'kelvin', 'module.r.region': 'eu'});
+      const file = path.join(dir, 'history.jsonl');
+      const lines = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter((l) => /no longer valid/.test(l)).length : 0);
+      const before = lines();
+      // a previous state of another declaration (a failed reload's): set aside
+      const other = ms.stateFor('w', pkgOf('w', {z: {type: 'boolean', default: true}}), {operator: false});
+      reread_.next('w', {pkg: W, net: []}, {previous: other, ceiling: {state: 'none'}, ceilingRefuses: true});
+      assert.strictEqual(lines(), before, 'a restart wrote none');
+      reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}});
+      assert.strictEqual(lines(), before + 1, 'an operator\'s load writes its line');
+    });
+
     it('a restart the ceiling refuses is suspended at once, with the ceiling\'s reason (no crash loop); another failure is retried', () => {
       const reread_ = require('../../lib/settings-reread');
       const {restartFailed} = require('../../lib/module-manager');
