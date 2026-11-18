@@ -1466,7 +1466,8 @@ the main thread's, not the module's (spec:
   origin is allowed that variable. A variable the file does not allow
   there is not read, and the remote is not contacted at
   all (`REMOTE_CREDENTIAL_NOT_ALLOWED`). Without the option no credential
-  is ever read.
+  is ever read. The client packs' `ch-local install` writes the file from
+  its allowlist, so for the single local user the user is the operator.
 - **Bound to one module (version 2 of the file, #413 section 6.5).** A key
   is bound to (module, variable, origin) and read from a slot,
   `COUNTINGHOUSE_CREDENTIAL_<n>`: a prefix the runtime never hands to a
@@ -1476,11 +1477,15 @@ the main thread's, not the module's (spec:
   a later entry may only repeat one. Another module that declares the same
   variable and origin gets nothing, and so does a version of the bound
   module that sends it to another origin or under another name.
-- **Never in a worker's environment.** A variable a credentials allowance
-  in force reads (version 1's listed names, version 2's slots) is never
-  copied from the runtime's environment into a worker, even when a module
-  declares it in `permissions.env` (before, under audit, a declared
-  `GITHUB_TOKEN` was handed over). Only a value the operator's
+- **Never in a worker's environment** (under `--moduleSandbox audit` and
+  `enforce`; with the sandbox off, or in single-thread mode, a module shares
+  the runtime's environment and this does not hold). A variable a
+  credentials allowance in force reads -- version 1's listed names; version
+  2's slots and every variable name the file binds, since the operator's
+  own variable of that name may still be exported -- is never copied from
+  the runtime's environment into a worker, even when a module declares it
+  in `permissions.env` (before, under audit, a declared `GITHUB_TOKEN` was
+  handed over). Only a value the operator's
   `--modulePolicy` sets for that module under that name is given: it is the
   operator's own value, not the runtime's credential. The names are those
   in force at the spawn: a worker spawned before a pack loaded in place
@@ -1490,8 +1495,8 @@ the main thread's, not the module's (spec:
   restart uses the remotes the last operator action took, and a
   `package.json` rewritten since (under audit, by a route the file broker
   does not see) changes nothing until an operator's reload; each
-  difference is logged as an error. The client packs' `ch-local install` writes the file from
-  its allowlist, so for the single local user the user is the operator.
+  difference is logged as an error, saying each remote's name, origin and
+  variable only (never a URL's user info, path or query, nor a header).
 - **What a remote can reach.**
   - https only (http only to a loopback host under `--debug`, for tests);
   - a redirect followed only within the same origin (the exact scheme,

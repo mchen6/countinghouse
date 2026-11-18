@@ -84,11 +84,34 @@ describe('countinghouse-validate CLI', function() {
   });
 
   it('a wrong declaration\'s fix line shows the short form, filled in with what the author wrote', (done) => {
-    const m = withRemote({name: 'gh', transport: 'streamable-http', url: 'http://example.com/mcp', credential: {env: 'GH_TOKEN', extra: 1}});
+    const m = withRemote({name: 'gh', transport: 'streamable-http', url: 'https://example.com/mcp', credential: {env: 'GH_TOKEN', extra: 1}});
     run(m.dir, (r) => {
       assert.strictEqual(r.code, 1);
-      assert.ok(r.stdout.includes('      fix: the shortest form is {"name":"gh","url":"http://example.com/mcp","credential":"GH_TOKEN"}; ' +
+      assert.ok(r.stdout.includes('      fix: the shortest form is {"name":"gh","url":"https://example.com/mcp","credential":"GH_TOKEN"}; ' +
         'see "Declaring a remote MCP server" in docs/module-development.md\n'), r.stdout);
+      done();
+    });
+  });
+
+  // #422 high review, 3: a URL the checks refuse is not offered back
+  it('a refused URL (http, a loopback or private host) is not in the fix line: a placeholder is', (done) => {
+    const urls = ['http://example.com/mcp', 'https://127.0.0.1/mcp', 'https://10.0.0.1/mcp'];
+    let left = urls.length;
+    for (const url of urls) {
+      run(withRemote({name: 'gh', url: url, credential: 'GH_TOKEN'}).dir, (r) => {
+        assert.ok(r.stdout.includes('fix: the shortest form is {"name":"gh","url":"<https URL of your server>","credential":"GH_TOKEN"}'), `${url}: ${r.stdout}`);
+        if (--left === 0) done();
+      });
+    }
+  });
+
+  // #422 high review, 5: the short form only where it means the same
+  it('with headers, or a credential header or scheme of its own, the fix line shows the full form, header values left out', (done) => {
+    const m = withRemote({name: 'gh', url: 'https://example.com/mcp', headers: {'X-Toolsets': 'secret-ish'}, credential: {env: 'GH_TOKEN', header: 'X-Api-Key', scheme: '', extra: 1}});
+    run(m.dir, (r) => {
+      assert.ok(r.stdout.includes('fix: the full form is {"name":"gh","transport":"streamable-http","url":"https://example.com/mcp","headers":{"X-Toolsets":"<value>"},' +
+        '"credential":{"env":"GH_TOKEN","header":"X-Api-Key","scheme":""}}'), r.stdout);
+      assert.ok(!r.stdout.includes('secret-ish'), r.stdout);
       done();
     });
   });
@@ -104,7 +127,8 @@ describe('countinghouse-validate CLI', function() {
     run(m.dir, (r) => {
       assert.strictEqual(r.code, 1);
       assert.ok(!r.stdout.includes(secret) && !r.stdout.includes('#frag'), r.stdout);
-      assert.ok(r.stdout.includes('the shortest form is {"name":"gh","url":"https://api.example.com/mcp","credential":"GH_TOKEN"}'), r.stdout);
+      // a URL with user info fails the URL checks: the placeholder (#422's high review, 3)
+      assert.ok(r.stdout.includes('the shortest form is {"name":"gh","url":"<https URL of your server>","credential":"GH_TOKEN"}'), r.stdout);
       done();
     });
   });

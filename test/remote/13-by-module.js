@@ -24,13 +24,13 @@ const SLOT1 = 'COUNTINGHOUSE_CREDENTIAL_1';
 
 // A copy of the remote probe under another package name, its remote on this
 // file's stand-in, declaring `variable`.
-function probe(name, variable) {
+function probe(name, variable, url) {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-13-')), name);
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   pkg.name = name;
-  pkg.countinghouse.remotes[0].url = `${ORIGIN}/mcp`;
+  pkg.countinghouse.remotes[0].url = (url != null) ? url : `${ORIGIN}/mcp`;
   pkg.countinghouse.remotes[0].credential = variable;
   fs.writeFileSync(pkgPath, JSON.stringify(pkg));
   // the tools are named after the device's friendlyName: one per copy
@@ -60,6 +60,7 @@ describe('remote 13: a version 2 binding, at registration', function() {
     dirs.bound = probe('remote-bound', 'CH_TEST_REMOTE_TOKEN');
     dirs.copycat = probe('remote-copycat', 'CH_TEST_REMOTE_TOKEN');
     dirs.elsewhere = probe('remote-bound', 'OTHER_TOKEN');
+    dirs.newOrigin = probe('remote-bound', 'CH_TEST_REMOTE_TOKEN', 'http://127.0.0.1:9/mcp');
     saved = credentials.snapshot();
     credentials.configure(v2file(BOUND));
   });
@@ -89,11 +90,18 @@ describe('remote 13: a version 2 binding, at registration', function() {
     assert.strictEqual(d.detail, `no credential is bound to remote-copycat for ${ORIGIN}: run \`ch-local credentials add remote-copycat\` at a terminal`);
   });
 
-  it('the bound module declaring another variable gets nothing: "somewhere new", with its version', () => {
+  it('the bound module declaring another variable at the same origin gets nothing: "under a new name", with its version', () => {
     chLocal();
     const d = disabledOf(remoteRegistry.register('remote-bound', dirs.elsewhere, {version: '1.2.0'}));
     assert.strictEqual(d.code, 'REMOTE_CREDENTIAL_NOT_ALLOWED');
-    assert.strictEqual(d.detail, `remote-bound 1.2.0 sends its credential OTHER_TOKEN somewhere new (${ORIGIN}); it gets no key until that is allowed` +
+    assert.strictEqual(d.detail, `remote-bound 1.2.0 asks for its credential under a new name (OTHER_TOKEN) for ${ORIGIN}; it gets no key until that is allowed` +
+      ': run `ch-local credentials add remote-bound` at a terminal');
+  });
+
+  it('the bound module declaring another origin gets nothing: "somewhere new", with its version', () => {
+    chLocal();
+    const d = disabledOf(remoteRegistry.register('remote-bound', dirs.newOrigin, {version: '1.3.0'}));
+    assert.strictEqual(d.detail, 'remote-bound 1.3.0 sends its credential CH_TEST_REMOTE_TOKEN somewhere new (http://127.0.0.1:9); it gets no key until that is allowed' +
       ': run `ch-local credentials add remote-bound` at a terminal');
   });
 

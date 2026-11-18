@@ -177,14 +177,17 @@ describe('remote 02: version 2, by module', () => {
     assert.deepStrictEqual(c, {missing: 'not-allowed', why: 'unbound', variable: 'GITHUB_TOKEN', origin: ORIGIN});
   });
 
-  it('another origin, or another variable, of the bound module gets nothing: the binding is elsewhere', () => {
+  it('another origin, or another variable, of the bound module gets nothing, each with its own reason (#422 high review, 6)', () => {
     const l = load(BOUND);
     const e = entryOf(l, '@countinghouse/ch-access-github');
     const env = {[SLOT1]: TOKEN, OTHER_TOKEN: OTHER};
     assert.deepStrictEqual(credentials.resolveModuleCredential(short('https://api.example.com/mcp', 'GITHUB_TOKEN'), env, e, 'x'),
-      {missing: 'not-allowed', why: 'elsewhere', variable: 'GITHUB_TOKEN', origin: 'https://api.example.com'});
+      {missing: 'not-allowed', why: 'new-origin', variable: 'GITHUB_TOKEN', origin: 'https://api.example.com'});
     assert.deepStrictEqual(credentials.resolveModuleCredential(short(`${ORIGIN}/mcp/`, 'OTHER_TOKEN'), env, e, 'x'),
-      {missing: 'not-allowed', why: 'elsewhere', variable: 'OTHER_TOKEN', origin: ORIGIN});
+      {missing: 'not-allowed', why: 'new-variable', variable: 'OTHER_TOKEN', origin: ORIGIN});
+    // an entry that binds nothing is no binding
+    assert.deepStrictEqual(credentials.resolveModuleCredential(GHV2, env, new Map(), 'x'),
+      {missing: 'not-allowed', why: 'unbound', variable: 'GITHUB_TOKEN', origin: ORIGIN});
   });
 
   it('two modules with one variable name and two values each send their own', () => {
@@ -206,7 +209,7 @@ describe('remote 02: version 2, by module', () => {
     // only the fallback is bound: still nothing is sent
     const onlyFallback = load({m: {[ORIGIN]: {COUNTINGHOUSE_GITHUB_TOKEN: SLOT2}}});
     assert.deepStrictEqual(credentials.resolveModuleCredential(withFallback, {[SLOT2]: OTHER}, entryOf(onlyFallback, 'm'), 'm'),
-      {missing: 'not-allowed', why: 'elsewhere', variable: 'GITHUB_TOKEN', origin: ORIGIN});
+      {missing: 'not-allowed', why: 'new-variable', variable: 'GITHUB_TOKEN', origin: ORIGIN});
   });
 
   it('the result carries the value only where it is sent', () => {
@@ -266,9 +269,9 @@ describe('remote 02: version 2, by module', () => {
       }
     });
 
-    it('the names an allowance reads from: the slots under version 2, and no pack\'s version 1 names (never used there)', () => {
-      assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), [SLOT1, SLOT2]);
-      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), [SLOT1, SLOT2]);
+    it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2), no pack\'s version 1 names', () => {
+      assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
+      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
     });
   });
 

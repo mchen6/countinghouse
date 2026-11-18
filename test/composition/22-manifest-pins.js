@@ -66,10 +66,10 @@ describe('composition 22: declarations pinned before the module runs, and every 
     withRemote('https://b.example/mcp');
     assert.strictEqual(p.pin('m', mod, false).countinghouse.remotes[0].url, 'https://a.example/mcp');
     assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (not adopted: the pin from the last operator action stays): ' +
-      '[{"name":"gh","url":"https://b.example/mcp","credential":"TOKEN"}]']);
+      '[{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]']);
     lines = [];
     assert.strictEqual(p.pin('m', mod, true).countinghouse.remotes[0].url, 'https://b.example/mcp');
-    assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (adopted): [{"name":"gh","url":"https://b.example/mcp","credential":"TOKEN"}]']);
+    assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (adopted): [{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]']);
     lines = [];
     p.pin('m', mod, true);
     p.pin('m', mod, false);
@@ -101,6 +101,20 @@ describe('composition 22: declarations pinned before the module runs, and every 
       assert.strictEqual(urlOf(p.pin('m', mod, false, planned)), 'https://b.example/mcp');
     });
 
+    it('wouldPin is what an operator\'s pin would take: a copy of another directory gives the loaded file\'s remotes (#422 high review, 8)', () => {
+      const p = pins();
+      const other = path.join(base, 'other');
+      fs.mkdirSync(other);
+      fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A, B], remotes: [{name: 'gh', url: 'https://other.example/mcp'}]}}));
+      p.forValidation(other);
+      withRemote('https://mine.example/mcp');
+      const would = p.wouldPin(mod, 'm');
+      assert.strictEqual(urlOf(would), 'https://mine.example/mcp');
+      assert.deepStrictEqual(would.countinghouse.calls, [A]);
+      assert.deepStrictEqual(lines, [], 'nothing logged, nothing taken');
+      assert.strictEqual(urlOf(p.pin('m', mod, true)), 'https://mine.example/mcp');
+    });
+
     it('a validation\'s copy of another directory, found by package name, keeps the loaded file\'s remotes', () => {
       const p = pins();
       const other = path.join(base, 'other');
@@ -112,6 +126,23 @@ describe('composition 22: declarations pinned before the module runs, and every 
       assert.strictEqual(urlOf(pinned), 'https://mine.example/mcp');
       assert.deepStrictEqual(pinned.countinghouse.calls, [A]);
       assert.strictEqual(added(B, 'not adopted: declared by the validation of another path').length, 1, lines.join('\n'));
+    });
+
+    it('the log says each remote\'s name, origin and variable only: never user info, a query, a path or a header (#422 high review, 1)', () => {
+      const p = pins();
+      const secret = ['s', 'e', 'c', 'r', 'e', 't', '9'].join('');
+      const write2 = (url) => fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A],
+        remotes: [{name: 'gh', url: url, headers: {'X-Api-Key': secret, [`X-${secret}`]: 'v'}, credential: {env: 'TOKEN', header: 'X-Auth'}}]}}));
+      write2('https://a.example/mcp');
+      p.pin('m', mod, true);
+      const u = new URL(`https://b.example/mcp/${secret}?k=${secret}`);
+      u.username = 'bot';
+      u.password = secret;
+      write2(u.href);
+      p.pin('m', mod, false);
+      assert.strictEqual(lines.length, 1, lines.join('\n'));
+      assert.ok(!lines[0].includes(secret) && !lines[0].includes('bot'), lines[0]);
+      assert.ok(lines[0].endsWith('[{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]'), lines[0]);
     });
 
     it('an operator adopting a validation\'s copy logs both: the file differs from the copy, and the copy from the last pin', () => {

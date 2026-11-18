@@ -80,6 +80,25 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
     assert.strictEqual(built('audit', null, undefined).workerOptions.env.GITHUB_TOKEN, SERVER_TOKEN);
   });
 
+  // #422 high review, 2: the migration case. A version 2 file binds
+  // GITHUB_TOKEN to a slot, and the operator's GITHUB_TOKEN is still
+  // exported: a module that declares it is never handed it.
+  it('under version 2, a variable name the file binds is denied too, though the value is read from a slot', () => {
+    const credentials = require('../../lib/remote/credentials');
+    const saved = credentials.snapshot();
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14b-')), 'allow.json');
+    fs.writeFileSync(file, JSON.stringify({version: 2, modules: {'some-module': {'https://api.githubcopilot.com': {GITHUB_TOKEN: SLOT1}}}}));
+    try {
+      credentials.configure(file);
+      const c = build(dir, NAME, {mode: 'audit', modulePolicy: null, serverEnv: SERVER_ENV, redisUrl: null,
+        credentialNames: require('../../lib/module-manager').credentialNamesNow()});
+      assert.deepStrictEqual(c.workerOptions.env, {PLAIN: 'plain'});
+      assert.ok(c.notes.some((n) => n.startsWith('env GITHUB_TOKEN denied: a credentials allowance reads it')), JSON.stringify(c.notes));
+    } finally {
+      credentials.restore(saved);
+    }
+  });
+
   it('the names at a spawn are the start\'s and every pack\'s version 1 allowance\'s (lib/module-manager.js)', () => {
     const credentials = require('../../lib/remote/credentials');
     const mmod = require('../../lib/module-manager');

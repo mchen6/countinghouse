@@ -1190,8 +1190,8 @@ The full form:
   operator's `--remoteCredentials` file decides where it may go. Under a
   version 2 file a key is bound to one module, one variable and one
   origin: another module that declares the same variable gets nothing, and
-  a version of this module that sends it to another origin, or under
-  another name, gets nothing until it is bound again
+  a version of this module that sends it to another origin, or asks for it
+  under another name, gets nothing until it is bound again
   (`REMOTE_CREDENTIAL_NOT_ALLOWED`, saying which).
 - The remotes are part of the module's pin: a supervised restart uses the
   remotes the last load, reload or restart took, never a `package.json`
