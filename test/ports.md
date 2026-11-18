@@ -19,6 +19,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9740–9749 | C |
 | 9750–9754 | A: lean worker step 3 |
 | 9755–9759 | C (2026-11-17) |
+| 9762–9769 | A: M3 credentials (2026-11-18) |
 | 9770–9779 | C (2026-11-17) |
 | 9790–9799 | B (2026-11-14) |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
@@ -136,6 +137,9 @@ one) as well as the ports it binds.
 | `test/remote/06-listing.js` | 9722–9723 |
 | `test/remote/07-counting.js` | 9728–9729 |
 | `test/remote/12-cancel-abort.js` | 9589 |
+| `test/remote/13-by-module.js` | 9762–9763 |
+| `test/remote/14-credential-env.js` | 9764–9765 |
+| `test/remote/15-pinned-remote.js` | 9766–9768 |
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
 | `test/module-loading/33-registry-opt-in.js` | 9594 |
 | `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
@@ -147,7 +151,7 @@ one) as well as the ports it binds.
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
-| `test/sandbox/05-lockdown.js` | 9608–9610 |
+| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9772 |
 | `test/sandbox/07-restart.js` | 9611–9614 |
 | `test/sandbox/08-limits.js` | 9613 |
 | `test/sandbox/09-hardened.js` | 9614 |

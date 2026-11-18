@@ -55,6 +55,125 @@ describe('composition 22: declarations pinned before the module runs, and every 
     assert.strictEqual(added(B, 'adopted').length, 1, lines.join('\n'));
   });
 
+  // M3 (#413 section 6.1): the remotes join the pin.
+  it('the remotes: a supervised restart keeps the pinned ones and logs the file\'s; an operator adopts and logs; the same ones log nothing', () => {
+    const p = pins();
+    const remote = (url) => ({remotes: [{name: 'gh', url: url, credential: 'TOKEN'}]});
+    const withRemote = (url) => fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'm', countinghouse: Object.assign({calls: [A]}, remote(url))}));
+    withRemote('https://a.example/mcp');
+    p.pin('m', mod, true);
+    assert.deepStrictEqual(lines, []);
+    withRemote('https://b.example/mcp');
+    assert.strictEqual(p.pin('m', mod, false).countinghouse.remotes[0].url, 'https://a.example/mcp');
+    assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (not adopted: the pin from the last operator action stays): ' +
+      '[{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]']);
+    lines = [];
+    assert.strictEqual(p.pin('m', mod, true).countinghouse.remotes[0].url, 'https://b.example/mcp');
+    assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (adopted): [{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]']);
+    lines = [];
+    p.pin('m', mod, true);
+    p.pin('m', mod, false);
+    assert.deepStrictEqual(lines, []);
+  });
+
+  // the review of M3: the remotes a spawn registers are the ones it pins
+  describe('the plan a spawn registers is the pin it commits', () => {
+    const withRemote = (url, calls) => fs.writeFileSync(path.join(mod, 'package.json'),
+      JSON.stringify({name: 'm', countinghouse: {calls: calls || [A], remotes: [{name: 'gh', url: url}]}}));
+    const urlOf = (pkg) => pkg.countinghouse.remotes[0].url;
+
+    it('the file is read once: a change between the plan and the pin changes neither', () => {
+      const p = pins();
+      withRemote('https://a.example/mcp');
+      const planned = p.plan('m', mod, true);
+      withRemote('https://b.example/mcp');
+      assert.strictEqual(urlOf(planned.pinned), 'https://a.example/mcp');
+      assert.strictEqual(urlOf(p.pin('m', mod, true, planned)), 'https://a.example/mcp');
+    });
+
+    it('a first spawn that is not an operator\'s plans what it pins (the file, not a validation\'s copy)', () => {
+      const p = pins();
+      withRemote('https://a.example/mcp');
+      p.forValidation(mod);
+      withRemote('https://b.example/mcp');
+      const planned = p.plan('m', mod, false);
+      assert.strictEqual(urlOf(planned.pinned), 'https://b.example/mcp');
+      assert.strictEqual(urlOf(p.pin('m', mod, false, planned)), 'https://b.example/mcp');
+    });
+
+    it('wouldPin is what an operator\'s pin would take: a copy of another directory gives the loaded file\'s remotes (#422 high review, 8)', () => {
+      const p = pins();
+      const other = path.join(base, 'other');
+      fs.mkdirSync(other);
+      fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A, B], remotes: [{name: 'gh', url: 'https://other.example/mcp'}]}}));
+      p.forValidation(other);
+      withRemote('https://mine.example/mcp');
+      const would = p.wouldPin(mod, 'm');
+      assert.strictEqual(urlOf(would), 'https://mine.example/mcp');
+      assert.deepStrictEqual(would.countinghouse.calls, [A]);
+      assert.deepStrictEqual(lines, [], 'nothing logged, nothing taken');
+      assert.strictEqual(urlOf(p.pin('m', mod, true)), 'https://mine.example/mcp');
+    });
+
+    it('a validation\'s copy of another directory, found by package name, keeps the loaded file\'s remotes', () => {
+      const p = pins();
+      const other = path.join(base, 'other');
+      fs.mkdirSync(other);
+      fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A, B], remotes: [{name: 'gh', url: 'https://other.example/mcp'}]}}));
+      p.forValidation(other);
+      withRemote('https://mine.example/mcp');
+      const pinned = p.pin('m', mod, true, p.plan('m', mod, true));
+      assert.strictEqual(urlOf(pinned), 'https://mine.example/mcp');
+      assert.deepStrictEqual(pinned.countinghouse.calls, [A]);
+      assert.strictEqual(added(B, 'not adopted: declared by the validation of another path').length, 1, lines.join('\n'));
+    });
+
+    it('the log says each remote\'s name, origin and variable only: never user info, a query, a path or a header (#422 high review, 1)', () => {
+      const p = pins();
+      const secret = ['s', 'e', 'c', 'r', 'e', 't', '9'].join('');
+      const write2 = (url) => fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A],
+        remotes: [{name: 'gh', url: url, headers: {'X-Api-Key': secret, [`X-${secret}`]: 'v'}, credential: {env: 'TOKEN', header: 'X-Auth'}}]}}));
+      write2('https://a.example/mcp');
+      p.pin('m', mod, true);
+      const u = new URL(`https://b.example/mcp/${secret}?k=${secret}`);
+      u.username = 'bot';
+      u.password = secret;
+      write2(u.href);
+      p.pin('m', mod, false);
+      assert.strictEqual(lines.length, 1, lines.join('\n'));
+      assert.ok(!lines[0].includes(secret) && !lines[0].includes('bot'), lines[0]);
+      assert.ok(lines[0].endsWith('[{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]'), lines[0]);
+    });
+
+    it('a change the summary cannot show says so; a fifth remote is counted', () => {
+      const p = pins();
+      const write3 = (remotes) => fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A], remotes: remotes}}));
+      write3([{name: 'gh', url: 'https://a.example/mcp', headers: {'X-A': '1'}}]);
+      p.pin('m', mod, true);
+      write3([{name: 'gh', url: 'https://a.example/other', headers: {'X-A': '2'}}]);
+      p.pin('m', mod, false);
+      assert.ok(lines[0].endsWith('[{"name":"gh","origin":"https://a.example"}] (the change is in a field not shown: a path, a query or a header)'), lines[0]);
+      lines = [];
+      const five = [1, 2, 3, 4, 5].map((n) => ({name: `r${n}`, url: `https://r${n}.example/mcp`}));
+      write3(five);
+      p.pin('m', mod, true);
+      assert.ok(lines.some((l) => l.includes('{"name":"r4","origin":"https://r4.example"}] and 1 more')), lines.join('\n'));
+    });
+
+    it('an operator adopting a validation\'s copy logs both: the file differs from the copy, and the copy from the last pin', () => {
+      const p = pins();
+      withRemote('https://r0.example/mcp');
+      p.pin('m', mod, true);
+      withRemote('https://r1.example/mcp');
+      p.forValidation(mod);
+      withRemote('https://r2.example/mcp');
+      lines = [];
+      assert.strictEqual(urlOf(p.pin('m', mod, true)), 'https://r1.example/mcp');
+      assert.ok(lines.some((l) => l.includes('(not adopted: the copy read before its validation stays)') && l.includes('r2.example')), lines.join('\n'));
+      assert.ok(lines.some((l) => l.includes('(adopted)') && l.includes('r1.example')), lines.join('\n'));
+    });
+  });
+
   it('a supervised restart keeps the pin; a call added on disk is logged at each one, not adopted', () => {
     const p = pins();
     write([A]);
