@@ -64,6 +64,10 @@ const REVIEWED = [
   [/^lib\/store\.js$/, /^(\.\/countinghouse-error|crypto|\.\/job-control|\.\/job-control-local|\.\/local-kv|\.\/logger|\.\/metering\/local-provider|\.\/metering\/redis-provider|path|redis|\.\/redis-resilient|\.\/store\/blobs|\.\/store\/json-file)$/,
     'the store is made on the main thread; a worker reaches it over its channel', NOT_IN_WORKER, 20],
   [/^lib\/worker-message\.js$/, /^(\.\/logger|\.\/worker-output)$/, 'the main thread\'s end of a worker', NOT_IN_WORKER, 5],
+  // the settings file's, through the settings tool: guarded by the thread
+  // the file loaded on (mainThreadAtLoad); a validation worker loads
+  // module-settings for the declaration's rules only (#426)
+  [/^lib\/module-settings\.js$/, /^\.\/settings-tool$/, 'storedFor / stateFor: the main thread\'s only (mainThreadAtLoad, taken at load)', NOT_IN_WORKER, 2],
   // dependencies: code that runs at the library's own load
   [/^node_modules\/stream-length\/node_modules\/bluebird\/js\/main\/[a-z_]+\.js$/, /^\.\/[a-z_0-9]+(\.js)?$/,
     'bluebird\'s own files: each exports a setup function that its promise.js calls once, at bluebird\'s load', FOLLOW, 72],
@@ -206,6 +210,8 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
     // the sites each reviewed entry covers: a new one with the same file and
     // request fails as surely as a new request (each entry's 5th, its count)
     const tally = REVIEWED.map(() => 0);
+    // how each file was reached (PIN67_WHY=<part of a path> prints the chain)
+    const via = new Map();
     while (queue.length > 0) {
       const file = queue.shift();
       if (seen.has(file) || !file.endsWith('.js') && !file.endsWith('.cjs') && !file.endsWith('.mjs')) continue;
@@ -226,7 +232,18 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
         if (r.request === '<dynamic>' || Module.isBuiltin(r.request)) continue;
         let target = null;
         try { target = require.resolve(r.request, {paths: [path.dirname(file)]}); } catch (e) { continue; }
-        if (!Module.isBuiltin(target)) queue.push(target);
+        if (!Module.isBuiltin(target)) {
+          if (!via.has(target)) via.set(target, `${path.relative(ROOT, file)}:${r.line}${r.inFunction ? ' (in a function)' : ''}`);
+          queue.push(target);
+        }
+      }
+    }
+    if (typeof(process.env.PIN67_WHY) === 'string') {
+      for (const f of seen) {
+        if (!path.relative(ROOT, f).includes(process.env.PIN67_WHY)) continue;
+        const chain = [path.relative(ROOT, f)];
+        for (let at = f; via.has(at) && chain.length < 40;) { const from = via.get(at); chain.push(from); at = path.join(ROOT, from.replace(/:.*$/, '')); }
+        console.log(chain.join('\n  <- '));
       }
     }
     if (process.env.PIN67_COUNTS === '1') REVIEWED.forEach((e, i) => console.log(`${i}\t${tally[i]}\t${e[0]} ${e[1]}`));
