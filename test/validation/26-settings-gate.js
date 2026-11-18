@@ -99,10 +99,24 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(reads, 2, 'read again after a bump');
     });
 
+    it('a "no" is never kept: asked again, so an answer that changes within a generation cannot fail open', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      let declared = false;
+      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {},
+        packageOfModule: (n) => (declared ? {name: n, countinghouse: {settings: {u: {type: 'string'}}}} : {name: n})};
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
+      declared = true;
+      const err = gate.requiredRefusal(dm, idOf('m'), true);
+      assert.ok(err != null && err.code === 'SETTING_NOT_READY', 'the new answer, in the same generation');
+    });
+
     it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       const DeviceManager = require('../../lib/device-manager');
-      const top = {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}};
+      // top: a worker's proxy, bound to the part by its verified bindings
+      const top = Object.assign(Object.create(WorkerMessage.prototype), {hostModuleName: 'top', settings: null,
+        bindings: {[idOf('top')]: {identity: 'k', module: 'top', targets: new Set([`${idOf('part')}|urn:x:serviceID:s|act`])}}});
       const pins = {'@acme/part': {name: '@acme/part', countinghouse: {role: 'part', settings: {r: {type: 'string', required: true}}}}, top: {name: 'top'}};
       const dm = {deviceMap: {[idOf('top')]: top},
         // the part spawning: a live spawn (lifecycle)
@@ -123,7 +137,8 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       require('../../lib/tool-generation').bump();
       assert.strictEqual(gate.requiredRefusal(dm, idOf('top'), true), null, 'not refused: the hop answers for it');
       // registered and serving with no state: refused, the top-level module named, never the part
-      dm.deviceMap[idOf('part')] = {moduleName: '@acme/part'};
+      dm.deviceMap[idOf('part')] = Object.assign(Object.create(WorkerMessage.prototype), {hostModuleName: '@acme/part', settings: null, bindings: {}});
+      dm.moduleManager.modules['@acme/part'] = dm.deviceMap[idOf('part')];
       require('../../lib/tool-generation').bump();
       const err = gate.requiredRefusal(dm, idOf('top'), true);
       assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
