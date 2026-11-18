@@ -95,8 +95,12 @@ describe('countinghouse-validate CLI', function() {
 
   // the review of M3: a URL's user info is never printed back
   it('the fix line never prints a URL\'s user info or fragment', (done) => {
+    // built at run time: no credential pair in the source
     const secret = ['pa', 'ss', 'word', '42'].join('');
-    const m = withRemote({name: 'gh', url: `https://bot:${secret}@api.example.com/mcp#frag`, credential: 'GH_TOKEN'});
+    const u = new URL('https://api.example.com/mcp#frag');
+    u.username = 'bot';
+    u.password = secret;
+    const m = withRemote({name: 'gh', url: u.href, credential: 'GH_TOKEN'});
     run(m.dir, (r) => {
       assert.strictEqual(r.code, 1);
       assert.ok(!r.stdout.includes(secret) && !r.stdout.includes('#frag'), r.stdout);
