@@ -163,7 +163,10 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.setCompletionHook((jobData, results, meta) => { metas.push(meta); });
     const {r} = await call(runner, 'addJob', INTERNAL, {name: 's'}, 'd', 's', 'act', {});
     assert.ok(await until(async () => (await state(runner, r.id)).state === 'completed'));
-    assert.deepStrictEqual(ci.calls[0].extraArgs, {usageCall: 7, name: 'act'});
+    // (and the run's own progress writer, F4-3: a function, never sent on)
+    const {progressTo, ...given} = ci.calls[0].extraArgs;
+    assert.strictEqual(typeof(progressTo), 'function');
+    assert.deepStrictEqual(given, {usageCall: 7, name: 'act'});
     // and the run's session (M6: a task stores in its job's), none here
     assert.deepStrictEqual(metas, [{extra: {usageCall: 7, name: 'act'}, session: null}]);
     runner.close();
