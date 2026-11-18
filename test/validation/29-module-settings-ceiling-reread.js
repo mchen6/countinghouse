@@ -676,7 +676,9 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(notices.take('w').some((t) => /changed by the operator's ceiling: units/.test(t)));
       assert.strictEqual(mm.modules.r.settings.values.region, 'eu', 'nothing else changed');
       await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.appliedByCeiling === 0);
-      assert.strictEqual(logged.filter((l) => /cannot be read/.test(l)).length, 1, 'said once');
+      assert.strictEqual(logged.filter((l) => /only the operator's ceiling is applied/.test(l)).length, 1, 'said once');
+      // and each module's: once, named in what was refused
+      assert.strictEqual(logged.filter((l) => /^module settings: w: the settings file cannot be read/.test(l)).length, 1, 'w\'s said once');
     });
 
     it('one ceiling rule: any caller of next() with the file unreadable takes the ceiling\'s fixed values (a registration too)', () => {
