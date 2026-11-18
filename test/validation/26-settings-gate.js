@@ -99,19 +99,26 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(reads, 2, 'read again after a bump');
     });
 
-    it('a "no" is never kept: asked again, so an answer that changes within a generation cannot fail open', () => {
+    it('a "no" is kept, but a pin committed since (the epoch) is seen, so it cannot fail open', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       let declared = false;
-      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {},
-        packageOfModule: (n) => (declared ? {name: n, countinghouse: {settings: {u: {type: 'string'}}}} : {name: n})};
+      let reads = 0;
+      const pins = {epoch: 0};
+      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {manifestPins: pins},
+        packageOfModule: (n) => { reads += 1; return declared ? {name: n, countinghouse: {settings: {u: {type: 'string'}}}} : {name: n}; }};
       require('../../lib/tool-generation').bump();
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
+      assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
+      assert.strictEqual(reads, 1, 'a "no" kept within the generation and epoch');
       declared = true;
+      pins.epoch += 1;   // its pin committed, no generation bumped
       const err = gate.requiredRefusal(dm, idOf('m'), true);
-      assert.ok(err != null && err.code === 'SETTING_NOT_READY', 'the new answer, in the same generation');
+      assert.ok(err != null && err.code === 'SETTING_NOT_READY', 'the new answer, seen by the epoch');
     });
 
-    it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', () => {
+    it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', function() {
+      // (the device manager is required here: seconds on a loaded machine)
+      this.timeout(30000);
       const idOf = (n) => callAddress.deviceIDForName(n);
       const DeviceManager = require('../../lib/device-manager');
       // top: a worker's proxy, bound to the part by its verified bindings
@@ -255,7 +262,9 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.ok(gate.toCarry(ended, st).values != null, 'an ended worker: nothing recorded');
     });
 
-    it('a declared graph past the walk\'s cap is refused, never checked in part', () => {
+    it('a declared graph past the walk\'s cap is refused, never checked in part', function() {
+      // (a walk of 4096 devices: over two seconds on a loaded machine)
+      this.timeout(30000);
       const chain = {};
       const n = gate.MAX_REACH + 5;
       for (let i = 0; i < n; i++) chain[`n${i}`] = {calls: i < n - 1 ? [`n${i + 1}`] : []};
