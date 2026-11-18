@@ -394,10 +394,15 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       // the same file again: no refusal, no second notice or line; n applies
       let reply = await rr(mm);
       assert.deepStrictEqual(reply, {applied: 1, refused: []});
-      assert.deepStrictEqual(notices.take('w'), []);
+      assert.deepStrictEqual(notices.take('w'), ['w\'s settings changed: n; still not applied: units'], 'the change said; the refusal not again');
       assert.strictEqual(lines(), once);
       assert.strictEqual(mm.modules.w.settings.values.n, 7);
       assert.strictEqual(mm.modules.w.settings.values.units, 'imperial', 'the value it ran with, not the default');
+      // never silent: the change is said, with what is still not applied
+      const said = fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+        .filter((h) => h.setting === 'module.w' && /^applied/.test(h.change));
+      assert.deepStrictEqual(said.map((h) => h.change), ['applied: n; still not applied: units'], JSON.stringify(said));
+      assert.ok(!said.some((h) => 'new' in h || 'kept' in h), 'no value');
       // removed, then written back: refused again
       write({'module.w.n': 7, 'module.r.region': 'eu'});
       await rr(mm);
