@@ -213,6 +213,59 @@ describe('auth 15: the authenticated read paths are rate limited', function() {
     });
   });
 
+  // F3-3 (the Fable pass over the MCP surface): the lists a legacy batch could multiply
+  ['tools/list', 'prompts/list'].forEach((method) => {
+    it(`${method}: a burst is denied`, (done) => {
+      drain(() => {
+        const body = {jsonrpc: '2.0', id: 1, method, params: {}};
+        burst(BURST, (cb) => mcpReq(url, ALICE, body, cb), (responses) => {
+          if (mcpDenials(responses).length === 0) {
+            return done(new Error(`no ${method} call in a burst of ${BURST} was rate limited: ${JSON.stringify(responses.map((r) => r.res && r.res.body.error))}`));
+          }
+          return done();
+        });
+      });
+    });
+  });
+
+  it('tools/list with no key is answered as before (the built-ins), not refused', (done) => {
+    drain(() => {
+      mcpReq(url, null, {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {}}, (err, res) => {
+        if (err) return done(err);
+        if (res.body == null || res.body.result == null || !Array.isArray(res.body.result.tools)) return done(new Error(`no list: ${JSON.stringify(res.body)}`));
+        return done();
+      });
+    });
+  });
+
+  it('a legacy batch of list requests spends the budget once per request', (done) => {
+    drain(() => {
+      const batch = Array.from({length: BURST}, (_, i) => ({jsonrpc: '2.0', id: i + 1, method: 'tools/list', params: {}}));
+      mcpReq(url, ALICE, batch, (err, res) => {
+        if (err) return done(err);
+        const answers = Array.isArray(res.body) ? res.body : [];
+        if (answers.length !== BURST) return done(new Error(`${answers.length} answers: ${JSON.stringify(res.body).slice(0, 300)}`));
+        if (!answers.some((a) => a.error != null && /rate limit exceeded/.test(String(a.error.message)))) {
+          return done(new Error(`no list in a batch of ${BURST} was rate limited`));
+        }
+        return done();
+      });
+    });
+  });
+
+  it('a legacy batch of more than 32 messages is refused whole: 400, -32600, none of it run', (done) => {
+    drain(() => {
+      const batch = Array.from({length: 33}, (_, i) => ({jsonrpc: '2.0', id: i + 1, method: 'ping'}));
+      mcpReq(url, ALICE, batch, (err, res) => {
+        if (err) return done(err);
+        if (res.status !== 400 || res.body == null || res.body.error == null || res.body.error.code !== -32600 || !/at most 32/.test(res.body.error.message)) {
+          return done(new Error(`${res.status} ${JSON.stringify(res.body).slice(0, 300)}`));
+        }
+        return done();
+      });
+    });
+  });
+
   it('tasks/list: a burst is denied', (done) => {
     drain(() => {
       const body = {jsonrpc: '2.0', id: 1, method: 'tasks/list', params: {}};
