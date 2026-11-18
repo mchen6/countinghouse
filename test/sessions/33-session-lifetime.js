@@ -85,15 +85,20 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     assert.deepStrictEqual(await ModuleManager.prototype.sessionSettled.call(m, A), {ps: true}, 'asked once, then forgotten');
   });
 
-  it('a late settle is cleared by a later clean one under the same name, and a module\'s unload forgets all of its', async () => {
+  it('a late mark lasts until that broker itself goes idle (a later worker\'s clean settle clears nothing), and a module\'s unload forgets all of its', async () => {
     const {ModuleLifecycle} = require('../../lib/module-lifecycle');
     const lc = new ModuleLifecycle();
-    lc.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
+    let drain;
+    const stillBusy = new Promise((r) => { drain = r; });
+    lc.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(false), idle: () => stillBusy});
     await new Promise((r) => setImmediate(r));
     assert.strictEqual(lc.wentLate(`ps\0${A}`), true);
-    lc.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(true)});
+    lc.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(true), idle: () => Promise.resolve()});
     await new Promise((r) => setImmediate(r));
-    assert.strictEqual(lc.wentLate(`ps\0${A}`), false, 'its next worker settled cleanly');
+    assert.strictEqual(lc.wentLate(`ps\0${A}`), true, 'a newer worker\'s clean settle: the old broker\'s op still runs');
+    drain();
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(lc.wentLate(`ps\0${A}`), false, 'cleared once the late broker went idle');
     lc.track(`ps\0${B}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
     lc.track(`other\0${B}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
     await new Promise((r) => setImmediate(r));
@@ -344,9 +349,12 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
         LOG.E = realE;
       }
       assert.ok(view != null && typeof(view.reserve) === 'function');
-      assert.strictEqual(mm.sessionQuotas.get('ps'), undefined, 'a failed build is dropped: the next spawn builds it again');
+      const first = quota();
+      assert.strictEqual(first.buildFailed, true, 'marked for a rebuild, still the module\'s one quota');
       await spawn(A);
-      assert.strictEqual(quota().knows(A), true, 'built again, whole this time');
+      assert.strictEqual(quota(), first, 'built again in place: every charge and credit to one quota');
+      assert.strictEqual(quota().knows(A), true, 'A, with no share yet, measured whole this time');
+      assert.strictEqual(quota().knows(B), false, 'B\'s share, made while it had failed, stays unknown (never walked twice)');
       await end(A);
       assert.ok(!has(A));
     });
@@ -512,18 +520,27 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
 
     it('a sessions/ that can\'t be read leaves every share unknown', async () => {
       await make(A);
+      let viewA;
       const realReaddir = fs.promises.readdir;
       fs.promises.readdir = () => Promise.reject(Object.assign(new Error('too many open files'), {code: 'EMFILE'}));
       try {
-        await spawn(A);
+        viewA = await spawn(A);
       } finally {
         fs.promises.readdir = realReaddir;
       }
-      assert.strictEqual(mm.sessionQuotas.get('ps'), undefined, 'dropped: never pinned, never kept as the module\'s');
-      fs.writeFileSync(data(A, 'f'), Buffer.alloc(4000));
-      await spawn(B);
-      assert.strictEqual(quota().knows(A), true, 'the next spawn built it again, and read it this time');
-      assert.strictEqual(quota().shares.get(A).bytes, 4000);
+      const first = quota();
+      assert.strictEqual(first.bytes, 0, 'nothing pinned');
+      write(viewA, data(A, 'w'), 500);   // charged through A's view, and on disk
+      await make(B);
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(4000));
+      const viewB = await spawn(B);
+      assert.strictEqual(quota(), first, 'the same quota, built again in place');
+      assert.strictEqual(quota().shares.get(B).bytes, 4000, 'B, with no share yet, read this time');
+      assert.strictEqual(quota().knows(A), false, 'A\'s, made while it had failed, stays unknown');
+      assert.strictEqual(quota().shares.get(A).bytes, 500, 'and not walked again: its charged write counted once');
+      write(viewB, data(B, 'g'), 100);
+      await end(B);
+      assert.strictEqual(quota().bytes, 500, 'B\'s end credits the quota it charged (A\'s 500 stay)');
     });
 
     it('only a session id under sessions/ is a partition: a stray entry is never counted', async () => {
