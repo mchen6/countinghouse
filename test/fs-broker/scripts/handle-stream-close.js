@@ -77,6 +77,30 @@ module.exports = async (fs, root) => {
       try { r = await pending; parity.webClose = r.done ? 'done' : 'value'; } catch (e) { parity.webClose = `error:${e.code || e.name}`; }
       await closed;
     }
+    // a web stream reads nothing until asked (the handle's own read gets
+    // the file's start); a BYOB reader reads into its own buffer; a second
+    // web stream, or one of a closing or closed handle, is refused
+    {
+      const h = await fsp.open(file);
+      const web = h.readableWebStream();
+      const b = Buffer.alloc(10);
+      await h.read(b, 0, 10, null);
+      parity.webNotAhead = b.toString() === fs.readFileSync(file).subarray(0, 10).toString() ? 'start' : 'moved';
+      try { h.readableWebStream(); parity.webSecond = 'made'; } catch (e) { parity.webSecond = e.code; }
+      const byob = web.getReader({mode: 'byob'});
+      const r = await byob.read(new Uint8Array(4));
+      parity.webByob = `${r.value.byteLength}`;
+      await byob.cancel();
+      await h.close();
+      try { h.readableWebStream(); parity.webClosed = 'made'; } catch (e) { parity.webClosed = e.code; }
+      // (a read under way keeps the handle open across its close: closing)
+      const h2 = await fsp.open(file);
+      const reading = h2.read(Buffer.alloc(4), 0, 4, 0);
+      const closing = h2.close();
+      try { h2.readableWebStream(); parity.webClosing = 'made'; } catch (e) { parity.webClosing = `${e.code} ${/closing/.test(e.message) ? 'closing' : 'closed'}`; }
+      await reading;
+      await closing;
+    }
     // a web stream left by break (cancelled, its next read under way), then
     // its handle closed
     {

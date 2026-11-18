@@ -25,7 +25,8 @@ describe('fs-broker 29: a file handle\'s stream left mid-read', function() {
     const plain = await runBrokered(SCRIPT, {patch: false});
     assert.strictEqual(plain.ok, true, JSON.stringify(plain));
     assert.deepStrictEqual(plain.r, {early: [1], mid: ['data,close'], buffered: 'finish,close,handle closed abc', toEnd: 'end,close',
-      parity: {webClose: 'done', 'web-break': '1 closed', 'web-toEnd': 'closed fd -1', 'web-paused': 'closed fd -1', destroyNoAutoClose: 'handle closed', firstClose: 'rejected:once', secondClose: 'resolved'},
+      parity: {webNotAhead: 'start', webSecond: 'ERR_INVALID_STATE', webByob: '4', webClosed: 'ERR_INVALID_STATE', webClosing: 'ERR_INVALID_STATE closing',
+        webClose: 'done', 'web-break': '1 closed', 'web-toEnd': 'closed fd -1', 'web-paused': 'closed fd -1', destroyNoAutoClose: 'handle closed', firstClose: 'rejected:once', secondClose: 'resolved'},
       uncaught: []}, 'Node\'s own FileHandle');
     const brokered = await runBrokered(SCRIPT);
     assert.strictEqual(brokered.ok, true, JSON.stringify(brokered));
@@ -42,11 +43,10 @@ describe('fs-broker 29: a file handle\'s stream left mid-read', function() {
       'write-destroy': 'handle closed closes:1', 'write-close': 'handle closed closes:1 wrote:abc', 'write-close-flush': 'handle closed closes:1 wrote:abc',
       'write-failed': 'error:EIO,one close closes:1',
       // (ERR_STREAM_DESTROYED: Node's own, for a stream destroyed with a write
-      // in flight; emitted once its own close has run, which releases the
-      // handle, as Node's own)
-      'write-in-flight': 'handle closed,error:ERR_STREAM_DESTROYED closes:1',
+      // in flight; its stream settles before its handle, as Node's own)
+      'write-in-flight': 'error:ERR_STREAM_DESTROYED,handle closed closes:1',
       'flush-late': 'handle closed closes:1', 'close-listener-throws': 'rejected: a listener of its own',
-      'handle-write': 'written:abc closes:1', 'handle-readFile': 'read:40', 'web-stream': 'read open', 'flush-destroyed': 'handle closed,error:ERR_STREAM_DESTROYED closes:1',
+      'handle-write': 'written:abc closes:1', 'handle-readFile': 'read:40', 'every-method': 'every one held', 'listener-throws-stream': 'rejected: a listener of its own; stream closed, no error', 'web-stream': 'read open', 'flush-destroyed': 'error:ERR_STREAM_DESTROYED,handle closed closes:1',
       afterClose: 'ERR_OUT_OF_RANGE', uncaught: []});
   });
 

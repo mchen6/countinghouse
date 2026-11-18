@@ -46,6 +46,12 @@ module.exports = async () => {
         return args[1].length;
       }
       if (op === 'fsync') { await new Promise((resolve) => setTimeout(resolve, 10)); if (closed.has(args[0])) throw ebadf(); return null; }
+      // each of a handle's other operations: answered late, refused once closed
+      if (['fstat', 'ftruncate', 'fdatasync', 'fchmod', 'fchown', 'futimes'].includes(op)) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        if (closed.has(args[0])) throw ebadf();
+        return op === 'fstat' ? {bigint: false, fields: {size: 0}} : null;
+      }
       throw new Error(`late-error client: no ${op}`);
     }
   };
@@ -167,6 +173,21 @@ module.exports = async () => {
     h.on('close', () => { throw new Error('a listener of its own'); });
     try { await h.close(); return 'resolved'; } catch (e) { return `rejected: ${e.message}`; }
   });
+  // a 'close' listener that throws, with a stream open: the close rejects
+  // with its error, the stream closes with none (the listener's error is the
+  // handle's alone: never an error on a stream nobody listens to)
+  out['listener-throws-stream'] = await bounded('listener-throws-stream', async () => {
+    const h = await fsp.open('/data/lt');
+    const s = h.createReadStream({highWaterMark: 64});
+    const ev = [];
+    s.on('error', (e) => ev.push(`error:${e.message}`));
+    s.on('close', () => ev.push('closed'));
+    h.on('close', () => { throw new Error('a listener of its own'); });
+    let first;
+    try { await h.close(); first = 'resolved'; } catch (e) { first = `rejected: ${e.message}`; }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return `${first}; stream ${ev.includes('closed') ? 'closed' : 'open'}, ${ev.some((x) => x.startsWith('error')) ? 'an error' : 'no error'}`;
+  });
   // the handle's own readFile under way as it closes: every read of it done
   // first (the operation held whole, not each call)
   out['handle-readFile'] = await bounded('handle-readFile', async () => {
@@ -210,6 +231,32 @@ module.exports = async () => {
     try { await h.close(); ev.push('handle closed'); } catch (e) { ev.push(`close-error:${e.code}`); }
     await new Promise((resolve) => setTimeout(resolve, 50));
     return `${ev.join(',')} closes:${closes.length - before}`;
+  });
+  // every operation of the handle's own, as the class has them (a method
+  // added later is in this list or the test fails), holds the handle open
+  // for its whole run: a close asked while it runs waits for it, which
+  // answers, never EBADF
+  out['every-method'] = await bounded('every-method', async () => {
+    const h0 = await fsp.open('/data/m', 'w');
+    const proto = Object.getPrototypeOf(h0);
+    await h0.close();
+    const notOperations = new Set(['constructor', 'fd', 'getAsyncId', 'close', 'createReadStream', 'createWriteStream', 'readLines', 'readableWebStream']);
+    const args = {
+      read: () => [Buffer.alloc(4), 0, 4, null], write: () => ['abc'], readv: () => [[Buffer.alloc(4)]], writev: () => [[Buffer.from('ab')]],
+      readFile: () => [], writeFile: () => ['abc'], appendFile: () => ['abc'], stat: () => [], truncate: () => [0], sync: () => [], datasync: () => [],
+      chmod: () => [0o644], chown: () => [0, 0], utimes: () => [0, 0]
+    };
+    const failed = [];
+    for (const k of Object.getOwnPropertyNames(proto)) {
+      if (notOperations.has(k)) continue;
+      if (args[k] == null) { failed.push(`${k}: no case`); continue; }
+      const h = await fsp.open(k === 'readFile' ? '/data/rf' : '/data/m', k === 'readFile' || k === 'read' || k === 'readv' || k === 'stat' ? 'r' : 'w');
+      const p = h[k](...args[k]());
+      const c = h.close();
+      try { await p; } catch (e) { failed.push(`${k}: ${e.code || e.message}`); }
+      await c;
+    }
+    return failed.length === 0 ? 'every one held' : failed.join(', ');
   });
   // a stream asked of a closed handle: refused as Node's own refuses it
   {
