@@ -132,11 +132,14 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     const MOD = '@countinghouse/ch-pack-mod';
     const dirsOf = (names) => Object.fromEntries(names.map((n) => [n, `/store/${n}/1.0.0`]));
     const modulePacks = Object.assign({}, packs, {
-      loadPack: async(mm, msg) => { calls.push(['load', msg.name]); records.set(msg.name, [`m-${msg.name}`]); return {modules: [`m-${msg.name}`]}; },
+      loadPack: async(mm, msg) => { calls.push(['load', msg.name]); records.set(msg.name, [`m-${msg.name}`]); if (mm.packsInPlace instanceof Map) mm.packsInPlace.set(msg.name, {form: 'module', pack: msg.name}); return {modules: [`m-${msg.name}`]}; },
       reloadPack: async(mm, msg) => { calls.push(['reload', msg.names.join(',')]); for (const n of msg.names) records.set(n, [`m-${n}`]); return {modules: msg.names.map((n) => `m-${n}`)}; },
       unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); records.delete(msg.name); return {modules: [`m-${msg.name}`]}; }
     });
-    const moduleControl = () => createPackControl({mm: {}, dm: {}, packs: modulePacks, toolsOf: async() => [], shared: () => sessions.shared()});
+    // the units these loads record, in the module form (module-control asks
+    // the record which form an unload is in)
+    const units = new Map();
+    const moduleControl = () => createPackControl({mm: {packsInPlace: units}, dm: {}, packs: modulePacks, toolsOf: async() => [], shared: () => sessions.shared()});
 
     it('a load with no pack and no global is taken; the unit is global under its package name, listed to every session; the notice reaches each once', async() => {
       const c = moduleControl();
@@ -152,6 +155,22 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         toolsOf: async() => [], shared: () => sessions.shared()});
       await assert.rejects(failing.load({type: 'load', name: MOD, dirs: dirsOf([MOD])}));
       assert.strictEqual(sessionPacks.isGlobal(MOD), false);
+    });
+
+    it('a shared runtime\'s module-form reload files its notice under each name (M4b medium 5)', async() => {
+      const c = moduleControl();
+      const OTHER = '@countinghouse/ch-pack-other';
+      await c.load({type: 'load', name: MOD, dirs: dirsOf([MOD])});
+      await c.load({type: 'load', name: OTHER, dirs: dirsOf([OTHER])});
+      for (const id of [A, B, C]) { notices.take(MOD, id); notices.take(OTHER, id); }
+      await c.reload({type: 'reload', names: [MOD, OTHER], dirs: dirsOf([MOD, OTHER]), notice: 'both upgraded'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(OTHER, id)), [['both upgraded'], ['both upgraded'], ['both upgraded']]);
+    });
+
+    it('an unload with no pack of a unit not recorded in the module form is refused, as the pack form requires (M4b medium 6)', async() => {
+      const c = createPackControl({mm: {packsInPlace: new Map([['@countinghouse/ch-pack-old', {form: undefined, pack: 'old'}]])}, dm: {}, packs: modulePacks,
+        toolsOf: async() => [], shared: () => sessions.shared()});
+      await assert.rejects(c.unload({type: 'unload', name: '@countinghouse/ch-pack-old'}), (e) => e.code === 'CONTROL_FAILED');
     });
 
     it('a reload of several names makes each global; an unload takes the unit out of the view and tells every session once', async() => {
