@@ -1,0 +1,398 @@
+'use strict';
+// The operator's ceiling over module settings, and reread (the module-level
+// configuration design, sections 4.3, 7.3 and 8; M2a). Server-free.
+// - The ceiling's moduleSettings (lib/settings-ceiling.js parse): per
+//   "<package>.<setting>" one of {"fixed": v}, {"confirm": true},
+//   {"conversation": false}; a bare "conversation": false makes every module
+//   setting terminal-only; any other shape makes the ceiling untrusted.
+// - A fixed value (lib/module-settings.js stateFor, given the ceiling): over
+//   the file's; one the declaration rejects refuses the load; a ceiling that
+//   cannot be trusted refuses an operator's load of a module that declares
+//   settings (a supervised restart keeps what it ran with).
+// - reread (lib/settings-reread.js): each loaded module's state again, with
+//   a new version, on its worker's proxy, its per-session record, every
+//   session's worker, the restart's copy and single-thread mode's; atomic
+//   per module (any refused value: that module keeps ALL its old values,
+//   the others apply); a refusal is a notice and a history line; a settings
+//   change never unloads.
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const ceiling = require('../../lib/settings-ceiling');
+const ms = require('../../lib/module-settings');
+const options = require('../../lib/cli-options');
+
+const trusted = (c) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: c});
+const parsed = (obj) => ceiling.parse(JSON.stringify(Object.assign({version: 1}, obj)));
+
+describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
+  describe('the ceiling\'s moduleSettings', () => {
+    it('absent: null', () => {
+      assert.strictEqual(parsed({}).ceiling.moduleSettings, null);
+    });
+
+    it('fixed, confirm and conversation:false per <package>.<setting>, scoped packages and dotted names too', () => {
+      const r = parsed({moduleSettings: {
+        '@acme/weather-tool.shareStats': {fixed: false},
+        '@acme/weather-tool.units': {confirm: true},
+        '@acme/repo-helper.defaultRepo': {conversation: false},
+        'plain.tool.maxResults': {fixed: 20},
+        'plain.tool.label': {fixed: ''}}});
+      assert.strictEqual(r.problem, undefined, r.problem);
+      const m = r.ceiling.moduleSettings;
+      assert.strictEqual(m.conversation, true);
+      assert.deepStrictEqual(Object.assign({}, m.byModule['@acme/weather-tool'].shareStats), {fixed: false});
+      assert.deepStrictEqual(Object.assign({}, m.byModule['@acme/weather-tool'].units), {confirm: true});
+      assert.deepStrictEqual(Object.assign({}, m.byModule['@acme/repo-helper'].defaultRepo), {conversation: false});
+      // the last dot splits the setting from the package
+      assert.deepStrictEqual(Object.assign({}, m.byModule['plain.tool'].maxResults), {fixed: 20});
+      assert.ok(Object.isFrozen(m) && Object.isFrozen(m.byModule) && Object.isFrozen(m.byModule['plain.tool']));
+      assert.strictEqual(Object.getPrototypeOf(m.byModule), null);
+    });
+
+    it('a bare "conversation": false makes every module setting terminal-only', () => {
+      const m = parsed({moduleSettings: {conversation: false, 'a.b': {fixed: 1}}}).ceiling.moduleSettings;
+      assert.strictEqual(m.conversation, false);
+      assert.deepStrictEqual(Object.assign({}, ceiling.moduleSettingRule(trusted({moduleSettings: m}), 'x', 'y')), {conversation: false});
+      assert.deepStrictEqual(Object.assign({}, ceiling.moduleSettingRule(trusted({moduleSettings: m}), 'a', 'b')), {fixed: 1}, 'a fixed value still binds');
+    });
+
+    it('moduleSettingRule: the rule, or null; none under no ceiling', () => {
+      const c = trusted(parsed({moduleSettings: {'w.units': {confirm: true}}}).ceiling);
+      assert.deepStrictEqual(Object.assign({}, ceiling.moduleSettingRule(c, 'w', 'units')), {confirm: true});
+      assert.strictEqual(ceiling.moduleSettingRule(c, 'w', 'other'), null);
+      assert.strictEqual(ceiling.moduleSettingRule({state: 'none'}, 'w', 'units'), null);
+      assert.strictEqual(ceiling.moduleSettingRule(null, 'w', 'units'), null);
+    });
+
+    it('fixedOf (lib/module-settings.js): a module\'s fixed values, null-prototype, or null', () => {
+      const c = trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}, 'w.n': {confirm: true}, 'v.x': {fixed: 1}}}).ceiling);
+      assert.deepStrictEqual(Object.assign({}, ms.fixedOf(c, 'w')), {units: 'metric'});
+      assert.strictEqual(Object.getPrototypeOf(ms.fixedOf(c, 'w')), null);
+      assert.strictEqual(ms.fixedOf(c, 'none'), null);
+      assert.strictEqual(ms.fixedOf({state: 'none'}, 'w'), null);
+    });
+
+    it('any other shape fails closed: the ceiling is not trusted', () => {
+      const bad = [
+        [],
+        'x',
+        {conversation: true},
+        {conversation: 'false'},
+        {'w.units': {}},
+        {'w.units': {fixed: 1, confirm: true}},
+        {'w.units': {confirm: false}},
+        {'w.units': {conversation: true}},
+        {'w.units': {fixed: null}},
+        {'w.units': {fixed: {a: 1}}},
+        {'w.units': {fixed: [1]}},
+        {'w.units': {fixed: Infinity}},
+        {'w.units': {other: 1}},
+        {'w.units': true},
+        {'nodot': {fixed: 1}},
+        {'w.': {fixed: 1}},
+        {'.units': {fixed: 1}},
+        {'W.units': {fixed: 1}},
+        {'w.Units': {fixed: 1}},
+        {'w.units-x': {fixed: 1}},
+        {[`${'a'.repeat(215)}.units`]: {fixed: 1}},
+        {'__proto__.units': {fixed: 1}},
+      ];
+      for (const b of bad) {
+        const r = ceiling.parse(`{"version": 1, "moduleSettings": ${JSON.stringify(b).replace('"Infinity"', '1e999')}}`);
+        assert.ok(r.problem != null, JSON.stringify(b).slice(0, 80));
+        assert.match(r.problem, /moduleSettings/, r.problem);
+      }
+    });
+
+    it('a ceiling reader without the key fails closed on it (an unknown key is untrusted)', () => {
+      // the rule every reader has kept (stdio 17): what lets this key be added
+      // without an older ch-local or runtime reading it as no restriction
+      assert.match(ceiling.parse('{"version": 1, "moduleSettingz": {}}').problem, /holds/);
+    });
+  });
+
+  describe('a fixed value at stateFor', () => {
+    let dir = null;
+    let saved = null;
+    const pkg = {name: 'w', version: '1.0.0', countinghouse: {settings: {
+      units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'},
+      n: {type: 'integer', min: 1, max: 9, default: 2}}}};
+    before(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validation-29-'));
+      saved = {settingsFile: options.settingsFile, moduleSettings: options.moduleSettings};
+      options.settingsFile = path.join(dir, 'settings.json');
+      options.moduleSettings = null;
+      fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {'module.w.units': 'imperial', 'module.w.n': 5}}));
+    });
+    after(() => { Object.assign(options, saved); fs.rmSync(dir, {recursive: true, force: true}); });
+
+    it('over the file\'s value; no ceiling, or none for this module: the file\'s', () => {
+      const c = trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling);
+      assert.deepStrictEqual(Object.assign({}, ms.stateFor('w', pkg, {operator: true, ceiling: c}).values), {units: 'metric', n: 5});
+      assert.deepStrictEqual(Object.assign({}, ms.stateFor('w', pkg, {operator: true, ceiling: {state: 'none'}}).values), {units: 'imperial', n: 5});
+      assert.deepStrictEqual(Object.assign({}, ms.stateFor('w', pkg, {operator: true}).values), {units: 'imperial', n: 5});
+    });
+
+    it('one the declaration rejects refuses the load, with the ceiling\'s reason', () => {
+      const c = trusted(parsed({moduleSettings: {'w.n': {fixed: 50}}}).ceiling);
+      const st = ms.stateFor('w', pkg, {operator: true, ceiling: c});
+      assert.ok(st.refused != null);
+      assert.match(st.refused.message, /ceiling fixes n/);
+      assert.deepStrictEqual(st.refusedBy, {code: 'SETTING_INVALID', setting: 'n'});
+    });
+
+    it('a ceiling that cannot be trusted: an operator\'s load refused; a supervised restart keeps what it ran with', () => {
+      const c = {state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'it is a symbolic link'};
+      const st = ms.stateFor('w', pkg, {operator: true, ceiling: c});
+      assert.ok(st.refused != null);
+      assert.match(st.refused.message, /ceiling/);
+      assert.deepStrictEqual(st.refusedBy, {code: 'SETTING_CEILING_UNTRUSTED', setting: null});
+      const last = {values: Object.freeze({units: 'metric', n: 3})};
+      const restart = ms.stateFor('w', pkg, {operator: false, ceiling: c, last});
+      assert.strictEqual(restart.refused, null);
+      assert.deepStrictEqual(Object.assign({}, restart.values), {units: 'metric', n: 3});
+    });
+
+    it('a fixed name this version does not declare is ignored, with a warning: no refusal', () => {
+      const lines = [];
+      const c = trusted(parsed({moduleSettings: {'w.oldFlag': {fixed: false}, 'w.units': {fixed: 'metric'}}}).ceiling);
+      const st = ms.stateFor('w', pkg, {operator: true, ceiling: c, log: (l) => lines.push(l)});
+      assert.strictEqual(st.refused, null);
+      assert.strictEqual(st.values.units, 'metric');
+      assert.ok(lines.some((l) => /oldFlag/.test(l) && /ignored/.test(l)), lines.join('\n'));
+    });
+
+    it('a state carries what it was made from (not enumerable)', () => {
+      const st = ms.stateFor('w', pkg, {operator: true, net: []});
+      assert.strictEqual(st.made.pkg, pkg);
+      assert.deepStrictEqual(st.made.net, []);
+      assert.ok(!Object.keys(st).includes('made'));
+    });
+
+    it('a module that declares no settings is never refused by the ceiling', () => {
+      const c = {state: 'untrusted', file: '/x', problem: 'p'};
+      assert.strictEqual(ms.stateFor('v', {name: 'v', version: '1.0.0'}, {operator: true, ceiling: c}).refused, null);
+    });
+
+    it('the state says what was not applied, by code', () => {
+      fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {'module.w.units': 'kelvin', 'module.w.gone': 1}}));
+      const st = ms.stateFor('w', pkg, {operator: false});
+      assert.deepStrictEqual(st.notApplied.map((n) => [n.setting, n.code]), [['units', 'SETTING_INVALID'], ['gone', 'SETTING_UNKNOWN']]);
+    });
+  });
+
+  describe('reread', () => {
+    let reread = null;
+    before(() => { require('../../lib/logger').createLogger(); reread = require('../../lib/settings-reread'); });
+    const notices = require('../../lib/notices');
+    const WorkerMessage = require('../../lib/worker-message');
+    let dir = null;
+    let saved = null;
+    const pkgOf = (name, settings) => ({name, version: '1.0.0', countinghouse: {settings}});
+    const W = pkgOf('w', {units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}, n: {type: 'integer', min: 1, max: 9, default: 2}});
+    const R = pkgOf('r', {region: {type: 'string', required: true}, tag: {type: 'string'}});
+    const write = (values) => fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values}));
+    const proxy = (name) => Object.assign(Object.create(WorkerMessage.prototype), {hostModuleName: name});
+    // a manager as reread reads one: each loaded module's proxy (or its
+    // per-session record) with the state it runs with (which carries what it
+    // was made from), the restart's copy, and each session's worker
+    function manager() {
+      const mm = {modules: {}, lastSettings: new Map(), unloads: [],
+        sessionWorkers: {list: [], all() { return this.list; }},
+        unloadModule(name) { this.unloads.push(name); }, unloadModuleExternal(name) { this.unloads.push(name); }};
+      for (const pkg of [W, R]) {
+        mm.lastSettings.set(pkg.name, ms.stateFor(pkg.name, pkg, {operator: true, net: []}));
+      }
+      mm.modules.w = proxy('w');
+      mm.modules.w.settings = mm.lastSettings.get('w');
+      // r keeps state per session: its record, and one session's worker
+      mm.modules.r = Object.assign(Object.create(require('../../lib/session-module-record').SessionModuleRecord.prototype), {name: 'r'});
+      mm.modules.r.settings = mm.lastSettings.get('r');
+      const sw = proxy('r');
+      sw.settings = mm.modules.r.settings;
+      mm.sessionWorkers.list.push({name: 'r', sid: 's1', wm: sw});
+      // a module that declares none
+      mm.modules.plain = proxy('plain');
+      return mm;
+    }
+
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validation-29r-'));
+      saved = {settingsFile: options.settingsFile, moduleSettings: options.moduleSettings};
+      options.settingsFile = path.join(dir, 'settings.json');
+      options.moduleSettings = null;
+      notices.resetForTests();
+      write({'module.w.units': 'imperial', 'module.r.region': 'eu'});
+    });
+    afterEach(() => { Object.assign(options, saved); fs.rmSync(dir, {recursive: true, force: true}); });
+
+    it('applies a changed value on every proxy, record and session worker, with a new version', async () => {
+      const mm = manager();
+      const before = {w: mm.modules.w.settings, r: mm.modules.r.settings};
+      write({'module.w.units': 'metric', 'module.w.n': 7, 'module.r.region': 'us'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 2, refused: []});
+      assert.deepStrictEqual(Object.assign({}, mm.modules.w.settings.values), {units: 'metric', n: 7});
+      assert.ok(mm.modules.w.settings.version > before.w.version, 'a new version');
+      assert.strictEqual(mm.lastSettings.get('w'), mm.modules.w.settings, 'the restart\'s copy');
+      assert.deepStrictEqual(Object.assign({}, mm.modules.r.settings.values), {region: 'us'});
+      assert.strictEqual(mm.sessionWorkers.list[0].wm.settings, mm.modules.r.settings, 'each session\'s worker');
+      assert.strictEqual(mm.modules.plain.settings, undefined, 'a module that declares none: untouched');
+      // what a call already sent keeps: the old state object is unchanged
+      assert.strictEqual(before.w.values.units, 'imperial');
+    });
+
+    it('a module whose values did not change keeps its state (no new version)', async () => {
+      const mm = manager();
+      const w = mm.modules.w.settings;
+      write({'module.w.units': 'imperial', 'module.r.region': 'asia'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.strictEqual(mm.modules.w.settings, w);
+    });
+
+    it('atomic per module: any refused value keeps ALL of that module\'s old values; the others apply', async () => {
+      const mm = manager();
+      const w = mm.modules.w.settings;
+      // w: n is valid, units is not -> w keeps imperial and n 2; r applies
+      write({'module.w.units': 'kelvin', 'module.w.n': 7, 'module.r.region': 'us'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 1, refused: [{name: 'module.w.units', code: 'SETTING_INVALID'}]});
+      assert.strictEqual(mm.modules.w.settings, w, 'w: the state it had, whole');
+      assert.deepStrictEqual(Object.assign({}, mm.modules.w.settings.values), {units: 'imperial', n: 2});
+      assert.strictEqual(mm.lastSettings.get('w'), w);
+      assert.deepStrictEqual(Object.assign({}, mm.modules.r.settings.values), {region: 'us'});
+      // a notice to w's sessions, naming the setting, never the value
+      const said = notices.take('w').map((n) => (typeof(n) === 'string' ? n : n.text)).join('\n');
+      assert.match(said, /units/);
+      assert.match(said, /not applied/);
+      assert.ok(!/kelvin/.test(said), said);
+      // and a history line
+      const history = fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      assert.ok(history.some((h) => h.by === 'runtime' && h.setting === 'module.w.units' && /not applied/.test(h.change)), JSON.stringify(history));
+    });
+
+    it('a stored name this version does not declare is not a refusal (it stays in the file, unread)', async () => {
+      const mm = manager();
+      write({'module.w.units': 'metric', 'module.w.gone': 1, 'module.r.region': 'eu'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.strictEqual(mm.modules.w.settings.values.units, 'metric');
+    });
+
+    it('a required setting newly unset applies, and nothing is unloaded (its calls answer SETTING_REQUIRED)', async () => {
+      const mm = manager();
+      write({'module.w.units': 'imperial'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.deepStrictEqual(ms.unsetRequired(mm.modules.r.settings.settings, mm.modules.r.settings.values), ['region']);
+      assert.deepStrictEqual(mm.unloads, [], 'never unloaded');
+    });
+
+    it('the ceiling: a fixed value applies over the file; one rejected keeps the module whole; untrusted keeps every module', async () => {
+      let mm = manager();
+      write({'module.w.units': 'imperial', 'module.w.n': 7, 'module.r.region': 'eu'});
+      let reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'},
+        {ceiling: () => trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling)});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.deepStrictEqual(Object.assign({}, mm.modules.w.settings.values), {units: 'metric', n: 7});
+
+      mm = manager();
+      const w = mm.modules.w.settings;
+      reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'},
+        {ceiling: () => trusted(parsed({moduleSettings: {'w.n': {fixed: 50}}}).ceiling)});
+      assert.deepStrictEqual(reply.refused, [{name: 'module.w.n', code: 'SETTING_INVALID'}]);
+      assert.strictEqual(mm.modules.w.settings, w);
+
+      mm = manager();
+      const kept = {w: mm.modules.w.settings, r: mm.modules.r.settings};
+      reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'},
+        {ceiling: () => ({state: 'untrusted', file: '/x', problem: 'p'})});
+      assert.deepStrictEqual(reply, {applied: 0, refused: [{name: 'module.w', code: 'SETTING_CEILING_UNTRUSTED'}, {name: 'module.r', code: 'SETTING_CEILING_UNTRUSTED'}]});
+      assert.strictEqual(mm.modules.w.settings, kept.w);
+      assert.strictEqual(mm.modules.r.settings, kept.r);
+      assert.deepStrictEqual(mm.unloads, []);
+    });
+
+    it('a value already not applied in the running state, the same value, holds nothing back; a new bad one does', async () => {
+      write({'module.w.units': 'kelvin', 'module.r.region': 'eu'});
+      const mm = manager();
+      assert.deepStrictEqual(mm.modules.w.settings.notApplied.map((n) => n.setting), ['units'], 'kelvin was not applied at the load');
+      write({'module.w.units': 'kelvin', 'module.w.n': 7, 'module.r.region': 'eu'});
+      let reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.deepStrictEqual(Object.assign({}, mm.modules.w.settings.values), {units: 'metric', n: 7});
+      write({'module.w.units': 'celsius', 'module.w.n': 8, 'module.r.region': 'eu'});
+      reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply.refused, [{name: 'module.w.units', code: 'SETTING_INVALID'}]);
+      assert.strictEqual(mm.modules.w.settings.values.n, 7, 'kept whole');
+    });
+
+    it('made from the state the worker runs with: a reload whose worker failed leaves the old one\'s package.json', async () => {
+      const mm = manager();
+      // the restart's copy is a newer version's (its spawn failed); the proxy runs the old
+      const W2 = pkgOf('w', {other: {type: 'string', default: 'x'}});
+      mm.lastSettings.set('w', ms.stateFor('w', W2, {operator: true}));
+      write({'module.w.units': 'metric', 'module.r.region': 'eu'});
+      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(Object.keys(mm.modules.w.settings.settings).sort(), ['n', 'units']);
+      assert.strictEqual(mm.modules.w.settings.made.pkg, W);
+    });
+
+    it('a refusal\'s notice is in its own words: a fixed value rejected names the ceiling (and a history line); values over 32 KiB do not', async () => {
+      const mm = manager();
+      const decl = {};
+      for (let i = 0; i < 32; i += 1) decl[`s${i}`] = {type: 'string', maxLength: 1024};
+      const big = pkgOf('big', decl);
+      mm.modules.big = proxy('big');
+      mm.modules.big.settings = ms.stateFor('big', big, {operator: true});
+      const values = {'module.w.units': 'metric', 'module.r.region': 'eu'};
+      for (let i = 0; i < 32; i += 1) values[`module.big.s${i}`] = 'a'.repeat(1024);
+      write(values);
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'},
+        {ceiling: () => trusted(parsed({moduleSettings: {'w.n': {fixed: 50}}}).ceiling)});
+      assert.deepStrictEqual(reply.refused, [{name: 'module.w.n', code: 'SETTING_INVALID'}, {name: 'module.big', code: 'SETTING_INVALID'}]);
+      assert.match(notices.take('w').join('\n'), /ceiling fixes n/);
+      const saidBig = notices.take('big').join('\n');
+      assert.match(saidBig, /over 32 KiB/);
+      assert.ok(!/ceiling/.test(saidBig), saidBig);
+      const history = fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8');
+      assert.match(history, /"setting":"module\.w\.n"[^\n]*not applied/);
+    });
+
+    it('a stored name this version does not declare writes no history line at a reread', async () => {
+      const mm = manager();
+      write({'module.w.units': 'metric', 'module.w.gone': 1, 'module.r.region': 'eu'});
+      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      const file = path.join(dir, 'history.jsonl');
+      const history = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+      assert.ok(!/module\.w\.gone/.test(history), history);
+    });
+
+    it('a runtime with no --settingsFile: refused whole', async () => {
+      const mm = manager();
+      options.settingsFile = null;
+      await assert.rejects(reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})}), (e) => e.code === 'CONTROL_FAILED');
+    });
+
+    it('single-thread mode: the manager\'s own copy', async () => {
+      const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
+      mm.singleThreadSettings.set('w', ms.stateFor('w', W, {operator: true}));
+      write({'module.w.units': 'metric'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.strictEqual(mm.singleThreadSettings.get('w').values.units, 'metric');
+    });
+
+    it('refused whole, nothing changed: another "what", or a settings file that cannot be read', async () => {
+      const mm = manager();
+      const w = mm.modules.w.settings;
+      await assert.rejects(reread.reread(mm, {type: 'reread', what: 'everything'}, {ceiling: () => ({state: 'none'})}), (e) => e.code === 'CONTROL_FAILED');
+      fs.writeFileSync(options.settingsFile, '{not json');
+      await assert.rejects(reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})}), (e) => e.code === 'CONTROL_FAILED' && /settings file/.test(e.message));
+      assert.strictEqual(mm.modules.w.settings, w);
+    });
+  });
+});

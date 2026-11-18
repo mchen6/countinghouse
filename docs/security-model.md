@@ -657,6 +657,33 @@ the file toward its start value. A lower value than what runs that may not
 be written applies to this start only, and is recorded as that. It is read once
 per process, and again when the file changes.
 
+`moduleSettings` binds the settings modules declare, per
+`"<package>.<setting>"` (the last dot splits them):
+
+```json
+"moduleSettings": {
+  "@acme/weather-tool.shareStats": {"fixed": false},
+  "@acme/weather-tool.units": {"confirm": true},
+  "@acme/repo-helper.defaultRepo": {"conversation": false}
+}
+```
+
+- `{"fixed": <value>}` applies that value whatever `settings.json` says. A
+  value the module's declaration rejects refuses the module's load, with the
+  ceiling's reason.
+- `{"confirm": true}` makes a change in conversation need the user's
+  confirmation.
+- `{"conversation": false}` allows a change at the terminal only.
+- `"conversation": false` directly under `moduleSettings` makes every module
+  setting terminal-only.
+
+Any other shape fails closed, as any key a reader doesn't know does: an
+older runtime or `ch-local` never reads this key as no restriction. Where
+the ceiling binds (the single-identity profile with a settings file), it is
+read again at each load of a module that declares settings, and at each
+`reread`. A ceiling that cannot be trusted refuses such a load; a
+supervised restart keeps the values the module ran with.
+
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
 (by real path) are owned by root and not writable by group or others; on
@@ -1232,6 +1259,18 @@ directory of each module of its closure:
   start refused is told the same way, with `when: "start"`. Without a
   control channel a suspended module stays suspended and listed until
   `POST /restart-module`.
+- **Settings re-read, never an unload.** `{type: "reread", what:
+  "module-settings"}` reads the `module.*` values of `--settingsFile` again,
+  under the ceiling as it is now, for every loaded module that declares
+  settings (`lib/settings-reread.js`). A module with any value refused (or
+  a `fixed` value its declaration rejects, or a ceiling that cannot be
+  trusted) keeps **all** of its old values; the others apply, each with a
+  new version its next call carries. The reply is `{applied, refused:
+  [{name, code}]}`; each refusal is a notice to the module's sessions and,
+  for a value, a `not applied` history line, never the value. A value
+  that already was not applied, unchanged, holds nothing back. A setting
+  change never unloads a module: one left with a required setting unset
+  stays loaded, and its calls answer `SETTING_REQUIRED`.
 
 The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
 is still taken until it is removed, never mixed with the module form in one

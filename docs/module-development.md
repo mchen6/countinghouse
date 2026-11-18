@@ -663,8 +663,8 @@ module.exports = async function forecast(input, ctx) {
 ```
 
 - `ctx.settings` holds the values for this call: the defaults, then the
-  user's (or the operator's) values. It is frozen and has no prototype. An
-  unset setting is absent.
+  user's (or the operator's) values, then any value the operator's ceiling
+  fixes. It is frozen and has no prototype. An unset setting is absent.
 - A change applies from the next call: a call in flight keeps the values it
   started with.
 - A task keeps the values of its first run for its life, so an answer to
