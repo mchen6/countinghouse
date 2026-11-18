@@ -287,8 +287,10 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
 
   // the reviewer's ruling (1) on #340: Task 6 wires session-packs in production, with no default left in place
   describe('the production wiring (RouteManager configureSessionPacks)', () => {
+    // required as the file loads, outside any test's 2 s: its first require
+    // is the heavy part, and on a loaded machine timed this test out
+    const RouteManager = require('../../lib/route-manager');
     it('records, devices, overrides, the ceiling and the open sessions all come from the runtime', () => {
-      const RouteManager = require('../../lib/route-manager');
       let ceiling = {state: 'none'};
       settings.configure({ceiling: () => ceiling, defaultOf: () => 8 * 1024 * 1024, isLive: (id) => open.has(id), ceilingMemoMs: 0});
       // a pack loaded at start (the terminal's) is global; ci is loaded after, for a session

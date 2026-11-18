@@ -191,4 +191,74 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       roles.expandLoadList = realExpand;
     }
   });
+
+  // the medium review of #429's high fixes
+  describe('the medium review of the high fixes', () => {
+    const storeDir = (name, version) => path.join(root, 'store', ...name.split('/'), version);
+    const moduleForm = (name, version = '1.0.0') => {
+      const dir = storeDir(name, version);
+      if (!fs.existsSync(dir)) writeModule(dir, {name, version, role: 'scenario'});
+      return {type: 'load', name, dirs: {[name]: dir}};
+    };
+
+    it('medium 1: a module-form unit is under its view key while it loads, never its package name', async () => {
+      const mm = runtime();
+      const seen = [];
+      const load = mm.loadModuleFromPath;
+      mm.loadModuleFromPath = (p, name, version, cb) => { seen.push(...mip.packRecords(mm).map((r) => r.pack)); load(p, name, version, cb); };
+      await mip.loadPack(mm, moduleForm('ci-failure-triage'), {});
+      assert.ok(seen.length > 0);
+      assert.ok(seen.every((k) => k === mip.moduleKey('ci-failure-triage')), JSON.stringify(seen));
+    });
+
+    it('medium 3: a names-only reload whose type the message leaves out is checked once, as a reload', async () => {
+      const mm = runtime();
+      await mip.loadPack(mm, moduleForm('@t/ch-pack-r'), {});
+      const dirs = {'@t/ch-pack-r': storeDir('@t/ch-pack-r', '1.0.0')};
+      await mip.reloadPack(mm, {names: ['@t/ch-pack-r'], dirs}, {});
+      assert.strictEqual(mm.modules['@t/ch-pack-r'].packageInfo.version, '1.0.0');
+    });
+
+    it('medium 2 and 7: a view rebuild that throws never stops a unit being told; a pack-form unit with no pack name is keyed by its own', async () => {
+      const mm = runtime();
+      await loadPf(mm);
+      mm.packsInPlace.get('ch-pack-pf').pack = null;
+      const told = [];
+      const gone = [];
+      const channel = require('../../lib/control-channel');
+      const realTell = channel.tell;
+      const realGone = sessionPacks.packsGone;
+      channel.tell = (m) => { told.push(m.name); return true; };
+      sessionPacks.packsGone = (keys) => { gone.push(...keys); throw new Error('a listener failed'); };
+      try {
+        await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
+      } finally {
+        channel.tell = realTell;
+        sessionPacks.packsGone = realGone;
+      }
+      assert.deepStrictEqual(gone, ['ch-pack-pf']);
+      assert.deepStrictEqual(told, ['ch-pack-pf']);
+    });
+
+    it('medium 5: a module with no supervisor record at its turn is not given up, and nothing throws on the channel\'s chain', async () => {
+      const mm = Object.assign(Object.create(ModuleManager.prototype), {generations: {'ch-step-x': 1},
+        supervisor: {records: {}, isCurrent: (n, r) => mm.supervisor.records[n] === r, status: () => null}});
+      const channel = require('../../lib/control-channel');
+      const realEnqueue = channel.enqueue;
+      let queued = null;
+      channel.enqueue = (fn) => { queued = fn; return true; };
+      const was = cli.controlChannel;
+      cli.setOptions({controlChannel: 'ipc'});
+      try {
+        mm.givenUp('ch-step-x', 'MODULE_SUSPENDED');
+      } finally {
+        channel.enqueue = realEnqueue;
+        cli.setOptions({controlChannel: was});
+      }
+      assert.strictEqual(typeof(queued), 'function');
+      mm.packsInPlace = new Map([['ch-pack-pf', {pack: 'pf', modules: new Map([['ch-step-x', {}]])}]]);
+      await queued();
+      assert.ok(mm.packsInPlace.has('ch-pack-pf'), 'left alone');
+    });
+  });
 });
