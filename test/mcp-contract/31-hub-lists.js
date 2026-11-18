@@ -175,8 +175,8 @@ describe('M8: the listen hub, resources and prompts', function() {
     });
 
     it('an icon carrying the registry\'s digest counts by it, never by its data (F3-2)', async() => {
-      const D = Symbol.for('countinghouse.iconDigest');
-      const icon = (data, digest) => { const i = {src: `data:image/png;base64,${data}`, mimeType: 'image/png'}; i[D] = digest; return [i]; };
+      const iconDigests = require('../../lib/mcp/icon-digest');
+      const icon = (data, digest) => { const i = {src: `data:image/png;base64,${data}`, mimeType: 'image/png'}; iconDigests.set(i, digest); return [i]; };
       let tools = [{name: 'a', icons: icon('AAAA', 'sha256:one')}];
       const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
       const got = [];
