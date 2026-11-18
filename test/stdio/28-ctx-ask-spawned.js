@@ -112,7 +112,7 @@ describe('--stdio, spawned: a handler\'s ctx.ask (MCP completeness M13)', functi
       // a question, not a result: nothing of the handler's is in it
       assert.deepStrictEqual(Object.keys(first.result).filter((k) => k !== '_meta').sort(), ['inputRequests', 'requestState', 'resultType']);
       assert.deepStrictEqual(first.result.inputRequests, {answer: {method: 'elicitation/create', params: {mode: 'form', message: 'asks-questions: Do it?', requestedSchema: FORM}}});
-      assert.match(first.result.requestState, /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
+      assert.match(first.result.requestState, /^v2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
       const retry = await call(2, {what: 'it'}, accept(first.result.requestState, {yes: true, note: 'go'}));
       assert.ok(retry.result != null && retry.result.isError !== true, JSON.stringify(retry).slice(0, 500));
       assert.deepStrictEqual([retry.result.structuredContent.asked, retry.result.structuredContent.answer], [true, {yes: true, note: 'go'}]);

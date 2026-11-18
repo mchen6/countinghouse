@@ -964,14 +964,18 @@ bounds it:
   with a question only from the main thread's own record that the handler
   asked one. Nothing a module returns or throws can produce that answer.
 - **The retry's `requestState`** is the client's to send, so the
-  attacker's to write. It is `v1.<payload>.<mac>`: an HMAC-SHA256 under a
-  key derived from the identity secret, over the payload and the call it
-  is good for (the caller's opaque id, the session, the method, the tool
-  and a hash of the arguments). It lasts five minutes and is used once.
-  **The payload is readable, not private:** it holds a nonce, the expiry,
-  the question's key and declared name, the round and the earlier rounds'
-  answers, which the client already has. Nothing secret may ever be put
-  in it.
+  attacker's to write. It is `v2.<sealed payload>.<mac>`: an HMAC-SHA256
+  under a key derived from the identity secret, over the sealed payload and
+  the call it is good for (the caller's opaque id, the session, the method,
+  the tool and a hash of the arguments). It lasts five minutes and is used
+  once. **The payload is sealed:** AES-256-GCM under a key derived from the
+  MAC key, a key of its own for each state (a fresh salt), checked by the
+  MAC before it is opened. It holds a nonce, the expiry, the question's key
+  (which names the question and the module that asked, an unlisted part
+  included), the round and the earlier rounds' answers. It is padded to a
+  length set by the answers alone, which the client already has, so its
+  length says nothing of who asked. A `v1` state, whose payload was in the
+  clear, is refused.
 - **One refusal.** A state that is not this call's, has expired or was
   already used gets one answer with one text (`ASK_STATE_INVALID`); which
   it was is in the runtime's own log line only. A store that cannot say
