@@ -85,7 +85,24 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     assert.deepStrictEqual(await ModuleManager.prototype.sessionSettled.call(m, A), {ps: true}, 'asked once, then forgotten');
   });
 
-  it('a broker still busy past the bound at a session\'s end: that partition is kept, and the end says so (false)', async () => {
+  it('a late settle is cleared by a later clean one under the same name, and a module\'s unload forgets all of its', async () => {
+    const {ModuleLifecycle} = require('../../lib/module-lifecycle');
+    const lc = new ModuleLifecycle();
+    lc.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(lc.wentLate(`ps\0${A}`), true);
+    lc.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(true)});
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(lc.wentLate(`ps\0${A}`), false, 'its next worker settled cleanly');
+    lc.track(`ps\0${B}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
+    lc.track(`other\0${B}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
+    await new Promise((r) => setImmediate(r));
+    lc.forgetLateUnder('ps\0');
+    assert.strictEqual(lc.wentLate(`ps\0${B}`), false);
+    assert.strictEqual(lc.wentLate(`other\0${B}`), true, 'another module\'s kept');
+  });
+
+  it('a broker still busy past the bound at a session\'s end: that partition is kept, and the end says so (\'kept\')', async () => {
     await make(A);
     mm.sessionSettled = () => Promise.resolve({ps: false});
     const LOG = require('../../lib/logger');
@@ -94,7 +111,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     try {
       const ending = lifetime.ended(mm, A, 'bye', env);
       releaseStop();
-      assert.strictEqual(await ending, false);
+      assert.strictEqual(await ending, 'kept');
     } finally {
       LOG.E = realE;
     }
@@ -120,7 +137,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     LOG.E = (e) => logged.push(e);
     try {
       const bare = {modules: mm.modules, sessionWorkers: {stopSession: () => Promise.resolve()}};
-      assert.strictEqual(await lifetime.ended(bare, A, 'bye', env), false);
+      assert.strictEqual(await lifetime.ended(bare, A, 'bye', env), 'kept');
       assert.strictEqual(logged.length, 1);
     } finally {
       LOG.E = realE;
@@ -131,7 +148,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     await make(A);
     const ending = lifetime.ended(mm, A, 'closed', env);
     releaseStop();
-    await ending;
+    assert.strictEqual(await ending, 'nothing', 'nothing removed: the daemon keeps it, to restore');
     assert.deepStrictEqual(order, ['stop a', 'stopped a', 'settled a']);
     assert.ok(has(A));
   });
@@ -220,7 +237,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.deepStrictEqual(total(), before, 'back to B\'s');
     });
 
-    it('a share is given back whole, whatever its walk did: a failed walk counted the limit + 1, a truncated one its count', async () => {
+    it('a share is given back whole, whatever its walk did: a failed walk counted 0 (unknown, never pinning the module), a truncated one its count', async () => {
       await make(A);
       await make(B);
       await make(C);
@@ -236,7 +253,9 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       }
       const built = quota().bytes;
       const counted = (sid) => quota().shares.get(sid).bytes;
-      assert.strictEqual(counted(A), 1024 * 1024 + 1, 'A\'s walk failed: counted as the limit + 1, never as nothing');
+      assert.strictEqual(counted(A), 0, 'A\'s walk failed: counted 0 (the reviewer\'s round 5: no module-wide ENOSPC from one failed walk)');
+      assert.strictEqual(quota().knows(A), false, 'and unknown');
+      assert.ok(quota().bytes < quota().maxBytes * 3, 'the module is not pinned past its limit by it');
       assert.ok(counted(B) > 1024 * 1024, 'B\'s stopped past 1 MB: it added what it counted');
       const bShare = counted(B);
       const aShare = counted(A);
@@ -260,6 +279,10 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       await end(A, 'unsettled');
       assert.ok(!has(A));
       assert.deepStrictEqual(total(), [2000, 3]);
+      const ending = lifetime.ended(mm, B, 'bye', env);
+      releaseStop();
+      assert.strictEqual(await ending, 'removed', 'an end with its partitions dealt with says so');
+      assert.deepStrictEqual(total(), [0, 0]);
     });
 
     it('a removal that fails gives nothing back; a module the session never ran is left alone; sessions/ is kept at runtime', async () => {
@@ -321,8 +344,9 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
         LOG.E = realE;
       }
       assert.ok(view != null && typeof(view.reserve) === 'function');
-      await spawn(A);   // its share made now, after the failed build
-      assert.strictEqual(quota().knows(A), false, 'a partition the failed walk didn\'t reach is unknown, never falsely known');
+      assert.strictEqual(mm.sessionQuotas.get('ps'), undefined, 'a failed build is dropped: the next spawn builds it again');
+      await spawn(A);
+      assert.strictEqual(quota().knows(A), true, 'built again, whole this time');
       await end(A);
       assert.ok(!has(A));
     });
@@ -495,8 +519,21 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       } finally {
         fs.promises.readdir = realReaddir;
       }
-      assert.strictEqual(quota().knows(A), false);
-      assert.ok(quota().bytes > quota().maxBytes, 'held past the limit (nothing given back from it) until it is built again');
+      assert.strictEqual(mm.sessionQuotas.get('ps'), undefined, 'dropped: never pinned, never kept as the module\'s');
+      fs.writeFileSync(data(A, 'f'), Buffer.alloc(4000));
+      await spawn(B);
+      assert.strictEqual(quota().knows(A), true, 'the next spawn built it again, and read it this time');
+      assert.strictEqual(quota().shares.get(A).bytes, 4000);
+    });
+
+    it('only a session id under sessions/ is a partition: a stray entry is never counted', async () => {
+      await make(A);
+      fs.mkdirSync(path.join(env.dataRoot, 'ps', 'sessions', 'old'), {recursive: true});
+      fs.writeFileSync(path.join(env.dataRoot, 'ps', 'sessions', 'old', 'big'), Buffer.alloc(50000));
+      fs.writeFileSync(data(A, 'f'), Buffer.alloc(1000));
+      await spawn(A);
+      assert.strictEqual(quota().bytes, 1000);
+      assert.strictEqual(quota().shares.has('old'), false);
     });
 
     it('a share can\'t drain the total by deleting files it never counted; its own charges are given back at its end', async () => {

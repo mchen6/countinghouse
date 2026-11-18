@@ -194,9 +194,42 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
     for (let i = 0; i < 3; i++) (await h.get('m', A)).wm.emit('exit');
     await h.get('m', B);
     await h.sw.stopSession(A);
+    h.sw.sessionClosed(A);   // (its close, as lib/sessions.js tells the pool)
     assert.ifError((await h.get('m', A)).err, 'its exits forgotten: no suspension held for it');
     await h.sw.stopSession(B);
     assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [A]);
+  });
+
+  // the reviewer's round 5: the rule doesn't rest on listener order. From
+  // stopSession on, none is spawned for the session, though it is still open
+  // (its own close not run yet); its close clears the mark
+  it('stopSession marks the session at once: get refuses it while it is still open, and a spawn under way is not kept; its close clears it', async () => {
+    const h = harness({max: 4, delay: 'manual'});
+    const pending = h.get('m', A);
+    await tick();
+    const stopped = h.sw.stopSession(A);
+    assert.strictEqual((await h.get('m', A)).err.code, 'DEVICE_NOT_FOUND', 'refused at once, live(sid) still true');
+    h.pendingSpawns.shift()();
+    const late = await pending;
+    assert.ok(late.err != null, 'the spawn under way is given up');
+    await stopped;
+    assert.strictEqual((await h.get('m', A)).err.code, 'DEVICE_NOT_FOUND', 'still refused after the stop, while open (live): no reuse');
+    h.sw.sessionClosed(A);
+    const again = h.get('m', A);
+    await tick();
+    h.pendingSpawns.shift()();
+    assert.ifError((await again).err, 'cleared by its close');
+  });
+
+  it('a stop whose session has already closed clears its own mark (no close is coming)', async () => {
+    const open = new Set([A]);
+    const h = harness({max: 4, live: (sid) => open.has(sid)});
+    await h.get('m', A);
+    const stopped = h.sw.stopSession(A);
+    open.delete(A);
+    await stopped;
+    open.add(A);   // (a test-only reuse: shows the mark is gone)
+    assert.ifError((await h.get('m', A)).err);
   });
 
   // the security pass of 11-17, the reviewer's ruling: a liveness check, no

@@ -21,6 +21,7 @@ const SVC = 'urn:countinghouse-test:serviceID:stateService';
 describe('sessions 31: a per-session module\'s worker is its call\'s session\'s (R1 Task 5)', () => {
   const sessions = require('../../lib/sessions');
   let realGet;
+  let realLive;
   let realAccess;
   let live;
   let dm;
@@ -33,13 +34,16 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     // own path (run in one process, as CI runs a folder)
     require('../../lib/session-packs').resetForTests();
     realGet = sessions.get;
+    realLive = sessions.live;
     sessions.get = (id) => (live.has(id) ? {id} : null);
+    sessions.live = (id) => live.has(id);
     realAccess = DeviceManager.prototype.replyAfterQueryAccessCheck;
     // the access check granted: what is under test is what comes after it
     DeviceManager.prototype.replyAfterQueryAccessCheck = function(wm, msgID, deviceID, identity, onGranted) { return onGranted(); };
   });
   after(() => {
     sessions.get = realGet;
+    sessions.live = realLive;
     DeviceManager.prototype.replyAfterQueryAccessCheck = realAccess;
   });
   beforeEach(() => {

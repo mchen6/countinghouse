@@ -43,12 +43,13 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
     assert.deepStrictEqual(quiet, []);
   });
 
-  it('boundedIdle: an idle() that fails counts as not idle, and clears its bound (no later "not idle" line)', async () => {
+  it('boundedIdle: an idle() that fails counts as not idle, is logged with its error, and clears its bound (no later "not idle" line)', async () => {
     const {boundedIdle} = require('../../lib/module-lifecycle');
     const lines = [];
-    assert.strictEqual(await boundedIdle({inFlight: 1, idle: () => Promise.reject(new Error('x'))}, 50, (line) => lines.push(line), 'm'), false);
+    assert.strictEqual(await boundedIdle({inFlight: 1, idle: () => Promise.reject(new Error('the idle wait broke'))}, 50, (line) => lines.push(line), 'm'), false);
     await new Promise((r) => setTimeout(r, 80));
-    assert.deepStrictEqual(lines, []);
+    assert.strictEqual(lines.length, 1, JSON.stringify(lines));
+    assert.ok(/its idle wait failed \(the idle wait broke\)/.test(lines[0]), lines[0]);
   });
 
   it('settleAfterExit always settles, even when closing the bridge fails (review, plan 4 Task 5)', async () => {

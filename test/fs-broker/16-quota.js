@@ -152,4 +152,15 @@ describe('fs-broker 16: the disk quota', function() {
       assert.deepStrictEqual([t.quota.shares.get('s').inflightBytes, t.quota.shares.get('s').inflightEntries], [0, 0]);
     } finally { await t.done(); }
   });
+
+  it('an op whose measure of what changed throws still settles: its reservation counted as used, nothing left in flight', async () => {
+    const t = await setup('enforce', {quota: {maxBytes: 100000, maxEntries: 100}, session: 's'});
+    try {
+      const boom = Object.assign(new Error('stat failed'), {code: 'EIO'});
+      await assert.rejects(t.broker.counted({virtual: '/data/f', res: {kind: 'root', root: {quota: true}}}, 300, 1, 'write', () => Promise.resolve('ok'), () => Promise.reject(boom)), (e) => e === boom);
+      const share = t.quota.shares.get('s');
+      assert.deepStrictEqual([share.inflightBytes, share.inflightEntries], [0, 0], 'nothing left in flight');
+      assert.deepStrictEqual([t.quota.bytes, t.quota.entries], [300, 1], 'the reservation counted as used');
+    } finally { await t.done(); }
+  });
 });
