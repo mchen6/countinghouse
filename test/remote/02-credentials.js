@@ -269,14 +269,11 @@ describe('remote 02: version 2, by module', () => {
       }
     });
 
-    it('a variable name that holds no secret (PATH, HOME, LANG, LC_*, TZ, ...) bound by one module is never denied to every worker', () => {
-      const s = credentials.snapshot();
-      try {
-        credentials.configure(v2file({m: {[ORIGIN]: {PATH: SLOT1, LC_ALL: SLOT2}}}));
-        assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), [SLOT1, SLOT2]);
-      } finally {
-        credentials.restore(s);
+    it('a binding of a variable that holds no secret (PATH, HOME, LANG, LC_*, TZ, ...) is refused, naming it; in a later entry too', () => {
+      for (const name of ['PATH', 'HOME', 'USER', 'LANG', 'TZ', 'TMPDIR', 'LC_ALL']) {
+        assert.throws(() => load({m: {[ORIGIN]: {[name]: SLOT1}}}), (e) => /--remoteCredentials/.test(e.message) && e.message.includes(`${name} is not a credential`), name);
       }
+      assert.throws(() => credentials.checkEntry('b', {'https://api.b.example': {PATH: SLOT2}}), /PATH is not a credential/);
     });
 
     it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2), no pack\'s version 1 names', () => {
