@@ -108,12 +108,9 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       assert.deepStrictEqual(kv.keysWithPrefix('').sort(), ['m:mod:k', `${ns.sessionPrefixFor('mod', B)}k`, `${ns.sessionPrefixFor('mod2', A)}k`].sort());
       assert.deepStrictEqual(await partition.remove(data, kv, 'mod', A), {keys: 0, dirs: false}, 'idempotent');
       await partition.remove(data, kv, 'mod', B);
-      // at runtime an empty sessions/ stays (a new session's ensure may be
-      // making its partition under it); the start's sweep prunes it
-      assert.ok(fs.existsSync(path.join(data, 'mod', 'sessions')), 'sessions/ kept at runtime');
-      await partition.ensure(data, 'mod', B);
-      await partition.remove(data, kv, 'mod', B, {prune: true});
-      assert.ok(!fs.existsSync(path.join(data, 'mod', 'sessions')), 'pruned once empty');
+      // an empty sessions/ stays: a new session's ensure may be making its
+      // partition under it at any time (the start's sweep runs after listen)
+      assert.ok(fs.existsSync(path.join(data, 'mod', 'sessions')), 'sessions/ kept');
       assert.ok(fs.existsSync(path.join(data, 'mod')), 'the module\'s own directory stays');
     });
 

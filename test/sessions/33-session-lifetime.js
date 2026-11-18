@@ -363,6 +363,53 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, 2100, 'a later write still charged');
     });
 
+    it('a decrease never takes another op\'s reservation in flight: an unknown share can\'t write uncounted that way', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'old'), Buffer.alloc(1024 * 1024));   // uncounted: A's walk fails
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
+      const realM = walk.measure;
+      walk.measure = (roots, opts) => (roots[0][0].endsWith(A) ? Promise.reject(new Error('failed')) : realM(roots, opts));
+      try {
+        await spawn(B);
+      } finally {
+        walk.measure = realM;
+      }
+      const viewA = await spawn(A);
+      viewA.reserve(100, 1, 'write', '/data/n');   // op 1, in flight
+      viewA.settle(0, 0, -1024 * 1024, -1);         // op 2 removes the uncounted 1 MB
+      assert.strictEqual(quota().bytes, 2100, 'op 1\'s 100 still counted');
+      viewA.settle(100, 1, 100, 1);                 // op 1 lands
+      assert.strictEqual(quota().bytes, 2100, 'and counted once');
+    });
+
+    it('the build walks a few partitions at a time, never all at once', async () => {
+      const ids = Array.from({length: 12}, (_, i) => i.toString(16).repeat(32).slice(0, 32));
+      for (const id of ids) await partition.ensure(env.dataRoot, 'ps', id);
+      let now = 0;
+      let most = 0;
+      const realM = walk.measure;
+      walk.measure = async(roots, opts) => { now++; most = Math.max(most, now); await new Promise((r) => setTimeout(r, 10)); now--; return realM(roots, opts); };
+      try {
+        await spawn(ids[0]);
+      } finally {
+        walk.measure = realM;
+      }
+      assert.ok(most > 1 && most <= 4, `at most 4 at once: ${most}`);
+    });
+
+    it('the start\'s sweep gives back what a live session\'s quota counted of the partitions it removes', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'f'), Buffer.alloc(3000));
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
+      await spawn(B);   // B's spawn built the quota after listen, counting A's ended partition
+      assert.strictEqual(quota().bytes, 5000);
+      await lifetime.sweepAtStart({has: (id) => id === B}, env, {mm});
+      assert.ok(!has(A) && has(B));
+      assert.strictEqual(quota().bytes, 2000, 'A\'s share given back with its partition');
+    });
+
     it('a sessions/ that can\'t be read leaves every share unknown', async () => {
       await make(A);
       const realReaddir = fs.promises.readdir;
@@ -451,6 +498,27 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     notices.openSession(A, null);
     lifetime.sessionOpened(A);
     assert.deepStrictEqual(notices.take('ps', A), [], 'once');
+  });
+
+  it('the sweep asks keep as it reaches each partition: once the runtime is stopping (keep says yes), the rest are kept', async () => {
+    await make(A);
+    await make(B);
+    await make(C);
+    let stopping = false;
+    const keep = {has: () => { const kept = stopping; stopping = true; return kept; }};
+    assert.deepStrictEqual(await lifetime.sweepAtStart(keep, env), {removed: 1, failed: 0, skipped: 0}, 'the first only, before the stop');
+    assert.strictEqual([A, B, C].filter(has).length, 2);
+  });
+
+  it('D3 when the listing before listen() failed: what the sweep removed decides', async () => {
+    await make(A);
+    const broken = {dataRoot: env.dataRoot, kv: {keysWithPrefix: () => { throw new Error('briefly gone'); }}};
+    await lifetime.checkResetAtStart([], broken);   // undecided
+    await lifetime.sweepAtStart(new Set(), env, {restoredNone: true});
+    const notices = require('../../lib/notices');
+    notices.openSession(B, null);
+    lifetime.sessionOpened(B);
+    assert.deepStrictEqual(notices.take('ps', B), [lifetime.RESET_AT_START]);
   });
 
   it('a sweep that cannot run is logged, never fatal', async () => {

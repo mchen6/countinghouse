@@ -181,7 +181,8 @@ module.exports = async (input) => {
     await stop();
     assert.ok(fs.existsSync(dirOf(a.id)), 'the runtime\'s stop removed nothing');
     secret = await up();
-    assert.ok(!fs.existsSync(dirOf(a.id)), 'swept');
+    // swept once it listens, in the background
+    assert.ok(await until(async() => !fs.existsSync(dirOf(a.id)), 15000), 'swept');
     const c = await open(secret);
     const first = await c.call('touch');
     assert.deepStrictEqual(outOf(first), {file: 1, store: 1, memory: 1});
