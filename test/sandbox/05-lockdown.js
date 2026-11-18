@@ -136,22 +136,25 @@ describe('sandbox 05: worker lockdown', function() {
     }
     // #406's second review: a parent whose path is lib/ and whose filename is
     // the module's own poisoned Node's relative-resolve cache, so the
-    // runtime's first getHostIp got the module's decoy: refused in both modes
-    it('a parent whose path, paths and filename disagree is refused and reported, and the runtime\'s later require is not poisoned', async () => {
-      const from = server.output.length;
-      const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'poisonRelative'}));
-      assert.strictEqual(r.outcome, 'blocked', JSON.stringify(r));
-      await waitFor(() => server.output.slice(from).includes('violation require ./bind-address (a parent whose path, paths and filename disagree)'), 20000,
-        'the forged parent\'s violation line');
+    // runtime's first getHostIp got the module's decoy. Node is now handed a
+    // shadow built from the filename alone: the module's load is its own,
+    // recorded under its own directory, and the runtime's getHostIp is clean
+    // (the route throws POISONED otherwise)
+    it('a parent whose path is lib/ and whose filename is the module\'s own no longer poisons the runtime\'s later require', async () => {
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'poisonRelative'})), {outcome: 'allowed', code: null});
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null});
     });
-    it('each condition of the parent check on its own, and a parent that changes after it, is refused; createRequire still loads', async () => {
-      for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'objectRequest', 'isMain']) {
+    it('every forged parent the reviews found leaves the runtime unpoisoned; a request that is no string, isMain and a throwing filename are refused', async () => {
+      for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'kURL', 'builtinModule', 'objectRequest', 'isMain', 'filenameThrows']) {
         const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'forgeParent', arg: variant}));
-        assert.strictEqual(r.outcome, 'blocked', `${variant}: ${JSON.stringify(r)}`);
+        if (['objectRequest', 'isMain', 'filenameThrows'].includes(variant)) assert.strictEqual(r.outcome, 'blocked', `${variant}: ${JSON.stringify(r)}`);
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null}, `after ${variant}`);
       }
-      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null});
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
+    });
+    it('Node\'s linkage is restored without running module code, and kept for a module\'s own require', async () => {
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageSpy'})), {outcome: 'allowed', code: null});
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageKept'})), {outcome: 'allowed', code: null});
     });
     if (mode === 'audit') {
       it('a module that replaces Module._load is reported', async () => {

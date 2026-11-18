@@ -45,9 +45,10 @@ const ATTEMPTS = {
     module.constructor._load('./bind-address', forged, false);
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
   },
-  // each condition of the parent check on its own (the medium review of
-  // cb3ce40e): a parent that agrees in all but one, or that changes once
-  // the check has passed, is refused; createRequire's own Module still loads
+  // a forged parent of every kind the reviews of #406 found: none of them
+  // may record the module's decoy under lib/'s key (the shadow parent
+  // takes only its filename); a request that is no string, isMain and a
+  // filename that throws are refused
   forgeParent:      (arg) => {
     const path = require('path');
     const M = module.constructor;
@@ -66,8 +67,20 @@ const ATTEMPTS = {
         const p = agreeing(ownDir);
         Object.defineProperty(p, 'id', {configurable: true, get() { this.path = libDir; return 'x'; }});
         return p;
-      }
+      },
+      // a lib/ parent that agrees, with Node's internal URL (an own symbol
+      // of a Module Node resolved for) pointing at the module's own file
+      kURL: () => {
+        const p = agreeing(libDir);
+        const donor = require.cache[key];
+        const sym = Object.getOwnPropertySymbols(donor).find((s) => /url/i.test(String(s)));
+        if (sym != null) p[sym] = require('url').pathToFileURL(path.join(ownDir, 'decoy.js')).href;
+        return p;
+      },
+      // (its own throw, in words of its own: blocked only if the wrapper refuses)
+      filenameThrows: () => Object.defineProperty({}, 'filename', {get() { throw new Error('the module\'s own throw'); }})
     };
+    if (arg === 'builtinModule') return M._load('module', Object.assign(agreeing(ownDir), {path: libDir}), false);
     if (arg === 'objectRequest') {
       const p = agreeing(ownDir);
       return M._load({toString() { p.path = libDir; return './bind-address'; }}, p, false);
@@ -76,6 +89,33 @@ const ATTEMPTS = {
     return M._load('./bind-address', variants[arg](), false);
   },
   createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
+  // Node's linkage is restored without running module code: a parent setter
+  // on Module.prototype can't be added (Node's is not configurable), so an
+  // own one on the runtime's Module, and a children accessor on it, are
+  // each set while the runtime requires through it; neither may run
+  linkageSpy:       () => {
+    const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
+    const runtime = require.cache[key];
+    const seen = [];
+    const kids = runtime.children;
+    Object.defineProperty(runtime, 'children', {configurable: true, get() { seen.push('children'); return kids; }, set() { seen.push('children='); }});
+    const kid = require.cache[require('path').join(require('path').dirname(key), 'bind-address.js')];
+    if (kid != null) Object.defineProperty(kid, 'parent', {configurable: true, get() { seen.push('parent'); return undefined; }, set() { seen.push('parent='); }});
+    try {
+      CHUtil.getHostIp();
+    } finally {
+      Object.defineProperty(runtime, 'children', {value: kids, writable: true, enumerable: true, configurable: true});
+      if (kid != null) delete kid.parent;
+    }
+    if (seen.length > 0) throw Object.assign(new Error(`linkage ran module code: ${seen.join(', ')}`), {code: 'SEEN'});
+  },
+  // and kept: the module's own require leaves module.children and the
+  // child's parent as Node would
+  linkageKept:      () => {
+    const kid = require('../../lib/kid');
+    const child = module.children.find((c) => c.exports === kid);
+    if (child == null || child.parent !== module) throw Object.assign(new Error('unlinked'), {code: 'UNLINKED'});
+  },
   hostIpClean:      () => {
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
   },
