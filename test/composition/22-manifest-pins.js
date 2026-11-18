@@ -55,6 +55,27 @@ describe('composition 22: declarations pinned before the module runs, and every 
     assert.strictEqual(added(B, 'adopted').length, 1, lines.join('\n'));
   });
 
+  // M3 (#413 section 6.1): the remotes join the pin.
+  it('the remotes: a supervised restart keeps the pinned ones and logs the file\'s; an operator adopts and logs; the same ones log nothing', () => {
+    const p = pins();
+    const remote = (url) => ({remotes: [{name: 'gh', url: url, credential: 'TOKEN'}]});
+    const withRemote = (url) => fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'm', countinghouse: Object.assign({calls: [A]}, remote(url))}));
+    withRemote('https://a.example/mcp');
+    p.pin('m', mod, true);
+    assert.deepStrictEqual(lines, []);
+    withRemote('https://b.example/mcp');
+    assert.strictEqual(p.pin('m', mod, false).countinghouse.remotes[0].url, 'https://a.example/mcp');
+    assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (not adopted: the pin from the last operator action stays): ' +
+      '[{"name":"gh","url":"https://b.example/mcp","credential":"TOKEN"}]']);
+    lines = [];
+    assert.strictEqual(p.pin('m', mod, true).countinghouse.remotes[0].url, 'https://b.example/mcp');
+    assert.deepStrictEqual(lines, ['module sandbox: m: its remotes changed since its last pin (adopted): [{"name":"gh","url":"https://b.example/mcp","credential":"TOKEN"}]']);
+    lines = [];
+    p.pin('m', mod, true);
+    p.pin('m', mod, false);
+    assert.deepStrictEqual(lines, []);
+  });
+
   it('a supervised restart keeps the pin; a call added on disk is logged at each one, not adopted', () => {
     const p = pins();
     write([A]);
