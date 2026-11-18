@@ -125,23 +125,47 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     assert.strictEqual(dm.notifyDeviceLoad['some-device'], waiting);
   });
 
-  // #427's high review, 6: a hop that waited on a module being replaced
-  // until its call's end answers MODULE_RELOADING, never CALL_TOKEN_INVALID
-  it('high 6: a hop that waits a replacement out answers MODULE_RELOADING, before its token expires', (done) => {
+  // #427's high review, 6, and the medium review of its fixes, 4: a hop to
+  // a module being replaced waits only once its own checks have passed, and
+  // a callee still being replaced is answered MODULE_RELOADING through the
+  // missing-device path (after the access check), never CALL_TOKEN_INVALID
+  it('high 6: a hop with no verdict is answered at once, not after waiting a replacement out', (done) => {
     const callTokens = require('../../lib/call-tokens');
     const dm = Object.create(DeviceManager.prototype);
     dm.deviceMap = {};
     dm.moduleManager = {};
     dm.replacingInPlace = () => true;
-    const token = callTokens.issue({billingKey: 'k', workerId: 4271, deviceID: 'd', ttlMs: 400});
+    const token = callTokens.issue({billingKey: 'k', workerId: 4271, deviceID: 'd', ttlMs: 60000});
+    const started = Date.now();
     const callerWM = {workerId: 4271, sendActionInvokeReplyToChild: (reply) => {
       callTokens.drop(token);
       try {
-        assert.strictEqual(reply.errCode, 'MODULE_RELOADING', JSON.stringify(reply));
+        assert.strictEqual(reply.errCode, 'CTX_CALL_NOT_READY', JSON.stringify(reply));
+        assert.ok(Date.now() - started < 1000, 'no wait');
         done();
       } catch (e) { done(e); }
     }};
     dm.sendInvokeActionMessageToWorker('k', 'k', 'dev', 'svc', 'act', {}, 1, callerWM, token);
+  });
+
+  it('high 6: a callee still being replaced is MODULE_RELOADING on the missing-device path', () => {
+    const dm = Object.create(DeviceManager.prototype);
+    dm.deviceMap = {};
+    dm.moduleManager = {};
+    dm.replacingInPlace = () => true;
+    assert.strictEqual(dm.missingDeviceErrorForHop('dev').code, 'MODULE_RELOADING');
+    dm.replacingInPlace = () => false;
+    dm.missingDeviceError = () => ({code: 'DEVICE_NOT_FOUND'});
+    assert.strictEqual(dm.missingDeviceErrorForHop('dev').code, 'DEVICE_NOT_FOUND');
+  });
+
+  it('high 6: the wait ends by its bound', (done) => {
+    const dm = Object.create(DeviceManager.prototype);
+    dm.replacingInPlace = () => true;
+    const until = Date.now() + 200;
+    dm.whileReplacing('dev', until, () => {
+      try { assert.ok(Date.now() >= until && Date.now() < until + 500); done(); } catch (e) { done(e); }
+    });
   });
 
   describe('2: verifyComposition says a target is not loaded only when nothing else is wrong', () => {
