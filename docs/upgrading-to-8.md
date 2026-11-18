@@ -552,6 +552,30 @@ says how to write a module for this.
   `kind` and `origin` beside them. Match on `code`.
 - The request-body limits, `application/json` for JSON, and the browser
   origin check are in [Before you upgrade](#before-you-upgrade).
+- **Breaking: an action whose declared schemas make it unusable is refused
+  here too.** A tool whose input schema, or output schema as advertised,
+  holds a hidden character where nothing can be left out (an enum or const
+  member, a property name, a required entry, a pattern...) is not listed
+  and not callable over MCP. `invoke-action` and `add-job` now refuse it as
+  well, with `MODULE_NOT_LISTED`, a task already queued for it ends
+  with that code instead of running, `get-spec` leaves it out of the
+  spec it answers, and `schema` refuses its input and output schemas.
+  Every action is decided, a tool or not (a resource or completion
+  action, or one with no description, is refused over these routes too,
+  and over `resources/read` and `completion/complete`). It is decided
+  once, when the module loads, and the load's warning names each such
+  action.
+- **Breaking: `GET /devices/:id/schema` answers only the advertised,
+  cleaned schemas.** It no longer serves `schema.json` by any JSON
+  pointer. A path at or under a usable action's declared schema (its
+  input, its output, a question's form) answers that schema as
+  `tools/list` shows it: `$ref`s put in place, an output's binary fields as
+  advertised, its text cleaned and anything holding a hidden character
+  left out. `/`, a service or an action answers a container of only those
+  schemas, at their places (no `$defs`, no `$ref`). Any other path
+  (`/$defs/...`, another keyword of the document, a part that was left
+  out, a character of a string) answers `POINTER_DEREF_ERROR`, as a path
+  that names nothing does.
 
 ## What operators get
 
