@@ -1,6 +1,6 @@
 # Module settings: declared by the module, changed by the user (release 1)
 
-Status: draft for review, 2026-11-17. Reviewer session.
+Status: draft for review, 2026-11-17; the maintainer answered the two open questions the same day. Reviewer session.
 Scope: countinghouse (declaration, delivery to the module, the settings tool)
 and ch-local (the terminal command, the file).
 
@@ -291,10 +291,11 @@ About 5 days in all, after the sandbox release blockers (F4-9, F4-1/#194).
 PR 3 needs PR 1's control-channel messages (the shared wire vectors gain the
 `module.*` set/get cases, so both repos test against one file).
 
-## Open questions for the maintainer
+## The maintainer's answers (2026-11-17)
 
-1. Should `ch-local settings modules` also list modules that are installed
-   but not currently loaded (read from their `package.json`), so a user can
-   set values before first use? Recommended: yes.
-2. Per-caller settings on an HTTP multi-tenant server: later, on customer
-   demand (recommended), or in release 1?
+1. **`ch-local settings modules` lists installed modules that are not
+   loaded too**, read from their `package.json` declaration, so a user can
+   set values before first use. Values set this way are checked against that
+   declaration and persisted; they are read when the module loads.
+2. **Per-caller settings on an HTTP multi-tenant server: later**, on customer
+   demand. Release 1 keeps one set of values per module on such a server.
