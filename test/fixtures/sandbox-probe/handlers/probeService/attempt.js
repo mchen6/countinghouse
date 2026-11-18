@@ -54,7 +54,9 @@ const ATTEMPTS = {
     const M = module.constructor;
     const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
     const libDir = path.dirname(key);
-    const ownDir = path.join(__dirname, '..', '..', 'lib');
+    // (a directory of its own per variant, with its own decoy: no variant is
+    // answered from the cache entry another's load made)
+    const ownDir = path.join(__dirname, '..', '..', 'lib', 'v', String(arg));
     const agreeing = (dir) => Object.assign(new M(path.join(dir, 'decoy.js'), null), {filename: path.join(dir, 'decoy.js'), paths: M._nodeModulePaths(dir)});
     const variants = {
       // the key's directory is lib/, the resolution's the module's own
@@ -80,10 +82,9 @@ const ATTEMPTS = {
     return M._load('./bind-address', variants[arg](), false);
   },
   createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
-  // Node's linkage is restored without running module code: a parent setter
-  // on Module.prototype can't be added (Node's is not configurable), so an
-  // own one on the runtime's Module, and a children accessor on it, are
-  // each set while the runtime requires through it; neither may run
+  // nothing of the caller's is touched for linkage: an own parent accessor
+  // on the runtime's child and a children accessor on the runtime's Module
+  // are each set while the runtime requires through it; neither may run
   linkageSpy:       () => {
     const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
     const runtime = require.cache[key];
@@ -100,12 +101,15 @@ const ATTEMPTS = {
     }
     if (seen.length > 0) throw Object.assign(new Error(`linkage ran module code: ${seen.join(', ')}`), {code: 'SEEN'});
   },
-  // and kept: the module's own require leaves module.children and the
-  // child's parent as Node would
-  linkageKept:      () => {
+  // and none emulated (#406): the module's own require leaves its child with
+  // no parent, at load and after, and its own children as they were
+  linkageNone:      () => {
+    const before = module.children.length;
     const kid = require('../../lib/kid');
-    const child = module.children.find((c) => c.exports === kid);
-    if (child == null || child.parent !== module || kid.parentAtLoad !== module) throw Object.assign(new Error('unlinked'), {code: 'UNLINKED'});
+    const child = require.cache[require.resolve('../../lib/kid')];
+    if (kid.parentAtLoad !== undefined || child == null || child.parent !== undefined || module.children.length !== before) {
+      throw Object.assign(new Error('linked'), {code: 'LINKED'});
+    }
   },
   hostIpClean:      () => {
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});

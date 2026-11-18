@@ -232,8 +232,18 @@ any module code). Stops:
   code reaches as `module.constructor._load`, forwards only its request,
   parent and isMain, locked, so its internal fourth argument (which skips
   the resolve hooks, or hands over a resolution or source) never skips
-  them. (Other routes into Node's loader, and a parent module code forges,
-  are #194's: see its design.)
+  them. Nor does it hand Node the caller's parent: Node's relative-resolve
+  cache, answered before any hook, is keyed by the parent's directory, so a
+  parent module code forged (or one whose fields it changes mid-load) could
+  record its own file under countinghouse's lib/ key for the runtime's later
+  require of the same name. Node gets a frozen stand-in built from the
+  parent's filename alone (read once, absolute), so the key, the URL the
+  hooks see and the resolution all come from one string; `module.parent`
+  and `module.children` are then not kept (a deprecated API). Under `audit`,
+  replacing `Module._load` or `Module._resolveFilename` is reported; under
+  `enforce` both are locked. (What a forged parent with a countinghouse
+  filename may load, and the other routes into Node's loader, are #194's:
+  see its design.)
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker;

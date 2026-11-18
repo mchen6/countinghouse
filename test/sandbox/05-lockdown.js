@@ -147,9 +147,9 @@ describe('sandbox 05: worker lockdown', function() {
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });
-    it('Node\'s linkage is restored without running module code, and kept for a module\'s own require', async () => {
+    it('no linkage is emulated: nothing of the caller\'s runs, and a child has no parent, at load and after', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageSpy'})), {outcome: 'allowed', code: null});
-      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageKept'})), {outcome: 'allowed', code: null});
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageNone'})), {outcome: 'allowed', code: null});
     });
     if (mode === 'audit') {
       it('a module that replaces Module._load is reported', async () => {
