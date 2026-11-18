@@ -667,6 +667,20 @@ The vocabulary is small and closed. It is not JSON Schema.
   `calls` is: a module that rewrites its `package.json` and restarts under
   supervision keeps the declaration it was loaded with.
 
+### How a user sets them
+
+- **At a terminal:** `ch-local settings set <package>.<setting> <value>`.
+- **In conversation:** the built-in `countinghouse_settings` lists a loaded
+  module's settings (`get`, at most 64 a call, with a cursor; a part's are
+  never listed), and changes one by its name, `module.<package>.<setting>`
+  (`set`).
+  - An `enum`, `integer`, `number` or `boolean` setting changes on request.
+  - A `string` setting, and any you mark `confirm: true`, needs the user's
+    own confirmation: a form for a tested client, else the terminal command.
+  - The operator's ceiling can fix a value or allow the terminal only.
+  - A change applies to every session of the user, from the next call; each
+    session that has your module in view is told what changed.
+
 ### Reading them: `ctx.settings`
 
 ```js

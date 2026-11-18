@@ -43,8 +43,10 @@ describe('validation 30: countinghouse_settings and module settings', () => {
     assert.strictEqual(err.code, code, err.message);
     return err;
   };
-  const make = () => settingsTool.create({file, lockWaitMs: 200, ceiling: () => ceiling,
-    moduleStates: () => modules, applyModuleSettings: async () => { applied += 1; return {applied: 1, refused: []}; }});
+  const make = (extra = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ceiling,
+    moduleStates: () => modules, applyModuleSettings: async () => { applied += 1; return {applied: 1, refused: []}; }}, extra));
+  // a client that may show a form (a tested one, its conditions met)
+  const formClient = {mayElicit: async () => ({ok: true, client: {name: 'tested-client', version: '1.0.0'}})};
   const loadedWith = (values) => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values}));
     modules = [{name: W.name, version: W.version, part: false, state: ms.stateFor(W.name, W, {operator: false, net: []})},
@@ -54,6 +56,7 @@ describe('validation 30: countinghouse_settings and module settings', () => {
   before(() => { saved = {settingsFile: options.settingsFile}; });
   after(() => Object.assign(options, saved));
   beforeEach(() => {
+    require('../../lib/settings-confirm').resetForTests();
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validation-30-'));
     file = path.join(home, 'settings.json');
     options.settingsFile = file;
@@ -166,6 +169,58 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       for (const name of ['module.@acme/region-part.region', 'module.@acme/weather-tool.nope', 'module.not-loaded.units', 'module.@acme/weather-tool']) {
         await refused(make().set(name, 'x'), 'SETTING_UNKNOWN');
       }
+    });
+  });
+
+  describe('the form, for a client that may show one', () => {
+    const accept = {approve: {action: 'accept', content: {approve: true}}};
+    const decline = {approve: {action: 'decline'}};
+
+    it('the runtime\'s sentence: the package and version, the key, the values quoted, the author\'s title as the module\'s words; a yes writes it, its version confirmed', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'form-1'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      assert.ok(asked.inputRequired != null, JSON.stringify(asked));
+      const message = asked.inputRequired.inputRequests.approve.params.message;
+      assert.match(message, /@acme\/weather-tool 1\.2\.0's setting defaultRepo from "" to "acme\/repo"\?/);
+      assert.match(message, /every session of this user/);
+      assert.match(message, /in its own words, as: "Default repository"/);
+      assert.strictEqual(applied, 0, 'nothing applied before the answer');
+      const done = await tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx);
+      assert.strictEqual(done.applies, 'now');
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], 'acme/repo');
+      assert.ok(history().some((h) => h.setting === 'module.@acme/weather-tool.defaultRepo' && h.confirmed === '1.2.0'), JSON.stringify(history()));
+      assert.strictEqual(applied, 1);
+    });
+
+    it('a decline writes nothing and locks the kind for this start: a second asks at the terminal', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'form-2'};
+      const asked = await tool.set('module.@acme/weather-tool.shareStats', 'on', 'settings tool', ctx);
+      const done = await tool.confirm('module.@acme/weather-tool.shareStats', 'on', {requestState: asked.inputRequired.requestState, inputResponses: decline}, ctx);
+      assert.strictEqual(done.applies, 'declined');
+      assert.strictEqual(stored()['module.@acme/weather-tool.shareStats'], undefined);
+      await refused(tool.set('module.@acme/weather-tool.defaultRepo', 'acme/x', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+    });
+
+    it('the module at another version when the answer comes: SETTING_CHANGED_MEANWHILE, nothing written', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'form-3'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      modules[0] = Object.assign({}, modules[0], {version: '1.3.0'});
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_CHANGED_MEANWHILE');
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined);
+    });
+  });
+
+  describe('the session\'s budget', () => {
+    it('a shared runtime session\'s changes on request count against its 32; past them, the terminal', async () => {
+      const tool = make();
+      const ctx = {shared: true, session: 'budget-1'};
+      for (let i = 0; i < 32; i += 1) await tool.set('module.@acme/weather-tool.maxResults', String(10 + i), 'settings tool', ctx);
+      await refused(tool.set('module.@acme/weather-tool.maxResults', '99', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      // another session's are its own
+      await tool.set('module.@acme/weather-tool.maxResults', '98', 'settings tool', {shared: true, session: 'budget-2'});
     });
   });
 });
