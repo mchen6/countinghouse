@@ -839,8 +839,7 @@ against the effective `net` entries: under `audit` a disallowed target is
 logged and the request still goes ahead; only `enforce` refuses it. Under
 `enforce`, `CHUtil.request` also accepts only the ordinary request options (`method`,
 `headers`, `body`, `json`, `qs`, `timeout`, ... but not `baseUrl`, `proxy`,
-`agent`, `har` and similar) and checks every redirect. In both modes it
-refuses the `httpSignature` option.
+`agent`, `har` and similar) and checks every redirect.
 
 **Self-contained.** Every dependency of your module, followed through the
 whole tree, must be installed inside the module's own directory. Install

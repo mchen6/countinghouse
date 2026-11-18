@@ -32,6 +32,9 @@
           },
           "outcomes": {
             "type": "string"
+          },
+          "detail": {
+            "type": "string"
           }
         }
       }

@@ -37,9 +37,9 @@ const REVIEWED = [
   // the test-only late-load probe (sandbox 66): at boot, only with CH_TEST_LATE_LOADS
   ['lean-worker', 'require in a function body', /^const (Module|path) = require\('(module|path)'\);$/, 'the test\'s probe: at boot, only when the main thread asks'],
   ['lean-worker', 'for...of', /^for \(const \[key, what\] of \[\['_load', 'load'\]/, 'the test\'s probe: at boot, a literal list'],
-  ['lean-worker', 'a live bind, call or apply', /^return Reflect\.apply\((original, this, \[request, parent, \.\.\.rest\]|createRequire, this, \[filename\]|getBuiltinModule, this, \[id\])\);$/, 'the test\'s probe: only when the main thread asks'],
   ['lean-worker', 'for...of', /^for \(const line of String\(new Error\(\)\.stack\)/, 'the test\'s probe: only when the main thread asks'],
-  ['lean-worker', 'spread', /^return Reflect\.apply\(original, this, \[request, parent, \.\.\.rest\]\);$/, 'the test\'s probe: only when the main thread asks'],
+  ['lean-worker', 'spread', /^return probeApply\(original, this, \[request, parent, \.\.\.rest\]\);$/, 'the test\'s probe: only when the main thread asks'],
+  ['lean-worker', 'require in a function body', /^require\(require\.resolve\('bcrypt-pbkdf', \{paths: \[sshpk\]\}\)\);$/, 'warmSshpkBcrypt: set-options, before module code (#425\'s review)'],
   ['peer-worker', 'require in a function body', /require\('\.\/countinghouse-util'\)\.ci;$/, 'the main thread\'s and a test\'s: a lean worker\'s peer state always serves'],
   ['call-limits', 'require in a function body', /^c = require\('\.\/settings-tool'\)\.cachedCeiling/, 'main thread: a worker has outputCeiling, and returns before'],
   ['call-limits', 'require in a function body', /^const settings = require\('\.\/session-settings'\);$/, 'main thread: of() returns before in a worker'],

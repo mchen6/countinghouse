@@ -16,12 +16,16 @@ const {loadConventionHandlers} = require('../../lib/handler-map');
 const tmp = require('../helpers/test-tmp');
 
 describe('stdio 06: paths under the module\'s /app (issue #40, round 3)', () => {
+  // (pathFor hands out path's functions as identity took them at load,
+  // #425's review, so it is compared by what it does, never by identity)
+  const sameAs = (got, lib) => got.sep === lib.sep && got.join('a', 'b', '..', 'c') === lib.join('a', 'b', '..', 'c') &&
+    got.resolve('/x', 'y') === lib.resolve('/x', 'y') && got.isAbsolute('\\x') === lib.isAbsolute('\\x');
   it('a path under /app takes path.posix; any other path the platform\'s', () => {
-    assert.strictEqual(pathFor('/app'), path.posix);
-    assert.strictEqual(pathFor('/app/handlers/probeService/remember.js'), path.posix);
-    assert.strictEqual(pathFor('/application/x.js'), path);
-    assert.strictEqual(pathFor(os.tmpdir()), path);
-    assert.strictEqual(pathFor(null), path);
+    assert.ok(sameAs(pathFor('/app'), path.posix));
+    assert.ok(sameAs(pathFor('/app/handlers/probeService/remember.js'), path.posix));
+    assert.ok(sameAs(pathFor('/application/x.js'), path));
+    assert.ok(sameAs(pathFor(os.tmpdir()), path));
+    assert.ok(sameAs(pathFor(null), path));
   });
 
   it('built under /app, a handler\'s path is /app/handlers/<svc>/<action>.js, joined or resolved', () => {

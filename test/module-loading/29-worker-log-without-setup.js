@@ -65,6 +65,19 @@ describe('module-loading 29: a worker logs without a logger made first', functio
         // an array or a Buffer first is all message, as bunyan made it
         LOG.logger.info(['a', 'b'], 'and more');
         LOG.logger.info(Buffer.from('hi'), 'tail');
+        // nothing that can't be made text throws: a message that is no
+        // string, an object with no prototype; and null first is no message
+        LOG.E(Object.assign(new Error(), {message: Object.create(null)}));
+        LOG.logger.warn(Object.create(null), 'fields with no prototype');
+        LOG.logger.warn(null, 'after null');
+        LOG.logger.warn({get e() { throw new Error('getter'); }}, 'a getter that throws');
+        const {proxy, revoke} = Proxy.revocable({}, {});
+        revoke();
+        LOG.logger.warn(proxy, 'a revoked proxy');
+        // each field read once
+        let reads = 0;
+        LOG.logger.warn({get e() { reads += 1; return 'counted'; }}, 'read once');
+        sent.push({msg: String(reads), e: 'reads'});
         parentPort.postMessage({records: sent});
       `, {eval: true});
       w.on('message', (m) => { if (m != null && m.records != null) { w.terminate(); resolve(m.records); } });
@@ -73,6 +86,9 @@ describe('module-loading 29: a worker logs without a logger made first', functio
     const broke = '(Error in Bunyan log "e" serializer broke field. See stderr for details.)';
     assert.deepStrictEqual(records, [{msg: 'boom', e: 'boom'}, {msg: 'said otherwise', e: 'boom'},
       {msg: '', e: broke}, {msg: 'with a bad e', e: broke},
-      {msg: "[ 'a', 'b' ] and more", e: undefined}, {msg: '<Buffer 68 69> tail', e: undefined}]);
+      {msg: "[ 'a', 'b' ] and more", e: undefined}, {msg: '<Buffer 68 69> tail', e: undefined},
+      {msg: '', e: '(unprintable)'}, {msg: 'fields with no prototype', e: undefined}, {msg: 'after null', e: undefined},
+      {msg: 'a getter that throws', e: undefined}, {msg: 'a revoked proxy', e: undefined},
+      {msg: 'read once', e: 'counted'}, {msg: '1', e: 'reads'}]);
   });
 });

@@ -1308,8 +1308,16 @@ and the short list of what the in-process sandbox cannot give.
   and the request carries only the options the module itself passes, so
   the late load exposes nothing it didn't already hold (preloading it on
   every audit worker would cost about 240 files at each boot).
-  `CHUtil.request` refuses the `httpSignature` option in both modes: an
-  encrypted OpenSSH key would make a dependency load a file on first use.
+  bcrypt-pbkdf, which sshpk requires on the first encrypted OpenSSH key
+  (the `httpSignature` option), is warmed with postman-request, so that
+  require is a hit in Node's cache however the option arrives. The options
+  are put together as postman-request does (a second options argument
+  included): enforce hands on only their checked own keys, with no
+  prototype; audit hands on postman-request's own copy (own and inherited
+  keys, each read once) and reports over that same copy. A module file the
+  runtime loads (a handler, `CHUtil.loadFile`) has the module's own anchor
+  as parent, a `Module` whose file is inside the module root, never a
+  runtime `Module` (and never null, which would read as a main module).
   Everything a call's token goes through is loaded at a worker's boot, and
   its exports and classes' prototypes are fixed there (above), so what
   module code reaches this way it can read, not change.

@@ -23,68 +23,73 @@ const ENTRIES = [path.join(ROOT, 'lib', 'lean-worker.js'), path.join(ROOT, 'lib'
 
 // [file relative to ROOT (a regex), the request (a regex), why]
 const MAIN = 'the main thread\'s branch: never runs in a worker';
-// an entry's 4th: what it loads can run in a worker, so it is followed
+// an entry's 5th: the number of sites it covers (checked: a new site fails).
+// an entry's 4th: FOLLOW (what it loads can run in a worker: followed, as
+// is every unreviewed load and every entry with no 4th), or NOT_IN_WORKER
+// (a main thread's branch, or a path no worker takes: not followed, since
+// what it loads never loads in a worker)
 const FOLLOW = 'follow';
+const NOT_IN_WORKER = 'not in a worker';
 const REVIEWED = [
   // set-options and boot, before the lockdown
-  [/^lib\/lean-worker\.js$/, /^\.\/fs-broker\/(identity|patch)$/, 'boot and set-options: before the lockdown'],
-  [/^lib\/lean-worker\.js$/, /^\.\/module-lockdown$/, 'set-options: the lockdown itself'],
-  [/^lib\/fs-broker\/identity\.js$/, /^(fs|\.\/roots)$/, 'the main thread\'s code roots, and insideHostFor at load'],
-  [/^lib\/fs-broker\/identity\.js$/, /^os$/, 'install: at set-options, before the lockdown'],
-  [/^lib\/fs-broker\/patch\.js$/, /^\.\/roots$/, 'install: at boot'],
-  [/^lib\/lean-worker\.js$/, /^postman-request$/, 'warm, at set-options before the lockdown, for a module that declares net', FOLLOW],
-  [/^lib\/lean-worker\.js$/, /^\.\/declarations$/, 'warm, at boot in a validation worker (validateOnly)', FOLLOW],
-  [/^lib\/module-lockdown\.js$/, /^(crypto|dgram|http|http2|net|tls|tty|util)$/, 'install (set-options, before module code) and the handle probes at load'],
+  [/^lib\/lean-worker\.js$/, /^\.\/fs-broker\/(identity|patch)$/, 'boot and set-options: before the lockdown', FOLLOW, 1],
+  [/^lib\/lean-worker\.js$/, /^\.\/module-lockdown$/, 'set-options: the lockdown itself', FOLLOW, 1],
+  [/^lib\/fs-broker\/identity\.js$/, /^(fs|\.\/roots)$/, 'the main thread\'s code roots, and insideHostFor at load', FOLLOW, 3],
+  [/^lib\/fs-broker\/identity\.js$/, /^os$/, 'install: at set-options, before the lockdown', FOLLOW, 1],
+  [/^lib\/fs-broker\/patch\.js$/, /^\.\/roots$/, 'install: at boot', FOLLOW, 1],
+  [/^lib\/lean-worker\.js$/, /^postman-request$/, 'warm, at set-options before the lockdown, for a module that declares net', FOLLOW, 2],
+  [/^lib\/lean-worker\.js$/, /^\.\/declarations$/, 'warm, at boot in a validation worker (validateOnly)', FOLLOW, 1],
+  [/^lib\/module-lockdown\.js$/, /^(crypto|dgram|http|http2|net|tls|tty|util)$/, 'install (set-options, before module code) and the handle probes at load', FOLLOW, 12],
   // postman-request on first use: a module that declares net has it from
   // set-options; with no net, enforce refuses every request in the
   // lockdown's wrapper before it is reached, and audit loads it then, by
   // design (ruling (b), the spec's Revision 6 item 11)
-  [/^lib\/(chutil-facade|countinghouse-util)\.js$/, /^postman-request$/, 'CHUtil.request: preloaded with net; otherwise ruling (b)'],
-  [/^lib\/service-client\.js$/, /^postman-request$/, 'a remote http client only: none is made (lib/query-device.js passes isRemoteService false)'],
-  [/^lib\/schema-safety\.js$/, /^\.\/declarations$/, 'checkSchema: the validator\'s (a validation worker, warmed; lib/validator-worker.js runs no module code)'],
+  [/^lib\/(chutil-facade|countinghouse-util)\.js$/, /^postman-request$/, 'CHUtil.request: preloaded with net; otherwise ruling (b)', FOLLOW, 2],
+  [/^lib\/service-client\.js$/, /^postman-request$/, 'a remote http client only: never made in a worker (its constructor refuses; lib/query-device.js makes none)', NOT_IN_WORKER, 1],
+  [/^lib\/schema-safety\.js$/, /^\.\/declarations$/, 'checkSchema: the validator\'s (a validation worker, warmed; lib/validator-worker.js runs no module code)', FOLLOW, 1],
   // the main thread's branches in files a worker shares
-  [/^lib\/cli-options\.js$/, /^(\.\/call-limits|\.\/settings-ceiling|\.\/settings-tool)$/, 'outputCeilingNow: a worker returns before (isMainThread)'],
-  [/^lib\/cli-options\.js$/, /^(crypto|os|\.\/store\/resources-path|\.\/win-acl)$/, 'option parsing: the main thread\'s, and a worker\'s at boot and set-options'],
-  [/^lib\/call-limits\.js$/, /^(\.\/session-settings|\.\/settings-ceiling|\.\/settings-tool)$/, MAIN],
-  [/^lib\/countinghouse-util\.js$/, /^\.\/single-thread-facade$/, MAIN],
-  [/^lib\/countinghouse-device\.js$/, /^\.\/tool-generation$/, 'a device\'s spec replaced: the main thread\'s'],
-  [/^lib\/handler-ctx\.js$/, /^(\.\/identity|\.\/module-ask|\.\/redis-api|\.\/remote|\.\/usage\/query)$/, MAIN],
-  [/^lib\/logger\.js$/, /^bunyan$/, 'createLogger: the main thread\'s logger'],
-  [/^lib\/logger\.js$/, /^(\.\/thread-info|\.\/worker-logger)$/, 'ready(): a worker\'s logger is made at boot, so it never runs there'],
-  [/^lib\/peer-worker\.js$/, /^\.\/countinghouse-util$/, MAIN],
-  [/^lib\/query-device\.js$/, /^\.\/countinghouse-device$/, MAIN],
-  [/^lib\/redis-api\.js$/, /^(\.\/redis-namespace|\.\/store)$/, 'single-thread mode and the main thread\'s client'],
-  [/^lib\/service-client\.js$/, /^\.\/user-auth$/, MAIN],
-  [/^lib\/session\.js$/, /^\.\/countinghouse-util$/, 'recordMeteredCall: a worker returns before (thread-info)'],
+  [/^lib\/cli-options\.js$/, /^(\.\/call-limits|\.\/settings-ceiling|\.\/settings-tool)$/, 'outputCeilingNow: a worker returns before (isMainThread)', NOT_IN_WORKER, 3],
+  [/^lib\/cli-options\.js$/, /^(crypto|os|\.\/store\/resources-path|\.\/win-acl)$/, 'option parsing: the main thread\'s, and a worker\'s at boot and set-options', FOLLOW, 5],
+  [/^lib\/call-limits\.js$/, /^(\.\/session-settings|\.\/settings-ceiling|\.\/settings-tool)$/, MAIN, NOT_IN_WORKER, 3],
+  [/^lib\/countinghouse-util\.js$/, /^\.\/single-thread-facade$/, MAIN, NOT_IN_WORKER, 1],
+  [/^lib\/countinghouse-device\.js$/, /^\.\/tool-generation$/, 'a device\'s spec replaced: the main thread\'s', NOT_IN_WORKER, 1],
+  [/^lib\/handler-ctx\.js$/, /^(\.\/identity|\.\/module-ask|\.\/redis-api|\.\/remote|\.\/usage\/query)$/, MAIN, NOT_IN_WORKER, 5],
+  [/^lib\/logger\.js$/, /^bunyan$/, 'createLogger: the main thread\'s logger', NOT_IN_WORKER, 1],
+  [/^lib\/logger\.js$/, /^(\.\/thread-info|\.\/worker-logger)$/, 'ready(): a worker\'s logger is made at boot, so it never runs there', FOLLOW, 1],
+  [/^lib\/peer-worker\.js$/, /^\.\/countinghouse-util$/, MAIN, NOT_IN_WORKER, 1],
+  [/^lib\/query-device\.js$/, /^\.\/countinghouse-device$/, MAIN, NOT_IN_WORKER, 1],
+  [/^lib\/redis-api\.js$/, /^(\.\/redis-namespace|\.\/store)$/, 'single-thread mode and the main thread\'s client', NOT_IN_WORKER, 2],
+  [/^lib\/service-client\.js$/, /^\.\/user-auth$/, MAIN, NOT_IN_WORKER, 1],
+  [/^lib\/session\.js$/, /^\.\/countinghouse-util$/, 'recordMeteredCall: a worker returns before (thread-info)', NOT_IN_WORKER, 1],
   [/^lib\/store\.js$/, /^(\.\/countinghouse-error|crypto|\.\/job-control|\.\/job-control-local|\.\/local-kv|\.\/logger|\.\/metering\/local-provider|\.\/metering\/redis-provider|path|redis|\.\/redis-resilient|\.\/store\/blobs|\.\/store\/json-file)$/,
-    'the store is made on the main thread; a worker reaches it over its channel'],
-  [/^lib\/worker-message\.js$/, /^(\.\/logger|\.\/worker-output)$/, 'the main thread\'s end of a worker'],
+    'the store is made on the main thread; a worker reaches it over its channel', NOT_IN_WORKER, 20],
+  [/^lib\/worker-message\.js$/, /^(\.\/logger|\.\/worker-output)$/, 'the main thread\'s end of a worker', NOT_IN_WORKER, 5],
   // dependencies: code that runs at the library's own load
-  [/^node_modules\/stream-length\/node_modules\/bluebird\/js\/main\/promise\.js$/, /^\.\/(async|bind|captured_trace|catch_filter|context|debuggability|direct_resolve|errors|finally|join|method|progress|promise_array|promise_resolver|synchronous_inspection|thenables|util)\.js$/,
-    'bluebird\'s setup function (the file\'s module.exports), called once by bluebird.js at its load'],
-  [/^node_modules\/debug\/src\/node\.js$/, /^(fs|net)$/, 'createWritableStdioStream: at its load'],
-  [/^node_modules\/socks-proxy-agent\/node_modules\/debug\/src\/common\.js$/, /^ms$/, 'setup(): at its load'],
-  [/^node_modules\/tweetnacl\/nacl-fast\.js$/, /^crypto$/, 'an IIFE at its load'],
+  [/^node_modules\/stream-length\/node_modules\/bluebird\/js\/main\/[a-z_]+\.js$/, /^\.\/[a-z_0-9]+(\.js)?$/,
+    'bluebird\'s own files: each exports a setup function that its promise.js calls once, at bluebird\'s load', FOLLOW, 72],
+  [/^node_modules\/debug\/src\/node\.js$/, /^(fs|net)$/, 'createWritableStdioStream: at its load', FOLLOW, 2],
+  [/^node_modules\/socks-proxy-agent\/node_modules\/debug\/src\/common\.js$/, /^ms$/, 'setup(): at its load', FOLLOW, 1],
+  [/^node_modules\/tweetnacl\/nacl-fast\.js$/, /^crypto$/, 'an IIFE at its load', FOLLOW, 1],
   [/^node_modules\/json-schema-ref-parser\/node_modules\/es6-promise\/dist\/es6-promise\.js$/, /^vertx$/,
-    'attemptVertx (as r): only where Node\'s process.nextTick is missing; Node picks it at load'],
+    'attemptVertx (as r): only where Node\'s process.nextTick is missing; Node picks it at load', NOT_IN_WORKER, 1],
   // lazy-require's holder: the one load each lazy(name) makes, a finding of
   // its own above unless warmed at a worker's boot
-  [/^lib\/lazy-require\.js$/, /^<dynamic>$/, 'the holder\'s first use: each lazy(name) is checked above (warmed, or reviewed)'],
+  [/^lib\/lazy-require\.js$/, /^<dynamic>$/, 'the holder\'s first use: each lazy(name) is checked above (warmed, or reviewed)', FOLLOW, 1],
   // set-options, before the lockdown: bcrypt-pbkdf along sshpk's chain
-  [/^lib\/lean-worker\.js$/, /^(<dynamic>|http-signature|sshpk|bcrypt-pbkdf)$/, 'warmSshpkBcrypt: set-options, before the lockdown, with postman-request'],
+  [/^lib\/lean-worker\.js$/, /^(<dynamic>|http-signature|sshpk|bcrypt-pbkdf)$/, 'warmSshpkBcrypt: set-options, before the lockdown, with postman-request', FOLLOW, 4],
   // dependencies: what a worker never reaches, or reaches harmlessly
-  [/^node_modules\/uuid-1345\/index\.js$/, /^macaddress$/, 'v1 uuids only: a worker makes v5 (lib/call-address.js)'],
+  [/^node_modules\/uuid-1345\/index\.js$/, /^macaddress$/, 'v1 uuids only: a worker makes v5 (lib/call-address.js)', NOT_IN_WORKER, 1],
   [/^node_modules\/sshpk\/lib\/formats\/ssh-private\.js$/, /^bcrypt-pbkdf$/,
-    'an encrypted OpenSSH key (httpSignature): bcrypt-pbkdf is warmed with postman-request at set-options (lib/lean-worker.js warmSshpkBcrypt), so this is a hit in Node\'s cache', FOLLOW],
+    'an encrypted OpenSSH key (httpSignature): bcrypt-pbkdf is warmed with postman-request at set-options (lib/lean-worker.js warmSshpkBcrypt), so no file is loaded then; the resolve and the require.cache read that remain after the lockdown are PR 2\'s (its moved cache), by the reviewer\'s ruling', FOLLOW, 2],
   [/^node_modules\/@postman\/tough-cookie\/lib\/utilHelper\.js$/, /^util$/,
-    'a module\'s own cookie jar (MemoryCookieStore): what it gets is only used to inspect that jar']
+    'a module\'s own cookie jar (MemoryCookieStore): what it gets is only used to inspect that jar', FOLLOW, 1]
 ];
 
 const FUNCTIONS = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
 function parse(file) {
   const text = fs.readFileSync(file, 'utf8').replace(/^#!.*/, '');
   for (const sourceType of ['script', 'module']) {
-    try { return espree.parse(text, {ecmaVersion: 'latest', sourceType, range: true}); } catch (e) { /* the other */ }
+    try { return espree.parse(text, {ecmaVersion: 'latest', sourceType, range: true, loc: true}); } catch (e) { /* the other */ }
   }
   return null;
 }
@@ -155,19 +160,24 @@ function requiresOf(ast) {
       else if (c.type === 'MemberExpression' && c.object.type === 'Identifier' && loaders.has(c.object.name) && c.property.name === 'resolve') kind = 'require.resolve';
       if (kind != null) {
         const request = literalOf(node.arguments[0]);
-        // at load, only a plain literal require is followed; the rest run
-        // at load too, before any lockdown
-        if (inFunction ? true : (kind === 'require' && request !== '<dynamic>')) out.push({request, inFunction, kind});
+        // at load, every form with a literal request is followed (an alias:
+        // js-yaml's _require('esprima')); at load they run before any lockdown
+        if (inFunction || request !== '<dynamic>') out.push({request, inFunction, kind, line: node.loc.start.line});
       }
     }
     if (callOf(node, 'lazy') && !WARMED.has(node.arguments[0].value)) {
-      out.push({request: node.arguments[0].value, inFunction: true, kind: 'lazy'});
+      out.push({request: node.arguments[0].value, inFunction: true, kind: 'lazy', line: node.loc.start.line});
     }
     if (callOf(node, 'warm') && !topWarms.has(node)) {
-      out.push({request: node.arguments[0].value, inFunction: true, kind: 'warm'});
+      out.push({request: node.arguments[0].value, inFunction: true, kind: 'warm', line: node.loc.start.line});
     }
+    // import() settles later, wherever it is written: always a finding
     if (node.type === 'ImportExpression') {
-      out.push({request: literalOf(node.source), inFunction: true, kind: 'import'});
+      out.push({request: literalOf(node.source), inFunction: true, kind: 'import', line: node.loc.start.line});
+    }
+    // an ESM file's static imports and re-exports: loaded with it
+    if ((node.type === 'ImportDeclaration' || node.type === 'ExportAllDeclaration' || node.type === 'ExportNamedDeclaration') && node.source != null) {
+      out.push({request: literalOf(node.source), inFunction: false, kind: 'import', line: node.loc.start.line});
     }
     for (const key of Object.keys(node)) {
       if (key === 'parent') continue;
@@ -188,33 +198,41 @@ WARMED = new Set([...topLevelWarms(parse(path.join(ROOT, 'lib', 'lean-worker.js'
 
 describe('sandbox 67: no require inside a function in a worker\'s boot closure (a static pin)', function() {
   this.timeout(120000);
-  it('every require or import inside a function there is reviewed, with why it never runs in a locked worker', () => {
+  it('every require or import inside a function there is reviewed, with why it never runs in a locked worker, site by site', () => {
     const seen = new Set();
     const queue = ENTRIES.slice();
     const unparsed = [];
     const findings = [];
+    // the sites each reviewed entry covers: a new one with the same file and
+    // request fails as surely as a new request (each entry's 5th, its count)
+    const tally = REVIEWED.map(() => 0);
     while (queue.length > 0) {
       const file = queue.shift();
-      if (seen.has(file) || !file.endsWith('.js') && !file.endsWith('.cjs')) continue;
+      if (seen.has(file) || !file.endsWith('.js') && !file.endsWith('.cjs') && !file.endsWith('.mjs')) continue;
       seen.add(file);
       const ast = parse(file);
       if (ast == null) { unparsed.push(path.relative(ROOT, file)); continue; }
       for (const r of requiresOf(ast)) {
         if (Module.isBuiltin(r.request) && !r.inFunction) continue;
+        const rel = path.relative(ROOT, file);
+        const at = r.inFunction ? REVIEWED.findIndex(([f, q]) => f.test(rel) && q.test(r.request)) : -1;
         if (r.inFunction) {
-          const rel = path.relative(ROOT, file);
-          const reviewed = REVIEWED.find(([f, q]) => f.test(rel) && q.test(r.request));
-          if (reviewed == null) findings.push(`${rel}: ${r.kind}('${r.request}')`);
-          // a reviewed load that can run in a worker (warmed, say) is
-          // followed: what it loads is in the closure too
-          if (reviewed == null || reviewed[3] !== FOLLOW || r.request === '<dynamic>' || Module.isBuiltin(r.request)) continue;
+          if (at < 0) findings.push(`${rel}:${r.line}: ${r.kind}('${r.request}')`);
+          else tally[at] += 1;
         }
+        // followed wherever it is (a function's load included), unless it
+        // never runs in a worker: what it loads is scanned too
+        if (r.inFunction && at >= 0 && REVIEWED[at][3] === NOT_IN_WORKER) continue;
+        if (r.request === '<dynamic>' || Module.isBuiltin(r.request)) continue;
         let target = null;
         try { target = require.resolve(r.request, {paths: [path.dirname(file)]}); } catch (e) { continue; }
         if (!Module.isBuiltin(target)) queue.push(target);
       }
     }
+    if (process.env.PIN67_COUNTS === '1') REVIEWED.forEach((e, i) => console.log(`${i}\t${tally[i]}\t${e[0]} ${e[1]}`));
     assert.deepStrictEqual(unparsed, [], 'files the pin could not read');
     assert.deepStrictEqual(findings.sort(), [], `a require inside a function, not reviewed (${findings.length}):\n  ${findings.sort().join('\n  ')}`);
+    const counted = REVIEWED.map((e, i) => (e[4] === tally[i] ? null : `${e[0]} ${e[1]}: ${tally[i]} sites, reviewed ${e[4]}`)).filter((x) => x != null);
+    assert.deepStrictEqual(counted, [], 'a reviewed entry covers a different number of sites');
   });
 });
