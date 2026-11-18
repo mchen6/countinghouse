@@ -271,7 +271,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
 
     // #341 review, 5: the loading record is gone whatever throws, the rollback included
     it('a load whose rollback throws leaves no loading record behind', async() => {
-      const packsInPlace = require('../../lib/packs-in-place');
+      const packsInPlace = require('../../lib/modules-in-place');
       let loads = 0;
       const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         // the first module loads, the second fails, and the rollback's unload throws
@@ -286,7 +286,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     // the #341 deep review, 1: the mid-UNLOAD side. The record goes only once its modules are unloaded; a
     // view rebuilt meanwhile (any changed(null)) still has the pack's modules owned by it
     it('B can\'t see A\'s pack while it unloads, though the views are rebuilt meanwhile', async() => {
-      const packsInPlace = require('../../lib/packs-in-place');
+      const packsInPlace = require('../../lib/modules-in-place');
       const seenMidUnload = [];
       const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
@@ -304,7 +304,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     });
 
     it('B can\'t see A\'s pack between its devices\' registration and the load\'s answer', async() => {
-      const packsInPlace = require('../../lib/packs-in-place');
+      const packsInPlace = require('../../lib/modules-in-place');
       const seenMidLoad = [];
       const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         loadModuleFromPath: (p, name, version, cb) => {
@@ -319,7 +319,10 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
       on(A, 'ci');
       await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-ci', scenario: path.join(root, 'ci', 'node_modules', '@countinghouse', 'ch-pack-ci'), pack: 'ci', global: false}, {});
-      assert.deepStrictEqual(seenMidLoad, [{records: [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}], b: false, a: true}]);
+      // M4 (#413 section 5.5): what a load newly brings in is hidden from
+      // every session until the load has completed, A's own included
+      assert.deepStrictEqual(seenMidLoad, [{records: [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}], b: false, a: false}]);
+      assert.strictEqual(sessionPacks.listsModule(A, '@countinghouse/ch-pack-ci'), true, 'and listed to A once loaded');
       assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}]);
       // and a pack loaded at runtime keeps its prompt names for the next load's check (a fix to fd2bfc62)
       assert.ok(mm.packsInPlace.get('@countinghouse/ch-pack-ci').prompts instanceof Set);
@@ -348,10 +351,10 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         return h;
       }
       const scenario = () => path.join(root, 'two', 'node_modules', '@countinghouse', 'ch-pack-two');
-      const load = (h) => require('../../lib/packs-in-place').loadPack(h.mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario: scenario(), pack: 'two', global: false}, {});
+      const load = (h) => require('../../lib/modules-in-place').loadPack(h.mm, {type: 'load', name: '@countinghouse/ch-pack-two', scenario: scenario(), pack: 'two', global: false}, {});
 
       it('turned off inside the backoff: the restart never runs, and nothing of the part is left', async() => {
-        const packsInPlace = require('../../lib/packs-in-place');
+        const packsInPlace = require('../../lib/modules-in-place');
         const h = crashedPartRuntime();
         await load(h);
         h.crash();
@@ -366,7 +369,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       // (that a spawn no longer current terminates its worker rather than registering it is the module
       // manager's own, sandbox 07: an operator restart racing the supervisor restart leaves one worker)
       it('turned off while its restart\'s spawn is under way: that spawn\'s record is no longer current', async() => {
-        const packsInPlace = require('../../lib/packs-in-place');
+        const packsInPlace = require('../../lib/modules-in-place');
         const h = crashedPartRuntime();
         await load(h);
         h.crash();
@@ -378,7 +381,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       });
 
       it('reloaded without the part inside the backoff: the restart never runs either', async() => {
-        const packsInPlace = require('../../lib/packs-in-place');
+        const packsInPlace = require('../../lib/modules-in-place');
         const h = crashedPartRuntime();
         await load(h);
         h.crash();
@@ -391,7 +394,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       });
 
       it('a part that crashed with no supervisor (sandbox off) is unloaded with no warning: nothing of it is known', async() => {
-        const packsInPlace = require('../../lib/packs-in-place');
+        const packsInPlace = require('../../lib/modules-in-place');
         const LOG = require('../../lib/logger');
         const h = crashedPartRuntime();
         h.mm.supervisor = null;
@@ -409,7 +412,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       // F3-5 with F1-3: the part's spec, kept by its supervisor while it is down, is no tool before its pack goes,
       // and gone with it after; it never comes back
       it('restarting or suspended, its spec kept: no tool while down, gone with its pack, never respawned (F3-5)', async() => {
-        const packsInPlace = require('../../lib/packs-in-place');
+        const packsInPlace = require('../../lib/modules-in-place');
         const toolRegistry = require('../../lib/mcp/tool-registry');
         const DeviceManager = require('../../lib/device-manager');
         const spec = {device: {friendlyName: 'ch-step-x', serviceList: {'urn:x:serviceID:svc': {actionList: [{name: 'run', description: 'run'}]}}}};
@@ -435,7 +438,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       });
 
       it('pack operations run one at a time: one arriving while another is under way is refused, and changes nothing', async() => {
-        const packsInPlace = require('../../lib/packs-in-place');
+        const packsInPlace = require('../../lib/modules-in-place');
         const h = crashedPartRuntime();
         await load(h);
         h.mm.packsLoading.set('@countinghouse/ch-pack-ci', {pack: 'ci', modules: ['@countinghouse/ch-pack-ci']});

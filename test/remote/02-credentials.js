@@ -235,8 +235,15 @@ describe('remote 02: version 2, by module', () => {
     it('a later entry that repeats the start\'s is taken; it is set and dropped by module', () => {
       const m = credentials.checkEntry('b', {'https://api.b.example': {B_KEY: SLOT2}});
       assert.strictEqual(m.get('https://api.b.example').get('B_KEY'), SLOT2);
+      // dropped at its unload: the start's own binding stays (M4a's
+      // medium review, finding 2); a module the start bound nothing for
+      // has none
+      credentials.setModule('b', new Map());
       credentials.dropModule('b');
-      assert.strictEqual(credentials.moduleEntry('b'), undefined);
+      assert.strictEqual(credentials.moduleEntry('b').get('https://api.b.example').get('B_KEY'), SLOT2);
+      credentials.setModule('@t/unbound', m);
+      credentials.dropModule('@t/unbound');
+      assert.strictEqual(credentials.moduleEntry('@t/unbound'), undefined);
       credentials.setModule('b', m);
       assert.strictEqual(credentials.moduleEntry('b').get('https://api.b.example').get('B_KEY'), SLOT2);
     });
