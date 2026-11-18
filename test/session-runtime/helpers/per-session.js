@@ -89,8 +89,12 @@ function runtime(home, extra = [], {restore = true} = {}) {
   const r = {child, socket, run, err: '', out: '', code: undefined};
   const replies = new Map();
   let nextControl = 1;
+  // what the runtime tells the daemon unasked (session-resume, busy...)
+  r.told = [];
   child.on('message', (m) => {
-    if (m != null && m.type === 'ready' && restore) child.send({id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []});
+    // restore: true sends an empty table; an object sends that one
+    if (m != null && m.type === 'ready' && restore) child.send(restore === true ? {id: 'restore-1', type: 'restore', sessions: [], declines: [], reset: []} : restore);
+    if (m != null && m.id === undefined && m.type !== 'ready') r.told.push(m);
     const f = m != null ? replies.get(m.id) : null; if (f != null) { replies.delete(m.id); f(m); }
   });
   r.control = (msg) => new Promise((resolve) => { const id = nextControl++; replies.set(id, resolve); child.send(Object.assign({}, msg, {id})); });

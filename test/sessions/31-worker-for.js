@@ -21,6 +21,7 @@ const SVC = 'urn:countinghouse-test:serviceID:stateService';
 describe('sessions 31: a per-session module\'s worker is its call\'s session\'s (R1 Task 5)', () => {
   const sessions = require('../../lib/sessions');
   let realGet;
+  let realLive;
   let realAccess;
   let live;
   let dm;
@@ -33,13 +34,16 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     // own path (run in one process, as CI runs a folder)
     require('../../lib/session-packs').resetForTests();
     realGet = sessions.get;
+    realLive = sessions.live;
     sessions.get = (id) => (live.has(id) ? {id} : null);
+    sessions.live = (id) => live.has(id);
     realAccess = DeviceManager.prototype.replyAfterQueryAccessCheck;
     // the access check granted: what is under test is what comes after it
     DeviceManager.prototype.replyAfterQueryAccessCheck = function(wm, msgID, deviceID, identity, onGranted) { return onGranted(); };
   });
   after(() => {
     sessions.get = realGet;
+    sessions.live = realLive;
     DeviceManager.prototype.replyAfterQueryAccessCheck = realAccess;
   });
   beforeEach(() => {
@@ -77,6 +81,18 @@ describe('sessions 31: a per-session module\'s worker is its call\'s session\'s 
     assert.strictEqual(ended.err.code, 'DEVICE_NOT_FOUND', JSON.stringify(ended.err));
     assert.ok(!ended.err.message.includes(D), ended.err.message);
     assert.strictEqual((await workerFor(B)).err.code, 'DEVICE_NOT_FOUND', 'a client\'s call too');
+  });
+
+  // the reviewer's high review of #398: the pool's refusal of a session that
+  // ended meanwhile answers byte for byte as an unknown device does
+  it('workerFor: the pool refusing an ended session is exactly an unknown device: with the ID for a call, without for a hop', async () => {
+    dm.moduleManager.sessionWorkers.get = (n, s, cb) => cb(Object.assign(new Error('ended'), {code: 'DEVICE_NOT_FOUND'}));
+    const call = await workerFor(A);
+    const asUnknown = new (require('../../lib/countinghouse-error').CountinghouseError)('DEVICE_NOT_FOUND', D);
+    assert.deepStrictEqual([call.err.code, call.err.message], [asUnknown.code, asUnknown.message]);
+    const hop = await workerFor(A, {hop: true});
+    assert.strictEqual(hop.err.code, 'DEVICE_NOT_FOUND');
+    assert.ok(!hop.err.message.includes(D), hop.err.message);
   });
 
   it('workerFor: a module closing starts no worker; busy and suspended pass through', async () => {

@@ -12,7 +12,7 @@
 - **A new main-thread `lib/session-workers.js`** holds the per-session workers, keyed by (module name, session id). They're spawned through `ModuleManager.spawnModuleWorker` with a `session` option that only the main thread sees.
 - **Every dispatch site resolves the worker through one function**, `DeviceManager.prototype.workerFor(deviceID, sessionId, cb)`, before it sends anything: the call path, the routed hop, the device query, a job's run, and the peer broker. A shared module's entry answers itself, as today.
 - **A new `lib/session-partition.js`** owns the partitions' names, creation, removal and the sweep. Store keys go under `ms:<encoded name>:<session id>:`. Files go under `<moduleDataPath>/<name>/sessions/<session id>/{data,tmp}`.
-- **The registry says why a session ended** (`bye`, `window`, `closed`). A partition is removed on the first two, never on `closed`.
+- **The registry says why a session ended** (`bye`, `window`, `closed`, and `unsettled`). A partition is removed on every end but `closed`.
 
 **Tech stack:** Node ≥ 22.16, mocha. C1's session transport (`lib/session-transport/*`), B1's `lib/sessions.js`, the fs broker (`lib/fs-broker`), `lib/redis-namespace.js`.
 
@@ -54,10 +54,10 @@ Each was the Reviewer's ruling, given while the task was built.
 - **Not reachable is unknown** (B3's rule): a call with no session, a token or peer channel past its session's end, and a job whose session ended are answered as a device never hosted (`missingDeviceErrorForHop`: `DEVICE_NOT_FOUND`, no ID). Never a code that says the module exists.
 - **Prefixes never nest:** `ms:<enc(name)>:<sid>:` and `m:<enc(name)>:` each keep their trailing colon, and `<sid>` is exactly 32 lowercase hex characters (`lib/session-transport/restore.js` `SESSION_ID`). A purge of `ms:foo:` can't reach `ms:foobar:`, and nothing in `ms:` can be named from `m:`.
 - **Data paths:** `<moduleDataPath>/<name>/sessions/<sid>/{data,tmp}`, made 0700 by `lib/module-data.js`. The worker sees `/data` and `/tmp` as today. The broker maps them on the main thread, and the scrub strips the session root from paths and error texts.
-- **Lifetime:** removed on the session's `bye` or window expiry only, never on `Registry.close()`. The restored ids keep their partitions; the sweep (before the listener accepts) removes partitions whose id wasn't restored.
+- **Lifetime:** removed when the session ends for good (`bye`, window expiry, or `unsettled`: a resume that never settles, which the registry forgets whole), never on `Registry.close()`. The restored ids keep their partitions. The sweep removes partitions whose session is neither restored nor open; it runs once the listener accepts, in the background (the reviewer's ruling of 11-17: a long sweep before listen() could run past restored sessions' reconnect windows).
 - **Limits:** `--maxSessionWorkers` (default 16, operator only; a session can't raise it). At the cap, the least recently used session worker with no call in flight gives up its slot, and its session is told "<module>'s in-memory state was reset; its files were kept". If none can, the call is refused `SESSION_WORKERS_BUSY` (retryable). Nothing is queued. The fs quota counts all of a module's partitions together.
 - **The cap never kills mid-call** (Reviewer, #349). LRU eviction takes only a worker with no call in flight and no live token issued to it (a hop's, a job's, a peer channel's). When every slot is busy, the call is `SESSION_WORKERS_BUSY` (retryable). Tested in Task 4.
-- **The memory cost is stated, and the cap is the operator's** (Reviewer, #349). The docs state the per-session cost as one lean worker (~14.5 MB measured on #177) × `--maxSessionWorkers` (16 by default: ~232 MB at the cap) above today's shared workers. The cap is a CLI flag only: never a setting a session can change in conversation, and not in the settings tool's allowlist.
+- **The memory cost is stated, and the cap is the operator's** (Reviewer, #349). The docs state the per-session cost as measured on #377: about 15 MB once plus about 24 MB per per-session worker × `--maxSessionWorkers` (16 by default: about 400 MB at most) above today's shared workers. (This plan first said ~14.5 MB per lean worker, from #177; the measurement replaced it.) The cap is a CLI flag only: never a setting a session can change in conversation, and not in the settings tool's allowlist.
 - **B3's session packs** (Reviewer, #349). A per-session module inside a this-session pack: its workers and partitions follow what the session lists (`lib/session-packs.js`). **The hook, agreed with B:** `sessionPacks.onChange(fn)` calls fn(sessionId) when that session's view may have changed, or fn(null) when every session's may have. Then for each of S's session workers, `sessionPacks.listsModule(S, moduleName) === false` stops the worker and keeps its partition (removed only at S's end). Never set membership: the view also moves with the global value, a session's own "off" of a global pack, and the ceiling. **A ceiling change fires too** (the Reviewer asked; B built it): `onChange(null)` when a ceiling read's key differs from the last one's (untrusted fires once, trusted again once more, the first read is silent). It's wired in production by `configureSessionPacks`, and lands in B3's follow-up PR (Tasks 8b and 9). In Task 4's test, configure session-packs with `onCeilingChange: settings.onCeilingChange` (`test/sessions/14` has the pattern). Task 5's dispatch check stays the backstop. **Ordering:** B3's Task 9 restores a session's packs at its own resume, not between `_restore` and listen, and reads no module data before listen. So the order is `_restore`, then the sweep, then `listener.listen()`.
 - **No idle stop.** A session worker stops only at its session's end, at the cap, on its module's reload or unload, or by crashing.
 - New error codes (`MODULE_NEEDS_SESSIONS`, `MODULE_STATE_INVALID`, `MODULE_STATE_CHANGED`, `SESSION_WORKERS_BUSY`) go into `lib/error-catalogue.js` with `en` and `zh` texts, and get their own wording review.
@@ -69,7 +69,7 @@ Each was the Reviewer's ruling, given while the task was built.
 2. **A crash of one session's worker:** the supervisor is keyed by module name (`this.supervisor.clear(name)`). A crash must restart (or end) only that (module, session) worker, never the listing record or another session's worker (Task 4's crash case).
 3. **Reload or unload of a per-session module:** every session's worker stops. The next call spawns one on the new code (reload) or is unknown (unload). Partitions are kept on reload and removed on uninstall, whose purge must cover `ms:<name>:` as well as `m:<name>:` (Task 3 and Task 4).
 4. **A session ending while its worker has a call in flight:** the call ends as a cancelled one does today (billed for what ran). The worker stops after it, and the partition is removed after the worker has stopped, never under it (Task 6).
-5. **The sweep and a resume racing:** the sweep runs before the listener accepts, so no resume can arrive mid-sweep. A restored session that resumes after the sweep finds its partition (Task 6's restart case).
+5. **The sweep and a resume racing:** the sweep keeps every session the registry holds as it reaches each partition (restored, or open now; a new session's id is random), so a resume during the sweep finds its partition (Task 6's restart case). It runs once the listener accepts, in the background (the reviewer, 11-17).
 
 ---
 
@@ -230,10 +230,10 @@ Isolation is then structural: no channel to a per-session worker exists. **Cost:
   - `--maxSessionWorkers` (default 16) **in all**, across every per-session module (§4a; confirmed by the Reviewer): the one memory bound;
   - idle workers are retired least recently used, never one with a call in flight or a live token;
   - `SESSION_WORKERS_BUSY` when all are busy;
-  - the cost: about 14.5 MB per lean worker × the cap;
+  - the cost: about 15 MB once plus about 24 MB per worker × the cap (measured, #377);
   - the cap is set from the terminal only.
 - [ ] **Lifetime:**
-  - storage is kept while the session can resume (a restart keeps restored sessions' partitions), and removed on `bye` or window expiry, or by the sweep;
+  - storage is kept while the session can resume (a restart keeps restored sessions' partitions), and removed when it ends for good (`bye`, window expiry, `unsettled`), or by the sweep;
   - a reload stops all its workers;
   - `MODULE_STATE_CHANGED` if the declaration changes (unload first).
 - [ ] **Where it runs:** not on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`). `--stdio` is one session, so one worker, on today's paths.
