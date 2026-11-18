@@ -71,6 +71,20 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
   }
 
+  it('a session\'s end never rejects: a module manager it can\'t ask resolves false, logged', async () => {
+    const LOG = require('../../lib/logger');
+    const realE = LOG.E;
+    const logged = [];
+    LOG.E = (e) => logged.push(e);
+    try {
+      const bare = {modules: mm.modules, sessionWorkers: {stopSession: () => Promise.resolve()}};
+      assert.strictEqual(await lifetime.ended(bare, A, 'bye', env), false);
+      assert.strictEqual(logged.length, 1);
+    } finally {
+      LOG.E = realE;
+    }
+  });
+
   it('\'closed\' (the runtime stopping): the workers stop, and every partition is kept for the next start', async () => {
     await make(A);
     const ending = lifetime.ended(mm, A, 'closed', env);
@@ -283,6 +297,9 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       viewA.settle(1000, 1, 0, 0);   // the write then failed
       viewA.settle(0, 0, 700, 1);   // or another grew
       assert.throws(() => viewA.reserve(500, 1, 'write', '/data/h'), (e) => e.code === 'ENOSPC', 'a share given back refuses any new charge');
+      quota().enforce = false;   // under report nothing is refused: nor this, and it isn't counted either
+      viewA.reserve(500, 1, 'write', '/data/h');
+      assert.strictEqual(quota().bytes, 2000);
       assert.strictEqual(quota().bytes, 2000, 'B\'s 2000 untouched');
     });
 
@@ -400,6 +417,12 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       }
       assert.ok(walks < 12, `${walks} of 12 walked`);
       assert.ok(ids.filter((id) => !quota().knows(id)).length >= 12 - walks, 'the ones not walked are unknown');
+      // the total is pinned at what was counted: a share given back never
+      // takes it lower, so the partitions not counted stay covered
+      const pinned = quota().bytes;
+      const counted = ids.find((id) => quota().shares.get(id) != null && quota().shares.get(id).bytes > 0);
+      await end(counted);
+      assert.strictEqual(quota().bytes, pinned, 'not below what the build counted');
     });
 
     it('the build walks a few partitions at a time, never all at once', async () => {
