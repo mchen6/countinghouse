@@ -686,7 +686,10 @@ read again at each load of a module that declares settings and at each
 `reread`, and watched while the runtime has a control channel: a change
 re-reads every module's settings, so a fixed value binds without `ch-local`.
 A ceiling that cannot be trusted refuses such a load; a supervised restart
-keeps the values the module ran with.
+keeps the values the module ran with. A supervised restart the ceiling's
+`fixed` refuses (a value the module rejects, or a setting it doesn't
+declare) is suspended at once with the ceiling's reason, not retried: the
+next load, once the ceiling is updated, proceeds.
 
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`

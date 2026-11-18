@@ -465,6 +465,27 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(logged.some((l) => /uid 1000/.test(l)), logged.join('\n'));
     });
 
+    it('a restart the ceiling refuses is suspended at once, with the ceiling\'s reason (no crash loop); another failure is retried', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const {restartFailed} = require('../../lib/module-manager');
+      const c = trusted(parsed({moduleSettings: {'w.sharestats': {fixed: false}}}).ceiling);
+      const load = reread_.next('w', {pkg: W, net: []}, {ceiling: {state: 'none'}});
+      const r = reread_.next('w', {pkg: W, net: []}, {previous: load.state, ceiling: c, ceilingRefuses: true});
+      assert.ok(reread_.isCeilingRefusal(r.refusal));
+      const calls = [];
+      const record = {specs: null};
+      const mm = {supervisor: {isCurrent: () => true, suspend: (n, why) => calls.push(['suspend', n, why]),
+        exited: () => { calls.push(['exited']); return {action: 'restart', delayMs: 1}; }, status: () => ({exits: []})},
+      givenUp: (n, code) => calls.push(['givenUp', n, code])};
+      restartFailed(mm, 'w', record, r.refusal);
+      assert.deepStrictEqual(calls.map((x) => x[0]), ['suspend', 'givenUp']);
+      assert.match(calls[0][2], /moduleSettings "w\.sharestats".*update the ceiling/);
+      assert.strictEqual(calls[1][2], 'MODULE_SUSPENDED');
+      calls.length = 0;
+      restartFailed(mm, 'w', record, new Error('a crash'));
+      assert.deepStrictEqual(calls.map((x) => x[0]), ['exited'], 'any other failure: the supervisor\'s retry');
+    });
+
     it('a module coming up (not in the map yet) takes its state as it registers, by the one rule, from its own pinned package.json and net', async () => {
       const mm = manager();
       const mmLib = require('../../lib/module-manager');
