@@ -66,6 +66,22 @@ describe('composition 22: declarations pinned before the module runs, and every 
     assert.strictEqual(added(B, 'adopted').length, 0, lines.join('\n'));
   });
 
+  it('a supervised restart keeps the settings declaration too; one changed on disk is logged, not adopted (module settings, section 4.1)', () => {
+    const p = pins();
+    const settings = (s) => ({countinghouse: {calls: [A], settings: s}});
+    write([A], settings({share: {type: 'boolean', default: false, confirm: true}}));
+    p.pin('m', mod, true);
+    write([A], settings({share: {type: 'boolean', default: true}}));   // drops confirm, flips the default
+    const kept = p.pin('m', mod, false);
+    assert.deepStrictEqual(kept.countinghouse.settings, {share: {type: 'boolean', default: false, confirm: true}});
+    assert.strictEqual(lines.filter((l) => /settings declaration changed since its last pin/.test(l) && l.includes('(not adopted')).length, 1, lines.join('\n'));
+    assert.ok(lines.every((l) => !l.includes('"default":true')), 'the declaration itself is not logged');
+    // an operator's reload adopts it, and says so
+    lines = [];
+    assert.deepStrictEqual(p.pin('m', mod, true).countinghouse.settings, {share: {type: 'boolean', default: true}});
+    assert.strictEqual(lines.filter((l) => /settings declaration changed since its last pin/.test(l) && l.includes('(adopted')).length, 1, lines.join('\n'));
+  });
+
   it('an operator\'s reload adopts the file and logs each call added since the previous pin', () => {
     const p = pins();
     write([A]);
