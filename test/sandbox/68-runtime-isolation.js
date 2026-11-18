@@ -76,12 +76,12 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'resolveOracle'});
       const codes = detail(r).split(' ');
       assert.strictEqual(codes[0], 'MODULE_NOT_FOUND', JSON.stringify(r).slice(0, 500));
-      if (mode === 'enforce') assert.deepStrictEqual(codes, Array(5).fill('MODULE_NOT_FOUND'), JSON.stringify(r).slice(0, 500));
+      if (mode === 'enforce') assert.deepStrictEqual(codes, [...Array(5).fill('MODULE_NOT_FOUND'), 'stat:missing'], JSON.stringify(r).slice(0, 500));
       else assert.ok(await waitFor(server, /violation require [^\n]*(settings-tool|json-stringify-safe)/), server.output.slice(-1500));
     });
     it('interop: the module\'s own files by import(), require(esm), createRequire and require.resolve', async () => {
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'interop'});
-      assert.strictEqual(detail(r), 'cjs esm json resolved', JSON.stringify(r).slice(0, 500));
+      assert.strictEqual(detail(r), 'cjs esm json resolved function', JSON.stringify(r).slice(0, 500));
     });
     it(`BroadcastChannel: ${mode === 'enforce' ? 'gone by either route' : 'a message crosses to another module\'s worker, and is reported'}`, async () => {
       const listening = mcpCall(testPort(9759), KEY, 'isolation_peer_peerservice_listen', {});
@@ -89,11 +89,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'broadcast'});
       const heard = await listening;
       if (mode === 'enforce') {
-        assert.match(detail(r), /^undefined (MODULE_NOT_FOUND|ERR_ACCESS_DENIED)$/, JSON.stringify(r).slice(0, 500));
+        assert.match(detail(r), /^undefined (MODULE_NOT_FOUND|ERR_ACCESS_DENIED) none$/, JSON.stringify(r).slice(0, 500));
         assert.strictEqual(detail(heard), 'no BroadcastChannel');
       } else {
         // (worker_threads, refused under enforce, is allowed and reported under audit)
-        assert.match(detail(r), /^function (function|undefined)$/, JSON.stringify(r).slice(0, 500));
+        assert.match(detail(r), /^function (function|undefined) one$/, JSON.stringify(r).slice(0, 500));
         assert.strictEqual(detail(heard), 'received hello');
         assert.ok(await waitFor(server, /isolation-probe uses BroadcastChannel/), server.output.slice(-1500));
       }

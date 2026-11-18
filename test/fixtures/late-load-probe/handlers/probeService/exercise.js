@@ -144,6 +144,20 @@ const STEPS = {
     if (typeof(process.getBuiltinModule) === 'function') { try { call(process.getBuiltinModule); } catch (e) { /* recorded first */ } }
     return 'ran';
   },
+  // sshpk's lazy require of bcrypt-pbkdf (warmed with postman-request, #425):
+  // after the seal (#194's PR 2) the net answers that one require, by
+  // sshpk's own Module, from what it was at the lockdown (another load from
+  // a runtime Module, refused: test/sandbox/68)
+  lazyHit: async () => {
+    const h = handle();
+    if (h == null || h.modules == null) return 'no handle';
+    const key = Object.keys(h.modules).find((k) => /[\\/]node_modules[\\/]sshpk[\\/]lib[\\/]formats[\\/]ssh-private\.js$/.test(k));
+    if (key == null) return 'no sshpk';
+    const M = module.constructor;
+    let served;
+    try { served = typeof(M._load('bcrypt-pbkdf', h.modules[key]).pbkdf) === 'function' ? 'served' : 'other'; } catch (e) { served = String(e.code); }
+    return served;
+  },
   // an error the runtime logs and answers
   error: async () => { throw new Error('late-load-probe: an error to answer'); }
 };

@@ -38,7 +38,10 @@ const STEPS = {
       code(() => M._resolveFilename('./settings-tool.js', h.module)),
       code(() => M._resolveFilename('json-stringify-safe', h.module)),
       code(() => M._resolveFilename('json-stringify-safe', forged)),
-      code(() => M.createRequire(path.join(lib, 'logger.js')).resolve('json-stringify-safe'))
+      code(() => M.createRequire(path.join(lib, 'logger.js')).resolve('json-stringify-safe')),
+      // and the loader's own stat: a runtime file as a missing one
+      `stat:${M._stat(path.join(lib, 'settings-tool.js')) === M._stat(path.join(lib, 'no-such-isolation-file.js'))
+        && M._stat(path.relative(process.cwd(), path.join(lib, 'settings-tool.js'))) === M._stat(path.join(lib, 'no-such-isolation-file.js')) ? 'missing' : 'found'}`
     ].join(' ');
   },
   // interop, in both modes: the module's own files by every form
@@ -48,6 +51,9 @@ const STEPS = {
     out.push(require('../../lib/own.mjs').own);
     out.push(require('module').createRequire(__filename)('../../lib/data.json').own);
     out.push(insideRoot(require.resolve('../../lib/data.json')) ? 'resolved' : 'outside');
+    // (a CommonJS file reached by import(), asking for the module built-in:
+    // the reduced module's re-resolution, which has no parent, still served)
+    out.push((await import('../../lib/needs-module.cjs')).default.createRequire);
     return out.join(' ');
   },
   // The window (Revision 4, test 4): while the runtime's late paths run (a
@@ -105,7 +111,10 @@ const STEPS = {
       c.postMessage('hello');
       c.close();
     }
-    return `${global} ${viaRequire}`;
+    // (under audit its prototype's constructor is the same view: no route to
+    // the original unreported)
+    const ctor = global === 'function' ? (globalThis.BroadcastChannel.prototype.constructor === globalThis.BroadcastChannel ? 'one' : 'another') : 'none';
+    return `${global} ${viaRequire} ${ctor}`;
   },
   // A: the require cache lists the module's own files only
   cacheFiles: () => {

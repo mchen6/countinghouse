@@ -67,13 +67,6 @@ async function startFdProbe(root) {
 }
 const fdAttempt = async (form) => toolOutput(await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_attempt', {what: 'socket', arg: form}));
 
-// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
-// runtime object only through the probe's hand-over, module code's own
-// require.cache holding its own files only)
-let savedLateLoads;
-before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
-after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
-
 describe('sandbox 09: --hardened', function() {
   this.timeout(90000);
   let server = null;
@@ -154,9 +147,13 @@ describe('sandbox 09: --hardened', function() {
       server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
         '--modulePolicy', policy, '--modulePath', root, '--loadModule', path.join(root, 'lazy-net-probe')]);
       const probe = async (args) => toolOutput(await mcpCall(testPort(9614), KEY, 'lazy_net_probe_netservice_probe', args));
-      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: true});
+      // (module code no longer sees the runtime's files, #194's PR 2, and
+      // the test's probe is refused under --hardened: that the request is
+      // answered, under enforce, where a load after the lockdown is refused
+      // by the net, is what shows the library loaded before module code)
+      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: false});
       const r = await probe({what: 'request', url: `${standIn.base}/`});
-      assert.deepStrictEqual([r.outcome, r.status, r.body, r.loaded], ['ok', 200, 'ok', {request: true}], JSON.stringify(r));
+      assert.deepStrictEqual([r.outcome, r.status, r.body], ['ok', 200, 'ok'], JSON.stringify(r));
     } finally {
       await standIn.close();
     }

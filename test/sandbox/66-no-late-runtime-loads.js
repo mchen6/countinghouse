@@ -47,6 +47,8 @@ const STEPS = [
   // walks out of the root stays refused (identity takes path at load too:
   // the in-process case below)
   ['pathSwap', (d) => d === 'not replaced: MODULE_NOT_FOUND'],
+  // the one listed lazy require, answered by the net with nothing loaded
+  ['lazyHit', (d) => d === 'served'],
   ['error', (d, r) => r.isError === true]
 ];
 const settle = () => new Promise((res) => setTimeout(res, 200));
