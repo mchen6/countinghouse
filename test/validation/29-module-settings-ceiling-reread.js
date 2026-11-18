@@ -619,6 +619,18 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       await assert.rejects(reread.reread(manager(), null), (e) => e.code === 'CONTROL_FAILED');
     });
 
+    it('the user\'s file unusable: the operator\'s ceiling binds all the same (its fixed values over the running ones), the problem said once, the request refused', async () => {
+      const mm = manager();
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const logged = [];
+      const c = () => trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling);
+      await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.code === 'CONTROL_FAILED' && e.fileProblem === true && e.appliedByCeiling === 1);
+      assert.strictEqual(mm.modules.w.settings.values.units, 'metric', 'the fixed value binds');
+      assert.strictEqual(mm.modules.r.settings.values.region, 'eu', 'nothing else changed');
+      await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.appliedByCeiling === 0);
+      assert.strictEqual(logged.filter((l) => /cannot be read/.test(l)).length, 1, 'said once');
+    });
+
     it('single-thread mode: the manager\'s own copy', async () => {
       const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
       mm.singleThreadSettings.set('w', ms.stateFor('w', W, {operator: true}));
@@ -687,15 +699,17 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(lines.some((l) => /re-read \(0 applied/.test(l)), lines.join('\n'));
       listen({state: 'untrusted', file: '/x', problem: 'p'});
       assert.strictEqual(queued.length, 1, 'trust changed: a reread');
-      // the settings file mid-write: said once, retried
+      // the settings file mid-write: said once, tried once more, not again
       fs.writeFileSync(options.settingsFile, '{not json');
       await queued.shift()();
       assert.strictEqual(timers.length, 1);
       timers.shift()();
       await queued.shift()();
+      assert.strictEqual(timers.length, 0, 'tried once more only');
       assert.strictEqual(lines.filter((l) => /re-read failed/.test(l)).length, 1, 'the same failure, said once');
+      // a later change reads it again
       fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {}}));
-      timers.shift()();
+      listen(trusted(parsed({moduleSettings: {'w.units': {fixed: 'imperial'}, 'w.n': {fixed: 3}}}).ceiling));
       await queued.shift()();
       assert.ok(/re-read \(/.test(lines[lines.length - 1]), lines.join('\n'));
       // a failure that would last (no --settingsFile): said, never retried
