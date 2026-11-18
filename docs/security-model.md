@@ -235,8 +235,9 @@ any module code). Stops:
   settings, `compact`, `excludeNetwork` and `excludeEnv` are the worker's
   own values, which a module may read and set (a boolean, as Node checks)
   and which never reach the process's (the worker's real `excludeEnv` and
-  `excludeNetwork` are on from its start; a report it writes under `audit`
-  takes its own `compact`); every other one (`directory`, `filename`,
+  `excludeNetwork` are on from its start, so a report it writes under
+  `audit` holds no environment; such a report is in the process's
+  `compact`, not the module's); every other one (`directory`, `filename`,
   `signal`, the `reportOn*` triggers, and any a later Node adds) is locked;
 - `process.report.getReport()`, in every mode: Node builds a report from the
   process, not the worker, so it would hold the server's own environment and

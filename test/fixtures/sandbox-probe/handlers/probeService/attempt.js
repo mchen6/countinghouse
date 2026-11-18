@@ -150,7 +150,7 @@ const ATTEMPTS = {
   },
   // a setting that writes where a report goes (re-set to itself: audit changes nothing)
   reportDirectory:  () => { process.report.directory = process.report.directory; },
-  // a report written to {file, compact} (arg as JSON) in the module's own compact (audit only: refused under enforce)
+  // a report written to {file} (arg as JSON) with the module's compact set to {compact} (audit only: refused under enforce)
   writeReportTo:    (arg) => {
     const {file, compact} = JSON.parse(arg);
     const was = process.report.compact;
@@ -167,7 +167,10 @@ const ATTEMPTS = {
   },
   // a view of Node's own: a setting is a boolean, as Node checks
   reportCompactNotBoolean: () => {
-    try { process.report.compact = 'yes'; } catch (e) { if (e instanceof TypeError && e.code === 'ERR_INVALID_ARG_TYPE') return; throw e; }
+    try { process.report.compact = 'yes'; } catch (e) {
+      if (e instanceof TypeError && e.code === 'ERR_INVALID_ARG_TYPE' && /Received type string \('yes'\)/.test(e.message) && process.report.compact === false) return;
+      throw e;
+    }
     throw Object.assign(new Error('a non-boolean was taken'), {code: 'TAKEN'});
   },
   compileCache:     () => module.constructor.enableCompileCache('/nonexistent-ch-probe/cc'),

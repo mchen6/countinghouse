@@ -164,7 +164,7 @@ describe('sandbox 05: worker lockdown', function() {
       await noReportViolation(testPort(9609), server, from, 'excludeNetwork');
     });
 
-    it('a report written under audit holds no environment, in the module\'s own compact', async () => {
+    it('a report written under audit holds no environment, and is in the process\'s compact, not the module\'s', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-05-report-'));
       try {
         for (const compact of [true, false]) {
@@ -174,7 +174,7 @@ describe('sandbox 05: worker lockdown', function() {
           const text = fs.readFileSync(file, 'utf8');
           const report = JSON.parse(text);
           assert.strictEqual(report.environmentVariables, undefined, `${compact}: the environment was written`);
-          assert.strictEqual(text.trim().includes('\n'), !compact, `${compact}: compact ${compact} as the module set it`);
+          assert.ok(text.trim().includes('\n'), `module's compact ${compact}: written in the process's (not compact)`);
         }
       } finally { fs.rmSync(dir, {recursive: true, force: true}); }
     });
@@ -205,7 +205,8 @@ describe('sandbox 05: worker lockdown', function() {
     it('a module\'s compact is its own: the process\'s is unchanged, as a restarted worker finds it', async () => {
       const set = await mcpCall(testPort(9609), KEY, TOOL, {what: 'reportCompactSet'});
       assert.deepStrictEqual(toolOutput(set), {outcome: 'allowed', code: null}, JSON.stringify(set));
-      await post(testPort(9609), KEY, '/restart-module', {name: 'sandbox-probe'});
+      const restarted = await post(testPort(9609), KEY, '/restart-module', {name: 'sandbox-probe'});
+      assert.strictEqual(restarted.status, 200, `the restart: ${JSON.stringify(restarted)}`);
       // (until the restart answers, the old worker still says its own compact: COMPACT_true)
       let last = null;
       await waitFor(async () => {
