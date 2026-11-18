@@ -674,6 +674,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       timers.shift()();
       await queued.shift()();
       assert.ok(/re-read \(/.test(lines[lines.length - 1]), lines.join('\n'));
+      // a failure that would last (no --settingsFile): said, never retried
+      const file = options.settingsFile;
+      options.settingsFile = null;
+      listen(trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling));
+      await queued.shift()();
+      options.settingsFile = file;
+      assert.strictEqual(timers.length, 0, 'not retried');
+      assert.match(lines[lines.length - 1], /no --settingsFile/);
     });
   });
 });
