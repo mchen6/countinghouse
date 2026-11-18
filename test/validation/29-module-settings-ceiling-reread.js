@@ -713,6 +713,23 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(typeof(stamp) === 'string' && stamp.includes(options.settingsFile), String(stamp));
     });
 
+    it('a ceiling that cannot be read when a state is made binds as untrusted, never a throw', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const tool = require('../../lib/settings-tool');
+      const saved3 = options.settingsTool;
+      options.settingsTool = true;
+      tool.ceilingForControl(() => { throw Object.assign(new Error('EIO'), {code: 'EIO'}); });
+      try {
+        const ran = ms.stateFor('w', W, {operator: true});
+        let r = null;
+        assert.doesNotThrow(() => { r = reread_.settle({modules: {}}, 'w', ran); });
+        assert.ok(r != null);
+      } finally {
+        options.settingsTool = saved3;
+        tool.ceilingForControl(() => tool.cachedCeiling(() => require('../../lib/settings-ceiling').readCeiling()));
+      }
+    });
+
     it('single-thread mode: the manager\'s own copy', async () => {
       const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
       // the serving instance's ticket, which its devices read
