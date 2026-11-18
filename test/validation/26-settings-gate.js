@@ -95,6 +95,18 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       require('../../lib/tool-generation').bump();
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
     });
+
+    it('a declaring part not registered yet (still spawning) is not ready; a client\'s call names its top-level module, never the part', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const top = {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}};
+      const dm = {deviceMap: {[idOf('top')]: top}, moduleOfDevice: () => null,
+        moduleManager: {deviceTickets: new WeakMap([[top, {state: stateWith({})}]]), pinnedDevicePackages: new Map([[idOf('part'), '@acme/part']])},
+        packageOfModule: (n) => (n === '@acme/part' ? {name: n, countinghouse: {settings: {r: {type: 'string', required: true}}}} : {name: n})};
+      require('../../lib/tool-generation').bump();
+      const err = gate.requiredRefusal(dm, idOf('top'), true);
+      assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
+      assert.ok(/top/.test(err.message) && !/part/.test(err.message), err.message);
+    });
   });
 
   // a device manager whose devices are named modules: `calls` the modules
