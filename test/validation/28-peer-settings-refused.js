@@ -50,7 +50,7 @@ describe('validation 28: a peer match to a module whose required setting is unse
   // a peer hop's error as the callee posts it (lib/peer-worker.js): its fields and data, as bytes
   const errorBytesOf = (code, message) => require('../../lib/serialized-result').serialize({fields: {errMsg: message, errCode: code}, data: null});
   const toAB = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
-  function billWith(code, message, flagged = (code === 'SETTING_REQUIRED')) {
+  function billWith(code, message, flagged = (code === 'SETTING_REQUIRED' || code === 'SETTING_NOT_READY')) {
     const PeerChannelBroker = require('../../lib/peer-channel-broker');
     const decl = ms.parseDeclaration({name: 'callee', countinghouse: {settings: {region: {type: 'string'}, units: {type: 'enum', values: ['a'], default: 'a'}}}}).settings;
     const callee = Object.assign(Object.create(require('../../lib/worker-message').prototype), {workerId: 86, hostModuleName: 'callee',
@@ -77,6 +77,11 @@ describe('validation 28: a peer match to a module whose required setting is unse
       const results = billWith('SETTING_REQUIRED', name);
       assert.strictEqual(results[0].errCode, 'DEVICE_INVOKE_EXCEPTION', name);
     }
+  });
+
+  it('a SETTING_NOT_READY a callee makes up, with no module that declares settings behind it, is a module fault, as on a routed hop', () => {
+    const results = billWith('SETTING_NOT_READY', 'not ready');
+    assert.strictEqual(results[0].errCode, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(results[0]));
   });
 
   it('an error the callee did not flag as a settings claim is not decoded here: its bytes go on', () => {
