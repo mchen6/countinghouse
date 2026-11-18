@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "#/",
+  "type": "object",
+  "probeService": {
+    "exercise": {
+      "input": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "handlerParent": {
+            "type": "string"
+          },
+          "loadedParent": {
+            "type": "string"
+          },
+          "outcomes": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

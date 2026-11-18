@@ -320,6 +320,51 @@ const out = {
       ]
     };
   })(),
+  // The module form of ch-local's control messages (module-level
+  // configuration, #413 section 7.3; M4): a load, reload and unload name
+  // top-level modules by package name, with the directory of each module of
+  // their closures; the runtime tells module-stopped unasked. The pack form
+  // (packMessages) is still taken until M6, never mixed with this one.
+  moduleMessages: (() => {
+    const store = '/home/example/.countinghouse/module-store';
+    const dir = (name, version) => `${store}/${name}/${version}`;
+    const scenario = '@countinghouse/ch-pack-example';
+    const part = '@countinghouse/ch-step-shared';
+    const slot = 'COUNTINGHOUSE_CREDENTIAL_1';
+    const creds = {'@countinghouse/ch-access-example': {'https://api.example.com': {EXAMPLE_TOKEN: slot}}};
+    return {
+      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
+      packagePattern: '^(?:@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$',
+      slotPattern: '^COUNTINGHOUSE_CREDENTIAL_[1-9][0-9]{0,3}$',
+      accepted: [
+        {why: 'a load', message: {id: 1, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0'), [part]: dir(part, '1.0.0')}, notice: 'example added 1.0.0'}},
+        {why: 'a load with credentials', message: {id: 2, type: 'load', name: '@countinghouse/ch-access-example',
+          dirs: {'@countinghouse/ch-access-example': dir('@countinghouse/ch-access-example', '0.2.0')}, credentials: creds}},
+        {why: 'a reload of two names that share a part', message: {id: 3, type: 'reload', names: [scenario, '@countinghouse/ch-pack-other'],
+          dirs: {[scenario]: dir(scenario, '1.1.0'), '@countinghouse/ch-pack-other': dir('@countinghouse/ch-pack-other', '2.0.0'), [part]: dir(part, '1.1.0')}}},
+        {why: 'a reload of three names over two shared parts', message: {id: 4, type: 'reload', names: ['@t/s1', '@t/s2', '@t/s3'],
+          dirs: {'@t/s1': dir('@t/s1', '1.0.0'), '@t/s2': dir('@t/s2', '1.0.0'), '@t/s3': dir('@t/s3', '1.0.0'), '@t/x': dir('@t/x', '2.0.0'), '@t/y': dir('@t/y', '2.0.0')}}},
+        {why: 'an unload', message: {id: 5, type: 'unload', name: scenario, notice: 'example turned off'}},
+        {why: 'a reread of the module settings', message: {id: 6, type: 'reread', what: 'module-settings'}},
+        {why: 'a notice about a module', message: {id: 7, type: 'notice', module: scenario, text: 'example upgraded 1.0.0 → 1.1.0'}},
+        {why: 'a notice about no module', message: {id: 8, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
+        {why: 'the runtime stopped a module for good', message: {type: 'module-stopped', name: scenario, code: 'MODULE_SUSPENDED', when: 'restart'}}
+      ],
+      refused: [
+        {why: 'a load with no dirs', reason: 'dirs', message: {id: 11, type: 'load', name: scenario}},
+        {why: 'a directory that is not absolute', reason: 'dirs', message: {id: 12, type: 'load', name: scenario, dirs: {[scenario]: 'module-store/x'}}},
+        {why: 'a name that is not a package name', reason: 'name', message: {id: 13, type: 'load', name: 'Example Pack', dirs: {'Example Pack': dir('x', '1.0.0')}}},
+        {why: 'a reload with names empty', reason: 'names', message: {id: 14, type: 'reload', names: [], dirs: {[scenario]: dir(scenario, '1.0.0')}}},
+        {why: 'a credentials environment name that is not a slot', reason: 'credentials', message: {id: 15, type: 'load', name: '@countinghouse/ch-access-example',
+          dirs: {'@countinghouse/ch-access-example': dir('@countinghouse/ch-access-example', '0.2.0')},
+          credentials: {'@countinghouse/ch-access-example': {'https://api.example.com': {EXAMPLE_TOKEN: 'GITHUB_TOKEN'}}}}},
+        {why: 'a leftover pack field', reason: 'old-field', message: {id: 16, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')}, pack: 'example'}},
+        {why: 'a leftover global field', reason: 'old-field', message: {id: 17, type: 'reload', names: [scenario], dirs: {[scenario]: dir(scenario, '1.0.0')}, global: true}},
+        {why: 'a leftover remoteCredentials field', reason: 'old-field', message: {id: 18, type: 'load', name: scenario, dirs: {[scenario]: dir(scenario, '1.0.0')},
+          remoteCredentials: '/home/example/.countinghouse/run/start-1/remote-credentials.json'}}
+      ]
+    };
+  })(),
   // ch-local daemon's restore rows (#236 section 6): one shape for
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases

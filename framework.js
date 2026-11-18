@@ -39,6 +39,11 @@ if (options.stdioWithPort === true) {
   console.error('--stdio and --port: choose one');
   process.exit(2);
 }
+// --partDir (M4): parts of a start confined to --modulesRoot
+if (Array.isArray(options.partDir) && options.partDir.length > 0 && !(Array.isArray(options.modulesRoot) && options.modulesRoot.length > 0)) {
+  console.error('--partDir is only for a start given --modulesRoot');
+  process.exit(2);
+}
 // --sessionSocket (the shared runtime, C1): ch-local daemon's runtime
 {
   var sessionRefusal = options.sessionSocketInvalid === true ? '--sessionSocket needs a path'
