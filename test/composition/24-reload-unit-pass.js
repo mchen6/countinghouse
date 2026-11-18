@@ -90,6 +90,20 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     assert.deepStrictEqual(rec.verified, ['m']);
   });
 
+  // the medium review of M4a, finding 4: a caller a full pass skipped (it
+  // calls a held module) is in the unit's pass even when the unit rolled
+  // back and its target is out of the map; never verified before, it gets a
+  // verdict (unbound: fail closed), not none
+  it('a caller skipped while the unit was held gets a verdict at the unit\'s end, though the unit rolled back', () => {
+    const {dm, rec} = manager({modules: {'c': ['h/svc.act']}, offMap: {h: []}, outcomes: {c: 'not-loaded'}});
+    // c was never verified: no binding
+    const cid = Object.keys(dm.deviceMap)[0];
+    delete dm.deviceMap[cid].bindings;
+    dm.verifyModules(['h']);
+    assert.deepStrictEqual(rec.verified, ['c']);
+    assert.deepStrictEqual(rec.relayed, [['c', 'unbound']], 'a verdict, unbound');
+  });
+
   it('7: the unit\'s pass leaves another load\'s window as it is', () => {
     const {dm} = manager({modules: {'m': []}});
     dm.allDevicesLoaded = false;
