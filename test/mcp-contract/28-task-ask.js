@@ -196,6 +196,19 @@ function suite(title, {port, extra = [], store = 'local'}) {
       assert.strictEqual(onlyKey(await asking(id)), key, 'still waiting on its own owner');
     });
 
+    // F2-5: capabilities are per request: the form goes only to a poll that declared form elicitation
+    it('a poll that did not declare form elicitation gets input_required with no form in it, and is told why; one that did gets the form', async () => {
+      const id = await task();
+      const key = onlyKey(await asking(id));
+      const bare = (await modern(KEY_A, 'tasks/get', {taskId: id}, {forms: false})).body.result;
+      assert.strictEqual(bare.status, 'input_required', JSON.stringify(bare));
+      assert.deepStrictEqual(bare.inputRequests, {}, 'no form for it');
+      assert.match(bare.statusMessage, /form elicitation declared/);
+      assert.deepStrictEqual(Object.keys((await get(id)).result.inputRequests), [key], 'the form, to a poll that can show it');
+      await update(id, {[key]: {action: 'accept', content: {yes: true}}});
+      await settled(id);
+    });
+
     it('a task made by a request that did not declare form elicitation is never input_required: ctx.ask is ASK_UNAVAILABLE', async () => {
       const id = await task({}, {forms: false});
       const done = await settled(id);
