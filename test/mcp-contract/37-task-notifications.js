@@ -360,6 +360,18 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       return r.result.taskId;
     };
     const get = async (key, taskId, opts) => (await post(port, key, 'tasks/get', {taskId}, opts)).result;
+    // M22's fixture, listed, then called with form elicitation declared: the
+    // new task's id (the medium review of T2: one setup for the asking cases)
+    const askingTask = async (args) => {
+      assert.ok(await until(async () => {
+        const l = await post(port, KEY_A, 'tools/list', {});
+        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
+      }, 30000), 'the M22 fixture never listed');
+      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: args}, {forms: true});
+      const t = r.result && r.result.taskId;
+      assert.match(String(t), /^t-/, JSON.stringify(r));
+      return t;
+    };
     const ackOf = (s) => s.events.find((e) => e.method === 'notifications/subscriptions/acknowledged');
 
     each('the ack lists only the caller\'s own tasks; another key\'s, an unknown and a malformed id are left out alike', async () => {
@@ -418,13 +430,7 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
     // completed) with tasks/get's own form, the id kept; answered, the run
     // again is told working, then completed once
     it('a task that asks: input_required with its form, its id kept; answered, working again, then completed once', async () => {
-      assert.ok(await until(async () => {
-        const l = await post(port, KEY_A, 'tools/list', {});
-        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
-      }, 30000), 'the M22 fixture never listed');
-      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it', beforeMs: 1500}}, {forms: true});
-      const t = r.result && r.result.taskId;
-      assert.match(String(t), /^t-/, JSON.stringify(r));
+      const t = await askingTask({what: 'it', beforeMs: 1500});
       const s = await open(KEY_A, {taskIds: [t]}, {forms: true});
       assert.ok(await until(() => notices(s).some((n) => n.status === 'input_required'), 20000), JSON.stringify(s.events));
       const asked = notices(s).find((n) => n.status === 'input_required');
@@ -453,13 +459,7 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
     });
 
     it('a task already waiting on its question when the listen opens is sent after the ack, with its form', async () => {
-      assert.ok(await until(async () => {
-        const l = await post(port, KEY_A, 'tools/list', {});
-        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
-      }, 30000), 'the M22 fixture never listed');
-      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it'}}, {forms: true});
-      const t = r.result && r.result.taskId;
-      assert.match(String(t), /^t-/, JSON.stringify(r));
+      const t = await askingTask({what: 'it'});
       assert.ok(await until(async () => (await get(KEY_A, t)).status === 'input_required'), 'it asked');
       const s = await open(KEY_A, {taskIds: [t]}, {forms: true});
       assert.ok(await until(() => notices(s).length > 0), JSON.stringify(s.events));
@@ -474,13 +474,7 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
     // F2-5 on the listen stream: a listen that did not declare form
     // elicitation hears the task as tasks/get tells such a request, no form
     it('a listen without form elicitation hears a waiting task without its form, as tasks/get says it', async () => {
-      assert.ok(await until(async () => {
-        const l = await post(port, KEY_A, 'tools/list', {});
-        return l.result != null && l.result.tools.some((x) => x.name === ASK_TOOL);
-      }, 30000), 'the M22 fixture never listed');
-      const r = await post(port, KEY_A, 'tools/call', {name: ASK_TOOL, arguments: {what: 'it'}}, {forms: true});
-      const t = r.result && r.result.taskId;
-      assert.match(String(t), /^t-/, JSON.stringify(r));
+      const t = await askingTask({what: 'it'});
       assert.ok(await until(async () => (await get(KEY_A, t)).status === 'input_required'), 'it asked');
       const s = await open(KEY_A, {taskIds: [t]});
       assert.ok(await until(() => notices(s).length > 0), JSON.stringify(s.events));

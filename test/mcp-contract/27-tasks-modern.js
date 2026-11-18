@@ -442,12 +442,17 @@ describe('mcp-contract 27: a task\'s status mirrors the inline answer, the modul
 describe('mcp-contract 27: a failed task\'s statusMessage is only ever a catalogued code', () => {
   const {detailedTask} = require('../../lib/mcp/gateway');
   const failedTask = (failedReason) => detailedTask({taskId: 't-clamp', record: {state: 'failed', job: {id: 't-clamp', timestamp: Date.now(), failedReason, data: {}}}}, null, null);
-  it('a catalogued code is shown; a code of anyone else\'s choosing, or none, is "failed"', async () => {
-    assert.strictEqual((await failedTask('JOB_TIMEOUT: the job did not finish in time')).statusMessage, 'JOB_TIMEOUT');
+  it('a catalogued code is shown; a code of anyone else\'s choosing, or none, is "failed", in the error\'s data too', async () => {
+    const timedOut = await failedTask('JOB_TIMEOUT: the job did not finish in time');
+    assert.strictEqual(timedOut.statusMessage, 'JOB_TIMEOUT');
+    assert.strictEqual(timedOut.error.data['countinghouse/code'], 'JOB_TIMEOUT');
     for (const reason of ['NOT_A_RUNTIME_CODE: a module\'s own words', 'MY_MODULE_SAYS_HELLO: hi', 'no code at all']) {
       const task = await failedTask(reason);
       assert.strictEqual(task.status, 'failed', reason);
       assert.strictEqual(task.statusMessage, 'failed', reason);
+      // no code reaches the error either; the words stay the text's own
+      assert.ok(task.error.data == null || task.error.data['countinghouse/code'] == null, JSON.stringify(task.error));
+      assert.ok(task.error.message.startsWith(reason.split(':')[0]), task.error.message);
     }
   });
 });
