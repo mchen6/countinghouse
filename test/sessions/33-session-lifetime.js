@@ -158,7 +158,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.deepStrictEqual(total(), before, 'back to B\'s');
     });
 
-    it('a partition whose walk failed, or stopped past the limits, gives nothing back; every other share does', async () => {
+    it('a share is given back whole, whatever its walk did: a failed walk added nothing, a truncated one its count', async () => {
       await make(A);
       await make(B);
       await make(C);
@@ -173,12 +173,16 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
         walk.measure = realMeasure;
       }
       const built = quota().bytes;
+      const counted = (sid) => quota().shares.get(sid).bytes;
+      assert.strictEqual(counted(A), 0, 'A\'s walk failed: it added nothing');
+      assert.ok(counted(B) > 1024 * 1024, 'B\'s stopped past 1 MB: it added what it counted');
+      const bShare = counted(B);
       await end(A);
-      assert.strictEqual(quota().bytes, built, 'A\'s walk failed: its share unknown, nothing given back');
+      assert.strictEqual(quota().bytes, built, 'A gave back the nothing it added');
       await end(B);
-      assert.strictEqual(quota().bytes, built, 'B\'s walk stopped past the limit: nothing given back');
+      assert.strictEqual(quota().bytes, built - bShare, 'B gave back exactly what it added');
       await end(C);
-      assert.strictEqual(quota().bytes, built - 3000, 'C\'s, exactly');
+      assert.strictEqual(quota().bytes, 0, 'C\'s, exactly: nothing left');
     });
 
     it('every end but \'closed\' removes and gives back: \'unsettled\' too; \'closed\' keeps both', async () => {
@@ -226,6 +230,109 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       const done = await Promise.race([Promise.all([ending, spawning]).then(() => 'done'), new Promise((r) => setTimeout(r, 3000, 'stuck'))]);
       assert.strictEqual(done, 'done');
       assert.ok(quota().bytes === 2000 || quota().bytes === 5000, `B's alone, or A's still counted (the safe side): ${quota().bytes}`);
+    });
+
+    // a build walk held mid-way (its partition's measure waits for release())
+    const slowBuild = (sid) => {
+      const realMeasure = walk.measure;
+      let release = null;
+      const held = new Promise((r) => { release = r; });
+      walk.measure = (roots, opts) => (roots[0][0].endsWith(sid) ? held.then(() => realMeasure(roots, opts)) : realMeasure(roots, opts));
+      return {release: () => { walk.measure = realMeasure; release(); }};
+    };
+
+    it('the build\'s promise always settles, resolving, even when its walk throws: a spawn gets its view, an end completes', async () => {
+      await make(A);
+      await make(B);
+      const {Quota} = require('../../lib/fs-broker/quota');
+      const realAdd = Quota.prototype.addMeasured;
+      Quota.prototype.addMeasured = () => { throw new Error('a walk that throws'); };
+      const LOG = require('../../lib/logger');
+      const realE = LOG.E;
+      LOG.E = () => {};
+      let view;
+      try {
+        view = await spawn(B);
+      } finally {
+        Quota.prototype.addMeasured = realAdd;
+        LOG.E = realE;
+      }
+      assert.ok(view != null && typeof(view.reserve) === 'function');
+      await end(A);
+      assert.ok(!has(A));
+    });
+
+    it('a session\'s end stops its workers before it waits for a slow build walk', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'f'), Buffer.alloc(3000));
+      const slow = slowBuild(B);
+      const spawning = spawn(A);
+      await new Promise((r) => setImmediate(r));
+      const ending = lifetime.ended(mm, A, 'bye', env);
+      releaseStop();
+      await new Promise((r) => setTimeout(r, 50));
+      assert.deepStrictEqual(order, ['stop a', 'stopped a'], 'stopped while the build still walks');
+      slow.release();
+      await spawning;
+      await ending;
+      assert.ok(!has(A));
+      assert.strictEqual(quota().bytes, 0, 'A\'s share given back after the build');
+    });
+
+    it('a session that ends while the build walks its partition: never counted again, no share left behind', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'f'), Buffer.alloc(3000));
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
+      const slow = slowBuild(A);
+      const spawning = spawn(B);
+      await new Promise((r) => setImmediate(r));
+      const ending = end(A);
+      await new Promise((r) => setTimeout(r, 50));
+      slow.release();
+      await spawning;
+      await ending;
+      assert.deepStrictEqual(total(), [2000, 3], 'B\'s alone');
+      assert.ok(!quota().shares.has(A), 'A\'s share forgotten');
+    });
+
+    it('a share not known can\'t drain the total by deleting uncounted files; its own charges are given back at its end', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'old'), Buffer.alloc(9000));   // uncounted: A's walk fails
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
+      const realMeasure = walk.measure;
+      walk.measure = (roots, opts) => (roots[0][0].endsWith(A) ? Promise.reject(new Error('failed')) : realMeasure(roots, opts));
+      try {
+        await spawn(B);
+      } finally {
+        walk.measure = realMeasure;
+      }
+      const viewA = await spawn(A);
+      write(viewA, data(A, 'new'), 500);
+      assert.strictEqual(quota().bytes, 2500);
+      viewA.settle(0, 0, -9000, -1);   // A's broker removes the uncounted 9000
+      assert.strictEqual(quota().bytes, 2000, 'down by A\'s 500 at most: B\'s 2000 stay counted');
+      await end(A);
+      assert.strictEqual(quota().bytes, 2000, 'B\'s');
+    });
+
+    it('a respawn\'s /tmp emptied during the build waits for it: the walk never measures it half emptied', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'd'), Buffer.alloc(4000));
+      fs.writeFileSync(tmp(A, 't'), Buffer.alloc(2500));
+      const slow = slowBuild(A);
+      const spawning = spawn(B);
+      await new Promise((r) => setImmediate(r));
+      const emptying = mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'));
+      await new Promise((r) => setTimeout(r, 50));
+      assert.ok(fs.existsSync(tmp(A, 't')), 'not emptied before the build walked it');
+      slow.release();
+      await spawning;
+      await emptying;
+      assert.strictEqual(quota().shares.get(A).bytes, 4000, 'A\'s /data alone left in its share');
     });
 
     it('a respawn empties its /tmp: what it held leaves its share and the total; a name in /data keeps those bytes counted', async () => {
