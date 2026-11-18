@@ -678,6 +678,23 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.deepStrictEqual(b.refused.map((r) => r.code), ['SETTING_INVALID', 'SETTING_NOT_APPLIED'], 'said already, still in the reply');
     });
 
+    it('the file unreadable: a refusal not by the ceiling (values over 32 KiB) is never marked the ceiling\'s', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const decl = {};
+      for (let i = 0; i < 32; i += 1) decl[`s${i}`] = {type: 'string', maxLength: 1024};
+      const BIG = pkgOf('big', decl);
+      // a previous state over 32 KiB together (made as it ran: its values set by hand)
+      const ran = ms.stateFor('big', BIG, {operator: true});
+      const values = Object.create(null);
+      for (let i = 0; i < 32; i += 1) values[`s${i}`] = 'a'.repeat(1024);
+      const prev = Object.assign({}, ran, {values: Object.freeze(values)});
+      Object.defineProperty(prev, 'made', {value: ran.made});
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const r = reread_.next('big', {pkg: BIG, net: null}, {previous: prev, ceiling: {state: 'none'}, ceilingRefuses: true});
+      assert.ok(r.state != null, 'kept, not refused');
+      assert.ok(r.refusal == null || !reread_.isCeilingRefusal(r.refusal));
+    });
+
     it('a refusal said while the file is unreadable is cleared by a success, so a later one is said again', () => {
       const reread_ = require('../../lib/settings-reread');
       const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
