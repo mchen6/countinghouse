@@ -37,6 +37,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     mm = {modules: {ps: new SessionModuleRecord({name: 'ps', version: '1.0.0', modulePath: '/m', moduleSpec: null}), shared: {}},
       // the module holds no quota here (its quota: the describe below)
       creditSessionEnd: () => false,
+      sessionSettled: (id) => { order.push(`settled ${id[0]}`); return Promise.resolve(); },
       sessionWorkers: {stopSession: (id) => { order.push(`stop ${id[0]}`); return new Promise((r) => { releaseStop = () => { order.push(`stopped ${id[0]}`); r(); }; }); }}};
     lifetime.resetForTests();
     require('../../lib/notices').resetForTests();
@@ -63,7 +64,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.ok(has(A), 'nothing removed while its workers are stopping');
       releaseStop();
       await ending;
-      assert.deepStrictEqual(order, ['stop a', 'stopped a', 'keys a'], 'removed only after they stopped');
+      assert.deepStrictEqual(order, ['stop a', 'stopped a', 'settled a', 'keys a'], 'removed only after they stopped, a crashed one\'s broker too');
       assert.ok(!has(A), 'removed once they stopped');
       assert.ok(has(B), 'B\'s kept');
     });
@@ -74,7 +75,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     const ending = lifetime.ended(mm, A, 'closed', env);
     releaseStop();
     await ending;
-    assert.deepStrictEqual(order, ['stop a', 'stopped a']);
+    assert.deepStrictEqual(order, ['stop a', 'stopped a', 'settled a']);
     assert.ok(has(A));
   });
 
@@ -121,7 +122,11 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       for (const m of ['sessionQuota', 'creditSessionEnd', 'emptySessionTmp']) mm[m] = ModuleManager.prototype[m];
       mm.sessionQuotas = new Map();
     });
-    afterEach(() => Object.assign(options, saved));
+    const realMeasure = walk.measure;
+    afterEach(() => {
+      Object.assign(options, saved);
+      walk.measure = realMeasure;   // a case that failed with its build held never holds the next
+    });
     // a session worker's spawn: the module's quota (built by the first), and
     // the view its broker charges through
     const spawn = (sid, limits = {diskMb: 10, diskEntries: 1000}) => mm.sessionQuota('ps', limits, () => {}, sid).take();
@@ -210,8 +215,8 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       try {
         await end(A);
         assert.strictEqual(quota().bytes, 3000, 'not given back');
-        await end(C);   // C never ran ps: no partition
-        assert.strictEqual(removes, 1, 'nothing done for C');
+        await end(C);   // C never ran ps: its removal finds nothing (no skip: its keys would go too)
+        assert.strictEqual(removes, 2, 'C\'s removal asked too');
       } finally {
         partition.remove = realRemove;
       }
@@ -311,7 +316,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       const ending = lifetime.ended(mm, A, 'bye', env);
       releaseStop();
       await new Promise((r) => setTimeout(r, 50));
-      assert.deepStrictEqual(order, ['stop a', 'stopped a'], 'stopped while the build still walks');
+      assert.deepStrictEqual(order, ['stop a', 'stopped a', 'settled a'], 'stopped while the build still walks');
       slow.release();
       await spawning;
       await ending;
@@ -334,6 +339,40 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       await ending;
       assert.deepStrictEqual(total(), [2000, 3], 'B\'s alone');
       assert.ok(!quota().shares.has(A), 'A\'s share forgotten');
+    });
+
+    it('a negative reservation (a copy over a bigger file) is capped at the share: an unknown share can\'t drain the total, nor go below 0', async () => {
+      await make(A);
+      await make(B);
+      fs.writeFileSync(data(A, 'big'), Buffer.alloc(9000));   // uncounted: A's walk fails
+      fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
+      const realMeasure = walk.measure;
+      walk.measure = (roots, opts) => (roots[0][0].endsWith(A) ? Promise.reject(new Error('failed')) : realMeasure(roots, opts));
+      try {
+        await spawn(B);
+      } finally {
+        walk.measure = realMeasure;
+      }
+      const viewA = await spawn(A);
+      viewA.reserve(-9000, 0, 'copyfile', '/data/big');   // a small file copied over the big one
+      assert.strictEqual(quota().bytes, 2000, 'while the copy runs: B\'s still counted (others can\'t write past the limit meanwhile)');
+      viewA.settle(-9000, 0, -9000, 0);
+      assert.strictEqual(quota().bytes, 2000, 'B\'s 2000 stay counted');
+      assert.strictEqual(quota().shares.get(A).bytes, 0, 'never below 0');
+      write(viewA, data(A, 'n'), 100);
+      assert.strictEqual(quota().bytes, 2100, 'a later write still charged');
+    });
+
+    it('a sessions/ that can\'t be read leaves every share unknown', async () => {
+      await make(A);
+      const realReaddir = fs.promises.readdir;
+      fs.promises.readdir = () => Promise.reject(Object.assign(new Error('too many open files'), {code: 'EMFILE'}));
+      try {
+        await spawn(A);
+      } finally {
+        fs.promises.readdir = realReaddir;
+      }
+      assert.strictEqual(quota().knows(A), false);
     });
 
     it('a share not known can\'t drain the total by deleting uncounted files; its own charges are given back at its end', async () => {
@@ -391,17 +430,21 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
   });
 
-  it('a start\'s sweep keeps the restored sessions\' partitions and removes the rest; with none restored, the next session is told once', async () => {
+  it('a start\'s sweep keeps the restored and open sessions\' partitions and removes the rest; with none restored and some there, the next session is told once', async () => {
     await make(A);
     await make(B);
-    assert.deepStrictEqual(await lifetime.sweepAtStart([A], env), {removed: 1, failed: 0, skipped: 0});
-    assert.ok(has(A) && !has(B));
+    await make(C);
+    await lifetime.checkResetAtStart([A], env);
+    const open = new Set([C]);   // opened while the sweep runs: kept too
+    assert.deepStrictEqual(await lifetime.sweepAtStart({has: (id) => id === A || open.has(id)}, env), {removed: 1, failed: 0, skipped: 0});
+    assert.ok(has(A) && !has(B) && has(C));
     const notices = require('../../lib/notices');
     notices.openSession(C, null);
     lifetime.sessionOpened(C);
     assert.deepStrictEqual(notices.take('ps', C), [], 'A was restored: nothing reset for anyone');
     await make(B);
-    assert.deepStrictEqual(await lifetime.sweepAtStart([], env), {removed: 2, failed: 0, skipped: 0});
+    await lifetime.checkResetAtStart([], env);
+    assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), env), {removed: 3, failed: 0, skipped: 0});
     notices.openSession(C, null);
     lifetime.sessionOpened(C);
     assert.deepStrictEqual(notices.take('ps', C), [lifetime.RESET_AT_START]);
@@ -412,7 +455,8 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
 
   it('a sweep that cannot run is logged, never fatal', async () => {
     const broken = {dataRoot: env.dataRoot, kv: {keysWithPrefix: () => { throw new Error('the store is gone'); }}};
-    assert.deepStrictEqual(await lifetime.sweepAtStart([], broken), {removed: 0, failed: 0, skipped: 0});
+    assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), broken), {removed: 0, failed: 0, skipped: 0});
+    await lifetime.checkResetAtStart([], broken);   // nor its listing
   });
 });
 

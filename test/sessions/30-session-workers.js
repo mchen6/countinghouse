@@ -12,7 +12,7 @@ const A = 'a'.repeat(32);
 const B = 'b'.repeat(32);
 const C = 'c'.repeat(32);
 
-function harness({max = 2, delay = 0} = {}) {
+function harness({max = 2, delay = 0, live = () => true} = {}) {
   let clock = 1000;
   let nextId = 1;
   const spawned = [];
@@ -34,7 +34,8 @@ function harness({max = 2, delay = 0} = {}) {
     busy: (wm) => busySet.has(wm),
     announce: (name, sid, text) => told.push({name, sid, text}),
     max: () => max,
-    now: () => clock
+    now: () => clock,
+    live
   });
   const get = (name, sid) => new Promise((resolve) => sw.get(name, sid, (err, wm) => resolve({err, wm})));
   return {sw, get, spawned, ended, told, busySet, pendingSpawns, tick: (ms) => { clock += ms; }};
@@ -188,18 +189,33 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
     assert.match(refused.err.message, /paused for this session; it starts again after 10 minutes/);
   });
 
-  // (a session id is never reused: stopSession runs at a session's real end,
-  // bye, its window, or the runtime closing)
-  it('stopSession stops that session\'s workers only, and spawns none for it afterwards: a device not hosted (the security pass, 11-17)', async () => {
+  it('stopSession stops that session\'s workers only, and forgets its exits', async () => {
     const h = harness({max: 4});
-    await h.get('m', A);
+    for (let i = 0; i < 3; i++) (await h.get('m', A)).wm.emit('exit');
     await h.get('m', B);
     await h.sw.stopSession(A);
-    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [B], 'B\'s runs on');
-    const late = await h.get('m', A);   // a job's run that raced A's end
-    assert.strictEqual(late.err.code, 'DEVICE_NOT_FOUND');
-    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [B], 'nothing spawned for A');
-    assert.ifError((await h.get('n', B)).err, 'B spawns on');
+    assert.ifError((await h.get('m', A)).err, 'its exits forgotten: no suspension held for it');
+    await h.sw.stopSession(B);
+    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [A]);
+  });
+
+  // the security pass of 11-17, the reviewer's ruling: a liveness check, no
+  // set of ended sessions to bound
+  it('a session that has ended gets no worker (a device not hosted), and a spawn under way when it ends is not wanted', async () => {
+    const open = new Set([A, B]);
+    const h = harness({max: 4, delay: 'manual', live: (sid) => open.has(sid)});
+    const pending = h.get('m', A);
+    await tick();
+    open.delete(A);
+    h.pendingSpawns.shift()();
+    const late = await pending;
+    assert.ok(late.err != null || h.ended.length === 1, 'A\'s spawn under way is not kept');
+    const refused = await h.get('m', A);
+    assert.strictEqual(refused.err.code, 'DEVICE_NOT_FOUND');
+    const b = h.get('m', B);
+    await tick();
+    h.pendingSpawns.shift()();
+    assert.ifError((await b).err, 'B spawns on');
   });
 });
 

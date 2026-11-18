@@ -1200,9 +1200,11 @@ What keeps one session out of another's:
   flight. A session that can't get a worker is refused
   `SESSION_WORKERS_BUSY`; nothing is queued.
 - **Storage ends with the session.** A session's partitions are removed
-  when it leaves or its reconnect window passes, after its workers stop, and
-  at a start for every session not restored, before the runtime accepts a
-  connection. Removal never follows a link out of the module's data
+  when it ends for good (it leaves, its reconnect window passes, or a resume
+  never settles), after its workers stop; and at a start, once the runtime
+  listens, in the background, for every session neither restored nor open.
+  What a session's partitions held leaves its module's shared disk quota
+  with them: the session's own share, exactly. Removal never follows a link out of the module's data
   directory, and a partition that can't be removed doesn't stop the runtime
   from starting.
 

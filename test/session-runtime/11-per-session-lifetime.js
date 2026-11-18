@@ -155,7 +155,7 @@ module.exports = async (input) => {
     assert.strictEqual(c.ended, c.up, `${c.up} up, ${c.ended} ended: no worker left under a removed partition`);
   });
 
-  it('a restart with A restored and B not: A\'s partition kept (its resumed call finds its file), B\'s swept before the listener accepts', async() => {
+  it('a restart with A restored and B not: A\'s partition kept (its resumed call finds its file), B\'s swept once the listener accepts', async() => {
     let secret = await up();
     const a = await open(secret);
     const b = await open(secret);
@@ -164,7 +164,8 @@ module.exports = async (input) => {
     const hash = r.told.filter((m) => m.type === 'session-resume' && m.session === a.id).pop().hash;
     await stop();
     secret = await up({restore: {id: 'restore-1', type: 'restore', sessions: [{session: a.id, resume: hash, state: {overrides: [], locks: [], formsLeft: 3}}], declines: [], reset: []}});
-    assert.ok(!fs.existsSync(dirOf(b.id)), 'B swept by the time the socket listens');
+    // the sweep runs once the socket listens, in the background
+    assert.ok(await until(async() => !fs.existsSync(dirOf(b.id)), 15000), 'B swept after the listen');
     assert.ok(fs.existsSync(dirOf(a.id)), 'A kept');
     const back = await open(secret, {resume: a.token});
     assert.strictEqual(back.id, a.id);

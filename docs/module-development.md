@@ -770,7 +770,8 @@ user's client sessions, `--sessionSocket`):
   (retryable). Nothing is queued.
 - A worker that crashes frees its slot at once. Its session's next call
   starts a fresh one and is told the same. Three exits within ten minutes
-  suspend the module for that session alone (`MODULE_SUSPENDED`), until the
+  suspend the module for that session alone (`MODULE_SESSION_PAUSED`,
+  retryable), until the
   ten minutes pass, the module is reloaded, or the session ends. Other
   sessions' workers aren't affected.
 
@@ -778,15 +779,18 @@ user's client sessions, `--sessionSocket`):
 
 - It's kept while the session can come back: across a detach within the
   reconnect window, and across a runtime restart that restores the session.
-- It's removed when the session leaves (`bye`) or its reconnect window
-  passes, after the session's workers have stopped. If the module is being
-  reloaded at that moment, or was reloaded as a shared module, its storage
-  for that session is removed at the runtime's next start instead.
-- When the runtime starts, the storage of every session it didn't restore
-  is removed before it accepts a connection. If it restored none (the
-  daemon died), only the next session to connect is told that per-session
-  module state was reset. A swept session's user reconnects as a new
-  session, which the runtime can't link to the old one.
+- It's removed when the session ends for good: it leaves (`bye`), its
+  reconnect window passes, or a resume never settles. That happens after
+  the session's workers have stopped. It's kept across a runtime restart
+  that restores and resumes the session. If the module is being reloaded at
+  that moment, or was reloaded as a shared module, its storage for that
+  session is removed at the runtime's next start instead.
+- When the runtime starts, once it accepts connections, it removes in the
+  background the storage of every session it neither restored nor has open.
+  If it restored none (the daemon died) and there was storage to remove,
+  only the next session to connect is told that per-session module state
+  was reset. A swept session's user reconnects as a new session, which the
+  runtime can't link to the old one.
 - A reload stops every session's worker. Their storage is kept, and the
   next calls run the new code. An uninstall removes every session's storage
   with the module's own.
