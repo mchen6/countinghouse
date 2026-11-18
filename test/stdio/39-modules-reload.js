@@ -87,6 +87,11 @@ describe('stdio 39: the module form\'s reload (M4 Task 3)', function() {
     assert.ok(init.result != null, JSON.stringify(init));
     io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
   });
+  // what a case loaded for itself, unloaded after it whatever its outcome
+  const loadedHere = [];
+  afterEach(async () => {
+    for (const name of loadedHere.splice(0)) { try { await io.control({type: 'unload', name}); } catch (e) { /* gone with the runtime */ } }
+  });
   after(async () => {
     if (process.env.CH_TEST_39_LOG != null && io != null) fs.writeFileSync(process.env.CH_TEST_39_LOG, io.err);
     if (io != null && io.child.exitCode == null) { io.child.kill(); await io.exited; }
@@ -158,6 +163,9 @@ describe('stdio 39: the module form\'s reload (M4 Task 3)', function() {
   // master under a CPU throttle, its devices out of the map between its old
   // version's end and its new one's registration)
   it('a reload right after a load: the switched scenario\'s tool is never unknown, each call answered or MODULE_RELOADING', async () => {
+    // unloaded in after(), whatever the case's outcome: the tests after it
+    // see the runtime as before (the high review of #435, 10)
+    loadedHere.push('@t/ch-pack-quick');
     scenario('@t/ch-pack-quick', '1.0.0', []);
     assert.strictEqual((await io.control({type: 'load', name: '@t/ch-pack-quick', dirs: dirsOf([['@t/ch-pack-quick', '1.0.0']])})).ok, true);
     scenario('@t/ch-pack-quick', '2.0.0', []);
@@ -165,7 +173,7 @@ describe('stdio 39: the module form\'s reload (M4 Task 3)', function() {
     const failures = [];
     const loop = (async () => {
       while (!stop) {
-        const res = await call('t_ch_pack_quick');
+        const res = await call('t_ch_pack_quick').catch((e) => ({error: {message: String(e && e.message)}}));
         const o = toolOutput(res.result);
         const text = JSON.stringify(res);
         if ((o == null || o.v == null) && !/MODULE_RELOADING/.test(text)) failures.push(text.slice(0, 200));
@@ -177,8 +185,6 @@ describe('stdio 39: the module form\'s reload (M4 Task 3)', function() {
     assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-1500)}`);
     assert.deepStrictEqual(failures, [], 'a call failed during the switch');
     assert.strictEqual((await out('t_ch_pack_quick')).v, 'ch-pack-quick@2.0.0');
-    // the tests after it see the runtime as before (the medium review, 9)
-    assert.strictEqual((await io.control({type: 'unload', name: '@t/ch-pack-quick'})).ok, true);
   });
 
   it('a reload that adds two parts, under load: both load, then are shown together, before any switch; a callee switches before its caller; no call fails', async () => {
@@ -247,30 +253,45 @@ describe('stdio 39: the module form\'s reload (M4 Task 3)', function() {
   });
 });
 
-// the switch's window, server-free: a module being switched in place keeps
-// its devices' specs listed until its new version registers, as a restarting
-// one's are (lib/device-manager.js getAllDeviceSpecs; lib/modules-in-place.js
-// replaceDrainThenSwitch)
-describe('stdio 39: a module being switched keeps its tools listed', () => {
+// the reload's window, server-free: a reloading device's record keeps its
+// spec and its module's package.json, per device, until that device
+// registers again or the reload ends without it (lib/module-manager.js
+// markEndedDevices; lib/device-manager.js getAllDeviceSpecs, packageOfModule,
+// keepsDecision; the high review of #435)
+describe('stdio 39: a reloading device keeps its tool listed', () => {
   const DeviceManager = require('../../lib/device-manager');
-  const specs = (self) => DeviceManager.prototype.getAllDeviceSpecs.call(self);
-  it('its specs are listed while its devices are out of the map; once registered, the new ones are', () => {
-    const old = {device: {friendlyName: 'ch-pack-quick', version: 'old'}};
-    const fresh = {device: {friendlyName: 'ch-pack-quick', version: 'new'}};
-    const mm = {supervisor: null, switchingSpecs: new Map([['@t/ch-pack-quick', {specs: {'d-quick': old}, packageInfo: {name: '@t/ch-pack-quick', countinghouse: {role: 'scenario'}}}]])};
-    assert.deepStrictEqual(specs({deviceMap: {}, moduleManager: mm}), {'d-quick': old}, 'out of the map: still listed');
-    assert.deepStrictEqual(specs({deviceMap: {'d-quick': {spec: fresh}}, moduleManager: mm}), {'d-quick': fresh}, 'the new registration wins');
-    // a new version whose device has another id: once any device of the
-    // module is back in the map, the kept ones are no longer listed
-    assert.deepStrictEqual(specs({deviceMap: {'d-renamed': {spec: fresh, moduleName: '@t/ch-pack-quick'}}, moduleManager: mm}), {'d-renamed': fresh}, 'registered again: nothing kept beside it');
-    // its package.json too, so its tools keep their names (a scenario's bare)
-    assert.strictEqual(DeviceManager.prototype.packageOfModule.call({moduleManager: Object.assign({modules: {}}, mm)}, '@t/ch-pack-quick').countinghouse.role, 'scenario');
-    // its hidden-text decisions (#400) stay while it is kept, so an action
-    // its text leaves unusable stays out through the switch
-    assert.strictEqual(DeviceManager.prototype.keepsDecision.call({deviceMap: {}, moduleManager: mm}, 'd-quick'), true);
-    assert.strictEqual(DeviceManager.prototype.keepsDecision.call({deviceMap: {}, moduleManager: mm}, 'd-other'), false);
-    mm.switchingSpecs.clear();
-    assert.deepStrictEqual(specs({deviceMap: {}, moduleManager: mm}), {}, 'switch over: nothing kept');
-    assert.strictEqual(DeviceManager.prototype.keepsDecision.call({deviceMap: {}, moduleManager: mm}, 'd-quick'), false, 'and its decision may go');
+  const ModuleManager = require('../../lib/module-manager');
+  const NAME = '@t/ch-pack-two';
+  const pkg = {name: NAME, countinghouse: {role: 'scenario'}};
+  const spec = (id, v) => ({device: {friendlyName: id, version: v}});
+  const dmOf = (deviceMap, mm) => ({deviceMap, moduleManager: mm});
+  const specs = (dm) => DeviceManager.prototype.getAllDeviceSpecs.call(Object.assign(Object.create(DeviceManager.prototype), dm));
+  const call = (fn, dm, ...a) => DeviceManager.prototype[fn].call(Object.assign(Object.create(DeviceManager.prototype), dm), ...a);
+  it('per device: kept while out of the map, gone once that device registers or the reload settles', () => {
+    const mm = {supervisor: null, modules: {}, endedDevices: {}};
+    ModuleManager.prototype.markEndedDevices.call(mm, ['d-a', 'd-b'], NAME, 'MODULE_RELOADING', {specs: {'d-a': spec('a', 1), 'd-b': spec('b', 1)}, packageInfo: pkg});
+    assert.deepStrictEqual(Object.keys(specs(dmOf({}, mm))).sort(), ['d-a', 'd-b'], 'both kept');
+    // d-a back (its record cleared, as on deviceonline); d-b still reloading
+    delete mm.endedDevices['d-a'];
+    const back = specs(dmOf({'d-a': {spec: spec('a', 2), moduleName: NAME}}, mm));
+    assert.deepStrictEqual(back, {'d-a': spec('a', 2), 'd-b': spec('b', 1)}, 'per device: the one still reloading stays listed');
+    // its package.json answers while the module is out of the map: a scenario stays one
+    assert.strictEqual(call('packageOfModule', dmOf({}, mm), NAME).countinghouse.role, 'scenario');
+    // and its #400 decision stays while it is kept
+    assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-b'), true);
+    assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-other'), false);
+    // marked again with nothing for it: it keeps what it had
+    ModuleManager.prototype.markEndedDevices.call(mm, ['d-b'], NAME, 'MODULE_RELOADING', {specs: {}, packageInfo: null});
+    assert.deepStrictEqual(mm.endedDevices['d-b'].spec, spec('b', 1));
+    // the reload ends without d-b (renamed away, say): settled, never listed beside the new one
+    ModuleManager.prototype.settleEndedDevices.call(Object.assign(mm, {emit: () => {}}), NAME);
+    assert.deepStrictEqual(specs(dmOf({'d-a': {spec: spec('a', 2), moduleName: NAME}}, mm)), {'d-a': spec('a', 2)});
+    assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-b'), false, 'and its decision may go');
+  });
+  it('a reload of a restarting module takes the supervisor\'s kept specs into its records first', () => {
+    const supervisor = {previousSpecs: (n) => (n === NAME ? {'d-r': spec('r', 1)} : {}), packageInfoOf: () => pkg};
+    const mm = {supervisor, modules: {}, endedDevices: {}, markEndedDevices: ModuleManager.prototype.markEndedDevices};
+    ModuleManager.prototype.keepRetainedForReload.call(mm, NAME);
+    assert.deepStrictEqual(mm.endedDevices['d-r'], {code: 'MODULE_RELOADING', name: NAME, spec: spec('r', 1), packageInfo: pkg});
   });
 });
