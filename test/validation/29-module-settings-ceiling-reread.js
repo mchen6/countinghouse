@@ -678,6 +678,16 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.deepStrictEqual(b.refused.map((r) => r.code), ['SETTING_INVALID', 'SETTING_NOT_APPLIED'], 'said already, still in the reply');
     });
 
+    it('a restart whose net changed, refused by the ceiling at the first check, is marked the ceiling\'s though the file cannot be read', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: null}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const bad = trusted(parsed({moduleSettings: {'w.n': {fixed: 500}}}).ceiling);
+      const r = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad, ceilingRefuses: true});
+      assert.strictEqual(r.state, null);
+      assert.ok(reread_.isCeilingRefusal(r.refusal), 'suspended at once, not crash-looped');
+    });
+
     it('the file unreadable: a refusal not by the ceiling (values over 32 KiB) is never marked the ceiling\'s', () => {
       const reread_ = require('../../lib/settings-reread');
       const decl = {};
