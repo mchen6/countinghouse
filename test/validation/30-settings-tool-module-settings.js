@@ -112,6 +112,16 @@ describe('validation 30: countinghouse_settings and module settings', () => {
     });
   });
 
+  describe('the tool\'s input schema', () => {
+    it('takes a cursor for get, and names module settings', () => {
+      const props = settingsTool.INPUT_SCHEMA.properties;
+      assert.deepStrictEqual(Object.keys(props).sort(), ['action', 'cursor', 'name', 'scope', 'value']);
+      assert.strictEqual(props.cursor.type, 'string');
+      assert.match(props.name.description, /module\.<package>\.<setting>/);
+      assert.strictEqual(settingsTool.INPUT_SCHEMA.additionalProperties, false);
+    });
+  });
+
   describe('set', () => {
     it('on request: an enum, an integer or a boolean not marked confirm; written under the lock, the history line first, unknown names kept, then applied', async () => {
       const tool = make();
