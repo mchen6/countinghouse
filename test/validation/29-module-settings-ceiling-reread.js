@@ -590,4 +590,46 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       stop();
     });
   });
+
+  describe('the ceiling watched for the modules\' settings (ceilingWatcher)', () => {
+    const reread_ = require('../../lib/settings-reread');
+    let dir2 = null;
+    let saved2 = null;
+    before(() => {
+      dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validation-29w-'));
+      saved2 = {settingsFile: options.settingsFile};
+      options.settingsFile = path.join(dir2, 'settings.json');
+      fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {}}));
+    });
+    after(() => { Object.assign(options, saved2); fs.rmSync(dir2, {recursive: true, force: true}); });
+
+    it('rereads only for a change of its moduleSettings or of its trust; a failure is said once, and retried', async () => {
+      const queued = [];
+      const lines = [];
+      const timers = [];
+      const base = parsed({maxOutputBytes: 1048576}).ceiling;
+      const listen = reread_.ceilingWatcher({modules: {}}, {enqueue: (fn) => queued.push(fn), now: () => trusted(base),
+        log: (l) => lines.push(l), later: (fn) => { timers.push(fn); return 1; }});
+      listen(trusted(parsed({maxOutputBytes: 2097152}).ceiling));
+      assert.strictEqual(queued.length, 0, 'the caps changed only: no reread');
+      listen(trusted(parsed({maxOutputBytes: 2097152, moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling));
+      listen(trusted(parsed({maxOutputBytes: 2097152, moduleSettings: {'w.units': {fixed: 'imperial'}}}).ceiling));
+      assert.strictEqual(queued.length, 1, 'one waits at a time');
+      await queued.shift()();
+      assert.ok(lines.some((l) => /re-read \(0 applied/.test(l)), lines.join('\n'));
+      listen({state: 'untrusted', file: '/x', problem: 'p'});
+      assert.strictEqual(queued.length, 1, 'trust changed: a reread');
+      // the settings file mid-write: said once, retried
+      fs.writeFileSync(options.settingsFile, '{not json');
+      await queued.shift()();
+      assert.strictEqual(timers.length, 1);
+      timers.shift()();
+      await queued.shift()();
+      assert.strictEqual(lines.filter((l) => /re-read failed/.test(l)).length, 1, 'the same failure, said once');
+      fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {}}));
+      timers.shift()();
+      await queued.shift()();
+      assert.ok(/re-read \(/.test(lines[lines.length - 1]), lines.join('\n'));
+    });
+  });
 });
