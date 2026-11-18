@@ -105,6 +105,13 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /@t\/ch-step-x is not in the closure/.test(e.message));
   });
 
+  // #427's high review, 4: what loads is checked again by its resolved path
+  it('a directory resolved outside --modulesRoot after it was read (a link swapped in between) is refused', () => {
+    const r = mip.readModuleRequest(msg(), {needsDirs: true});
+    r.dirs.set('@t/ch-step-s', fs.realpathSync(dirs.out));
+    assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /outside --modulesRoot/.test(e.message));
+  });
+
   it('a link out of --modulesRoot inside a module\'s directory is refused', () => {
     const link = path.join(dirs.part, 'handlers', 'escape.js');
     fs.symlinkSync(path.join(outside, 'ch-step-s', 'package.json'), link);

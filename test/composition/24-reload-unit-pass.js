@@ -35,7 +35,7 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     dm.notifyDeviceLoad = {};
     dm.allDevicesLoaded = true;
     dm._compositionStartupDone = true;
-    dm.moduleManager = {isHeld: (n) => held.includes(n)};
+    dm.moduleManager = {isHeld: (n) => held.includes(n), units: new Set(held.length > 0 ? [{names: new Set(held)}] : [])};
     // a device out of the map (mid-switch) still says its module
     dm.moduleOfDevice = (id) => {
       for (const [n] of Object.entries(Object.assign({}, modules, offMap))) if (callAddress.deviceIDForName(n) === id) return n;
@@ -104,6 +104,17 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     assert.deepStrictEqual(rec.relayed, [['c', 'unbound']], 'a verdict, unbound');
   });
 
+  // #427's high review, 9: with no unit in progress a full pass looks at no
+  // caller's targets
+  it('high 9: with no unit held, a full pass does not look up callers\' targets', () => {
+    const {dm} = manager({modules: {'c': ['m/svc.act'], 'm': []}});
+    dm.moduleManager = {units: new Set(), isHeld: () => false};
+    let lookups = 0;
+    dm.moduleOfDevice = () => { lookups++; return null; };
+    dm.verificationPass(null);
+    assert.strictEqual(lookups, 0);
+  });
+
   it('7: the unit\'s pass leaves another load\'s window as it is', () => {
     const {dm} = manager({modules: {'m': []}});
     dm.allDevicesLoaded = false;
@@ -112,6 +123,25 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     dm.verifyModules(['m']);
     assert.strictEqual(dm.allDevicesLoaded, false);
     assert.strictEqual(dm.notifyDeviceLoad['some-device'], waiting);
+  });
+
+  // #427's high review, 6: a hop that waited on a module being replaced
+  // until its call's end answers MODULE_RELOADING, never CALL_TOKEN_INVALID
+  it('high 6: a hop that waits a replacement out answers MODULE_RELOADING, before its token expires', (done) => {
+    const callTokens = require('../../lib/call-tokens');
+    const dm = Object.create(DeviceManager.prototype);
+    dm.deviceMap = {};
+    dm.moduleManager = {};
+    dm.replacingInPlace = () => true;
+    const token = callTokens.issue({billingKey: 'k', workerId: 4271, deviceID: 'd', ttlMs: 400});
+    const callerWM = {workerId: 4271, sendActionInvokeReplyToChild: (reply) => {
+      callTokens.drop(token);
+      try {
+        assert.strictEqual(reply.errCode, 'MODULE_RELOADING', JSON.stringify(reply));
+        done();
+      } catch (e) { done(e); }
+    }};
+    dm.sendInvokeActionMessageToWorker('k', 'k', 'dev', 'svc', 'act', {}, 1, callerWM, token);
   });
 
   describe('2: verifyComposition says a target is not loaded only when nothing else is wrong', () => {

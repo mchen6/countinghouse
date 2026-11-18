@@ -48,7 +48,7 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
     assert.deepStrictEqual(readCeiling({platform: 'linux', fs: fakeFs({'/': ROOTDIRS['/'], '/etc': ROOTDIRS['/etc']})}), {state: 'none'}, 'no directory either');
     const r = posix({uid: 0, mode: 0o644, text: GOOD});
     assert.strictEqual(r.state, 'trusted');
-    assert.deepStrictEqual(r.ceiling, {maxOutputBytes: 16 * 1024 * 1024, requestTimeout: undefined, forbid: ['autoUpgrade'], packs: null, conversation: false});
+    assert.deepStrictEqual(r.ceiling, {maxOutputBytes: 16 * 1024 * 1024, requestTimeout: undefined, forbid: ['autoUpgrade'], packs: null, modules: null, conversation: false});
   });
 
   it('POSIX: untrusted, failing closed: a symlinked file, a user-owned or group-writable file, a user-writable parent', () => {
@@ -74,11 +74,14 @@ describe('stdio 17: the operator\'s ceiling (part 3, section 4)', () => {
       ['{"version": 1, "forbid": ["off"]}', /forbid may hold only/], ['{"version": 1, "forbid": ["packs"]}', /forbid may hold only moduleSandbox, autoUpgrade/],
       ['{"version": 1, "packs": "ci"}', /packs is not a list of pack names/], ['{"version": 1, "packs": ["Bad Name"]}', /packs is not a list/],
       ['{"version": 1, "requestTimeout": 500}', /requestTimeout is not a whole number of seconds/], ['{"version": 1, "requestTimeout": 1500}', /whole number of seconds/],
-      ['{"version": 1, "conversation": "no"}', /true or false/], ['{"version": 1, "extra": 1}', /holds "extra"/]]) {
+      ['{"version": 1, "conversation": "no"}', /true or false/], ['{"version": 1, "extra": 1}', /holds "extra"/],
+      ['{"version": 1, "modules": "x"}', /modules is not a list of package names/], ['{"version": 1, "modules": ["Bad Name"]}', /modules is not a list of package names/]]) {
       assert.match(parse(text).problem, why, text);
       assert.match(posix({uid: 0, mode: 0o644, text}).problem, why);
     }
-    assert.deepStrictEqual(parse('{"version": 1}').ceiling, {maxOutputBytes: undefined, requestTimeout: undefined, forbid: [], packs: null, conversation: true});
+    assert.deepStrictEqual(parse('{"version": 1}').ceiling, {maxOutputBytes: undefined, requestTimeout: undefined, forbid: [], packs: null, modules: null, conversation: true});
+    // M4a (#413 section 8; #427's high review, 2): the operator's list of modules, by package name
+    assert.deepStrictEqual(parse('{"version": 1, "modules": ["@countinghouse/ch-access-github", "ch-step-x"]}').ceiling.modules, ['@countinghouse/ch-access-github', 'ch-step-x']);
     assert.deepStrictEqual(parse('{"version": 1, "packs": [], "requestTimeout": 60000}').ceiling.packs, [], 'an empty allowlist: no pack loads');
   });
 
