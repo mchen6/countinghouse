@@ -64,6 +64,8 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       setImmediate(() => { mm.unitRegistration(name); cb(null); });
     };
     mm.unloadModuleExternal = (name, cb) => { if (name !== stuck) delete mm.modules[name]; cb(null); };
+    // each case its own hidden set: one left hidden must not leak into the next
+    require('../../lib/module-visibility').resetForTests();
     require('../../lib/module-visibility').configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
     return mm;
   }
@@ -125,6 +127,66 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       mm.tellStartRefused = () => {};
       const list = mm.getModuleInfoFromPath([inside, outsideDir]);
       assert.deepStrictEqual(list.map((m) => m.name), ['@t/in']);
+    } finally {
+      roles.expandLoadList = realExpand;
+    }
+  });
+
+  // #429's high review
+  it('high 2: a module no longer given up when its turn comes is left alone', async () => {
+    const mm = runtime();
+    await loadPf(mm);
+    await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED', () => false);
+    assert.ok(mm.packsInPlace.has('ch-pack-pf'));
+    assert.ok(mm.modules['ch-step-x'] != null);
+  });
+
+  it('high 1: a unit with no ch-local pack name drops no pack setting, and one unit\'s failure never stops the next being told', async () => {
+    const mm = runtime();
+    await loadPf(mm);
+    // a second unit holding the same part, recorded as a start under
+    // --modulesRoot records it: no ch-local pack name
+    mm.packsInPlace.set('@t/ch-pack-seeded', {form: 'module', pack: mip.moduleKey('@t/ch-pack-seeded'), modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set(), allowance: null});
+    const told = [];
+    const channel = require('../../lib/control-channel');
+    const realTell = channel.tell;
+    const realUnloaded = settingsTool.packUnloaded;
+    const settings = require('../../lib/session-settings');
+    const realDrop = settings.dropPack;
+    const dropped = [];
+    channel.tell = (m) => { told.push(m.name); return true; };
+    settingsTool.packUnloaded = (n) => { if (n === 'ch-pack-pf') throw new Error('settings tool failed'); };
+    settings.dropPack = (k) => { dropped.push(k); return []; };
+    try {
+      await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
+    } finally {
+      channel.tell = realTell;
+      settingsTool.packUnloaded = realUnloaded;
+      settings.dropPack = realDrop;
+    }
+    assert.deepStrictEqual(told.sort(), ['@t/ch-pack-seeded', 'ch-pack-pf']);
+    assert.deepStrictEqual(dropped, ['pack.pf'], 'only the pack-form unit\'s pack name');
+  });
+
+  it('high 4: a top-level directory is kept, and loaded, by its checked real path', () => {
+    const store = path.join(root, 'store');
+    const real = writeModule(path.join(store, '@t', 'real', '1.0.0'), {name: '@t/real', role: 'scenario'});
+    const link = path.join(store, 'link-to-real');
+    fs.symlinkSync(real, link, 'dir');
+    const r = mip.checkStartPlan([link], []);
+    assert.deepStrictEqual(r.tops, [fs.realpathSync(real)]);
+    assert.deepStrictEqual(r.partDirs, [fs.realpathSync(real)]);
+  });
+
+  it('high 3: a start refusal from the scenario expansion is told by package name only', () => {
+    const roles = require('../../lib/module-roles');
+    const realExpand = roles.expandLoadList;
+    roles.expandLoadList = () => ({load: [], owners: new Map(), refused: [{name: '/not/a/package', code: 'PART_MISSING', part: 'x'}, {name: '@t/named', code: 'PART_MISSING', part: 'x'}]});
+    try {
+      const mm = Object.assign(Object.create(ModuleManager.prototype), {unlisted: new Set(), modules: {}});
+      mm.tellStartRefused = () => {};
+      mm.getModuleInfoFromPath([]);
+      assert.deepStrictEqual(mm.startRefused.map((r) => r.name), ['@t/named']);
     } finally {
       roles.expandLoadList = realExpand;
     }
