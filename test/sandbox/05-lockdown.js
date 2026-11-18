@@ -18,6 +18,7 @@ const OUTSIDE_FILE = path.join(ROOT, 'lib', 'cli-options.js');
 const ROUTES = [
   ['dlopen'], ['binding'], ['kill'], ['getBuiltinModule'], ['child_process'], ['worker_threads'],
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
+  ['loadSkipHooks'], ['loadResolved'], ['loadSource', OUTSIDE_FILE],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
   ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
@@ -70,7 +71,12 @@ describe('sandbox 05: worker lockdown', function() {
       it(`blocks ${what} and logs it`, async () => {
         const r = await mcpCall(testPort(9608), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(r.isError, false, JSON.stringify(r));
-        assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
+        // (a path outside is invisible under enforce: the file broker's
+        // _findPath answers it missing, so a load of one finds nothing, and
+        // Node's own not-found is what the module sees; B1's loadSource
+        // compiled its source there before)
+        if (what === 'loadSource') assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+        else assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
         assert.ok(server.output.includes('module sandbox: sandbox-probe violation'), server.output.slice(-2000));
       });
     });
@@ -104,6 +110,24 @@ describe('sandbox 05: worker lockdown', function() {
       assert.strictEqual(toolOutput(notFound).code, 'MODULE_NOT_FOUND');
       const denied = await mcpCall(testPort(9608), KEY, TOOL, {what: 'kill'});
       assert.strictEqual(toolOutput(denied).code, 'ERR_ACCESS_DENIED');
+    });
+  });
+
+  // #194's review, B1: Module._load's internal argument skipped the hooks,
+  // so under audit such a load was never reported. On a server of its own,
+  // so no earlier route has already reported the same target (once each).
+  describe('audit: Module._load\'s internal argument', () => {
+    let server = null;
+    before(async () => { server = await startServer(testPort(9611), serverArgs('audit')); });
+    after(() => stopServer(server));
+    it('each form runs the hooks, so each load is reported: each built-in, and the file outside (a target each)', async () => {
+      for (const [what, arg] of [['loadSkipHooks'], ['loadResolved'], ['loadSource', OUTSIDE_FILE]]) {
+        const r = await mcpCall(testPort(9611), KEY, TOOL, arg != null ? {what, arg} : {what});
+        assert.strictEqual(toolOutput(r).outcome, 'allowed', `${what}: ${JSON.stringify(r)}`);
+      }
+      const lines = () => server.output.split('\n').filter((l) => l.includes('module sandbox: sandbox-probe violation'));
+      await waitFor(() => ['child_process', 'worker_threads', 'cli-options'].every((t) => lines().some((l) => l.includes(t))), 20000,
+        `the _load violation lines: ${lines().join(' | ')}`);
     });
   });
 

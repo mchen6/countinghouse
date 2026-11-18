@@ -228,7 +228,12 @@ any module code). Stops:
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
   the module's directory); `module.registerHooks`/`register` are locked so no
-  later hook can run ahead of the boundary;
+  later hook can run ahead of the boundary; and `Module._load`, which module
+  code reaches as `module.constructor._load`, forwards only its request,
+  parent and isMain, locked, so its internal fourth argument (which skips
+  the resolve hooks, or hands over a resolution or source) never skips
+  them. (Other routes into Node's loader, and a parent module code forges,
+  are #194's: see its design.)
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker;

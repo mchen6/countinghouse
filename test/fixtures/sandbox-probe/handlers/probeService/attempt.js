@@ -25,6 +25,15 @@ const ATTEMPTS = {
   worker_threads:   () => require('worker_threads'),
   v8:               () => require('v8'),
   registerHooks:    () => module.constructor.registerHooks({resolve: (s, c, n) => n(s, c)}),
+  // Module._load's fourth, internal argument skips the resolve hooks, where
+  // the built-in gate and the file broker's bound live (#194's review, B1):
+  // the flag itself, a resolution handed over (24.21 and later), and source
+  // compiled under a filename of the module's choosing (24.21 and later)
+  loadSkipHooks:    () => module.constructor._load('node:child_process', null, false, {shouldSkipModuleHooks: true}),
+  // (worker_threads: a target of its own, so its report is told apart)
+  loadResolved:     () => module.constructor._load('worker_threads', null, false, {resolved: {filename: 'worker_threads', url: 'node:worker_threads', format: 'builtin'}}),
+  loadSource:       (arg) => module.constructor._load(arg, null, false,
+    {resolved: {filename: arg, url: require('url').pathToFileURL(arg).href, format: 'commonjs'}, source: 'module.exports = {compiled: true};'}),
   nodePath:         () => require('cli-options'),
   loadFileOutside:  (arg) => CHUtil.loadFile(arg),
   request:          (arg) => new Promise((resolve, reject) => {
