@@ -175,8 +175,10 @@ describe('stdio 39: the module form\'s reload (M4 Task 3)', function() {
     stop = true;
     await loop;
     assert.strictEqual(r.ok, true, `${JSON.stringify(r)}\n${io.err.slice(-1500)}`);
-        assert.deepStrictEqual(failures, [], 'a call failed during the switch');
+    assert.deepStrictEqual(failures, [], 'a call failed during the switch');
     assert.strictEqual((await out('t_ch_pack_quick')).v, 'ch-pack-quick@2.0.0');
+    // the tests after it see the runtime as before (the medium review, 9)
+    assert.strictEqual((await io.control({type: 'unload', name: '@t/ch-pack-quick'})).ok, true);
   });
 
   it('a reload that adds two parts, under load: both load, then are shown together, before any switch; a callee switches before its caller; no call fails', async () => {
@@ -258,6 +260,9 @@ describe('stdio 39: a module being switched keeps its tools listed', () => {
     const mm = {supervisor: null, switchingSpecs: new Map([['@t/ch-pack-quick', {specs: {'d-quick': old}, packageInfo: {name: '@t/ch-pack-quick', countinghouse: {role: 'scenario'}}}]])};
     assert.deepStrictEqual(specs({deviceMap: {}, moduleManager: mm}), {'d-quick': old}, 'out of the map: still listed');
     assert.deepStrictEqual(specs({deviceMap: {'d-quick': {spec: fresh}}, moduleManager: mm}), {'d-quick': fresh}, 'the new registration wins');
+    // a new version whose device has another id: once any device of the
+    // module is back in the map, the kept ones are no longer listed
+    assert.deepStrictEqual(specs({deviceMap: {'d-renamed': {spec: fresh, moduleName: '@t/ch-pack-quick'}}, moduleManager: mm}), {'d-renamed': fresh}, 'registered again: nothing kept beside it');
     // its package.json too, so its tools keep their names (a scenario's bare)
     assert.strictEqual(DeviceManager.prototype.packageOfModule.call({moduleManager: Object.assign({modules: {}}, mm)}, '@t/ch-pack-quick').countinghouse.role, 'scenario');
     mm.switchingSpecs.clear();
