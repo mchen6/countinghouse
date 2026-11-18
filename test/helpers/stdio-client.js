@@ -44,7 +44,10 @@ function startStdio(args, {env = {}, ipc = false, entry = ENTRY, nodeArgs = []} 
   if (ipc) {
     const replies = new Map();
     let nextControl = 1;
+    // what the runtime tells unasked (no id: ready, module-stopped, ...), in order
+    io.told = [];
     child.on('message', (m) => {
+      if (m != null && m.id === undefined) io.told.push(m);
       const r = (m != null) ? replies.get(m.id) : null;
       if (r != null) { replies.delete(m.id); r(m); }
     });

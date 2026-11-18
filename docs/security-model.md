@@ -409,7 +409,7 @@ directories, is another path and is not refused. A module cannot make one
 `enforce` a module whose `/data` or `/tmp` holds one does not start); the
 limit is a link that an operator, or other software on the machine, left
 where a module may read. A pack loaded in place may come with a credentials
-file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+file of its own, read when the pack is loaded (`lib/modules-in-place.js`):
 that file is no option of the runtime's, so it is not a protected path by
 itself; ch-local writes it under `run/` in its home, which is protected as
 a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
@@ -1194,6 +1194,48 @@ These events are **not recorded in this release**:
   expired;
 - how far a cancelled call had run (only its time and bytes);
 - a list cursor refused.
+
+### Modules loaded in place, by module (ch-local's control channel)
+
+ch-local loads, reloads and unloads modules while the runtime serves
+(`lib/modules-in-place.js`; #413 section 7). In the module form a message
+names a top-level module by its package name and gives `dirs`, the
+directory of each module of its closure:
+
+- **Only the module store.** Every directory a message gives, and every
+  `--loadModule` and `--partDir` directory of a start given `--modulesRoot`,
+  must lie inside `--modulesRoot` by real path, with no link leading out
+  anywhere in it, and hold the package its key names. A module calls its
+  parts only among the directories given: there is no `node_modules`
+  search, so a package planted in `~/node_modules`, or beside a module, with
+  a part's friendly name is never loaded as that part (`PART_MISSING`).
+- **Hidden while it changes.** What a load newly brings in is in no list
+  and reached by no call, hop, direct peer channel or job run until every
+  module of it is up; what an unload takes away is hidden from its start.
+  A module whose unload fails (still in the module map) stays hidden until
+  the runtime ends, and a load whose closure holds it is refused
+  (`lib/module-visibility.js`).
+- **The ceiling by module.** A trusted ceiling's `modules` list must name
+  every module of a closure, parts included (`SETTING_FORBIDDEN_BY_CEILING`
+  for one it leaves out). A ceiling that still lists `packs` and no
+  `modules` refuses every module-form load (fail closed).
+- **Credentials by repetition only.** A load's `credentials` may only
+  repeat a binding the start's `--remoteCredentials` file fixed (the same
+  slot for the same module, origin and variable): a message can never bind
+  a key anew.
+- **A module the runtime gives up on.** On a runtime with a control
+  channel, a module the supervisor would suspend (three exits within ten
+  minutes, or a restart the sandbox refuses) has every unit that holds it
+  unloaded by the runtime itself, on the channel's own chain; only once
+  nothing of it is left is ch-local told `module-stopped`, so ch-local and
+  the runtime never disagree about what is loaded. A top-level module the
+  start refused is told the same way, with `when: "start"`. Without a
+  control channel a suspended module stays suspended and listed until
+  `POST /restart-module`.
+
+The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
+is still taken until it is removed, never mixed with the module form in one
+message.
 
 ### Modules that keep state per session
 

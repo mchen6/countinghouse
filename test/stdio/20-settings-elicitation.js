@@ -173,6 +173,30 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
     }
   });
 
+  // M4 (#413 section 16, rule 4): ch-local's record becomes modules.json
+  // (L1a) before the tool's pack code goes (M5); the version is read from
+  // it, and from packs.json while modules.json is not there
+  it('a pack\'s version from modules.json, ahead of packs.json; packs.json while modules.json is not there', async () => {
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
+    const modulesJson = path.join(dir, 'modules.json');
+    fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {'ci-failure-triage': {packages: {'@countinghouse/ch-pack-ci-failure-triage': '0.4.0'}}}}));
+    fs.writeFileSync(modulesJson, JSON.stringify({v: 2, packs: {'ci-failure-triage': {from: {release: '0.9.0'}, modules: {'@countinghouse/ch-pack-ci-failure-triage': '0.5.0'}}},
+      modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0', role: 'scenario'}}}));
+    try {
+      const r = await tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+      assert.strictEqual(r.inputRequired.inputRequests.approve.params.message, 'Turn on the ci-failure-triage 0.5.0 tools in countinghouse? This applies until your client restarts countinghouse.');
+      confirmModule.resetForTests();
+      fs.writeFileSync(modulesJson, JSON.stringify({v: 2, modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0-rc.1', role: 'scenario'}}}));
+      await refused(tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+      confirmModule.resetForTests();
+      fs.rmSync(modulesJson);
+      const old = await tool().set('pack.ci-failure-triage', 'on', 'settings tool', CLIENT);
+      assert.match(old.inputRequired.inputRequests.approve.params.message, /ci-failure-triage 0\.4\.0 tools/);
+    } finally {
+      fs.rmSync(modulesJson, {force: true});
+    }
+  });
+
   it('the old value shown is the runtime\'s effective one, not the file\'s', async () => {
     options.maxOutputBytes = 24 * MiB;   // raised this start
     const r = await tool().set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);

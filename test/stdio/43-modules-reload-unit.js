@@ -36,7 +36,10 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   let root = null;
   let store = null;
   const at = (name, v) => path.join(store, ...name.split('/'), v);
-  before(() => {
+  // many fixture modules written at once: past mocha's 2 s on a slow
+  // Windows runner (#425's run), so a bound of its own
+  before(function() {
+    this.timeout(60000);
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-stdio-43-'));
     store = path.join(root, 'module-store');
     for (const v of ['1.0.0', '2.0.0']) {
@@ -335,7 +338,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   it('high 1: a reload\'s notice outside a shared runtime goes under its first name', async () => {
     const notices = require('../../lib/notices');
     notices.resetForTests();
-    const control = require('../../lib/pack-control').createPackControl({mm: {}, dm: {}, toolsOf: async () => [], shared: () => false,
+    const control = require('../../lib/module-control').createPackControl({mm: {}, dm: {}, toolsOf: async () => [], shared: () => false,
       packs: {reloadPack: async () => ({modules: []}), loadPack: async () => ({modules: []}), unloadPack: async () => ({modules: []})}});
     await control.reload({type: 'reload', names: ['@t/a', '@t/b'], dirs: {}, notice: 'a and b upgraded'});
     assert.deepStrictEqual(notices.take('@t/a'), ['a and b upgraded']);

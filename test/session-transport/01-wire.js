@@ -151,6 +151,27 @@ describe('sessions 01: the wire (contract 2)', () => {
       assert.deepStrictEqual([...new Set(P.refused.map((r) => r.reason))].sort(), ['global', 'pack', 'set-false']);
     });
 
+    // M4 (#413 section 7.5): the module form, read by the runtime's own
+    // structural check (lib/modules-in-place.js moduleMessageProblem) before
+    // anything is read from disk
+    it('the module messages\' vectors: the runtime takes every accepted one and refuses each refused one for its reason', () => {
+      const M = V.moduleMessages;
+      const {moduleMessageProblem} = require('../../lib/modules-in-place');
+      const {SLOT, isPackage} = require('../../lib/remote/credentials');
+      assert.strictEqual(M.slotPattern, SLOT.source);
+      const pkg = new RegExp(M.packagePattern);
+      for (const {why, message} of M.accepted) {
+        assert.strictEqual(moduleMessageProblem(message), null, why);
+        for (const n of [].concat(message.name || [], message.names || [], Object.keys(message.dirs || {}))) assert.ok(pkg.test(n) && isPackage(n), `${why}: ${n}`);
+      }
+      for (const {why, reason, message} of M.refused) {
+        const p = moduleMessageProblem(message);
+        assert.ok(p != null, why);
+        assert.strictEqual(p.reason, reason, `${why}: ${p.message}`);
+      }
+      assert.deepStrictEqual([...new Set(M.refused.map((r) => r.reason))].sort(), ['credentials', 'dirs', 'name', 'names', 'old-field']);
+    });
+
     it('makes the token MAC as the vectors have it', () => {
       assert.strictEqual(handshake.tokenMac(secret, V.tokenMac.token).toString('base64'), V.tokenMac.macB64);
     });
