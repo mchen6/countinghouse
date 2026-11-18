@@ -339,3 +339,79 @@ describe('sessions 30: an uninstall sees every session worker of the module', ()
     await waiting;
   });
 });
+
+// The security pass of 11-17: what counts as a session worker's work in
+// flight (lib/worker-message.js inFlight, read by the pool's busy)
+describe('sessions 30: a request past its deadline is no longer in flight', () => {
+  const WorkerMessage = require('../../lib/worker-message');
+  const EventEmitter = require('events');
+  const real = (post) => {
+    const worker = new EventEmitter();
+    worker.postMessage = post || (() => {});
+    return new WorkerMessage(worker);
+  };
+  // a request queued as sendCounted queues one: its deadline with it
+  const queue = (w, deadline, cb = () => {}) => w.sendMessageToWorker({category: 'parent', command: 'x'}, cb, undefined, deadline);
+
+  it('a request with no deadline (a load, a job run with no timeout) is always in flight', () => {
+    const w = real();
+    queue(w, null);
+    assert.strictEqual(w.inFlight(1e12, 5000), true);
+  });
+
+  it('a call is in flight until its deadline and the margin have passed; then not', () => {
+    const w = real();
+    assert.strictEqual(w.inFlight(0, 5000), false, 'nothing queued');
+    queue(w, 10000);
+    assert.strictEqual(w.inFlight(9000, 5000), true, 'before its deadline');
+    assert.strictEqual(w.inFlight(15000, 5000), true, 'within the margin');
+    assert.strictEqual(w.inFlight(15001, 5000), false, 'past it');
+    queue(w, 20000);
+    assert.strictEqual(w.inFlight(15001, 5000), true, 'another still in flight');
+  });
+
+  // the review of #416: the deadline rides with its queued request, and no
+  // request is answered twice
+  it('a reply takes its request, deadline and all; the worker\'s end takes the rest', () => {
+    const w = real();
+    const answers = [];
+    queue(w, 1000, (err, data) => answers.push([err && err.code, data]));
+    queue(w, null, (err) => answers.push([err && err.code]));
+    w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'});
+    assert.deepStrictEqual(Object.keys(w.msgQueue), ['1']);
+    assert.strictEqual(w.inFlight(1e12, 5000), true, 'the one with no deadline is left');
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    assert.strictEqual(w.inFlight(0, 5000), false);
+    assert.deepStrictEqual(answers, [[null, 'ok'], ['DEVICE_NOT_RESPONDING']]);
+  });
+
+  it('a post that throws (no transfer list) leaves nothing queued: never in flight for ever, never answered by the worker\'s end', () => {
+    const w = real(() => { throw Object.assign(new Error('could not be cloned'), {name: 'DataCloneError'}); });
+    let answered = 0;
+    assert.throws(() => queue(w, null, () => { answered += 1; }), /could not be cloned/);
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    assert.strictEqual(w.inFlight(Date.now(), 5000), false);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.strictEqual(answered, 0);
+  });
+
+  it('a callback queued again with no deadline is in flight: an earlier deadline it was queued with is never read for it', () => {
+    const w = real();
+    const cb = () => {};
+    queue(w, 1000, cb);
+    w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'});
+    queue(w, null, cb);
+    assert.strictEqual(w.inFlight(1e12, 5000), true);
+  });
+
+  it('a reply whose callback throws is taken off the queue first: the worker\'s end never answers it again', () => {
+    const w = real();
+    let calls = 0;
+    queue(w, 1000, () => { calls += 1; throw new Error('the caller\'s own'); });
+    assert.throws(() => w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'}), /the caller's own/);
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.strictEqual(calls, 1, 'answered once');
+  });
+});

@@ -1222,9 +1222,18 @@ What keeps one session out of another's:
   per-session worker (measured, Node 24, a small module; a heavier module
   adds its own heap): the default cap is about 400 MB at most
   ([benchmarks](benchmarks/lean-worker.md)).
-  At the cap only an idle worker is retired, never one with a call in
-  flight. A session that can't get a worker is refused
+  At the cap only an idle worker is retired, never one with a call still
+  within its timeout. A call past its timeout and a 5-second margin has
+  been answered (its own timeout did that) and no longer counts, so a
+  handler that never answers can't hold a slot for good: its worker may be
+  retired mid-handler. A session that can't get a worker is refused
   `SESSION_WORKERS_BUSY`; nothing is queued.
+  Residual: a task whose handler never answers holds its slot until the
+  task's timeout: its own, when it was added with one, or else
+  `--jobTimeout` (1 hour by default; an operator who sets 0 has chosen no
+  bound). The timeout counted is the one at the send:
+  a session that tightens its timeout during a call, or cancels it, frees
+  the slot only at the original timeout (a follow-up after R1).
 - **Storage ends with the session.** A session's partitions are removed
   when it ends for good (it leaves, its reconnect window passes, or a resume
   never settles), after its workers stop; and at a start, once the runtime
