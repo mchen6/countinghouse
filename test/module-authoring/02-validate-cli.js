@@ -105,6 +105,23 @@ describe('countinghouse-validate CLI', function() {
     }
   });
 
+  // the medium review of the high-review fixes: a query can carry a secret
+  it('a URL that passes keeps its path, and its query is replaced by a placeholder', (done) => {
+    const token = ['t', 'o', 'k', '7', '7'].join('');
+    run(withRemote({name: 'gh', url: `https://example.com/mcp/v1?access_token=${token}`, credential: {env: 'GH_TOKEN', extra: 1}}).dir, (r) => {
+      assert.ok(!r.stdout.includes(token), r.stdout);
+      assert.ok(r.stdout.includes('"url":"https://example.com/mcp/v1?<query>"'), r.stdout);
+      done();
+    });
+  });
+
+  it('a credential field the grammar refuses is a placeholder in the full form, never dropped', (done) => {
+    run(withRemote({name: 'gh', url: 'https://example.com/mcp', credential: {env: 'GH_TOKEN', header: 'Bad Header', scheme: 'B a d', fallbackEnv: '1X'}}).dir, (r) => {
+      assert.ok(r.stdout.includes('"credential":{"env":"GH_TOKEN","fallbackEnv":"<VARIABLE>","header":"<header>","scheme":"<scheme>"}'), r.stdout);
+      done();
+    });
+  });
+
   // #422 high review, 5: the short form only where it means the same
   it('with headers, or a credential header or scheme of its own, the fix line shows the full form, header values left out', (done) => {
     const m = withRemote({name: 'gh', url: 'https://example.com/mcp', headers: {'X-Toolsets': 'secret-ish'}, credential: {env: 'GH_TOKEN', header: 'X-Api-Key', scheme: '', extra: 1}});

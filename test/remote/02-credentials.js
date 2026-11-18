@@ -269,6 +269,16 @@ describe('remote 02: version 2, by module', () => {
       }
     });
 
+    it('a variable name that holds no secret (PATH, HOME, LANG, LC_*, TZ, ...) bound by one module is never denied to every worker', () => {
+      const s = credentials.snapshot();
+      try {
+        credentials.configure(v2file({m: {[ORIGIN]: {PATH: SLOT1, LC_ALL: SLOT2}}}));
+        assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), [SLOT1, SLOT2]);
+      } finally {
+        credentials.restore(s);
+      }
+    });
+
     it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2), no pack\'s version 1 names', () => {
       assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
       assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);

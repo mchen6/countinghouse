@@ -86,7 +86,8 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
   it('under version 2, a variable name the file binds is denied too, though the value is read from a slot', () => {
     const credentials = require('../../lib/remote/credentials');
     const saved = credentials.snapshot();
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14b-')), 'allow.json');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14b-'));
+    const file = path.join(tmp, 'allow.json');
     fs.writeFileSync(file, JSON.stringify({version: 2, modules: {'some-module': {'https://api.githubcopilot.com': {GITHUB_TOKEN: SLOT1}}}}));
     try {
       credentials.configure(file);
@@ -96,6 +97,7 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
       assert.ok(c.notes.some((n) => n.startsWith('env GITHUB_TOKEN denied: a credentials allowance reads it')), JSON.stringify(c.notes));
     } finally {
       credentials.restore(saved);
+      fs.rmSync(tmp, {recursive: true, force: true});
     }
   });
 

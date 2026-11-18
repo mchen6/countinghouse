@@ -145,6 +145,21 @@ describe('composition 22: declarations pinned before the module runs, and every 
       assert.ok(lines[0].endsWith('[{"name":"gh","origin":"https://b.example","credential":"TOKEN"}]'), lines[0]);
     });
 
+    it('a change the summary cannot show says so; a fifth remote is counted', () => {
+      const p = pins();
+      const write3 = (remotes) => fs.writeFileSync(path.join(mod, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A], remotes: remotes}}));
+      write3([{name: 'gh', url: 'https://a.example/mcp', headers: {'X-A': '1'}}]);
+      p.pin('m', mod, true);
+      write3([{name: 'gh', url: 'https://a.example/other', headers: {'X-A': '2'}}]);
+      p.pin('m', mod, false);
+      assert.ok(lines[0].endsWith('[{"name":"gh","origin":"https://a.example"}] (the change is in a field not shown: a path, a query or a header)'), lines[0]);
+      lines = [];
+      const five = [1, 2, 3, 4, 5].map((n) => ({name: `r${n}`, url: `https://r${n}.example/mcp`}));
+      write3(five);
+      p.pin('m', mod, true);
+      assert.ok(lines.some((l) => l.includes('{"name":"r4","origin":"https://r4.example"}] and 1 more')), lines.join('\n'));
+    });
+
     it('an operator adopting a validation\'s copy logs both: the file differs from the copy, and the copy from the last pin', () => {
       const p = pins();
       withRemote('https://r0.example/mcp');
