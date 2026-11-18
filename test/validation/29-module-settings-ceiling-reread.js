@@ -613,9 +613,10 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       const wm = proxy('w');
       wm.settings = made;
       mm.modules.w = wm;
-      const real = reread_.next;
+      // counted where it reads the file: stateFor
+      const real = ms.stateFor;
       let called = 0;
-      reread_.next = (...a) => { called += 1; return real(...a); };
+      ms.stateFor = (...a) => { called += 1; return real(...a); };
       try {
         mmLib.settleSettings(mm, 'w', wm);
         assert.strictEqual(called, 0, 'unchanged: not made again');
@@ -627,7 +628,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
         const before = called;
         mmLib.settleSettings(mm, 'w', wm);
         assert.strictEqual(called, before);
-      } finally { reread_.next = real; }
+      } finally { ms.stateFor = real; }
     });
 
     it('next: a load (no previous) is stateFor\'s; a restart under a ceiling refusal refuses (ceilingRefuses); a running module keeps its state', () => {
