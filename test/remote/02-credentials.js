@@ -253,13 +253,22 @@ describe('remote 02: version 2, by module', () => {
 
     it('a shared runtime compares a session\'s credential on no name the start adds under version 2 (route-manager credentialVariables)', () => {
       const {credentialVariables} = require('../../lib/route-manager');
+      const pack = {packsInPlace: new Map([['p', {allowance: new Map([['https://x.example', new Set(['X_KEY'])]])}]])};
       assert.deepStrictEqual([...credentialVariables(null)], []);
-      assert.deepStrictEqual([...credentialVariables({packsInPlace: new Map([['p', {allowance: new Map([['https://x.example', new Set(['X_KEY'])]])}]])})], ['X_KEY'],
-        'a pack\'s own version 1 file still adds its names');
+      assert.deepStrictEqual([...credentialVariables(pack)], [], 'a pack\'s own version 1 file is not used under version 2: it adds no name');
+      // the same pack under a version 1 start still adds its names
+      const v2 = credentials.snapshot();
+      try {
+        credentials.configure(v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']})));
+        assert.deepStrictEqual([...credentialVariables(pack)].sort(), ['GITHUB_TOKEN', 'X_KEY']);
+      } finally {
+        credentials.restore(v2);
+      }
     });
 
-    it('the names an allowance reads from: the slots under version 2', () => {
+    it('the names an allowance reads from: the slots under version 2, and no pack\'s version 1 names (never used there)', () => {
       assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), [SLOT1, SLOT2]);
+      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), [SLOT1, SLOT2]);
     });
   });
 

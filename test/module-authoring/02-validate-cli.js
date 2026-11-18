@@ -93,6 +93,27 @@ describe('countinghouse-validate CLI', function() {
     });
   });
 
+  // the review of M3: a URL's user info is never printed back
+  it('the fix line never prints a URL\'s user info or fragment', (done) => {
+    const secret = ['pa', 'ss', 'word', '42'].join('');
+    const m = withRemote({name: 'gh', url: `https://bot:${secret}@api.example.com/mcp#frag`, credential: 'GH_TOKEN'});
+    run(m.dir, (r) => {
+      assert.strictEqual(r.code, 1);
+      assert.ok(!r.stdout.includes(secret) && !r.stdout.includes('#frag'), r.stdout);
+      assert.ok(r.stdout.includes('the shortest form is {"name":"gh","url":"https://api.example.com/mcp","credential":"GH_TOKEN"}'), r.stdout);
+      done();
+    });
+  });
+
+  it('a fallbackEnv is said to be read under a version 1 file only', (done) => {
+    const m = withRemote({name: 'gh', url: 'https://api.example.com/mcp', credential: {env: 'A_TOKEN', fallbackEnv: 'B_TOKEN'}});
+    run(m.dir, (r) => {
+      assert.ok(r.stdout.includes('  sends the credential A_TOKEN to https://api.example.com as "Authorization: Bearer <value>" ' +
+        '(its fallbackEnv B_TOKEN is read only under a version 1 --remoteCredentials file)\n'), r.stdout);
+      done();
+    });
+  });
+
   it('exits 2 when the path does not exist', (done) => {
     run(path.join(FIXTURES, 'no-such-module-anywhere'), (r) => {
       assert.strictEqual(r.code, 2);
