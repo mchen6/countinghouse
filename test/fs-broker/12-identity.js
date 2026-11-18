@@ -75,7 +75,7 @@ describe('fs-broker 12: virtual identity', function() {
     it(`${mode}: an ES module imports the module built-in by both names`, async () => {
       server = await start(mode, 'esm-probe');
       const res = await mcpCall(testPort(9630), 'k', 'esm_probe_probeservice_moduleimport', {});
-      assert.deepStrictEqual(toolOutput(res), {named: 'function', prefixed: 'function', byDefault: 'function'}, JSON.stringify(res));
+      assert.deepStrictEqual(toolOutput(res), {named: 'function', prefixed: 'function', byDefault: 'function', reduced: mode === 'enforce', linked: true}, JSON.stringify(res));
     });
   });
 

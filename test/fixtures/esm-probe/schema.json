@@ -10,7 +10,7 @@
 
     "moduleImport": {
       "input": {"type": "object"},
-      "output": {"type": "object", "properties": {"named": {"type": "string"}, "prefixed": {"type": "string"}, "byDefault": {"type": "string"}}}
+      "output": {"type": "object", "properties": {"named": {"type": "string"}, "prefixed": {"type": "string"}, "byDefault": {"type": "string"}, "reduced": {"type": "boolean"}, "linked": {"type": "boolean"}}}
     },
 
     "where": {

@@ -4,5 +4,9 @@
 import {createRequire} from 'module';
 import * as prefixed from 'node:module';
 import byDefault from 'node:module';
+// a name the reduced one lacks still links (undefined there)
+import {findPackageJSON} from 'node:module';
 
-export default async () => ({output: {named: typeof createRequire, prefixed: typeof prefixed.createRequire, byDefault: typeof byDefault.createRequire}});
+// reduced: the lockdown's (no _load), or the real one
+export default async () => ({output: {named: typeof createRequire, prefixed: typeof prefixed.createRequire, byDefault: typeof byDefault.createRequire,
+  reduced: typeof byDefault._load === 'undefined', linked: typeof findPackageJSON !== 'symbol'}});

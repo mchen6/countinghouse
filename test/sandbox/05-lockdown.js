@@ -120,11 +120,12 @@ describe('sandbox 05: worker lockdown', function() {
   // in what was written after its call (#406's high review).
   ['enforce', 'audit'].forEach((mode, i) => describe(`${mode}: Module._load's internal argument`, () => {
     let server = null;
-    const port = testPort(9611 + i);
+    const port = testPort(9771 + i);
     before(async () => { server = await startServer(port, serverArgs(mode)); });
     after(() => stopServer(server));
+    // (this route's own report: the built-in rule, on its target)
     const reportedSince = (from, target) => server.output.slice(from).split('\n')
-      .some((l) => l.includes('module sandbox: sandbox-probe violation') && l.includes(target));
+      .some((l) => l.includes(`module sandbox: sandbox-probe violation builtin ${target}`));
     for (const [what, target] of [['loadSkipHooks', 'child_process'], ['loadResolved', 'worker_threads']]) {
       it(`${what}: runs the hooks, so ${target} is ${mode === 'enforce' ? 'refused' : 'loaded'} and reported`, async () => {
         const from = server.output.length;
@@ -142,7 +143,8 @@ describe('sandbox 05: worker lockdown', function() {
       if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: 'MODULE_NOT_FOUND'});
       else {
         assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
-        await waitFor(() => reportedSince(from, 'cli-options'), 20000, 'the require\'s violation line');
+        await waitFor(() => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: sandbox-probe violation require') && l.includes('cli-options')),
+          20000, 'the require\'s violation line');
       }
       const cached = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'compiledInCache', arg: OUTSIDE_FILE}));
       assert.deepStrictEqual(cached, {outcome: 'allowed', code: null}, 'the cache holds compiled source under that filename');
