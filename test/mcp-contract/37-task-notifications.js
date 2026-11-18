@@ -46,7 +46,7 @@ describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)
     const open = (ids, id = 7) => {
       const out = [];
       const ended = {count: 0};
-      const opened = hub.open({id, appKey: 'k', filter: {taskIds: ids}, write: (m) => out.push(m), finish: () => { ended.count += 1; }, taskView: view});
+      const opened = hub.open({id, appKey: 'k', filter: {taskIds: ids}, write: (m) => out.push(m), finish: (why) => { ended.count += 1; ended.why = why; }, taskView: view});
       assert.ok(opened.ok);
       return {out, opened, ended, sent: () => out.map((m) => `${m.params.taskId} ${m.params.status}${m.params.statusMessage != null ? ` ${m.params.statusMessage}` : ''}`)};
     };
@@ -80,6 +80,7 @@ describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)
     r.hub.taskChanged('t-revoked', 'progress');
     await settle();
     assert.strictEqual(gone.ended.count, 1, 'ended');
+    assert.strictEqual(gone.ended.why, 'revoked', 'told why: the transport answers it as an error');
     assert.deepStrictEqual(gone.sent(), []);
     const done = r.open(['t-a', 't-b'], 9);
     r.set('t-a', 'completed', {result: {content: []}});
@@ -91,6 +92,37 @@ describe('mcp-contract 37: notifications/tasks, the hub (M16 Task 2, in-process)
     await settle();
     assert.strictEqual(done.ended.count, 1, 'nothing left: ended');
     assert.strictEqual(r.hub.count('k'), 0, 'every slot freed');
+  });
+
+  // the medium review of #433's high fixes, 3: a first step that failed is
+  // tried again as a first step, so a task working at the listen is not sent
+  it('a failed first step is retried as one: a task working at the listen is still not sent', async () => {
+    let failing = true;
+    const r = rig({noticeMs: 20, fail: () => (failing ? new Error('the store blinked') : undefined)});
+    r.set('t-1', 'working', {statusMessage: '40%'});
+    const l = r.open(['t-1']);
+    l.opened.start();
+    await settle();
+    failing = false;
+    await tick(60);
+    assert.deepStrictEqual(l.sent(), [], 'working at the listen: not sent');
+    r.set('t-1', 'completed', {result: {content: []}});
+    r.hub.taskChanged('t-1', 'completed');
+    await settle();
+    assert.deepStrictEqual(l.sent(), ['t-1 completed']);
+  });
+
+  // the medium review of #433's high fixes, 2: a failure that never clears
+  // is no longer transient: the id goes, and a listen with nothing left ends
+  it('a view that always fails drops its task after MAX_TASK_RETRIES tries, and the emptied listen ends', async () => {
+    const {MAX_TASK_RETRIES} = require('../../lib/mcp/subscriptions');
+    const r = rig({noticeMs: 2, fail: () => new Error('always')});
+    r.set('t-1', 'working');
+    const l = r.open(['t-1']);
+    r.hub.taskChanged('t-1', 'progress');
+    assert.ok(await until(() => l.ended.count === 1, 5000), `ended after ${r.views.length} tries`);
+    assert.strictEqual(r.views.length, MAX_TASK_RETRIES + 1);
+    assert.strictEqual(l.ended.why, undefined, 'a graceful end');
   });
 
   // the high review of #433, 10: a change builds only for the listeners that hold it
@@ -569,6 +601,12 @@ function spawnedSuite(label, extraArgs, port, {full = true} = {}) {
       assert.strictEqual(reloaded.status, 200, JSON.stringify(reloaded));
       await tick(3000);   // past its run's end
       assert.deepStrictEqual(notices(s), [], JSON.stringify(s.events));
+      // and its listen ended, answered as an unknown key, never "complete"
+      // (the medium review of #433's high fixes, 7)
+      assert.ok(await until(() => s.ended), 'ended');
+      const last = s.events[s.events.length - 1];
+      assert.strictEqual(last.id, 50, JSON.stringify(s.events));
+      assert.strictEqual(last.error && last.error.data && last.error.data['countinghouse/code'], 'SYSTEM_ERROR_UNKNOWN_USER', JSON.stringify(last));
     });
 
     each('a task already completed at the listen is sent once, after the ack', async () => {

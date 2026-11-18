@@ -185,6 +185,18 @@ describe('subscriptions/listen (#231)', () => {
       assert.deepStrictEqual(s.events[0].params.notifications, {toolsListChanged: true, taskIds: []});
       s.req.destroy();
     });
+    // the medium review of #433's high fixes, 1: the stream failing to open
+    // after the hub took the listener frees its slot and answers the request
+    it('a stream that fails to open after the listener is registered: answered with an error, its slot freed', async() => {
+      const gateway = require('../../lib/mcp/gateway');
+      const before = hub.count(KEY);
+      const answer = await new Promise((resolve) => gateway.handle(body(84, {toolsListChanged: true, taskIds: []}), null, KEY, (err, response) => resolve({err, response}),
+        {headers: {'mcp-protocol-version': V, 'mcp-method': 'subscriptions/listen'}, subscriptions: hub, openStream: () => { throw new Error('the client left'); }}));
+      assert.strictEqual(answer.err, null);
+      assert.strictEqual(answer.response.error.message, 'the listen could not be opened');
+      assert.strictEqual(hub.count(KEY), before, 'no slot held');
+    });
+
     it('a listen whose opening throws is answered with an error, never left hanging (2)', async() => {
       const broken = express();
       broken.use(express.json());
