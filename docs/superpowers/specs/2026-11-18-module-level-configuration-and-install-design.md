@@ -1,12 +1,12 @@
 # Module-level configuration and install (release 1)
 
-Status: draft for review, 2026-11-18. A security review follows the design
-review.
+Status: revision 2, 2026-11-18, after the security review of revision 1
+(the section below says what changed).
 Scope: countinghouse (declarations, the settings tool, credentials on the
 remotes path, loading in place, the session layer), ch-local (settings,
 credentials, the module store, install, upgrade, start) and the pack
 repositories (pack 1's modules).
-Read at countinghouse `origin/master` 116503b0 and ch-local `origin/main`
+Read at countinghouse `origin/master` 8552c7d2 and ch-local `origin/main`
 f7b1cd3. File and line references are to those commits.
 
 This is one design for three pieces of work that share most of their code:
@@ -25,6 +25,72 @@ bundle". It replaces:
 
 Where this document and those disagree, this one holds.
 
+## Revision 2 (after the security review, 2026-11-18)
+
+A security review of revision 1 found five blocking problems, and the
+maintainer made two decisions the same day. All of it is folded into the
+sections below, which are the design; this section only says what moved.
+The maintainer's answers to revision 1's three open questions are in
+section 17.
+
+**The maintainer's two decisions**
+
+1. **Release pins decide.** In a released install every module runs at the
+   version the running release pins, up or down: a release can move a module
+   back. Upgrades, automatic ones included, install the release's tested set
+   without asking. The breaking-version question (a major, or a 0.x minor,
+   of a module that other installed modules call) is asked only between
+   packs that come from different pins: a development install today, a pack
+   from another source later. This replaces revision 1's "a module's active
+   version is the highest any installed pack was installed with" for every
+   module the running release lists; that rule remains only between packs
+   from different pins (sections 5.2, 9.2, 9.4 to 9.6).
+2. **Three implementers.** C joins A and B after its sandbox work, about
+   twelve working days in. Section 16 is reworked for three, with the order
+   problems below fixed.
+
+**The five blocking findings**
+
+| | Finding | Fix | Where |
+|---|---|---|---|
+| B1 | A credential slot was an ordinary environment variable. A module that declared the slot's name in `permissions.env` would be handed it (`resolveEnv` keeps only `COUNTINGHOUSE_*` from workers, `lib/module-permissions.js:229-241`; under audit a declared name needs no policy, lines 192-198). And the version 2 file could name any environment variable of the runtime, its identity secret included. | Slots are `COUNTINGHOUSE_CREDENTIAL_<n>`. Version 2 has one form and accepts only that pattern. `resolveEnv` also denies every name a credentials allowance reads from. | 6.4, 6.5 |
+| B2 | Which version of a module runs, under revision 1's "the highest version any installed pack was installed with". | Replaced by decision 1: the pins decide, and a module that is not at the release's pin is not loaded. | 5.2, 9.2 |
+| B3 | A key piped on standard input was bound to whatever origin the installed version declared, and replaced a binding for another origin with nobody looking. | The standard-input path needs `--to <origin>` equal to the declared origin, and never replaces a binding for another origin. Section 12 says plainly that an agent's shell is not "conversation". | 6.2, 12 |
+| B4 | A slot was a bare number, a key added or changed later could not be told from the one the runtime started with, and a module turned on later needed a restart. | A slot is (module, variable, origin, source, value digest) and is used only on an exact match with the store as it is now. The applier watches the store and unloads a module whose binding was removed or changed. Every installed module with a usable binding gets a slot at start. | 6.4, 9.8 |
+| B5 | The PR order broke between the repositories in four places (a shared runtime refuses a load with no `pack` and `global`; the ceiling's pack was read from the first directory under the root; the settings tool read `packs.json` after ch-local renamed it; ch-local's `set` erased the `module.*` values the runtime had written). | M4 takes a module-form message as global, checks the ceiling by package name and reads both record files; the unknown-names fix is a first, small ch-local PR. | 16 |
+
+**Also adopted from the review**
+
+- A reload loads what it adds before it switches anything, and switches a
+  called module before the module that calls it (7.3).
+- One reload per step, naming every loaded top-level module whose closure
+  changed (7.3, 9.8).
+- With `--modulesRoot`, a module is found only among the directories given:
+  no search of `node_modules` directories up to the home. The root and link
+  checks cover the whole start plan (7.2).
+- The hidden set: a failed unload is defined by the module map, and a load
+  whose closure holds a module that is still hidden is refused (5.5).
+- Migration: the daemon's handoff maps the kind `pack` to `enabled`; a
+  leftover `pack.<name>: false` beside `enabled.<module>: true` means off
+  (10).
+- `additions` also reports a new caller of a module that holds a key, and a
+  `confirm` setting that lost its mark or changed its default (9.3).
+- Remotes join the manifest pin; a binding covers the whole origin;
+  `fallbackEnv` is not read under version 2 and then leaves the vocabulary;
+  a version 1 file is refused on a runtime with a control channel; a module
+  loaded in place gets its allowance in the message, not in a file (6.1,
+  6.5, 7.3).
+- The runtime tells ch-local when it stops a module by itself, so `status`
+  does not say a stopped module is running (7.3, 9.9).
+
+**Choices changed** (section 18): a part has no on/off of its own; the gh
+offer is for `https://api.githubcopilot.com` only; turning a module off from
+conversation stays, counted in the session's budget of changes, with the
+undo command, the modules that go with it, and "until a terminal" in what is
+said.
+
+**The estimate** is about 51 developer-days, not 35 (section 16).
+
 ## 1. Intent
 
 The maintainer decided the following on 2026-11-17 and 2026-11-18. This
@@ -39,7 +105,8 @@ design implements the decisions and does not reopen them.
    module, changed by the user at a terminal or in conversation, applied live,
    persisted, one set of values per user.
 4. **Credentials are per module and entered at a terminal only**:
-   `ch-local credentials add <module>`, or standard input. The offer to use
+   `ch-local credentials add <module>`, typed, or piped on standard input
+   with the destination named (`--to <origin>`). The offer to use
    the GitHub CLI's login stays, behind a yes ("use your gh login's token for
    `<module>`? [y/N]"). A key never goes through conversation or the settings
    tool. The runtime attaches it on the existing remotes path, bound
@@ -53,16 +120,20 @@ design implements the decisions and does not reopen them.
 7. **The runtime loads, unloads and reloads modules.** A part that is not
    listed is loaded while an enabled module needs it.
 8. **ch-local keeps a module store keyed by name and version.** Installing a
-   pack skips the modules already installed. When an update would move a
-   module that other installed modules call across a major version, ch-local
-   asks [y/N], naming those modules; the default is No, and without a
-   terminal or in an automatic upgrade the answer is No and the user is told.
-   A minor or patch update installs without asking. After a yes every module
-   still loads; ch-local warns and says how to go back. Removing the pack
-   that brought the update puts the module back to its previous version,
-   unless a pack installed later relied on the newer one. Settings are kept
-   across both; a value the older version does not declare stays stored and
-   unused. There are no declared version ranges (`requires`) in release 1.
+   pack skips the modules already installed. **A release's pins decide the
+   versions**: in a released install each module runs at the version the
+   running release pins, whether that moves it up or back, and upgrades
+   install the release's tested set without asking. Between packs that come
+   from different pins, an update that would move a module that other
+   installed modules call across a breaking version (a major, or a 0.x
+   minor) asks [y/N], naming those modules. The default is No; without a
+   terminal the answer is No and the user is told; any other update installs
+   without asking. After a yes every module still loads; ch-local warns and
+   says how to go back. Removing the pack that brought the update puts the
+   module back to its previous version, unless a pack installed later relied
+   on the newer one. Settings are kept across both; a value the older version
+   does not declare stays stored and unused. There are no declared version
+   ranges (`requires`) in release 1.
 9. **Pack 1's modules are configured as a third party's would be.** No
    path exists for them that another author could not use.
 10. **Wording**: nothing outward calls a pack a unit that runs.
@@ -77,13 +148,15 @@ design implements the decisions and does not reopen them.
 | closure | A scenario and, recursively, every module named before the slash in its `countinghouse.calls` and in its parts'. A module with no role is its own closure: its calls are not followed (`closureOf`, `lib/module-roles.js:106`, as today). |
 | pack | A name in ch-local's release pins for a list of modules. An install-time convenience and nothing else. |
 | module store | `<home>/module-store`: every installed module version, each in a directory of its own. |
-| active version | The one version of a module that ch-local gives the runtime. A runtime holds one version of a module, as today. |
-| available | A module that may be loaded: installed, in the running release, allowed by the ceiling, turned on, its credential usable, and every module it calls available (section 5.2). |
+| pins | The versions a pack is installed from: a ch-local release's, or, in a development install, a pins file's (`--unreleased-pins`). |
+| active version | The one version of a module that ch-local gives the runtime: the running release's pin (section 9.2). A runtime holds one version of a module, as today. |
+| available | A module that may be loaded: installed, at the version the running release pins, allowed by the ceiling, turned on, its credential usable, and every module it calls available (section 5.2). |
 | short name | A package name without its scope (`ch-access-github`). ch-local's commands accept it when exactly one installed module has it. Stored names and the runtime's messages always use the full name. |
 
 ## 3. Not in scope (release 1)
 
 - A module turned on or off, or a module setting, for one session only.
+- An on/off switch for a part.
 - A consent screen for credentials, and a consents file.
 - Declared version ranges between modules (`countinghouse.requires`), and
   refusing a load because a called module's version is not the one the caller
@@ -94,8 +167,9 @@ design implements the decisions and does not reopen them.
 - The network broker. A module can still open outbound connections of its
   own; `docs/security-model.md` says so, and this design does not change it.
 - Installing a module that the running ch-local release does not pin. The
-  store, the record and the update rule are written for packs from more than
-  one source, but in release 1 every pack comes from the release's pins.
+  store, the record and the update question are written for packs from more
+  than one source, but in release 1 every pack comes from the release's
+  pins, and only a development install can hold packs from different pins.
 - More than one loaded version of a module.
 - Per-caller settings, the settings tool and the settings command on a
   multi-tenant HTTP server (section 4.7 is what such a server gets).
@@ -380,15 +454,20 @@ release 1.
 
 ### 5.1 The setting
 
-`enabled.<package name>` in `settings.json`: a boolean, default on.
+`enabled.<package name>` in `settings.json`: a boolean, default on, for a
+**top-level module**.
 
 - Grammar: `^enabled\.((?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*)$`,
   the package name at most 214 characters. It replaces `PACK` and
   `PACK_ENTRY` in countinghouse `lib/settings-tool.js:57-62` and ch-local
   `lib/settings.js:52-54`, with the same entry: on/off, default on, guarding,
   applies now, and "off" is the tighter value.
-- It exists for every installed module, parts included. A part's entry is
-  set at a terminal only and is never named to a client.
+- **A part has no switch of its own.** It runs exactly while a loaded module
+  needs it. `ch-local settings set enabled.<part> …` is refused, and says
+  what to do: "ch-access-github is a part: it runs while a module that calls
+  it is on (ch-pack-ci-failure-triage). Turn that module off instead." An
+  `enabled.<part>` entry found in the file (an edit by hand) is ignored with
+  a warning. In conversation a part's name answers `SETTING_UNKNOWN`.
 - It is a name of its own, not `module.<package>.enabled`, for two reasons.
   A package name may hold dots, so `module.a.b` could not be told apart from
   module `a`'s setting `b`. And the two follow different rules: on/off is a
@@ -404,9 +483,13 @@ A module is **available** when all of these hold. The first that fails is
 the reason given to the user.
 
 1. Its active version is in the module store.
-2. The running release lists it (it is not withdrawn; section 9.7).
+2. The running release lists it, **at that version** (sections 9.2 and
+   9.7). A module the release does not list is withdrawn. A module whose
+   installed version is not the release's pin is not loaded either: the
+   pins decide, and a version the release moved away from does not run. (A
+   development install is exempt, as it is from the withdrawn rule today.)
 3. The operator's ceiling allows it (section 8).
-4. `enabled.<module>` is not off.
+4. For a top-level module: `enabled.<module>` is not off.
 5. Each credential it declares has a usable stored binding (section 6.7).
 6. Every module in its closure is available.
 
@@ -423,16 +506,19 @@ A top-level module that another top-level module also calls is loaded once
 and stays listed while it is itself available. Turned off, it is not
 available, so the module that calls it is not loaded either, and the user is
 told which and why. This is the fail-closed reading of "off": nothing of a
-module the user turned off runs.
+module the user turned off runs, and what is said when it is turned off
+names the modules that go with it (section 5.3).
 
 ### 5.3 Changing it
 
 **At a terminal:** `ch-local settings set enabled.<module> on|off`.
 
-- Off is a tightening: made at once.
+- Off is a tightening: made at once. ch-local names the modules that call
+  it, which are unloaded with it.
 - On is a loosening: bound by the ceiling's `modules` list, and asked at the
   terminal ("Loosen enabled.weather-tool from off to on? … [y/N]"), with no
   `--yes`, refused without a terminal. This is `lib/cli-change.js` as it is.
+- A part's name is refused (section 5.1).
 
 **In conversation** (`countinghouse_settings`):
 
@@ -441,9 +527,23 @@ module the user turned off runs.
   tools. The tool reads the installed modules from ch-local's record beside
   the settings file (section 9.2), as it reads `packs.json` for a pack's
   version today (`packVersion`, `lib/settings-tool.js:367`).
-- `set … off` is made on request: written to `settings.json` under the lock
-  (history first). ch-local's running start or daemon sees the change and
-  unloads the module; every session of the user is told.
+- `set … off` is made on request. It is a tightening, and it applies to
+  every session of the user, so four things hold:
+  - It is written to `settings.json` under the lock, history line first,
+    naming the session that asked. ch-local's running start or daemon sees
+    the change and unloads the module.
+  - It counts against the budget of 32 changes a session may record
+    (`MAX_SESSION_CHANGES`, `lib/settings-tool.js:84`). Past the budget the
+    change is the terminal's, as for any other setting.
+  - The answer to the agent, and the notice every session gets, say what
+    went with it, how to undo it, and that the undo is not the agent's:
+
+    > weather-tool is turned off for all your sessions. trip-planner calls
+    > it, so trip-planner is off too. They stay off until weather-tool is
+    > turned on at a terminal: `ch-local settings set enabled.weather-tool on`.
+
+  - Turning it back on from conversation is a loosening (next item). With
+    no tested client, that ends at the terminal.
 - `set … on` needs the user's confirmation, like any loosening that
   conversation may ask for. The form (kind `enabled`) is the runtime's
   sentence:
@@ -489,7 +589,7 @@ On master a shared runtime's session can list or hide a pack for itself
 | `lib/settings-tool.js` | `setForSession` and the session confirm path take `pack.<n>` (lines 880, 920-924, 1149-1226); `get` adds a session's own pack rows (660-662). | `enabled.*` is never a session's own. In a shared runtime it is handled as an all-sessions change (`setForAll`'s path: no form for off, the form for on). |
 | `lib/pack-control.js` | `pack` and `global` on load and reload; the audience of a notice; `set pack.<n> true`. | Section 7.3. A notice about a module goes to every open session. |
 | ch-local `lib/session-table.js` | `KINDS` and `PACK` override rows; `seed` drops a pack turned on. | The new kinds; no pack rows (migration: section 10). |
-| The ~15 readers of a session's view | `filterTargetsBySession`, `sessionLists` (`lib/mcp/tool-registry.js:687-692`), `lib/mcp/gateway.js:1419`, `lib/mcp/prompts.js:47-56`, `lib/mcp/resources.js:96-99`, `lib/mcp/subscriptions.js`, `lib/device-manager.js:518, 599, 1878, 1891, 2152`, `lib/peer-channel-broker.js:243, 307, 412, 663`, `lib/module-manager.js:1852` (`sessionViewChanged`), `lib/route-manager.js:156, 343-373`. | Each asks the global set of section 5.5 instead, with no session argument. `sessionViewChanged` stops a per-session worker of a hidden module for every session. |
+| The ~15 readers of a session's view | `filterTargetsBySession`, `sessionLists` (`lib/mcp/tool-registry.js:687-692`), `lib/mcp/gateway.js:1461`, `lib/mcp/prompts.js:47-56`, `lib/mcp/resources.js:96-99`, `lib/mcp/subscriptions.js`, `lib/device-manager.js:562, 643, 1994, 2007, 2268`, `lib/peer-channel-broker.js:243, 307, 412, 663`, `lib/module-manager.js:1879` (`sessionViewChanged`), `lib/route-manager.js:156, 343-373`. | Each asks the global set of section 5.5 instead, with no session argument. `sessionViewChanged` stops a per-session worker of a hidden module for every session. |
 
 ### 5.5 A module that is going on or off is hidden
 
@@ -513,13 +613,27 @@ gone(names)          // when that unload has completed; a failed one stays hidde
 listsModule(name) / listsDevice(deviceID) / none() / onChange(fn)
 ```
 
-A hidden module is in no tools, prompts or resources list, and a call, a
-hop, a direct peer channel or a job run that reaches it is refused
-`MODULE_NOT_LISTED`. `none()` is true when the set is empty, which is the
-case on every call's path outside a load or unload, so the check costs one
-boolean, as `sessionPacks.none()` does today. A part stays unlisted by
-`mm.unlisted`, as today; a hop to an unlisted part is allowed, a hop to a
-hidden one is not.
+- A hidden module is in no tools, prompts or resources list, and a call, a
+  hop, a direct peer channel or a job run that reaches it is refused
+  `MODULE_NOT_LISTED`.
+- `none()` is true when the set is empty, which is the case on every call's
+  path outside a load or unload, so the check costs one boolean, as
+  `sessionPacks.none()` does today.
+- A part stays unlisted by `mm.unlisted`, as today; a hop to an unlisted
+  part is allowed, a hop to a hidden one is not.
+- **When an unload has completed** is read from the module map, not from
+  the unload's answer. A module is gone when it is out of `mm.modules` and
+  nothing of it can come back: no supervisor record, no spawn under way.
+  That is what `unloadOne` already ensures for a module that was restarting
+  after a crash, or suspended, when its pack went
+  (`lib/packs-in-place.js:253-267`), and that case is carried over with its
+  tests. A module that is still in the module map after its unload, or
+  whose unload answered an error while it was loaded, **failed to unload**:
+  it stays hidden until the runtime ends.
+- **A load or a reload whose closure holds a module that is still hidden is
+  refused** (`CONTROL_FAILED`: "`<module>` is still being unloaded; restart
+  your client"). A later request never brings a module that failed to
+  unload back into view.
 
 A module is **listed** while it is loaded as a top-level module in its own
 right. One that is loaded only because another module calls it is unlisted.
@@ -564,14 +678,30 @@ The validator's plain output is asserted byte for byte by its tests
 (`bin/countinghouse-validate.js`), so the new lines and the new `remotes`
 field of `--json` come with those tests updated.
 
-A credential's identity is (module, variable). Its destination is the
-origin of that module's declared URL. One remote per module stays the limit
-in release 1, so a module has at most one credential.
+Three rules about what a declaration is:
+
+- **A credential's identity is (module, variable).** Its destination is the
+  origin of that module's declared URL. One remote per module stays the
+  limit in release 1, so a module has at most one credential.
+- **`fallbackEnv` goes.** Under a version 2 credentials file (section 6.5)
+  the credential is the `env` variable alone, and `fallbackEnv` is never
+  read. It is still read under a version 1 file until the declaration stops
+  accepting it, in the cleanup PR, after ch-access-github has moved to the
+  short form (section 16).
+- **The remotes join the manifest pin** (`lib/manifest-pins.js`, which
+  covers `calls` today and, with section 4.1, the settings). Today a
+  module's remotes are read from disk again at every spawn, a supervised
+  restart's included. With the pin, a supervised restart keeps the remotes
+  an operator's load took; a module that rewrote its own `package.json`
+  under audit gets the pinned declaration, and each difference is logged as
+  an error, as an added call is. A load, a reload or an upgrade takes the
+  new pin.
 
 ### 6.2 Entering one (ch-local)
 
 ```
-ch-local credentials add <module>      # at a terminal, or the value on standard input
+ch-local credentials add <module>                    # at a terminal
+ch-local credentials add <module> --to <origin>      # the value on standard input
 ch-local credentials list
 ch-local credentials remove <module>
 ```
@@ -592,18 +722,11 @@ stored for ch-access-github: GITHUB_TOKEN, sent to https://api.githubcopilot.com
   variable and the origin, and only then asks for the value. What the user
   sees before typing is where the key will go.
 - **The gh offer.** Asked only at a terminal, only when gh has a login, and
-  only when the declared origin is one of GitHub's own API origins
+  only when the declared origin is exactly `https://api.githubcopilot.com`
   (section 6.8). The default is No. A yes stores no value: the binding
   records the source `gh`, and each start asks `gh auth token` and holds the
   token in memory, as today (`lib/github-token.js` `ghToken`).
 - **The typed value** is read with nothing echoed (`lib/hidden-input.js`).
-- **Standard input.** When standard input is not a terminal, `add` reads the
-  value from it: one line, at most 4096 bytes, the line ending removed. There
-  is no gh offer and no question on this path.
-  `gh auth token | ch-local credentials add ch-access-github` works, and so
-  does a CI job that pipes a secret. (Today a pipe is refused,
-  `lib/credentials-command.js:87`; the decision changes that.) A value is
-  still never taken from an argument or from the environment.
 - A value is 8 to 4096 visible ASCII characters with no space
   (`[\x21-\x7e]`), so that it is a safe header value. Today's grammar,
   letters, digits and `_` (`lib/credential-store.js:39`), fits GitHub's
@@ -620,15 +743,47 @@ stored for ch-access-github: GITHUB_TOKEN, sent to https://api.githubcopilot.com
   https://api.example.com"). The value is always entered again, or the gh
   offer answered again; a stored value is never moved to a new destination
   by itself.
+
+`add` with the value on **standard input** (when standard input is not a
+terminal). Nobody is looking at a prompt on this path, so the caller states
+the destination and ch-local checks it:
+
+- `--to <origin>` is required, and must equal the origin the installed
+  version declares. Without it: "a key on standard input needs
+  `--to <origin>`: the address it is for (`ch-local credentials list` shows
+  what `<module>` declares). Nothing was stored." With another origin:
+  "`<module>` `<version>` sends its credential to `<declared origin>`, not
+  the address given. Nothing was stored." A script written when the module
+  sent its key to one origin therefore stops, instead of binding the key to
+  wherever a later version sends it.
+- **It never replaces a binding for another origin or variable.** When the
+  store holds one, the standard-input path refuses: "the credential stored
+  for `<module>` is for `<old origin>`, and this version sends it to
+  `<new origin>`: run `ch-local credentials add <module>` at a terminal to
+  allow that. Nothing was changed." Replacing a binding for the same
+  destination (a rotated key) is allowed.
+- The value is one line, at most 4096 bytes, the line ending removed. There
+  is no gh offer and no question.
+- `gh auth token | ch-local credentials add ch-access-github --to https://api.githubcopilot.com`
+  works, and so does a CI job that pipes a secret. (Today a pipe is refused,
+  `lib/credentials-command.js:87`; the decision changes that.) A value is
+  never taken from an argument or from the environment.
+
+The rest:
+
 - `list` shows, per binding: the module, the variable, the origin, the
   source (`stored` or `gh login`), and whether the installed version still
-  declares that destination. Never a value.
+  declares that destination. Never a value. For an installed module with no
+  binding it shows what the module declares, so that `--to` can be written.
 - `remove <module>` removes the module's bindings.
 - `add` and `remove` ask a running daemon to restart its runtime (it drains
-  first), and say that a session on a runtime of its own takes the change at
-  its next start. This is today's behaviour.
+  first), and say what a session on a runtime of its own will see
+  (section 6.4: a changed or removed key unloads the module there at once; a
+  new one is taken at that client's next start). The restart request is
+  today's behaviour.
 - Each is one history line: `{by: 'credentials', module, variable, origin,
-  source, change: 'added' | 'replaced' | 'removed'}`.
+  source, how: 'terminal' | 'stdin', change: 'added' | 'replaced' |
+  'removed'}`.
 
 At the end of `install` and `add-pack`, for each installed module that
 declares a credential and has no usable binding: at a terminal ch-local runs
@@ -666,98 +821,140 @@ written through an exclusive temporary file):
 The entry is the binding: this value, for this module's credential of this
 name, to this origin. Nothing else in ch-local says where a key may go.
 
+**A binding covers the whole origin.** It is to a scheme, host and port,
+not to a URL. A later version of the module may change the path, the
+remote's name, its headers, or the header and scheme the key rides in, and
+keep the key; only the variable and the origin are compared. A user who
+enters a key for an origin trusts every path on it.
+
 ### 6.4 What a start gives its runtime
 
-For each module the start will load that declares a credential
-(section 6.7 has decided it is usable):
+**Slots.** A value reaches the runtime in its environment, in a variable
+named `COUNTINGHOUSE_CREDENTIAL_<n>` (n from 1). The prefix matters: the
+runtime never hands a `COUNTINGHOUSE_*` variable to a module's worker,
+whatever the module declares and whatever the policy grants
+(`lib/module-permissions.js:229-241`). No value is written to disk by a
+start. The slots exist because two modules may declare the same variable
+name and hold different values; the process environment has one value per
+name.
+
+At start, ch-local reads the store once and gives a slot to **every
+installed module that has a usable binding** (section 6.7), whether or not
+that module is loaded at this start. A module turned on later then loads in
+place with its key, with no restart.
+
+For each slot:
 
 1. The value: the stored one, or for `gh` the answer of
    `gh auth token --hostname github.com`, asked once per start, in the home,
    with gh's own token variables removed from its environment, as today.
-2. A slot: an environment variable named by ch-local (`CH_CREDENTIAL_1`,
-   `CH_CREDENTIAL_2`, …) in the runtime's environment, holding the value. No
-   value is written to disk by a start.
+2. Its identity, kept in the start's memory: **(module, variable, origin,
+   source, digest)**, the digest being the SHA-256 of the value. It is never
+   written anywhere.
 3. A line in the remote credentials file, in the start's run directory:
 
 ```json
 {"version": 2,
  "modules": {
    "@countinghouse/ch-access-github": {
-     "https://api.githubcopilot.com": {"GITHUB_TOKEN": "CH_CREDENTIAL_1"}
+     "https://api.githubcopilot.com": {"GITHUB_TOKEN": "COUNTINGHOUSE_CREDENTIAL_1"}
    }
  }}
 ```
 
 Read: for the module `@countinghouse/ch-access-github`, to the origin
 `https://api.githubcopilot.com`, the credential it calls `GITHUB_TOKEN` is in
-the environment variable `CH_CREDENTIAL_1`.
+the environment variable `COUNTINGHOUSE_CREDENTIAL_1`.
 
-The slots exist because two modules may declare the same variable name and
-hold different values; the process environment has one value per name.
+**A slot is used only on an exact match with the store as it is now.**
+Before the applier loads or reloads a module in place, it reads the store
+again and compares the module's binding with its slot's identity, all five
+parts (for the source `gh`: the four that the store holds). On a match the
+module's allowance, naming that slot, goes in the load message
+(section 7.3). With no slot, or a slot that no longer matches (a key added,
+replaced or re-bound since this runtime started), the module is not loaded,
+and ch-local says "`<module>` has a credential the running runtime was not
+started with; restart your client to load it". A slot is never given to
+another module, another variable or another origin.
 
-A module loaded in place (section 7) gets the same: its line in a file named
-in the load message, and its slot. The runtime's environment is fixed when
-it starts, so a module whose value was not given at the start cannot be
-loaded with its key in place. ch-local then says
-"`<module>` needs a credential the running runtime was not started with;
-restart your client to load it", as it does today for a pack
-(`lib/in-place.js:98`), and the daemon's shared runtime is restarted by
-`credentials add` itself.
+**The applier watches the store** (`<home>/credentials/credentials.json`,
+beside the record and the settings it watches today). When a loaded
+module's binding has been removed, or no longer matches its slot, the
+module is unloaded, with the modules that call it, and the sessions are
+told: "ch-access-github's credential was removed (or changed); it is
+unloaded here until this client restarts". An unload needs no key, so a
+removed key stops being used at once, in every running client. The daemon's
+shared runtime is also restarted by `credentials add` and `remove`
+themselves, as today.
 
 Under an acceptance run's origin map (`CH_LOCAL_REMOTE_MAP`), only a value
-that is an acceptance token (`chacc_…`) is given, as today.
+that is an acceptance token (`chacc_…`) is given a slot, as today.
 
 ### 6.5 The runtime's side
 
-`--remoteCredentials <file>` takes two forms (`lib/remote/credentials.js`
-`loadAllowance`):
+`--remoteCredentials <file>` (`lib/remote/credentials.js` `loadAllowance`):
 
-- **Version 2** (above): `{"version": 2, "modules": {"<package>": {"<origin>":
-  {"<VARIABLE>": "<ENVIRONMENT NAME>"}}}}`. A list of variables
-  (`["GITHUB_TOKEN"]`) is accepted in place of the inner object and means
-  each is read from the environment variable of the same name, which is what
-  an operator of an HTTP server writes by hand. Package names follow npm's
-  grammar; an origin is checked as today (scheme, host and port, https, or
-  http to loopback); both names match the variable grammar. Anything else
-  refuses the file.
-- **Version 1** (today's `{"<origin>": ["VARIABLE", …]}`) keeps its meaning:
-  process-wide, read from the variable of that name, not bound to a module.
-  It remains for an operator's own server. ch-local never writes it.
+- **Version 2** has one form:
+  `{"version": 2, "modules": {"<package>": {"<origin>": {"<VARIABLE>":
+  "COUNTINGHOUSE_CREDENTIAL_<n>"}}}}`. The environment name must match
+  `^COUNTINGHOUSE_CREDENTIAL_[1-9][0-9]{0,3}$`, and nothing else is
+  accepted, so the file cannot make the runtime send any other variable of
+  its environment (its identity secret, say) to an origin. Package names
+  follow npm's grammar; an origin is checked as today (scheme, host and
+  port; https, or http to loopback); the variable matches the variable
+  grammar. Anything else refuses the file. An operator of an HTTP server
+  writes the same form and sets `COUNTINGHOUSE_CREDENTIAL_1`, … in the
+  server's environment.
+- **Version 1** (today's `{"<origin>": ["VARIABLE", …]}`) keeps its meaning
+  on an operator's own server: process-wide, read from the variable of that
+  name, not bound to a module. **On a runtime with a control channel it is
+  refused** (from the cleanup PR on; until ch-local writes version 2 the
+  runtime must still take what ch-local sends, section 16).
 
 What changes in the runtime:
 
 - The allowance is kept **per module**: `Map(module → Map(origin →
   Map(variable → environment name)))`. It replaces `packRemotes`
-  (`lib/module-manager.js:668`, per module and per pack, merged). It is set
+  (`lib/module-manager.js:688`, per module and per pack, merged). It is set
   from the start's file and, for a module loaded or reloaded in place, from
-  the file its message names; a module's entry is removed when the module is
-  unloaded.
+  the `credentials` object in its message (section 7.3: the same shape as
+  the file's `modules`, checked the same way; no second file). A module's
+  entry is removed when the module is unloaded. A slot belongs, in the
+  runtime too, to the first (module, variable, origin) it was named for: a
+  later message that names it for anything else is refused.
 - `register` (`lib/remote/index.js:82`) resolves a module's credential
-  against that module's own entry: the declared variable (then
-  `fallbackEnv`) must be named there for the declared origin, and the value
-  is read from the environment name beside it. Under a version 1 file every
-  module gets the process's allowance, as today.
+  against that module's own entry: the declared variable must be named
+  there for the declared origin, and the value is read from the environment
+  name beside it. Under a version 1 file every module gets the process's
+  allowance, as today.
+- **`resolveEnv` denies every name an allowance reads from.** Beside
+  `COUNTINGHOUSE_*`, a worker is never given an environment variable that a
+  credentials allowance in force reads a value from: under version 1 the
+  listed variable names (today a module that declares `GITHUB_TOKEN` in
+  `permissions.env` is handed the operator's token under audit); under
+  version 2 the slots, which the prefix covers already.
+  `lib/module-sandbox-config.js:201` passes the names;
+  `deniedEnvNames` notes each one that was declared and denied.
 - Everything else on the remotes path is as it is: the value is read and
   attached on the main thread, to the exact origin, on a client of the
   runtime's own with no proxy and no cross-origin redirect; a module's worker
   never sees it.
-- A module's remotes are read from disk again at every spawn (the manifest
-  pin covers `calls` only). So the check is made again at a supervised
-  restart: a module that rewrote its own declaration gets nothing for the new
-  destination.
+- With the remotes pinned (section 6.1), a supervised restart resolves the
+  pinned declaration against the module's allowance, so it gets the same
+  answer as the load did.
 - `credentialVariables` (`lib/route-manager.js:70`), which decides the names
   a shared runtime will compare a session's credential against, reads the
-  version 1 allowance only. Under a version 2 file there is no name a
-  session's environment can supply (section 6.9), so every name counts as
-  one the runtime lacks.
+  version 1 allowance only. Under version 2 there is no name a session's
+  environment can supply (section 6.9), so every name counts as one the
+  runtime lacks.
 
 A remote whose credential cannot be resolved is disabled, with one of:
 
 | Case | Code | Message (fields filled by the runtime) |
 |---|---|---|
-| The file names the module, but for another origin or variable | `REMOTE_CREDENTIAL_NOT_ALLOWED` | "{module} {version} sends its credential {variable} somewhere new ({origin}); it gets no key until that is allowed" + the hint |
-| The file does not name the module | `REMOTE_CREDENTIAL_NOT_ALLOWED` | "no credential is bound to {module} for {origin}" + the hint |
-| Allowed, and the environment name holds nothing | `REMOTE_CREDENTIAL_MISSING` | as today |
+| The allowance names the module, but for another origin or variable | `REMOTE_CREDENTIAL_NOT_ALLOWED` | "{module} {version} sends its credential {variable} somewhere new ({origin}); it gets no key until that is allowed" + the hint |
+| The allowance does not name the module | `REMOTE_CREDENTIAL_NOT_ALLOWED` | "no credential is bound to {module} for {origin}" + the hint |
+| Allowed, and the slot holds nothing | `REMOTE_CREDENTIAL_MISSING` | as today |
 
 The hint is ": run `ch-local credentials add {module}` at a terminal" on a
 runtime started by ch-local (single identity, with a control channel), and
@@ -766,8 +963,14 @@ tenant of an HTTP server never sees a ch-local command.
 
 On a runtime with a control channel, a module whose remote is disabled is
 not loaded: the load is refused with that code (today's rule for a module a
-pack loads in place, `lib/module-manager.js:694`). On an operator's server
+pack loads in place, `lib/module-manager.js:714`). On an operator's server
 the module loads and the remote answers the code at each call, as today.
+
+If a supervised restart is refused on a runtime with a control channel
+(the slot is empty, or the module's allowance has gone), the module is no
+longer running while the home says it should be. The runtime tells ch-local
+(`module-stopped`, section 7.3), which takes it out of what it holds as
+loaded, tells the sessions, and shows it in `status` (section 9.9).
 
 ### 6.6 A new origin or a new variable
 
@@ -780,13 +983,14 @@ only for the module, the variable and the origin it was entered for.**
   new (https://api.example.com; the stored one is for
   https://api.githubcopilot.com). It gets no key, and is not loaded, until
   you run `ch-local credentials add ch-access-github` again".
-- Running `add` again is the user's yes: it shows the new destination and
-  takes the value again (section 6.2).
+- Running `add` again **at a terminal** is the user's yes: it shows the new
+  destination and takes the value again (section 6.2). The standard-input
+  path cannot do it.
 - Nothing else re-binds. An upgrade's yes does not. An automatic upgrade
   does not. A setting does not. Conversation cannot.
-- The runtime enforces the same rule by itself (section 6.5), from the file
-  ch-local wrote out of the store, so the guard does not depend on ch-local
-  having noticed the change.
+- The runtime enforces the same rule by itself (section 6.5), from the
+  allowance ch-local wrote out of the store, so the guard does not depend on
+  ch-local having noticed the change.
 - An automatic upgrade does not take a release that changes where an
   installed module's credential goes: it is announced and left to
   `ch-local upgrade`, as a release that adds an origin is today
@@ -808,6 +1012,7 @@ gh gave a token at this start. Otherwise the module is not available
 | A binding for another origin or variable | the sentence of section 6.6 |
 | Source `gh`, and gh gave no token | "not loading {module}: your gh login gave no token ({why}): run `gh auth login`, or `ch-local credentials add {module}`" |
 | The store fails its checks | "not loading {module}: the stored credentials are not used ({problem})" |
+| A binding the running runtime was not started with | the sentence of section 6.4 |
 
 A module that calls it is not loaded either, and says which module and why
 ("not loading ch-pack-ci-failure-triage: it calls ch-access-github, which
@@ -815,22 +1020,24 @@ needs a credential: run `ch-local credentials add ch-access-github`").
 With nothing loadable the runtime still starts and serves its own tools, as
 today.
 
-### 6.8 Which origins get the gh offer
+### 6.8 Which origin gets the gh offer
 
 The gh login is a GitHub credential. Offering it for any origin a module
 declares would hand the user's GitHub token to that origin on a reflexive
-"y". So the offer is made only for GitHub's own API origins, a fixed list in
-ch-local:
+"y". So the offer is made for one origin only, fixed in ch-local:
 
 ```
 https://api.githubcopilot.com
-https://api.github.com
 ```
 
-This is not a list of where credentials may go. Any module may declare any
-https origin, and the user may enter a key for it. The list only decides
-when ch-local offers the gh login instead of asking for a value, and the
-question still names the module and the origin.
+- The comparison is of the whole origin, as the runtime parses the declared
+  URL: scheme, host and port. A look-alike host
+  (`api.githubcopilot.com.example`, `api-githubcopilot.com`), another port,
+  or `http` gets no offer.
+- This is not a list of where credentials may go. Any module may declare any
+  https origin, and the user may enter a key for it. The origin only decides
+  when ch-local offers the gh login instead of asking for a value, and the
+  question still names the module and the origin.
 
 ### 6.9 What goes
 
@@ -851,10 +1058,8 @@ question still names the module and the origin.
   `GITHUB_TOKEN`; and any pack credential a client's environment sets). An
   environment variable cannot be bound to a module: with the origin list
   gone, any module that declared `GITHUB_TOKEN` and its own URL would receive
-  the user's exported token. The decisions say a key is entered at a
-  terminal or on standard input, and name no environment route, so this
-  design removes it. It is open question 1 (section 17), because it removes
-  a documented path. What removing it touches:
+  the user's exported token. The maintainer confirmed its removal
+  (section 17). What that touches:
   - `lib/start.js:364-403` and `lib/github-token.js` `chooseGitHubToken`;
   - `lib/conditions-command.js`: `chosenToken` and `chosenCredentials` go;
     the line it prints always has `"token": null` and no `credentials`. The
@@ -893,31 +1098,43 @@ never re-read from disk for an unload.
   reload switches is not hidden: calls to it wait for the new version, as
   today. `loading()` and `loaded_()` call `hide`, `show` and `gone` where
   they call `sessionPacks.packChanged` today.
+- A load or a reload whose closure holds a module that is still hidden from
+  a failed unload is refused (section 5.5).
 - The name grammar (`PACK_NAME`, line 57) becomes npm's package grammar.
 
 ### 7.2 Where a module's directory comes from
 
 Today a part is found from the scenario's own directory, on Node's search
 path (`resolvePart`, `lib/module-roles.js:44`), because a pack's modules
-share one `node_modules`. In the module store every version has a directory
-of its own, so ch-local says where each module is.
+share one `node_modules`. That search looks in a `node_modules` directory
+beside every ancestor of the scenario (`nodeModulesFrom`, line 57), so from
+a directory under the user's home it reaches `~/node_modules`, and a
+package planted there with the right friendly name would be loaded as the
+part. In the module store every version has a directory of its own, so
+ch-local says where each module is, and the search goes.
 
-- `--modulesRoot <dir>` replaces `--packsRoot`: every module a start or a
-  control request names must lie, by real path, inside it, with no link
-  leading out (`insideRoots` and `linkOut`, unchanged). ch-local passes
+- `--modulesRoot <dir>` replaces `--packsRoot`. ch-local passes
   `<home>/module-store`.
 - At start: `--loadModule <dir>` for each top-level module, as today, and
   `--partDir <dir>` (new, repeatable) for each part's directory.
 - In a control request: `dirs`, the directory of each module of the closure.
-- `expandLoadList` and `closureOf` take the given directories and resolve a
-  called module among them first, by the module's own `api.json` friendly
-  name, as `resolvePart` matches today. The runtime reads each directory's
-  own `package.json`; a name in the request that is not the package's is
-  refused. Two given directories that hold the same module are refused.
-- Node's search path from the caller's directory stays as the fallback, for a
-  developer who loads a checkout with `--loadModule`. ch-local never relies
-  on it.
-- A called module that is found nowhere is `PART_MISSING`, as today.
+- **With `--modulesRoot`, a called module is looked for only among the
+  directories given**, by the module's own `api.json` friendly name, as
+  `resolvePart` matches today. There is no fallback to any `node_modules`
+  directory. One that is not among them is `PART_MISSING`.
+- **The root and link checks cover the whole start plan.** Every directory
+  the start loads, top-level or part, must lie inside `--modulesRoot` by
+  real path, with no link leading out (`insideRoots` and `linkOut`, which
+  today run only for a pack loaded in place, `planFor`). A directory that
+  fails is not loaded, and neither is a top-level module whose closure holds
+  it; the runtime logs why and tells ch-local (`module-stopped`,
+  section 7.3). A control request's directories are checked the same way, as
+  today.
+- The runtime reads each directory's own `package.json`; a name in a
+  request that is not the package's is refused. Two given directories that
+  hold the same module are refused.
+- Without `--modulesRoot` (a developer loading a checkout, an operator's
+  server), today's lookup is unchanged.
 
 ### 7.3 Control messages
 
@@ -926,9 +1143,9 @@ ch-local to the runtime, on the control channel (`lib/control-channel.js`;
 
 ```
 {id, type: 'load',   name: '<top-level package>', dirs: {'<package>': '<absolute dir>', …},
-                     remoteCredentials?: '<absolute file>', notice?: '<text>'}
-{id, type: 'reload', names: ['<top-level package>', …], dirs: {…},
-                     remoteCredentials?: '<absolute file>', notice?: '<text>'}
+                     credentials?: {'<package>': {'<origin>': {'<VARIABLE>': 'COUNTINGHOUSE_CREDENTIAL_<n>'}}},
+                     notice?: '<text>'}
+{id, type: 'reload', names: ['<top-level package>', …], dirs: {…}, credentials?: {…}, notice?: '<text>'}
 {id, type: 'unload', name: '<top-level package>', notice?: '<text>'}
 {id, type: 'reread', what: 'module-settings'}
 {id, type: 'notice', module: '<package>' | null, text: '<text>'}
@@ -938,45 +1155,88 @@ ch-local to the runtime, on the control channel (`lib/control-channel.js`;
 Replies are as today: `{id, ok: true, tools: […]}` for load, reload and
 unload; `{id, ok: false, code, message}` otherwise.
 
+The runtime to ch-local, unasked (no id, as the session table's tells):
+
+```
+{type: 'module-stopped', name: '<package>', code: '<code>', when: 'start' | 'restart'}
+```
+
 - **load**: loads the modules of the closure that are not loaded, the
   top-level module listed, the others unlisted. Refused when the name is
-  loaded already, when a directory is outside `--modulesRoot`, on
-  `PART_MISSING`, `PART_VERSION_CONFLICT`, a tool or prompt name already
-  taken, or when the ceiling does not allow a module of the closure
-  (section 8). A failure part-way unloads what the request loaded.
+  loaded already, when a directory is outside `--modulesRoot` or has a link
+  out, on `PART_MISSING`, `PART_VERSION_CONFLICT`, a tool or prompt name
+  already taken, a module of the closure still hidden from a failed unload,
+  or when the ceiling does not allow a module of the closure (section 8). A
+  failure part-way unloads what the request loaded.
+- **`credentials`** on a load or reload is the allowance of the modules in
+  `dirs` that have a key: the same shape as the `modules` object of the
+  version 2 file, checked the same way (section 6.5). It replaces the
+  per-pack credentials file a load names today (`remoteCredentials`,
+  `lib/packs-in-place.js:122`). The slot it names must exist in the
+  runtime's environment from its start.
 - **reload**: brings the named loaded top-level modules, and their closures,
   to the directories given. It is today's `reloadPack`, over the union of
-  the named modules' closures instead of one pack's:
-  - a module at the same version stays as it is;
-  - a module at another version is drained, then switched;
-  - a module the new closures add is loaded; one they no longer hold, and no
-    other record holds, is unloaded after every switch has succeeded;
-  - all or none: a failure switches back what was switched and unloads what
+  the named modules' closures instead of one pack's, in this order:
+  1. The plan is made and checked whole. Any problem refuses the request
+     with nothing changed.
+  2. **What the new closures add is loaded first** (hidden, section 5.5).
+     Today a reload walks its modules in closure order, the scenario first,
+     so a scenario's new version could be serving before a part it newly
+     calls was loaded.
+  3. Each module at another version is drained, then switched, **a called
+     module before the module that calls it**. A module at the same version
+     stays as it is.
+  4. What the new closures no longer hold, and no other record holds, is
+     unloaded.
+  - All or none: a failure switches back what was switched and unloads what
     was added (`CONTROL_PACK_UNCERTAIN`, renamed `CONTROL_MODULE_UNCERTAIN`,
-    when that fails too);
-  - **a part changes version only when every loaded top-level module that
-    holds it is named in the same request.** Otherwise the request is refused
-    `PART_VERSION_CONFLICT`. This is what lets a module two packs list move
-    to another version in place, which today's per-pack reload cannot do
-    (it is refused, and ch-local falls back to a reinstall).
+    when that fails too).
+  - **A module changes version only when every loaded top-level module that
+    holds it is named in the same request.** Otherwise the request is
+    refused `PART_VERSION_CONFLICT`. This is what lets a module two packs
+    list move to another version in place, which today's per-pack reload
+    cannot do (it is refused, and ch-local falls back to a reinstall).
+  - ch-local sends **one reload per step**, naming every loaded top-level
+    module whose closure changed in that step: a member's version, or its
+    membership. Two parts that changed, held by different sets of modules,
+    still make one request, naming the union of their holders.
 - **unload**: unloads the named top-level module and each of its modules no
-  other record holds. Never refused by the ceiling.
+  other record holds. Never refused by the ceiling. Its completion is read
+  from the module map (section 5.5).
 - **reread**: the runtime reads the `module.*` values of `--settingsFile`
   again, checks each against its module's declaration and the ceiling, and
   applies them. The reply lists what was refused: `{applied: <count>,
   refused: [{name, code}]}`.
 - **notice**: said once to every open session, on the next result of that
   module's tools (or of any tool, for `null` or a module no longer loaded).
+- **module-stopped**: the runtime says that a module the home wants loaded
+  is not running by the runtime's own doing: a top-level module of the
+  start plan it refused (`when: 'start'`, with the load's code), or one whose
+  supervised restart was refused or gave up (`when: 'restart'`). ch-local
+  takes it out of what it holds as loaded, tells the sessions, records it in
+  the history and in its `run.json`, and `status` shows it (section 9.9).
+  Without it ch-local would go on saying a stopped module is on.
 
 Removed:
 
-- `scenario`, `pack` and `global` on load and reload, and the rule that a
-  shared runtime sets a pack's "global" value from the message.
+- `scenario`, `pack` and `global` on load and reload, the rule that a
+  shared runtime sets a pack's "global" value from the message, and
+  `remoteCredentials`.
 - `set pack.<n> true`.
 - The runtime's asks `load-pack` and `unload-pack`. `may-elicit` stays.
 
 `TYPES` (`lib/control-channel.js:21`) gains `reread`. Operations stay
 serialised on the channel's one chain.
+
+**While the session view still exists** (until PR M5, section 16), a shared
+runtime takes a module-form load or reload as **global**: it records the
+unit in the session view under its package name and sets it global, so
+every session lists it. Today a shared runtime refuses a load that has no
+`pack` and no boolean `global` (`packOf`, `lib/pack-control.js:48-52`), and
+reads the ceiling's pack from the first directory below the root
+(`chLocalPackOf`, `lib/packs-in-place.js:137`), which in the module store
+would be `@countinghouse`. A module-form message is never judged by either:
+it is checked against the ceiling by each module's package name.
 
 ### 7.4 What a session is told
 
@@ -986,7 +1246,8 @@ Every change to what is loaded is said, as today (`lib/notices.js`):
   text ch-local sends with the request;
 - on a shared runtime, to every open session, once. There is no audience to
   work out. A session that opens later is not told about earlier changes;
-- a module's settings changed by another session (section 4.4).
+- a module's settings changed by another session (section 4.4);
+- a module the runtime stopped by itself (`module-stopped`).
 
 ### 7.5 The shared wire vectors
 
@@ -995,10 +1256,10 @@ Every change to what is loaded is said, as today (`lib/notices.js`):
 
 | Entry | Change |
 |---|---|
-| `packMessages` | Replaced by `moduleMessages`: the shapes of section 7.3, a package-name pattern, accepted cases (a load, a reload of two names that share a part, an unload, a reread, a notice with and without a module) and refused ones (no `dirs`, a directory that is not absolute, a name that is not a package name, `names` empty, a leftover `pack` or `global` field). |
+| `packMessages` | Replaced by `moduleMessages`: the shapes of section 7.3, a package-name pattern, the slot pattern, accepted cases (a load with and without `credentials`, a reload of two names that share a part, a reload of three names over two shared parts, an unload, a reread, a notice with and without a module, a `module-stopped`) and refused ones (no `dirs`, a directory that is not absolute, a name that is not a package name, `names` empty, a `credentials` environment name that is not a slot, a leftover `pack`, `global` or `remoteCredentials` field once the old form is removed). |
 | `restoreRows` | Kinds are `maxOutputBytes`, `requestTimeout`, `enabled`, `module`. The accepted rows that carry a `pack.*` override or the kind `pack` move to the refused list. |
-| `control.record`, `control.replay` | Unchanged (a session's replay holds the two caps only, `lib/sessions.js:104`). |
-| `githubTokenPrecedence` | Rewritten for section 6: the stored binding and the gh source only. If open question 1 keeps the environment route, the cases stay and gain the binding. |
+| `control.record`, `control.replay` | Unchanged (a session's replay holds the two caps only, `lib/sessions.js:114`). |
+| `githubTokenPrecedence` | Rewritten for section 6: the stored binding and the gh source only. |
 | `credentialMac`, `credentialsMalformed`, `control.clientCredentials`, `ownRuntimeToken`, `ownRuntimeCredential` | Unchanged: the frames stay valid; ch-local stops sending the fields. |
 
 The contract number stays 2: no frame between the shim and the runtime
@@ -1106,7 +1367,7 @@ Everything they write is about modules.
   module; a module reads its own directory only, as with the pack trees
   today.
 
-### 9.2 The record
+### 9.2 The record, and which version is active
 
 `<home>/modules.json` replaces `<home>/packs.json` (`lib/record.js`):
 
@@ -1118,7 +1379,7 @@ Everything they write is about modules.
   "unreleased": false,
   "packs": {
     "ci-failure-triage": {
-      "installedUnder": "0.9.0",
+      "from": {"release": "0.9.0"},
       "modules": {
         "@countinghouse/ch-pack-ci-failure-triage": "0.5.0",
         "@countinghouse/ch-access-github": "0.2.0",
@@ -1137,23 +1398,48 @@ Everything they write is about modules.
 }
 ```
 
-- **`packs.<pack>.modules.<module>`** is the version of that module that was
-  in effect when the pack was installed or last updated. It is the pack's
-  own pinned version, or a newer installed one the pack accepted
-  (section 9.4). Another pack's install never changes it.
-- **`modules.<module>.version`** is the **active version**: the highest of
-  the versions the installed packs record for it. `role` is that version's
-  `countinghouse.role` (`scenario`, `part`, or `null`). This map is derived;
-  ch-local writes it so that readers need no version arithmetic (the
-  runtime's settings tool reads a module's version and role from it), and
-  the reader refuses a record whose `modules` is not what its `packs` give.
-- One rule gives both the update and the way back: **a module's active
-  version is the highest that any installed pack was installed with.**
-  Installing a pack can raise it. Removing a pack lowers it again, unless
-  another pack was installed with the higher version.
+- **`packs.<pack>.from`** says which pins the pack was installed from:
+  `{"release": "<ch-local version>"}`, or, for a development install,
+  `{"unreleased": "<the first 16 hex digits of the pins file's SHA-256>"}`.
+- **`packs.<pack>.modules.<module>`** is the version of that module the pack
+  was installed with.
+- **`modules.<module>`** is derived from `packs`: the highest version any
+  installed pack records for the module (in a released home, the one they
+  all record), and that version's `countinghouse.role` (`scenario`, `part`,
+  or `null`). ch-local writes it so that readers need no version arithmetic
+  (the runtime's settings tool reads a module's version and role from it),
+  and the reader refuses a record whose `modules` is not what its `packs`
+  give.
+
+**Which version is active:**
+
+1. **In a released home the pins decide.** For a module the running release
+   lists, the active version is the release's pin, and the record must agree
+   with it. Every operation under a
+   release (`install`, `add-pack`, `upgrade`) writes that release's pins into
+   every pack it touches, and `install` and `upgrade` touch every installed
+   pack, so in a released home the packs' recorded versions and the pins
+   agree. When a release pins a lower version than the one installed, the
+   module moves back: a release can withdraw a version by pinning the one
+   before it. A module whose recorded version is not the pin (a record
+   edited by hand, an operation that was cut short) is not available
+   (section 5.2, rule 2): "not loading `<m>`: `<version>` is installed and
+   this release pins `<pin>`; run `ch-local install` again".
+2. **Between packs from different pins** the active version is the highest
+   that any installed pack was installed with. This happens when the home
+   is a development one (`unreleased: true`: packs installed from different
+   pins files), and will happen when a pack can come from another source.
+   Installing a pack can raise a module's version (section 9.4 asks first
+   when that is a breaking change). Removing that pack lowers it again,
+   unless another pack was installed with the higher version (section 9.5).
+
+A module the running release does not list is withdrawn (section 9.7).
+
+Other fields:
+
 - `held`: packs that a release rollback's restored release does not have,
-  as today (`{modules, installedUnder}`): recorded, named by `status`, never
-  loaded, removed by `remove-pack`. The marks `withdrawn` and `relisted` go
+  as today (`{from, modules}`): recorded, named by `status`, never loaded,
+  removed by `remove-pack`. The marks `withdrawn` and `relisted` go
   (section 9.7).
 - Names and versions are checked as today (they become directory names).
 - The file name changes so that no older reader takes the new shape for its
@@ -1172,9 +1458,14 @@ Everything they write is about modules.
                                      "@countinghouse/ch-access-github", "…"]}
  },
  "modules": {
-   "@countinghouse/ch-access-github": {"credentials": [
-     {"variable": "GITHUB_TOKEN", "origin": "https://api.githubcopilot.com"}]},
-   "@countinghouse/ch-step-redact": {"credentials": []}
+   "@countinghouse/ch-pack-ci-failure-triage": {
+     "credentials": [],
+     "calls": ["@countinghouse/ch-access-github", "@countinghouse/ch-step-redact", "…"],
+     "confirmSettings": {}},
+   "@countinghouse/ch-access-github": {
+     "credentials": [{"variable": "GITHUB_TOKEN", "origin": "https://api.githubcopilot.com"}],
+     "calls": [],
+     "confirmSettings": {}}
  },
  "pins": {"…": "as today: one version, integrity and build identity per package"}}
 ```
@@ -1182,18 +1473,32 @@ Everything they write is about modules.
 - `packs.<pack>.modules` replaces `packages`. Its order means nothing any
   more: a module's role comes from its own manifest, not from being first.
 - Each pack's `credentials` and the top-level `allowedOrigins` are gone.
-- `modules.<package>.credentials` is what each package's own
-  `countinghouse.remotes` declares, written by the release step that writes
-  the pins, never by hand, with one entry for every package of every pack.
-  It is **not** a list of where a key may go; the store's binding is that
-  (section 6.6). It exists so that a release can be described before it is
-  installed: `additions` reads it to say "ch-access-github sends
-  GITHUB_TOKEN to a new origin", and an automatic upgrade holds back on it.
-  `install` refuses a package whose manifest declares anything other than
-  what the pins say, so what was shown is what is installed.
+- `modules.<package>` **describes** each package of each pack, from the
+  package's own manifest: the credentials its remotes declare, the modules
+  it calls (as package names), and each setting it marks `confirm: true`
+  with that setting's default. The release step that writes the pins writes
+  it; nobody writes it by hand.
+- It is **not** a list of what is allowed. The store's binding says where a
+  key may go (section 6.6), and the runtime checks calls and settings from
+  the manifests it loads. The description exists so that a release can be
+  compared with the one installed before anything is fetched. `install`
+  refuses a package whose manifest differs from its description, so what was
+  shown is what is installed.
 - `additions(now, next, installed)` reports, for the installed packs and
-  modules: a module added to an installed pack, and a credential destination
-  that is new or changed for an installed module.
+  modules:
+  - a module added to an installed pack;
+  - a credential destination that is new or changed for an installed
+    module;
+  - **a new caller of a module that holds a key**: a module of an installed
+    pack that newly calls a module with a credential, whether the caller is
+    new or its `calls` grew. More code can now ask for calls made with the
+    user's key;
+  - **a `confirm` setting that lost its mark, or whose default changed.**
+    The author had said this setting needs the user's own yes; a release
+    that drops the mark or flips the default changes it without one.
+
+  Each of these is shown by `ch-local upgrade` before its question, and
+  holds an automatic upgrade back (section 9.6).
 - `identityChanges` is unchanged apart from the key names.
 - This is a breaking change of the pins' format: a ch-local that reads
   version 1 refuses version 2. It is acceptable only because no release has
@@ -1203,8 +1508,25 @@ Everything they write is about modules.
 
 ### 9.4 `install` and `add-pack`
 
-For each module of the pack, with `p` the pack's pinned version and `a` the
-module's active version in the home:
+**In a released home** there is nothing to decide per module. The pack's
+modules are installed at the release's pins:
+
+- a module that is not installed is placed;
+- a module that is installed at the pin is skipped ("it shares
+  ch-access-github with the packs already installed");
+- there is no third case, because every installed module the release lists
+  is at its pin (section 9.2).
+
+`install --pack <name>` installs this release's runtime, adds the pack, and
+brings every pack already in the home to this release's pins, **up or down,
+without a question**: the release is a tested set. It no longer drops the
+other packs (`lib/install.js:388`). `add-pack` still needs the installed
+runtime to be this release's.
+
+**Between packs from different pins** (the home is a development one, or
+the pack being added comes from other pins than the installed ones), each
+module of the pack is taken by this table, with `p` the pack's pinned
+version and `a` the module's active version in the home:
 
 | Case | What happens |
 |---|---|
@@ -1217,14 +1539,14 @@ module's active version in the home:
 | `a` is newer than `p`, across a breaking change | **Question B.** |
 
 "A breaking change between two versions" is semver's: their major versions
-differ. Whether a 0.x minor counts, as it does for ch-local's own upgrade
-(`breaking`, `lib/npm-upgrade.js`), is open question 3; this design assumes
-it does.
+differ, or both are 0.x and their minor versions differ (for 0.0.x, their
+patch versions), which is the rule ch-local's own upgrade has (`breaking`,
+`lib/npm-upgrade.js`). It is applied here and nowhere else: a released
+upgrade never asks (section 9.6).
 
 "Installed modules that call it" are read from the installed modules'
 `countinghouse.calls`, the names before the slash, matched by friendly name
-as the runtime matches them. Modules that this same operation brings to the
-version its pins give them are named as such.
+as the runtime matches them.
 
 **Question A** (the update):
 
@@ -1262,27 +1584,18 @@ Rules for both:
   `ch-local remove-pack weekly-report` puts ch-access-github back to 1.4.0
   ```
 
-  After an `install` or an `upgrade` of a whole release the last line names
-  `ch-local rollback` instead.
 - The history gets one line for the answer (`{by: 'cli', module, from, to,
   callers, answer}`).
 
-Then, as today: the record is written, what no record or running start
-needs is collected, the credential conversation of section 6.2 runs, and a
-running start applies the change in place (section 9.8).
+In release 1 only a development install (`--unreleased-pins`) reaches this
+table: every released pack comes from the one release, and its pins. The
+tests reach every row that way. The mechanism is built now because the
+decisions ask for it, and it is what a pack from another source will meet.
 
-`install --pack <name>` installs this release's runtime, adds the pack, and
-brings every pack already in the home to this release's pins, by the same
-table. It no longer drops the other packs (`lib/install.js:388`).
-`add-pack` still needs the installed runtime to be this release's.
-
-In release 1 every pack comes from one ch-local release, which pins one
-version of each module. So in a released install the two questions and the
-"updated without asking" rows arise only at an upgrade (section 9.6), and
-the versions packs record never differ. They do differ between development
-installs (`--unreleased-pins`), which is how the tests reach every row, and
-they will between packs from different sources later. The mechanism is built
-now because the decisions ask for it.
+Then, on both paths, as today: the record is written, what no record or
+running start needs is collected, the credential conversation of
+section 6.2 runs, and a running start applies the change in place
+(section 9.8).
 
 ### 9.5 `remove-pack`, and the way back
 
@@ -1292,89 +1605,85 @@ the pack recorded:
 - **No other installed pack records it**: it leaves the record. Its files go
   once no running start uses them and no rollback can need them
   (section 9.10).
-- **Another pack records it at the same or a higher version**: nothing
-  changes.
-- **The remaining packs record only lower versions**: the active version
-  goes back to the highest of those. This is the rollback: "put back
-  ch-access-github 2.0.0 -> 1.4.0 (it was updated when weekly-report was
-  installed)".
-- **A pack installed later was installed with the newer version**: it
-  recorded that version, so the module stays, and remove-pack says why:
-  "ch-access-github stays at 2.0.0: the pack monthly-report was installed
-  with it".
+- **In a released home, another installed pack records it**: nothing
+  changes. Its version is the release's pin, with or without this pack.
+- **Between packs from different pins**, the active version is worked out
+  again (section 9.2, rule 2):
+  - the remaining packs record only lower versions: the module goes back to
+    the highest of those. This is the rollback the maintainer asked for:
+    "put back ch-access-github 2.0.0 -> 1.4.0 (it was updated when
+    weekly-report was installed)";
+  - a pack installed later was installed with the newer version: it
+    recorded that version, so the module stays, and remove-pack says why:
+    "ch-access-github stays at 2.0.0: the pack monthly-report was installed
+    with it".
 
-The last two are one computation (section 9.2's rule); no history of
-updates is kept.
+  Both are one computation; no history of updates is kept.
 
 What is kept:
 
 - **Settings.** `module.<module>.*` and `enabled.<module>` are not touched by
-  an update, a rollback or a removal. Under the older version, a value for a
-  setting it does not declare stays stored and unused, and comes back with
-  the newer version (section 4.2).
+  an update, a rollback, a release that moves a module back, or a removal.
+  Under the older version, a value for a setting it does not declare stays
+  stored and unused, and comes back with the newer version (section 4.2).
 - **The stored credential.** remove-pack says "the credential stored for
   `<module>` is kept: `ch-local credentials remove <module>` removes it"
-  when it removes a module that has one. After a rollback to a version that
+  when it removes a module that has one. After a move to a version that
   declares another destination, the module is not loaded until
-  `credentials add` is run (section 6.6).
+  `credentials add` is run at a terminal (section 6.6).
 - **The previous version's files**, while any installed pack, a held pack,
   the release rollback's record or a running start names them.
 
 A running start applies the change in place: one reload naming every loaded
-top-level module that holds the module whose version moved (section 7.3).
+top-level module whose closure changed (section 7.3).
 
 ### 9.6 `upgrade`, the automatic upgrade, and the release rollback
 
-**`ch-local upgrade`** moves the runtime and every installed module to the
-new release's pins in one operation. The refusal of a home with more than
-one pack goes (`lib/upgrade.js:77`).
+**A release is a tested set, and is installed as one.** `ch-local upgrade`
+moves the runtime and every installed module to the new release's pins in
+one operation, whichever way each version moves. No module's version is
+asked about: not a major, not a 0.x minor, not a version that goes back.
+The refusal of a home with more than one pack goes (`lib/upgrade.js:77`).
 
-- The preview lists, beside what it lists today: each installed module whose
-  version changes; each that crosses a breaking change, marked, with the
-  installed modules that call it; each credential destination that changes
-  (section 6.6); each module the release adds to an installed pack; each
-  installed module the release no longer lists (section 9.7).
-- Its one question, "Upgrade to `<version>`? (yes/no)", is the yes for all
-  of it, at a terminal only, as today. A module crossing a breaking change is
-  part of what that question covers; no second question is asked, because a
-  No to one module in the middle of a release would leave the modules of one
-  release out of step with each other.
-- `upgrade` hands its yes to the install it runs, which then asks nothing.
-  An `install` run by hand asks its own questions (section 9.4), and a No
-  there installs nothing.
+- The preview lists, beside what it lists today: each installed module
+  whose version changes, saying so when it moves back; what `additions`
+  reports (section 9.3); each installed module the release no longer lists
+  (section 9.7).
+- Its one question, "Upgrade to `<version>`? (yes/no)", at a terminal only,
+  is the one it asks today for any upgrade.
 - After the install: "upgraded ch-local `a` -> `b`; `ch-local rollback`
-  undoes it", and for each module that crossed a breaking change, the line
-  naming it and its callers.
+  undoes it".
 
-**The automatic upgrade** (`lib/auto-apply.js`) never answers a question.
-Beside what holds it back today (another major or a 0.x minor of ch-local
-itself, an identity change, an addition, the 72-hour wait), it announces
-and leaves to `ch-local upgrade` a release that:
+**The automatic upgrade** (`lib/auto-apply.js`) installs the release's set
+the same way, after its 72-hour wait, and never answers a question. Beside
+what holds it back today (another major or a 0.x minor of ch-local itself,
+an identity change, the wait), it announces and leaves to `ch-local upgrade`
+a release for which `additions` reports anything:
 
-- moves a module that installed modules call across a breaking change ("…is
-  available, but it updates ch-access-github across a major version, which
-  ch-pack-ci-failure-triage calls: run ch-local upgrade to see it and
-  install");
-- changes where an installed module's credential goes;
-- adds a module to an installed pack (today's "a package in `<pack>`").
+- a module added to an installed pack (today's "a package in `<pack>`");
+- a credential destination that is new or changed;
+- a new caller of a module that holds a key;
+- a `confirm` setting that lost its mark or changed its default.
 
-All three are decided from the new release's pins and the home's own
-record and manifests, before anything is fetched. The refusal of a home with
-more than one pack goes (`lib/auto-apply.js:82`).
+A module's version moving, forward or back, does not hold it back. All of
+this is decided from the new release's pins and the home's own record,
+before anything is fetched. The refusal of a home with more than one pack
+goes (`lib/auto-apply.js:82`).
 
 **`ch-local rollback`** (to the release the last install replaced) keeps its
 mechanism: the app and the record are swapped with the kept ones, journalled
 (`lib/rollback.js`). The kept record is `<home>/previous/modules.json`. A
 pack only the newer release's record has becomes `held`. The module store
 keeps every version either record names. Settings and credentials are not
-touched, as today.
+touched, as today. After it, the running release is the older one, and its
+pins decide.
 
 ### 9.7 Withdrawn modules
 
 Today a pack that the running release does not list is not started, and an
 upgrade moves it to `held` with a mark (`lib/packs.js` "Withdrawn packs",
 `lib/install.js` `carriedHeld`). With the pack gone as a unit, the rule is
-per module and needs no mark:
+per module and needs no mark. The maintainer confirmed it (section 17).
 
 - **A module is withdrawn when no pack of the running release lists it.** It
   is not available (section 5.2): never loaded, and neither is a module that
@@ -1388,10 +1697,14 @@ per module and needs no mark:
   release that lists it again pins it, so the upgrade to that release brings
   it to the pin and it loads again. That upgrade counts the module as an
   addition, so it is shown and is never taken automatically.
+- **A module dropped from one pack but still listed by another pack of the
+  release is not withdrawn.** It stays installed, at the release's pin, and
+  loads as before, whether or not the pack that now lists it is installed:
+  the release still ships it. It stays recorded under the pack that brought
+  it, and `remove-pack` of that pack removes it if no other installed pack
+  records it. The upgrade's preview says "ch-step-redact is no longer part
+  of the pack ci-failure-triage in this release; it stays installed".
 - A development install (`unreleased: true`) is exempt, as today.
-
-Whether withdrawal should be by module is open question 2: it follows from
-the decisions, but it was asked and not answered.
 
 ### 9.8 `start`, and the running applier
 
@@ -1402,9 +1715,11 @@ the decisions, but it was asked and not answered.
    is collected (`loaded: {"<module>": "<version>"}`; today
    `{"<pack>": "<key>"}`).
 2. The settings and the ceiling are read and checked as today.
-3. Availability is worked out for every installed module (section 5.2).
-   Each module that is not available is said once, with its reason.
-4. Credentials are resolved for the modules that will load (section 6.4).
+3. Availability is worked out for every installed module (section 5.2),
+   the version against the release's pin included. Each module that is not
+   available is said once, with its reason.
+4. Credentials: a slot for every installed module with a usable binding,
+   loaded now or not (section 6.4).
 5. The runtime is started with `--loadModule <dir>` for each available
    top-level module, `--partDir <dir>` for each part one of them needs,
    `--modulesRoot <home>/module-store`, `--remoteCredentials <file>`, and
@@ -1414,23 +1729,29 @@ the decisions, but it was asked and not answered.
 6. `PATH_OPTIONS` (line 253), which a shared runtime's start checks against
    the home, takes `--modulesRoot` and `--partDir` in place of `--packsRoot`.
 
-**While it runs** (`lib/in-place.js`), on a change of `modules.json` or
-`settings.json`:
+**While it runs** (`lib/in-place.js`), on a change of `modules.json`,
+`settings.json` or the credential store:
 
 1. Work out the wanted set again: each available top-level module, its
-   closure, and each module's active version.
-2. Compare with what is loaded:
-   - a loaded top-level module no longer wanted: `unload`, with its reason
-     as the notice ("turned off", "removed", "withdrawn", "its credential…");
-   - a module whose active version changed: one `reload` naming every loaded
-     top-level module that holds it, plus any top-level module whose own
-     version changed in the same step;
-   - a wanted top-level module not loaded: `load`.
-3. Unloads first, then reloads, then loads; one request at a time; each with
-   its notice and its history line, as today.
-4. A change against another runtime version than the one this start spawned
+   closure, and each module's active version. A module whose binding no
+   longer matches its slot is not available here (section 6.4).
+2. Compare with what is loaded, and apply in three steps, one request at a
+   time, each with its notice and its history line, as today:
+   - **unloads**: each loaded top-level module that is no longer wanted,
+     with its reason as the notice ("turned off", "removed", "withdrawn",
+     "its credential was removed");
+   - **one reload**, naming every loaded top-level module whose closure
+     changed: a member at another version, a member added or gone
+     (section 7.3);
+   - **loads**: each wanted top-level module that is not loaded, with its
+     allowance when its slot matches.
+3. A change against another runtime version than the one this start spawned
    waits for the next start, as today.
-5. A changed `module.*` value: `reread` (section 4.3).
+4. A changed `module.*` value: `reread` (section 4.3).
+5. A `module-stopped` from the runtime: the module is taken out of what the
+   start holds as loaded and out of `run.json`'s `loaded`, recorded there as
+   `stopped: {"<module>": "<code>"}`, said to the sessions and written to
+   the history.
 
 The applier loses `thisStart`, `confirmed`, `loadPack`, `unloadPack` and the
 "now global" step (section 5.3).
@@ -1446,12 +1767,18 @@ modules:
   ch-access-github 0.2.0            part; credential GITHUB_TOKEN -> https://api.githubcopilot.com (gh login)
   ch-step-redact 0.2.0              part
   weather-tool 1.2.0                not loaded: turned off (`ch-local settings set enabled.weather-tool on`)
+  tracker-access 0.4.0              on; stopped in a running client (REMOTE_CREDENTIAL_NOT_ALLOWED): restart that client
 packs:
   ci-failure-triage                 9 modules
 ```
 
-A module that would not load says why, with the same sentence a start tells
-a session (section 11).
+- A module that would not load says why, with the same sentence a start
+  tells a session (section 11).
+- `status` reads the home, and also the `run.json` of each start that is
+  alive (as collection does). A module that a running runtime stopped by
+  itself (`module-stopped`, section 7.3) is shown as stopped there, with the
+  code, so `status` never reports a module as running in a client where it
+  is not.
 
 ### 9.10 Collection
 
@@ -1476,17 +1803,18 @@ test homes. Every step is one-way, and each fails closed.
 
 | From | To | When and how |
 |---|---|---|
-| `<home>/packs.json` | `<home>/modules.json` | By `install` and `upgrade`, in the operation that installs a ch-local of this design. Each recorded pack becomes a pack entry with its packages as modules; `credentials` is dropped; a held pack marked `withdrawn` or `relisted` becomes an ordinary pack entry (section 9.7 decides whether its modules load); a pack held after a rollback stays held. `packs.json` is removed once `modules.json` is written. A `start`, `add-pack`, `remove-pack` or `status` that finds `packs.json` and no `modules.json` says "this home was made by an earlier ch-local; run `ch-local install` again", as `lib/record.js` already says for the format before it. |
+| `<home>/packs.json` | `<home>/modules.json` | By `install` and `upgrade`, in the operation that installs a ch-local of this design. Each recorded pack becomes a pack entry with its packages as modules and `from` set to the release being installed (that install brings every module to its pins); `credentials` is dropped; a held pack marked `withdrawn` or `relisted` becomes an ordinary pack entry (section 9.7 decides whether its modules load); a pack held after a rollback stays held. `packs.json` is removed once `modules.json` is written. A `start`, `add-pack`, `remove-pack` or `status` that finds `packs.json` and no `modules.json` says "this home was made by an earlier ch-local; run `ch-local install` again", as `lib/record.js` already says for the format before it. |
 | `<home>/packs/<pack>/<key>/…` trees | `<home>/module-store` | The same install places every module in the store from its pinned tarball. The old trees are not converted. They are collected once no running start names them (a start from before has the old `run.json` shape, which collection still reads) and they are not the rollback target. |
 | `<home>/previous/packs.json` (the release rollback's kept record, old format) | none | `ch-local rollback` refuses it: "the kept release predates the module store, so it could not return you here; install it again instead". This is the wording and the rule rollback already has for a kept release from before rollback existed. |
-| `pack.<name>` in `settings.json` | `enabled.<package>` | The install or upgrade that migrates the record rewrites each `pack.<name>` as `enabled.<the pack's scenario module>` in the same operation, under the settings lock, with a history line `{by: 'migration', setting, was}`. Until then, and for one left over (a file edited by hand), ch-local's reader takes `pack.<name>` for that entry, so a pack the user turned off never loads. A `pack.<name>` whose pack the home does not have is kept as an unknown name. The runtime's settings tool keeps a `pack.*` name as an unknown one. |
+| `pack.<name>` in `settings.json` | `enabled.<package>` | The install or upgrade that migrates the record rewrites each `pack.<name>` as `enabled.<the pack's scenario module>` in the same operation, under the settings lock, with a history line `{by: 'migration', setting, was}`. Until then, and for one left over (a file edited by hand), ch-local's reader takes `pack.<name>` for that entry. **Off wins**: with a leftover `pack.<name>: false` beside `enabled.<module>: true`, the module is off. A terminal `ch-local settings set enabled.<module> on` (asked and confirmed as any loosening) removes the leftover in the same write, so the "on" then holds. A `pack.<name>` whose pack the home does not have is kept as an unknown name. The runtime's settings tool keeps a `pack.*` name as an unknown one. |
 | `<home>/credentials/credentials.json` version 1 (`{values: {VARIABLE: {value, module}}}`) | version 2 | Read-time: an entry reads as a binding for its recorded module, to `https://api.githubcopilot.com` (the only origin ch-local ever sent it to), under whichever of `COUNTINGHOUSE_GITHUB_TOKEN` and `GITHUB_TOKEN` (the two names that origin was allowed) the installed module declares; source `stored`. The first `credentials add` or `remove` rewrites the file as version 2. |
-| A session's pack rows (the daemon's table, a restore) | none | The new daemon's `seed` (the handoff from the daemon it replaces) drops `pack.*` overrides and the kind `pack` from each row and marks the session to be told once: "tools are turned on and off for all your sessions now; `<module>` is on. Turn it off with `enabled.<module>`". The new runtime refuses a restore that still carries one (`CONTROL_BAD_RESTORE`), after which the table starts over and each session's shim replays its tightened caps, as today. |
+| A session's pack rows and the kind `pack` (the daemon's table, a restore) | the kind `enabled`; no pack rows | The new daemon's `seed` (the handoff from the daemon it replaces) **maps the kind `pack` to `enabled`** wherever it appears: in a row's `locks` and `unanswered`, and in the declines. A user who declined a form three times stays locked out of the form that replaces it. It drops each `pack.*` override, and marks the session to be told once: "tools are turned on and off for all your sessions now; `<module>` is on. Turn it off with `enabled.<module>`". The new runtime refuses a restore that still carries a `pack.*` row or the kind `pack` (`CONTROL_BAD_RESTORE`), after which the table starts over, every kind is locked for a window (today's rule for a restore that cannot be read), and each session's shim replays its tightened caps. |
 | The ceiling's `"packs"` | `"modules"` | Not migrated: the operator rewrites the file. Until then it is not trusted and no module loads (section 8). |
+| A version 1 `--remoteCredentials` file from ch-local | version 2 | Nothing to migrate: the file is written at each start. From the cleanup PR on, a runtime with a control channel refuses version 1 (section 6.5). |
 | `lib/release-pins.json` version 1 | version 2 | Not migrated: no release carries version 1 pins with content. |
 | `{defaultRepo}` in a start's device config | `module.<scenario>.defaultRepo` | Nothing is stored today (it is derived at each start), so there is nothing to move. |
 | Usage records' `pack` field | `scenario` | The reader accepts both. |
-| A stored GitHub token in a client's configuration (`COUNTINGHOUSE_GITHUB_TOKEN`) | the store | Not moved by ch-local (it does not read client configurations for secrets). A start that sees the variable set says once: "COUNTINGHOUSE_GITHUB_TOKEN in this client's environment is no longer read: run `ch-local credentials add <module>`" (if open question 1 is answered as recommended). |
+| A GitHub token in a client's configuration (`COUNTINGHOUSE_GITHUB_TOKEN`) | the store | Not moved by ch-local (it does not read client configurations for secrets). A start that sees the variable set says once: "COUNTINGHOUSE_GITHUB_TOKEN in this client's environment is no longer read: run `ch-local credentials add <module>`". |
 
 Between the two repositories: ch-local and countinghouse are installed as a
 pinned pair, and a running start applies nothing in place against another
@@ -1505,14 +1833,21 @@ whole, names a module and a command, and never names a path or a value.
 | The ceiling's list leaves a module out | start, applier, install | "not loading `<m>`: this machine's operator ceiling does not list it" |
 | The ceiling cannot be trusted | start, applier | "not loading any module: the operator's ceiling file `<file>` cannot be trusted (`<problem>`)" |
 | A module is withdrawn | start, applier, status, upgrade | section 9.7 |
+| A module is not at the version the release pins | start, applier, status | "not loading `<m>`: `<version>` is installed and this release pins `<pin>`; run `ch-local install` again" |
 | No credential, another destination, gh gave none, the store fails | start, applier, status | section 6.7 |
 | A module calls one that is not available | start, applier, status | "not loading `<m>`: it calls `<n>`, which `<n's reason>`" |
 | A module's files are missing from the store | start | "not loading `<m>`: its files are missing; run `ch-local install` again" |
 | Nothing is loadable | start | "no module is loaded this start; only ch-local's own tools (settings, the usage report) are served" |
-| A module needs a key the running runtime was not started with | applier | "`<m>` needs a credential the running runtime was not started with; restart your client to load it" |
+| A module's key was added, replaced or re-bound since this runtime started | applier | "`<m>` has a credential the running runtime was not started with; restart your client to load it" |
+| A loaded module's key was removed or changed | applier | "`<m>`'s credential was removed (or changed); it is unloaded here until this client restarts" |
+| The runtime stopped a module by itself | applier, status | "`<m>` stopped (`<code>`); restart your client", and `status`'s line (section 9.9) |
+| A module is turned off from conversation | every session's notice | section 5.3: what went with it, the undo command, "until … at a terminal" |
+| `enabled.<part>` at a terminal | `settings set` | section 5.1 |
+| A key on standard input without `--to`, with another origin, or over a binding for another destination | `credentials add` | section 6.2 |
+| A load whose closure holds a module that failed to unload | applier | "`<m>` is still being unloaded; restart your client" |
 | A load, reload or unload is refused by the runtime | applier | "`<notice>`: not applied in place (`<code>`); restart your client to apply it" (today's line) |
 | An unload fails | runtime | The module stays hidden (section 5.5); logged; the applier says the line above |
-| Question A or B with no terminal, or answered No | install, add-pack | section 9.4 |
+| Question A or B with no terminal, or answered No (between packs from different pins only) | install, add-pack | section 9.4 |
 | An automatic upgrade is held back | start's announcement | section 9.6 |
 | A pack holds a module the ceiling does not list | install, add-pack | section 8 |
 | A stored value the loaded version does not accept | load | one warning in the log, one history line; the default applies (section 4.2) |
@@ -1545,56 +1880,100 @@ are control-channel codes, never a client's; they are renamed with
 What must hold, and where it is enforced.
 
 1. **A module never receives a key.** The value is read and attached on the
-   runtime's main thread only (`lib/remote/`), as today. Nothing in this
-   design gives a value to a worker: settings are not secrets, and the
-   declaration vocabulary has no secret type; the validator warns on a
-   setting that looks like one. Values are never written to the settings
-   file, the history, a notice, a log or a run directory.
+   runtime's main thread only (`lib/remote/`), as today. It sits in the
+   runtime's environment under `COUNTINGHOUSE_CREDENTIAL_<n>`, a name no
+   worker is ever given, whatever a module declares in `permissions.env` and
+   whatever the policy or audit mode grants; and `resolveEnv` denies every
+   other name a credentials allowance reads from (section 6.5). The version 2
+   file can name only such a slot, so it cannot be made to send another
+   variable of the runtime. Settings are not secrets, and the declaration
+   vocabulary has no secret type; the validator warns on a setting that
+   looks like one. Values are never written to the settings file, the
+   history, a notice, a log or a run directory.
 2. **A key goes only where the user entered it for.** The binding is
-   (module, variable, origin), made at a terminal or on standard input.
-   ch-local writes the runtime's file from the store, and the runtime checks
-   the module's current declaration against it at every spawn. No other list
-   exists that could be widened by mistake.
+   (module, variable, origin). ch-local writes the runtime's allowance from
+   the store, and the runtime checks the module's pinned declaration against
+   it. A slot is used only on an exact match of module, variable, origin,
+   source and value with the store as it is now, so a key is never given to
+   another module, never used after it was removed or replaced, and never
+   re-used for another destination (section 6.4).
 3. **A new origin or variable gets no key.** A compromised release cannot
    redirect a stored key: its new destination has no binding. Only
-   `credentials add`, run by the user, makes one, and it shows the
-   destination before it asks. An upgrade's yes, an automatic upgrade, a
-   setting and conversation cannot.
-4. **The gh login is offered only for GitHub's own origins**, and never
+   `credentials add` at a terminal makes one, and it shows the destination
+   before it asks. An upgrade's yes, an automatic upgrade, a setting,
+   conversation and the standard-input path cannot.
+4. **The gh login is offered for one origin**, compared whole, and never
    used without a yes for that module.
-5. **No setting widens the sandbox.** A module setting is data the module
+5. **The release's pins decide what runs.** A module that is not at the
+   version the running release pins is not loaded, so a release that moves a
+   module back takes effect on every home that installs it, and no earlier
+   install can keep a newer or an older version running.
+6. **No setting widens the sandbox.** A module setting is data the module
    reads; it reaches no policy, permission, ceiling, route or price. A
    `hostname` or `url` value must already be inside the module's granted
-   `net`. `enabled.<module>` turns on only what is installed, in the running
-   release, and on the ceiling's list.
-6. **Conversation cannot loosen by itself.** Turning a module on, and every
+   `net`. `enabled.<module>` turns on only what is installed, at the
+   release's pin, and on the ceiling's list.
+7. **Conversation cannot loosen by itself.** Turning a module on, and every
    string setting, needs the user's own confirmation, on a client tested to
    show it to a person, or else a terminal. A credential has no
    conversational path at all. The settings tool is not reachable from module
    code. Text in a form is the runtime's; hints carry no values; package
    names in hints are npm-grammar names.
-7. **An automatic upgrade never says yes.** It does not answer question A
-   or B, does not take a release that moves a called module across a breaking
-   change, changes a credential's destination, adds a module, changes an
-   identity, or is a major of ch-local; and it never binds a credential.
-8. **Fail closed.** A ceiling that is not trusted loads no module. A
-   settings file that is not valid stops the start. A credentials store that
-   fails its checks is not used. A module that is going on or off is hidden.
-   A module no pack of the release lists does not load. A `pack.<name>: false`
-   left from before keeps its module off. A restore the runtime cannot check
-   is refused whole.
-9. **What is installed is what was pinned.** Tarballs are checked against
-   their pins and provenance before anything is written, as today; a store
-   version is reused only with the pin's integrity; a module directory must
-   lie inside `--modulesRoot` by real path with no link out; a package's
-   declared credentials must be what the pins said.
-10. **Files modules cannot read**: the whole ch-local home (settings, the
+8. **An agent with a shell is not "conversation", and is not stopped by
+   it.** "Conversation" in this design means the `countinghouse_settings`
+   tool. An agent whose client lets it run commands can run `ch-local`
+   itself. What stands there is different, and is stated so that nothing
+   claims more:
+   - A loosening (`enabled.<module> on`, a raised cap, a `confirm` setting)
+     and the questions of section 9.4 are asked at a terminal, with no
+     `--yes`, and refused without one. That stops a command run without a
+     terminal; it does not stop an agent that has a terminal.
+   - `credentials add` on standard input takes a key the caller already
+     holds. It can only store it for the destination the installed module
+     declares, named in `--to`; it cannot replace a binding for another
+     destination; it cannot read a stored key back. So it cannot move the
+     user's stored key anywhere.
+   - `credentials remove`, turning a module off, and a tightened cap are
+     tightenings, made on request by anyone who can run the command.
+   - Beyond that, the user's consent to what an agent's shell runs is the
+     client's own command-approval prompt, as
+     `2026-11-14-guarding-settings-by-conversation-design.md` already says
+     for settings. ch-local records every change in the history, which the
+     agent's tool cannot edit.
+9. **An automatic upgrade never says yes.** It installs a release's tested
+   set only when nothing needs the user: it does not take a release that
+   changes a credential's destination, adds a module, adds a caller of a
+   module that holds a key, drops a `confirm` mark or changes such a
+   setting's default, changes an identity, or is a major of ch-local; and it
+   never binds a credential.
+10. **Fail closed.** A ceiling that is not trusted loads no module. A
+    settings file that is not valid stops the start. A credentials store
+    that fails its checks is not used. A module that is going on or off is
+    hidden, one that failed to unload stays hidden, and nothing loads it
+    again. A module no pack of the release lists, or one at another version
+    than the pin, does not load. A `pack.<name>: false` left from before
+    keeps its module off, even beside an `enabled` entry that says on. A
+    restore the runtime cannot check is refused whole.
+11. **What is installed is what was pinned.** Tarballs are checked against
+    their pins and provenance before anything is written, as today; a store
+    version is reused only with the pin's integrity; a package's manifest
+    must match the pins' description of it. With `--modulesRoot` a module is
+    loaded only from a directory ch-local named, inside the root by real
+    path, with no link out, at start as in place; nothing is found by
+    searching `node_modules` directories.
+12. **A module's own declaration is pinned.** Its calls, its settings and
+    its remotes are taken at an operator's load and kept across a supervised
+    restart, so a module that rewrites its `package.json` gains no call, no
+    dropped confirmation and no new destination.
+13. **Files modules cannot read**: the whole ch-local home (settings, the
     record, the credentials, the store but for a module's own directory, the
     run directories), as today. `--moduleSettings` is refused to modules like
     the policy file.
-11. **Every change is recorded** in `history.jsonl` first: a setting, an
-    on/off, a credential added or removed (never its value), an answer to
-    question A or B, a module loaded, reloaded or unloaded.
+14. **Every change is recorded** in `history.jsonl` first: a setting, an
+    on/off (with the session that asked), a credential added, replaced or
+    removed (never its value, and whether at a terminal or on standard
+    input), an answer to question A or B, a module loaded, reloaded,
+    unloaded or stopped.
 
 Limits that this design does not change, stated so that no document claims
 more:
@@ -1604,11 +1983,19 @@ more:
 - A module can still open outbound connections of its own until the network
   broker exists. The key does not reach the module, but data a remote gave
   it can be sent on.
+- A module that is allowed to call a module with a key can have calls made
+  with that key, within what the keyed module's tools do. `calls` bounds who
+  that is, and a release that adds such a caller is shown and never taken
+  automatically.
+- A binding is to an origin: every path on it.
 - A version 1 `--remoteCredentials` file on an operator's server is not
   bound to a module.
 - Under `--moduleSandbox audit` a module can rewrite its own `package.json`;
-  the settings pin holds until the next start, and the credential check is
-  made against the store's binding in either mode.
+  the pins hold until the next operator's load, and each difference is
+  logged.
+- A session can turn a module off for every session of the user. It is
+  recorded, said to every session with the way to undo it, and counted in
+  that session's budget of changes.
 
 ## 13. Code areas that change
 
@@ -1616,28 +2003,29 @@ more:
 
 | File | What changes |
 |---|---|
-| `lib/settings-tool.js` | `PACK`, `PACK_NAME`, `PACK_ENTRY`, `entryOf` (57-62): the `enabled.*` grammar and entry; `entryOf` also answers `module.*` from the module's declaration. `conversationMayAsk` (150) and `CEILING_KIND` (200) take `enabled.*`. `ceilingRefusal` (303) reads the ceiling's `modules`. `FORM_TEXT` (321): the `pack` and `session.pack` sentences go; the `enabled` sentence (section 5.3) and the module-setting sentence (section 4.4) come, en and zh. `packsThisStart`, the pack branch of `effectiveOf` (360), `packUnloaded` (476): removed. `packVersion` (367): a module's version and role from `modules.json`. `applyConfirmed` (415): the `load-pack` and `unload-pack` asks go; a confirmed "on" is written to the file. `get` (656): one `enabled` row per installed top-level module, and the module settings with a cursor. `set` (685): `enabled.*` and `module.*`, keeping unknown names on every write. `setForSession` (877) and the session branch of `confirm` (1523): the two caps only. `setForAll` (1249): also `enabled.*` and `module.*`. `applyThisStart` (1471), `formOrRefusal` (1491): no pack case. `applyControlSet` (1755): unchanged for the runtime's own settings; the new `reread` handler sits beside it. The tool's description and input schema (1793). |
+| `lib/settings-tool.js` | `PACK`, `PACK_NAME`, `PACK_ENTRY`, `entryOf` (57-62): the `enabled.*` grammar and entry; `entryOf` also answers `module.*` from the module's declaration. `conversationMayAsk` (150) and `CEILING_KIND` (200) take `enabled.*`. `ceilingRefusal` (303) reads the ceiling's `modules`. `FORM_TEXT` (321): the `pack` and `session.pack` sentences go; the `enabled` sentence (section 5.3) and the module-setting sentence (section 4.4) come, en and zh. `packsThisStart`, the pack branch of `effectiveOf` (360), `packUnloaded` (476): removed. `packVersion` (367): a module's version and role from `modules.json`; until the cleanup PR it reads `packs.json` when `modules.json` is not there, because ch-local renames the record before the tool's pack code goes. `MAX_SESSION_CHANGES` (84): an `enabled` off counts on a runtime with one session too. `applyConfirmed` (415): the `load-pack` and `unload-pack` asks go; a confirmed "on" is written to the file. `get` (656): one `enabled` row per installed top-level module, and the module settings with a cursor. `set` (685): `enabled.*` and `module.*`, keeping unknown names on every write. `setForSession` (877) and the session branch of `confirm` (1523): the two caps only. `setForAll` (1249): also `enabled.*` and `module.*`. `applyThisStart` (1471), `formOrRefusal` (1491): no pack case. `applyControlSet` (1755): unchanged for the runtime's own settings; the new `reread` handler sits beside it. The tool's description and input schema (1793). |
 | `lib/settings-confirm.js` | `kindOf` (50) and `KINDS` (58): `enabled` and `module` in place of `pack`. |
 | `lib/settings-ceiling.js` | `KEYS` (37): `modules` and `moduleSettings` in place of `packs`; their checks; the problem text for a leftover `packs`. |
 | `lib/module-settings.js` (new) | The declaration's vocabulary and checks, the format checkers, effective values and their versions, the stored-value check, `--moduleSettings`. |
-| `lib/manifest-pins.js` | The settings declaration joins the pin. |
+| `lib/manifest-pins.js` | The settings declaration and the remotes join the pin (sections 4.1 and 6.1); a difference at a supervised restart is logged, as an added call is. |
 | `lib/lean-worker.js`, the invoke message, `lib/device-manager.js`, `lib/peer-channel-broker.js`, the task and job paths | `ctx.settings` delivery on every path (section 4.5); `ctx.settingRequired`; the pre-handler `SETTING_REQUIRED` check over the call graph. |
 | `lib/session-packs.js` | Deleted. |
 | `lib/module-visibility.js` (new) | Section 5.5. |
 | `lib/session-settings.js` | `PACK` (50), `globalPack`, the pack branches of `set`, `effective` and `isLoosening`, `dropPack` (413), `packOnAllowed` (222), `packOverridesOf` (430): removed. |
 | `lib/session-state.js` | `KINDS` (134), the pack override rows (150, 281, 330), the restored pack "on" (370-400): removed; kinds as section 5.4. |
 | `lib/session-transport/restore.js` | `KINDS`, `PACK`, `overrideProblem`: caps only; the new kinds. |
-| `lib/sessions.js`, `lib/job-sessions.js` | `packsOffOf`, `sessionEnded`'s `packsOff`, `packsOffFor`, `sessionPacks.forget` (sessions.js 55-70; job-sessions.js 88-95): removed. |
-| `lib/packs-in-place.js` → `lib/modules-in-place.js` | Section 7.1 and 7.3: `readRequest` (`dirs`, `names`, no `scenario`), `ceilingRefusal` by module, the records without `pack` and `allowance`, `heldElsewhere` over a set of excepted names, `planFor` over several named modules, `reloadPack` generalised, `addAllowance` and `removeAllowance` replaced by the per-module allowance, `chLocalPackOf`, `packNameOf`, `packRecords`, `loadedVersionOf` removed. |
-| `lib/pack-control.js` → `lib/module-control.js` | Section 7.3: no `pack`, `global`, audience or `set pack.<n>`; a notice to every session. |
-| `lib/control-channel.js` | `TYPES` (21) gains `reread`. |
+| `lib/sessions.js`, `lib/job-sessions.js` | `packsOffOf`, `sessionEnded`'s `packsOff`, `packsOffFor`, `sessionPacks.forget` (sessions.js 65-80; job-sessions.js 88-95): removed. |
+| `lib/packs-in-place.js` → `lib/modules-in-place.js` | Sections 7.1 to 7.3: `readRequest` (`dirs`, `names`, `credentials`; no `scenario`, no `remoteCredentials` file, line 122), `ceilingRefusal` by each module's package name, the records without `pack` and `allowance`, `heldElsewhere` over a set of excepted names, `planFor` (211) over several named modules and over the start plan, `reloadPack` generalised with additions first and callees before callers, the refusal of a still-hidden module, `unloadOne`'s result read from the module map, `addAllowance` and `removeAllowance` replaced by the per-module allowance, `chLocalPackOf`, `packNameOf`, `packRecords`, `loadedVersionOf` removed. While `lib/session-packs.js` exists, a module-form request is recorded there as global. |
+| `lib/pack-control.js` → `lib/module-control.js` | Section 7.3: no `pack`, `global`, audience or `set pack.<n>`; a notice to every session. `packOf` (48) no longer refuses a shared runtime's module-form load. |
+| `lib/control-channel.js` | `TYPES` (21) gains `reread`; `tell` carries `module-stopped`. |
 | `lib/route-manager.js` | `credentialVariables` (70); the control channel's handlers; `configureSessionPacks` (343) and its call (469) go, the visibility set's `onChange` takes the subscriptions' hook (156). |
-| `lib/module-roles.js` | `resolvePart`, `closureOf`, `expandLoadList` take the given directories (section 7.2); `refusedWhy`'s wording. |
-| `lib/module-manager.js` | `unlisted` recomputed from the records (83, 416); `packRemotes`, `START_ALLOWANCE`, `mergedAllowance`, `registerRemotes` (668-704): the per-module allowance; `sessionViewChanged` (1852) reads the visibility set; `startPlan` seeds `loadedUnits`. |
+| `lib/module-roles.js` | `resolvePart` (44), `closureOf`, `expandLoadList` take the given directories; with `--modulesRoot` there is no search (`nodeModulesFrom`, 57, is not used); `refusedWhy`'s wording (section 7.2). |
+| `lib/module-manager.js` | `unlisted` recomputed from the records (97, 436); `packRemotes`, `START_ALLOWANCE`, `mergedAllowance`, `registerRemotes` (688-724): the per-module allowance; `sessionViewChanged` (1879) reads the visibility set; `startPlan` (415-420) is checked against `--modulesRoot` and seeds `loadedUnits`; a refused start-plan module and a refused or abandoned supervised restart are told to ch-local (`module-stopped`). |
 | `lib/cli-options.js`, `framework.js` | `--modulesRoot` in place of `--packsRoot` (222-227), `--partDir`, `--moduleSettings`; their checks. `lib/fs-broker/index.js` `protectedPaths` and `lib/hardened-launch.js` learn `--moduleSettings`. |
-| `lib/remote/declaration.js` | The default `transport` (185) and the string `credential` (`parseCredential`, 115). |
-| `lib/remote/credentials.js` | `loadAllowance` (18): version 2 beside version 1; `resolveCredential` (44): the module's own entry and its environment name. |
-| `lib/remote/index.js` | `register` (82): the allowance by module; the two `NOT_ALLOWED` cases and the hint. |
+| `lib/remote/declaration.js` | The default `transport` (185) and the string `credential` (`parseCredential`, 115); `fallbackEnv` leaves `CREDENTIAL_FIELDS` in the cleanup PR. |
+| `lib/remote/credentials.js` | `loadAllowance` (18): version 2 in its one form, the slot pattern; version 1 refused on a runtime with a control channel (cleanup PR). `resolveCredential` (44): the module's own entry and its slot. The set of names any allowance reads from, for `resolveEnv`. |
+| `lib/module-permissions.js`, `lib/module-sandbox-config.js` | `resolveEnv` (module-permissions.js 235) and `deniedEnvNames` (231) also deny every name a credentials allowance reads from; `module-sandbox-config.js:201` passes them and notes each denied name. |
+| `lib/remote/index.js` | `register` (82): the allowance by module, the pinned remotes at a supervised restart, the two `NOT_ALLOWED` cases and the hint. |
 | `lib/module-validator.js`, `bin/countinghouse-validate.js` | The settings declaration's problems and warnings, each setting's confirmation rule, the expanded remote. |
 | The readers of a session's view | Section 5.4's last row: `lib/mcp/tool-registry.js`, `gateway.js`, `prompts.js`, `resources.js`, `subscriptions.js`, `lib/device-manager.js`, `lib/peer-channel-broker.js`, `lib/job-control-common.js` (its comment on runs into a pack). |
 | `lib/notices.js`, `lib/usage/receipt.js` | Wording only (a module, not a pack). |
@@ -1654,29 +2042,29 @@ file's or a flag's name before changing it.
 
 | File | What changes |
 |---|---|
-| `lib/settings.js` | `PACK`, `packEntry`, `entryOf` (52-54): `enabled.*`, and `module.*` checked with the installed runtime's reader. `readSettings`: unknown names are kept apart, not dropped. `setSetting` and `resetSettings`: every name the file holds that this ch-local does not write is preserved; a bare reset leaves `module.*`. `listSettings`: modules, not packs. The read-time `pack.*` mapping (section 10). |
+| `lib/settings.js` | **First, as its own PR (L0):** `setSetting` (166) writes only the names it knows, and `resetSettings` (192) removes the file, so today a terminal change erases every `module.*` value the runtime's tool wrote. Both keep every name they do not write; a bare reset leaves `module.*`. Then: `PACK`, `packEntry`, `entryOf` (52-54): `enabled.*` for top-level modules (a part's name refused, section 5.1), and `module.*` checked with the installed runtime's reader. `readSettings` (70): unknown names are kept apart, not dropped. `listSettings`: modules, not packs. The `pack.*` mapping, with off winning and a terminal "on" removing the leftover (section 10). |
 | `lib/settings-command.js` | `settings modules`, `set <module>.<setting>` with a prompted value, `reset <module>[.<setting>]`, short names. |
 | `lib/outside-edits.js` | The `module.*` and `enabled.*` rules; a cut value compared by its hash. |
 | `lib/ceiling.js` | `packAllowed`, `packRefusal`, `notAllowed`, `packName`: by module, over every module of a pack at install. |
-| `lib/session-table.js` | `KINDS`, `PACK`, `overrideOk`: caps only, the new kinds; `seed` strips pack rows and marks the session (section 10). |
+| `lib/session-table.js` | `KINDS`, `PACK`, `overrideOk`: caps only, the new kinds; `seed` maps the kind `pack` to `enabled` in locks, unanswered and declines, drops pack overrides and marks the session (section 10). |
 | `lib/credential-store.js` | Version 2 (section 6.3), the wider value grammar, the version 1 reading. |
-| `lib/credentials-command.js` | Section 6.2: `<module>`, the declaration shown, the gh offer, standard input, `list`, `remove`. |
+| `lib/credentials-command.js` | Section 6.2: `<module>`, the declaration shown, the gh offer for the one origin, `--to` and the standard-input rules, `list`, `remove`. |
 | `lib/github-token.js` | `ghToken` stays. `chooseGitHubToken` goes. |
-| `lib/module-credentials.js` (new) | For a set of modules: each one's usable binding or its reason, the values, the slots, the version 2 file's content (sections 6.4 and 6.7). start and the applier call it at one place each. |
-| `lib/conditions-command.js` | `chosenToken`, `chosenCredentials` go; `token` is always null and `credentials` absent (open question 1). |
+| `lib/module-credentials.js` (new) | For the installed modules: each one's usable binding or its reason, the values, the slots and their identities, the version 2 file's content, the allowance for a load message, and whether a slot still matches the store (sections 6.4 and 6.7). start and the applier call it at one place each. |
+| `lib/conditions-command.js` | `chosenToken`, `chosenCredentials` go; `token` is always null and `credentials` absent (section 6.9). |
 | `lib/snippets.js`, `lib/uninstall.js` | No credential variable is forwarded by a client entry; uninstall names the stored credentials by module, and its list of the home's own names gains `modules.json` and `module-store`. |
-| `lib/release-pins.json`, `lib/release-pins.js`, `lib/allowlist.js`, `lib/pins.js` | Section 9.3. `ALLOWED_ORIGINS` goes. |
-| `lib/record.js` | Section 9.2, and reading the old file only to migrate it. |
+| `lib/release-pins.json`, `lib/release-pins.js`, `lib/allowlist.js`, `lib/pins.js` | Section 9.3: `packs.<pack>.modules`, the `modules` description (credentials, calls, confirm settings), `additions` (140) with its two new reports. `ALLOWED_ORIGINS` goes. The release step that writes the pins writes the description. |
+| `lib/record.js` | Section 9.2: the shape, `from`, the active-version rule and the check of the derived `modules`; reading the old file only to migrate it. |
 | `lib/home.js` | `layout`: `moduleStore`, `record` (`modules.json`), `previousRecord`. |
 | `lib/pack-dir.js` → `lib/module-store.js` | Section 9.1: place, skip, the marker. |
 | `lib/unpack.js` | `unpackInto` places one package into a version directory; `checkManifest` also checks the declared credentials against the pins. |
-| `lib/install.js` | `install`, `installLocked`: every installed pack kept and brought to the pins; the table and questions of section 9.4; `carriedHeld` and the `runtimeOnly` path's withdrawn marks go; `credentialLines` becomes the credential conversation; the migration. |
-| `lib/packs-command.js` | `addPack` (the shared-module path, 66-79, becomes section 9.4), `removePack` (section 9.5), `status` (section 9.9). |
+| `lib/install.js` | `install`, `installLocked`: every installed pack kept and brought to the release's pins, up or down, with no question; between packs from different pins, the table and questions of section 9.4; a package's manifest checked against the pins' description; `carriedHeld` and the `runtimeOnly` path's withdrawn marks go; `credentialLines` becomes the credential conversation; the migration. |
+| `lib/packs-command.js` | `addPack` (the shared-module path, 66-79, becomes section 9.4), `removePack` (section 9.5), `status` (section 9.9, reading each live start's `run.json` for stopped modules). |
 | `lib/packs.js` | `installedPacks` becomes the installed modules and their closures; `declaredRemotes` per module; `credentialUnion`, `loadablePacks` go; the withdrawn lines by module; availability (section 5.2) lives here or in a file beside it. |
-| `lib/start.js` | Section 9.8, and what section 6.9 removes: `GITHUB_VARIABLES` (41), `chooseCredentials` (227), the token block (364-403), the pack filters and the credential gate (456-474), `credentialUnion` and its refusal (497-505), the device-config write (523-531), `--loadModule` per pack (581), `--packsRoot` (594), the `load-pack` and `unload-pack` handlers (679-680), `PATH_OPTIONS` (253). |
-| `lib/in-place.js` | Section 9.8: the wanted set, unload/reload/load by module, `reread`; `thisStart`, `confirmed`, `loadPack`, `unloadPack`, the "now global" step, `credentialsFor`'s origin list and device config removed. |
+| `lib/start.js` | Section 9.8, and what section 6.9 removes: `GITHUB_VARIABLES` (41), `chooseCredentials` (227), the token block (364-403), the pack filters and the credential gate (456-474), `credentialUnion` and its refusal (497-505), the device-config write (523-531), `--loadModule` per pack (581), `--packsRoot` (594), the `load-pack` and `unload-pack` handlers (679-680), `PATH_OPTIONS` (253). The watch (681) takes `modules.json`, `settings.json` and the credential store. `run.json` gains `stopped`. |
+| `lib/in-place.js` | Section 9.8: the wanted set; unloads, one reload per step, loads; the slot match before a load; the unload of a module whose binding went; `reread`; `module-stopped`. `thisStart`, `confirmed`, `loadPack`, `unloadPack`, the "now global" step, `credentialsFor`'s origin list, its per-pack file and its device config are removed. |
 | `lib/control.js` | `teller`: a notice names a module, not a pack. |
-| `lib/upgrade.js`, `lib/auto-apply.js`, `lib/npm-upgrade.js` | Section 9.6: every pack, the preview, what holds an automatic upgrade back; the `several-packs` refusals go. |
+| `lib/upgrade.js`, `lib/auto-apply.js`, `lib/npm-upgrade.js` | Section 9.6: every pack, the release's set installed with no version question, the preview (a version that moves back said so), `additions` as what holds an automatic upgrade back; the `several-packs` refusals go (upgrade.js 77, auto-apply.js 82). |
 | `lib/rollback.js` | The record's new shape and name; `held` by pack; the refusal of an old-format kept record. |
 | `lib/gc.js` | Section 9.10; both `run.json` shapes. |
 | `scripts/acceptance.js`, `scripts/shared-acceptance.js`, `scripts/dogfood.js` | Credentials through `credentials add` on standard input; the store's layout; module names in what they assert. |
@@ -1688,8 +2076,8 @@ file's or a flag's name before changing it.
 
 | Repository | What changes |
 |---|---|
-| ch-pack-ci-failure-triage | `package.json`: `countinghouse.settings.defaultRepo` (`string`, format `repo`). `lib/repo.js` and the handler: the input's `repo`, else `ctx.settings.defaultRepo`, else `ctx.settingRequired('defaultRepo')`; `DeviceConfig` is no longer read. `api.json`: the tool's description tells the agent to pass the repository of the project it is working in. Tests, README. |
-| ch-access-github | `package.json`: the short remote form, `"credential": "GITHUB_TOKEN"`. README: `ch-local credentials add ch-access-github`. Its version changes, and the migration of section 10 covers the stored token. |
+| ch-pack-ci-failure-triage | `package.json`: `countinghouse.settings.defaultRepo` (`string`, format `repo`). `lib/repo.js` and the handler: the input's `repo`, else `ctx.settings.defaultRepo`, else `ctx.settingRequired('defaultRepo')`; `DeviceConfig` is read last until ch-local's start stops writing it (section 16, rule 6), and then no longer. `api.json`: the tool's description tells the agent to pass the repository of the project it is working in. Tests, README. |
+| ch-access-github | `package.json`: the short remote form, `"credential": "GITHUB_TOKEN"`, with no `fallbackEnv`. README: `ch-local credentials add ch-access-github`. Its version changes, and the migration of section 10 covers the stored token. |
 | The seven ch-step-* modules | Nothing, unless one gains a setting. They are the check that a part needs no configuration to be installed and loaded. |
 | ch-packs | `docs/superpowers/specs/2026-11-11-client-packs-design.md`, `docs/publishing.md`, the README: a pack is an install list; a module's configuration is its own; the release step writes `modules.<package>.credentials` into the pins. |
 
@@ -1739,64 +2127,129 @@ suite lock, a private Redis); the full matrices are CI's.
   open session is told once; on again asks, refuses without a terminal, and
   loads.
 - In conversation: off on request, written to the file, the history line
-  naming the session; on answers `SETTING_NEEDS_CONFIRMATION` with no tested
-  client, and with a tested one shows the form naming the module and
-  version, writes on a yes, and refuses on a version changed meanwhile.
+  naming the session; the answer and every session's notice name the modules
+  that went with it, the undo command, and "at a terminal"; the 33rd change
+  of a session is refused as the terminal's. On answers
+  `SETTING_NEEDS_CONFIRMATION` with no tested client, and with a tested one
+  shows the form naming the module and version, writes on a yes, and refuses
+  on a version changed meanwhile.
 - A shared runtime: one session's off applies to every session; no session
   can hold a module on or off for itself (a `set` with a session scope is an
   all-sessions change); a restore row with a `pack.*` override or the kind
   `pack` is refused; the shared vectors' rows.
 - Availability: each of the six reasons, and the "it calls … which …"
-  sentence for a module two levels up.
-- A part that is turned off at a terminal: every module that calls it is not
-  loaded, and says so.
+  sentence for a module two levels up. A module whose recorded version is
+  not the release's pin is not loaded, and says so.
+- A part: `enabled.<part>` is refused at a terminal, naming the modules that
+  call it; one written into the file by hand is ignored with a warning and
+  the part still loads; in conversation it answers `SETTING_UNKNOWN`.
+- A top-level module that another calls, turned off: the caller is not
+  loaded, and both are named.
 - Visibility: a tool is not listed and not callable while its module's
-  parts are still loading; a module whose unload fails stays unlisted and
-  refuses a call, a hop, a peer channel and a job run; `none()` is true
+  parts are still loading; a module whose unload fails (it is still in the
+  module map) stays unlisted and refuses a call, a hop, a peer channel and a
+  job run; a later load whose closure holds it is refused; `none()` is true
   outside those windows (the call path reads one boolean).
+- Carried over from the pack form: a module that is restarting after a
+  crash, or suspended, when it is unloaded does not come back by its
+  restart, listed or unlisted (`test/session-runtime/08`,
+  `test/sessions/19`'s restart cases, in module form).
 - `mm.unlisted` after loading and unloading a module that is both loaded
   for itself and called by another.
+- Migration of kinds: a handoff with the kind `pack` in locks, unanswered
+  and declines comes out as `enabled`, and the lock still holds; a leftover
+  `pack.x: false` beside `enabled.<its module>: true` keeps the module off;
+  a terminal "on" removes the leftover and the module then loads.
 
 **Credentials (section 6).**
 - The declaration: the short form and the default transport parse to the
   expanded form; the validator prints it; a wrong form's fix line.
-- The runtime: a version 2 file binds a key to one module, so a second
+- **The probe (B1).** A module declares `COUNTINGHOUSE_CREDENTIAL_1` in
+  `permissions.env`, and a second declares the variable a version 1
+  allowance reads (`GITHUB_TOKEN`). Under audit with no policy, under
+  enforce with `approve: as-declared`, and with the name granted in the
+  policy's `env`, neither worker's environment holds the value, and the
+  denial is noted at the spawn. A version 2 file whose environment name is
+  `COUNTINGHOUSE_IDENTITY_SECRET`, `PATH`, or a slot written with another
+  pattern refuses the start.
+- The runtime: a version 2 allowance binds a key to one module, so a second
   module that declares the same variable and origin gets nothing; a module
   that declares another origin, or another variable, gets nothing, with each
   of the two messages; two modules with one variable name and two values
-  each send their own; a supervised restart after the module rewrote its
-  declaration gets nothing; under a control channel the load is refused; a
-  version 1 file behaves as today; a malformed version 2 file refuses the
-  start.
+  each send their own; a slot named for one module and then, in a later
+  message, for another is refused; a version 1 file on a runtime with a
+  control channel refuses the start, and on an operator's server behaves as
+  today; a malformed version 2 file refuses the start.
+- The pin: a module that rewrites its remote's URL under audit and restarts
+  under supervision runs with the pinned remote, the key goes only to the
+  bound origin, and the difference is logged.
+- **A supervised restart that is refused on a runtime with a control
+  channel** (its slot emptied): the runtime tells `module-stopped`, the
+  sessions are told, and `status` shows the module as stopped in that
+  client, not as running.
 - ch-local `credentials`: `add` shows the origin before it asks; hidden
-  input; standard input (one line, a long one refused, an empty one
-  refused); a value never appears in output, history or a log (searched
-  for); the gh offer only for the listed origins, only at a terminal, only
-  with a login, default No; a binding for another destination is said, and
-  the value is asked again; `list` and `remove`; an argument that is no
-  module's name is not echoed.
+  input; a value never appears in output, history or a log (searched for);
+  a binding for another destination is said, and the value is asked again;
+  `list` and `remove`; an argument that is no module's name is not echoed.
+- **Standard input (B3).** Without `--to`: refused. With `--to` another
+  origin than the declared one: refused. After an upgrade that changed the
+  module's origin: `--to <old origin>` is refused (not what is declared),
+  and `--to <new origin>` is refused too while the store holds the binding
+  for the old one, naming the terminal. A rotated key for the same
+  destination is stored. A long line and an empty one are refused.
+- **The gh offer.** Made for `https://api.githubcopilot.com`; not made for
+  `https://api.githubcopilot.com.example`, `https://api-githubcopilot.com`,
+  `https://api.githubcopilot.com:8443`, `http://api.githubcopilot.com`, or
+  `https://api.github.com`; only at a terminal, only with a login, default
+  No.
 - The gate: each row of section 6.7, and the module that calls it.
+- **Slots (B4).** A module that is off at start has a slot, and loads in
+  place with its key when turned on, with no restart. `credentials add`
+  with another value while the module is loaded: it is unloaded in that
+  client, and is not loaded again there until the client restarts.
+  `credentials remove`: it is unloaded at once, and the stand-in for its
+  origin sees no further request. A key added for a module that had none at
+  start: "restart your client". The digest is in no file.
 - An upgrade that changes a module's origin: the preview says it; the
   automatic upgrade does not take it; after a manual upgrade the module is
-  not loaded and the sentence is told; `credentials add` brings it back.
-- No value is in the run directory; the slots are in the runtime's
-  environment and in no worker's (asserted from inside a module under
-  enforce and under audit).
+  not loaded and the sentence is told; `credentials add` at a terminal
+  brings it back.
+- No value is in the run directory or in any control message.
 - The version 1 store read as section 10 says.
-- No environment route (open question 1): a `GITHUB_TOKEN` in the client's
-  environment is sent nowhere; the conditions line has `token: null`.
+- No environment route: a `GITHUB_TOKEN` in the client's environment is
+  sent nowhere; the conditions line has `token: null`.
 
 **Loading in place (section 7).**
 - load, reload, unload by module through the control channel, with `dirs`;
   a directory outside `--modulesRoot`, a link out, a name that is not the
   package's, two directories for one module: each refused.
+- **The start plan**: a `--loadModule` or `--partDir` directory outside
+  `--modulesRoot`, or with a link out, is not loaded, its top-level module
+  is not loaded, and `module-stopped` is told.
+- **A planted part.** With `--modulesRoot`, a package in `~/node_modules`
+  (and in a `node_modules` beside the store) whose friendly name is a
+  called part's is not found: the load answers `PART_MISSING`. Without
+  `--modulesRoot` today's lookup still finds a sibling.
 - A part two loaded modules hold: a reload naming both switches it once; a
   reload naming one is refused `PART_VERSION_CONFLICT`; a failure part-way
   puts both back.
+- **Two shared parts with different holders** (X held by S1 and S2, Y held
+  by S2 and S3, both changed): one reload naming S1, S2 and S3 switches
+  both; ch-local sends exactly one.
+- **A reload that adds a part, under load.** While calls to the scenario
+  run in a loop, a reload to a version that calls a new part completes with
+  no call answered `CTX_CALL_UNRESOLVED`: the part is loaded before the
+  scenario switches. A called module is switched before its caller.
 - Ref-counting: unloading one of two modules that share a part keeps the
   part; unloading the second unloads it.
 - The ceiling's `modules` at a load in place: a closure with one module not
   listed is refused, naming it.
+- **A module-form message on a shared runtime while the session view still
+  exists** (before M5): accepted without `pack` or `global`, listed to every
+  session, and checked against the ceiling by package name, with the store
+  path's first directory (`@countinghouse`) playing no part.
+- `credentials` in a load message: taken as the module's allowance; one
+  with an environment name that is not a slot is refused.
 - `reread`: a changed `module.*` value applies; an invalid one is in the
   reply's `refused`, with a notice and a history line.
 - The shared vectors' `moduleMessages`, on both sides.
@@ -1805,21 +2258,35 @@ suite lock, a private Redis); the full matrices are CI's.
 - The store: place, the marker, a version with no marker never loaded and
   collected, a second install of the same version neither fetches nor
   unpacks (asserted on the fetch and on the directory's times).
-- Each row of section 9.4's table, with pins files that differ.
-- Question A and B: the text names the module, both versions and the
-  callers; default No; no terminal refuses with exit 2; a No changes
-  nothing on disk; a yes updates, every module loads, and the two lines are
-  printed.
-- remove-pack: a module only it lists leaves; the active version goes back;
-  it stays when a later pack was installed with it, and the line says which;
-  the settings file is byte for byte the same before and after; a value the
-  older version does not declare is unused under it and used again after
-  the update is repeated.
-- upgrade with two and three packs; the automatic upgrade for each of its
-  three new reasons to hold back, and with none of them it installs.
+- **The pins decide.** In a released home `add-pack` asks nothing and
+  places only what is missing. An upgrade to a release that raises a called
+  module across a major, and one that raises a 0.x minor, install with no
+  question beyond the upgrade's own.
+- **A lowered pin.** An upgrade to a release that pins a lower version of a
+  module than the one installed moves it back, in place, with the notice
+  "rolled back"; its settings are untouched; a value only the newer version
+  declared is unused. A home whose record names another version than the
+  pin does not load that module and says to run `install` again.
+- Between packs from different pins (development pins files): each row of
+  section 9.4's table. Question A and B: the text names the module, both
+  versions and the callers; default No; no terminal refuses with exit 2; a
+  No changes nothing on disk; a yes updates, every module loads, and the two
+  lines are printed.
+- remove-pack: a module only it lists leaves; in a released home a shared
+  module is unchanged; between different pins the active version goes back,
+  and stays when a later pack was installed with it, the line saying which;
+  the settings file is byte for byte the same before and after.
+- upgrade with two and three packs. The automatic upgrade installs a
+  release whose only changes are versions, whichever way they move; it holds
+  back, with its announcement, for each of: a module added to an installed
+  pack, a credential destination changed, a new caller of a module that
+  holds a key, a `confirm` mark dropped, a `confirm` setting's default
+  changed.
 - Withdrawn: a module no pack of the release lists is not started, and is
   said; a module that calls it is not started; a release that lists it again
-  shows it as an addition.
+  shows it as an addition. A module dropped from one installed pack and
+  still listed by another stays installed and loaded, and the preview says
+  so.
 - Release rollback with the new record; a kept record in the old format
   refused.
 - Migration: a home with `packs.json`, pack trees, `pack.x: false` and a
@@ -1827,12 +2294,18 @@ suite lock, a private Redis); the full matrices are CI's.
   step, the token still works, the old trees go once no start uses them.
 - Collection: every version a pack records is kept; one that nothing names
   goes; a running start's versions stay.
-- The pins: version 2 parses; a package whose manifest declares another
-  destination than the pins say is refused at install; `additions`.
+- The pins: version 2 parses; a package whose manifest differs from the
+  pins' description (a credential destination, a call, a `confirm` setting)
+  is refused at install; `additions` for each of its reports.
+- **First PR (L0):** with `module.x.y` in the settings file, a
+  `ch-local settings set requestTimeout 20s` and a bare `reset` both leave
+  it there.
 
 **End to end** (ch-local's acceptance, CI only): pack 1 installed, the
-credential entered on standard input, `defaultRepo` set in conversation,
-one triage call, the module turned off and on, an upgrade in place.
+credential entered on standard input with `--to`, `defaultRepo` set in
+conversation, one triage call, the module turned off and on with no
+restart, the credential removed and the module seen to stop, an upgrade in
+place.
 
 ## 15. Documents to update
 
@@ -1842,9 +2315,12 @@ countinghouse:
   `ctx.settings`, `ctx.settingRequired`, where authors should put a setting);
   "Calling a remote MCP server" (the short form, the per-module binding).
 - `docs/module-authoring.md`: the validator's new output.
-- `docs/security-model.md`: credentials (bound per module; version 2; the
-  limits of section 12), the settings pin under audit, the ceiling's
-  `modules` and `moduleSettings`, every "pack" that means a running unit.
+- `docs/security-model.md`: credentials (bound per module; version 2 and
+  its slots, which no worker is given; the pinned remotes; the limits of
+  section 12), what an agent's shell can and cannot do (section 12, item 8),
+  the release's pins deciding what runs, the settings pin under audit, the
+  ceiling's `modules` and `moduleSettings`, every "pack" that means a
+  running unit.
 - `docs/cli-and-api-reference.md`: `--modulesRoot`, `--partDir`,
   `--moduleSettings`, `--remoteCredentials` version 2, the settings tool,
   the usage report's `scenario`.
@@ -1860,16 +2336,19 @@ countinghouse:
 
 ch-local:
 
-- `README.md`: packs as install lists, modules as what runs; `status`;
-  `credentials add <module>`; `settings modules`; the questions at install;
-  the way back.
+- `README.md`: packs as install lists, modules as what runs; a release's
+  pins as the versions that run; `status`; `credentials add <module>` and
+  `--to` for a piped key; `settings modules`; what a removed or changed key
+  does to a running client.
 - `docs/install/README.md` and the five client pages: how the GitHub token
   is given (the stored binding or the gh login; no variable in a client's
   configuration).
 - `docs/development/settings.md`: the names `enabled.*` and `module.*`, the
   rule that both writers keep unknown names, `reread`.
-- `docs/development/auto-upgrade.md`: the pins' version 2, what holds an
-  automatic upgrade back.
+- `docs/development/auto-upgrade.md`: the pins' version 2 and its
+  description of each module, the release as a tested set (no question
+  about a module's version, a pin that moves back), what holds an automatic
+  upgrade back.
 - `docs/development/acceptance.md`, `dogfood.md`, `release-checklist.md`.
 
 Pack repositories: section 13.3.
@@ -1881,133 +2360,207 @@ No text says a pack runs, loads, is on, or has a credential.
 
 ## 16. PR plan and estimate
 
-Two implementers, A and B, in parallel. Each line is one PR, with its tests
-and its documents; the estimate is developer-days to a reviewable PR.
+Three implementers. A and B start on day 1; C joins on about day 13, after
+its sandbox work. Days are working days counted from the program's start
+(2026-11-18 as day 1 if A's and B's queues are clear; otherwise everything
+of theirs shifts by what they still hold). Each line is one PR, with its
+tests and its documents; the estimate is developer-days to a reviewable PR.
 
 | PR | Who | Repository | What | Needs | Days |
 |---|---|---|---|---|---|
-| M1 | B | countinghouse | Settings core: the declaration, effective values, `ctx.settings` on every path, `SETTING_REQUIRED` and `ctx.settingRequired`, the pin, `--moduleSettings`, the validator | – | 3.5 |
-| M2 | B | countinghouse | The settings tool's module settings: `module.*` read, set and confirmed, the kind `module`, `reread`; the ceiling reader's `modules` and `moduleSettings` keys; the vectors' kinds | M1 | 3 |
-| M3 | A | countinghouse | Credentials: `--remoteCredentials` version 2, the per-module allowance, the short declaration, the validator's output | – | 2 |
-| M4 | A | countinghouse | Modules in place: `modules-in-place`, `module-control`, `--modulesRoot`, `--partDir`, the multi-name reload, the visibility set in the loaders, the vectors' `moduleMessages` | M3 | 3 |
-| L1 | A | ch-local | The module store, the record, collection, `install`, `add-pack`, `remove-pack`, `status`, the migration; `start` and the applier read the new record and pass `--modulesRoot` and `--partDir`, still deciding pack by pack | M4 | 4 |
-| L2 | A | ch-local | `start` and the applier decide by module: availability and its reasons, on and off by module, the multi-name reload, the device-config write removed | L1, L5 | 3 |
-| L5 | B | ch-local | Credentials: the store's version 2, the command, the gh offer, `module-credentials`, the pins' version 2, what section 6.9 removes | M3 | 2.5 |
-| L3 | B | ch-local | Settings: `settings modules`, `module.*` and `enabled.*` (a stored `pack.*` still read, section 10), unknown names kept, outside edits, the ceiling by module, the session table's kinds | M1, M2 | 3 |
-| M5 | B | countinghouse | `pack.*` becomes `enabled.*` in the settings tool, with the kind `enabled`; per-session packs removed: `session-packs` deleted, the session layer and its readers, the vectors' restore rows | M2, M4, L2, L3 | 3.5 |
-| L4 | A | ch-local | `upgrade`, the automatic upgrade and `rollback` over every pack; the questions; what holds an automatic upgrade back | L1, L5 | 3.5 |
-| P1 | B | ch-pack-ci-failure-triage | `defaultRepo` as a setting | M1, L2, L3 | 0.5 |
-| P2 | B | ch-access-github, ch-packs | The short form; the documents | M3, L5 | 0.5 |
-| M6 | B | countinghouse | The old forms removed (below), the catalogue's texts, the usage report's `scenario`, the documents | all | 1.5 |
-| L6 | A | ch-local | The README, the install pages, the development documents, the acceptance scripts' last changes | all | 1.5 |
+| L0 | A | ch-local | `settings set` and `settings reset` keep every name they do not write (`lib/settings.js:166, 192`) | – | 0.5 |
+| M1 | B | countinghouse | Settings core: the declaration, effective values, `ctx.settings` on every path, `SETTING_REQUIRED` and `ctx.settingRequired`, the pin, `--moduleSettings`, the validator | – | 5 |
+| M2 | B | countinghouse | The settings tool's module settings: `module.*` read, set and confirmed, the kind `module`, `reread`; the ceiling reader's `modules` and `moduleSettings` keys; the vectors' kinds | M1; merges after L0 | 3.5 |
+| M3 | A | countinghouse | Credentials: version 2 with the slot pattern, the per-module allowance, `resolveEnv`'s denial, the remotes in the pin, the short declaration, the validator's output | – | 3.5 |
+| M4 | A | countinghouse | Modules in place: `modules-in-place`, `module-control`, `--modulesRoot` and `--partDir` with no search and the start plan checked, the multi-name reload in its order, `credentials` in the message, the visibility set, `module-stopped`, the vectors' `moduleMessages`; and the bridges below | M3 | 5 |
+| L5 | B | ch-local | Credentials: the store's version 2, the command with `--to`, the gh offer, `module-credentials` with the slots and their identities, the pins' version 2 and the release step that writes it, what section 6.9 removes | M3 | 4.5 |
+| L1a | A | ch-local | The module store, the record with `from` and the active-version rule, collection, the migration, `install` (the pins decide); `start` and the applier read the new record and pass `--modulesRoot` and `--partDir`, still deciding pack by pack | M4 | 4 |
+| L3 | C | ch-local | Settings: `settings modules`, `module.*` and `enabled.*` for top-level modules (a stored `pack.*` still read, off winning), outside edits, the ceiling by module, the session table's kinds and the handoff's mapping | L0, M1, M2 | 3 |
+| P1 | C | ch-pack-ci-failure-triage | `defaultRepo` as a setting: the input, then the setting, then (until L2 has merged) the device config | M1 | 0.5 |
+| P2 | C | ch-access-github, ch-packs | The short form; the documents | M3, L5 | 0.5 |
+| L2 | A | ch-local | `start` and the applier decide by module: availability with the version check, on and off, slots matched against the store, the store watched, one reload per step, `module-stopped`, the device-config write removed | L1a, L5 | 4 |
+| M5 | B | countinghouse | `pack.*` becomes `enabled.*` in the settings tool, with the kind `enabled` and the budget; per-session packs removed: `session-packs` deleted, the session layer and its readers, the vectors' restore rows | M2, M4; merges after L2 and L3 | 5.5 |
+| L4 | C | ch-local | `upgrade`, the automatic upgrade and `rollback` over every pack: the release's set with no version question, the preview, `additions`' two new reports | L1a, L5 | 4.5 |
+| L1b | A | ch-local | `add-pack`, `remove-pack` and `status` by module; between packs from different pins, the table, the two questions and the way back | L1a, L2 | 3 |
+| M6 | B | countinghouse | The old forms removed (below), the catalogue's texts, the usage report's `scenario`, the documents | M5, L2, L5, P2 | 2 |
+| L6 | A | ch-local | The README, the install pages, the development documents, the acceptance scripts' last changes, the session table's old kinds removed | all | 2 |
 
-Order: A does M3, M4, L1, L2, L4, L6. B does M1, M2, L5, L3, M5, P1, P2,
-M6. A is not blocked by B until L2, which needs L5 (B's third PR, due
-about when A reaches it).
+**Who does what, and when.**
+
+| | Order | Busy until about |
+|---|---|---|
+| A | L0, M3, M4, L1a, L2, L1b, L6 | day 22 |
+| B | M1, M2, L5, M5, M6 | day 21 |
+| C (from day 13) | L3, P1, P2, L4 | day 22 |
+
+- B starts M5 on day 13 and has it ready about day 18; it merges once L2
+  (about day 17) and L3 (about day 16) are in.
+- The longest chain is A's: M3, M4, L1a, L2. Nothing of B's or C's waits on
+  it before day 13.
+- L5 and L1a both change `lib/start.js` and are due the same day. L5 keeps
+  its change there to one call into `lib/module-credentials.js` and merges
+  first.
+- All sixteen PRs are ready for review by about **day 22** (about
+  2026-12-17 on five-day weeks from 2026-11-18), before review rounds and
+  the acceptance run.
 
 **Across the two repositories.** ch-local's acceptance run builds
 countinghouse's default branch and the pack repositories' default branches,
-so a change on one side alone breaks it. Two rules keep it whole:
+so a change on one side alone breaks it. The order above holds because of
+these rules, each of which answers one of the review's order problems:
 
-- A countinghouse PR that changes something ch-local sends or reads keeps
-  the old form working beside the new one. M2: the ceiling reader takes
-  `modules` and still takes `packs`. M3: version 1 of the credentials file
-  stays in any case. M4: the `scenario`, `pack` and `global` fields and
-  `--packsRoot` are still read. The ch-local PR that follows moves to the
-  new form, and M6 removes the old ones.
-- The names in `settings.json` are read and written by both sides, so they
-  move in this order: L3 makes ch-local write `enabled.*` and read both
-  names (which the migration needs in any case); until M5 the runtime's
-  settings tool still writes `pack.<name>`, which ch-local then reads as the
-  module's entry. M5 moves the tool to `enabled.*` and removes a session's
-  own packs in one step, and merges only after L2 and L3. ch-local's
-  session table takes both sets of kinds from L3 until L6.
+1. **L0 merges before M2.** Until L0, a `ch-local settings set` rewrites the
+   settings file from the names it knows, and would erase every `module.*`
+   value the runtime's tool had written.
+2. **M3 still takes a version 1 credentials file on a runtime with a control
+   channel**, because ch-local writes version 1 until L5. M6 refuses it.
+3. **M4 takes both forms of a load, reload and unload**, and reads
+   `--packsRoot` and `--modulesRoot`. For a module-form message, while the
+   session view still exists:
+   - a shared runtime does not refuse it for having no `pack` and no boolean
+     `global` (today's `packOf`); it records the unit in the session view
+     under its package name, as global, so every session lists it;
+   - the ceiling is checked by each module's package name against `modules`,
+     never by the first directory below the root (which in the store is
+     `@countinghouse`); an old-form message keeps today's check against
+     `packs`.
+4. **M4 makes the settings tool read `modules.json`, and `packs.json` when
+   that is not there**, because L1a renames the record before M5 removes the
+   tool's pack code.
+5. **The names in `settings.json`** are read and written by both sides, so
+   they move in this order: L3 makes ch-local write `enabled.*` and read
+   both names (which the migration needs in any case); until M5 the
+   runtime's tool still writes `pack.<name>`, which ch-local reads as the
+   module's entry. M5 moves the tool to `enabled.*` and removes a session's
+   own packs in one step, and merges only after L2 (the applier no longer
+   answers `load-pack`) and L3. ch-local's session table takes both sets of
+   kinds from L3 until L6.
+6. **P1 merges before L2**: the scenario reads the device config last until
+   the start stops writing it; that read is removed with L6.
+7. **M6 removes what the bridges kept**: the old message fields and
+   `remoteCredentials`, `--packsRoot`, the ceiling's `packs`, version 1 on a
+   runtime with a control channel, `fallbackEnv`, and the reading of
+   `packs.json`.
 
 The shared vectors change in M2 (kinds), M4 (`moduleMessages`) and M5
 (restore rows). Each ch-local PR that follows refreshes its copies, which
 runs the shim's workflow without changing the shim.
 
-**Estimate.** About 35 developer-days (16.5 in countinghouse, 17.5 in
-ch-local, 1 in the pack repositories): about 17 to 18 working days for each
-of two implementers, before review rounds.
+**Estimate.** About **51 developer-days**: 24.5 in countinghouse, 25.5 in
+ch-local, 1 in the pack repositories.
 
-The earlier estimate for the program was about 25 days. Read against the
-code, these parts are larger:
+Revision 1 said 35. The review counted about 50, from the number of test
+files that exercise a pack (33 in countinghouse, 57 in ch-local) and its own
+reading of the larger PRs. This count agrees with it. Where the 16 days
+come from:
 
-| Part | Earlier | Here | Why |
+| Part | Revision 1 | Now | Why |
 |---|---|---|---|
-| Settings | 9.5 | 10 | `ctx.settingRequired`, and pack 1's `defaultRepo` moved to a setting. |
-| Credentials, with the per-module gate | 4 | 5 | ch-local's side is not one command: the store's format, the gate in `start` and in the applier, the pins, and the environment route's removal touch about ten files and the acceptance scripts. |
-| Load, unload, reload by module | 3 | 6 | A module two packs list cannot change version in place today; the multi-name reload and the part directories are new. ch-local's applier (438 lines) and its tests (907 lines, 212 mentions of a pack) are rewritten, not renamed. |
-| Per-session packs removed | 2.5 | 3.5 | Eight test files exist only for them (about 2,000 lines), and the session-state and restore tests (about 1,000 more) carry pack rows. |
-| Module on/off and the ceiling's list | 1.5 | 1.5 | Inside M2, M5 and L3. |
-| The store, install, upgrade, rollback | 6.5 | 7.5 | The record, the trees and collection change together; six commands and about 2,900 lines of tests read them. |
-| Wording and documents | 1 | 3 | ch-local's README, six install pages and five development documents; countinghouse's security model, reference and module guides; the catalogue in two languages. |
-| Bridges between the repositories | – | 1 | Above. |
-| Overlap already counted | −3 | −2.5 | |
+| M1 settings core | 3.5 | 5 | Delivery on six paths each needs its own test under the latency gate; the pin, `--moduleSettings` and `ctx.settingRequired` are each a small feature. |
+| M2 settings tool | 3 | 3.5 | |
+| M3 credentials, runtime | 2 | 3.5 | The slot pattern, `resolveEnv`'s denial and its probe, the remotes in the pin. |
+| M4 modules in place | 3 | 5 | The start plan's checks, the reload's order, the hidden set's new rules, `module-stopped`, and three bridges. |
+| M5 enabled and the session layer | 3.5 | 5.5 | Eight test files exist only for per-session packs and more carry pack rows; the settings tool has about seventy lines that mention a pack. |
+| M6 cleanup | 1.5 | 2 | More bridges to remove. |
+| L0 | – | 0.5 | New. |
+| L1 store, record, install (L1a + L1b) | 4 | 7 | The record, the trees, collection and five commands change together, with about 1,250 lines of tests; two version rules instead of one. |
+| L2 start and applier | 3 | 4 | Slots and their match, the store watched, `module-stopped`. |
+| L3 settings, ch-local | 3 | 3 | L0 took a part; the handoff's mapping and "off wins" added one. |
+| L4 upgrades | 3.5 | 4.5 | No questions to build, but `additions` grows and the pins describe every module; five test files, about 1,800 lines. |
+| L5 credentials, ch-local | 2.5 | 4.5 | `--to` and its refusals, the slots' identities, the pins' version 2 and the release step, about ten files for the environment route. |
+| L6 documents | 1.5 | 2 | |
+| P1, P2 | 1 | 1 | |
 
 ## 17. The maintainer's answers (2026-11-18)
 
-All three open questions were answered as recommended:
+Revision 1 asked three questions. All three were answered as recommended,
+and two decisions followed the security review.
+
 1. **No credential from a client's environment.** Keys come only from
-   `ch-local credentials add <module>` (typed, from standard input, or from
-   the gh login after a yes). The `COUNTINGHOUSE_GITHUB_TOKEN` /
-   `GITHUB_TOKEN` client source is removed; headless and CI setups pipe the
-   key on standard input. The docs say so.
+   `ch-local credentials add <module>` (typed, from standard input with
+   `--to`, or from the gh login after a yes). The
+   `COUNTINGHOUSE_GITHUB_TOKEN` / `GITHUB_TOKEN` client source is removed;
+   headless and CI setups pipe the key on standard input. The docs say so.
 2. **Withdrawal is per module.** A module that no pack of the running
    release lists is not started, and the user is told; nothing is deleted,
-   and it comes back with an upgrade that lists it again.
-3. **A 0.x minor counts as breaking.** For the update question, `0.3 -> 0.4`
-   is treated like a major bump (ch-local's own rule), so it asks, and
-   automatic upgrades hold back on it.
+   and it comes back with an upgrade that lists it again. A module that one
+   installed pack no longer lists, but another pack of the release still
+   does, is not withdrawn: it stays installed at the release's pin and loads
+   as before (section 9.7).
+3. **A 0.x minor counts as breaking, where the question is asked.** For the
+   update question, `0.3 -> 0.4` is treated like a major bump (ch-local's
+   own rule). After decision 4 the question is asked only between packs
+   from different pins, so that is the only place this applies: a released
+   upgrade, automatic or not, installs a 0.x minor of a called module with
+   the rest of the release and does not hold back on it.
+4. **Release pins decide** (after the review). In a released install each
+   module runs at the version the running release pins, up or down. A
+   release's set is installed as tested, without a question about any
+   module's version. The breaking-version question remains only between
+   packs from different pins (sections 9.2 to 9.6).
+5. **Three implementers** (after the review). C joins A and B after its
+   sandbox work (section 16).
 
 ## 18. Choices made here that the review should check
 
-These are within the decisions, but each is a choice.
+These are within the decisions, but each is a choice. The security review
+of revision 1 looked at the first fifteen; what it changed is marked.
 
 1. **`enabled.<package>`**, a name of its own, not `module.<package>.enabled`
    (section 5.1).
-2. **A part has an `enabled` entry**, terminal only, and a module that is
-   off makes the modules that call it unavailable (section 5.2). The
-   narrower choice is on/off for top-level modules only.
+2. **On and off is for top-level modules only** (changed by the review: a
+   part had an entry of its own in revision 1). A top-level module that is
+   off still makes the modules that call it unavailable, and what is said
+   when it is turned off names them (sections 5.1 to 5.3).
 3. **A module whose key is not usable is not loaded under ch-local**, for a
-   missing key and for a changed destination alike. The earlier note had the
-   changed-destination case load, with its remote answering
-   `REMOTE_CREDENTIAL_NOT_ALLOWED` at the call. That is still what the
-   runtime does by itself (an operator's server, a supervised restart). One
-   rule for ch-local is simpler, and a version that changed where its key
-   goes does not run until the user has looked.
+   missing key and for a changed destination alike. The runtime by itself
+   (an operator's server) loads the module and answers
+   `REMOTE_CREDENTIAL_NOT_ALLOWED` at the call.
 4. **`ctx.settingRequired`** (section 4.6): one function beyond the
-   2026-11-17 design. Without it, a module with a fallback setting writes
-   its own error text and command.
-5. **The gh offer's two origins** (section 6.8): a fixed list in ch-local,
-   for the offer only.
-6. **Values in environment slots, bindings in the file** (section 6.4): no
-   value on disk from a start, and two modules may use one variable name.
-   The price is that a key added later needs a restart, as today.
-7. **The pins still describe each module's credentials**
-   (section 9.3), as derived data, so that a release can be described
-   before it is installed. The guard itself is the store.
-8. **`upgrade`'s one question covers a module that crosses a breaking
-   change, and the automatic upgrade holds back on it** (section 9.6). The
-   looser reading asks only when a caller is left on other pins, which in
-   release 1 never happens at an upgrade.
-9. **The record's rule**: a module's active version is the highest any
-   installed pack was installed with (section 9.2). It gives the update, the
-   way back and the "a later pack relied on it" guard with no history of
-   updates.
+   2026-11-17 design.
+5. **The gh offer is for `https://api.githubcopilot.com` only** (changed by
+   the review: revision 1 also listed `https://api.github.com`), compared as
+   a whole origin (section 6.8).
+6. **Values in `COUNTINGHOUSE_CREDENTIAL_<n>` slots, bindings in the file or
+   the message** (changed by the review: the name, the slot's identity, a
+   slot for every installed module with a usable binding). No value on disk
+   from a start. A module turned on later needs no restart; a key added or
+   changed later does, and a changed or removed one unloads its module at
+   once (section 6.4).
+7. **Version 2 of the credentials file has one form** (new). Revision 1 let
+   an operator list variable names to be read from the environment under
+   the same names. An operator now sets `COUNTINGHOUSE_CREDENTIAL_<n>` too,
+   so that no file can name another variable of the runtime.
+8. **The pins describe each module** (its credentials, its calls, its
+   `confirm` settings) as derived data, so that a release can be compared
+   before it is installed. The guards themselves are the store and the
+   runtime (section 9.3).
+9. **The record's two rules** (replaced by the maintainer's decision): the
+   release's pin in a released home; the highest version any pack was
+   installed with only between packs from different pins (section 9.2).
 10. **The withdrawn and relisted marks go** (section 9.7); a withdrawn
     module comes back by the upgrade that lists it again, with no
     `add-pack`.
-11. **The hidden set** (section 5.5) keeps the guard the session view gave.
-    Removing it too would be less code and would leave a module callable
-    while it unloads.
+11. **The hidden set** (section 5.5), with a failed unload read from the
+    module map and never loaded again (added by the review).
 12. **A session can turn a module off for every session, on request**
-    (section 5.3). It is a tightening, recorded and told, and undone at a
-    terminal; an all-sessions cap can already be lowered this way. An agent
-    under a prompt injection could use it to take the user's tools away.
-13. **Version 1 of `--remoteCredentials` stays** for an operator's server,
-    unbound (section 6.5).
+    (accepted by the review, with conditions that are now in section 5.3:
+    counted in the session's budget of changes; the undo command, the
+    modules that go with it, and "until a terminal" in what is said).
+13. **Version 1 of `--remoteCredentials` stays on an operator's server
+    only**, unbound; a runtime with a control channel refuses it (changed
+    by the review).
 14. **No migration of the release rollback's kept record** from the old
     format (section 10).
 15. **The usage record's `pack` becomes `scenario`** (section 13.1).
+16. **`module-stopped`** (new): the runtime tells ch-local when it stops a
+    module by itself, and `status` reads each live start's `run.json`. It
+    is new machinery, there so that `status` is true (sections 7.3, 9.9).
+17. **A reload loads its additions first and switches a called module
+    before its caller** (new; the review offered this or holding every
+    switched module's gate to the end). It adds no waiting; between two
+    switches an old caller can still reach a new callee, where the per-hop
+    schema check is the guard.
+18. **A slot is tied, in the runtime too, to the first (module, variable,
+    origin) it was named for** (new, section 6.5), so a wrong message from
+    ch-local cannot hand one module's key to another.
