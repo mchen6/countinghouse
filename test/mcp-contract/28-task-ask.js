@@ -209,6 +209,24 @@ function suite(title, {port, extra = [], store = 'local'}) {
       await settled(id);
     });
 
+    it('an answer from a request that did not declare form elicitation is refused (-32021, naming it), and the task still waits; one that did is taken (F2-5)', async () => {
+      const id = await task();
+      const key = onlyKey(await asking(id));
+      const answer = {[key]: {action: 'accept', content: {yes: true}}};
+      const refusedUpdate = (await modern(KEY_A, 'tasks/update', {taskId: id, inputResponses: answer}, {forms: false})).body;
+      assert.strictEqual(refusedUpdate.error && refusedUpdate.error.code, -32021, JSON.stringify(refusedUpdate));
+      assert.match(refusedUpdate.error.message, /declare form elicitation/);
+      assert.deepStrictEqual(refusedUpdate.error.data, {requiredCapabilities: {elicitation: {form: {}}}});
+      // refused alike for a task that does not exist: it says nothing of one
+      const unknown = (await modern(KEY_A, 'tasks/update', {taskId: 'no-such-task', inputResponses: answer}, {forms: false})).body;
+      assert.deepStrictEqual(unknown.error, refusedUpdate.error);
+      // an update with no answers is acknowledged as before, form or not
+      assert.deepStrictEqual(ack((await modern(KEY_A, 'tasks/update', {taskId: id, inputResponses: {}}, {forms: false})).body), {resultType: 'complete'});
+      assert.strictEqual((await get(id)).result.status, 'input_required', 'still waiting');
+      assert.deepStrictEqual(ack(await update(id, {[key]: {action: 'accept', content: {yes: true}}})), {resultType: 'complete'});
+      await settled(id);
+    });
+
     it('a task made by a request that did not declare form elicitation is never input_required: ctx.ask is ASK_UNAVAILABLE', async () => {
       const id = await task({}, {forms: false});
       const done = await settled(id);

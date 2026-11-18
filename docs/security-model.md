@@ -1041,7 +1041,11 @@ bounds it:
   it. The record keeps the task's owner and its session's hash, never the
   session's id. `tasks/update` finds the task as `tasks/get` does (the
   caller's own, in its session: anyone else's is the one unknown-task
-  error), and the record's own session is checked again. Outside shared
+  error), and the record's own session is checked again. Answers come only
+  from a request that declares form elicitation, as only such a poll is
+  handed the form: a `tasks/update` with `inputResponses` from any other
+  is refused `-32021` before the task is looked up, so the refusal says
+  nothing of one. Outside shared
   mode the owner key decides, so a key that may read another owner's task
   (an admin, as M15 rules for `tasks/get` and `tasks/cancel`) may also
   answer its question. Only the waiting
