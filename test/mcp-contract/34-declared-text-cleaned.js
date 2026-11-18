@@ -524,6 +524,14 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     const both = {s: {c: {input: {type: 'object'}, output: {type: 'object', properties: {k: {enum: [`x${ZWSP}`]}}}}}};
     const cSpec = {device: {serviceList: {[svc]: {actionList: [{name: 'c', description: 'C.', input: {schema: '/s/c/input'}, output: {schema: '/s/c/output'}}]}}}};
     assert.deepStrictEqual(answer(both, cSpec, ['s', 'c', 'input'], () => false), {refused: 'MODULE_NOT_LISTED'});
+    // (the reviewer's ruling: exactly as tools/list) an output that is no
+    // object is not advertised, the tool still listed with its input; an
+    // input that names nothing is advertised as the default schema
+    const loose = {s: {c: {input: {type: 'object', description: 'In.'}, output: true}}};
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'input'], () => false), {value: {type: 'object', description: 'In.'}});
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'output'], () => false), {refused: 'POINTER_DEREF_ERROR'});
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c'], () => false), {value: {input: {type: 'object', description: 'In.'}}});
+    assert.deepStrictEqual(answer({s: {c: {output: {type: 'object'}}}}, cSpec, ['s', 'c', 'input'], () => false), {value: {type: 'object', properties: {}}});
     // an answer is a copy: changing it changes nothing kept
     const first = at('s', 'a', 'input').value;
     first.type = 'changed';
