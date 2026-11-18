@@ -526,7 +526,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       const reread_ = require('../../lib/settings-reread');
       const callAddress = require('../../lib/call-address');
       const dm = {deviceMap: {}, moduleOfDevice: () => null};
-      const mm = {pinnedDeviceIDs: {'@acme/region-part': new Set([callAddress.deviceIDForName('region-part')])}};
+      const mm = {pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])};
       assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm, mm), '@acme/region-part');
     });
 
