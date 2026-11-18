@@ -31,6 +31,8 @@ const STEPS = [
   ['redis', (d) => /^called: /.test(d)],
   ['hostIp', (d) => d === 'string'],
   ['loadFile', (d) => d === 'loaded'],
+  // a lib/ file and a node_modules file of countinghouse's: refused
+  ['loadRuntime', (d) => /^(MODULE_NOT_FOUND|ERR_ACCESS_DENIED) (MODULE_NOT_FOUND|ERR_ACCESS_DENIED)$/.test(d)],
   ['readLines', (d) => d === 'read'],
   ['libName', (d) => d === 'MODULE_NOT_FOUND'],
   ['ownLoaders', (d) => /^createRequire/.test(d)],
@@ -106,6 +108,9 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     it('the probe records a runtime-parented load in a validation worker (its control)', async () => {
       await mcpCall(port, KEY, 'countinghouse_validate_module', {path: CONTROL});
       assert.ok(await waitFor(server, /late runtime load: path from .*[\\/]lib[\\/]logger\.js/), server.output.slice(-2000));
+      // its request at load: refused there, in both modes, and nothing loaded
+      assert.ok(await waitFor(server, /late-load-control request: ERR_ACCESS_DENIED/), server.output.slice(-2000));
+      assert.ok(!/late runtime \w+: [^\n]*postman-request/.test(server.output), server.output.slice(-2000));
     });
     it('the probe records each hook with a runtime parent or caller in the module\'s worker (its control)', async () => {
       const before = late().length;
@@ -204,6 +209,29 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       w.once('error', reject);
     });
     assert.deepStrictEqual(out, {resolved: '/app/b.js', joined: '/app/c.js', reaches: true});
+  });
+
+  // a live setting is applied in the worker after its lockdown: module code
+  // that replaced an Array iterator, Array.prototype.includes or
+  // Number.isInteger since can't stop an operator's tightening (#425's
+  // final review)
+  it('live options apply on intrinsics taken at load: replaced ones stop no tightening', async () => {
+    const {Worker} = require('worker_threads');
+    const out = await new Promise((resolve, reject) => {
+      const w = new Worker(`
+        const {parentPort} = require('worker_threads');
+        const {applyLiveOptions} = require(${JSON.stringify(path.join(ROOT, 'lib', 'live-options.js'))});
+        Array.prototype[Symbol.iterator] = function* () {};
+        Array.prototype.includes = () => false;
+        Number.isInteger = () => false;
+        const target = {maxOutputBytes: 16777216, requestTimeout: 30000, locale: 'zh-CN'};
+        applyLiveOptions(target, {maxOutputBytes: 4096, requestTimeout: 1000, locale: 'en-US'});
+        parentPort.postMessage(target);
+      `, {eval: true});
+      w.once('message', (m) => { w.terminate(); resolve(m); });
+      w.once('error', reject);
+    });
+    assert.deepStrictEqual(out, {maxOutputBytes: 4096, requestTimeout: 1000, locale: 'en-US'});
   });
 
   // without CH_TEST_LATE_LOADS the probe is never installed: its control

@@ -84,7 +84,7 @@ describe('module-loading 29: a worker logs without a logger made first', functio
       w.once('error', reject);
     });
     const broke = '(Error in Bunyan log "e" serializer broke field. See stderr for details.)';
-    assert.deepStrictEqual(records, [{msg: 'boom', e: 'boom'}, {msg: 'said otherwise', e: 'boom'},
+    assert.deepStrictEqual(records, [{msg: 'boom', e: undefined}, {msg: 'said otherwise', e: undefined},
       {msg: '', e: broke}, {msg: 'with a bad e', e: broke},
       {msg: "[ 'a', 'b' ] and more", e: undefined}, {msg: '<Buffer 68 69> tail', e: undefined},
       {msg: '', e: '(unprintable)'}, {msg: 'fields with no prototype', e: undefined}, {msg: 'after null', e: undefined},

@@ -4,5 +4,14 @@
 // its top level, which the probe must record there too.
 const parent = Object.values(require.cache).find((m) => m != null && typeof(m.filename) === 'string' && /[\\/]lib[\\/]logger\.js$/.test(m.filename));
 if (parent != null) { try { module.constructor._load('path', parent); } catch (e) { /* recorded first */ } }
+// and a request at load: a validation worker sends none (refused, in both
+// modes), so postman-request is never loaded there late
+// (said on the module's stderr: a validation worker's violations aren't
+// logged, its output is)
+try {
+  CHUtil.request({url: 'http://late-load.example.invalid/', timeout: 1000}, (err) => console.error(`late-load-control request: ${err != null ? err.code : 'sent'}`));
+} catch (e) {
+  console.error(`late-load-control request threw: ${e.code}`);
+}
 
 module.exports = async () => ({output: {step: 'control', done: true}});

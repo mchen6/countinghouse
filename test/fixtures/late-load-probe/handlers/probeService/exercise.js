@@ -32,6 +32,18 @@ const STEPS = {
   hostIp: async () => typeof(CHUtil.getHostIp()),
   // loadFile: the module's own file, by the runtime
   loadFile: async () => (CHUtil.loadFile(`${__dirname}/../../lib/parent-probe.js`).parent != null ? 'loaded' : 'no parent'),
+  // loadFile of countinghouse's own files (#425's final review): a lib/ file
+  // and one of its node_modules, named by their host paths as module code
+  // can find them (require.cache): refused, never loaded as the runtime's
+  // with its exports handed back
+  loadRuntime: async () => {
+    const logger = runtimeModule();
+    if (logger == null) return 'no runtime path';
+    const lib = logger.filename.replace(/[\\/]logger\.js$/, '');
+    const sep = logger.filename.includes('\\') ? '\\' : '/';
+    const attempt = (p) => { try { CHUtil.loadFile(p); return 'loaded'; } catch (e) { return String(e.code); } };
+    return [attempt(`${lib}${sep}settings-tool.js`), attempt(`${lib}${sep}..${sep}node_modules${sep}json-stringify-safe${sep}stringify.js`)].join(' ');
+  },
   // FileHandle.readLines: the file broker's readline
   readLines: async () => {
     const h = await fs.promises.open(__filename);
