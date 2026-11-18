@@ -35,7 +35,7 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     dm.notifyDeviceLoad = {};
     dm.allDevicesLoaded = true;
     dm._compositionStartupDone = true;
-    dm.moduleManager = {isHeld: (n) => held.includes(n)};
+    dm.moduleManager = {isHeld: (n) => held.includes(n), units: new Set(held.length > 0 ? [{names: new Set(held)}] : [])};
     // a device out of the map (mid-switch) still says its module
     dm.moduleOfDevice = (id) => {
       for (const [n] of Object.entries(Object.assign({}, modules, offMap))) if (callAddress.deviceIDForName(n) === id) return n;
@@ -104,6 +104,17 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     assert.deepStrictEqual(rec.relayed, [['c', 'unbound']], 'a verdict, unbound');
   });
 
+  // #427's high review, 9: with no unit in progress a full pass looks at no
+  // caller's targets
+  it('high 9: with no unit held, a full pass does not look up callers\' targets', () => {
+    const {dm} = manager({modules: {'c': ['m/svc.act'], 'm': []}});
+    dm.moduleManager = {units: new Set(), isHeld: () => false};
+    let lookups = 0;
+    dm.moduleOfDevice = () => { lookups++; return null; };
+    dm.verificationPass(null);
+    assert.strictEqual(lookups, 0);
+  });
+
   it('7: the unit\'s pass leaves another load\'s window as it is', () => {
     const {dm} = manager({modules: {'m': []}});
     dm.allDevicesLoaded = false;
@@ -112,6 +123,49 @@ describe('composition 24: a reload unit\'s pass (M4a items 1, 2, 6, 7)', () => {
     dm.verifyModules(['m']);
     assert.strictEqual(dm.allDevicesLoaded, false);
     assert.strictEqual(dm.notifyDeviceLoad['some-device'], waiting);
+  });
+
+  // #427's high review, 6, and the medium review of its fixes, 4: a hop to
+  // a module being replaced waits only once its own checks have passed, and
+  // a callee still being replaced is answered MODULE_RELOADING through the
+  // missing-device path (after the access check), never CALL_TOKEN_INVALID
+  it('high 6: a hop with no verdict is answered at once, not after waiting a replacement out', (done) => {
+    const callTokens = require('../../lib/call-tokens');
+    const dm = Object.create(DeviceManager.prototype);
+    dm.deviceMap = {};
+    dm.moduleManager = {};
+    dm.replacingInPlace = () => true;
+    const token = callTokens.issue({billingKey: 'k', workerId: 4271, deviceID: 'd', ttlMs: 60000});
+    const started = Date.now();
+    const callerWM = {workerId: 4271, sendActionInvokeReplyToChild: (reply) => {
+      callTokens.drop(token);
+      try {
+        assert.strictEqual(reply.errCode, 'CTX_CALL_NOT_READY', JSON.stringify(reply));
+        assert.ok(Date.now() - started < 1000, 'no wait');
+        done();
+      } catch (e) { done(e); }
+    }};
+    dm.sendInvokeActionMessageToWorker('k', 'k', 'dev', 'svc', 'act', {}, 1, callerWM, token);
+  });
+
+  it('high 6: a callee still being replaced is MODULE_RELOADING on the missing-device path', () => {
+    const dm = Object.create(DeviceManager.prototype);
+    dm.deviceMap = {};
+    dm.moduleManager = {};
+    dm.replacingInPlace = () => true;
+    assert.strictEqual(dm.missingDeviceErrorForHop('dev').code, 'MODULE_RELOADING');
+    dm.replacingInPlace = () => false;
+    dm.missingDeviceError = () => ({code: 'DEVICE_NOT_FOUND'});
+    assert.strictEqual(dm.missingDeviceErrorForHop('dev').code, 'DEVICE_NOT_FOUND');
+  });
+
+  it('high 6: the wait ends by its bound', (done) => {
+    const dm = Object.create(DeviceManager.prototype);
+    dm.replacingInPlace = () => true;
+    const until = Date.now() + 200;
+    dm.whileReplacing('dev', until, () => {
+      try { assert.ok(Date.now() >= until && Date.now() < until + 500); done(); } catch (e) { done(e); }
+    });
   });
 
   describe('2: verifyComposition says a target is not loaded only when nothing else is wrong', () => {

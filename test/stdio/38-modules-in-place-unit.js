@@ -94,6 +94,12 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
 
   // the medium review of M4a, finding 10: a part is found by friendly name
   // among the directories given; two of them under one name are refused
+  it('resolvePart given a list of directories looks only among them (medium 9)', () => {
+    const roles = require('../../lib/module-roles');
+    assert.strictEqual(roles.resolvePart('ch-step-s', dirs.scenario, [dirs.part]), dirs.part);
+    assert.strictEqual(roles.resolvePart('ch-step-s', dirs.scenario, []), null);
+  });
+
   it('two directories whose modules share a friendly name are refused', () => {
     const twin = writeModule(path.join(root, 'module-store', '@u', 'ch-step-s', '1.0.0'), {name: '@u/ch-step-s', role: 'part', friendly: 'ch-step-s'});
     refusedWith(msg({dirs: {'@t/ch-pack-a': dirs.scenario, '@t/ch-step-s': dirs.part, '@u/ch-step-s': twin}}), /friendly name ch-step-s/);
@@ -103,6 +109,13 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     const extra = writeModule(path.join(root, 'module-store', '@t', 'ch-step-x', '1.0.0'), {name: '@t/ch-step-x', role: 'part'});
     const r = mip.readModuleRequest(msg({dirs: {'@t/ch-pack-a': dirs.scenario, '@t/ch-step-s': dirs.part, '@t/ch-step-x': extra}}), {needsDirs: true});
     assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /@t\/ch-step-x is not in the closure/.test(e.message));
+  });
+
+  // #427's high review, 4: what loads is checked again by its resolved path
+  it('a directory resolved outside --modulesRoot after it was read (a link swapped in between) is refused', () => {
+    const r = mip.readModuleRequest(msg(), {needsDirs: true});
+    r.dirs.set('@t/ch-step-s', fs.realpathSync(dirs.out));
+    assert.throws(() => mip.closureOf(r), (e) => e.code === 'CONTROL_FAILED' && /outside --modulesRoot/.test(e.message));
   });
 
   it('a link out of --modulesRoot inside a module\'s directory is refused', () => {

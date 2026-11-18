@@ -30,7 +30,7 @@ function writeModule(dir, {name, version = '1.0.0', role, calls, service, action
   return dir;
 }
 
-describe('stdio 37: modules loaded and unloaded in place, the module form (M4 Task 2)', function() {
+describe('stdio 44: modules loaded and unloaded in place, the module form (M4 Task 2)', function() {
   this.timeout(120000);
   let io = null;
   let home = null;

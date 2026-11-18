@@ -71,15 +71,15 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const log = [];
     const mm = Object.assign(Object.create(ModuleManager.prototype), {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
       supervisor: null, generations: {}, packsInPlace: null});
-    const instance = (name, version) => {
+    const instance = (name, version, p) => {
       // a worker proxy: the drain reads its queue
       const wm = Object.create(WorkerMessage.prototype);
-      return Object.assign(wm, {hostModuleName: name, packageInfo: {name, version}, deviceList: {[`d-${name}`]: {}}, msgQueue: {}});
+      return Object.assign(wm, {hostModuleName: name, packageInfo: {name, version}, deviceList: {[`d-${name}`]: {}}, msgQueue: {}, modulePath: p});
     };
     const spawn = (p, name, version, cb) => {
       if (version === failVersion && name === failName) return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
       log.push(`held ${name}: ${mm.isHeld(name)}`);
-      mm.modules[name] = instance(name, version);
+      mm.modules[name] = instance(name, version, p);
       mm.unitLoaded(name);
       setImmediate(() => cb(null));
       // its registration, a little later
@@ -188,6 +188,158 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     await mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm);
     assert.deepStrictEqual(seen, [false], 'y shown before w loads');
     visibility.resetForTests();
+  });
+
+  // #427's high review
+  it('high 5: a load whose module entered the map and then failed takes it out again; nothing stays hidden', async () => {
+    const visibility = require('../../lib/module-visibility');
+    const {mm, dm} = runtime();
+    visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
+    const spawn = mm.loadModuleFromPath;
+    mm.loadModuleFromPath = (p, name, version, cb) => {
+      if (name === '@t/ch-step-p') { mm.modules[name] = {packageInfo: {name, version}, deviceList: {}}; return setImmediate(() => cb(new Error('registered, then failed'))); }
+      return spawn(p, name, version, cb);
+    };
+    await assert.rejects(loadBoth(mm, dm, '1.0.0'));
+    assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'rolled back');
+    assert.deepStrictEqual(visibility.hiddenOf(['@t/ch-step-p', '@t/ch-pack-s', '@t/ch-step-k']), []);
+    visibility.resetForTests();
+  });
+
+  it('high 3: a switched module with nothing to switch back to makes the failure uncertain, not all-or-none', async () => {
+    const {mm, dm} = runtime({failVersion: '2.0.0'});
+    await loadBoth(mm, dm, '1.0.0');
+    // the record no longer names p, and the loaded module says no path
+    mm.packsInPlace.get('@t/ch-pack-s').modules.delete('@t/ch-step-p');
+    delete mm.modules['@t/ch-step-p'].modulePath;
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code === 'CONTROL_MODULE_UNCERTAIN');
+  });
+
+  it('a switched module with no record entry is switched back to the loaded module\'s own path and version (medium 6)', async () => {
+    const {mm, dm, log} = runtime({failVersion: '2.0.0'});
+    await loadBoth(mm, dm, '1.0.0');
+    mm.packsInPlace.get('@t/ch-pack-s').modules.delete('@t/ch-step-p');
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => e.code !== 'CONTROL_MODULE_UNCERTAIN');
+    assert.ok(log.includes('registered @t/ch-step-p@1.0.0'), log.join('\n'));
+    assert.strictEqual(mm.modules['@t/ch-step-p'].packageInfo.version, '1.0.0');
+  });
+
+  it('medium 1: a trusted ceiling\'s modules list binds the pack form too', async () => {
+    const settingsTool = require('../../lib/settings-tool');
+    const {mm, dm} = runtime();
+    settingsTool.ceilingForControl(() => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: {packs: null, modules: ['ch-pack-pf']}}));
+    try {
+      const scenario = path.join(root, 'packs', 'pf', '1.0.0', 'node_modules', 'ch-pack-pf');
+      await assert.rejects(mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario}, dm), (e) => e.code === 'SETTING_FORBIDDEN_BY_CEILING' && /enabled\.ch-step-x/.test(e.message));
+    } finally {
+      settingsTool.ceilingForControl(() => ({state: 'none'}));
+    }
+  });
+
+  it('high 8: the pack form\'s rollback hides an addition before unloading it', async () => {
+    const visibility = require('../../lib/module-visibility');
+    const {mm, dm} = runtime();
+    visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
+    const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
+    // 2.0.0's closure switches the scenario, then adds y, then w; w fails,
+    // so the rollback unloads y, which was shown once it loaded
+    const seen = [];
+    const unload = mm.unloadModuleExternal;
+    mm.unloadModuleExternal = (name, cb) => { if (name === 'ch-step-y') seen.push(visibility.isHidden(name)); unload(name, cb); };
+    await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
+    const spawn = mm.loadModuleFromPath;
+    mm.loadModuleFromPath = (p, name, version, cb) => (name === 'ch-step-w' ? setImmediate(() => cb(new Error('no spawn'))) : spawn(p, name, version, cb));
+    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm));
+    assert.deepStrictEqual(seen, [true], 'hidden when its unload starts');
+    visibility.resetForTests();
+  });
+
+  describe('high 7: a reload\'s credentials are authoritative for every module it names', () => {
+    const credentials = require('../../lib/remote/credentials');
+    let saved = null;
+    const ORIGIN = 'https://api.example.com';
+    const entryFor = (slot) => ({[ORIGIN]: {K: slot}});
+    before(() => {
+      saved = credentials.snapshot();
+      const file = path.join(root, 'allow7.json');
+      fs.writeFileSync(file, JSON.stringify({version: 2, modules: {'@t/ch-step-p': entryFor('COUNTINGHOUSE_CREDENTIAL_1'),
+        '@t/ch-step-k': Object.assign(entryFor('COUNTINGHOUSE_CREDENTIAL_2'), {'https://api.other.com': {K2: 'COUNTINGHOUSE_CREDENTIAL_3'}})}}));
+      credentials.configure(file);
+    });
+    after(() => credentials.restore(saved));
+
+    it('a switched module named with no credentials loses its allowance (a revoke); a kept one too, and its remote is registered again', async () => {
+      const {mm, dm} = runtime();
+      const reregistered = [];
+      mm.reRegisterRemotes = (name) => reregistered.push(name);
+      await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-s', dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '1.0.0'), '@t/ch-step-p': at('@t/ch-step-p', '1.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')},
+        credentials: {'@t/ch-step-p': entryFor('COUNTINGHOUSE_CREDENTIAL_1'), '@t/ch-step-k': entryFor('COUNTINGHOUSE_CREDENTIAL_2')}}, dm);
+      await reloadTo(mm, dm, '2.0.0');
+      assert.strictEqual(credentials.moduleEntry('@t/ch-step-p'), undefined, 'revoked with the switch');
+      assert.strictEqual(credentials.moduleEntry('@t/ch-step-k'), undefined, 'revoked, though kept');
+      assert.deepStrictEqual(reregistered, ['@t/ch-step-k'], 'the kept module\'s remote takes it now');
+    });
+
+    it('medium 2: a module-form load is authoritative for what it brings in: absent credentials, none', async () => {
+      const {mm, dm} = runtime();
+      await loadBoth(mm, dm, '1.0.0');
+      assert.strictEqual(credentials.moduleEntry('@t/ch-step-p'), undefined, 'the start bound p, but the load named none for it');
+    });
+
+    it('medium 3: a module another unnamed unit holds changes its credentials only with every holder named', async () => {
+      const {mm, dm} = runtime();
+      mm.reRegisterRemotes = () => {};
+      await loadBoth(mm, dm, '1.0.0');
+      writeModule(at('@t/ch-pack-y', '1.0.0'), {name: '@t/ch-pack-y', version: '1.0.0', role: 'part', calls: ['ch-step-k/svc.run']});
+      await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-y', dirs: {'@t/ch-pack-y': at('@t/ch-pack-y', '1.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')}}, dm);
+      await assert.rejects(mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'], dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), '@t/ch-step-p': at('@t/ch-step-p', '2.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')},
+        credentials: {'@t/ch-step-k': entryFor('COUNTINGHOUSE_CREDENTIAL_2')}}, dm), (e) => e.code === 'CONTROL_FAILED' && /every loaded module that holds it/.test(e.message));
+      assert.strictEqual(mm.modules['@t/ch-pack-s'].packageInfo.version, '1.0.0', 'nothing changed');
+    });
+
+    it('medium 5: a reload that fails before its unit is held changes no allowance', async () => {
+      const {mm, dm} = runtime();
+      mm.reRegisterRemotes = () => {};
+      await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-s', dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '1.0.0'), '@t/ch-step-p': at('@t/ch-step-p', '1.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')},
+        credentials: {'@t/ch-step-p': entryFor('COUNTINGHOUSE_CREDENTIAL_1'), '@t/ch-step-k': entryFor('COUNTINGHOUSE_CREDENTIAL_2')}}, dm);
+      mm.holdDiscovery = () => { throw new Error('bookkeeping'); };
+      await assert.rejects(reloadTo(mm, dm, '2.0.0'));
+      assert.strictEqual(credentials.moduleEntry('@t/ch-step-k').get(ORIGIN).get('K'), 'COUNTINGHOUSE_CREDENTIAL_2');
+    });
+
+    it('medium 8: the same credentials in another order are no change: the kept module\'s remote is not rebuilt', async () => {
+      const {mm, dm} = runtime();
+      const reregistered = [];
+      mm.reRegisterRemotes = (n) => reregistered.push(n);
+      const ab = {[ORIGIN]: {K: 'COUNTINGHOUSE_CREDENTIAL_2'}, 'https://api.other.com': {K2: 'COUNTINGHOUSE_CREDENTIAL_3'}};
+      const ba = {'https://api.other.com': {K2: 'COUNTINGHOUSE_CREDENTIAL_3'}, [ORIGIN]: {K: 'COUNTINGHOUSE_CREDENTIAL_2'}};
+      await mip.loadPack(mm, {type: 'load', name: '@t/ch-pack-s', dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '1.0.0'), '@t/ch-step-p': at('@t/ch-step-p', '1.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')},
+        credentials: {'@t/ch-step-k': ab}}, dm);
+      await mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'], dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), '@t/ch-step-p': at('@t/ch-step-p', '2.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')},
+        credentials: {'@t/ch-step-k': ba}}, dm);
+      assert.deepStrictEqual(reregistered, []);
+    });
+
+    it('a kept module given credentials takes them', async () => {
+      const {mm, dm} = runtime();
+      mm.reRegisterRemotes = () => {};
+      await loadBoth(mm, dm, '1.0.0');
+      credentials.dropModule('@t/ch-step-k');
+      credentials.setModule('@t/ch-step-k', new Map());
+      await mip.reloadPack(mm, {type: 'reload', names: ['@t/ch-pack-s'], dirs: {'@t/ch-pack-s': at('@t/ch-pack-s', '2.0.0'), '@t/ch-step-p': at('@t/ch-step-p', '2.0.0'), '@t/ch-step-k': at('@t/ch-step-k', '1.0.0')},
+        credentials: {'@t/ch-step-k': entryFor('COUNTINGHOUSE_CREDENTIAL_2')}}, dm);
+      assert.strictEqual(credentials.moduleEntry('@t/ch-step-k').get(ORIGIN).get('K'), 'COUNTINGHOUSE_CREDENTIAL_2');
+    });
+  });
+
+  it('high 1: a reload\'s notice outside a shared runtime goes under its first name', async () => {
+    const notices = require('../../lib/notices');
+    notices.resetForTests();
+    const control = require('../../lib/module-control').createPackControl({mm: {}, dm: {}, toolsOf: async () => [], shared: () => false,
+      packs: {reloadPack: async () => ({modules: []}), loadPack: async () => ({modules: []}), unloadPack: async () => ({modules: []})}});
+    await control.reload({type: 'reload', names: ['@t/a', '@t/b'], dirs: {}, notice: 'a and b upgraded'});
+    assert.deepStrictEqual(notices.take('@t/a'), ['a and b upgraded']);
+    assert.deepStrictEqual(notices.take('@t/b'), ['a and b upgraded'], 'under each name (medium 10)');
   });
 
   it('5: the hold covers what the reload switches, never a kept module', async () => {

@@ -1779,7 +1779,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const replies = [];
       const caller = {workerId: 61, sendActionInvokeReplyToChild: (m) => replies.push(m)};
       const token = tokens().issue(Object.assign(ENTRY(61), {deviceID: 'd-early'}));
-      DeviceManager.prototype.sendInvokeActionMessageToWorker.call({deviceMap: {}}, 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
+      // the real prototype: M4a's hop wait asks replacingInPlace, false with no module manager
+      DeviceManager.prototype.sendInvokeActionMessageToWorker.call(Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}}), 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
       assert.strictEqual(replies[0].errCode, 'CTX_CALL_NOT_READY', JSON.stringify(replies));
     });
   });
