@@ -465,6 +465,23 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(logged.some((l) => /uid 1000/.test(l)), logged.join('\n'));
     });
 
+    it('a restart keeps no value outside the net granted now, and is made from it afterwards', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const U = pkgOf('u', {api: {type: 'string', format: 'url'}, n: {type: 'integer', default: 1}});
+      write({'module.u.api': 'https://api.example.com/v1', 'module.u.n': 2});
+      const wide = [{host: 'api.example.com', ports: [443]}];
+      const ran = reread_.next('u', {pkg: U, net: wide}, {ceiling: {state: 'none'}}).state;
+      assert.strictEqual(ran.values.api, 'https://api.example.com/v1');
+      // the restart: the file can no longer be read, and the net was narrowed
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const r = reread_.next('u', {pkg: U, net: []}, {previous: ran, ceiling: {state: 'none'}, ceilingRefuses: true});
+      assert.ok(r.state != null);
+      assert.strictEqual(r.state.values.api, undefined, 'outside the net granted now: unset');
+      assert.strictEqual(r.state.values.n, 2, 'the rest kept');
+      assert.deepStrictEqual(r.state.made.net, [], 'made from the net granted now');
+      assert.ok(r.state.version > ran.version);
+    });
+
     it('a restart the ceiling refuses is suspended at once, with the ceiling\'s reason (no crash loop); another failure is retried', () => {
       const reread_ = require('../../lib/settings-reread');
       const {restartFailed} = require('../../lib/module-manager');
