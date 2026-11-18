@@ -299,3 +299,150 @@ PR 3 needs PR 1's control-channel messages (the shared wire vectors gain the
    declaration and persisted; they are read when the module loads.
 2. **Per-caller settings on an HTTP multi-tenant server: later**, on customer
    demand. Release 1 keeps one set of values per module on such a server.
+
+## Revision 2: after the design review (2026-11-17)
+
+A security design review (Fable) found five blocking issues in revision 1.
+The maintainer approved the three user-facing changes below the same day.
+**Where this section and the sections above disagree, this section holds.**
+
+### Three changes the maintainer approved
+
+1. **No per-session module settings in release 1.** There is one set of
+   values per user (per home). A change made in one agent session applies to
+   every session of that user, and every other session is told (a notice on
+   that module's next result there). The per-session layer stays a wire
+   contract for caps and packs only, so `session-settings`, ch-local's
+   `session-table` (`KINDS`), the restore rows and the replay rule are
+   untouched. (Revision 1's per-session default, its replay and its
+   all-sessions confirmation are withdrawn.)
+2. **The runtime, not the author, decides what needs confirmation.** In
+   conversation:
+   - `enum`, `integer`, `number` and `boolean` settings change on request,
+     unless the author marked them `confirm: true` or the ceiling says
+     otherwise (below);
+   - **every `string`** setting, and every value of a `format` that names a
+     place (`hostname`, `url`, `path`), **always** needs the user's own
+     confirmation, whatever the declaration says. An open value can be a
+     destination (`defaultRepo` sending writes to someone else's repository),
+     and "gains no reach" holds for hosts, not for destinations;
+   - a `hostname` or `url` value must be inside the module's granted `net`
+     entries, and a `path` inside its granted `fs` entries, on every path
+     (terminal, tool, file read at load). Outside them it is refused
+     (`SETTING_OUT_OF_BOUNDS`, saying it is outside what the operator
+     granted).
+3. **A multi-tenant HTTP server reads an operator file.** `--settingsFile`
+   stays single-identity only. A server outside that profile takes
+   `--moduleSettings <file>` (`{"<package>": {"<setting>": value}}`), read
+   at each module load and reload, checked the same way, never written by
+   the runtime, and refused to modules like the policy file. No tool and no
+   command there in release 1.
+
+### The other fixes
+
+**Vocabulary (B1).** `pattern` is removed from release 1: an author's
+regular expression would run on the main thread, and a declared default
+alone could hang the runtime. In its place, runtime-owned `format`s with
+fixed, linear checkers: `slug` (`[a-z0-9][a-z0-9-]{0,63}`), `repo`
+(`owner/name`, GitHub's grammar), `email`, `hostname`, `url` (https only)
+and `path` (absolute, normalised). `maxLength` counts characters (code
+points). An empty string is unset (so it fails `required`). A value holding
+a hidden character (client-text's `hasHidden`) is refused, never cleaned. A
+setting named like an `Object.prototype` member (`constructor`, `toString`,
+`__proto__`, …) is refused at load.
+
+**No shell text in hints (B2).** A module that declares settings must have
+an npm-grammar package name (the load refuses it otherwise). Every hint the
+runtime gives (`SETTING_REQUIRED`, a confirmation that ends at the terminal,
+`SETTING_TERMINAL_ONLY_SHARED`) names the setting but **never carries a
+value**: `ch-local settings set weather-tool.defaultRepo`, and the command
+prompts for the value at the terminal (`ch-local settings set <name>
+<value>` also still works when typed by hand).
+
+**The confirmation form (B3).** No agent or author text is offered as the
+runtime's words, as part 3's `FORM_TEXT` requires. The runtime writes the
+sentence: the package and its version, the setting's key, the old and new
+values in quotes (each cut to 200 characters, with "(cut)"), and the
+author's `title` labelled as the module's own words. The ceiling gains, per
+setting: `{"fixed": v}`, `{"confirm": true}` and `{"conversation": false}`
+(terminal only). A `fixed` value the declaration rejects makes that module
+refuse to load, with the ceiling's reason. An untrusted ceiling refuses
+every conversational module-setting change, as it refuses loosenings today.
+
+**Explicit values are kept (B3).** A value the user set is stored even when
+it equals today's default, so an upgrade that changes the default never
+overrides an explicit choice. `reset` removes the stored value, so the
+default then applies.
+
+**The declaration is pinned (B3).** The `settings` declaration joins
+`calls` in the manifest pins taken at load (lib/manifest-pins.js): a module
+cannot rewrite its `package.json` and restart under supervision to drop
+`confirm` or flip a default. A reload or upgrade takes the new pins, as for
+`calls`.
+
+**Persist, then apply (B5).** There is no control channel from the CLI;
+revision 1's "the runtime refuses, nothing is persisted" is withdrawn. The
+order is the existing one for settings:
+1. ch-local validates the value with the **installed runtime's own reader**
+   (as it reads the ceiling), refusing before anything is written;
+2. it persists under the lock, history line first;
+3. the running start or daemon tells its runtime to re-read `module.*`
+   (the existing in-place apply path); the runtime checks again, and a
+   refusal there is a notice plus a `not applied` history line.
+A conversational change runs the same steps from the runtime's side (write
+under the lock, then apply).
+
+**ch-local keeps names it does not know.** `setSetting` must preserve every
+`module.*` (and any unknown) name when it rewrites the file, or an older
+ch-local would delete them; a bare `ch-local settings reset` resets the
+runtime's settings and leaves `module.*` alone (`reset <module>` resets
+one module). The outside-edits check learns the `module.*` rules.
+
+**Parts and listing.** `get` lists only modules the session can see (its
+listed modules and its packs' scenarios), and says which tool each setting
+affects. An unlisted part's settings are never named to the client: they
+are set at the terminal only. Result size: at most 64 settings shown per
+call, with a cursor.
+
+**`SETTING_REQUIRED` across hops.** It is checked for the whole declared
+call graph before the outer call runs (not billed), so a scenario never
+swallows a part's missing setting. The message reads: "… needs a setting:
+defaultRepo (Default repository). Ask the user for the value (do not
+guess), then set it, or run `ch-local settings set
+weather-tool.defaultRepo`."
+
+**Delivery, every path.** The versioned snapshot is attached on: a client
+call, a routed hop, a direct peer channel's announcement, a job run, single
+thread mode, and per-session workers; a worker's cache keeps the last 4
+versions per module.
+
+**Tasks.** A task reads the values current at its **first** pass and keeps
+them for its life, so an answer to `ctx.ask` is never run under different
+settings than it was asked under.
+
+**History and logs.** Values over 64 characters are written cut, with a
+SHA-256 of the whole (users paste tokens by mistake).
+
+**pack 1's existing input.** `ch-local start` writes `{defaultRepo}` to
+`<deviceConfigPath>/<package>.json` today (lib/start.js). Release 1
+migrates it: ci-failure-triage declares `defaultRepo`, start moves an
+existing value into `module.ci-failure-triage.defaultRepo` once, and the
+device-config write is removed.
+
+**More tests.** A declared default that would be slow under a pattern (now
+refused at load); a hint built from a hostile name and value; setting names
+`constructor`/`toString`; `ctx.settings` immutable across calls; a
+re-pinned declaration across a supervised restart; a `url` outside the
+grants refused on every path; another session's notice; an upgrade that
+changes a default leaves an explicit value; the ceiling's three per-setting
+rules; `--moduleSettings` on an HTTP server; the pack-1 migration.
+
+### Work and estimate (replaces section 9)
+
+| PR | Repo | What | Estimate |
+|---|---|---|---|
+| 1 | countinghouse | declaration (vocabulary, formats, pins, load checks), effective values on main, versioned delivery on every path, `SETTING_REQUIRED` with the call graph, `--moduleSettings` | ~3 d |
+| 2 | countinghouse | the settings tool's module kind (listing, the runtime's confirmation rule, the form, notices, ceiling rules), the re-read on apply, docs | ~2.5 d |
+| 3 | ch-local | `ch-local settings modules/set/reset` for `module.*` (prompted values, validation by the installed reader, keeping unknown names), the outside-edits rules, pack 1's `defaultRepo` migration, docs | ~2.5 d |
+
+About **8–9 days**, after the sandbox release blockers.
