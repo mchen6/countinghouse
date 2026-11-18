@@ -615,6 +615,10 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
         mmLib.settleSettings(mm, 'w', wm);
         assert.strictEqual(called, 1, 'the file changed: made again');
         assert.strictEqual(wm.settings.values.units, 'metric');
+        // the same ceiling read again (a new object, as on Windows): unchanged
+        const before = called;
+        mmLib.settleSettings(mm, 'w', wm);
+        assert.strictEqual(called, before);
       } finally { reread_.next = real; }
     });
 
