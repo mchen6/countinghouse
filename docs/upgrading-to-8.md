@@ -169,9 +169,19 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
-- **Breaking: `CHUtil.request` refuses the `httpSignature` option**, under
-  `audit` as well as `enforce`, with the sandbox's `ERR_ACCESS_DENIED`
-  error. Sign the request in the module (a header it computes) instead.
+- **Breaking, under the sandbox: Node's loader internals are held.**
+  `Module._load` takes only its request, parent and isMain (Node's internal
+  fourth argument, which skips the resolve hooks, is dropped). Under
+  `enforce`:
+  - a request that is no string, or a main-module load, is refused;
+  - `Module._load`, `Module._resolveFilename`, `Module.prototype.load` and
+    the extension handlers are locked;
+  - the `Module._extensions` table takes no new extension.
+
+  Under `audit` each of those is reported instead: the request is made a
+  string, `isMain` is passed on as given, and a replacement takes effect.
+  A dependency that replaces any of them (proxyquire, mock-require, some
+  APM agents) needs `--moduleSandbox off` under `enforce`.
 - **Breaking: `ctx.job` is never `null`.** Outside a task it is now
   `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
   is the call's own progress, sent to an MCP client that asked for it
