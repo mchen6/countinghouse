@@ -130,6 +130,19 @@ const ATTEMPTS = {
   hostIpClean:      () => {
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
   },
+  // each loader property #406 holds: whether a replacement takes (put back
+  // at once where it does, under audit, where it is reported)
+  replaceHeld:      (arg) => {
+    const M = module.constructor;
+    const [obj, key] = {protoLoad: [M.prototype, 'load'], jsHandler: [M._extensions, '.js'], jsonHandler: [M._extensions, '.json'],
+      resolveFilename: [M, '_resolveFilename']}[arg];
+    const prev = obj[key];
+    const mine = function(...a) { return prev.apply(this, a); };
+    try { obj[key] = mine; } catch (e) { /* refused */ }
+    if (obj[key] !== mine) return;
+    obj[key] = prev;
+    throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
   // under audit, a module that replaces the loader is reported
   replaceLoad:      () => {
     const prev = module.constructor._load;

@@ -150,6 +150,20 @@ describe('sandbox 05: worker lockdown', function() {
     it('no linkage is emulated: a child has no parent, at its load and after', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'linkageNone'})), {outcome: 'allowed', code: null});
     });
+    it(`each property #406 holds ${mode === 'enforce' ? 'can\'t be replaced' : 'is replaced and reported'}`, async () => {
+      const names = {protoLoad: 'Module.prototype.load', jsHandler: 'Module._extensions[\'.js\']', jsonHandler: 'Module._extensions[\'.json\']',
+        resolveFilename: '_resolveFilename'};
+      for (const arg of Object.keys(names)) {
+        const from = server.output.length;
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceHeld', arg}));
+        if (mode === 'enforce') {
+          assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, `${arg} was replaced under enforce`);
+        } else {
+          assert.deepStrictEqual(r, {outcome: 'allowed', code: 'REPLACED'}, arg);
+          await waitFor(() => server.output.slice(from).includes(`violation require ${names[arg]} replaced`), 20000, `${arg}'s violation line`);
+        }
+      }
+    });
     if (mode === 'audit') {
       it('a module that replaces Module._load is reported', async () => {
         const from = server.output.length;
