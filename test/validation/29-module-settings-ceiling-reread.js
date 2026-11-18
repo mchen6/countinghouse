@@ -503,6 +503,16 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.deepStrictEqual(calls.map((x) => x[0]), ['exited'], 'any other failure: the supervisor\'s retry');
     });
 
+    it('a notice is keyed by the friendlyName the module\'s own api.json gives, before its devices register', async () => {
+      const mm = manager();
+      mm.pinnedFriendlyNames = {w: 'weather'};
+      write({'module.w.units': 'kelvin', 'module.w.n': 3, 'module.r.region': 'eu'});
+      // no device of w registered: an empty device map
+      await rr(mm, {dm: {deviceMap: {}, moduleOfDevice: () => null}});
+      assert.strictEqual(notices.take('weather').filter((t) => /units not applied/.test(t)).length, 1);
+      assert.deepStrictEqual(notices.take('w'), []);
+    });
+
     it('single-thread mode\'s in-process devices (no host module) by their package.json; a module of two devices told once on any result', async () => {
       const callAddress = require('../../lib/call-address');
       const PART = pkgOf('@acme/region-part', {region: {type: 'string', maxLength: 4}});
