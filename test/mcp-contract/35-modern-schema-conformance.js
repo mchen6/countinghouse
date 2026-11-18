@@ -288,6 +288,8 @@ describe('mcp-contract 35: what a 2026-07-28 client is sent conforms to the offi
       }
       assert.strictEqual(got.status, 'completed', JSON.stringify(got));
       conforms(await task('tasks/update', {taskId: made.taskId, inputResponses: {}}), 'tasks:UpdateTaskResult');
+      // an answer from a request that declares no form elicitation: an error (F2-5)
+      conformsAsError(await task('tasks/update', {taskId: made.taskId, inputResponses: {q: {action: 'decline'}}}));
       const failing = conforms(await task('tools/call', {name: await toolNamed('taskservice_fails'), arguments: {}}), 'tasks:CreateTaskResult', 'task');
       for (let i = 0; i < 100; i++) {
         got = conforms(await task('tasks/get', {taskId: failing.taskId}), 'tasks:GetTaskResult');

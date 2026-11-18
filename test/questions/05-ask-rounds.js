@@ -256,7 +256,7 @@ describe('questions 05: a call\'s rounds, as the gateway drives them (MCP comple
       await rejectedWith('ASK_UNAVAILABLE', ask.formOf(state, deps({key: counting, cancelled: () => true})));
       assert.deepStrictEqual([formCalls.length, minted], [0, 0]);
       // and a call not cancelled is asked as before
-      assert.ok((await ask.formOf(state, deps({cancelled: () => false}))).requestState.startsWith('v1.'));
+      assert.ok((await ask.formOf(state, deps({cancelled: () => false}))).requestState.startsWith('v2.'));
     });
   });
 

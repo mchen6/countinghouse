@@ -174,6 +174,7 @@ one) as well as the ports it binds.
 | `test/sandbox/57-session-caps.js` | none (a session socket in its home) |
 | `test/sandbox/59-protected-paths-denied.js` | 9796, 9797, 9798 |
 | `test/sandbox/60-audit-writes.js` | 9799 (audit, enforce and off, one after another) |
+| `test/sandbox/63-unlisted-part-restarting.js` | 9793 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |

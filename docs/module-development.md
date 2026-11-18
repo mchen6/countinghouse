@@ -712,6 +712,94 @@ checks, quota or link rules. The differences from worker mode:
 Upgrading a module or a deployment from 7.x: see
 [`upgrading-to-8.md`](upgrading-to-8.md).
 
+## Modules that keep state per session
+
+By default a module runs in **one worker, shared by every session** of the
+runtime that hosts it: what it keeps in memory, in `ctx.redis` and in `/data`
+is the same for every user. That is right for almost every module. Declare
+otherwise only if your module keeps per-user state, in memory or in storage,
+that must not be shared:
+
+```json
+{
+  "name": "my-notes",
+  "version": "1.0.0",
+  "countinghouse": {"state": "per-session"}
+}
+```
+
+The value is `"shared"` (the default) or `"per-session"`; anything else
+refuses the load (`MODULE_STATE_INVALID`). It's read from your
+`package.json` when the operator loads the module, and kept with it: a
+reload or restart that changes it is refused (`MODULE_STATE_CHANGED`).
+Unload first, then load.
+
+**What you get, on the shared runtime** (one runtime serving several of a
+user's client sessions, `--sessionSocket`):
+
+- **A worker per session that uses the module.** It starts on that
+  session's first call into the module: a direct call, a hop from another
+  module (`ctx.call`) made in that session's call, or a task the session
+  created. It stops when the session ends. Listing the module's tools,
+  prompts and resources needs no worker.
+- **Its own storage per session:** its own `ctx.redis` keys, `/data` and
+  `/tmp`. Write the module as if it had one user. It never sees a session id
+  (not in its options, environment, `ctx`, paths or error texts), and it
+  can't reach another session's worker or storage.
+- **Hops into it go through the main thread.** Each hop is routed to the
+  calling session's worker by its own call's token, never over a direct
+  peer channel. That costs one main-thread round trip per hop into a
+  per-session module (see [the security model](security-model.md#modules-that-keep-state-per-session)
+  for why).
+
+**Limits.**
+
+- `--maxSessionWorkers` (default 16) caps the per-session workers **in
+  all**, across every per-session module and every session. It's the one
+  bound on their memory: about 15 MB once plus about 24 MB per per-session
+  worker (resident memory, measured on Node 24 with a small module; a
+  heavier module adds its own heap), so the default cap of 16 is about
+  400 MB at most, above the shared workers
+  ([benchmarks](benchmarks/lean-worker.md)). Only the operator sets it, from
+  the terminal. A session can't change it.
+- At the cap, the least recently used worker that is idle (no call in flight,
+  and no call token issued to it still live) gives up its slot, and its
+  session is told on its next result of the module: `<module>'s in-memory
+  state was reset; its files were kept`. A worker is never stopped mid-call.
+- When every slot is busy, the call is refused `SESSION_WORKERS_BUSY`
+  (retryable). Nothing is queued.
+- A worker that crashes frees its slot at once. Its session's next call
+  starts a fresh one and is told the same. Three exits within ten minutes
+  suspend the module for that session alone (`MODULE_SESSION_PAUSED`,
+  retryable), until the
+  ten minutes pass, the module is reloaded, or the session ends. Other
+  sessions' workers aren't affected.
+
+**Lifetime of the storage.**
+
+- It's kept while the session can come back: across a detach within the
+  reconnect window, and across a runtime restart that restores the session.
+- It's removed when the session ends for good: it leaves (`bye`), its
+  reconnect window passes, or a resume never settles. That happens after
+  the session's workers have stopped. It's kept across a runtime restart
+  that restores and resumes the session. If the module is being reloaded at
+  that moment, or was reloaded as a shared module, its storage for that
+  session is removed at the runtime's next start instead.
+- When the runtime starts, once it accepts connections, it removes in the
+  background the storage of every session it neither restored nor has open.
+  If it restored none (the daemon died) and there was storage to remove,
+  only the next session to connect is told that per-session module state
+  was reset. A swept session's user reconnects as a new session, which the
+  runtime can't link to the old one.
+- A reload stops every session's worker. Their storage is kept, and the
+  next calls run the new code. An uninstall removes every session's storage
+  with the module's own.
+
+**Where it runs.** A per-session module needs the shared runtime's sessions:
+on the HTTP hosting profile its load is refused (`MODULE_NEEDS_SESSIONS`).
+Under `--stdio` there is one session, so it runs in its one worker on the
+module's usual paths (`<name>/data`, `m:<name>:`), as a shared module does.
+
 ## Declaring permissions
 
 Under `--workerThread`, each module runs inside the module sandbox

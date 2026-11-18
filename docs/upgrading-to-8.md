@@ -451,6 +451,9 @@ says how to write a module for this.
     `inputRequests` and the status message "waiting for an answer". The
     client answers with `tasks/update`, and the run starts again under the
     same `taskId`.
+    - Only a request that declares form elicitation is handed the form
+      (`tasks/get`) or may answer it: a `tasks/update` with `inputResponses`
+      from one that doesn't is refused `-32021`, naming the capability.
     - A question waits at most an hour; then the task fails `ASK_EXPIRED`.
     - At most 64 of a key's tasks, and 10,000 in all, wait on a question at
       once. Past either, a new task's question is `ASK_UNAVAILABLE`.
