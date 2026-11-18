@@ -35,6 +35,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     order = [];
     releaseStop = null;
     mm = {modules: {ps: new SessionModuleRecord({name: 'ps', version: '1.0.0', modulePath: '/m', moduleSpec: null}), shared: {}},
+      perSessionModuleNames: require('../../lib/module-manager').prototype.perSessionModuleNames,
       // the module holds no quota here (its quota: the describe below)
       creditSessionEnd: () => false,
       sessionSettled: (id) => { order.push(`settled ${id[0]}`); return Promise.resolve(); },
@@ -281,7 +282,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, 2000, 'A\'s share, its reservation too, given back');
       viewA.settle(1000, 1, 0, 0);   // the write then failed
       viewA.settle(0, 0, 700, 1);   // or another grew
-      viewA.reserve(500, 1, 'write', '/data/h');
+      assert.throws(() => viewA.reserve(500, 1, 'write', '/data/h'), (e) => e.code === 'ENOSPC', 'a share given back refuses any new charge');
       assert.strictEqual(quota().bytes, 2000, 'B\'s 2000 untouched');
     });
 
@@ -383,6 +384,24 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, 2100, 'and counted once');
     });
 
+    it('the build stops walking once the module\'s total is past its limits; the partitions not reached are unknown', async () => {
+      const ids = Array.from({length: 12}, (_, i) => i.toString(16).repeat(32).slice(0, 32));
+      for (const id of ids) {
+        await partition.ensure(env.dataRoot, 'ps', id);
+        fs.writeFileSync(data(id, 'f'), Buffer.alloc(300 * 1024));
+      }
+      let walks = 0;
+      const realM = walk.measure;
+      walk.measure = (roots, opts) => { walks++; return realM(roots, opts); };
+      try {
+        await spawn(ids[0], {diskMb: 1, diskEntries: 1000});
+      } finally {
+        walk.measure = realM;
+      }
+      assert.ok(walks < 12, `${walks} of 12 walked`);
+      assert.ok(ids.filter((id) => !quota().knows(id)).length >= 12 - walks, 'the ones not walked are unknown');
+    });
+
     it('the build walks a few partitions at a time, never all at once', async () => {
       const ids = Array.from({length: 12}, (_, i) => i.toString(16).repeat(32).slice(0, 32));
       for (const id of ids) await partition.ensure(env.dataRoot, 'ps', id);
@@ -481,7 +500,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     await make(A);
     await make(B);
     await make(C);
-    await lifetime.checkResetAtStart([A], env);
+    await lifetime.checkResetAtStart(false, env);   // A restored: the registry isn't idle
     const open = new Set([C]);   // opened while the sweep runs: kept too
     assert.deepStrictEqual(await lifetime.sweepAtStart({has: (id) => id === A || open.has(id)}, env), {removed: 1, failed: 0, skipped: 0});
     assert.ok(has(A) && !has(B) && has(C));
@@ -490,7 +509,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     lifetime.sessionOpened(C);
     assert.deepStrictEqual(notices.take('ps', C), [], 'A was restored: nothing reset for anyone');
     await make(B);
-    await lifetime.checkResetAtStart([], env);
+    await lifetime.checkResetAtStart(true, env);
     assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), env), {removed: 3, failed: 0, skipped: 0});
     notices.openSession(C, null);
     lifetime.sessionOpened(C);
@@ -510,11 +529,9 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     assert.strictEqual([A, B, C].filter(has).length, 2);
   });
 
-  it('D3 when the listing before listen() failed: what the sweep removed decides', async () => {
-    await make(A);
+  it('D3 when the listing before listen() fails: the first session is told (the safe side), once', async () => {
     const broken = {dataRoot: env.dataRoot, kv: {keysWithPrefix: () => { throw new Error('briefly gone'); }}};
-    await lifetime.checkResetAtStart([], broken);   // undecided
-    await lifetime.sweepAtStart(new Set(), env, {restoredNone: true});
+    await lifetime.checkResetAtStart(true, broken);
     const notices = require('../../lib/notices');
     notices.openSession(B, null);
     lifetime.sessionOpened(B);
@@ -524,7 +541,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
   it('a sweep that cannot run is logged, never fatal', async () => {
     const broken = {dataRoot: env.dataRoot, kv: {keysWithPrefix: () => { throw new Error('the store is gone'); }}};
     assert.deepStrictEqual(await lifetime.sweepAtStart(new Set(), broken), {removed: 0, failed: 0, skipped: 0});
-    await lifetime.checkResetAtStart([], broken);   // nor its listing
+    await lifetime.checkResetAtStart(true, broken);   // nor its listing
   });
 });
 

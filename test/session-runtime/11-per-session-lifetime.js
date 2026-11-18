@@ -3,9 +3,10 @@
 // per-session module's partitions live as long as the session. A bye
 // removes that session's (after its worker has stopped, a call in flight
 // included) and keeps the other's; a runtime restarted with A restored and
-// B not keeps A's (A's resumed call finds its file) and sweeps B's before
-// it listens; one restarted with nothing restored sweeps everything, and the
-// next session's first result says per-session state was reset. The
+// B not keeps A's (A's resumed call finds its file) and sweeps B's once it
+// listens, in the background; one restarted with nothing restored sweeps
+// everything, and the next session's first result says per-session state was
+// reset (decided before it listens). The
 // runtime's own stop (SIGTERM, 'closed') removes nothing. The window
 // expiry is sessions 33's, in-process (the window is a minute).
 const assert = require('assert');
@@ -37,8 +38,9 @@ describe('session-runtime 11: a per-session module\'s partitions live as long as
   };
   async function up(opts = {}) {
     r = runtime(home, ['--loadModule', perSession(home)], opts);
-    // its own 'listening' tell (after the restore and the sweep), not the
-    // socket file: or its exit, which the assert then shows with its log
+    // its own 'listening' tell (after the restore and D3's listing; the
+    // sweep follows in the background), not the socket file: or its exit,
+    // which the assert then shows with its log
     await until(async() => r.told.some((m) => m.type === 'listening') || r.code !== undefined, 30000);
     assert.ok(r.told.some((m) => m.type === 'listening'), `not listening (exit ${r.code}): ${r.log().slice(-3000)}`);
     const secret = secretOf(r);
