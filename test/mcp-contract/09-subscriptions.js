@@ -171,6 +171,55 @@ describe('subscriptions/listen (#231)', () => {
     });
     const body = (id, notifications = {toolsListChanged: true}) => ({jsonrpc: '2.0', id, method: 'subscriptions/listen', params: {_meta: META, notifications}});
 
+    // M16 Task 2's high review (#433): taskIds checked as the plan says, and
+    // a listen that cannot be opened answered, never left hanging
+    const bodyOf = async(s) => { await until(() => s.ended); return JSON.parse(s.raw.trim().replace(/^data: /, '')); };
+    it('taskIds that are not all strings answer -32602 (the high review of #433, 6)', async() => {
+      const s = await listen(body(81, {taskIds: ['t-x', 7]}));
+      assert.strictEqual(s.res.statusCode, 400);
+      assert.strictEqual((await bodyOf(s)).error.code, -32602);
+    });
+    it('where tasks are not offered (no job runner), taskIds without the extension are agreed to nothing, not -32021 (7)', async() => {
+      const s = await listen(body(82, {toolsListChanged: true, taskIds: ['t-x']}));
+      assert.ok(await until(() => s.events.length > 0), s.raw);
+      assert.deepStrictEqual(s.events[0].params.notifications, {toolsListChanged: true, taskIds: []});
+      s.req.destroy();
+    });
+    // the medium review of #433's high fixes, 1: the stream failing to open
+    // after the hub took the listener frees its slot and answers the request
+    it('a stream that fails to open after the listener is registered: answered with an error, its slot freed', async() => {
+      const gateway = require('../../lib/mcp/gateway');
+      const before = hub.count(KEY);
+      const answer = await new Promise((resolve) => gateway.handle(body(84, {toolsListChanged: true, taskIds: []}), null, KEY, (err, response) => resolve({err, response}),
+        {headers: {'mcp-protocol-version': V, 'mcp-method': 'subscriptions/listen'}, subscriptions: hub, openStream: () => { throw new Error('the client left'); }}));
+      assert.strictEqual(answer.err, null);
+      assert.strictEqual(answer.response.error.message, 'the listen could not be opened');
+      assert.strictEqual(hub.count(KEY), before, 'no slot held');
+    });
+
+    it('a listen whose opening throws is answered with an error, never left hanging (2)', async() => {
+      const broken = express();
+      broken.use(express.json());
+      const throwing = Object.assign(Object.create(hub), {open: () => { throw new Error('the hub refused'); }});
+      broken.use('/mcp', require('../../lib/routes/mcp')(null, null, throwing));
+      const srv = await new Promise((r) => { const x = broken.listen(0, '127.0.0.1', () => r(x)); });
+      try {
+        const data = JSON.stringify(body(83, {toolsListChanged: true, taskIds: []}));
+        const res = await new Promise((resolve) => {
+          const rq = http.request({host: '127.0.0.1', port: srv.address().port, path: '/mcp', method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Content-Length': Buffer.byteLength(data), 'MCP-Protocol-Version': V, 'Mcp-Method': 'subscriptions/listen', 'X-CH-Key': KEY}}, (r) => {
+            let t = '';
+            r.on('data', (c) => { t += c; });
+            r.on('end', () => resolve({status: r.statusCode, body: t}));
+          });
+          rq.end(data);
+        });
+        assert.match(res.body, /the listen could not be opened/, res.body);
+      } finally {
+        await new Promise((r) => srv.close(r));
+      }
+    });
+
     it('answers text/event-stream: the acknowledgement first, then a list_changed with the id, then the graceful end', async() => {
       // (prompts' list notices are served since M8; a kind that is not, is left out)
       const s = await listen(body(41, {toolsListChanged: true, promptsListChanged: true, elicitationsListChanged: true}));
@@ -339,7 +388,7 @@ describe('subscriptions/listen (#231)', () => {
     let closed = 0;
     // a hub that hands the test the listen's writer
     const hub = {
-      open(o) { opened = o; return {ok: true, close: () => { closed += 1; }}; },
+      open(o) { opened = o; return {ok: true, close: () => { closed += 1; }, start: () => {}}; },
       count: () => 0, endAll() {}, changed() {}, callSucceeded() {}, closeSession() {}
     };
     before((done) => {

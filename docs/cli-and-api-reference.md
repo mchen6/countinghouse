@@ -100,7 +100,7 @@ modules see their own code at. Install it elsewhere (e.g.
 
 | Endpoint | Protocol | Purpose |
 |---|---|---|
-| `POST /mcp` | MCP (JSON-RPC 2.0, stateless Streamable HTTP) | `initialize`, `tools/list`, `tools/call`, the legacy era's tasks (`params.task`; `tasks/get`/`tasks/result`/`tasks/list`/`tasks/cancel`), and for 2026-07-28 clients the `io.modelcontextprotocol/tasks` extension (`tasks/get`/`tasks/update`/`tasks/cancel`, for an action that declares `longRunning`) — the primary interface. Tasks need `--workerThread`. |
+| `POST /mcp` | MCP (JSON-RPC 2.0, stateless Streamable HTTP) | `initialize`, `tools/list`, `tools/call`, the legacy era's tasks (`params.task`; `tasks/get`/`tasks/result`/`tasks/list`/`tasks/cancel`), and for 2026-07-28 clients the `io.modelcontextprotocol/tasks` extension (`tasks/get`/`tasks/update`/`tasks/cancel`, for an action that declares `longRunning`; and `subscriptions/listen` with `notifications.taskIds`, at most 64 of the caller's own task ids, for a `notifications/tasks` carrying the task as `tasks/get` answers it, on each change: a working task's at most once a second, a finished one's once, and one already finished or waiting on its question (`input_required`) once right after the ack; more than 64 is -32602, and without the extension declared -32021) — the primary interface. Tasks need `--workerThread`. |
 | `GET /balance` | Platform | Current balance for the caller's apiKey (`MeteringProvider.checkBalance`). |
 | `GET /device-list` | Platform | Devices the caller's apiKey can see — same filtering `tools/list` applies. |
 | `POST /devices/:deviceID/invoke-action` | Platform, pre-MCP HTTP API | Direct HTTP equivalent of `tools/call`; predates the MCP gateway and still works. |
