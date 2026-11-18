@@ -23,8 +23,9 @@ describe('validation 28: a peer match to a module whose required setting is unse
     const PeerChannelBroker = require('../../lib/peer-channel-broker');
     const decl = ms.parseDeclaration({name: 'callee', countinghouse: {settings: {region: {type: 'string', required: true}}}}).settings;
     const replies = [];
-    const callee = {workerId: 86, hostModuleName: 'callee', settings: {settings: decl, values: ms.effective(decl, {}, {net: []}).values, version: 1},
-      sendPeerMeteringReplyToChild: (m) => replies.push(m)};
+    const callee = Object.assign(Object.create(require('../../lib/worker-message').prototype), {workerId: 86, hostModuleName: 'callee',
+      settings: {settings: decl, values: ms.effective(decl, {}, {net: []}).values, version: 1},
+      sendPeerMeteringReplyToChild: (m) => replies.push(m)});
     const caller = {workerId: 85, bindings: {'d-caller': {identity: null, module: 'caller', targets: new Set(['d-callee|svc|act'])}}};
     const b = new PeerChannelBroker({deviceMap: {'d-callee': callee}});
     b.channelRegistry['ch'] = {callerWM: caller, calleeWM: callee, grants: {}};
@@ -35,8 +36,10 @@ describe('validation 28: a peer match to a module whose required setting is unse
     b.serveMatched({channel: 'ch', invokeId: 1}, 'm1', callee, 'ch/1');
     callTokens.drop(token);
     assert.strictEqual(replies.length, 1, JSON.stringify(replies));
+    // as the claim (the setting's name), for the calling module to pass on:
+    // its outer call answers in the runtime's words
     assert.strictEqual(replies[0].errCode, 'SETTING_REQUIRED', JSON.stringify(replies[0]));
-    assert.match(replies[0].errMsg, /callee needs a setting: region/);
+    assert.strictEqual(replies[0].errMsg, 'region');
     assert.strictEqual(b.unbilled.size, 0, 'no match held for a bill');
   });
 });

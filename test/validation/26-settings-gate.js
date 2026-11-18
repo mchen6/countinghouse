@@ -19,6 +19,7 @@ const gate = require('../../lib/settings-gate');
 const ms = require('../../lib/module-settings');
 const {CountinghouseError} = require('../../lib/countinghouse-error');
 const callAddress = require('../../lib/call-address');
+const WorkerMessage = require('../../lib/worker-message');
 
 const stateWith = (settings, stored = {}, version = 1) => {
   const decl = ms.parseDeclaration({name: 'x', countinghouse: {settings}}).settings;
@@ -31,29 +32,43 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
   after(() => { options.singleIdentity = savedSingle; });
 
   describe('what a call carries', () => {
-    it('the values once per version per worker; a version pushed out of the four is sent again', () => {
-      const wm = {};
+    const wmOf = () => Object.create(WorkerMessage.prototype);
+    it('the values until a send of them is noted; then {v}; a version pushed out of the four is sent again', () => {
+      const wm = wmOf();
       const st = (v) => stateWith({u: {type: 'string', default: 'x'}}, {}, v);
-      assert.deepStrictEqual(Object.keys(gate.carried(wm, st(1))).sort(), ['v', 'values']);
-      assert.deepStrictEqual(gate.carried(wm, st(1)), {v: 1});
-      for (const v of [2, 3, 4, 5]) gate.carried(wm, st(v));
-      assert.ok(gate.carried(wm, st(1)).values != null, 'version 1 left the ring: sent again');
-      assert.deepStrictEqual(gate.carried(wm, st(5)), {v: 5});
+      const first = gate.toCarry(wm, st(1));
+      assert.deepStrictEqual(Object.keys(first).sort(), ['v', 'values']);
+      assert.ok(gate.toCarry(wm, st(1)).values != null, 'not noted until it is sent: the values again');
+      gate.sent(wm, first);
+      assert.deepStrictEqual(gate.toCarry(wm, st(1)), {v: 1});
+      for (const v of [2, 3, 4, 5]) gate.sent(wm, gate.toCarry(wm, st(v)));
+      assert.ok(gate.toCarry(wm, st(1)).values != null, 'version 1 left the ring: sent again');
+      assert.deepStrictEqual(gate.toCarry(wm, st(5)), {v: 5});
     });
 
     it('a module that declares no settings carries nothing', () => {
-      assert.strictEqual(gate.carried({}, null), null);
-      assert.strictEqual(gate.carried({}, {settings: null, values: null, version: null}), null);
+      assert.strictEqual(gate.toCarry(wmOf(), null), null);
+      assert.strictEqual(gate.toCarry(wmOf(), {settings: null, values: null, version: null}), null);
     });
 
-    it('a task keeps its first pass\'s state while the declaration is the same; a new declaration takes the new state', () => {
+    it('a task keeps the state its first sent pass had while the declaration is the same; a refused pass pins nothing', () => {
       const first = stateWith({u: {type: 'string'}}, {u: 'a'}, 10);
       const later = stateWith({u: {type: 'string'}}, {u: 'b'}, 11);
-      assert.strictEqual(gate.forTask('job-1', first), first);
+      assert.strictEqual(gate.forTask('job-1', first), first, 'nothing pinned yet');
+      gate.pin('job-1', first);
       assert.strictEqual(gate.forTask('job-1', later), first, 'the first pass\'s values');
+      gate.pin('job-1', later);
+      assert.strictEqual(gate.forTask('job-1', later), first, 'a pin is not replaced');
       const changed = stateWith({u: {type: 'string'}, w: {type: 'boolean'}}, {}, 12);
-      assert.strictEqual(gate.forTask('job-1', changed), changed);
+      assert.strictEqual(gate.forTask('job-1', changed), changed, 'another declaration: the current state');
       assert.strictEqual(gate.forTask(null, later), later, 'no task: the current state');
+    });
+
+    it('the state is a worker\'s proxy\'s own; a module\'s own object with a settings field is never read', () => {
+      const proxy = Object.assign(wmOf(), {settings: stateWith({u: {type: 'string'}})});
+      assert.strictEqual(gate.stateOf({}, proxy), proxy.settings);
+      const modulesOwn = {moduleName: 'm', settings: {settings: {}, values: {forged: true}}};
+      assert.strictEqual(gate.stateOf({moduleManager: {}}, modulesOwn), null);
     });
   });
 
@@ -64,8 +79,8 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
     const idOf = (name) => callAddress.deviceIDForName(name);
     for (const [name, m] of Object.entries(modules)) {
       const id = idOf(name);
-      deviceMap[id] = {hostModuleName: name, settings: m.state || null,
-        bindings: {[id]: {identity: 'k', module: name, targets: new Set((m.calls || []).map((c) => `${idOf(c)}|urn:x:serviceID:s|act`))}}};
+      deviceMap[id] = Object.assign(Object.create(WorkerMessage.prototype), {hostModuleName: name, settings: m.state || null,
+        bindings: {[id]: {identity: 'k', module: name, targets: new Set((m.calls || []).map((c) => `${idOf(c)}|urn:x:serviceID:s|act`))}}});
     }
     return {deviceMap, idOf};
   }
@@ -95,10 +110,15 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(err.fields.missingSettings, null);
     });
 
-    it('a hop: the target alone, not what it calls', () => {
+    it('a hop: the target alone, not what it calls; refused as the claim (the setting\'s name), for the calling module', () => {
       const dm = dmWith({'top': {calls: ['part']}, 'part': {state: stateWith({r: {type: 'string', required: true}})}});
       assert.strictEqual(gate.requiredRefusal(dm, dm.idOf('top'), false), null);
-      assert.ok(gate.requiredRefusal(dm, dm.idOf('part'), false) != null);
+      const claim = gate.requiredRefusal(dm, dm.idOf('part'), false);
+      assert.deepStrictEqual([claim.code, claim.message], ['SETTING_REQUIRED', 'r']);
+      // passed on by the top-level module: the outer call answers in the part's wording, no setting named
+      const outer = gate.claimAnswer(claim, dm, dm.idOf('top'), dm.deviceMap[dm.idOf('top')].settings, true);
+      assert.match(outer.message, /a module this tool calls needs a setting made at the terminal/);
+      assert.ok(!/\br\b/.test(outer.message.replace(/needs a setting|terminal|settings modules/g, '')), outer.message);
     });
 
     it('set, or a default: no refusal; a task\'s pinned state is the one checked', () => {

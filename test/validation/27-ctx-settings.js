@@ -55,6 +55,15 @@ describe('validation 27: ctx.settings and ctx.settingRequired', () => {
     assert.strictEqual(ctxWith({v: 302, values}).settings.units, undefined);
   });
 
+  it('values are kept as their message arrives (holdSettings), so a later {v} finds them; settingsHeld says when a call\'s are not here', () => {
+    handlerCtx.holdSettings({settings: {v: 401, values: {n: 401}}});
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 401}}), true);
+    assert.strictEqual(ctxWith({v: 401}).settings.n, 401);
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 499}}), false, 'never given: not held');
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 499, values: {n: 1}}}), true, 'its values with it');
+    assert.strictEqual(handlerCtx.settingsHeld({input: {}}), true, 'none carried');
+  });
+
   it('ctx.settingRequired: the issued SETTING_REQUIRED claim, the name its message, cut to 64', () => {
     const ctx = ctxWith(null);
     const claim = ctx.settingRequired('defaultRepo');
