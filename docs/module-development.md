@@ -1133,7 +1133,28 @@ example, without ever holding the user's credential. The runtime's main
 thread connects to the server, adds the credential the operator allowed,
 and hands the module the server's answer.
 
-Declare it in `package.json`:
+Declare it in `package.json`. The shortest declaration:
+
+```json
+"countinghouse": {
+  "remotes": [
+    {"name": "github", "url": "https://api.githubcopilot.com/mcp/", "credential": "GITHUB_TOKEN"}
+  ]
+}
+```
+
+`"credential": "GITHUB_TOKEN"` means `{"env": "GITHUB_TOKEN"}`, with the
+header `Authorization` and the scheme `Bearer`; `transport` defaults to
+`"streamable-http"`. The load keeps the expanded form, and
+`countinghouse-validate` prints it for every remote, with where its
+credential goes:
+
+```
+remote github: {"name":"github","transport":"streamable-http","url":"https://api.githubcopilot.com/mcp/","credential":{"env":"GITHUB_TOKEN","header":"Authorization","scheme":"Bearer"}}
+  sends the credential GITHUB_TOKEN to https://api.githubcopilot.com as "Authorization: Bearer <value>"
+```
+
+The full form:
 
 ```json
 "countinghouse": {
@@ -1152,7 +1173,7 @@ Declare it in `package.json`:
 
 - `name`: lower-case letters, digits and `-`, starting with a letter. It
   is the name in the address below.
-- `transport`: `"streamable-http"`, the only one.
+- `transport` (optional): `"streamable-http"`, the only one and the default.
 - `url`: `https:`, with no user info and no fragment. `http:` is accepted
   only for a loopback host under `--debug`, for local testing. A loopback
   or private address, or the Redis endpoint, is refused.
@@ -1161,12 +1182,20 @@ Declare it in `package.json`:
   credential's header, hop-by-hop headers and the headers the transport
   sets itself (`Host`, `Content-Type`, `Accept`, `Mcp-Session-Id` and the
   like) are refused.
-- `credential` (optional): the environment variable to read (`env`, then
-  `fallbackEnv` when `env` is empty), the header (default
-  `Authorization`) and the scheme (default `Bearer`; `""` sends the bare
-  value). It is a request, not a grant: the operator's
-  `--remoteCredentials` file decides which variables may go to which
-  origin.
+- `credential` (optional): a variable name (the short form), or an
+  object: the environment variable to read (`env`, then `fallbackEnv`
+  when `env` is empty, under a version 1 `--remoteCredentials` file only),
+  the header (default `Authorization`) and the scheme (default `Bearer`;
+  `""` sends the bare value). It is a request, not a grant: the
+  operator's `--remoteCredentials` file decides where it may go. Under a
+  version 2 file a key is bound to one module, one variable and one
+  origin: another module that declares the same variable gets nothing, and
+  a version of this module that sends it to another origin, or asks for it
+  under another name, gets nothing until it is bound again
+  (`REMOTE_CREDENTIAL_NOT_ALLOWED`, saying which).
+- The remotes are part of the module's pin: a supervised restart uses the
+  remotes the last load, reload or restart took, never a `package.json`
+  changed since.
 
 One remote per module in this version. `countinghouse-validate` reports a
 declaration problem by position and field, and the load refuses the
@@ -1194,7 +1223,7 @@ rejects, with a code:
 | `REMOTE_ADDRESS_REFUSED` | the host resolves to a loopback, private or Redis-endpoint address | no |
 | `REMOTE_UNDECLARED` | the module declares no remote by that name | no |
 | `REMOTE_ARGS_INVALID` | not an address `remote:<name>/<tool>`, or the arguments are not a plain JSON object | no |
-| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin; the remote is disabled | no |
+| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin (version 1), or binds no key to this module for this origin and variable (version 2); the remote is disabled | no |
 | `REMOTE_CREDENTIAL_MISSING` | the variable is allowed but was not set when the module loaded | no |
 
 A remote needs no `net` permission: the connection is the main thread's,
