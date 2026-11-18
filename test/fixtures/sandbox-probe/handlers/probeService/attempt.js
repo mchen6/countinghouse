@@ -2,6 +2,21 @@
 // sandbox refused it -- recognised by its message, so an ordinary failure of
 // the operation itself (a missing file, a refused connection) still counts as
 // "allowed". test/sandbox/05-lockdown.js drives this under audit and enforce.
+// F4-2: a report as a module reads it holds nothing of the process: its
+// environment, command line, working directory, host, open handles, stacks,
+// or any shared object's path (only libc's and the loader's names). One that
+// does is LEAKED, whatever the mode; and it is still a report.
+function reportChecked(r) {
+  const header = (r != null && r.header != null) ? r.header : {};
+  const leaked = ['environmentVariables', 'libuv', 'workers', 'nativeStack', 'javascriptStack'].filter((k) => r != null && r[k] != null)
+    .concat(['commandLine', 'cwd', 'networkInterfaces', 'host', 'osRelease', 'osVersion', 'osMachine', 'cpus'].filter((k) => header[k] != null).map((k) => `header.${k}`))
+    // shared objects: only libc's and the musl loader's names, as detect-libc reads them
+    .concat((r != null && Array.isArray(r.sharedObjects) ? r.sharedObjects : []).filter((o) => /[\\/]/.test(o) || !/^(libc[.-]|ld-musl-|ld-linux)/.test(o)).map((o) => `sharedObjects ${o}`));
+  if (leaked.length > 0) throw Object.assign(new Error(`the report holds ${leaked.join(', ')}`), {code: 'LEAKED'});
+  // still a report: its header's runtime facts, as native-addon loaders read them
+  if (typeof(header.nodejsVersion) !== 'string' || typeof(header.platform) !== 'string') throw Object.assign(new Error('not a report'), {code: 'NOT_A_REPORT'});
+}
+
 const ATTEMPTS = {
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),
@@ -115,6 +130,26 @@ const ATTEMPTS = {
   // Writes by native code, outside the broker (to directories that do not
   // exist, so audit writes nothing).
   report:           () => process.report.writeReport('/nonexistent-ch-probe/r.json'),
+  // F4-2: a diagnostic report read in the worker. It must never hold the
+  // process's own environment, command line, working directory, open
+  // handles or loaded objects (the --redisUrl password, --debugKey, the
+  // server's tokens): one that does is LEAKED, whatever the mode.
+  getReport:        () => reportChecked(process.report.getReport()),
+  // detect-libc's own steps (its lib/process.js): excludeNetwork set around
+  // the call, then put back; never refused, in any mode
+  detectLibc:       () => {
+    const orig = process.report.excludeNetwork;
+    process.report.excludeNetwork = true;
+    const r = process.report.getReport();
+    process.report.excludeNetwork = orig;
+    if (process.report.excludeNetwork !== orig) throw Object.assign(new Error('excludeNetwork was not put back'), {code: 'NOT_RESTORED'});
+    reportChecked(r);
+    if (typeof(r.header.glibcVersionRuntime) !== 'string' && process.platform === 'linux' && !(r.sharedObjects || []).some((o) => /musl/.test(o))) {
+      throw Object.assign(new Error('no libc to be read'), {code: 'NO_LIBC'});
+    }
+  },
+  // a setting that writes where a report goes (re-set to itself: audit changes nothing)
+  reportDirectory:  () => { process.report.directory = process.report.directory; },
   compileCache:     () => module.constructor.enableCompileCache('/nonexistent-ch-probe/cc'),
   sourceMaps:       () => process.setSourceMapsEnabled(true),
   repl:             () => require('repl'),

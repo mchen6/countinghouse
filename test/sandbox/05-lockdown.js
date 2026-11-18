@@ -20,7 +20,7 @@ const ROUTES = [
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
-  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['reportDirectory'], ['compileCache'], ['sourceMaps'],
   ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
 
@@ -65,6 +65,18 @@ describe('sandbox 05: worker lockdown', function() {
     after(() => stopServer(server));
 
     it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(testPort(9608), server));
+
+    // F4-2: as under audit (below)
+    it('process.report.getReport answers with nothing of the process\'s environment, command line or handles', async () => {
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'getReport'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
+    it('detect-libc\'s steps (excludeNetwork set around getReport, then put back) are never refused, and leak nothing', async () => {
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'detectLibc'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+      assert.ok(!/violation report excludeNetwork/.test(server.output), 'and no violation');
+    });
 
     ROUTES.forEach(([what, arg]) => {
       it(`blocks ${what} and logs it`, async () => {
@@ -119,6 +131,18 @@ describe('sandbox 05: worker lockdown', function() {
         const r = await mcpCall(testPort(9609), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(toolOutput(r).outcome, 'allowed', `${what}: ${JSON.stringify(r)}`);
       });
+    });
+
+    // F4-2: a module's report is read (native-addon loaders read its header), but never holds the process's secrets
+    it('process.report.getReport answers with nothing of the process\'s environment, command line or handles', async () => {
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'getReport'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
+    it('detect-libc\'s steps leak nothing under audit either, and are not violations', async () => {
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'detectLibc'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+      assert.ok(!/violation report excludeNetwork/.test(server.output), 'and no violation');
     });
 
     it('process.loadEnvFile reads through the broker', async () => {

@@ -230,8 +230,18 @@ any module code). Stops:
   the module's directory); `module.registerHooks`/`register` are locked so no
   later hook can run ahead of the boundary;
 - other routes to files: `module.enableCompileCache`, `process.report`'s
-  file output and `process.setSourceMapsEnabled` are locked;
-  `process.loadEnvFile` goes through the file broker;
+  file output and every one of its settings, and
+  `process.setSourceMapsEnabled` are locked; `process.loadEnvFile` goes
+  through the file broker;
+- `process.report.getReport()`, in every mode: Node builds a report from the
+  process, not the worker, so it would hold the server's own environment and
+  command line (its database and Redis passwords, its debug key, any token
+  in its environment) whatever env the worker was given. A module is served
+  the report with the environment, the command line, the working directory,
+  the host and its network interfaces, the OS's release, version, machine
+  and CPUs, the libuv handles, the worker reports and the native stack
+  removed, and of the shared objects only libc's and the dynamic loader's
+  names: what native-addon loaders (detect-libc) read to pick a binary;
 - adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
   `net.connect({fd})` and `net.createConnection({fd})`, which an `http`
   request given an `fd` reaches through the agent (`https` goes through
