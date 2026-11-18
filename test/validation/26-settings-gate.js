@@ -70,6 +70,18 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const modulesOwn = {moduleName: 'm', settings: {settings: {}, values: {forged: true}}};
       assert.strictEqual(gate.stateOf({moduleManager: {}}, modulesOwn), null);
     });
+
+    it('single-thread mode: a load under way reads the loading instance\'s own state, kept apart from the serving one', () => {
+      const device = {moduleName: 'm'};
+      const serving = stateWith({u: {type: 'string'}});
+      const loading = stateWith({u: {type: 'string'}, w: {type: 'boolean'}});
+      const mm = {singleThreadSettings: new Map([['m', serving]]), singleThreadPending: new Map()};
+      assert.strictEqual(gate.stateOf({moduleManager: mm}, device), serving);
+      mm.singleThreadPending.set('m', loading);
+      assert.strictEqual(gate.stateOf({moduleManager: mm}, device), loading);
+      mm.singleThreadPending.set('m', null);
+      assert.strictEqual(gate.stateOf({moduleManager: mm}, device), null, 'a loading version that declares none');
+    });
   });
 
   // a device manager whose devices are named modules: `calls` the modules
