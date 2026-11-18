@@ -672,11 +672,12 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
 
     it('single-thread mode: the manager\'s own copy', async () => {
       const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
-      mm.singleThreadSettings.set('w', ms.stateFor('w', W, {operator: true}));
+      // the serving instance's ticket, which its devices read
+      mm.singleThreadSettings.set('w', {state: ms.stateFor('w', W, {operator: true})});
       write({'module.w.units': 'metric'});
       const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
       assert.deepStrictEqual(reply, {applied: 1, refused: []});
-      assert.strictEqual(mm.singleThreadSettings.get('w').values.units, 'metric');
+      assert.strictEqual(mm.singleThreadSettings.get('w').state.values.units, 'metric');
     });
 
     it('refused whole, nothing changed: another "what", or a settings file that cannot be read', async () => {
