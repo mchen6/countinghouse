@@ -45,6 +45,37 @@ const ATTEMPTS = {
     module.constructor._load('./bind-address', forged, false);
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
   },
+  // each condition of the parent check on its own (the medium review of
+  // cb3ce40e): a parent that agrees in all but one, or that changes once
+  // the check has passed, is refused; createRequire's own Module still loads
+  forgeParent:      (arg) => {
+    const path = require('path');
+    const M = module.constructor;
+    const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
+    const libDir = path.dirname(key);
+    const ownDir = path.join(__dirname, '..', '..', 'lib');
+    const agreeing = (dir) => Object.assign(new M(path.join(dir, 'decoy.js'), null), {filename: path.join(dir, 'decoy.js'), paths: M._nodeModulePaths(dir)});
+    const variants = {
+      // the key's directory is lib/, the resolution's the module's own
+      dirname: () => Object.assign(agreeing(ownDir), {path: libDir}),
+      paths: () => Object.assign(agreeing(ownDir), {paths: []}),
+      noId: () => Object.assign(agreeing(ownDir), {id: ''}),
+      plainObject: () => Object.assign({}, agreeing(ownDir)),
+      // agrees when checked, then Node's own read of id moves path to lib/
+      idGetter: () => {
+        const p = agreeing(ownDir);
+        Object.defineProperty(p, 'id', {configurable: true, get() { this.path = libDir; return 'x'; }});
+        return p;
+      }
+    };
+    if (arg === 'objectRequest') {
+      const p = agreeing(ownDir);
+      return M._load({toString() { p.path = libDir; return './bind-address'; }}, p, false);
+    }
+    if (arg === 'isMain') return M._load(path.join(ownDir, 'bind-address.js'), null, true);
+    return M._load('./bind-address', variants[arg](), false);
+  },
+  createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
   hostIpClean:      () => {
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
   },

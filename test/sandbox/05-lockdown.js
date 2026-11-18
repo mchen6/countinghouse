@@ -145,6 +145,14 @@ describe('sandbox 05: worker lockdown', function() {
         'the forged parent\'s violation line');
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null});
     });
+    it('each condition of the parent check on its own, and a parent that changes after it, is refused; createRequire still loads', async () => {
+      for (const variant of ['dirname', 'paths', 'noId', 'plainObject', 'idGetter', 'objectRequest', 'isMain']) {
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'forgeParent', arg: variant}));
+        assert.strictEqual(r.outcome, 'blocked', `${variant}: ${JSON.stringify(r)}`);
+      }
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'hostIpClean'})), {outcome: 'allowed', code: null});
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
+    });
     if (mode === 'audit') {
       it('a module that replaces Module._load is reported', async () => {
         const from = server.output.length;
