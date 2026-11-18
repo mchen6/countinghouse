@@ -83,5 +83,15 @@ describe('module-authoring 07: module settings in countinghouse-validate', funct
     assert.ok(ours.some((m) => /apiKey/.test(m) && /secret/.test(m)), JSON.stringify(ours));
     assert.ok(ours.some((m) => /region/.test(m) && /part/.test(m)), JSON.stringify(ours));
     assert.match((await cli(dir)).out, /warning \[countinghouse\.settings\] setting apiKey looks like a secret/);
+    assert.deepStrictEqual(r.settings.map((x) => x.rule), ['terminal only', 'terminal only'], 'a part\'s settings are set at a terminal');
+    assert.match((await cli(dir)).out, /setting region \(string\): changed at a terminal only/);
+  });
+
+  it('a module with problems still has its settings printed', async () => {
+    const dir = moduleWith({units: {type: 'enum', values: ['metric']}});
+    fs.rmSync(path.join(dir, 'api.json'));
+    const {code, out} = await cli(dir);
+    assert.strictEqual(code, 1);
+    assert.match(out, /setting units \(enum\): changed in conversation on request/);
   });
 });

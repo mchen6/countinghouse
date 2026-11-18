@@ -116,6 +116,58 @@ describe('module-loading 41: the values a module\'s worker runs with', () => {
     assert.strictEqual(history().length, 2, 'no second history line');
   });
 
+  it('the history line is written once per value in this runtime: a second operator load writes none', () => {
+    settingsFile({'module.w2.units': 'kelvin'});
+    state('w2', pkgOf('w2'));
+    state('w2', pkgOf('w2'));
+    assert.strictEqual(history().filter((h) => h.setting === 'module.w2.units').length, 1);
+  });
+
+  it('a dry run (before anything is unloaded): the refusal alone, nothing logged, written or numbered', () => {
+    settingsFile({'module.w3.units': 'kelvin'});
+    const before = state('w3', pkgOf('w3')).version;
+    lines = [];
+    const dry = state('w3', pkgOf('w3'), {dryRun: true});
+    assert.strictEqual(dry.refused, null);
+    assert.strictEqual(dry.version, null);
+    assert.deepStrictEqual(lines, []);
+    assert.ok(state('w3', pkgOf('w3')).version === before + 1, 'no version taken by the dry run');
+    moduleSettingsFile({'w3': {}});
+    const refusedDry = state('w3', pkgOf('w3', Object.assign({}, DECL, {region: {type: 'string', required: true}})), {dryRun: true});
+    assert.ok(refusedDry.refused != null && /region/.test(refusedDry.refused.message));
+  });
+
+  it('a supervised restart whose settings file cannot be read keeps the values it ran with; an operator\'s load is refused', () => {
+    settingsFile({'module.w4.units': 'imperial'});
+    const last = state('w4', pkgOf('w4'));
+    fs.writeFileSync(options.settingsFile, '{broken');
+    lines = [];
+    const kept = state('w4', pkgOf('w4'), {operator: false, last});
+    assert.strictEqual(kept, last);
+    assert.ok(lines.some((l) => /keeps the values it ran with/.test(l)), lines.join('\n'));
+    assert.ok(state('w4', pkgOf('w4'), {operator: true, last}).refused != null);
+  });
+
+  it('the settings file is read as the settings tool reads it: another version is refused', () => {
+    const f = path.join(dir, 'settings.json');
+    fs.writeFileSync(f, JSON.stringify({version: 2, values: {'module.w.units': 'imperial'}}));
+    options.settingsFile = f;
+    options.singleIdentity = true;
+    options.moduleSettings = null;
+    assert.ok(state('w', pkgOf('w')).refused != null);
+  });
+
+  it('a stored key named __proto__ is a stored value like any other: not declared, not applied, said', () => {
+    const f = path.join(dir, 'settings.json');
+    fs.writeFileSync(f, `{"version": 1, "values": {"module.w5.__proto__": {"units": "imperial"}}}`);
+    options.settingsFile = f;
+    options.singleIdentity = true;
+    options.moduleSettings = null;
+    const s = state('w5', pkgOf('w5'));
+    assert.strictEqual(s.values.units, 'metric');
+    assert.ok(lines.some((l) => /__proto__ not applied/.test(l)), lines.join('\n'));
+  });
+
   it('a kept value over 64 characters is written cut, with the SHA-256 of the whole', () => {
     settingsFile({'module.w.gone': 'v'.repeat(100)});
     state('w', pkgOf('w'));

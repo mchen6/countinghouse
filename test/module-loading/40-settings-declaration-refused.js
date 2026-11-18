@@ -64,6 +64,23 @@ describe('module-loading 40: an invalid settings declaration is refused at load'
     assert.ok(!err.message.includes('‮'), JSON.stringify(err.message));
   });
 
+  it('a required setting --moduleSettings leaves unset: refused before anything is unloaded or spawned', async () => {
+    const m = moduleWith({region: {type: 'string', required: true}});
+    const file = path.join(path.dirname(m.dir), `${path.basename(m.dir)}-ms.json`);
+    fs.writeFileSync(file, JSON.stringify({[m.name]: {}}));
+    const was = {moduleSettings: options.moduleSettings, settingsFile: options.settingsFile};
+    options.moduleSettings = file;
+    options.settingsFile = null;
+    try {
+      const {err, spawned} = await load(m);
+      assert.ok(err != null && err.code === 'LOAD_MODULE_FAIL' && /region/.test(err.message), String(err && err.message));
+      assert.strictEqual(spawned, false);
+    } finally {
+      Object.assign(options, was);
+      fs.rmSync(file, {force: true});
+    }
+  });
+
   it('a good declaration loads as before', async () => {
     const m = moduleWith({units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}});
     const {err, spawned} = await load(m);

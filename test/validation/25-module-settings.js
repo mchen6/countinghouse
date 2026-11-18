@@ -351,6 +351,13 @@ describe('validation 25: module settings, the declaration and its values', () =>
       assert.ok(e.refused != null && /32 KiB/.test(e.refused), JSON.stringify(e.refused));
     });
 
+    it('an empty string default is unset, and a required setting with it is unset', () => {
+      const d = ms.parseDeclaration(pkgWith({a: {type: 'string', required: true, default: ''}})).settings;
+      const e = ms.effective(d, {}, {net});
+      assert.strictEqual('a' in e.values, false);
+      assert.deepStrictEqual(ms.unsetRequired(d, e.values), ['a']);
+    });
+
     it('the required settings left unset', () => {
       const d = ms.parseDeclaration(pkgWith({a: {type: 'string', required: true}, b: {type: 'string', required: true, default: 'x'}, c: {type: 'string'}})).settings;
       assert.deepStrictEqual(ms.unsetRequired(d, ms.effective(d, {}, {net}).values), ['a']);

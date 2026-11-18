@@ -92,7 +92,8 @@ moduleValidator.validateModule(target, (err, result) => {
 
   // each declared setting, and how a user's change to it is made
   // (lib/module-settings.js confirmRule)
-  const RULE = {'on request': 'changed in conversation on request', confirm: 'changed in conversation only with the user\'s own confirmation (at a terminal until a client is tested to show the form)'};
+  const RULE = {'on request': 'changed in conversation on request', confirm: 'changed in conversation only with the user\'s own confirmation (at a terminal until a client is tested to show the form)',
+    'terminal only': 'changed at a terminal only (a part\'s settings are never named to a client)'};
   const printSettings = () => (result.settings || []).forEach((s) => console.log(`  setting ${s.name} (${s.type}): ${RULE[s.rule]}`));
 
   if (result.ok === true) {
@@ -107,6 +108,7 @@ moduleValidator.validateModule(target, (err, result) => {
     console.log(`  [${p.stage}] ${p.message}`);
     if (p.fix != null) console.log(`      fix: ${p.fix}`);
   });
+  printSettings();
   (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
   process.exit(1);
 });
