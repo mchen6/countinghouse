@@ -106,7 +106,11 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     // worker (a module whose top level loads with a runtime parent), then in
     // this module's worker, each of the four hooks
     it('the probe records a runtime-parented load in a validation worker (its control)', async () => {
-      await mcpCall(port, KEY, 'countinghouse_validate_module', {path: CONTROL});
+      const validated = await mcpCall(port, KEY, 'countinghouse_validate_module', {path: CONTROL});
+      // the validation worker is locked down: child_process refused under
+      // enforce, allowed (and reported) under audit, said in the answer
+      const said = JSON.stringify(validated);
+      assert.match(said, mode === 'enforce' ? /late-load-control: child_process (MODULE_NOT_FOUND|ERR_ACCESS_DENIED)/ : /late-load-control: child_process allowed/, said.slice(0, 1500));
       assert.ok(await waitFor(server, /late runtime load: path from .*[\\/]lib[\\/]logger\.js/), server.output.slice(-2000));
       // its request at load: nothing of postman-request loaded late (the
       // refusal itself, answered on the next tick, can outlive the worker,

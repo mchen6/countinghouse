@@ -17,6 +17,9 @@ const ROOT = path.join(__dirname, '..', '..');
 // a file's name as the reviewed entries spell it: relative to the repo, and a
 // dependency as node_modules/..., also where node_modules is a link to
 // another tree (a worktree's), by its real path
+const ROOT_REAL = (() => {
+  try { return fs.realpathSync(ROOT); } catch (e) { return ROOT; }
+})();
 const NODE_MODULES = (() => {
   try { return fs.realpathSync(path.join(ROOT, 'node_modules')); } catch (e) { return path.join(ROOT, 'node_modules'); }
 })();
@@ -25,6 +28,10 @@ const relOf = (file) => {
   try { real = fs.realpathSync(file); } catch (e) { /* as given */ }
   const fromModules = path.relative(NODE_MODULES, real);
   if (!fromModules.startsWith('..') && !path.isAbsolute(fromModules)) return path.join('node_modules', fromModules).split(path.sep).join('/');
+  // (the repo's own files by its real path too: a checkout reached through
+  // a link names them the same)
+  const fromRoot = path.relative(ROOT_REAL, real);
+  if (!fromRoot.startsWith('..') && !path.isAbsolute(fromRoot)) return fromRoot.split(path.sep).join('/');
   return path.relative(ROOT, file).split(path.sep).join('/');
 };
 // what a worker boots from: the lean worker; the lockdown, loaded at
@@ -230,10 +237,11 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
       if (seen.has(file) || !file.endsWith('.js') && !file.endsWith('.cjs') && !file.endsWith('.mjs')) continue;
       seen.add(file);
       const ast = parse(file);
-      if (ast == null) { unparsed.push(relOf(file)); continue; }
+      const fileRel = relOf(file);
+      if (ast == null) { unparsed.push(fileRel); continue; }
       for (const r of requiresOf(ast)) {
         if (Module.isBuiltin(r.request) && !r.inFunction) continue;
-        const rel = relOf(file);
+        const rel = fileRel;
         const at = r.inFunction ? REVIEWED.findIndex(([f, q]) => f.test(rel) && q.test(r.request)) : -1;
         if (r.inFunction) {
           if (at < 0) findings.push(`${rel}:${r.line}: ${r.kind}('${r.request}')`);
@@ -246,7 +254,7 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
         let target = null;
         try { target = require.resolve(r.request, {paths: [path.dirname(file)]}); } catch (e) { continue; }
         if (!Module.isBuiltin(target)) {
-          if (!via.has(target)) via.set(target, `${relOf(file)}:${r.line}${r.inFunction ? ' (in a function)' : ''}`);
+          if (!via.has(target)) via.set(target, `${fileRel}:${r.line}${r.inFunction ? ' (in a function)' : ''}`);
           queue.push(target);
         }
       }
