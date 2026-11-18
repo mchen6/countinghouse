@@ -81,6 +81,19 @@ const ATTEMPTS = {
       return M._load('./bind-address', {path: libDir, filename: path.relative(process.cwd(), path.join(ownDir, 'decoy.js')), paths: []}, false);
     }
     if (arg === 'nonObject') return M._load('./bind-address', 5, false);
+    // a primitive parent whose prototype carries lib/ as the path Node keys
+    // on, and the module's decoy as its filename (the medium review of
+    // 0fd4a67b)
+    if (arg === 'primitiveProto') {
+      const fields = {path: libDir, id: 'x', filename: path.join(ownDir, 'decoy.js'), paths: []};
+      for (const k of Object.keys(fields)) Object.defineProperty(Number.prototype, k, {configurable: true, value: fields[k]});
+      try { return M._load('./bind-address', 5, false); } finally { for (const k of Object.keys(fields)) delete Number.prototype[k]; }
+    }
+    // a filename that throws on the wrapper's read only, then names the decoy
+    if (arg === 'filenameThrowsOnce') {
+      let n = 0;
+      return M._load('./bind-address', {path: libDir, paths: [], id: 'x', get filename() { if (n++ === 0) throw new Error('once'); return path.join(ownDir, 'decoy.js'); }}, false);
+    }
     // Node's path cache, keyed by the request and the directory it is looked
     // up in: an entry for the runtime's first './bind-address' from lib/
     if (arg === 'pathCache') {
