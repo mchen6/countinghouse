@@ -49,6 +49,19 @@ describe('sessions 35: a module going on or off is hidden', () => {
     assert.strictEqual(told, 2);
   });
 
+  // the medium review of M4a, finding 9: one listener for what the lists
+  // show, replaced at each configure (a test process starts many runtimes)
+  it('configure\'s changed() is the one told: a later configure replaces it', () => {
+    const told = [];
+    visibility.configure({changed: () => told.push('first')});
+    visibility.configure({changed: () => told.push('second')});
+    visibility.hide(['mod-a']);
+    assert.deepStrictEqual(told, ['second']);
+    visibility.resetForTests();
+    visibility.hide(['mod-b']);
+    assert.deepStrictEqual(told, ['second'], 'reset clears it');
+  });
+
   describe('the bridge: lib/session-packs.js asks the hidden set', () => {
     it('outside a shared runtime (no session view): a hidden module is not listed, its device not, and none() is false', () => {
       visibility.hide(['mod-a']);

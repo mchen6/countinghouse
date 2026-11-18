@@ -228,7 +228,24 @@ any module code). Stops:
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
   the module's directory); `module.registerHooks`/`register` are locked so no
-  later hook can run ahead of the boundary;
+  later hook can run ahead of the boundary; and `Module._load`, which module
+  code reaches as `module.constructor._load`, forwards only its request,
+  parent and isMain, so its internal fourth argument (which skips the
+  resolve hooks, or hands over a resolution or source) never skips them.
+  Under `enforce` it takes only a string request and never makes a main
+  module; it, `Module._resolveFilename`, `Module.prototype.load` and the
+  extension handlers are locked, and the extensions table takes no new
+  extension. Under `audit` each replacement is reported. **Until #194's
+  next step (no lazy runtime load after the lockdown), other routes into
+  what the runtime loads later are one assignment away for module code:**
+  a planted `require.cache` entry or `Module._cache` replaced; Node's
+  relative-resolve cache poisoned through a parent module code forges (its
+  path a countinghouse directory, its filename the module's own);
+  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced; an
+  accessor on `Module.prototype` for Node's internal URL symbol; and, under
+  `audit` even with the file broker, `_findPath` and `_stat`. #194's later
+  steps close them (the runtime loads nothing after the lockdown; the cache
+  moved out of reach; every loader static locked);
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s

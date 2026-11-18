@@ -92,6 +92,13 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     }
   });
 
+  // the medium review of M4a, finding 10: a part is found by friendly name
+  // among the directories given; two of them under one name are refused
+  it('two directories whose modules share a friendly name are refused', () => {
+    const twin = writeModule(path.join(root, 'module-store', '@u', 'ch-step-s', '1.0.0'), {name: '@u/ch-step-s', role: 'part', friendly: 'ch-step-s'});
+    refusedWith(msg({dirs: {'@t/ch-pack-a': dirs.scenario, '@t/ch-step-s': dirs.part, '@u/ch-step-s': twin}}), /friendly name ch-step-s/);
+  });
+
   it('a directory the closure does not hold is refused: the message says exactly what loads', () => {
     const extra = writeModule(path.join(root, 'module-store', '@t', 'ch-step-x', '1.0.0'), {name: '@t/ch-step-x', role: 'part'});
     const r = mip.readModuleRequest(msg({dirs: {'@t/ch-pack-a': dirs.scenario, '@t/ch-step-s': dirs.part, '@t/ch-step-x': extra}}), {needsDirs: true});

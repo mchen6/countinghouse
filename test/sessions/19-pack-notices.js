@@ -30,6 +30,12 @@ const until = async(test, ms = 3000) => {
   return test();
 };
 
+// What lib/packs-in-place.js asks of a manager for a unit loaded in place:
+// ModuleManager's own methods (these fakes' loads never acknowledge, so a
+// unit has nothing to wait for).
+const MMP = require('../../lib/module-manager').prototype;
+const UNITS = {holdDiscovery: MMP.holdDiscovery, releaseDiscovery: MMP.releaseDiscovery, isHeld: MMP.isHeld, unitLoaded: MMP.unitLoaded, unitRegistration: MMP.unitRegistration, unitNote: MMP.unitNote};
+
 describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is told (shared runtime B3, Task 6)', () => {
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
@@ -253,7 +259,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
       let ceiling = {state: 'none'};
       settings.configure({ceiling: () => ceiling, defaultOf: () => 8 * 1024 * 1024, isLive: (id) => open.has(id), ceilingMemoMs: 0});
       // a pack loaded at start (the terminal's) is global; ci is loaded after, for a session
-      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         packsInPlace: new Map([['@countinghouse/ch-pack-docs', {scenario: '/y', pack: 'docs', modules: new Map([['@countinghouse/ch-pack-docs', {version: '2.0.0'}]]), tools: new Set(), prompts: new Set()}]]),
         supervisor: {errorForDevice: (d) => (d === 'd-restarting' ? {code: 'MODULE_RESTARTING', module: 'm-ci'} : null)},
         endedStateForDevice: (d) => (d === 'd-ended' ? {code: 'MODULE_UNLOADED', name: 'm-ci'} : null)};
@@ -309,7 +315,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     it('a load whose rollback throws leaves no loading record behind', async() => {
       const packsInPlace = require('../../lib/modules-in-place');
       let loads = 0;
-      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         // the first module loads, the second fails, and the rollback's unload throws
         loadModuleFromPath: (p, name, version, cb) => { loads += 1; if (loads === 1) { mm.modules[name] = {}; return cb(null); } return cb(new Error('no spawn')); },
         unloadModuleExternal: () => { throw new Error('unload threw'); }};
@@ -324,7 +330,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     it('B can\'t see A\'s pack while it unloads, though the views are rebuilt meanwhile', async() => {
       const packsInPlace = require('../../lib/modules-in-place');
       const seenMidUnload = [];
-      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         loadModuleFromPath: (p, name, version, cb) => { mm.modules[name] = {packageInfo: {version}}; cb(null); },
         unloadModuleExternal: (name, cb) => { seenMidUnload.push(sessionPacks.listsModule(B, name)); delete mm.modules[name]; cb(); }};
       sessionPacks.configure({records: () => packsInPlace.packRecords(mm), moduleOf: () => null,
@@ -342,7 +348,7 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
     it('B can\'t see A\'s pack between its devices\' registration and the load\'s answer', async() => {
       const packsInPlace = require('../../lib/modules-in-place');
       const seenMidLoad = [];
-      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null,
+      const mm = {modules: {}, unlisted: new Set(), startScenarios: [], startPlan: null, ...UNITS,
         loadModuleFromPath: (p, name, version, cb) => {
           // the module's devices register now (toolschanged): what B sees at this moment
           mm.modules[name] = {packageInfo: {version}};
