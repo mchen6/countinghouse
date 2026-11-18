@@ -90,8 +90,14 @@ moduleValidator.validateModule(target, (err, result) => {
     process.exit(result.ok === true ? 0 : 1);
   }
 
+  // each declared setting, and how a user's change to it is made
+  // (lib/module-settings.js confirmRule)
+  const RULE = {'on request': 'changed in conversation on request', confirm: 'changed in conversation only with the user\'s own confirmation (at a terminal until a client is tested to show the form)'};
+  const printSettings = () => (result.settings || []).forEach((s) => console.log(`  setting ${s.name} (${s.type}): ${RULE[s.rule]}`));
+
   if (result.ok === true) {
     console.log(`ok: ${result.module} -- no problems found`);
+    printSettings();
     (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
     process.exit(0);
   }
