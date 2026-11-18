@@ -402,6 +402,12 @@ try {
   process.exit(-1);
 }
 
+// With modules to load, the validators boot now, beside the rest of the main
+// thread's boot, not when the first module's spec is checked
+// (lib/validator-pool.js startEarly). Every synchronous refusal of the start
+// has run by here; the id index's (identityReady, below) is the one left.
+require('./lib/validator-pool').startEarly();
+
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
 // ModuleManager.prototype.loadAllModules's registry-lookup branch, and only
 // under --moduleRegistry with no --loadModule path (options.usesModuleRegistry)
