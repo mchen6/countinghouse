@@ -73,6 +73,18 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
   }
 
+  it('sessionSettled reads a late settle the lifecycle has already dropped: a worker whose broker went past the bound counts as busy', async () => {
+    const {ModuleLifecycle} = require('../../lib/module-lifecycle');
+    const ModuleManager = require('../../lib/module-manager');
+    const m = {modules: mm.modules, lifecycle: new ModuleLifecycle(), perSessionModuleNames: ModuleManager.prototype.perSessionModuleNames};
+    m.lifecycle.track(`ps\0${A}`, {exited: Promise.resolve(), settled: Promise.resolve(false)});
+    m.lifecycle.track(`ps\0${B}`, {exited: Promise.resolve(), settled: Promise.resolve(true)});
+    await new Promise((r) => setImmediate(r));   // both entries dropped by now
+    assert.deepStrictEqual(await ModuleManager.prototype.sessionSettled.call(m, A), {ps: false});
+    assert.deepStrictEqual(await ModuleManager.prototype.sessionSettled.call(m, B), {ps: true});
+    assert.deepStrictEqual(await ModuleManager.prototype.sessionSettled.call(m, A), {ps: true}, 'asked once, then forgotten');
+  });
+
   it('a broker still busy past the bound at a session\'s end: that partition is kept, and the end says so (false)', async () => {
     await make(A);
     mm.sessionSettled = () => Promise.resolve({ps: false});
@@ -208,7 +220,7 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.deepStrictEqual(total(), before, 'back to B\'s');
     });
 
-    it('a share is given back whole, whatever its walk did: a failed walk added nothing, a truncated one its count', async () => {
+    it('a share is given back whole, whatever its walk did: a failed walk counted the limit + 1, a truncated one its count', async () => {
       await make(A);
       await make(B);
       await make(C);
@@ -224,13 +236,14 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       }
       const built = quota().bytes;
       const counted = (sid) => quota().shares.get(sid).bytes;
-      assert.strictEqual(counted(A), 0, 'A\'s walk failed: it added nothing');
+      assert.strictEqual(counted(A), 1024 * 1024 + 1, 'A\'s walk failed: counted as the limit + 1, never as nothing');
       assert.ok(counted(B) > 1024 * 1024, 'B\'s stopped past 1 MB: it added what it counted');
       const bShare = counted(B);
+      const aShare = counted(A);
       await end(A);
-      assert.strictEqual(quota().bytes, built, 'A gave back the nothing it added');
+      assert.strictEqual(quota().bytes, built - aShare, 'A gave back exactly what it added');
       await end(B);
-      assert.strictEqual(quota().bytes, built - bShare, 'B gave back exactly what it added');
+      assert.strictEqual(quota().bytes, built - aShare - bShare, 'B gave back exactly what it added');
       await end(C);
       assert.strictEqual(quota().bytes, 0, 'C\'s, exactly: nothing left');
     });
@@ -389,18 +402,12 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.ok(!quota().shares.has(A), 'A\'s share forgotten');
     });
 
-    it('a negative reservation (a copy over a bigger file) is capped at the share: an unknown share can\'t drain the total, nor go below 0', async () => {
-      await make(A);
+    it('a negative reservation (a copy over a bigger file) is capped at the share: files never counted can\'t drain the total, nor take the share below 0', async () => {
       await make(B);
-      fs.writeFileSync(data(A, 'big'), Buffer.alloc(9000));   // uncounted: A's walk fails
       fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
-      const realMeasure = walk.measure;
-      walk.measure = (roots, opts) => (roots[0][0].endsWith(A) ? Promise.reject(new Error('failed')) : realMeasure(roots, opts));
-      try {
-        await spawn(B);
-      } finally {
-        walk.measure = realMeasure;
-      }
+      await spawn(B);   // built before A's partition is there
+      await make(A);
+      fs.writeFileSync(data(A, 'big'), Buffer.alloc(9000));   // on disk, never counted (no broker wrote it)
       const viewA = await spawn(A);
       viewA.reserve(-9000, 0, 'copyfile', '/data/big');   // a small file copied over the big one
       assert.strictEqual(quota().bytes, 2000, 'while the copy runs: B\'s still counted (others can\'t write past the limit meanwhile)');
@@ -411,18 +418,12 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, 2100, 'a later write still charged');
     });
 
-    it('a decrease never takes another op\'s reservation in flight: an unknown share can\'t write uncounted that way', async () => {
-      await make(A);
+    it('a decrease never takes another op\'s reservation in flight: a share can\'t write uncounted that way', async () => {
       await make(B);
-      fs.writeFileSync(data(A, 'old'), Buffer.alloc(1024 * 1024));   // uncounted: A's walk fails
       fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
-      const realM = walk.measure;
-      walk.measure = (roots, opts) => (roots[0][0].endsWith(A) ? Promise.reject(new Error('failed')) : realM(roots, opts));
-      try {
-        await spawn(B);
-      } finally {
-        walk.measure = realM;
-      }
+      await spawn(B);
+      await make(A);
+      fs.writeFileSync(data(A, 'old'), Buffer.alloc(1024 * 1024));   // on disk, never counted
       const viewA = await spawn(A);
       viewA.reserve(100, 1, 'write', '/data/n');   // op 1, in flight
       viewA.settle(0, 0, -1024 * 1024, -1);         // op 2 removes the uncounted 1 MB
@@ -495,20 +496,15 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
         fs.promises.readdir = realReaddir;
       }
       assert.strictEqual(quota().knows(A), false);
+      assert.ok(quota().bytes > quota().maxBytes, 'held past the limit (nothing given back from it) until it is built again');
     });
 
-    it('a share not known can\'t drain the total by deleting uncounted files; its own charges are given back at its end', async () => {
-      await make(A);
+    it('a share can\'t drain the total by deleting files it never counted; its own charges are given back at its end', async () => {
       await make(B);
-      fs.writeFileSync(data(A, 'old'), Buffer.alloc(9000));   // uncounted: A's walk fails
       fs.writeFileSync(data(B, 'f'), Buffer.alloc(2000));
-      const realMeasure = walk.measure;
-      walk.measure = (roots, opts) => (roots[0][0].endsWith(A) ? Promise.reject(new Error('failed')) : realMeasure(roots, opts));
-      try {
-        await spawn(B);
-      } finally {
-        walk.measure = realMeasure;
-      }
+      await spawn(B);
+      await make(A);
+      fs.writeFileSync(data(A, 'old'), Buffer.alloc(9000));   // on disk, never counted
       const viewA = await spawn(A);
       write(viewA, data(A, 'new'), 500);
       assert.strictEqual(quota().bytes, 2500);
