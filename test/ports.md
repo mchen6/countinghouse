@@ -94,6 +94,7 @@ one) as well as the ports it binds.
 | `test/fs-broker/12-identity.js` | 9630 |
 | `test/fs-broker/13-collisions.js` | 9631 |
 | `test/fs-broker/14-hoisted-install.js` | 9633 |
+| `test/fs-broker/29-handle-stream-close.js` | 9758 |
 | `test/job-control/test001.js` | 9527 |
 | `test/load-module/test001.js` | 9527 |
 | `test/load-module/test002.js` | 9527 |
