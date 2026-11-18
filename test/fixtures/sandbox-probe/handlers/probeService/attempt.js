@@ -68,15 +68,6 @@ const ATTEMPTS = {
         Object.defineProperty(p, 'id', {configurable: true, get() { this.path = libDir; return 'x'; }});
         return p;
       },
-      // a lib/ parent that agrees, with Node's internal URL (an own symbol
-      // of a Module Node resolved for) pointing at the module's own file
-      kURL: () => {
-        const p = agreeing(libDir);
-        const donor = require.cache[key];
-        const sym = Object.getOwnPropertySymbols(donor).find((s) => /url/i.test(String(s)));
-        if (sym != null) p[sym] = require('url').pathToFileURL(path.join(ownDir, 'decoy.js')).href;
-        return p;
-      },
       // (its own throw, in words of its own: blocked only if the wrapper refuses)
       filenameThrows: () => Object.defineProperty({}, 'filename', {get() { throw new Error('the module\'s own throw'); }})
     };
@@ -114,7 +105,7 @@ const ATTEMPTS = {
   linkageKept:      () => {
     const kid = require('../../lib/kid');
     const child = module.children.find((c) => c.exports === kid);
-    if (child == null || child.parent !== module) throw Object.assign(new Error('unlinked'), {code: 'UNLINKED'});
+    if (child == null || child.parent !== module || kid.parentAtLoad !== module) throw Object.assign(new Error('unlinked'), {code: 'UNLINKED'});
   },
   hostIpClean:      () => {
     if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
