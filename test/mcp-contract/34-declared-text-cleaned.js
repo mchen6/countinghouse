@@ -350,6 +350,33 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     }
   });
 
+  // #400: tools/list's own finding, recorded on the action (tools/call asks
+  // the action itself, so no new generation: a page cursor and the kept
+  // caches stay); a spec replaced in place keeps its marks; single-thread
+  // mode assembles the spec it decided on
+  it('a mark tools/list adds keeps the tool generation; a replaced spec keeps its marks; one read of api.json', () => {
+    const verdict = require('../../lib/hidden-text-verdict');
+    const toolGeneration = require('../../lib/tool-generation');
+    const action = {name: 'late'};
+    const before = toolGeneration.current();
+    verdict.markAction(action);
+    assert.strictEqual(verdict.isUnusable(action), true);
+    assert.strictEqual(toolGeneration.current(), before);
+    const old = {device: {serviceList: {'urn:t:serviceID:s': {actionList: [{name: 'stuck'}, {name: 'fine'}]}}}};
+    verdict.mark(old, [['urn:t:serviceID:s', 'stuck']]);
+    const replaced = JSON.parse(JSON.stringify(old));
+    verdict.carry(old, replaced);
+    assert.deepStrictEqual(replaced.device.serviceList['urn:t:serviceID:s'].actionList.map((a) => verdict.isUnusable(a)), [true, false]);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-34-checked-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'x', serviceList: {}}}));
+      const checked = require('../../lib/schema-safety').schemaChecked(dir, 'x');
+      assert.deepStrictEqual(checked.spec, {device: {friendlyName: 'x', serviceList: {}}});
+    } finally {
+      fs.rmSync(dir, {recursive: true, force: true});
+    }
+  });
+
   // #378's review (7): cut first, then cleaned, so no kept joiner is left
   // dangling at the cut
   it('a question\'s dialog cut at its limit ends in no hidden character', () => {
