@@ -215,7 +215,8 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         packsInPlace: new Map([['@countinghouse/ch-pack-docs', {scenario: '/y', pack: 'docs', modules: new Map([['@countinghouse/ch-pack-docs', {version: '2.0.0'}]]), tools: new Set(), prompts: new Set()}]]),
         supervisor: {errorForDevice: (d) => (d === 'd-restarting' ? {code: 'MODULE_RESTARTING', module: 'm-ci'} : null)},
         endedStateForDevice: (d) => (d === 'd-ended' ? {code: 'MODULE_UNLOADED', name: 'm-ci'} : null)};
-      const dm = {deviceMap: {'d-ci': {hostModuleName: 'm-ci'}, 'd-docs': {hostModuleName: '@countinghouse/ch-pack-docs'}}};
+      const dm = Object.assign(Object.create(require('../../lib/device-manager').prototype),
+        {moduleManager: mm, deviceMap: {'d-ci': {hostModuleName: 'm-ci'}, 'd-docs': {hostModuleName: '@countinghouse/ch-pack-docs'}}});
       let gone = false;
       RouteManager.prototype.configureSessionPacks.call({moduleManager: mm, cdifInterface: {deviceManager: dm}}, {daemonGone: () => gone});
       assert.strictEqual(sessionPacks.isGlobal('docs'), true, 'a start pack is global');
@@ -397,6 +398,34 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
           await packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
         } finally { LOG.W = W; }
         assert.deepStrictEqual(warned, []);
+      });
+
+      // F3-5 with F1-3: the part's spec, kept by its supervisor while it is down, is no tool before its pack goes,
+      // and gone with it after; it never comes back
+      it('restarting or suspended, its spec kept: no tool while down, gone with its pack, never respawned (F3-5)', async() => {
+        const packsInPlace = require('../../lib/packs-in-place');
+        const toolRegistry = require('../../lib/mcp/tool-registry');
+        const DeviceManager = require('../../lib/device-manager');
+        const spec = {device: {friendlyName: 'ch-step-x', serviceList: {'urn:x:serviceID:svc': {actionList: [{name: 'run', description: 'run'}]}}}};
+        const tools = (ci) => Object.keys(toolRegistry.buildToolTargets(ci));
+        for (const exits of [1, 3]) {
+          const h = crashedPartRuntime();
+          await load(h);
+          const dm = Object.assign(Object.create(DeviceManager.prototype), {moduleManager: h.mm, deviceMap: {}, deviceOwners: new Map([['dx', PART]])});
+          const ci = {deviceManager: dm};
+          // its worker exits: its device out of the map, its spec and package.json with the supervisor
+          delete h.mm.modules[PART];
+          for (let i = 0; i < exits; i++) h.mm.supervisor.exited(PART, 'exit code 1', {dx: spec}, {name: PART, version: '1.0.0', countinghouse: {role: 'part'}});
+          assert.strictEqual(h.mm.supervisor.status(PART).state, exits === 3 ? 'suspended' : 'restarting');
+          assert.ok(dm.getAllDeviceSpecs().dx != null, 'premise: its spec kept');
+          assert.ok(Object.keys(toolRegistry.buildToolTargets(ci, {includeUnlisted: true})).includes('ch_step_x_svc_run'), 'premise: a tool, but for its listing');
+          assert.ok(!tools(ci).includes('ch_step_x_svc_run'), `no tool while down (${exits} exit(s))`);
+          await packsInPlace.unloadPack(h.mm, {type: 'unload', name: '@countinghouse/ch-pack-two', pack: 'two'});
+          h.backoffEnds();
+          assert.deepStrictEqual(h.restarts, [], 'never respawned');
+          assert.strictEqual(dm.getAllDeviceSpecs().dx, undefined, 'its spec gone with the pack');
+          assert.ok(!tools(ci).includes('ch_step_x_svc_run'));
+        }
       });
 
       it('pack operations run one at a time: one arriving while another is under way is refused, and changes nothing', async() => {
