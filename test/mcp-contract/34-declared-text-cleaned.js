@@ -569,6 +569,9 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
             .send({serviceID: 'urn:countinghouse-test:serviceID:textService', actionName: 'stuck', input: {}});
           assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route}: ${JSON.stringify(res.body).slice(0, 400)}`);
         }
+        const got = (await request(at).get(`/devices/${device.device.deviceID}/get-spec`).set('X-CH-Key', KEY)).body;
+        const shownNames = (got && got.device && got.device.serviceList ? got.device.serviceList['urn:countinghouse-test:serviceID:textService'].actionList : []).map((a) => a.name);
+        assert.ok(shownNames.includes('show') && !shownNames.includes('stuck'), JSON.stringify(got).slice(0, 600));
       } finally {
         stopServer(single);
       }
@@ -588,6 +591,10 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
           assert.strictEqual(res.body && res.body.code, 'MODULE_NOT_LISTED', `${route} ${actionName}: ${res.status} ${JSON.stringify(res.body).slice(0, 400)}${log()}`);
         }
       }
+      // nor shown in get-spec's spec (as tools/list leaves it out)
+      const got = (await request(`http://127.0.0.1:${PORT}`).get(`/devices/${device.device.deviceID}/get-spec`).set('X-CH-Key', KEY)).body;
+      const names = (got && got.device && got.device.serviceList ? got.device.serviceList[serviceID].actionList : []).map((a) => a.name);
+      assert.ok(names.includes('show') && !names.includes('stuck') && !names.includes('outStuck'), JSON.stringify(got).slice(0, 600));
       // a listed action of the same module is not refused for it
       const shown = await request(`http://127.0.0.1:${PORT}`).post(`/devices/${device.device.deviceID}/invoke-action`).set('X-CH-Key', KEY)
         .send({serviceID, actionName: 'show', input: {what: 'x'}});

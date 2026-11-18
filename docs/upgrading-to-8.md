@@ -543,8 +543,9 @@ says how to write a module for this.
   holds a hidden character where nothing can be left out (an enum or const
   member, a property name, a required entry, a pattern...) is not listed
   and not callable over MCP. `invoke-action` and `add-job` now refuse it as
-  well, with `MODULE_NOT_LISTED`, and a task already queued for it ends
-  with that code instead of running. It is decided once, when the module
+  well, with `MODULE_NOT_LISTED`, a task already queued for it ends
+  with that code instead of running, and `get-spec` leaves it out of the
+  spec it answers. It is decided once, when the module
   loads, and the load's warning names each such action.
 
 ## What operators get
