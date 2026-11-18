@@ -360,7 +360,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
   it('tools/list\'s finding is recorded; updateDeviceSpec decides again; a decision is taken when its spec serves; one read of api.json', () => {
     const verdict = require('../../lib/hidden-text-verdict');
     verdict.set('d-late', []);
-    verdict.markAt('d-late', 'urn:t:serviceID:s', 'late', null, verdict.tokenOf('d-late'));
+    verdict.markAt('d-late', 'urn:t:serviceID:s', 'late', verdict.tokenOf('d-late'));
     assert.strictEqual(verdict.unusableAt('d-late', 'urn:t:serviceID:s', 'late'), true);
     verdict.forget('d-late');
     const CHDevice = require('../../lib/countinghouse-device');
@@ -385,12 +385,12 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     const refusedSpec = {device: {friendlyName: 'u'}};
     verdict.pend(refusedSpec, []);
     assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true);
-    verdict.set('d-update', [['urn:t:serviceID:s', 'added']], null, device);
+    verdict.set('d-update', [['urn:t:serviceID:s', 'added']], device);
     verdict.adopt('d-update', refusedSpec, undefined, other);
     assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), false, 'adopted: its decision now');
     // (8) a purged device's decision goes, only its owner's, and not while it
     // is coming back (restarting: its spec stays listed)
-    verdict.set('d-update', [['urn:t:serviceID:s', 'added']], null, other);
+    verdict.set('d-update', [['urn:t:serviceID:s', 'added']], other);
     const DeviceManager = require('../../lib/device-manager');
     DeviceManager.prototype.forgetDecision.call({moduleManager: {endedDevices: {'d-update': {code: 'MODULE_RESTARTING'}}}}, 'd-update', other);
     assert.strictEqual(verdict.unusableAt('d-update', 'urn:t:serviceID:s', 'added'), true, 'restarting: kept');
@@ -469,9 +469,9 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     verdict.set('d-gen', []);
     const walked = verdict.tokenOf('d-gen');
     verdict.set('d-gen', []);
-    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, walked);
+    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', walked);
     assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), false, 'a walk of a decision since replaced marks nothing');
-    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', null, verdict.tokenOf('d-gen'));
+    verdict.markAt('d-gen', 'urn:t:serviceID:s', 'x', verdict.tokenOf('d-gen'));
     assert.strictEqual(verdict.unusableAt('d-gen', 'urn:t:serviceID:s', 'x'), true);
     verdict.forget('d-gen');
   });
@@ -488,6 +488,14 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
       {name: 'deep', description: 'Deep.', input: {schema: '/s/deep/input'}}]}}}};
     assert.deepStrictEqual(require('../../lib/declarations').check(api, doc).hiddenUnlisted, [['urn:t:serviceID:s', 'deep']]);
+    // (and a document whose refs stay within the depth, no hidden character:
+    // the fast path, every action usable, none inlined)
+    const shallow = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', $defs: {n: {type: 'string'}}, s: {deep: {input: {type: 'object', properties: {a: {$ref: '#/$defs/n'}}}}}};
+    assert.deepStrictEqual(require('../../lib/declarations').check(api, shallow).hiddenUnlisted, []);
+    // (a ref to no schema, a number, is never the fast path's: the walk
+    // judges it, as the gateway's does)
+    const toNumber = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', $defs: {n: 5}, s: {deep: {input: {type: 'object', properties: {a: {$ref: '#/$defs/n'}}}}}};
+    assert.deepStrictEqual(require('../../lib/declarations').check(api, toNumber).hiddenUnlisted, [['urn:t:serviceID:s', 'deep']]);
   });
 
   // #400's high review (3, the reviewer's ruling): the schema route answers
@@ -499,14 +507,19 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     const svc = 'urn:t:serviceID:s';
     const spec = {device: {serviceList: {[svc]: {actionList: [{name: 'a', description: 'A.', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}},
       {name: 'b', description: 'B.', input: {schema: '/s/b/input'}},
-      // (no tool: a resource action, which tools/list never lists)
+      // (no tool: a resource action, answered as every action the load
+      // decided usable is, the reviewer's ruling)
       {name: 'r', description: 'R.', input: {schema: '/s/r/input'}, resource: {uriTemplate: 'r/{id}', name: 'r'}}]}}}};
     const doc = {$defs: {Shared: {type: 'string', title: 'One\ntwo', description: `d${ZWSP}`}},
       s: {a: {input: {type: 'object', properties: {x: {$ref: '#/$defs/Shared'}}, 'x-note': {a: 'visible', b: '\u202e'}, examples: ['ok', '\u202e']},
         output: {type: 'object'}}, b: {input: {type: 'object', description: 'B only', properties: {y: {$ref: '#/$defs/Shared'}}}},
         r: {input: {type: 'object', description: 'R only'}}}};
-    const unusable = (serviceID, actionName) => actionName === 'b';
-    const at = (...tokens) => answer(doc, spec, tokens, unusable);
+    // (the load's decision, as lib/hidden-text-verdict.js holds it)
+    const verdict = require('../../lib/hidden-text-verdict');
+    verdict.set('d-answer', [[svc, 'b']]);
+    const decision = verdict.tokenOf('d-answer');
+    verdict.forget('d-answer');
+    const at = (...tokens) => answer(doc, spec, tokens, decision);
     const shared = {type: 'string', title: clientText.line('One\ntwo'), description: 'd '};
     assert.deepStrictEqual(at('s', 'a', 'input'), {value: {type: 'object', properties: {x: shared}}}, 'as tools/list shows it');
     assert.ok(!shared.title.includes('\n'), 'a title one line');
@@ -517,21 +530,22 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     }
     assert.deepStrictEqual(at('s', 'b', 'input'), {refused: 'MODULE_NOT_LISTED'});
     assert.deepStrictEqual(at('s', 'b', 'input', 'description'), {refused: 'MODULE_NOT_LISTED'});
-    assert.deepStrictEqual(at(), {value: {s: {a: {input: {type: 'object', properties: {x: shared}}, output: {type: 'object'}}}}}, 'the document: only the usable ones');
+    assert.deepStrictEqual(at(), {value: {s: {a: {input: {type: 'object', properties: {x: shared}}, output: {type: 'object'}}, r: {input: {type: 'object', description: 'R only'}}}}},
+      'the document: only the usable ones');
     assert.deepStrictEqual(at('s', 'b'), {refused: 'POINTER_DEREF_ERROR'}, 'nothing shown there: as a path that names nothing');
-    assert.deepStrictEqual(at('s', 'r', 'input'), {refused: 'POINTER_DEREF_ERROR'}, 'no tool');
+    assert.deepStrictEqual(at('s', 'r', 'input'), {value: {type: 'object', description: 'R only'}}, 'an action that is no tool, decided usable');
     // a tool whose output is unusable is shown nowhere, its input neither (as tools/list leaves it out)
     const both = {s: {c: {input: {type: 'object'}, output: {type: 'object', properties: {k: {enum: [`x${ZWSP}`]}}}}}};
     const cSpec = {device: {serviceList: {[svc]: {actionList: [{name: 'c', description: 'C.', input: {schema: '/s/c/input'}, output: {schema: '/s/c/output'}}]}}}};
-    assert.deepStrictEqual(answer(both, cSpec, ['s', 'c', 'input'], () => false), {refused: 'MODULE_NOT_LISTED'});
+    assert.deepStrictEqual(answer(both, cSpec, ['s', 'c', 'input'], null), {refused: 'MODULE_NOT_LISTED'});
     // (the reviewer's ruling: exactly as tools/list) an output that is no
     // object is not advertised, the tool still listed with its input; an
     // input that names nothing is advertised as the default schema
     const loose = {s: {c: {input: {type: 'object', description: 'In.'}, output: true}}};
-    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'input'], () => false), {value: {type: 'object', description: 'In.'}});
-    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'output'], () => false), {refused: 'POINTER_DEREF_ERROR'});
-    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c'], () => false), {value: {input: {type: 'object', description: 'In.'}}});
-    assert.deepStrictEqual(answer({s: {c: {output: {type: 'object'}}}}, cSpec, ['s', 'c', 'input'], () => false), {value: {type: 'object', properties: {}}});
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'input'], null), {value: {type: 'object', description: 'In.'}});
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c', 'output'], null), {refused: 'POINTER_DEREF_ERROR'});
+    assert.deepStrictEqual(answer(loose, cSpec, ['s', 'c'], null), {value: {input: {type: 'object', description: 'In.'}}});
+    assert.deepStrictEqual(answer({s: {c: {output: {type: 'object'}}}}, cSpec, ['s', 'c', 'input'], null), {value: {type: 'object', properties: {}}});
     // an answer is a copy: changing it changes nothing kept
     const first = at('s', 'a', 'input').value;
     first.type = 'changed';
