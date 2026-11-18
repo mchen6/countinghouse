@@ -133,11 +133,12 @@ describe('sandbox 09: --hardened', function() {
     }
   });
 
-  // CHUtil's HTTP library loads on first use (lib/lazy-require.js),
-  // so its files are read after the permission model is live, not in the
-  // worker's boot (reviewer, 2026-11-12). The fixture declares 127.0.0.1 and a
-  // policy approves it; the stand-in is an ephemeral loopback server.
-  it('the first CHUtil.request works under --hardened, loading its library only then', async () => {
+  // CHUtil's HTTP library, for a module that declares net, loads at the
+  // worker's set-options, before the lockdown (#194's PR 1, ruling (b); see
+  // test/sandbox/40): its files are read under the permission model too. The
+  // fixture declares 127.0.0.1 and a policy approves it; the stand-in is an
+  // ephemeral loopback server.
+  it('CHUtil.request works under --hardened, its library loaded before module code', async () => {
     fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'lazy-net-probe'), path.join(root, 'lazy-net-probe'), {recursive: true});
     const policy = path.join(root, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'lazy-net-probe': {approve: 'as-declared'}}}));
@@ -146,7 +147,7 @@ describe('sandbox 09: --hardened', function() {
       server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
         '--modulePolicy', policy, '--modulePath', root, '--loadModule', path.join(root, 'lazy-net-probe')]);
       const probe = async (args) => toolOutput(await mcpCall(testPort(9614), KEY, 'lazy_net_probe_netservice_probe', args));
-      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: false});
+      assert.deepStrictEqual((await probe({what: 'loaded'})).loaded, {request: true});
       const r = await probe({what: 'request', url: `${standIn.base}/`});
       assert.deepStrictEqual([r.outcome, r.status, r.body, r.loaded], ['ok', 200, 'ok', {request: true}], JSON.stringify(r));
     } finally {

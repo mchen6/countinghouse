@@ -802,8 +802,8 @@ is no private compile path. So:
   - the live-options file;
   - bind-address;
   - the patch's built-ins;
-  - postman-request (always under audit; under enforce when the module
-    declares `net`);
+  - postman-request, when the module declares `net`, in both modes
+    (revised by Revision 6's item 11: no longer always under audit);
   - the validator closure (on `validateOnly`);
   - each re-require, hoisted;
   - `reachesLib`'s lookup (below).
@@ -846,8 +846,10 @@ after the lockdown, then resolves: the planted path is never used.
    `ownKeys`, `getOwnPropertyDescriptor`, `defineProperty` (which wrote
    through), `getPrototypeOf`, `setPrototypeOf`, `isExtensible` and
    `preventExtensions`. Each is tested.
-3. Under audit, postman-request is always preloaded (audit allows a request
-   enforce would refuse, so it's always reachable there).
+3. ~~Under audit, postman-request is always preloaded (audit allows a request
+   enforce would refuse, so it's always reachable there).~~ Revised by
+   Revision 6's item 11: preloaded only when the module declares `net`, in
+   both modes.
 4. A genuine-parent out-of-root load is refused under audit too: audit's
    private cache (Revision 4, A) holds only module-root files, and there is
    no out-of-root runtime load to serve under B2.
@@ -876,8 +878,9 @@ after the lockdown, then resolves: the planted path is never used.
 - `module.parent` at the three runtime-load sites.
 - An all-strict pin: every file under `lib/` starts with `'use strict'`
   (no sloppy runtime frame).
-- A request with no `net` under audit: allowed and reported, through the
-  preloaded postman-request.
+- A request with no `net` under audit: allowed, and reported as a `net`
+  report; postman-request loads then, after the lockdown (Revision 6's
+  item 11).
 
 ### PRs and estimate, revised
 
@@ -1012,6 +1015,15 @@ parent passed from module code is refused by the net.
 10. **#406's comment** now says every load it makes runs the hooks, apart
     from what Node answers from its own caches; blocking 2's check covers
     the one that mattered.
+11. **Revision 5's item 3 is revised: postman-request is preloaded only
+    when the module declares `net`, under audit and enforce alike.**
+    Preloading it on every audit worker costs about 240 files at boot (PR
+    1's measure on sandbox 43). A no-net module's request under audit loads
+    it after the lockdown instead. Audit isn't a boundary: the request
+    itself is reported (a `net` report naming its target), and it carries
+    only the module's own options, so the late load exposes nothing the
+    module didn't already hold. Under enforce a no-net request is refused
+    before the load.
 
 ### Audit under S, and what S names (the fourth review's rulings)
 
@@ -1041,9 +1053,9 @@ parent passed from module code is refused by the net.
     PR 1 makes it unnecessary.
 0. F4-1, with identity tagging lib-reaching not-founds, the own-data
    parent, and item 9's test. About 0.5 d.
-1. The must-preload list (Revision 5's, plus item 3), `httpSignature`
-   refused under enforce, null parents at the three sites, and item 4's
-   static pin. About 2 d.
+1. The must-preload list (Revision 5's, plus item 3; postman-request on
+   `net` only, item 11), `httpSignature` refused in both modes (item 3),
+   null parents at the three sites, and item 4's static pin. About 2 d.
 2. P: the cache entries moved and the property locked (no Proxy); `load`
    serving only the `Map` by path arithmetic; C; S with `_pathCache` as
    the empty Proxy; the genuine set, added to #406's wrapper and checked

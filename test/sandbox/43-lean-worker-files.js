@@ -70,7 +70,18 @@ const ALLOWED = [
   'node_modules/once/',
   'node_modules/wrappy/',
   'lib/timer.js',
-  'lib/store.js'
+  'lib/store.js',
+  // #194's PR 1: what the runtime used to load on first use, after the
+  // lockdown, now at boot (sandbox 66 shows none is loaded after it): the
+  // bunyan-free worker logger, ctx.redis's client, getHostIp's address, a
+  // live setting's fields
+  'lib/logger.js',
+  'lib/worker-logger.js',
+  'lib/redis-api.js',
+  'lib/supported-redis-commands.json',
+  'node_modules/redis-commands/',
+  'lib/bind-address.js',
+  'lib/live-options.js'
 ];
 
 // What one routed ctx.call may add to the above: nothing of the device
@@ -129,7 +140,7 @@ after(() => fs.rmSync(LOCAL_STORE, {recursive: true, force: true}));
       assert.deepStrictEqual(extra, [], `required outside the allowed list (${extra.length}):\n  ${extra.join('\n  ')}`);
     });
 
-    it(`after one ctx.call (${label}), has required nothing outside the hop's list (no validator, no device model, no logger)`, async () => {
+    it(`after one ctx.call (${label}), has required nothing outside the hop's list (no validator, no device model, no bunyan)`, async () => {
       const out = toolOutput(await mcpCall(PORT, 'k', 'lean_probe_caller_probecallerservice_filesaftercall', {}));
       assert.match(out.called, /^ok \d+$/, `the hop did not answer: ${out.called}`);
       const runtime = runtimeFiles(out.files);

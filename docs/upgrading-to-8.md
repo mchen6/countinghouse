@@ -169,6 +169,9 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking: `CHUtil.request` refuses the `httpSignature` option**, under
+  `audit` as well as `enforce`, with the sandbox's `ERR_ACCESS_DENIED`
+  error. Sign the request in the module (a header it computes) instead.
 - **Breaking: `ctx.job` is never `null`.** Outside a task it is now
   `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
   is the call's own progress, sent to an MCP client that asked for it

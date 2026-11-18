@@ -1,10 +1,11 @@
 // An http.Agent subclass made after the lockdown keeps its own
 // createConnection (#177's CI). On Node 24.0 and 22.16 http.Agent's
 // createConnection is net.createConnection itself, so the lockdown guards it
-// there; a lean worker loads libraries on first use, after the lockdown, and
-// a subclass that assigns its own createConnection as it loads (https's
-// Agent, forever-agent's ForeverAgentSSL under postman-request, any
-// util.inherits agent) must get it, not the guarded plain connect: a TLS
+// there; a library loaded after the lockdown (a module's own; postman-request
+// for a module with no net under audit, #194's PR 1), with a subclass that
+// assigns its own createConnection as it loads (https's Agent,
+// forever-agent's ForeverAgentSSL under postman-request, any util.inherits
+// agent), must get it, not the guarded plain connect: a TLS
 // agent would otherwise connect in the clear. http.Agent's own stays guarded.
 // On other versions the agent is not guarded there, and this passes as is.
 const assert = require('assert');

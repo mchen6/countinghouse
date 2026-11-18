@@ -186,6 +186,7 @@ one) as well as the ports it binds.
 | `test/sandbox/49-peer-hops-validated.js` | 9749 (after 41's, 42's and 48's servers have stopped, as 42) |
 | `test/sandbox/43-lean-worker-files.js` | 9750 |
 | `test/sandbox/48-lean-lockdown.js` | 9751 |
+| `test/sandbox/66-no-late-runtime-loads.js` | 9775–9776 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |
