@@ -27,6 +27,18 @@ const LOG = require('../../lib/logger');
 
 const {performance} = require('perf_hooks');
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+// until what a case waits for is true, polled, at most `ms` (never a fixed
+// sleep a loaded runner can outlast); on the monotonic clock, as the buckets.
+// The cases' own timeout (WAIT_TIMEOUT) is above every wait they chain.
+const UNTIL_MS = 5000;
+const WAIT_TIMEOUT = 30000;
+const until = async(test, ms = UNTIL_MS) => {
+  const end = performance.now() + ms;
+  while (!test() && performance.now() < end) await tick(20);
+  return test();
+};
+// nothing held for a later write, and no flush to come: no write can follow
+const noWriteToCome = (wm) => wm.progressFlush == null && (wm.progressPending == null || wm.progressPending.size === 0);
 
 function worker({rate = 1000, tokens = 1000, progress = 1000} = {}) {
   const posted = [];
@@ -34,9 +46,12 @@ function worker({rate = 1000, tokens = 1000, progress = 1000} = {}) {
   const wm = new WorkerMessage({on() {}, postMessage: (m) => posted.push(m), terminate: () => { ended.push(true); return Promise.resolve(); }});
   wm.messageRate = rate;
   wm.rateTokens = tokens;
-  wm.rateRefillAt = performance.now();
   wm.progressTokens = progress;
-  wm.progressRefillAt = performance.now();
+  // no refill of the message or the progress bucket during a test: a refillAt
+  // ahead of now holds it (lib/worker-message.js), so a loaded runner's clock
+  // never adds a token between two lines (the bytes bucket keeps its own)
+  wm.rateRefillAt = performance.now() + 60000;
+  wm.progressRefillAt = performance.now() + 60000;
   return {wm, posted, ended};
 }
 
@@ -51,7 +66,8 @@ function handled(wm) {
   return {updates, logged, restore: () => { JobControl.updateJobProgress = saved.update; LOG.I = saved.info; }};
 }
 
-describe('sandbox 65: progress messages and a worker\'s bytes, on the main thread (F4-3, F4-4)', () => {
+describe('sandbox 65: progress messages and a worker\'s bytes, on the main thread (F4-3, F4-4)', function() {
+  this.timeout(WAIT_TIMEOUT);
   describe('F4-3: progress spends a bucket of its own', () => {
     it('jobprogress spends no bucket at all, the requests\' or the progress one: a final 100 always reaches its handler', () => {
       const {wm} = worker({rate: 1, tokens: 0, progress: 0});
@@ -81,12 +97,28 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       wm.on('callprogress', () => { seen += 1; });
       wm.onWorkerMessage({id: 'callprogress', data: {token: 't', progress: 5}});
       assert.strictEqual(seen, 1);
-      assert.ok(wm.progressTokens < 10 && wm.progressTokens >= 9, String(wm.progressTokens));
-      assert.ok(wm.rateTokens < 1, 'the requests\' bucket untouched');
+      assert.strictEqual(wm.progressTokens, 9);
+      assert.strictEqual(wm.rateTokens, 0, 'the requests\' bucket untouched');
       assert.strictEqual(wm.progressDropped, 0);
       const {wm: empty} = worker({progress: 0});
       empty.onWorkerMessage({id: 'callprogress', data: {token: 't', progress: 5}});
       assert.strictEqual(empty.progressDropped + (empty.progressDroppedLoggedAt != null ? 1 : 0) >= 1, true, 'counted');
+    });
+
+    it('the progress bucket refills at the message rate, up to it', () => {
+      const {wm} = worker({rate: 10, tokens: 0, progress: 0});
+      let seen = 0;
+      wm.on('callprogress', () => { seen += 1; });
+      wm.onWorkerMessage({id: 'callprogress', data: {token: 't', progress: 5}});
+      assert.strictEqual(seen, 0, 'empty, held');
+      // half a second's refill at 10 a second: 5 more
+      wm.progressRefillAt = performance.now() - 500;
+      for (let i = 0; i < 8; i++) wm.onWorkerMessage({id: 'callprogress', data: {token: 't', progress: 5}});
+      assert.strictEqual(seen, 5);
+      // ten seconds' worth refills no more than the rate (10)
+      wm.progressRefillAt = performance.now() - 10000;
+      for (let i = 0; i < 20; i++) wm.onWorkerMessage({id: 'callprogress', data: {token: 't', progress: 5}});
+      assert.strictEqual(seen, 15);
     });
   });
 
@@ -100,7 +132,8 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
           {jobID: 'j1', progress: 101}, {jobID: 'j1', progress: -1}, {jobID: 'j1', progress: {a: 1}}]) {
           wm.onWorkerMessage({id: 'jobprogress', data});
         }
-        await tick(400);
+        assert.ok(noWriteToCome(wm), 'none held, no flush scheduled');
+        await tick(300);
         assert.deepStrictEqual(h.updates, []);
       } finally { h.restore(); }
     });
@@ -112,13 +145,14 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       try {
         for (let n = 0; n <= 100; n++) wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: n}});
         wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 7, progress: 3}});
-        await tick(400);
+        assert.ok(await until(() => h.updates.length >= 2 && noWriteToCome(wm)), `the flush ran: ${JSON.stringify(h.updates)}`);
+        // and no third: one write per job, and nothing left to write
         assert.deepStrictEqual(h.updates.sort(), [[7, 3], ['j1', 100]].sort());
         // and a job whose run ends inside the window gets its last progress all the same (invokeJobs writes it
         // before the run's answer; here the flush, which takes it whatever the run's state)
         wm.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j1', progress: 77}});
         wm.jobsInFlight.delete('j1');
-        await tick(400);
+        assert.ok(await until(() => h.updates.some(([j, p]) => j === 'j1' && p === 77)), `the flush ran: ${JSON.stringify(h.updates)}`);
         assert.deepStrictEqual(h.updates.filter(([j]) => j === 'j1').pop(), ['j1', 77]);
       } finally { h.restore(); }
     });
@@ -166,7 +200,7 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
         let finishFirst;
         JobControl.updateJobProgress = (jobID, p) => new Promise((r) => { finishFirst = () => { order.push(`queue ${p}`); r(); }; });
         w3.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j3', progress: 60}});
-        await tick(300);   // the flush's write of 60 is under way
+        assert.ok(await until(() => typeof finishFirst === 'function'), 'the flush\'s write of 60 is under way');
         w3.onWorkerMessage({id: 'jobprogress', data: {jobID: 'j3', progress: 100}});
         const done = DeviceManager.runProgressWritten(w3, DeviceManager.runKey('j3', null), 2000, (p) => { order.push(`job ${p}`); });
         await tick(20);
@@ -182,7 +216,8 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       const h = handled(wm);
       try {
         for (let n = 0; n < 50; n++) wm.onWorkerMessage({id: 'jobprogress', data: {jobID: `other-${n}`, progress: 1}});
-        await tick(400);
+        assert.ok(noWriteToCome(wm), 'none held, no flush scheduled');
+        await tick(300);
         assert.deepStrictEqual(h.updates, []);
         assert.strictEqual(h.logged.filter((l) => /job progress refused/.test(l)).length, 1, h.logged.join('\n'));
       } finally { h.restore(); }
@@ -223,8 +258,7 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
       for (const e of copies(6)) wm.onEnvelope(e);
       assert.strictEqual(decoded.length, 4, 'a burst of four caps decoded at once');
       assert.strictEqual(wm.heldCount(), 2, 'the rest held, not decoded');
-      await tick(800);
-      assert.strictEqual(decoded.length, 6, 'decoded as the budget refilled');
+      assert.ok(await until(() => decoded.length === 6), `decoded as the budget refilled (${decoded.length} of 6)`);
       assert.strictEqual(ended.length, 0);
     });
 
@@ -286,8 +320,7 @@ describe('sandbox 65: progress messages and a worker\'s bytes, on the main threa
         wm.onEnvelope(envelope.wrap({id: 1, category: 'child', command: 'log', data: 'x', boom: true}, cap).envelope);
         wm.onEnvelope(two);
         assert.strictEqual(wm.heldCount(), 3, 'premise: a copy, the throwing one and one after are held');
-        await tick(1200);
-        assert.strictEqual(wm.heldCount(), 0, 'all read');
+        assert.ok(await until(() => wm.heldCount() === 0), `all read (${wm.heldCount()} held)`);
         assert.strictEqual(decoded.length, 2, 'the one after the throw too');
       } finally { LOG.E = savedE; }
     });
