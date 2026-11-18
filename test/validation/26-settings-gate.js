@@ -71,6 +71,30 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.stateOf({moduleManager: {}}, modulesOwn), null);
     });
 
+    it('whether a module declares settings is asked at each call, never kept: an answer that changes is seen at once', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      let declared = false;
+      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {},
+        packageOfModule: (n) => (declared ? {name: n, countinghouse: {settings: {u: {type: 'string'}}}} : {name: n})};
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
+      declared = true;
+      const err = gate.requiredRefusal(dm, idOf('m'), true);
+      assert.ok(err != null && err.code === 'SETTING_NOT_READY', 'the new answer, with nothing bumped');
+    });
+
+    it('a per-session module\'s workers count as spawning or loaded (its pin answers)', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const DeviceManager = require('../../lib/device-manager');
+      const pins = {'@acme/ps': {name: '@acme/ps', countinghouse: {settings: {r: {type: 'string'}}}}};
+      const dm = {deviceMap: {}, moduleManager: {modules: {}, lifecycle: {live: () => null, liveUnder: (prefix) => (prefix === '@acme/ps\0' ? {} : null)},
+        pinnedDevicePackages: new Map([[idOf('ps'), '@acme/ps']]), manifestPins: {pinnedOf: (n) => pins[n]}}};
+      dm.moduleOfDevice = DeviceManager.prototype.moduleOfDevice.bind(dm);
+      dm.packageOfModule = DeviceManager.prototype.packageOfModule.bind(dm);
+      assert.strictEqual(dm.moduleOfDevice(idOf('ps')), '@acme/ps');
+      assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/ps', {live: true})));
+    });
+
     it('a module that declares settings, with no state here: refused SETTING_NOT_READY, never run unchecked', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       const device = {moduleName: 'm'};
@@ -83,37 +107,6 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       dm.packageOfModule = (n) => ({name: n});
       require('../../lib/tool-generation').bump();
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
-    });
-
-    it('whether a module declares settings is read once per tool-set generation', () => {
-      const idOf = (n) => callAddress.deviceIDForName(n);
-      let reads = 0;
-      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {},
-        packageOfModule: (n) => { reads += 1; return {name: n, countinghouse: {settings: {u: {type: 'string'}}}}; }};
-      require('../../lib/tool-generation').bump();
-      gate.requiredRefusal(dm, idOf('m'), true);
-      gate.requiredRefusal(dm, idOf('m'), true);
-      assert.strictEqual(reads, 1, 'kept within a generation');
-      require('../../lib/tool-generation').bump();
-      gate.requiredRefusal(dm, idOf('m'), true);
-      assert.strictEqual(reads, 2, 'read again after a bump');
-    });
-
-    it('a "no" is kept, but a pin committed since (the epoch) is seen, so it cannot fail open', () => {
-      const idOf = (n) => callAddress.deviceIDForName(n);
-      let declared = false;
-      let reads = 0;
-      const pins = {epoch: 0};
-      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {manifestPins: pins},
-        packageOfModule: (n) => { reads += 1; return declared ? {name: n, countinghouse: {settings: {u: {type: 'string'}}}} : {name: n}; }};
-      require('../../lib/tool-generation').bump();
-      assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
-      assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
-      assert.strictEqual(reads, 1, 'a "no" kept within the generation and epoch');
-      declared = true;
-      pins.epoch += 1;   // its pin committed, no generation bumped
-      const err = gate.requiredRefusal(dm, idOf('m'), true);
-      assert.ok(err != null && err.code === 'SETTING_NOT_READY', 'the new answer, seen by the epoch');
     });
 
     it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', function() {
