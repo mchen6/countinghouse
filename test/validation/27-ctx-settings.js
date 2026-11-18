@@ -43,10 +43,8 @@ describe('validation 27: ctx.settings and ctx.settingRequired', () => {
     assert.strictEqual(ctxWith({v: 205}).settings.n, 205);
   });
 
-  it('single-thread mode\'s {values}: those values, frozen', () => {
-    const s = ctxWith({values: {units: 'metric'}}).settings;
-    assert.strictEqual(s.units, 'metric');
-    assert.ok(Object.isFrozen(s));
+  it('{values} with no version (single-thread mode\'s, before module settings ran only with worker threads) is not taken', () => {
+    assert.deepStrictEqual(Object.keys(ctxWith({values: {units: 'metric'}}).settings), []);
   });
 
   it('only own data fields are read: an inherited or accessor field is not', () => {
