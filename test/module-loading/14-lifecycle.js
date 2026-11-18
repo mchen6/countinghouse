@@ -35,11 +35,11 @@ describe('module-loading 14: the per-name lifecycle lock', () => {
     const lines = [];
     const stuck = {inFlight: 2, idle: () => new Promise(() => {})};
     const started = Date.now();
-    await boundedIdle(stuck, 50, (line) => lines.push(line), 'm');
+    assert.strictEqual(await boundedIdle(stuck, 50, (line) => lines.push(line), 'm'), false, 'not idle: the bound passed');
     assert.ok(Date.now() - started >= 45);
     assert.deepStrictEqual(lines, ['file broker: m not idle after 0.05 s (2 operations still running in the host); continuing']);
     const quiet = [];
-    await boundedIdle({inFlight: 0, idle: () => Promise.resolve()}, 50, (line) => quiet.push(line), 'm');
+    assert.strictEqual(await boundedIdle({inFlight: 0, idle: () => Promise.resolve()}, 50, (line) => quiet.push(line), 'm'), true);
     assert.deepStrictEqual(quiet, []);
   });
 

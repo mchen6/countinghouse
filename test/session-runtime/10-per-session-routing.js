@@ -32,7 +32,7 @@ describe('session-runtime 10: a hop reaches its own session\'s worker (R1 Task 5
   async function twoSessions(extra = []) {
     const part = perSession(home, {dir: path.join(home, 'hop', 'node_modules', NAME), role: 'part'});
     r = runtime(home, ['--loadModule', part, '--loadModule', caller(home), ...extra]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);   // its 'listening' tell, not the socket file (a first connect raced it)
     const secret = secretOf(r);
     assert.ok(secret != null, `no secret: ${r.log().slice(-3000)}`);
     const out = {};
@@ -105,7 +105,7 @@ describe('session-runtime 10: a hop reaches its own session\'s worker (R1 Task 5
   // SESSION_WORKER_ENDED.
   it('a per-session module\'s task whose worker ends mid-run is completed with the inline answer: isError, SESSION_WORKER_ENDED', async() => {
     r = runtime(home, ['--loadModule', perSession(home)]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);   // its 'listening' tell, not the socket file (a first connect raced it)
     const a = await shim.session(r.socket, secretOf(r));
     assert.ok(a.welcome != null, JSON.stringify(a.refused));
     const TASKS = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',

@@ -28,7 +28,7 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
   // the runtime up with `extra`, and two sessions with the touch tool listed
   async function twoSessions(extra = [], modules = [perSession(home)], wanted = ['touch']) {
     r = runtime(home, [...modules.flatMap((m) => ['--loadModule', m]), ...extra]);
-    await until(async() => fs.existsSync(r.socket) && secretOf(r) != null);
+    await until(async() => (r.told.some((m) => m.type === 'listening') && secretOf(r) != null) || r.code !== undefined);   // its 'listening' tell, not the socket file (a first connect raced it)
     const secret = secretOf(r);
     assert.ok(secret != null, `no secret: ${r.log().slice(-3000)}`);
     const out = {};
