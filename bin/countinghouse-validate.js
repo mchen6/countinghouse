@@ -90,8 +90,16 @@ moduleValidator.validateModule(target, (err, result) => {
     process.exit(result.ok === true ? 0 : 1);
   }
 
+  // M3 (#413 section 6.1): each remote in its expanded form, and what it
+  // means, whichever form the author wrote.
+  const printRemotes = () => (result.remotes || []).forEach((r) => {
+    console.log(`remote ${r.declared.name}: ${JSON.stringify(r.declared)}`);
+    console.log(`  ${r.meaning}`);
+  });
+
   if (result.ok === true) {
     console.log(`ok: ${result.module} -- no problems found`);
+    printRemotes();
     (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
     process.exit(0);
   }
@@ -101,6 +109,7 @@ moduleValidator.validateModule(target, (err, result) => {
     console.log(`  [${p.stage}] ${p.message}`);
     if (p.fix != null) console.log(`      fix: ${p.fix}`);
   });
+  printRemotes();
   (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
   process.exit(1);
 });

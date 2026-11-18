@@ -251,6 +251,13 @@ describe('remote 02: version 2, by module', () => {
       refused.forEach(([name, obj]) => assert.throws(() => credentials.checkEntry(name, obj), JSON.stringify([name, obj])));
     });
 
+    it('a shared runtime compares a session\'s credential on no name the start adds under version 2 (route-manager credentialVariables)', () => {
+      const {credentialVariables} = require('../../lib/route-manager');
+      assert.deepStrictEqual([...credentialVariables(null)], []);
+      assert.deepStrictEqual([...credentialVariables({packsInPlace: new Map([['p', {allowance: new Map([['https://x.example', new Set(['X_KEY'])]])}]])})], ['X_KEY'],
+        'a pack\'s own version 1 file still adds its names');
+    });
+
     it('the names an allowance reads from: the slots under version 2', () => {
       assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), [SLOT1, SLOT2]);
     });
