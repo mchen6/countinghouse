@@ -416,22 +416,41 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(!('kept' in line) && !('new' in line), JSON.stringify(line));
     });
 
-    it('a part\'s refusal is said on its top-level module, never naming the part; the ceiling\'s file problem is never said', async () => {
-      const PART = pkgOf('region-part', {region: {type: 'string', maxLength: 4}});
+    it('a part\'s refusal is said on its top-level module, never naming the part; keyed by the friendlyName a result takes, for scoped packages too', async () => {
+      const callAddress = require('../../lib/call-address');
+      // packages named apart from their friendlyNames
+      const PART = pkgOf('@acme/region-part', {region: {type: 'string', maxLength: 4}});
       PART.countinghouse.role = 'part';
-      const TOP = {name: 'hopper', version: '1.0.0', countinghouse: {calls: ['region-part/partService.run']}};
+      const MID = {name: '@acme/mid', version: '1.0.0', countinghouse: {role: 'part', calls: ['region-part/partService.run']}};
+      const TOP = {name: '@acme/hopper', version: '1.0.0', countinghouse: {calls: ['mid/midService.run']}};
+      const devices = {'region-part': '@acme/region-part', mid: '@acme/mid', hopper: '@acme/hopper', weather: 'w', regions: 'r'};
+      const deviceMap = {};
+      const owner = {};
+      for (const [friendly, pkg] of Object.entries(devices)) {
+        const id = callAddress.deviceIDForName(friendly);
+        deviceMap[id] = {spec: {device: {friendlyName: friendly}}};
+        owner[id] = pkg;
+      }
+      const dm = {deviceMap, moduleOfDevice: (id) => owner[id] || null};
       const mm = manager();
-      mm.unlisted = new Set(['region-part']);
-      mm.manifestPins = {pinnedOf: (n) => ({'region-part': PART, hopper: TOP, w: W, r: R})[n] || null};
-      mm.modules['region-part'] = proxy('region-part');
-      mm.modules['region-part'].settings = ms.stateFor('region-part', PART, {operator: true});
-      mm.modules.hopper = proxy('hopper');
-      write({'module.w.units': 'metric', 'module.r.region': 'eu', 'module.region-part.region': 'toolong'});
-      await rr(mm);
+      mm.unlisted = new Set(['@acme/region-part', '@acme/mid']);
+      mm.manifestPins = {pinnedOf: (n) => ({'@acme/region-part': PART, '@acme/mid': MID, '@acme/hopper': TOP, w: W, r: R})[n] || null};
+      mm.modules['@acme/region-part'] = proxy('@acme/region-part');
+      mm.modules['@acme/region-part'].settings = ms.stateFor('@acme/region-part', PART, {operator: true});
+      mm.modules['@acme/mid'] = proxy('@acme/mid');
+      mm.modules['@acme/hopper'] = proxy('@acme/hopper');
+      write({'module.w.units': 'kelvin', 'module.w.n': 3, 'module.r.region': 'eu', 'module.@acme/region-part.region': 'toolong'});
+      await rr(mm, {dm});
+      // two hops down, by the device manager's package for each friendlyName
       const said = notices.take('hopper').join('\n');
-      assert.match(said, /a part of hopper/);
-      assert.ok(!/region-part|region/.test(said.replace('a part of hopper', '')), said);
-      assert.deepStrictEqual(notices.take('region-part'), []);
+      assert.match(said, /a part of @acme\/hopper/);
+      assert.ok(!/region/.test(said), said);
+      assert.deepStrictEqual(notices.take('@acme/hopper'), [], 'keyed by the friendlyName, as take() reads it');
+      // a top-level module's, by its friendlyName too: one notice
+      const w = notices.take('weather');
+      assert.strictEqual(w.length, 1, JSON.stringify(w));
+      assert.match(w[0], /units not applied/);
+      notices.take('w');
       // a ceiling that cannot be trusted: its problem is the log's only
       const logged = [];
       await rr(mm, {ceiling: () => ({state: 'untrusted', file: '/etc/countinghouse/ceiling.json', problem: 'it is owned by uid 1000'}), log: (l) => logged.push(l)});
