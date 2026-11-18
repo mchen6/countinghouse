@@ -396,6 +396,15 @@ describe('sessions 30: a request past its deadline is no longer in flight', () =
     assert.strictEqual(answered, 0);
   });
 
+  it('a callback queued again with no deadline is in flight: an earlier deadline it was queued with is never read for it', () => {
+    const w = real();
+    const cb = () => {};
+    queue(w, 1000, cb);
+    w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'});
+    queue(w, null, cb);
+    assert.strictEqual(w.inFlight(1e12, 5000), true);
+  });
+
   it('a reply whose callback throws is taken off the queue first: the worker\'s end never answers it again', () => {
     const w = real();
     let calls = 0;

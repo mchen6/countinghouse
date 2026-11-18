@@ -1225,8 +1225,9 @@ What keeps one session out of another's:
   retired mid-handler. A session that can't get a worker is refused
   `SESSION_WORKERS_BUSY`; nothing is queued.
   Residual: a task whose handler never answers holds its slot until the
-  task's own timeout (`--jobTimeout`, 1 hour by default; an operator who
-  sets 0 has chosen no bound). The timeout counted is the one at the send:
+  task's timeout: its own, when it was added with one, or else
+  `--jobTimeout` (1 hour by default; an operator who sets 0 has chosen no
+  bound). The timeout counted is the one at the send:
   a session that tightens its timeout during a call, or cancels it, frees
   the slot only at the original timeout (a follow-up after R1).
 - **Storage ends with the session.** A session's partitions are removed
