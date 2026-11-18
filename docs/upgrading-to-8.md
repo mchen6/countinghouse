@@ -169,6 +169,19 @@ you have to do. What the sandbox does and does not protect is in
 
 ## What modules will notice
 
+- **Breaking, under the sandbox: Node's loader internals are held.**
+  `Module._load` takes only its request, parent and isMain (Node's internal
+  fourth argument, which skips the resolve hooks, is dropped). Under
+  `enforce`:
+  - a request that is no string, or a main-module load, is refused;
+  - `Module._load`, `Module._resolveFilename`, `Module.prototype.load` and
+    the extension handlers are locked;
+  - the `Module._extensions` table takes no new extension.
+
+  Under `audit` each of those is reported instead: the request is made a
+  string, `isMain` is passed on as given, and a replacement takes effect.
+  A dependency that replaces any of them (proxyquire, mock-require, some
+  APM agents) needs `--moduleSandbox off` under `enforce`.
 - **Breaking: `ctx.job` is never `null`.** Outside a task it is now
   `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
   is the call's own progress, sent to an MCP client that asked for it
@@ -438,6 +451,9 @@ says how to write a module for this.
     `inputRequests` and the status message "waiting for an answer". The
     client answers with `tasks/update`, and the run starts again under the
     same `taskId`.
+    - Only a request that declares form elicitation is handed the form
+      (`tasks/get`) or may answer it: a `tasks/update` with `inputResponses`
+      from one that doesn't is refused `-32021`, naming the capability.
     - A question waits at most an hour; then the task fails `ASK_EXPIRED`.
     - At most 64 of a key's tasks, and 10,000 in all, wait on a question at
       once. Past either, a new task's question is `ASK_UNAVAILABLE`.

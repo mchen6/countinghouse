@@ -363,8 +363,8 @@ The contract for authors is one line: **ask first, act after.** Stated plainly, 
 
 MCP's own description of MRTR is that the retry "does not need any information beyond what is directly present in the retry request". Running again needs no state between the two requests.
 
-**`requestState`.** It's attacker-controlled. Its form is `v1.<payload>.<mac>`.
-- **The payload** is base64url JSON:
+**`requestState`.** It's attacker-controlled. Its form is `v1.<payload>.<mac>` (since F2-4, `v2.<sealed payload>.<mac>`: the payload sealed and padded, docs/security-model.md).
+- **The payload** is base64url JSON (as first written; since F2-4 it is sealed: AES-256-GCM under a per-state key HKDF-derived from the MAC key with a fresh salt, laid out salt | iv | ciphertext | tag, and padded to a length set by the answers alone, so the client reads nothing of it, the asker included; the MAC is over the sealed bytes, under a /2 label). It holds:
   - a 16-byte nonce;
   - an expiry, 5 minutes out;
   - the pending question's key;

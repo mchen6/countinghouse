@@ -108,6 +108,9 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
   this.timeout(60000);
   let provider = null;
   let real = null;
+  // each test starts with a full completion floor (F3-6): the file's calls never spend another test's
+  beforeEach(() => gateway.resetCompletionFloor());
+  after(() => gateway.resetCompletionFloor());
   before(async () => {
     options.setOptions(OPTIONS);
     const FileAuthProvider = require('../../lib/auth/file-provider');
@@ -160,8 +163,11 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
     assert.deepStrictEqual(r.result.completion.values.slice(0, 2), ['shade-000', 'shade-001']);
     assert.strictEqual(r.result.completion.total, 150);
     assert.strictEqual(r.result.completion.hasMore, true);
+    // a value past 256 characters (the candidates' own bound) is refused (F3-6); one longer than any candidate matches none
     const long = await complete(KEY_A, 'colours_shades', 'shade', 's'.repeat(300));
-    assert.deepStrictEqual(long.result.completion, {values: [], total: 0, hasMore: false}, 'a value longer than any candidate matches none');
+    assert.match(long.error && long.error.message, /longer than 256/, JSON.stringify(long));
+    const longest = await complete(KEY_A, 'colours_shades', 'shade', 's'.repeat(256));
+    assert.deepStrictEqual(longest.result.completion, {values: [], total: 0, hasMore: false}, 'a value longer than any candidate matches none');
   });
 
   it('a prompt the caller is not listed is an unknown prompt: completion finds no other tenant\'s prompts', async () => {
@@ -218,6 +224,51 @@ describe('mcp-contract 30: completion of a prompt\'s arguments (M11)', function(
       const answered = await complete(KEY_A, 'tints_tint', 'shade', 't');
       assert.deepStrictEqual(ran, ['completeTint']);
       assert.deepStrictEqual(answered.result && answered.result.completion, {values: ['teal-blue'], total: 1, hasMore: false}, JSON.stringify(answered));
+    } finally {
+      delete ci.invokeDeviceAction;
+    }
+  });
+
+  // F3-6: a floor whatever --apiKeyRateLimit says (none here: limited false), and a bounded value
+  it('a value longer than 256 characters is refused, before anything is asked', async () => {
+    limited = false;
+    const r = await complete(KEY_A, 'colours_paint', 'colour', 'r'.repeat(257));
+    assert.match(r.error && r.error.message, /longer than 256/, JSON.stringify(r));
+    const ok = await complete(KEY_A, 'colours_paint', 'colour', 'r'.repeat(256));
+    assert.ok(ok.result != null, JSON.stringify(ok));
+  });
+
+  it('with no key limit at all, completion has a floor of its own per key (50 a second)', async () => {
+    limited = false;
+    // a clock that stands still: the 51st in the same instant is refused, and a second later there are 50 again
+    let now = 1000;
+    gateway.resetCompletionFloor(() => now);
+    try {
+      for (let i = 0; i < 50; i++) {
+        const r = await complete(KEY_A, 'colours_paint', 'colour', 'r');
+        assert.ok(r.result != null, `${i}: ${JSON.stringify(r)}`);
+      }
+      const over = await complete(KEY_A, 'colours_paint', 'colour', 'r');
+      assert.match(over.error && over.error.message, /rate limit/, JSON.stringify(over));
+      now += 1000;
+      const again = await complete(KEY_A, 'colours_paint', 'colour', 'r');
+      assert.ok(again.result != null, JSON.stringify(again));
+    } finally { gateway.resetCompletionFloor(); }
+  });
+
+  it('at most 8 of a key\'s completion actions run at once: past it, the schema\'s candidates answer at once (F3-6)', async () => {
+    limited = false;
+    const held = [];
+    ci.invokeDeviceAction = (deviceID, serviceID, actionName, args, session) => { held.push(session); };
+    try {
+      const pending = Array.from({length: 8}, () => complete(KEY_A, 'tints_tint', 'shade', 't'));
+      await new Promise((r) => setTimeout(r, 100));
+      assert.strictEqual(held.length, 8, 'eight run');
+      const ninth = await complete(KEY_A, 'tints_tint', 'shade', 't');
+      assert.ok(ninth.result != null && Array.isArray(ninth.result.completion.values), JSON.stringify(ninth));
+      assert.strictEqual(held.length, 8, 'the ninth ran nothing');
+      for (const s of held) s.callbackWithoutTimer(null, {output: {values: ['teal-blue']}});
+      await Promise.all(pending);
     } finally {
       delete ci.invokeDeviceAction;
     }

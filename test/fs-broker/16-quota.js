@@ -17,8 +17,10 @@ async function setup(mode, opts) {
   const namespace = createNamespace({moduleRoot: dirs.app, dataDir: dirs.data, tmpDir: dirs.tmp, declared: [], protectedPaths: []});
   await namespace.prepare();
   const quota = opts.quota == null ? null : new Quota(Object.assign({}, opts.quota, {enforce: mode === 'enforce', report: report}));
-  const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/', report: report, quota: quota});
-  return {base, dirs, broker, reports, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
+  // opts.session: the broker charges a session's view of the quota (R1 Task 6)
+  const charged = (quota != null && opts.session != null) ? quota.viewFor(opts.session) : quota;
+  const broker = new FsBroker({name: 'm', mode: mode, namespace: namespace, cwd: '/', report: report, quota: charged});
+  return {base, dirs, broker, reports, quota, done: () => broker.closeAll().then(() => fs.rmSync(base, {recursive: true, force: true}))};
 }
 
 describe('fs-broker 16: the disk quota', function() {
@@ -128,6 +130,37 @@ describe('fs-broker 16: the disk quota', function() {
       const fd = await t.broker.handle('open', ['/data/f', 'w']);
       await t.broker.handle('write', [fd, Buffer.alloc(5000), null]);
       await t.broker.handle('close', [fd]);
+    } finally { await t.done(); }
+  });
+
+  // R1 Task 6, the reviewer's high review: open's new-file entry is used at
+  // once; through a session's view it must not stay "in flight", or every
+  // later give-back of an entry is blocked and a create/delete cycle ends
+  // ENOSPC
+  it('through a session\'s view: creating and unlinking files many times leaves the entries as they were', async () => {
+    const t = await setup('enforce', {quota: {maxBytes: 1024 * 1024, maxEntries: 5}, session: 's'});
+    try {
+      const start = t.quota.entries;
+      for (let i = 0; i < 20; i++) {
+        const fd = await t.broker.handle('open', [`/data/f${i}`, 'w']);
+        await t.broker.handle('write', [fd, Buffer.alloc(10), null]);
+        await t.broker.handle('close', [fd]);
+        await t.broker.handle('unlink', [`/data/f${i}`]);
+      }
+      assert.strictEqual(t.quota.entries, start);
+      assert.strictEqual(t.quota.bytes, 0);
+      assert.deepStrictEqual([t.quota.shares.get('s').inflightBytes, t.quota.shares.get('s').inflightEntries], [0, 0]);
+    } finally { await t.done(); }
+  });
+
+  it('an op whose measure of what changed throws still settles, and answers as it did: its reservation counted as used, nothing left in flight', async () => {
+    const t = await setup('enforce', {quota: {maxBytes: 100000, maxEntries: 100}, session: 's'});
+    try {
+      const boom = Object.assign(new Error('stat failed'), {code: 'EIO'});
+      assert.strictEqual(await t.broker.counted({virtual: '/data/f', res: {kind: 'root', root: {quota: true}}}, 300, 1, 'write', () => Promise.resolve('ok'), () => Promise.reject(boom)), 'ok', 'the op succeeded: never told failed');
+      const share = t.quota.shares.get('s');
+      assert.deepStrictEqual([share.inflightBytes, share.inflightEntries], [0, 0], 'nothing left in flight');
+      assert.deepStrictEqual([t.quota.bytes, t.quota.entries], [300, 1], 'the reservation counted as used');
     } finally { await t.done(); }
   });
 });

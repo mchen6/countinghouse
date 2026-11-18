@@ -66,6 +66,19 @@ describe('fs-broker 12: virtual identity', function() {
     assert.strictEqual(r.depFile, path.join(fs.realpathSync(ROOT), 'test', 'fixtures', 'esm-probe', 'node_modules', 'plain-dep', 'where.js'));
   });
 
+  // #406's high review: under enforce `module` is the lockdown's reduced one,
+  // which an ES module's import must reach on every Node line (from 24.21
+  // the CommonJS translator loaded it through Module._load with no parent,
+  // which no hook knew once the lockdown dropped _load's internal argument);
+  // under audit, the real one
+  ['enforce', 'audit'].forEach((mode) => {
+    it(`${mode}: an ES module imports the module built-in by both names`, async () => {
+      server = await start(mode, 'esm-probe');
+      const res = await mcpCall(testPort(9630), 'k', 'esm_probe_probeservice_moduleimport', {});
+      assert.deepStrictEqual(toolOutput(res), {named: 'function', prefixed: 'function', byDefault: 'function', reduced: mode === 'enforce', linked: true}, JSON.stringify(res));
+    });
+  });
+
   // Review C2's cases, restated for decision 12: countinghouse's own code is
   // never under /app (refused below), so a parent under /app is the module's.
   // POSIX host paths in file URLs; on Windows file:///opt/... is no path.
@@ -138,4 +151,88 @@ describe('fs-broker 12: virtual identity', function() {
       }
     });
   }));
+
+  // F4-1: the load hook granted Node's read of any host file it was given,
+  // so a route that reaches it with a path of the module's choosing read
+  // past the broker: Node's extension handlers (a) and a Module of its own.
+  // Now Node's read meets the broker with the module's own rights: under
+  // enforce refused; under audit a file outside is read and reported, and
+  // one in the denied set (the install directory) is refused in both.
+  ['extJs', 'extJson', 'moduleNewLoad'].forEach((what) => Object.keys(targets).forEach((where) => {
+    it(`F4-1: enforce refuses ${what} on a secret in ${where}; audit ${where === 'home' ? 'reads it and reports it' : 'refuses it too'}`, async () => {
+      const t = targets[where]();
+      fs.writeFileSync(t.file, '{"secret": true}');
+      try {
+        server = await start('enforce', 'route-probe');
+        const refused = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what, target: t.file}));
+        assert.strictEqual(refused.outcome, 'refused', JSON.stringify(refused));
+        stopServer(server);
+        server = null;
+        fs.rmSync(base, {recursive: true, force: true});
+        server = await start('audit', 'route-probe');
+        const audit = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what, target: t.file}));
+        if (where !== 'home') return assert.deepStrictEqual(audit, {outcome: 'refused', code: 'EACCES'});
+        assert.strictEqual(audit.outcome, 'read', JSON.stringify(audit));
+        const reported = () => server.output.split('\n').some((l) => l.includes('module sandbox: route-probe file outside') && l.includes(t.file));
+        for (let i = 0; i < 40 && !reported(); i++) await new Promise((r) => setTimeout(r, 50));
+        assert.ok(reported(), server.output.slice(-3000));
+      } finally {
+        fs.rmSync(t.cleanup, {recursive: true, force: true});
+      }
+    });
+  }));
+
+  // #194's revision 6, item 9: F4-1's fix 2 resolves a module request with
+  // Node's own resolver against the host parent; a not-found names only the
+  // request, never Node's require stack (the host parent's path)
+  ['enforce', 'audit'].forEach((mode) => {
+    it(`${mode}: a module's own request that is not found names only the request`, async () => {
+      server = await start(mode, 'route-probe');
+      const r = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'notFoundShape', target: '/x'}));
+      assert.deepStrictEqual(r, {outcome: 'refused', code: 'EXACT'});
+    });
+  });
+
+  // F4-1's review: since fix 2 the lockdown's resolve hook no longer sees a
+  // module's CommonJS not-found, so identity says it of a bare name that
+  // would reach countinghouse's lib/ (a file, or a directory with an
+  // index): tagged under enforce, reported under audit; any other name is a
+  // plain not-found, reported nowhere
+  ['enforce', 'audit'].forEach((mode) => {
+    it(`${mode}: a bare name of a lib/ file is the sandbox's (${mode === 'enforce' ? 'tagged' : 'reported'}); a lib/ directory with no index is not`, async () => {
+      server = await start(mode, 'route-probe');
+      const from = server.output.length;
+      const lib = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'libName', target: 'cli-options'}));
+      assert.deepStrictEqual(lib, {outcome: 'refused', code: mode === 'enforce' ? 'TAGGED' : 'PLAIN'});
+      const reported = () => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: route-probe violation require cli-options'));
+      for (let i = 0; i < 40 && !reported(); i++) await new Promise((r) => setTimeout(r, 50));
+      assert.ok(reported(), server.output.slice(-2000));
+      const dir = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'libName', target: 'routes'}));
+      assert.deepStrictEqual(dir, {outcome: 'refused', code: 'PLAIN'});
+      assert.ok(!server.output.slice(from).includes('violation require routes'), 'a name that reaches nothing was reported');
+    });
+  });
+
+  // F4-1 (b): Node's createRequire assigns require.resolve, so an accessor on
+  // Function.prototype swallowed it and answered the resolve hook's own
+  // lookup with a path under the module's root, lexically, that climbs out.
+  // The hook now calls Node's own resolver directly: the accessor decides
+  // nothing, in either mode, and the request is simply not found.
+  (WIN ? it.skip : it)('F4-1: an accessor on Function.prototype.resolve never decides a resolution, under enforce or audit', async () => {
+    const t = targets.home();
+    fs.writeFileSync(t.file, '{"secret": true}');
+    try {
+      for (const mode of ['enforce', 'audit']) {
+        server = await start(mode, 'route-probe');
+        const r = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'resolveAccessor', target: t.file}));
+        assert.deepStrictEqual(r, {outcome: 'refused', code: 'MODULE_NOT_FOUND'}, `${mode}: ${JSON.stringify(r)}`);
+        stopServer(server);
+        server = null;
+        fs.rmSync(base, {recursive: true, force: true});
+        base = null;
+      }
+    } finally {
+      fs.rmSync(t.cleanup, {recursive: true, force: true});
+    }
+  });
 });

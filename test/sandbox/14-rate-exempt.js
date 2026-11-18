@@ -12,7 +12,7 @@ function exhausted() {
   const wm = new WorkerMessage({on() {}, postMessage: (m) => posted.push(m)});
   wm.messageRate = 1;
   wm.rateTokens = 0;
-  wm.rateRefillAt = Date.now();
+  wm.rateRefillAt = require('perf_hooks').performance.now();   // the bucket's own clock (monotonic)
   return {wm, posted};
 }
 

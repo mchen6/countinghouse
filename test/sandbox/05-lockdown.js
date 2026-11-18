@@ -3,10 +3,12 @@
 // under enforce, so countinghouse's own worker code is proven not to trip the
 // built-in block.
 const assert = require('assert');
+const fs     = require('fs');
+const os     = require('os');
 const path   = require('path');
 const Module = require('module');
 const {normaliseRequestOptions, builtinAllowed, ALLOWED_BUILTIN_IDS} = require('../../lib/module-lockdown');
-const {ROOT, startServer, stopServer, mcpCall, waitFor} = require('../helpers/sandbox-server');
+const {ROOT, startServer, stopServer, mcpCall, post, waitFor} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
 const {toolOutput} = require('../helpers/tool-result');
 
@@ -18,9 +20,10 @@ const OUTSIDE_FILE = path.join(ROOT, 'lib', 'cli-options.js');
 const ROUTES = [
   ['dlopen'], ['binding'], ['kill'], ['getBuiltinModule'], ['child_process'], ['worker_threads'],
   ['v8'], ['registerHooks'], ['nodePath'], ['loadFileOutside', OUTSIDE_FILE], ['request', 'http://127.0.0.1:1/'],
+  ['loadSkipHooks'], ['loadResolved'], ['loadSource', OUTSIDE_FILE],
   ['_kill'], ['dataImport', OUTSIDE_FILE], ['reducedCreateRequire'], ['requestUri'], ['requestBaseUrl'], ['requestHar'],
   ['sqlite'], ['nodeTest'], ['importSqlite'], ['getBuiltinSqlite'], ['tlsEngine'], ['clientCertEngine'], ['cryptoEngine'],
-  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['compileCache'], ['sourceMaps'],
+  ['listenFd'], ['socketFd'], ['socketFdNumber'], ['connectFd'], ['ttyFd'], ['socketCtor'], ['ttyWriteCtor'], ['ttyReadCtor'], ['ttySuper'], ['tlsSuper'], ['dgramFd'], ['report'], ['reportDirectory'], ['compileCache'], ['sourceMaps'],
   ['repl'], ['traceEvents'], ['http2RespondFD']
 ];
 
@@ -56,6 +59,16 @@ async function handleIsNotAdoption(port, server) {
   assert.ok(!since.includes('violation descriptor'), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
 }
 
+// F4-2: nothing logged for a call (a "violation report <what>" line) up to a
+// known violation made after it, read up to its line (L1 round 5's pattern)
+async function noReportViolation(port, server, from, what) {
+  const name = `ch-05-mark-${process.pid}-${Date.now()}`;
+  await mcpCall(port, KEY, TOOL, {what: 'loadFileOutside', arg: `/nonexistent/${name}`});
+  await waitFor(() => server.output.indexOf(name, from) !== -1, 20000, 'the loadFile violation line');
+  const since = server.output.slice(from, server.output.indexOf(name, from));
+  assert.ok(!since.includes(`violation report ${what}`), since.split('\n').filter((l) => l.includes('violation')).join('\n'));
+}
+
 describe('sandbox 05: worker lockdown', function() {
   this.timeout(120000);
 
@@ -66,11 +79,34 @@ describe('sandbox 05: worker lockdown', function() {
 
     it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(testPort(9608), server));
 
+    // F4-2: as under audit (below)
+    it('process.report.getReport answers with nothing of the process\'s environment, command line or handles', async () => {
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'getReport'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
+    it('detect-libc\'s steps (excludeNetwork set around getReport, then put back) are never refused, and leak nothing', async () => {
+      const from = server.output.length;
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'detectLibc'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+      await noReportViolation(testPort(9608), server, from, 'excludeNetwork');
+    });
+
+    it('a report setting is a boolean, as Node\'s own: anything else is a TypeError, ERR_INVALID_ARG_TYPE', async () => {
+      const r = await mcpCall(testPort(9608), KEY, TOOL, {what: 'reportCompactNotBoolean'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
     ROUTES.forEach(([what, arg]) => {
       it(`blocks ${what} and logs it`, async () => {
         const r = await mcpCall(testPort(9608), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(r.isError, false, JSON.stringify(r));
-        assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
+        // (a path outside is invisible under enforce: the file broker's
+        // _findPath answers it missing, so a load of one finds nothing, and
+        // Node's own not-found is what the module sees; B1's loadSource
+        // compiled its source there before)
+        if (what === 'loadSource') assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+        else assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
         assert.ok(server.output.includes('module sandbox: sandbox-probe violation'), server.output.slice(-2000));
       });
     });
@@ -107,6 +143,88 @@ describe('sandbox 05: worker lockdown', function() {
     });
   });
 
+  // #194's review, B1: Module._load's internal argument skipped the hooks,
+  // so a load through it was neither refused nor reported. Each mode on a
+  // server of its own, so no earlier route has reported the same target
+  // (a report is once per target), and each form's own line is looked for
+  // in what was written after its call (#406's high review).
+  ['enforce', 'audit'].forEach((mode, i) => describe(`${mode}: Module._load's internal argument`, () => {
+    let server = null;
+    const port = testPort(9771 + i);
+    before(async () => { server = await startServer(port, serverArgs(mode)); });
+    after(() => stopServer(server));
+    // (this route's own report: the built-in rule, on its target)
+    const reportedSince = (from, target) => server.output.slice(from).split('\n')
+      .some((l) => l.includes(`module sandbox: sandbox-probe violation builtin ${target}`));
+    for (const [what, target] of [['loadSkipHooks', 'child_process'], ['loadResolved', 'worker_threads']]) {
+      it(`${what}: runs the hooks, so ${target} is ${mode === 'enforce' ? 'refused' : 'loaded'} and reported`, async () => {
+        const from = server.output.length;
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what}));
+        assert.strictEqual(r.outcome, mode === 'enforce' ? 'blocked' : 'allowed', JSON.stringify(r));
+        await waitFor(() => reportedSince(from, target), 20000, `${target}'s violation line`);
+      });
+    }
+    it(`a request that is no string, and isMain, ${mode === 'enforce' ? 'are refused' : 'are reported and go on'}, each with its line`, async () => {
+      for (const [arg, why] of [['objectRequest', 'a request that is no string'], ['isMain', 'as the main module']]) {
+        const from = server.output.length;
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'forgeParent', arg}));
+        assert.strictEqual(r.outcome, mode === 'enforce' ? 'blocked' : 'allowed', `${arg}: ${JSON.stringify(r)}`);
+        await waitFor(() => server.output.slice(from).includes(`(${why})`), 20000, `${arg}'s violation line`);
+      }
+    });
+    it('createRequire\'s own Module still loads', async () => {
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
+    });
+    it(`a new extension ${mode === 'enforce' ? 'can\'t be added to the table' : 'is reported at the next load'}`, async () => {
+      const from = server.output.length;
+      const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'newExtension'}));
+      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
+      else {
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: 'ADDED'});
+        await waitFor(() => server.output.slice(from).includes('violation require Module._extensions[.min.js] added'), 20000, 'the added extension\'s line');
+      }
+    });
+    it(`each property #406 holds ${mode === 'enforce' ? 'can\'t be replaced' : 'is replaced and reported'}`, async () => {
+      const names = {protoLoad: 'Module.prototype.load', jsHandler: 'Module._extensions[\'.js\']', jsonHandler: 'Module._extensions[\'.json\']',
+        resolveFilename: '_resolveFilename'};
+      for (const arg of Object.keys(names)) {
+        const from = server.output.length;
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceHeld', arg}));
+        if (mode === 'enforce') {
+          assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, `${arg} was replaced under enforce`);
+        } else {
+          assert.deepStrictEqual(r, {outcome: 'allowed', code: 'REPLACED'}, arg);
+          await waitFor(() => server.output.slice(from).includes(`violation require ${names[arg]} replaced`), 20000, `${arg}'s violation line`);
+        }
+      }
+    });
+    if (mode === 'audit') {
+      it('an assignment of load on one Module is that Module\'s own, never the worker\'s', async () => {
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'instanceLoad'})), {outcome: 'allowed', code: 'OWN'});
+      });
+      it('a module that replaces Module._load is reported', async () => {
+        const from = server.output.length;
+        assert.strictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})).outcome, 'allowed');
+        await waitFor(() => server.output.slice(from).includes('violation require _load replaced'), 20000, 'the replacement\'s violation line');
+      });
+    }
+    it(`loadSource: no source compiled under a countinghouse filename; ${mode === 'enforce' ? 'the path is invisible' : 'the real file, reported'}`, async () => {
+      const from = server.output.length;
+      const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'loadSource', arg: OUTSIDE_FILE}));
+      // (under enforce a path outside is invisible: the file broker's
+      // _findPath answers it missing, and Node's own not-found is what the
+      // module sees)
+      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: 'MODULE_NOT_FOUND'});
+      else {
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
+        await waitFor(() => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: sandbox-probe violation require') && l.includes('cli-options')),
+          20000, 'the require\'s violation line');
+      }
+      const cached = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'compiledInCache', arg: OUTSIDE_FILE}));
+      assert.deepStrictEqual(cached, {outcome: 'allowed', code: null}, 'the cache holds compiled source under that filename');
+    });
+  }));
+
   describe('audit', () => {
     let server = null;
     before(async () => { server = await startServer(testPort(9609), serverArgs('audit')); }); // serverArgs passes --workerThread
@@ -119,6 +237,34 @@ describe('sandbox 05: worker lockdown', function() {
         const r = await mcpCall(testPort(9609), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(toolOutput(r).outcome, 'allowed', `${what}: ${JSON.stringify(r)}`);
       });
+    });
+
+    // F4-2: a module's report is read (native-addon loaders read its header), but never holds the process's secrets
+    it('process.report.getReport answers with nothing of the process\'s environment, command line or handles', async () => {
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'getReport'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+    });
+
+    it('detect-libc\'s steps leak nothing under audit either, and are not violations', async () => {
+      const from = server.output.length;
+      const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'detectLibc'});
+      assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+      await noReportViolation(testPort(9609), server, from, 'excludeNetwork');
+    });
+
+    it('a report written under audit holds no environment, and is in the process\'s compact, not the module\'s', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-05-report-'));
+      try {
+        for (const compact of [true, false]) {
+          const file = path.join(dir, `r-${compact}.json`);
+          const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'writeReportTo', arg: JSON.stringify({file, compact})});
+          assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: null}, JSON.stringify(r));
+          const text = fs.readFileSync(file, 'utf8');
+          const report = JSON.parse(text);
+          assert.strictEqual(report.environmentVariables, undefined, `${compact}: the environment was written`);
+          assert.ok(text.trim().includes('\n'), `module's compact ${compact}: written in the process's (not compact)`);
+        }
+      } finally { fs.rmSync(dir, {recursive: true, force: true}); }
     });
 
     it('process.loadEnvFile reads through the broker', async () => {
@@ -141,6 +287,21 @@ describe('sandbox 05: worker lockdown', function() {
       await mcpCall(testPort(9609), KEY, TOOL, {what: 'v8'});
       const lines = server.output.split('\n').filter((l) => l.includes('module sandbox: sandbox-probe violation builtin v8'));
       assert.strictEqual(lines.length, 1, lines.join('\n'));
+    });
+
+    // last of the block: it restarts the probe
+    it('a module\'s compact is its own: the process\'s is unchanged, as a restarted worker finds it', async () => {
+      const set = await mcpCall(testPort(9609), KEY, TOOL, {what: 'reportCompactSet'});
+      assert.deepStrictEqual(toolOutput(set), {outcome: 'allowed', code: null}, JSON.stringify(set));
+      const restarted = await post(testPort(9609), KEY, '/restart-module', {name: 'sandbox-probe'});
+      assert.strictEqual(restarted.status, 200, `the restart: ${JSON.stringify(restarted)}`);
+      // (until the restart answers, the old worker still says its own compact: COMPACT_true)
+      let last = null;
+      await waitFor(async () => {
+        const r = await mcpCall(testPort(9609), KEY, TOOL, {what: 'reportCompactIsFalse'});
+        last = toolOutput(r);
+        return r.isError === false && last != null && last.outcome === 'allowed' && last.code === null;
+      }, 30000, 'the restarted probe to find the process\'s compact false', () => JSON.stringify(last));
     });
   });
 

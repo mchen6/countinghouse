@@ -589,7 +589,71 @@ ignores any other one.
 | `permissions` | `{fs, net, env, limits}` | What its worker may reach under the sandbox: paths, hosts, environment variables, and memory, blocking and disk limits ([Declaring permissions](#declaring-permissions)). |
 | `remotes` | `[{name, transport, url, headers, credential}]` | The remote MCP server it calls, one per module in this version ([Calling a remote MCP server](#calling-a-remote-mcp-server)). |
 | `role` | `"scenario"` or `"part"` | A scenario is listed and loads its parts. A part loaded by a scenario is not listed ([Roles](module-authoring.md#roles-scenarios-and-parts)). Any other value counts as no role. In the single-identity profile (`--stdio`, the shared runtime) only scenarios are listed; on a hosted server a module with no role is listed as any module is. |
+| `settings` | `{"<name>": {type, values, min, max, maxLength, format, default, required, confirm, title, description}}` | The settings a user may choose for your module, such as units or a default repository ([Module settings](#module-settings)). An invalid declaration refuses the load (`SETTINGS_DECLARATION_INVALID`). |
 | `state` | `"shared"` (the default) or `"per-session"` | Whether the module keeps state per user session. `per-session` gives it, on the shared runtime, a worker, `ctx.redis` keys and `/data` and `/tmp` of its own per session. It is refused on the HTTP hosting profile (`MODULE_NEEDS_SESSIONS`); under `--stdio`, one session, it runs as a shared module. Any other value refuses the load (`MODULE_STATE_INVALID`); a reload that changes it is refused (`MODULE_STATE_CHANGED`). |
+
+## Module settings
+
+A module can declare settings that a user chooses: units, a default
+repository, a page size. Declare them in `package.json`, beside `calls` and
+`permissions`:
+
+```json
+"countinghouse": {
+  "settings": {
+    "units":       {"type": "enum", "values": ["metric", "imperial"], "default": "metric",
+                    "title": "Units", "description": "Units used in forecasts."},
+    "defaultRepo": {"type": "string", "format": "repo", "title": "Default repository",
+                    "description": "owner/name used when a call names no repository."},
+    "maxResults":  {"type": "integer", "min": 1, "max": 100, "default": 20,
+                    "title": "Results per call"},
+    "shareStats":  {"type": "boolean", "default": false, "confirm": true,
+                    "title": "Send anonymous usage statistics"}
+  }
+}
+```
+
+The vocabulary is small and closed. It is not JSON Schema.
+
+| Field | Rules |
+|---|---|
+| the name (the key) | `[a-z][a-zA-Z0-9_]{0,63}`, with no dot, and not the name of an `Object.prototype` member (`constructor`, `toString`, ...). At most 32 settings. |
+| `type` | `string`, `integer`, `number`, `boolean` or `enum`. |
+| `values` | For an `enum` only: 1 to 64 distinct strings, each 1 to 64 characters of letters, digits, space and `_.:/@+-`. |
+| `min`, `max` | For an `integer` or a `number`: finite bounds (whole numbers for an `integer`). |
+| `maxLength` | For a `string`: 1 to 1024 characters (256 by default), counted in code points. |
+| `format` | For a `string`, optional: `slug`, `repo` (`owner/name`, GitHub's grammar), `email`, `hostname` or `url` (https only, no user info, kept in canonical form). There is no `pattern` and no `path`. |
+| `default` | Optional; it must be a valid value. A setting with no default and no value is **unset**, and so is an empty string. |
+| `required` | `true`: a call while the setting is unset fails before your handler runs. |
+| `confirm` | `true`: a change in conversation needs the user's own confirmation. Mark a setting that sends data somewhere, costs money, or acts for the user. Every `string` setting needs it anyway. |
+| `title`, `description` | Shown to the user and the agent: at most 64 and 512 characters. |
+
+- **The declaration is at most 16 KiB**, and a module that declares settings
+  has an npm package name.
+- **A value with a hidden character is refused**, never cleaned.
+- **A `hostname` or `url` value must be inside your module's granted
+  `permissions.net`**, as the operator's policy narrowed it, or it is
+  refused as out of bounds. A default outside it is treated as unset, with
+  a warning at load.
+- **Settings are not secrets.** A value can be shown and set in
+  conversation. A key goes in a credential, never a setting.
+  `countinghouse-validate` warns on a name or title that looks like one
+  (`password`, `token`, `secret`, `apiKey`, `credential`).
+- **The values your module gets** are its defaults, then the values the
+  user stored, then any the operator fixes. A stored value your loaded
+  version does not accept (a removed setting, a narrowed enum, a tighter
+  bound) is not applied: the default applies, the log says so once per load
+  (naming the setting, never the value), and the stored value comes back
+  with a version that accepts it.
+- **The declaration is pinned when an operator loads your module**, as
+  `calls` is: a module that rewrites its `package.json` and restarts under
+  supervision keeps the declaration it was loaded with.
+
+`countinghouse-validate` checks the declaration, by position and field, and
+prints how each setting is changed in conversation (on request, or only with
+the user's confirmation), so you see what your users will be asked. The load
+makes the same checks; an invalid declaration refuses it
+(`SETTINGS_DECLARATION_INVALID`).
 
 ## Loading your module
 
@@ -711,6 +775,94 @@ checks, quota or link rules. The differences from worker mode:
 
 Upgrading a module or a deployment from 7.x: see
 [`upgrading-to-8.md`](upgrading-to-8.md).
+
+## Modules that keep state per session
+
+By default a module runs in **one worker, shared by every session** of the
+runtime that hosts it: what it keeps in memory, in `ctx.redis` and in `/data`
+is the same for every user. That is right for almost every module. Declare
+otherwise only if your module keeps per-user state, in memory or in storage,
+that must not be shared:
+
+```json
+{
+  "name": "my-notes",
+  "version": "1.0.0",
+  "countinghouse": {"state": "per-session"}
+}
+```
+
+The value is `"shared"` (the default) or `"per-session"`; anything else
+refuses the load (`MODULE_STATE_INVALID`). It's read from your
+`package.json` when the operator loads the module, and kept with it: a
+reload or restart that changes it is refused (`MODULE_STATE_CHANGED`).
+Unload first, then load.
+
+**What you get, on the shared runtime** (one runtime serving several of a
+user's client sessions, `--sessionSocket`):
+
+- **A worker per session that uses the module.** It starts on that
+  session's first call into the module: a direct call, a hop from another
+  module (`ctx.call`) made in that session's call, or a task the session
+  created. It stops when the session ends. Listing the module's tools,
+  prompts and resources needs no worker.
+- **Its own storage per session:** its own `ctx.redis` keys, `/data` and
+  `/tmp`. Write the module as if it had one user. It never sees a session id
+  (not in its options, environment, `ctx`, paths or error texts), and it
+  can't reach another session's worker or storage.
+- **Hops into it go through the main thread.** Each hop is routed to the
+  calling session's worker by its own call's token, never over a direct
+  peer channel. That costs one main-thread round trip per hop into a
+  per-session module (see [the security model](security-model.md#modules-that-keep-state-per-session)
+  for why).
+
+**Limits.**
+
+- `--maxSessionWorkers` (default 16) caps the per-session workers **in
+  all**, across every per-session module and every session. It's the one
+  bound on their memory: about 15 MB once plus about 24 MB per per-session
+  worker (resident memory, measured on Node 24 with a small module; a
+  heavier module adds its own heap), so the default cap of 16 is about
+  400 MB at most, above the shared workers
+  ([benchmarks](benchmarks/lean-worker.md)). Only the operator sets it, from
+  the terminal. A session can't change it.
+- At the cap, the least recently used worker that is idle (no call in flight,
+  and no call token issued to it still live) gives up its slot, and its
+  session is told on its next result of the module: `<module>'s in-memory
+  state was reset; its files were kept`. A worker is never stopped mid-call.
+- When every slot is busy, the call is refused `SESSION_WORKERS_BUSY`
+  (retryable). Nothing is queued.
+- A worker that crashes frees its slot at once. Its session's next call
+  starts a fresh one and is told the same. Three exits within ten minutes
+  suspend the module for that session alone (`MODULE_SESSION_PAUSED`,
+  retryable), until the
+  ten minutes pass, the module is reloaded, or the session ends. Other
+  sessions' workers aren't affected.
+
+**Lifetime of the storage.**
+
+- It's kept while the session can come back: across a detach within the
+  reconnect window, and across a runtime restart that restores the session.
+- It's removed when the session ends for good: it leaves (`bye`), its
+  reconnect window passes, or a resume never settles. That happens after
+  the session's workers have stopped. It's kept across a runtime restart
+  that restores and resumes the session. If the module is being reloaded at
+  that moment, or was reloaded as a shared module, its storage for that
+  session is removed at the runtime's next start instead.
+- When the runtime starts, once it accepts connections, it removes in the
+  background the storage of every session it neither restored nor has open.
+  If it restored none (the daemon died) and there was storage to remove,
+  only the next session to connect is told that per-session module state
+  was reset. A swept session's user reconnects as a new session, which the
+  runtime can't link to the old one.
+- A reload stops every session's worker. Their storage is kept, and the
+  next calls run the new code. An uninstall removes every session's storage
+  with the module's own.
+
+**Where it runs.** A per-session module needs the shared runtime's sessions:
+on the HTTP hosting profile its load is refused (`MODULE_NEEDS_SESSIONS`).
+Under `--stdio` there is one session, so it runs in its one worker on the
+module's usual paths (`<name>/data`, `m:<name>:`), as a shared module does.
 
 ## Declaring permissions
 
@@ -1045,7 +1197,28 @@ example, without ever holding the user's credential. The runtime's main
 thread connects to the server, adds the credential the operator allowed,
 and hands the module the server's answer.
 
-Declare it in `package.json`:
+Declare it in `package.json`. The shortest declaration:
+
+```json
+"countinghouse": {
+  "remotes": [
+    {"name": "github", "url": "https://api.githubcopilot.com/mcp/", "credential": "GITHUB_TOKEN"}
+  ]
+}
+```
+
+`"credential": "GITHUB_TOKEN"` means `{"env": "GITHUB_TOKEN"}`, with the
+header `Authorization` and the scheme `Bearer`; `transport` defaults to
+`"streamable-http"`. The load keeps the expanded form, and
+`countinghouse-validate` prints it for every remote, with where its
+credential goes:
+
+```
+remote github: {"name":"github","transport":"streamable-http","url":"https://api.githubcopilot.com/mcp/","credential":{"env":"GITHUB_TOKEN","header":"Authorization","scheme":"Bearer"}}
+  sends the credential GITHUB_TOKEN to https://api.githubcopilot.com as "Authorization: Bearer <value>"
+```
+
+The full form:
 
 ```json
 "countinghouse": {
@@ -1064,7 +1237,7 @@ Declare it in `package.json`:
 
 - `name`: lower-case letters, digits and `-`, starting with a letter. It
   is the name in the address below.
-- `transport`: `"streamable-http"`, the only one.
+- `transport` (optional): `"streamable-http"`, the only one and the default.
 - `url`: `https:`, with no user info and no fragment. `http:` is accepted
   only for a loopback host under `--debug`, for local testing. A loopback
   or private address, or the Redis endpoint, is refused.
@@ -1073,12 +1246,20 @@ Declare it in `package.json`:
   credential's header, hop-by-hop headers and the headers the transport
   sets itself (`Host`, `Content-Type`, `Accept`, `Mcp-Session-Id` and the
   like) are refused.
-- `credential` (optional): the environment variable to read (`env`, then
-  `fallbackEnv` when `env` is empty), the header (default
-  `Authorization`) and the scheme (default `Bearer`; `""` sends the bare
-  value). It is a request, not a grant: the operator's
-  `--remoteCredentials` file decides which variables may go to which
-  origin.
+- `credential` (optional): a variable name (the short form), or an
+  object: the environment variable to read (`env`, then `fallbackEnv`
+  when `env` is empty, under a version 1 `--remoteCredentials` file only),
+  the header (default `Authorization`) and the scheme (default `Bearer`;
+  `""` sends the bare value). It is a request, not a grant: the
+  operator's `--remoteCredentials` file decides where it may go. Under a
+  version 2 file a key is bound to one module, one variable and one
+  origin: another module that declares the same variable gets nothing, and
+  a version of this module that sends it to another origin, or asks for it
+  under another name, gets nothing until it is bound again
+  (`REMOTE_CREDENTIAL_NOT_ALLOWED`, saying which).
+- The remotes are part of the module's pin: a supervised restart uses the
+  remotes the last load, reload or restart took, never a `package.json`
+  changed since.
 
 One remote per module in this version. `countinghouse-validate` reports a
 declaration problem by position and field, and the load refuses the
@@ -1106,7 +1287,7 @@ rejects, with a code:
 | `REMOTE_ADDRESS_REFUSED` | the host resolves to a loopback, private or Redis-endpoint address | no |
 | `REMOTE_UNDECLARED` | the module declares no remote by that name | no |
 | `REMOTE_ARGS_INVALID` | not an address `remote:<name>/<tool>`, or the arguments are not a plain JSON object | no |
-| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin; the remote is disabled | no |
+| `REMOTE_CREDENTIAL_NOT_ALLOWED` | the operator's file does not allow the variable for this origin (version 1), or binds no key to this module for this origin and variable (version 2); the remote is disabled | no |
 | `REMOTE_CREDENTIAL_MISSING` | the variable is allowed but was not set when the module loaded | no |
 
 A remote needs no `net` permission: the connection is the main thread's,

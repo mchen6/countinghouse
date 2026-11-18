@@ -39,6 +39,37 @@ describe('remote 01: the remotes declaration', () => {
     assert.strictEqual(parse(pkgWith([none])).remotes[0].credential, null);
   });
 
+  // M3 (#413 section 6.1): the shortest declaration, and what it expands to.
+  it('the short form: a string credential and no transport parse to the expanded form', () => {
+    const short = {name: 'github', url: 'https://api.githubcopilot.com/mcp/', credential: 'GITHUB_TOKEN'};
+    const r = parse(pkgWith([short]));
+    assert.deepStrictEqual(r.problems, []);
+    const g = r.remotes[0];
+    assert.deepStrictEqual(g.credential, {env: 'GITHUB_TOKEN', fallbackEnv: null, header: 'Authorization', scheme: 'Bearer'});
+    assert.strictEqual(g.origin, 'https://api.githubcopilot.com');
+    assert.strictEqual(JSON.stringify(g.declared), '{"name":"github","transport":"streamable-http","url":"https://api.githubcopilot.com/mcp/",' +
+      '"credential":{"env":"GITHUB_TOKEN","header":"Authorization","scheme":"Bearer"}}');
+  });
+
+  it('the expanded form keeps headers and a fallbackEnv when given, and has no credential when none is declared', () => {
+    const g = parse(pkgWith([GITHUB])).remotes[0];
+    assert.deepStrictEqual(g.declared, {name: 'github', transport: 'streamable-http', url: 'https://api.githubcopilot.com/mcp/',
+      headers: {'X-MCP-Toolsets': 'actions,repos'},
+      credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}});
+    const none = {name: 'open', url: 'https://example.com/mcp'};
+    assert.deepStrictEqual(parse(pkgWith([none])).remotes[0].declared, {name: 'open', transport: 'streamable-http', url: 'https://example.com/mcp'});
+  });
+
+  it('a string credential that is not a variable name is refused, by position; a given transport must still be streamable-http', () => {
+    for (const bad of ['', 'GITHUB TOKEN', '1TOKEN', 'TOKEN=x']) {
+      const r = parse(one({credential: bad}));
+      assert.deepStrictEqual(r.remotes, [], JSON.stringify(bad));
+      assert.ok(r.problems.some((p) => p.includes('remotes[0].credential')), `${JSON.stringify(bad)}: ${JSON.stringify(r.problems)}`);
+    }
+    assert.ok(parse(one({transport: 'sse'})).problems.some((p) => p.includes('remotes[0].transport')));
+    assert.ok(parse(one({transport: null})).problems.some((p) => p.includes('remotes[0].transport')));
+  });
+
   it('a module with no remotes has none, and no problem', () => {
     assert.deepStrictEqual(parse({name: 'm'}), {remotes: [], problems: []});
     assert.deepStrictEqual(parse({name: 'm', countinghouse: {calls: []}}), {remotes: [], problems: []});

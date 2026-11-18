@@ -228,10 +228,45 @@ any module code). Stops:
   refused until it has been reviewed; `module` is replaced by a reduced
   version (`builtinModules`, `isBuiltin`, a `createRequire` that stays inside
   the module's directory); `module.registerHooks`/`register` are locked so no
-  later hook can run ahead of the boundary;
+  later hook can run ahead of the boundary; and `Module._load`, which module
+  code reaches as `module.constructor._load`, forwards only its request,
+  parent and isMain, so its internal fourth argument (which skips the
+  resolve hooks, or hands over a resolution or source) never skips them.
+  Under `enforce` it takes only a string request and never makes a main
+  module; it, `Module._resolveFilename`, `Module.prototype.load` and the
+  extension handlers are locked, and the extensions table takes no new
+  extension. Under `audit` each replacement is reported. **Until #194's
+  next step (no lazy runtime load after the lockdown), other routes into
+  what the runtime loads later are one assignment away for module code:**
+  a planted `require.cache` entry or `Module._cache` replaced; Node's
+  relative-resolve cache poisoned through a parent module code forges (its
+  path a countinghouse directory, its filename the module's own);
+  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced; an
+  accessor on `Module.prototype` for Node's internal URL symbol; and, under
+  `audit` even with the file broker, `_findPath` and `_stat`. #194's later
+  steps close them (the runtime loads nothing after the lockdown; the cache
+  moved out of reach; every loader static locked);
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
-  `process.loadEnvFile` goes through the file broker;
+  `process.loadEnvFile` goes through the file broker. Of `process.report`'s
+  settings, `compact`, `excludeNetwork` and `excludeEnv` are the worker's
+  own values, which a module may read and set (a boolean, as Node checks)
+  and which never reach the process's (the worker's real `excludeEnv` and
+  `excludeNetwork` are on from its start, so a report it writes under
+  `audit` holds no environment; such a report is in the process's
+  `compact`, not the module's); every other one (`directory`, `filename`,
+  `signal`, the `reportOn*` triggers, and any a later Node adds) is locked;
+- `process.report.getReport()`, in every mode: Node builds a report from the
+  process, not the worker, so it would hold the server's own environment and
+  command line (its database and Redis passwords, its debug key, any token
+  in its environment) whatever env the worker was given. A module is served
+  only what an allowlist keeps: of the header, the runtime's versions, word
+  size, arch, platform, glibc and OS name; the JavaScript heap, resource use
+  and limits; and of the shared objects only libc's and the dynamic loader's
+  names, which native-addon loaders (detect-libc) read to pick a binary. The
+  environment, command line, working directory, host, network, OS release,
+  version, machine and CPUs, the libuv handles, worker reports, both stacks,
+  and any field a later Node adds are left out;
 - adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
   `net.connect({fd})` and `net.createConnection({fd})`, which an `http`
   request given an `fd` reaches through the agent (`https` goes through
@@ -563,6 +598,11 @@ the key's fingerprint (a full, domain-separated sha256). The seeding
 command, `countinghouse-meter`, reads the key from
 `COUNTINGHOUSE_SEED_KEY`, never from its arguments, and prints only the
 fingerprint.
+
+The store's files are written back every 5 seconds, and at a clean stop. So
+a runtime killed without one (SIGKILL, a power loss) can lose up to the
+last 5 seconds of `ctx.redis` writes, per-session or not. Redis has its own
+persistence settings.
 
 In the single-identity profile (`--store local --stdio` without
 `--authConfigPath` or `--authProvider`) no auth file exists. The one key is
@@ -941,14 +981,18 @@ bounds it:
   with a question only from the main thread's own record that the handler
   asked one. Nothing a module returns or throws can produce that answer.
 - **The retry's `requestState`** is the client's to send, so the
-  attacker's to write. It is `v1.<payload>.<mac>`: an HMAC-SHA256 under a
-  key derived from the identity secret, over the payload and the call it
-  is good for (the caller's opaque id, the session, the method, the tool
-  and a hash of the arguments). It lasts five minutes and is used once.
-  **The payload is readable, not private:** it holds a nonce, the expiry,
-  the question's key and declared name, the round and the earlier rounds'
-  answers, which the client already has. Nothing secret may ever be put
-  in it.
+  attacker's to write. It is `v2.<sealed payload>.<mac>`: an HMAC-SHA256
+  under a key derived from the identity secret, over the sealed payload and
+  the call it is good for (the caller's opaque id, the session, the method,
+  the tool and a hash of the arguments). It lasts five minutes and is used
+  once. **The payload is sealed:** AES-256-GCM under a key derived from the
+  MAC key, a key of its own for each state (a fresh salt), checked by the
+  MAC before it is opened. It holds a nonce, the expiry, the question's key
+  (which names the question and the module that asked, an unlisted part
+  included), the round and the earlier rounds' answers. It is padded to a
+  length set by the answers alone, which the client already has, so its
+  length says nothing of who asked. A `v1` state, whose payload was in the
+  clear, is refused.
 - **One refusal.** A state that is not this call's, has expired or was
   already used gets one answer with one text (`ASK_STATE_INVALID`); which
   it was is in the runtime's own log line only. A store that cannot say
@@ -1014,7 +1058,11 @@ bounds it:
   it. The record keeps the task's owner and its session's hash, never the
   session's id. `tasks/update` finds the task as `tasks/get` does (the
   caller's own, in its session: anyone else's is the one unknown-task
-  error), and the record's own session is checked again. Outside shared
+  error), and the record's own session is checked again. Answers come only
+  from a request that declares form elicitation, as only such a poll is
+  handed the form: a `tasks/update` with `inputResponses` from any other
+  is refused `-32021` before the task is looked up, so the refusal says
+  nothing of one. Outside shared
   mode the owner key decides, so a key that may read another owner's task
   (an admin, as M15 rules for `tasks/get` and `tasks/cancel`) may also
   answer its question. Only the waiting
@@ -1146,6 +1194,71 @@ These events are **not recorded in this release**:
   expired;
 - how far a cancelled call had run (only its time and bytes);
 - a list cursor refused.
+
+### Modules that keep state per session
+
+On the shared runtime, a module that declares
+`"countinghouse": {"state": "per-session"}` runs in one worker per session
+that uses it, with that session's own `ctx.redis` keys, `/data` and `/tmp`
+([module development](module-development.md#modules-that-keep-state-per-session)).
+What keeps one session out of another's:
+
+- **The worker is never the caller's choice.** Every call carries a call
+  token the runtime issues and binds to the session it was made in. A
+  direct call, a hop (`ctx.call`) or a task run reaches the worker of the
+  session its token names, which the main thread looks up for each call. A
+  session, or a module acting for it, reaches only its own session's
+  worker and storage. A call whose session has ended reaches none: it is
+  answered as a device that was never hosted, and nothing runs.
+- **Never over a direct peer channel, under any profile.** Hops into a
+  per-session module always go through the main thread, routed by each
+  call's own token, and the runtime never opens a direct channel to one.
+  A caller's peer channels are keyed by the device they lead to, not by
+  session (a module never sees a session id), so a channel opened for one
+  session's call would carry another session's later hop into the first
+  session's worker. The broker answers a request for one with "route
+  through the main thread"; and were a channel to a session's worker ever
+  to exist, an invoke on it by another session's call is refused. On the
+  shared runtime peer channels are off anyway (it is the single-identity
+  profile), but the guarantee doesn't rest on that.
+- **No session id reaches the module**: not in its options, environment,
+  `ctx`, paths (its `/data` is mapped on the main thread) or error texts.
+- **Shared modules are trusted with every session's data.** A shared module
+  is reached by every session by design. While it serves two sessions'
+  calls at once it holds both tokens, so it could hop into either session's
+  per-session worker. Only load as shared a module you would trust with
+  all of the user's sessions. That is the case already: on the shared
+  runtime every session is the same user.
+- **With session packs (B3),** a session sees and calls only the modules in
+  packs that are on for it (the global ones and its own). A module it
+  doesn't list answers like a missing one, and its per-session workers stop
+  when the session turns its pack off.
+- **The memory bound is the operator's.** `--maxSessionWorkers` (default
+  16, in all) is a terminal flag only, not a setting a session can change.
+  It bounds their memory at about 15 MB once plus about 24 MB per
+  per-session worker (measured, Node 24, a small module; a heavier module
+  adds its own heap): the default cap is about 400 MB at most
+  ([benchmarks](benchmarks/lean-worker.md)).
+  At the cap only an idle worker is retired, never one with a call still
+  within its timeout. A call past its timeout and a 5-second margin has
+  been answered (its own timeout did that) and no longer counts, so a
+  handler that never answers can't hold a slot for good: its worker may be
+  retired mid-handler. A session that can't get a worker is refused
+  `SESSION_WORKERS_BUSY`; nothing is queued.
+  Residual: a task whose handler never answers holds its slot until the
+  task's timeout: its own, when it was added with one, or else
+  `--jobTimeout` (1 hour by default; an operator who sets 0 has chosen no
+  bound). The timeout counted is the one at the send:
+  a session that tightens its timeout during a call, or cancels it, frees
+  the slot only at the original timeout (a follow-up after R1).
+- **Storage ends with the session.** A session's partitions are removed
+  when it ends for good (it leaves, its reconnect window passes, or a resume
+  never settles), after its workers stop; and at a start, once the runtime
+  listens, in the background, for every session neither restored nor open.
+  What a session's partitions held leaves its module's shared disk quota
+  with them: the session's own share, exactly. Removal never follows a link out of the module's data
+  directory, and a partition that can't be removed doesn't stop the runtime
+  from starting.
 
 ### What this explicitly does NOT provide (accepted gaps and limits)
 
@@ -1372,6 +1485,35 @@ the main thread's, not the module's (spec:
   all (`REMOTE_CREDENTIAL_NOT_ALLOWED`). Without the option no credential
   is ever read. The client packs' `ch-local install` writes the file from
   its allowlist, so for the single local user the user is the operator.
+- **Bound to one module (version 2 of the file, #413 section 6.5).** A key
+  is bound to (module, variable, origin) and read from a slot,
+  `COUNTINGHOUSE_CREDENTIAL_<n>`: a prefix the runtime never hands to a
+  worker, and the only names the file accepts, so it cannot send the
+  identity secret or any other variable of the runtime's environment
+  anywhere. The start's file fixes each slot for the life of the process;
+  a later entry may only repeat one. Another module that declares the same
+  variable and origin gets nothing, and so does a version of the bound
+  module that sends it to another origin or under another name.
+- **Never in a worker's environment** (under `--moduleSandbox audit` and
+  `enforce`; with the sandbox off, or in single-thread mode, a module shares
+  the runtime's environment and this does not hold). A variable a
+  credentials allowance in force reads -- version 1's listed names; version
+  2's slots and every variable name the file binds, since the operator's
+  own variable of that name may still be exported -- is never copied from
+  the runtime's environment into a worker, even when a module declares it
+  in `permissions.env` (before, under audit, a declared `GITHUB_TOKEN` was
+  handed over). Only a value the operator's
+  `--modulePolicy` sets for that module under that name is given: it is the
+  operator's own value, not the runtime's credential. The names are those
+  in force at the spawn: a worker spawned before a pack loaded in place
+  added a version 1 name keeps its environment until its next spawn (until
+  version 1 leaves a runtime with a control channel).
+- **Pinned.** A module's remotes join its manifest pin: a supervised
+  restart uses the remotes the last operator action took, and a
+  `package.json` rewritten since (under audit, by a route the file broker
+  does not see) changes nothing until an operator's reload; each
+  difference is logged as an error, saying each remote's name, origin and
+  variable only (never a URL's user info, path or query, nor a header).
 - **What a remote can reach.**
   - https only (http only to a loopback host under `--debug`, for tests);
   - a redirect followed only within the same origin (the exact scheme,

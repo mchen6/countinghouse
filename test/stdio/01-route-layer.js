@@ -17,6 +17,8 @@ function fakeHandle(calls) {
     // notification gets 'method not found' with no id.
     if (message.id === undefined) return cb(null, message.method === 'notifications/initialized' ? null : {jsonrpc: '2.0', id: null, error: {code: -32601, message: `method not found: ${message.method}`}});
     if (message.method === 'boom') return cb(new Error('it broke'));
+    // an answer of params.bytes characters (F3-3's answer bound)
+    if (message.method === 'big') return cb(null, {jsonrpc: '2.0', id: message.id, result: {pad: 'x'.repeat(message.params.bytes)}});
     const delay = message.params && message.params.delayMs ? message.params.delayMs : 0;
     setTimeout(() => cb(null, {jsonrpc: '2.0', id: message.id, result: {method: message.method}}), delay);
   };
@@ -38,9 +40,18 @@ function harness({drainMs = 2000, appKey = 'k', maxLineBytes} = {}) {
 }
 const send = (h, obj) => h.input.write(`${JSON.stringify(obj)  }\n`);
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+// until the output holds `count` lines, polled for up to `ms` (a slow runner's answer, not a fixed wait)
+const lines = async (h, count, ms = 10000) => {
+  const end = Date.now() + ms;
+  while (h.lines().length < count && Date.now() < end) await settle(20);
+  assert.ok(h.lines().length >= count, `${count} line(s) expected within ${ms} ms: ${h.raw().slice(0, 300)}`);
+  return h.json();
+};
 const req = (id, method, params) => ({jsonrpc: '2.0', id, method, ...(params ? {params} : {})});
 
-describe('--stdio route layer', () => {
+describe('--stdio route layer', function() {
+  // (an answer is waited for up to 10 s on a slow runner: lines())
+  this.timeout(20000);
   it('answers a request with one line holding its id', async () => {
     const h = harness();
     send(h, req(1, 'initialize'));
@@ -79,6 +90,32 @@ describe('--stdio route layer', () => {
     await settle();
     assert.strictEqual(h.raw(), '');
     assert.strictEqual(h.calls.length, 2);
+    h.input.end();
+    await h.served.done;
+  });
+
+  // F3-3 (the Fable pass over the MCP surface): a batch is bounded, in length and in its answers' bytes
+  it('a batch of more than 32 messages is refused whole, and none of it runs; 32 are served', async () => {
+    const h = harness();
+    h.input.write(`${JSON.stringify(Array.from({length: 33}, (_, i) => req(i + 1, 'ping')))}\n`);
+    assert.deepStrictEqual(await lines(h, 1), [{jsonrpc: '2.0', id: null, error: {code: -32600, message: 'invalid JSON-RPC 2.0 request: a batch of 33 messages; at most 32 are taken (send them in smaller batches, or one at a time)'}}]);
+    assert.strictEqual(h.calls.length, 0, 'none of it ran');
+    h.input.write(`${JSON.stringify(Array.from({length: 32}, (_, i) => req(i + 1, 'ping')))}\n`);
+    assert.strictEqual((await lines(h, 2))[1].length, 32);
+    h.input.end();
+    await h.served.done;
+  });
+
+  it('a batch whose answers pass 8 MiB: the answer that took it past is kept (it ran), and no later one runs', async () => {
+    const h = harness({maxLineBytes: 16 * 1024 * 1024});
+    const MiB = 1024 * 1024;
+    h.input.write(`${JSON.stringify([req(1, 'big', {bytes: 3 * MiB}), req(2, 'big', {bytes: 3 * MiB}), req(3, 'big', {bytes: 3 * MiB}),
+      req(4, 'ping'), {jsonrpc: '2.0', method: 'notifications/initialized'}, {jsonrpc: '2.0', id: 6, method: 'notifications/initialized'}])}\n`);
+    const [answers] = await lines(h, 1);
+    assert.deepStrictEqual(answers.map((a) => a.id), [1, 2, 3, 4], 'one answer per request; neither notification, with an id or not, gets one');
+    assert.ok(answers[0].result != null && answers[1].result != null && answers[2].result != null, 'the third ran, and its answer is kept');
+    assert.deepStrictEqual(answers[3].error, {code: -32603, message: 'not run: the batch\'s answers passed 8388608 bytes before it; send it alone'});
+    assert.deepStrictEqual(h.calls.map((c) => c.message.method), ['big', 'big', 'big'], 'the ping and the notifications never ran');
     h.input.end();
     await h.served.done;
   });

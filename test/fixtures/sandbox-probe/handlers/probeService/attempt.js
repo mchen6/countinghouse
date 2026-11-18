@@ -2,6 +2,21 @@
 // sandbox refused it -- recognised by its message, so an ordinary failure of
 // the operation itself (a missing file, a refused connection) still counts as
 // "allowed". test/sandbox/05-lockdown.js drives this under audit and enforce.
+// F4-2: a report as a module reads it holds nothing of the process: its
+// environment, command line, working directory, host, open handles, stacks,
+// or any shared object's path (only libc's and the loader's names). One that
+// does is LEAKED, whatever the mode; and it is still a report.
+function reportChecked(r) {
+  const header = (r != null && r.header != null) ? r.header : {};
+  const leaked = ['environmentVariables', 'libuv', 'workers', 'nativeStack', 'javascriptStack'].filter((k) => r != null && r[k] != null)
+    .concat(['commandLine', 'cwd', 'networkInterfaces', 'host', 'osRelease', 'osVersion', 'osMachine', 'cpus'].filter((k) => header[k] != null).map((k) => `header.${k}`))
+    // shared objects: only libc's and the musl loader's names, as detect-libc reads them
+    .concat((r != null && Array.isArray(r.sharedObjects) ? r.sharedObjects : []).filter((o) => /[\\/]/.test(o) || !/^(libc[.-]|ld-musl-|ld-linux)/.test(o)).map((o) => `sharedObjects ${o}`));
+  if (leaked.length > 0) throw Object.assign(new Error(`the report holds ${leaked.join(', ')}`), {code: 'LEAKED'});
+  // still a report: its header's runtime facts, as native-addon loaders read them
+  if (typeof(header.nodejsVersion) !== 'string' || typeof(header.platform) !== 'string') throw Object.assign(new Error('not a report'), {code: 'NOT_A_REPORT'});
+}
+
 const ATTEMPTS = {
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),
@@ -25,6 +40,68 @@ const ATTEMPTS = {
   worker_threads:   () => require('worker_threads'),
   v8:               () => require('v8'),
   registerHooks:    () => module.constructor.registerHooks({resolve: (s, c, n) => n(s, c)}),
+  // Module._load's fourth, internal argument skips the resolve hooks, where
+  // the built-in gate and the file broker's bound live (#194's review, B1):
+  // the flag itself, a resolution handed over (24.21 and later), and source
+  // compiled under a filename of the module's choosing (24.21 and later)
+  loadSkipHooks:    () => module.constructor._load('node:child_process', null, false, {shouldSkipModuleHooks: true}),
+  // (worker_threads: a target of its own, so its report is told apart)
+  loadResolved:     () => module.constructor._load('worker_threads', null, false, {resolved: {filename: 'worker_threads', url: 'node:worker_threads', format: 'builtin'}}),
+  // B1's own checks (#406): a request that is no string, and isMain
+  forgeParent:      (arg) => {
+    const M = module.constructor;
+    if (arg === 'objectRequest') return M._load({toString() { return './attempt'; }}, module, false);
+    if (arg === 'isMain') return M._load(__filename, null, true);
+    throw new Error(`unknown variant ${arg}`);
+  },
+  createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
+  // under audit an assignment of load on one Module is that Module's own
+  instanceLoad:     () => {
+    const M = module.constructor;
+    const before = M.prototype.load;
+    const one = new M('/app/one.js', null);
+    const mine = function() {};
+    one.load = mine;
+    if (M.prototype.load !== before) throw Object.assign(new Error('worker-wide'), {code: 'WORKER_WIDE'});
+    if (Object.hasOwn(one, 'load') && one.load === mine) throw Object.assign(new Error('own'), {code: 'OWN'});
+  },
+  // each loader property #406 holds: whether a replacement takes (put back
+  // at once where it does, under audit, where it is reported)
+  replaceHeld:      (arg) => {
+    const M = module.constructor;
+    const [obj, key] = {protoLoad: [M.prototype, 'load'], jsHandler: [M._extensions, '.js'], jsonHandler: [M._extensions, '.json'],
+      resolveFilename: [M, '_resolveFilename']}[arg];
+    const prev = obj[key];
+    const mine = function(...a) { return prev.apply(this, a); };
+    try { obj[key] = mine; } catch (e) { /* refused */ }
+    if (obj[key] !== mine) return;
+    obj[key] = prev;
+    throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  // a new, longer extension would take over a file the runtime asks for
+  // (Node picks the longest): whether it takes (taken out at once where it
+  // does, after a load that reports it, under audit)
+  newExtension:     () => {
+    const exts = module.constructor._extensions;
+    try { exts['.min.js'] = exts['.js']; } catch (e) { /* refused */ }
+    if (!Object.hasOwn(exts, '.min.js')) return;
+    require('path');
+    delete exts['.min.js'];
+    throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
+  // under audit, a module that replaces the loader is reported
+  replaceLoad:      () => {
+    const prev = module.constructor._load;
+    module.constructor._load = function(...args) { return prev.apply(this, args); };
+  },
+  // whether the cache holds source compiled under that filename (what
+  // loadSource's internal argument did before B1's fix)
+  compiledInCache:  (arg) => {
+    const entry = require.cache[arg];
+    if (entry != null && entry.exports != null && entry.exports.compiled === true) throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
+  },
+  loadSource:       (arg) => module.constructor._load(arg, null, false,
+    {resolved: {filename: arg, url: require('url').pathToFileURL(arg).href, format: 'commonjs'}, source: 'module.exports = {compiled: true};'}),
   nodePath:         () => require('cli-options'),
   loadFileOutside:  (arg) => CHUtil.loadFile(arg),
   request:          (arg) => new Promise((resolve, reject) => {
@@ -115,6 +192,49 @@ const ATTEMPTS = {
   // Writes by native code, outside the broker (to directories that do not
   // exist, so audit writes nothing).
   report:           () => process.report.writeReport('/nonexistent-ch-probe/r.json'),
+  // F4-2: a diagnostic report read in the worker. It must never hold the
+  // process's own environment, command line, working directory, open
+  // handles or loaded objects (the --redisUrl password, --debugKey, the
+  // server's tokens): one that does is LEAKED, whatever the mode.
+  getReport:        () => reportChecked(process.report.getReport()),
+  // detect-libc's own steps (its lib/process.js): excludeNetwork set around
+  // the call, then put back; never refused, in any mode
+  detectLibc:       () => {
+    const orig = process.report.excludeNetwork;
+    process.report.excludeNetwork = true;
+    const r = process.report.getReport();
+    process.report.excludeNetwork = orig;
+    if (process.report.excludeNetwork !== orig) throw Object.assign(new Error('excludeNetwork was not put back'), {code: 'NOT_RESTORED'});
+    reportChecked(r);
+    if (typeof(r.header.glibcVersionRuntime) !== 'string' && process.platform === 'linux' && !(r.sharedObjects || []).some((o) => /musl/.test(o))) {
+      throw Object.assign(new Error('no libc to be read'), {code: 'NO_LIBC'});
+    }
+  },
+  // a setting that writes where a report goes (re-set to itself: audit changes nothing)
+  reportDirectory:  () => { process.report.directory = process.report.directory; },
+  // a report written to {file} (arg as JSON) with the module's compact set to {compact} (audit only: refused under enforce)
+  writeReportTo:    (arg) => {
+    const {file, compact} = JSON.parse(arg);
+    const was = process.report.compact;
+    process.report.compact = compact === true;
+    try { process.report.writeReport(file); } finally { process.report.compact = was; }
+  },
+  // compact is the module's own: set here, the process's is unchanged (a new worker starts from it)
+  reportCompactSet: () => {
+    process.report.compact = true;
+    if (process.report.compact !== true) throw Object.assign(new Error('not set'), {code: 'NOT_SET'});
+  },
+  reportCompactIsFalse: () => {
+    if (process.report.compact !== false) throw Object.assign(new Error(`compact is ${process.report.compact}`), {code: `COMPACT_${process.report.compact}`});
+  },
+  // a view of Node's own: a setting is a boolean, as Node checks
+  reportCompactNotBoolean: () => {
+    try { process.report.compact = 'yes'; } catch (e) {
+      if (e instanceof TypeError && e.code === 'ERR_INVALID_ARG_TYPE' && /Received type string \('yes'\)/.test(e.message) && process.report.compact === false) return;
+      throw e;
+    }
+    throw Object.assign(new Error('a non-boolean was taken'), {code: 'TAKEN'});
+  },
   compileCache:     () => module.constructor.enableCompileCache('/nonexistent-ch-probe/cc'),
   sourceMaps:       () => process.setSourceMapsEnabled(true),
   repl:             () => require('repl'),

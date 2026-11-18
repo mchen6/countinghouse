@@ -337,6 +337,26 @@ if (options.modulePolicy != null) {
   }
 }
 
+// --moduleSettings: an operator's modules' settings (lib/module-settings.js),
+// read at each load; checked here, so a file that cannot be read stops the
+// start rather than refusing every module. ch-local's settings are its
+// --settingsFile's: one source or the other.
+if (options.moduleSettingsInvalid === true) {
+  console.error('--moduleSettings needs one path (--moduleSettings <file>, given once)');
+  process.exit(2);
+}
+if (options.moduleSettings != null) {
+  if (options.settingsFile != null) {
+    console.error('--moduleSettings and --settingsFile: choose one (ch-local\'s settings file holds its modules\' settings)');
+    process.exit(2);
+  }
+  const read = require('./lib/module-settings').readModuleSettings(options.moduleSettings);
+  if (read.problem != null) {
+    console.error(read.problem);
+    process.exit(2);
+  }
+}
+
 var monitor       = require('./lib/monitor');
 
 logger.I('countinghouse@' + packageJson.version + ' start with options:' + JSON.stringify(options.getOptionsForLog()));
@@ -401,6 +421,12 @@ try {
   logger.E(new Error('cannot access module folder: ' + e.message));
   process.exit(-1);
 }
+
+// With modules to load, the validators boot now, beside the rest of the main
+// thread's boot, not when the first module's spec is checked
+// (lib/validator-pool.js startEarly). Every synchronous refusal of the start
+// has run by here; the id index's (identityReady, below) is the one left.
+require('./lib/validator-pool').startEarly();
 
 // deviceDB (lib/device-db.js, sqlite3-backed) is only ever consulted by
 // ModuleManager.prototype.loadAllModules's registry-lookup branch, and only
