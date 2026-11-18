@@ -62,6 +62,22 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   });
   const ask = (taskId, opts = {}) => made.add(taskId) && taskAsks.asked(taskId, opts.state || asking(), {owner: opts.owner || 'owner-1', session: opts.session === undefined ? SESSION : opts.session, ofAsker});
 
+  // F2-5: capabilities are per request in 2026-07-28: a waiting task's form goes only to a poll that declared form
+  it('tasks/get hands a waiting task\'s form only to a request that declared form elicitation (F2-5)', async () => {
+    const t = id();
+    await ask(t);
+    const gateway = require('../../lib/mcp/gateway');
+    const record = {state: 'completed', job: {id: t, timestamp: now - 1000, finishedOn: now - 500, data: {era: 'modern', asks: true, asking: 1}}};
+    const without = await gateway.modernTaskView(record, null, {session: SESSION}, {form: false});
+    assert.strictEqual(without.status, 'input_required');
+    assert.match(without.statusMessage, /form elicitation declared/, 'it says what the poll lacks');
+    assert.deepStrictEqual(without.inputRequests, {}, 'no form for a poll that cannot show one (the schema\'s map, empty)');
+    const unsaid = await gateway.modernTaskView(record, null, {session: SESSION});
+    assert.deepStrictEqual(unsaid.inputRequests, {}, 'and none when nothing is said (fails closed)');
+    const withForm = await gateway.modernTaskView(record, null, {session: SESSION}, {form: true});
+    assert.deepStrictEqual(withForm.inputRequests, {q1: {method: 'elicitation/create', params: {mode: 'form', message: 'm: Do it?', requestedSchema: SCHEMA}}});
+  });
+
   it('the pass that asks: the record holds the form under q1, the session\'s hash and never its id; the task reads input_required', async () => {
     const t = id();
     const r = await ask(t);
