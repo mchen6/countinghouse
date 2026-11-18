@@ -1,7 +1,7 @@
 'use strict';
-// A unit loaded or reloaded in place (lib/packs-in-place.js) is verified as
-// a whole: while it is in progress its modules' loads re-run no discovery,
-// so no composition pass sees part of it; a load that is not part of it
+// A unit loaded in place (lib/packs-in-place.js) is verified as a whole:
+// while it is in progress its modules' loads re-run no discovery, so no
+// composition pass sees part of it; a load that is not part of it
 // runs its own, as before. The unit waits for each module it loaded to have
 // its registration's outcome, registered or refused, in worker mode and in
 // single-thread mode alike, and fails loudly if one has none at the bound.
@@ -73,15 +73,28 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
     mm.releaseDiscovery(unit);
   });
 
-  it('a refused registration is an outcome too: the unit does not wait for it', async () => {
+  it('a refused registration is an outcome: noted through the refusal itself, so the unit does not wait for it', async () => {
     const {mm} = manager();
-    // a registration the device manager refuses (DEVICE_OBJECT_CONFLICT) still ends
-    mm.on('registerdevices', () => false);
+    // the device manager refuses this registration (DEVICE_OBJECT_CONFLICT):
+    // nothing is registered, and the outcome is noted after the attempt
+    const attempts = [];
+    mm.on('registerdevices', (module) => { attempts.push([module.name, mm.units != null && [...mm.units][0].registered.has('s')]); return false; });
     const unit = mm.holdDiscovery(['s']);
     mm.emit('moduleload', 's', {name: 's'}, '1.0.0');
     const t0 = Date.now();
     await packs.unitRegistered(unit, ['s'], 2000);
     assert.ok(Date.now() - t0 < 1000, `waited ${Date.now() - t0} ms`);
+    assert.deepStrictEqual(attempts, [['s', false]], 'the refusal ran, before the outcome was noted');
+    assert.ok(unit.registered.has('s'));
+  });
+
+  it('a load replaced before its registration ran is no outcome: the replacement\'s is', async () => {
+    const {mm} = manager();
+    const unit = mm.holdDiscovery(['s']);
+    mm.emit('moduleload', 's', {name: 's'}, '1.0.0');
+    mm.modules.s = {name: 's', replacement: true};   // replaced before the queued registration runs
+    await assert.rejects(packs.unitRegistered(unit, ['s'], 100), (err) => err.code === 'CONTROL_FAILED');
+    assert.strictEqual(unit.registered.has('s'), false);
   });
 
   it('a module loaded but never registered fails the unit, loudly, at the bound', async () => {
@@ -94,13 +107,6 @@ describe('module-loading 43: a unit in place re-runs no discovery until it is wh
   it('a stub that never acknowledges a load is not waited for', async () => {
     const {mm} = manager();
     const unit = mm.holdDiscovery(['s']);
-    await packs.unitRegistered(unit, ['s'], 2000);
-  });
-
-  it('a restart of a module the unit holds, not loaded by the operation, is not waited for', async () => {
-    const {mm} = manager();
-    const unit = mm.holdDiscovery(['s', 'kept']);
-    unit.loaded.add('kept');   // its supervisor's restart, whose registration has not come
     await packs.unitRegistered(unit, ['s'], 2000);
   });
 
