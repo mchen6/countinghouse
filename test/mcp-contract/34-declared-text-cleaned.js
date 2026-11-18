@@ -127,253 +127,140 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
     });
   });
 
-  // register follow-up (3), as ruled: inside an advertised schema, text at
-  // a keyword's place is cleaned (title a line; description and $comment
-  // keep \n and \t); names and data are never changed, only left out
+  // F3-1, the reviewer's rule: in an advertised schema (input, output, a
+  // form) text keywords are cleaned; an annotation or an unknown keyword
+  // holding a hidden character anywhere is left out; one anywhere else makes
+  // the schema unusable. One predicate (hasHidden), one walk. Validation
+  // always uses the declared schema; this only decides what a client sees.
   describe('an advertised schema (clientText.schema)', () => {
-    const input = (s) => clientText.schema(s);
-    it('title, description and $comment cleaned at keyword places; names, a plain pattern and format as declared', () => {
-      const declared = {type: 'object', title: `A${ZWSP}b`, description: `One${LRI}\ntwo`, $comment: `c${TAG_A}`,
+    const schemaOf = (s) => clientText.schema(s);
+    const unusable = (s) => schemaOf(s).unusable;
+
+    it('text keywords cleaned (a title a line; a description keeps \n and \t, with no false "unusable"); names, a plain pattern and format as declared', () => {
+      const declared = {type: 'object', title: `A${ZWSP}b`, description: `One${LRI}\ntwo\tthree`, $comment: `c${TAG_A}`,
         properties: {title: {type: 'string', title: `T${ZWSP}`, pattern: '^ab$', format: 'email'}, description: {type: 'string'}}};
-      const got = input(declared);
+      const got = schemaOf(declared);
       assert.strictEqual(got.unusable, false);
-      assert.deepStrictEqual(got.schema, {type: 'object', title: 'A b', description: 'One \ntwo', $comment: 'c ',
+      assert.deepStrictEqual(got.schema, {type: 'object', title: 'A b', description: 'One \ntwo\tthree', $comment: 'c ',
         properties: {title: {type: 'string', title: 'T ', pattern: '^ab$', format: 'email'}, description: {type: 'string'}}});
       assert.notStrictEqual(got.schema, declared, 'a copy, never the declared object');
       assert.strictEqual(declared.title, `A${ZWSP}b`, 'the declared schema is unchanged');
     });
 
-    it('an enum member, an example or a default with a hidden character is left out, never changed; enumNames stay aligned', () => {
-      const got = input({type: 'object', properties: {
-        pick: {type: 'string', enum: ['a', `b${ZWSP}`, 'c'], enumNames: [`A${ZWSP}`, 'B', 'C']},
-        ex: {type: 'string', examples: [`x${ZWSP}`, 'y'], default: `d${ZWSP}`},
-        allHidden: {type: 'string', examples: [`x${ZWSP}`]},
-        fine: {type: 'string', default: 'ok', enum: ['ok', 1, null]}}});
-      assert.deepStrictEqual(got.schema.properties.pick, {type: 'string', enum: ['a', 'c'], enumNames: ['A ', 'C']});
-      assert.deepStrictEqual(got.schema.properties.ex, {type: 'string', examples: ['y']});
-      assert.deepStrictEqual(got.schema.properties.allHidden, {type: 'string'});
-      assert.deepStrictEqual(got.schema.properties.fine, {type: 'string', default: 'ok', enum: ['ok', 1, null]});
-    });
-
-    // never wider than the declared schema (the second review): a property
-    // left out for what it holds is advertised as never present (`false`); one
-    // left out for its name can't be named, so no name with a hidden character
-    // may be sent at all (an ASCII-escaped pattern)
-    it('an optional property named with a hidden character is left out, and such names refused; one whose enum or const is left with nothing, never present', () => {
-      const got = input({type: 'object', required: ['keep'], properties: {
-        keep: {type: 'string'}, [`na${ZWSP}me`]: {type: 'string'}, empty: {enum: [`x${ZWSP}`]}, gone: {const: `y${ZWSP}`}}});
+    it('annotations and unknown keywords holding a hidden character anywhere are left out, wherever they are (under not and if too); clean ones are sent', () => {
+      const got = schemaOf({type: 'object', 'x-label': `L${ZWSP}`, [`x-n${ZWSP}`]: 'v', 'x-ok': 'fine', 'x-deep': {a: [{[`k${TAG_A}`]: 1}]},
+        properties: {a: {type: 'string', default: `d${ZWSP}`, examples: ['ok', `e${ZWSP}`], enum: ['ok', 'e'], enumNames: ['Ok', `E${ZWSP}`]},
+          b: {type: 'array', default: [{k: `v${ZWSP}`}]}},
+        not: {required: ['q'], default: `x${ZWSP}`, 'x-y': `y${ZWSP}`}, deprecated: false});
       assert.strictEqual(got.unusable, false);
-      assert.deepStrictEqual(got.schema.properties, {keep: {type: 'string'}, empty: false, gone: false});
-      assert.ok(got.schema.propertyNames != null && !clientText.hasHidden(JSON.stringify(got.schema.propertyNames)), JSON.stringify(got.schema.propertyNames));
+      assert.deepStrictEqual(got.schema, {type: 'object', 'x-ok': 'fine', properties: {a: {type: 'string', enum: ['ok', 'e']}, b: {type: 'array'}},
+        not: {required: ['q']}, deprecated: false});
     });
 
-    it('a required one makes the schema unusable (the tool not listed; a question unavailable)', () => {
-      assert.strictEqual(input({type: 'object', required: [`na${ZWSP}me`], properties: {[`na${ZWSP}me`]: {type: 'string'}}}).unusable, true);
-      assert.strictEqual(input({type: 'object', required: ['e'], properties: {e: {enum: [`x${ZWSP}`]}}}).unusable, true);
-      // nested: a required object whose own required property goes
-      assert.strictEqual(input({type: 'object', required: ['o'], properties: {o: {type: 'object', required: ['e'], properties: {e: {const: `x${ZWSP}`}}}}}).unusable, true);
-      // a oneOf of titled consts (a form's choices): a hidden one leaves; all hidden, unusable
-      const choices = input({type: 'object', properties: {c: {oneOf: [{const: 'a', title: `A${ZWSP}`}, {const: `b${ZWSP}`, title: 'B'}]}}});
-      assert.deepStrictEqual(choices.schema.properties.c, {oneOf: [{const: 'a', title: 'A '}]});
-      assert.strictEqual(input({type: 'object', required: ['c'], properties: {c: {oneOf: [{const: `b${ZWSP}`}]}}}).unusable, true);
-    });
-
-    it('an output schema: only title, description and $comment cleaned; its data and names as declared (the client checks results against them)', () => {
-      const declared = {type: 'object', title: `O${ZWSP}`, properties: {[`na${ZWSP}me`]: {type: 'string', enum: [`x${ZWSP}`], description: `d${LRI}`}}, required: [`na${ZWSP}me`]};
-      const got = clientText.schema(declared, {output: true});
-      assert.strictEqual(got.unusable, false);
-      assert.deepStrictEqual(got.schema, {type: 'object', title: 'O ', properties: {[`na${ZWSP}me`]: {type: 'string', enum: [`x${ZWSP}`], description: 'd '}}, required: [`na${ZWSP}me`]});
-    });
-
-    // the reviewer's ruling on F3-1: an unknown keyword means nothing to
-    // validation, so one holding a hidden character anywhere is left out,
-    // whole, and the tool stays listed; a clean one is sent as declared
-    it('an unknown keyword: sent when clean; left out, whole, with a hidden character anywhere in it (its name too); the tool stays listed', () => {
-      const clean = input({type: 'object', 'x-label': 'L', 'x-more': {title: 'M', n: [1, 'two']}});
-      assert.deepStrictEqual(clean.schema, {type: 'object', 'x-label': 'L', 'x-more': {title: 'M', n: [1, 'two']}});
-      const got = input({type: 'object', 'x-label': `L${ZWSP}`, 'x-more': {title: `M${ZWSP}`}, 'x-deep': {a: [{[`k${TAG_A}`]: 1}]}, [`x-n${ZWSP}`]: 'v', 'x-ok': 'fine'});
-      assert.strictEqual(got.unusable, false);
-      assert.deepStrictEqual(got.schema, {type: 'object', 'x-ok': 'fine'});
-    });
-
-    // the code review's findings on the first version
-    it('a property named __proto__ is a property of the copy, never its prototype', () => {
-      const declared = JSON.parse('{"type":"object","required":["__proto__"],"properties":{"__proto__":{"type":"string","title":"P​"}}}');
-      const got = input(declared);
-      assert.strictEqual(got.unusable, false);
-      assert.ok(Object.hasOwn(got.schema.properties, '__proto__'));
-      assert.deepStrictEqual(JSON.parse(JSON.stringify(got.schema)), JSON.parse('{"type":"object","required":["__proto__"],"properties":{"__proto__":{"type":"string","title":"P "}}}'));
-    });
-
-    // F3-1 (a security pass on the MCP surface): where nothing can be left
-    // out or changed, a hidden character makes the schema unusable, so the
-    // tool is not listed; data is looked into at any depth
-    it('if, not, contains and propertyNames: as declared when plain, their text cleaned; unusable with a hidden character', () => {
-      const plain = {type: 'object', if: {required: ['mode'], properties: {mode: {const: 'a'}}}, then: {}, else: {required: ['extra']},
-        properties: {list: {type: 'array', contains: {const: 'x', title: `C${ZWSP}`}}}, 'x-ui': {default: 't', title: 'U'}};
-      const got = input(plain);
-      assert.strictEqual(got.unusable, false);
-      assert.deepStrictEqual(got.schema.if, plain.if);
-      assert.deepStrictEqual(got.schema.properties.list.contains, {const: 'x', title: 'C '});
-      assert.deepStrictEqual(got.schema['x-ui'], {default: 't', title: 'U'});
-      for (const odd of [{not: {const: `t${TAG_A}`}}, {if: {properties: {m: {const: `a${ZWSP}`}}}, then: {}},
+    it('a hidden character anywhere else makes the schema unusable: an enum or const member, a name, a required entry, pattern, $ref, format, anything under not or if', () => {
+      for (const odd of [
+        {type: 'string', enum: ['a', `b${ZWSP}`]}, {const: {k: `v${ZWSP}`}}, {enum: [[`x${ZWSP}`]]},
+        {type: 'object', properties: {[`k${ZWSP}`]: {type: 'string'}}}, {type: 'object', required: [`r${ZWSP}`]},
+        {type: 'object', $defs: {[`D${ZWSP}`]: {}}}, {type: 'object', patternProperties: {[`^p${ZWSP}`]: {}}}, {type: 'object', dependentSchemas: {[`a${ZWSP}`]: {}}},
+        {type: 'object', dependentRequired: {a: [`b${ZWSP}`]}}, {type: 'object', dependencies: {x: [`y${ZWSP}`]}},
+        {type: 'string', pattern: `^a${ZWSP}b$`}, {$ref: `#/$defs/d${ZWSP}`}, {type: 'string', format: `email${ZWSP}`},
+        {type: 'string', contentMediaType: `text/plain${ZWSP}`}, {not: {const: `t${TAG_A}`}}, {if: {properties: {m: {const: `a${ZWSP}`}}}, then: {}},
         {type: 'array', contains: {enum: [`x${ZWSP}`]}}, {propertyNames: {pattern: `^a${ZWSP}`}}]) {
-        assert.strictEqual(input(odd).unusable, true, JSON.stringify(odd));
+        assert.strictEqual(unusable(odd), true, JSON.stringify(odd));
       }
     });
 
-    it('data at any depth: an array or object default, example, enum member or const with a hidden value or key is left out, never changed', () => {
-      const got = input({type: 'object', properties: {
-        d: {type: 'array', default: [`x${ZWSP}`]},
-        e: {type: 'object', examples: [{[`k${ZWSP}`]: 1}, {k: 2}]},
-        m: {enum: [[`x${ZWSP}`], ['y']]},
-        c: {const: {k: `v${ZWSP}`}}}});
+    // the high review's five probe cases, under the rule
+    it('the high review\'s probe cases: each unusable or left out, as the rule says', () => {
+      assert.strictEqual(unusable({oneOf: [{enum: ['a', `b${ZWSP}`]}, {type: 'string'}]}), true, 'a hidden enum member in a oneOf branch');
+      assert.strictEqual(unusable({type: 'object', not: {dependentSchemas: {[`v${ZWSP}`]: {required: ['q']}}}}), true, 'a hidden name under not');
+      // no pattern of its own is ever added (it needed the u flag)
+      assert.ok(!/propertyNames/.test(JSON.stringify(schemaOf({type: 'object', properties: {a: {type: 'string'}}}).schema)));
+      // the output data rule is gone: an output's hidden enum member makes it unusable too
+      assert.strictEqual(unusable({type: 'object', properties: {s: {enum: ['ok', `o${ZWSP}k`]}}}), true);
+      // dependentRequired is data, never a schema: its keys are names, not keywords
+      assert.deepStrictEqual(schemaOf({type: 'object', dependentRequired: {a: ['b']}}).schema, {type: 'object', dependentRequired: {a: ['b']}});
+    });
+
+    it('one predicate: an emoji or an RGI flag is no hidden character, so an emoji-named property is listed and sent', () => {
+      const flag = `\u{1f3f4}${['g', 'b', 's', 'c', 't'].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('')}\u{e007f}`;
+      const declared = {type: 'object', required: [FAMILY], properties: {[FAMILY]: {type: 'string', enum: [HEART, flag]}}};
+      const got = schemaOf(declared);
       assert.strictEqual(got.unusable, false);
-      assert.deepStrictEqual(got.schema.properties, {d: {type: 'array'}, e: {type: 'object', examples: [{k: 2}]}, m: {enum: [['y']]}, c: false});
+      assert.deepStrictEqual(got.schema, declared);
     });
 
-    it('a name other than an optional property\'s, a required entry, pattern or contentMediaType with a hidden character: unusable', () => {
-      for (const odd of [{required: [`r${ZWSP}`]}, {dependentRequired: {a: [`b${ZWSP}`]}},
-        {patternProperties: {[`^p${ZWSP}`]: {}}}, {type: 'string', pattern: `^a${ZWSP}b$`},
-        {type: 'string', contentMediaType: `text/plain${ZWSP}`}]) {
-        assert.strictEqual(input(Object.assign({type: 'object'}, odd)).unusable, true, JSON.stringify(odd));
-      }
-      // a definition is reached by a $ref, which then holds the character itself: the name is left out
-      const defs = input({type: 'object', $defs: {[`D${ZWSP}`]: {type: 'string'}, ok: {type: 'string'}}});
-      assert.deepStrictEqual([defs.unusable, Object.keys(defs.schema.$defs)], [false, ['ok']]);
-    });
-
-    // F3-1's code review: what can be left out is, and only what can't is
-    // unsatisfiable, at its own place (the whole tool only from the root)
-    it('only the part that can\'t be sent goes: an optional property, one anyOf branch, an unused definition; annotations under if/not too', () => {
-      const optional = input({type: 'object', properties: {a: {type: 'string'}, b: {type: 'string', pattern: `^x${ZWSP}`}}});
-      assert.deepStrictEqual([optional.unusable, optional.schema.properties], [false, {a: {type: 'string'}, b: false}]);
-      assert.strictEqual(input({type: 'object', required: ['b'], properties: {b: {type: 'string', pattern: `^x${ZWSP}`}}}).unusable, true);
-      const branch = input({anyOf: [{type: 'string'}, {type: 'object', required: [`a${ZWSP}`]}]});
-      assert.deepStrictEqual([branch.unusable, branch.schema.anyOf], [false, [{type: 'string'}]]);
-      const unused = input({type: 'object', $defs: {d: {pattern: `a${ZWSP}`}}});
-      assert.deepStrictEqual([unused.unusable, unused.schema.$defs], [false, {d: false}]);
-      const annotated = input({type: 'object', not: {required: ['q'], default: `x${ZWSP}`, examples: [`y${ZWSP}`]}});
-      assert.deepStrictEqual([annotated.unusable, annotated.schema.not], [false, {required: ['q']}]);
-      assert.deepStrictEqual(input({type: 'string', examples: `x${ZWSP}`}).schema, {type: 'string'});
-      // an old-style tuple items: its members cleaned as any subschema
-      assert.deepStrictEqual(input({type: 'array', items: [{enum: ['a', `b${ZWSP}`]}]}).schema, {type: 'array', items: [{enum: ['a']}]});
-    });
-
-    // the second review: what the advertised schema accepts, the declared one
-    // accepts too (validation is on the declared schema; the advertised may
-    // only be narrower), checked with the gateway's own validator
-    it('never wider than the declared schema: each case, against Ajv', () => {
-      const Ajv2020 = require('ajv/dist/2020');
-      const ajv = new Ajv2020({allErrors: false, allowUnionTypes: true, strict: false});
-      require('ajv-formats')(ajv);
-      const narrower = (declared, probes) => {
-        const got = input(declared);
-        if (got.unusable) return;
-        const d = ajv.compile(declared);
-        const a = ajv.compile(got.schema);
-        for (const p of probes) assert.ok(!a(p) || d(p), `${JSON.stringify(p)} passes the advertised ${JSON.stringify(got.schema)} but not the declared ${JSON.stringify(declared)}`);
-      };
-      const probes = [{}, {a: 42}, {a: 'x'}, {[`k${ZWSP}`]: 'v'}, {[`k${ZWSP}`]: 1}, {v: 1, q: 1}, {v: 1}, `x${ZWSP}`, 'x', 'y', 42, {c: {a: {}}}, {p: 'x'}, {p: 1}];
-      narrower({type: 'object', properties: {a: {type: 'string', pattern: `^x${ZWSP}`}}}, probes);
-      narrower({type: 'object', properties: {[`k${ZWSP}`]: {type: 'number'}}}, probes);
-      narrower({type: 'object', additionalProperties: false, properties: {a: {}, [`k${ZWSP}`]: {type: 'number'}}}, probes);
-      narrower({oneOf: [{const: `x${ZWSP}`}, {type: 'string'}]}, probes);
-      narrower({type: 'object', properties: {v: {}}, dependentSchemas: {[`v${ZWSP}`]: {required: ['q']}}}, probes);
-      narrower({type: 'object', dependencies: {x: [`y${ZWSP}`]}}, probes);
-      narrower({type: 'object', $defs: {[`d${ZWSP}`]: {type: 'string'}}, properties: {p: {$ref: '#/$defs/d%E2%80%8B'}}}, probes);
-      // a cycle: a node met again while it was still being copied, which then
-      // turned out unsatisfiable, is never kept as its partial copy
-      const A = {type: 'object', required: [`k${ZWSP}`]};
-      const C = {type: 'object', properties: {}};
-      A.properties = {c: C};
-      C.properties.a = A;
-      const cyc = input({anyOf: [A, C]});
-      assert.deepStrictEqual(cyc.schema.anyOf[0].properties.a, false, JSON.stringify(cyc.schema));
-      // oneOf with a branch that can't be sent; dependencies with a hidden name: unusable
-      assert.strictEqual(input({oneOf: [{const: `x${ZWSP}`}, {type: 'string'}]}).unusable, true);
-      assert.strictEqual(input({type: 'string', dependencies: {x: [`y${ZWSP}`]}}).unusable, true);
-      // a percent-encoded $ref to a definition left out for its name
-      assert.deepStrictEqual(input({type: 'object', $defs: {[`d${ZWSP}`]: {type: 'string'}}, properties: {p: {$ref: '#/$defs/d%E2%80%8B'}}}).schema.properties, {p: false});
+    it('a cycle is walked once; a property named __proto__ is a property of the copy', () => {
+      const node = {type: 'object', title: `C${ZWSP}`, properties: {}};
+      node.properties.self = node;
+      const got = schemaOf(node);
+      assert.strictEqual(got.schema.properties.self, got.schema);
+      assert.strictEqual(schemaOf(node).schema, got.schema, 'kept per declared object');
+      const proto = schemaOf(JSON.parse('{"type":"object","properties":{"__proto__":{"type":"string","title":"P​"}}}'));
+      assert.ok(Object.hasOwn(proto.schema.properties, '__proto__'));
+      assert.strictEqual(proto.schema.properties.__proto__.title, 'P ');
     });
 
     it('every keyword the gateway\'s validator enforces is a known one (never left out as unknown)', () => {
       const Ajv2020 = require('ajv/dist/2020');
       const ajv = new Ajv2020({allErrors: false, allowUnionTypes: true});
       require('ajv-formats')(ajv);
-      const missing = Object.keys(ajv.RULES.all).filter((k) => !clientText.KNOWN_KEYWORDS.has(k));
-      assert.deepStrictEqual(missing, []);
+      assert.deepStrictEqual(Object.keys(ajv.RULES.all).filter((k) => !clientText.KNOWN_KEYWORDS.has(k)), []);
     });
 
-    it('a property named with a hidden character left out: no name with one may be sent; the pattern holds none itself', () => {
-      const got = input({type: 'object', properties: {a: {type: 'string'}, [`k${ZWSP}`]: {type: 'number'}}});
-      const Ajv2020 = require('ajv/dist/2020');
-      const a = new Ajv2020({strict: false}).compile(got.schema);
-      assert.deepStrictEqual([a({a: 'x'}), a({[`k${ZWSP}`]: 1}), a({[`k${TAG_A}`]: 1}), a({b: 1})], [true, false, false, true]);
-      assert.strictEqual(clientText.hasHidden(JSON.stringify(got.schema)), false);
-    });
-
-    it('an output\'s unknown keyword with a hidden character is left out too; enumNames with a name that is no string, left out', () => {
-      const out = clientText.schema({type: 'object', [`x-${ZWSP}`]: 'v', 'x-a': {b: `c${ZWSP}`}, 'x-ok': 1}, {output: true});
-      assert.deepStrictEqual(out.schema, {type: 'object', 'x-ok': 1});
-      assert.deepStrictEqual(input({type: 'string', enum: ['a', 'b'], enumNames: ['A', {t: `B${ZWSP}`}]}).schema, {type: 'string', enum: ['a', 'b']});
-    });
-
-    it('the load\'s warnings, when the tool is not listed, say so for every finding', () => {
+    // the warning is the gateway's own decision, from the same walk
+    it('the load\'s warning matches the gateway\'s decision: left out, or not listed for every finding', () => {
       const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
         {name: 'a', description: 'A.', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}};
-      const doc = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
-        s: {a: {input: {type: 'object', required: [`k${ZWSP}`], properties: {[`k${ZWSP}`]: {type: 'string'}}}, output: {type: 'object'}}}};
-      const said = require('../../lib/declarations').check(api, doc).warnings.map((w) => w.message).filter((m) => /hidden character/.test(m));
-      assert.ok(said.length > 0 && said.every((m) => /the tool is not listed/.test(m)), JSON.stringify(said));
+      const warned = (input) => require('../../lib/declarations').check(api, {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+        s: {a: {input, output: {type: 'object'}}}}).warnings.map((w) => w.message).filter((m) => /hidden character/.test(m));
+      assert.deepStrictEqual(warned({type: 'object', description: `d${ZWSP}\tx`}), [], 'text is only cleaned');
+      const leftOut = warned({type: 'object', 'x-u': {enum: [`a${ZWSP}`]}});
+      assert.strictEqual(leftOut.length, 1, JSON.stringify(leftOut));
+      assert.match(leftOut[0], /x-u.*left out of what is advertised/);
+      const notListed = warned({type: 'object', 'x-u': `a${ZWSP}`, not: {const: `t${ZWSP}`}});
+      assert.ok(notListed.length === 2 && notListed.every((m) => /the tool is not listed/.test(m)), JSON.stringify(notListed));
+      // through a $ref, as advertised
+      const viaRef = require('../../lib/declarations').check(api, {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+        $defs: {Choice: {enum: [`x${ZWSP}`]}}, s: {a: {input: {type: 'object', properties: {c: {$ref: '#/$defs/Choice'}}}, output: {type: 'object'}}}});
+      assert.ok(viaRef.warnings.some((w) => /hidden character, so the tool is not listed/.test(w.message)), JSON.stringify(viaRef.warnings));
+      // a control character JSON escapes as \u0007, found all the same
+      assert.ok(warned({type: 'object', properties: {p: {enum: ['a\u0007']}}}).some((m) => /not listed/.test(m)));
     });
 
-    it('the load\'s warnings are the gateway\'s own account: none for text only cleaned, one per finding', () => {
+    // #400's medium review
+    it('a tab or a line break in data is no hidden character: a delimiter enum, a multi-line const or default, listed as declared', () => {
+      const declared = {type: 'object', properties: {sep: {enum: [',', '\t', ';']}, eol: {const: '\n'}, note: {type: 'string', default: 'a\nb'}}};
+      const got = schemaOf(declared);
+      assert.strictEqual(got.unusable, false);
+      assert.deepStrictEqual(got.schema, declared);
+      assert.strictEqual(unusable({enum: ['a\r']}), true, 'a carriage return is still hidden');
+    });
+
+    it('a local $ref into what is left out makes the schema unusable (it would dangle)', () => {
+      assert.strictEqual(unusable({'x-shared': {a: {type: 'string', enum: [`k${ZWSP}`]}}, properties: {p: {$ref: '#/x-shared/a'}}}), true);
+      assert.strictEqual(unusable({properties: {a: {default: `d${ZWSP}`}, b: {$ref: '#/properties/a/default'}}}), true);
+      // a $ref to what is sent, and a clean unknown keyword, as declared
+      const ok = {'x-shared': {a: {type: 'string'}}, $defs: {d: {type: 'string', default: `d${ZWSP}`}}, properties: {p: {$ref: '#/x-shared/a'}, q: {$ref: '#/$defs/d'}}};
+      assert.deepStrictEqual(schemaOf(ok), {unusable: false, schema: {'x-shared': {a: {type: 'string'}}, $defs: {d: {type: 'string'}}, properties: {p: {$ref: '#/x-shared/a'}, q: {$ref: '#/$defs/d'}}}});
+    });
+
+    it('a text keyword that is no string is an annotation: left out with a hidden character, never unusable', () => {
+      assert.deepStrictEqual(schemaOf({type: 'string', description: [`x${ZWSP}`], title: 'T'}), {unusable: false, schema: {type: 'string', title: 'T'}});
+    });
+
+    it('the warnings: one decision per tool (an unusable output makes the input\'s findings say not listed too); an output walked as advertised', () => {
       const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
         {name: 'a', description: 'A.', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}};
-      const doc = (inputSchema) => ({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', s: {a: {input: inputSchema, output: {type: 'object'}}}});
-      const warned = (inputSchema) => require('../../lib/declarations').check(api, doc(inputSchema)).warnings.map((w) => w.message).filter((m) => /hidden character/.test(m));
-      assert.deepStrictEqual(warned({type: 'object', anyOf: [{description: `d${ZWSP}`}]}), [], 'a description is only cleaned');
-      const once = warned({type: 'object', 'x-u': {enum: [`a${ZWSP}`]}});
-      assert.strictEqual(once.length, 1, JSON.stringify(once));
-      assert.match(once[0], /x-u.*left out of what is advertised/);
-    });
-
-    it('a definition nothing can satisfy is kept as false, so a $ref to it still resolves', () => {
-      const got = input({type: 'object', properties: {c: {$ref: '#/$defs/C'}}, $defs: {C: {const: `x${ZWSP}`}}});
-      assert.deepStrictEqual(got.schema.$defs, {C: false});
-      assert.deepStrictEqual(got.schema.properties.c, {$ref: '#/$defs/C'});
-    });
-
-    it('enumNames not one for each member: left out rather than misaligned', () => {
-      const got = input({type: 'string', enum: ['a', `b${ZWSP}`, 'c'], enumNames: ['A']});
-      assert.deepStrictEqual(got.schema, {type: 'string', enum: ['a', 'c']});
-    });
-
-    it('the load\'s warning for an exact place says the tool is not listed (F3-1: it is never left out there)', () => {
-      const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
-        {name: 'a', description: 'A.', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}};
-      const doc = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
-        s: {a: {input: {type: 'object', not: {const: `t${ZWSP}`}}, output: {type: 'object'}}}};
-      const said = require('../../lib/declarations').check(api, doc).warnings.map((w) => w.message).join('\n');
-      assert.match(said, /not.*const has a hidden character, so the tool is not listed/, said);
-    });
-
-    it('the load\'s warning says what the gateway does, through a $ref', () => {
-      const api = {device: {friendlyName: 'r', manufacturer: 't', modelDescription: 'r', serviceList: {'urn:t:serviceID:s': {actionList: [
-        {name: 'a', description: 'A.', input: {schema: '/s/a/input'}, output: {schema: '/s/a/output'}}]}}}};
-      const doc = {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object', $defs: {Choice: {enum: [`x${ZWSP}`]}},
-        s: {a: {input: {type: 'object', required: ['c'], properties: {c: {$ref: '#/$defs/Choice'}}}, output: {type: 'object'}}}};
-      const said = require('../../lib/declarations').check(api, doc).warnings.map((w) => w.message).join('\n');
-      assert.match(said, /hidden character.*not listed/, said);
-    });
-
-    it('a schema with a cycle is copied once per node; the same declared schema gives the same copy (kept)', () => {
-      const node = {type: 'object', title: `C${ZWSP}`, properties: {}};
-      node.properties.self = node;
-      const got = input(node);
-      assert.strictEqual(got.schema.properties.self, got.schema);
-      assert.strictEqual(input(node).schema, got.schema, 'kept per declared object');
+      const warned = (input, output) => require('../../lib/declarations').check(api, {$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
+        s: {a: {input, output}}}).warnings.map((w) => w.message).filter((m) => /hidden character/.test(m));
+      const both = warned({type: 'object', default: {}, 'x-u': `u${ZWSP}`}, {type: 'object', properties: {s: {enum: [`a${ZWSP}`]}}});
+      assert.ok(both.length === 2 && both.every((m) => /the tool is not listed/.test(m)), JSON.stringify(both));
+      // a binary field is advertised as a reference: what it declares is never shown, nor warned of
+      const img = {type: 'object', properties: {img: {type: 'string', contentEncoding: 'base64', contentMediaType: `image/png${ZWSP}`}}};
+      assert.deepStrictEqual(warned({type: 'object'}, img), []);
+      const decided = clientText.schema(require('../../lib/binary-fields').advertisedSchema(img));
+      assert.strictEqual(decided.unusable, false, 'the gateway lists it');
     });
   });
 
@@ -418,6 +305,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
             input: {schema: `/${svc}/show/input`}, output: {schema: `/${svc}/show/output`},
             questions: {confirm: {message: `Go${ZWSP} on with {what}?`, schema: `/${svc}/show/questions/confirm`}}},
           {name: 'stuck', description: 'A tool whose required choice has only hidden members.', input: {schema: `/${svc}/stuck/input`}, output: {schema: `/${svc}/stuck/output`}},
+          {name: 'outStuck', description: 'A tool whose output has a hidden enum member.', input: {schema: `/${svc}/outStuck/input`}, output: {schema: `/${svc}/outStuck/output`}},
           {name: 'askStuck', description: 'Asks a question whose required choice has only hidden members.', input: {schema: `/${svc}/askStuck/input`},
             output: {schema: `/${svc}/askStuck/output`}, questions: {pick: {message: 'Pick one?', schema: `/${svc}/askStuck/questions/pick`}}},
           {name: 'failTask', description: 'Fails, saying so with hidden characters.', input: {schema: `/${svc}/askStuck/input`},
@@ -441,10 +329,11 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
           messages: [{role: 'user', text: 'Hello {{x}}.'}]}]}}));
       fs.writeFileSync(path.join(mod, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
         [svc]: {show: {input: {type: 'object', title: `In${ZWSP}put`, properties: {what: {type: 'string', description: `What${LRI}\nto show`},
-          mood: {type: 'string', enum: ['calm', `wi${ZWSP}ld`]}, [`na${ZWSP}me`]: {type: 'string'}, empty: {enum: [`x${ZWSP}`]}}},
-          output: {type: 'object', title: `Out${ZWSP}`, properties: {status: {type: 'string', enum: ['ok', `o${ZWSP}k`]}}},
+          mood: {type: 'string', enum: ['calm', 'wild'], default: `wi${ZWSP}ld`, examples: [`c${ZWSP}`]}}},
+          output: {type: 'object', title: `Out${ZWSP}`, properties: {status: {type: 'string', enum: ['ok', 'done'], examples: [`n${ZWSP}`]}}},
           questions: {confirm: {type: 'object', properties: {yes: {type: 'boolean', title: 'Yes'},
-            how: {type: 'string', title: `How${ZWSP}`, enum: ['now', `la${ZWSP}ter`, 'soon'], enumNames: ['Now', 'Later', `So${TAG_A}on`]}}, required: ['yes']}}},
+            how: {type: 'string', title: `How${ZWSP}`, enum: ['now', 'later', 'soon'], enumNames: ['Now', 'Later', `So${TAG_A}on`]}}, required: ['yes']}}},
+        outStuck: {input: {type: 'object'}, output: {type: 'object', properties: {status: {enum: ['ok', `o${ZWSP}k`]}}}},
         stuck: {input: {type: 'object', 'x-label': `L${ZWSP}`, required: ['mode'], properties: {mode: {enum: [`a${ZWSP}`]}}}, output: {type: 'object'}},
         askStuck: {input: {type: 'object'}, output: {type: 'object'},
           questions: {pick: {type: 'object', properties: {c: {type: 'string', title: 'Choice', enum: [`x${ZWSP}`]}}, required: ['c']}}},
@@ -461,6 +350,7 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'show.js'), 'module.exports = async (input, ctx) => ({output: {answer: await ctx.ask(\'confirm\', {what: input.what || \'it\'})}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'item.js'), 'module.exports = async (input) => ({output: {id: input.id}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'stuck.js'), 'module.exports = async () => ({output: {}});\n');
+      fs.writeFileSync(path.join(mod, 'handlers', svc, 'outStuck.js'), 'module.exports = async () => ({output: {status: \'ok\'}});\n');
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'askStuck.js'), 'module.exports = async (input, ctx) => { try { await ctx.ask(\'pick\', {}); return {output: {code: null}}; } catch (e) { if (e.code !== \'ASK_UNAVAILABLE\') throw e; return {output: {code: e.code}}; } };\n');
       fs.copyFileSync(path.join(mod, 'handlers', svc, 'askStuck.js'), path.join(mod, 'handlers', svc, 'askStuckTask.js'));
       fs.writeFileSync(path.join(mod, 'handlers', svc, 'failTask.js'), `module.exports = async () => { throw new Error('ok\\u{e0069}\\u{e0067}\\u200bdone'); };\n`);
@@ -490,30 +380,24 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       assert.deepStrictEqual([tool.title, tool.description], ['Show  it', `Shows  a thing , ${FAMILY}.\nArgs:\twhat`]);
       // a description of hidden characters alone is none: the tool is not listed (#378's review (8))
       assert.ok(!(await modern('tools/list')).result.tools.some((t) => /textservice_blank$/.test(t.name)), 'a blank description was listed');
-      // inside its schemas (register follow-up (3)): the input's text cleaned,
-      // a hidden member, name or emptied enum left out; the output's text
-      // cleaned, its data as declared (the client checks results against it)
-      assert.strictEqual(tool.inputSchema.title, 'In put');
-      assert.deepStrictEqual(Object.keys(tool.inputSchema.properties).sort(), ['empty', 'mood', 'what']);
-      assert.strictEqual(tool.inputSchema.properties.empty, false);
-      assert.deepStrictEqual([tool.inputSchema.properties.what.description, tool.inputSchema.properties.mood.enum], ['What \nto show', ['calm']]);
-      assert.deepStrictEqual([tool.outputSchema.title, tool.outputSchema.properties.status.enum], ['Out ', ['ok', `o${ZWSP}k`]]);
-      // a required choice left with nothing: the tool is not listed
-      assert.ok(!(await modern('tools/list')).result.tools.some((t) => /textservice_stuck$/.test(t.name)), 'a tool nothing can satisfy was listed');
-      // and nothing else hidden anywhere in what was listed, but an output's data
-      const tools = (await modern('tools/list')).result.tools.map((t) => {
-        const c = Object.assign({}, t);
-        if (c.outputSchema != null) c.outputSchema = JSON.parse(JSON.stringify(c.outputSchema, (k, v) => (['enum', 'const', 'default', 'examples'].includes(k) ? undefined : v)));
-        return c;
-      });
-      clean(tools, 'tools/list');
+      // inside its schemas (F3-1, the reviewer's rule): text cleaned; an
+      // annotation or unknown keyword holding a hidden character left out
+      assert.deepStrictEqual(tool.inputSchema, {type: 'object', title: 'In put', properties: {what: {type: 'string', description: 'What \nto show'},
+        mood: {type: 'string', enum: ['calm', 'wild']}}});
+      assert.deepStrictEqual(tool.outputSchema, {type: 'object', title: 'Out ', properties: {status: {type: 'string', enum: ['ok', 'done']}}});
+      // a hidden character anywhere else, in the input or the output: the tool is not listed
+      const names = (await modern('tools/list')).result.tools.map((t) => t.name);
+      assert.ok(!names.some((n) => /textservice_stuck$/.test(n)), 'an input with a hidden enum member was listed');
+      assert.ok(!names.some((n) => /textservice_outstuck$/.test(n)), 'an output with a hidden enum member was listed');
+      // and nothing hidden anywhere in what was listed, outputs included
+      clean((await modern('tools/list')).result.tools, 'tools/list');
     });
 
-    it('a question\'s form: its text cleaned, a hidden member left out with its name; a required choice left with nothing, unavailable', async () => {
+    it('a question\'s form: its text cleaned, enumNames with a hidden character left out; a hidden enum member makes it unavailable', async () => {
       const name = (await modern('tools/list')).result.tools.find((t) => /textservice_show$/.test(t.name)).name;
       const got = await modern('tools/call', {name, arguments: {what: 'it'}}, {elicitation: {form: {}}});
       const req = Object.values(got.result.inputRequests)[0];
-      assert.deepStrictEqual(req.params.requestedSchema.properties.how, {type: 'string', title: 'How ', enum: ['now', 'soon'], enumNames: ['Now', 'So on']});
+      assert.deepStrictEqual(req.params.requestedSchema.properties.how, {type: 'string', title: 'How ', enum: ['now', 'later', 'soon']});
       clean(req, 'the form');
       // (a tool, so it is listed: its own input is plain)
       const stuck = (await modern('tools/list')).result.tools.find((t) => /textservice_askstuck$/.test(t.name)).name;
@@ -557,16 +441,20 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       assert.ok(!/\u{e0069}|\u200b/u.test(JSON.stringify(task)), JSON.stringify(task).slice(0, 600));
     });
 
-    it('the load\'s check warns of each: what is left out, what is unavailable, an output\'s data, an unknown keyword\'s text', () => {
+    // the warning says what the gateway did, for each surface
+    it('the load\'s check warns of each, as the gateway decides: left out, not listed, unavailable', () => {
       const checked = require('../../lib/declarations').check(JSON.parse(fs.readFileSync(path.join(dir, 'hidden-text', 'api.json'), 'utf8')),
         JSON.parse(fs.readFileSync(path.join(dir, 'hidden-text', 'schema.json'), 'utf8')));
       const said = checked.warnings.map((w) => w.message).join('\n');
-      assert.match(said, /show input.*mood.*hidden character.*left out/);
-      assert.match(said, /stuck input.*mode.*hidden character.*not listed/);
-      assert.match(said, /askStuck questions\.pick.*hidden character.*unavailable/);
-      assert.match(said, /show output.*status.*hidden character.*as declared/);
+      assert.match(said, /show input: \/properties\/mood\/default: default has a hidden character, so it is left out of what is advertised/);
+      assert.match(said, /show input: \/properties\/mood\/examples: examples has a hidden character, so it is left out/);
+      assert.match(said, /show output: \/properties\/status\/examples: .*left out/);
+      assert.match(said, /show questions\.confirm: .*enumNames has a hidden character, so it is left out/);
+      assert.match(said, /stuck input: \/properties\/mode\/enum: enum has a hidden character, so the tool is not listed/);
       // (stuck's input can't be advertised at all: every finding says so)
-      assert.match(said, /stuck input.*x-label.*hidden character, so the tool is not listed/);
+      assert.match(said, /stuck input: \/x-label: .*so the tool is not listed/);
+      assert.match(said, /outStuck output: .*enum has a hidden character, so the tool is not listed/);
+      assert.match(said, /askStuck questions\.pick: .*enum has a hidden character, so asking it is unavailable/);
     });
 
     it('prompts/list and prompts/get: title, description, an argument\'s description, the messages (\\n and \\t kept); the client\'s argument as it sent it', async () => {
