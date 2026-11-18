@@ -17,6 +17,39 @@ function reportChecked(r) {
   if (typeof(header.nodejsVersion) !== 'string' || typeof(header.platform) !== 'string') throw Object.assign(new Error('not a report'), {code: 'NOT_A_REPORT'});
 }
 
+// F4-7: a V8 code cache is not checked against its source (only its
+// length), so a cache made for one source runs in place of another of the
+// same length. Each vm route is given one: CACHE when the cached code ran,
+// SOURCE when the source given did, NO_CACHE when none could be produced.
+const VM_CACHED = 'globalThis.__chVm = 1;;';
+const VM_SOURCE = 'globalThis.__chVm = 2;;';
+function vmRan(run) {
+  globalThis.__chVm = 0;
+  run();
+  const v = globalThis.__chVm;
+  throw Object.assign(new Error('ran'), {code: v === 1 ? 'CACHE' : (v === 2 ? 'SOURCE' : `OTHER_${v}`)});
+}
+const scriptCache = (vm) => new vm.Script(VM_CACHED, {filename: 'ch-probe-vm.js'}).createCachedData();
+const VM_ROUTES = {
+  script: (vm) => vmRan(() => new vm.Script(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  runInThisContext: (vm) => vmRan(() => vm.runInThisContext(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)})),
+  subclass: (vm) => vmRan(() => new (class extends vm.Script {})(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  protoConstructor: (vm) => vmRan(() => new vm.Script.prototype.constructor(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  // (a source of the same length no other route compiled: V8's in-memory
+  // compilation cache, keyed by the source, would otherwise answer with what
+  // an earlier route's cache made of VM_SOURCE under audit)
+  inherited: (vm) => {
+    const data = scriptCache(vm);
+    Object.defineProperty(Object.prototype, 'cachedData', {configurable: true, get: () => data});
+    try { vmRan(() => new vm.Script('globalThis.__chVm =2;;;', {filename: 'ch-probe-vm.js'}).runInThisContext()); } finally { delete Object.prototype.cachedData; }
+  },
+  compileFunction: (vm) => {
+    const produced = vm.compileFunction(VM_CACHED, [], {produceCachedData: true}).cachedData;
+    if (produced == null) throw Object.assign(new Error('none produced'), {code: 'NO_CACHE'});
+    vmRan(() => vm.compileFunction(VM_SOURCE, [], {cachedData: produced})());
+  }
+};
+
 const ATTEMPTS = {
   // what the lockdown holds, as a dependency would try to change it (the
   // review of e0f39de9: under audit each is reported, and none takes)
@@ -52,6 +85,13 @@ const ATTEMPTS = {
   holdExtension:    () => {
     try { require.extensions['.chprobe'] = () => {}; } catch (e) { /* refused */ }
     if (require.extensions['.chprobe'] !== undefined) throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
+  // F4-7 (arg: a VM_ROUTES name; 'esm:<name>' takes vm by an import's named
+  // exports)
+  vmCache: async (arg) => {
+    const esm = arg.startsWith('esm:');
+    const vm = esm ? await import('node:vm') : require('vm');
+    VM_ROUTES[esm ? arg.slice(4) : arg](esm ? {Script: vm.Script, runInThisContext: vm.runInThisContext, compileFunction: vm.compileFunction} : vm);
   },
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),

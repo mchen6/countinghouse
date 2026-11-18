@@ -188,6 +188,20 @@ describe('sandbox 05: worker lockdown', function() {
         if (mode === 'audit' || both) await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
       }
     });
+    // F4-7: a module's code cache is never run in place of its source under
+    // enforce (V8 checks a cache against its source's length only); under
+    // audit it is reported, and used
+    it(`vm code caches: ${mode === 'enforce' ? 'dropped, so the source runs' : 'used, and reported'}, by every route`, async () => {
+      const from = server.output.length;
+      for (const route of ['script', 'runInThisContext', 'subclass', 'protoConstructor', 'compileFunction', 'esm:script']) {
+        const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmCache', arg: route}));
+        const ran = route === 'compileFunction' && mode === 'enforce' ? 'NO_CACHE' : (mode === 'enforce' ? 'SOURCE' : 'CACHE');
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: ran}, route);
+      }
+      // (one on Object.prototype is no option of the module's: never taken)
+      assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmCache', arg: 'inherited'})), {outcome: 'allowed', code: 'SOURCE'}, 'inherited');
+      await waitFor(() => server.output.slice(from).includes(`violation vm cachedData (${mode === 'enforce' ? 'blocked' : 'allowed, audit'})`), 20000, 'the cachedData line');
+    });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });
