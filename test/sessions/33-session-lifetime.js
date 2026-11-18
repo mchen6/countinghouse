@@ -73,6 +73,42 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
   }
 
+  it('the start\'s sweep keeps a session known here until its end says \'removed\': \'kept\' and \'nothing\' keep it; held or closing keeps all', async () => {
+    const registry = {held: new Set(), isClosed: false, closed() { return this.isClosed; }, holds(id) { return this.held.has(id); }};
+    const outcome = new Map();
+    const guard = lifetime.sweepGuard(registry, null, (id) => Promise.resolve(outcome.get(id)));
+    const C = 'c'.repeat(32);
+    const D = 'd'.repeat(32);
+    const E = 'e'.repeat(32);
+    guard.restored([A]);
+    guard.opened(B);
+    guard.opened(C);
+    assert.ok(guard.keep.has(A) && guard.keep.has(B) && guard.keep.has(C), 'restored and opened: kept');
+    assert.strictEqual(guard.keep.has(D), false, 'one this process never knew: the sweep\'s');
+    outcome.set(A, 'kept');      // a worker still running, or a busy broker
+    outcome.set(B, 'nothing');   // 'closed': the daemon keeps it
+    outcome.set(C, 'removed');
+    assert.strictEqual(await guard.gone(A, 'bye'), 'kept');
+    assert.strictEqual(await guard.gone(B, 'closed'), 'nothing');
+    assert.strictEqual(await guard.gone(C, 'bye'), 'removed');
+    assert.strictEqual(guard.keep.has(A), true, '\'kept\': never swept under a live worker');
+    assert.strictEqual(guard.keep.has(B), true, '\'nothing\': the daemon\'s row, kept');
+    assert.strictEqual(guard.keep.has(C), false, '\'removed\': what is left is the sweep\'s');
+    const failing = lifetime.sweepGuard(registry, null, () => Promise.reject(new Error('x')));
+    failing.opened(E);
+    assert.strictEqual(await failing.gone(E, 'bye'), undefined, 'never rejects');
+    assert.strictEqual(failing.keep.has(E), true, 'an end that failed keeps it');
+    registry.held.add(D);
+    assert.strictEqual(guard.keep.has(D), true, 'held by the registry: kept');
+    registry.held.delete(D);
+    registry.isClosed = true;
+    assert.strictEqual(guard.keep.has(D), true, 'closing: everything kept');
+    registry.isClosed = false;
+    guard.done();
+    guard.opened(E);
+    assert.strictEqual(guard.keep.has(E), false, 'after the sweep: nothing recorded');
+  });
+
   it('sessionSettled reads a late settle the lifecycle has already dropped: a worker whose broker went past the bound counts as busy', async () => {
     const {ModuleLifecycle} = require('../../lib/module-lifecycle');
     const ModuleManager = require('../../lib/module-manager');
