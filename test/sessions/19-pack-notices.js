@@ -313,7 +313,10 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         shared: () => sessions.shared(), allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
       on(A, 'ci');
       await packsInPlace.loadPack(mm, {type: 'load', name: '@countinghouse/ch-pack-ci', scenario: path.join(root, 'ci', 'node_modules', '@countinghouse', 'ch-pack-ci'), pack: 'ci', global: false}, {});
-      assert.deepStrictEqual(seenMidLoad, [{records: [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}], b: false, a: true}]);
+      // M4 (#413 section 5.5): what a load newly brings in is hidden from
+      // every session until the load has completed, A's own included
+      assert.deepStrictEqual(seenMidLoad, [{records: [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}], b: false, a: false}]);
+      assert.strictEqual(sessionPacks.listsModule(A, '@countinghouse/ch-pack-ci'), true, 'and listed to A once loaded');
       assert.deepStrictEqual(packsInPlace.packRecords(mm), [{pack: 'ci', modules: ['@countinghouse/ch-pack-ci']}]);
       // and a pack loaded at runtime keeps its prompt names for the next load's check (a fix to fd2bfc62)
       assert.ok(mm.packsInPlace.get('@countinghouse/ch-pack-ci').prompts instanceof Set);
