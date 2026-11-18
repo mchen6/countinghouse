@@ -232,10 +232,14 @@ describe('sandbox 05: worker lockdown', function() {
 
     it('a handle object given to net.Socket is not adoption', () => handleIsNotAdoption(testPort(9609), server));
 
+    // (loadFileOutside is refused under audit too since #425's final review:
+    // a path that isn't the module's is never loaded as the runtime's; it is
+    // still reported, below)
+    const AUDIT_REFUSED = new Set(['loadFileOutside']);
     ROUTES.forEach(([what, arg]) => {
-      it(`allows ${what} and logs it`, async () => {
+      it(`${AUDIT_REFUSED.has(what) ? 'refuses' : 'allows'} ${what} and logs it`, async () => {
         const r = await mcpCall(testPort(9609), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
-        assert.strictEqual(toolOutput(r).outcome, 'allowed', `${what}: ${JSON.stringify(r)}`);
+        assert.strictEqual(toolOutput(r).outcome, AUDIT_REFUSED.has(what) ? 'blocked' : 'allowed', `${what}: ${JSON.stringify(r)}`);
       });
     });
 

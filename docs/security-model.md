@@ -1331,15 +1331,38 @@ and the short list of what the in-process sandbox cannot give.
   still use modules countinghouse loaded before the lockdown, and read
   countinghouse's own code files. `CHUtil` and everything else loaded before
   lockdown stay part of the review checklist for every change to
-  `lib/countinghouse-util.js`. postman-request, behind `CHUtil.request` and
-  a remote service client, loads on its first use instead
-  (`lib/lazy-require.js`), after module code has run, so a module can plant
-  `require.cache` entries for it in its own worker first. That reaches only calls made in that worker, which carry the
-  keys the module itself passes; the library is loaded once and kept, so
-  nothing planted after its first use is read. Everything a call's token
-  goes through is loaded at a worker's boot instead, and its exports and
-  classes' prototypes are fixed there (above), so what module code reaches
-  this way it can read, not change.
+  `lib/countinghouse-util.js`. Nothing of the runtime's own loads or
+  resolves after the lockdown (#194's PR 1): what it used to load on first
+  use (the worker logger, redis-api, bind-address, the live options, the
+  file broker's built-ins, the validator's files in a validation worker) is
+  loaded at a worker's boot, so a `require.cache` entry or a relative
+  resolution module code plants has no runtime load to reach.
+  test/sandbox/66 records every runtime `_load`, `_resolveFilename`,
+  `createRequire` and `getBuiltinModule` after the lockdown on each of
+  those paths, and test/sandbox/67 pins the boot closure, dependencies
+  included, against a `require` inside a function. postman-request, behind
+  `CHUtil.request` and a remote service client, is loaded at set-options,
+  before the lockdown, when the module declares `net`, in both modes. A
+  module with no `net` under `enforce` has every request refused before
+  the library is reached. Under `audit` such a request is allowed and
+  reported, and postman-request then loads after the lockdown, so a module
+  can plant `require.cache` entries for it first: audit isn't a boundary,
+  and the request carries only the options the module itself passes, so
+  the late load exposes nothing it didn't already hold (preloading it on
+  every audit worker would cost about 240 files at each boot).
+  bcrypt-pbkdf, which sshpk requires on the first encrypted OpenSSH key
+  (the `httpSignature` option), is warmed with postman-request, so that
+  require is a hit in Node's cache however the option arrives. The options
+  are put together as postman-request does (a second options argument
+  included): enforce hands on only their checked own keys, with no
+  prototype; audit hands on postman-request's own copy (own and inherited
+  keys, each read once) and reports over that same copy. A module file the
+  runtime loads (a handler, `CHUtil.loadFile`) has the module's own anchor
+  as parent, a `Module` whose file is inside the module root, never a
+  runtime `Module` (and never null, which would read as a main module).
+  Everything a call's token goes through is loaded at a worker's boot, and
+  its exports and classes' prototypes are fixed there (above), so what
+  module code reaches this way it can read, not change.
 - **A module can obtain a peer port transferred into its worker.** Node
   writes the array of ports a message transferred natively, index by index,
   before any JavaScript runs, so a setter module code puts on an index of
