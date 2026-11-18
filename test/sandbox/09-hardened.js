@@ -74,6 +74,16 @@ describe('sandbox 09: --hardened', function() {
   beforeEach(() => { root = moduleRoot(); });
   afterEach(() => { stopServer(server); server = null; fs.rmSync(root, {recursive: true, force: true}); });
 
+  // (the test's probe hands module code the runtime's modules: never with
+  // --hardened, the reviewer's ruling on #434)
+  it('refuses --testLateLoads with --hardened, before anything starts', () => {
+    const {spawnSync} = require('child_process');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--port', String(testPort(9614)), '--hardened', '--testLateLoads', '--workerThread',
+      '--modulePath', root], {cwd: ROOT, encoding: 'utf8', timeout: 30000});
+    assert.strictEqual(r.status, 2, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /--testLateLoads is a test-only probe: it cannot be used with --hardened/);
+  });
+
   it('runs under the permission model and blocks /proc/self/environ and /proc/self/mem', async () => {
     server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened',
       '--modulePath', root, '--loadModule', path.join(root, 'sandbox-probe')]);

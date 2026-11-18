@@ -287,6 +287,31 @@ describe('validation 06: the review of c15 -- every failure is answered, and log
     assert.ok(/06-fail-answers\.js:\d+/.test(lines[0]), `names the runtime's own frame: ${lines[0]}`);
   });
 
+  // (#194's PR 2: in a worker the seal empties require.cache of the
+  // runtime's files, so a runtime bug's frame is named by the list the seal
+  // took, handed over once; in a child, so the hand-over stays out of here)
+  it('names a runtime bug\'s frame by the sealed runtime files once handed over, never by require.cache after', () => {
+    const {spawnSync} = require('child_process');
+    const lib = require('path').resolve(__dirname, '../../lib');
+    const script = `
+      const lib = ${JSON.stringify(lib)};
+      const {whereFrom, runtimeFilesAre} = require(lib + '/handler-answer');
+      const err = new TypeError('x');
+      err.stack = 'TypeError: x\\n    at f (' + lib + '/logger.js:10:5)\\n    at g (' + lib + '/cli-options.js:20:3)';
+      const before = whereFrom(err);
+      runtimeFilesAre([lib + '/cli-options.js']);
+      const after = whereFrom(err);
+      runtimeFilesAre([lib + '/logger.js']);
+      process.stdout.write(JSON.stringify([before, after, whereFrom(err)]));
+    `;
+    const r = spawnSync(process.execPath, ['-e', script], {encoding: 'utf8', timeout: 30000});
+    assert.strictEqual(r.status, 0, r.stderr);
+    const [before, after, again] = JSON.parse(r.stdout);
+    assert.strictEqual(before, 'TypeError at lib/logger.js:10');
+    assert.strictEqual(after, 'TypeError at lib/cli-options.js:20');
+    assert.strictEqual(again, after, 'handed over once');
+  });
+
   it('the debug API log line carries neither the caller\'s input nor the module\'s message or fault', () => {
     // In a child process, so the options it sets (--debug) stay out of
     // this folder's process.

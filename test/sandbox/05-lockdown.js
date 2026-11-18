@@ -187,10 +187,10 @@ describe('sandbox 05: worker lockdown', function() {
       for (const arg of Object.keys(names)) {
         const from = server.output.length;
         const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceHeld', arg}));
-        if (mode === 'enforce') {
-          assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, `${arg} was replaced under enforce`);
-        } else {
-          assert.deepStrictEqual(r, {outcome: 'allowed', code: 'REPLACED'}, arg);
+        // (never replaced, in either mode: Node hands each the runtime's own
+        // Modules; under audit the attempt is reported, #434's Fable pass F7)
+        assert.deepStrictEqual(r, {outcome: 'allowed', code: null}, `${arg} was replaced under ${mode}`);
+        if (mode === 'audit') {
           await waitFor(() => server.output.slice(from).includes(`violation require ${names[arg]} replaced`), 20000, `${arg}'s violation line`);
         }
       }
@@ -199,9 +199,9 @@ describe('sandbox 05: worker lockdown', function() {
       it('an assignment of load on one Module is that Module\'s own, never the worker\'s', async () => {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'instanceLoad'})), {outcome: 'allowed', code: 'OWN'});
       });
-      it('a module that replaces Module._load is reported', async () => {
+      it('a module that replaces Module._load is reported, and the runtime\'s kept', async () => {
         const from = server.output.length;
-        assert.strictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})).outcome, 'allowed');
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'replaceLoad'})), {outcome: 'allowed', code: null});
         await waitFor(() => server.output.slice(from).includes('violation require _load replaced'), 20000, 'the replacement\'s violation line');
       });
     }

@@ -5,10 +5,11 @@
 //   lockdown, so util.inspect, which reads past any view, names none, and no
 //   runtime Module reaches an inspect.custom (Revision 6, blocking 1).
 // - C: no main module (require.main, process.mainModule).
-// - S: every loader static stays as the lockdown left it (those it leaves
-//   audit to report as accessors aside), and Node's path cache reads empty
-//   whatever is planted in it.
+// - S: every loader static stays as the lockdown left it, and Node's path
+//   cache keeps nothing outside the module's root that is planted in it.
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -23,6 +24,7 @@ const EXPECTED = {
   sameCache: 'same',
   inspect: 'none named, no runtime Module',
   main: 'no require.main, no mainModule',
+  parentSlot: 'handle, no runtime parent',
   statics: 'none replaced',
   window: 'no loader, nothing compiled',
   pathCache: 'empty'
@@ -36,15 +38,22 @@ const waitFor = async (server, re) => {
 
 describe('sandbox 68: the runtime isolated from module code after the lockdown', function() {
   this.timeout(120000);
-  // (the test's probe on, for its hand-over of a runtime Module: module code
-  // reaches none, A)
-  let savedProbe;
-  before(() => { savedProbe = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
-  after(() => { if (savedProbe === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedProbe; });
+  let home;
+  let policy;
+  before(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
+    policy = path.join(home, 'policy.json');
+    fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));
+  });
+  after(() => fs.rmSync(home, {recursive: true, force: true}));
   ['enforce', 'audit'].forEach((mode) => describe(mode, () => {
     let server = null;
     before(async () => {
-      server = await startServer(testPort(9759), ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE, '--loadModule', PEER]);
+      // (the test's probe on, --testLateLoads, for its hand-over of a runtime
+      // Module: module code reaches none, A)
+      // (its declared net approved: postman-request and sshpk warmed, for
+      // the bcrypt-pbkdf case)
+      server = await startServer(testPort(9759), ['--testLateLoads', '--modulePolicy', policy, '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE, '--loadModule', PEER]);
     });
     after(() => { stopServer(server); server = null; });
     for (const [step, expected] of Object.entries(EXPECTED)) {
@@ -67,21 +76,57 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     }
     it(`netModuleLoad: a runtime file loaded by a Module of its own is ${mode === 'enforce' ? 'refused' : 'read, and reported'}`, async () => {
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'netModuleLoad'});
-      if (mode === 'enforce') assert.notStrictEqual(detail(r), 'loaded', JSON.stringify(r).slice(0, 500));
+      // (the refusal's own answer, the broker's for a file outside the
+      // module's grants: that it is missing, though it is there; 'no handle'
+      // or another failure is no refusal)
+      assert.ok(fs.existsSync(path.join(ROOT, 'lib', 'settings-tool.js')));
+      if (mode === 'enforce') assert.strictEqual(detail(r), 'ENOENT', JSON.stringify(r).slice(0, 500));
       else assert.strictEqual(detail(r), 'loaded', JSON.stringify(r).slice(0, 500));
     });
     // (item 7: under enforce each fails as the missing file does; under audit
     // each is reported, as every out-of-root resolution is)
     it(`resolving the runtime's files from a runtime-shaped parent ${mode === 'enforce' ? 'fails as a missing file does' : 'is reported'}`, async () => {
+      const from = server.output.length;
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'resolveOracle'});
       const codes = detail(r).split(' ');
       assert.strictEqual(codes[0], 'MODULE_NOT_FOUND', JSON.stringify(r).slice(0, 500));
       if (mode === 'enforce') assert.deepStrictEqual(codes, [...Array(5).fill('MODULE_NOT_FOUND'), 'stat:missing'], JSON.stringify(r).slice(0, 500));
-      else assert.ok(await waitFor(server, /violation require [^\n]*(settings-tool|json-stringify-safe)/), server.output.slice(-1500));
+      // (said by this step, not an earlier one: its createRequire resolve,
+      // through the resolve hook; the loader's helpers called directly answer
+      // truthfully under audit, unreported, as every lookup does there)
+      else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
+    });
+    if (mode === 'enforce') {
+      it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
+        assert.strictEqual(detail(r), 'same same same same same', JSON.stringify(r).slice(0, 1500));
+      });
+    }
+    it(`a require made for a runtime file by createRequire is module code's: ${mode === 'enforce' ? 'the reduced module' : 'its watched built-in reported'}`, async () => {
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'runtimeParentBuiltins'});
+      if (mode === 'enforce') assert.strictEqual(detail(r), 'reduced module', JSON.stringify(r).slice(0, 500));
+      else {
+        assert.strictEqual(detail(r), 'real module', JSON.stringify(r).slice(0, 500));
+        assert.ok(await waitFor(server, /isolation-probe uses dgram/), server.output.slice(-1500));
+      }
+    });
+    // (#434's Fable pass F9: Web Locks list other workers' locks; only on a
+    // Node that has them)
+    it(`navigator.locks: ${mode === 'enforce' ? 'gone' : 'there, its read reported'}`, async function() {
+      if (globalThis.navigator == null || globalThis.navigator.locks == null) this.skip();
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'locks'});
+      assert.strictEqual(detail(r), mode === 'enforce' ? 'no locks' : 'locks', JSON.stringify(r).slice(0, 500));
+      if (mode === 'audit') assert.ok(await waitFor(server, /isolation-probe uses navigator\.locks/), server.output.slice(-1500));
+    });
+    // (the reviewer's ruling on #434: the net's one exception is sshpk's own)
+    it('bcrypt-pbkdf asked for by module code, or with a forged sshpk-shaped parent: its own copy or a refusal, never what sshpk is answered (which is frozen)', async () => {
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'lazyHitOthers'});
+      assert.match(detail(r), /^(own|refused) (own|refused) frozen$/, JSON.stringify(r).slice(0, 500));
+      if (mode === 'enforce') assert.strictEqual(detail(r), 'refused refused frozen', JSON.stringify(r).slice(0, 500));
     });
     it('interop: the module\'s own files by import(), require(esm), createRequire and require.resolve', async () => {
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'interop'});
-      assert.strictEqual(detail(r), 'cjs esm json resolved function', JSON.stringify(r).slice(0, 500));
+      assert.strictEqual(detail(r), 'cjs esm json resolved function function function', JSON.stringify(r).slice(0, 500));
     });
     it(`BroadcastChannel: ${mode === 'enforce' ? 'gone by either route' : 'a message crosses to another module\'s worker, and is reported'}`, async () => {
       const listening = mcpCall(testPort(9759), KEY, 'isolation_peer_peerservice_listen', {});

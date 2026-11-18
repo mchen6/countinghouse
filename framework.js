@@ -142,6 +142,12 @@ if (options.controlChannel != null) {
     process.exit(2);
   }
 }
+// --testLateLoads hands module code the runtime's modules (a test's probe,
+// #194): never with --hardened.
+if (options.testLateLoads === true && options.hardened === true) {
+  console.error('--testLateLoads is a test-only probe: it cannot be used with --hardened');
+  process.exit(2);
+}
 // --settingsFile names the file countinghouse_settings changes, and the tool
 // is served only in the single-identity profile (ch-local start): anywhere
 // else the flag would half-apply (its options.settingsTool on, the tool not

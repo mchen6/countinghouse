@@ -92,7 +92,9 @@ const ATTEMPTS = {
   // under audit, a module that replaces the loader is reported
   replaceLoad:      () => {
     const prev = module.constructor._load;
-    module.constructor._load = function(...args) { return prev.apply(this, args); };
+    try { module.constructor._load = function(...args) { return prev.apply(this, args); }; } catch (e) { /* refused */ }
+    // (whether it took: it never does, in either mode, #434's Fable pass F7)
+    if (module.constructor._load !== prev) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
   },
   // whether the cache holds source compiled under that filename (what
   // loadSource's internal argument did before B1's fix)

@@ -23,6 +23,55 @@ const STEPS = {
     return outcome(() => { const m = new M(file, h.module); m.load(file); });
   },
   noParent: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => M._load(path.join(path.dirname(h.module.filename), 'settings-tool.js'))); },
+  // the high review of #434, item 2: after the seal every resolution is
+  // module code's, a require made for a runtime file by createRequire too:
+  // under enforce its 'module' is the reduced one, under audit its watched
+  // built-in is reported
+  runtimeParentBuiltins: () => {
+    const h = handle();
+    if (h == null) return 'no handle';
+    const req = M.createRequire(path.join(path.dirname(h.module.filename), 'logger.js'));
+    const mod = req('module');
+    req('dgram');
+    return typeof(mod._load) === 'function' ? 'real module' : 'reduced module';
+  },
+  // #434's Fable pass F1-F3 (enforce): whether a runtime package is
+  // installed is no answer, by the whole error (code and message), for a
+  // forged parent inside it (Node reads the package.json above a parent's
+  // filename natively), findPackageJSON's base in any URL case or a
+  // relative specifier that climbs out, and _findPath's array-like paths
+  parentPackage: () => {
+    const h = handle();
+    if (h == null) return 'no handle';
+    const root = path.dirname(path.dirname(h.module.filename));
+    const nm = path.join(root, 'node_modules');
+    const forge = (pkg) => { const f = path.join(nm, pkg, 'lib', 'x.js'); return {__proto__: null, id: f, filename: f, paths: M._nodeModulePaths(path.dirname(f))}; };
+    // (each side's own package name masked: the whole error otherwise, code
+    // and message)
+    const o = (fn, pkg) => { try { return String(fn()).split(pkg).join('PKG'); } catch (e) { return `${e.code}|${e.message}`.split(pkg).join('PKG'); } };
+    const same = (a, b, pa = 'sshpk', pb = 'no-such-isolation-pkg') => {
+      const x = o(a, pa);
+      const y = o(b, pb);
+      return x === y ? 'same' : `differs(${x.slice(0, 200)} / ${y.slice(0, 200)})`;
+    };
+    const out = [];
+    // a '#' import, and a self-reference into a runtime package with an
+    // exports map (es-errors): Node reads the package.json above the parent
+    for (const [pkg, req] of [['sshpk', () => '#nope'], ['es-errors', (p) => `${p}/no-such-export`]]) {
+      out.push(same(() => M._resolveFilename(req(pkg), forge(pkg)), () => M._resolveFilename(req('no-such-isolation-pkg'), forge('no-such-isolation-pkg')), pkg));
+    }
+    if (typeof(M.findPackageJSON) === 'function') {
+      const upper = `File://${require('url').pathToFileURL(path.join(root, 'lib', 'logger.js')).href.slice('file://'.length)}`;
+      out.push(same(() => M.findPackageJSON('sshpk', upper), () => M.findPackageJSON('no-such-isolation-pkg', upper)));
+      const climb = (pkg) => `./${path.relative(__dirname, path.join(nm, pkg)).split(path.sep).join('/')}`;
+      out.push(same(() => M.findPackageJSON(climb('sshpk'), __filename), () => M.findPackageJSON(climb('no-such-isolation-pkg'), __filename)));
+    } else {
+      out.push('same', 'same');
+    }
+    const like = (dir) => ({length: 1, 0: dir});
+    out.push(same(() => M._findPath('sshpk', like(nm)), () => M._findPath('no-such-isolation-pkg', like(nm))));
+    return out.join(' ');
+  },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a
   // genuine runtime parent, a forged one, or createRequire on a runtime
@@ -44,6 +93,24 @@ const STEPS = {
         && M._stat(path.relative(process.cwd(), path.join(lib, 'settings-tool.js'))) === M._stat(path.join(lib, 'no-such-isolation-file.js')) ? 'missing' : 'found'}`
     ].join(' ');
   },
+  // the exception is sshpk's alone (the reviewer's ruling on #434): module
+  // code asking for bcrypt-pbkdf itself, or with a parent shaped like
+  // sshpk's file, gets its own copy or a refusal, never the exports the net
+  // answers sshpk with
+  lazyHitOthers: async () => {
+    const h = handle();
+    if (h == null || h.modules == null) return 'no handle';
+    const sshKey = Object.keys(h.modules).find((k) => /[\\/]node_modules[\\/]sshpk[\\/]lib[\\/]formats[\\/]ssh-private\.js$/.test(k));
+    const bcryptKey = Object.keys(h.modules).find((k) => /[\\/]node_modules[\\/]bcrypt-pbkdf[\\/]index\.js$/.test(k));
+    if (sshKey == null || bcryptKey == null) return 'no sshpk';
+    const captured = h.modules[bcryptKey].exports;
+    const M = module.constructor;
+    const judge = (fn) => { try { return fn() === captured ? 'captured' : 'own'; } catch (e) { return 'refused'; } };
+    const forged = {__proto__: null, id: sshKey, filename: sshKey, paths: M._nodeModulePaths(path.dirname(sshKey))};
+    // (and the object sshpk is answered with frozen: require tracing shows it
+    // to module code, #434's Fable pass F8)
+    return `${judge(() => require('bcrypt-pbkdf'))} ${judge(() => M._load('bcrypt-pbkdf', forged))} ${Object.isFrozen(captured) ? 'frozen' : 'not frozen'}`;
+  },
   // interop, in both modes: the module's own files by every form
   interop: async () => {
     const out = [];
@@ -54,6 +121,8 @@ const STEPS = {
     // (a CommonJS file reached by import(), asking for the module built-in:
     // the reduced module's re-resolution, which has no parent, still served)
     out.push((await import('../../lib/needs-module.cjs')).default.createRequire);
+    // (and one importing it: named exports of the same form)
+    out.push(await (await import('../../lib/imports-module.cjs')).default());
     return out.join(' ');
   },
   // The window (Revision 4, test 4): while the runtime's late paths run (a
@@ -102,6 +171,8 @@ const STEPS = {
   },
   // BroadcastChannel: gone under enforce, by either route; under audit it
   // stays (a message crosses to the peer module's worker) and is reported
+  // #434's Fable pass F9: Web Locks, a channel between workers
+  locks: () => (globalThis.navigator != null && globalThis.navigator.locks != null ? 'locks' : 'no locks'),
   broadcast: () => {
     const global = typeof(globalThis.BroadcastChannel);
     let viaRequire;
@@ -137,6 +208,23 @@ const STEPS = {
     try { text = util.inspect(require.cache, {depth: 1}); } finally { delete Object.prototype[key]; }
     const runtimeNamed = /[\\/]lib[\\/][a-z-]+\.js|node_modules/.test(text.replace(ROOT, ''));
     return `${runtimeNamed ? 'runtime named' : 'none named'}, ${seen.length === 0 ? 'no runtime Module' : `runtime Modules: ${seen.length}`}`;
+  },
+  // C, #434's Fable pass F6: a parent is cut at Node's own slot, not only
+  // shadowed: Module.prototype's getter, called directly, and a delete of
+  // the own property, reach no runtime Module, for every module file in the
+  // cache and for a runtime Module the test's hand-over gives
+  parentSlot: () => {
+    const get = Object.getOwnPropertyDescriptor(M.prototype, 'parent').get;
+    const runtimeParent = (p) => p != null && typeof(p.filename) === 'string' && !insideRoot(p.filename);
+    const found = [];
+    const h = handle();
+    const ms = Object.values(require.cache).concat(h != null && h.module != null ? [h.module] : []);
+    for (const m of ms) {
+      if (runtimeParent(get.call(m))) found.push('getter');
+      try { delete m.parent; } catch (e) { /* held */ }
+      if (runtimeParent(m.parent)) found.push('delete');
+    }
+    return `${h == null ? 'no handle' : 'handle'}, ${found.length === 0 ? 'no runtime parent' : found.join(' ')}`;
   },
   // C: no main module, in either form
   main: () => `${require.main === undefined ? 'no require.main' : 'require.main'}, ${process.mainModule === undefined ? 'no mainModule' : 'mainModule'}`,

@@ -1,1 +1,14 @@
-{"name": "isolation-probe", "version": "1.0.0", "description": "reports what of the runtime a module's worker shows module code"}
+{
+  "name": "isolation-probe",
+  "version": "1.0.0",
+  "description": "reports what of the runtime a module's worker shows module code",
+  "countinghouse": {
+    "permissions": {
+      "net": [
+        {
+          "host": "isolation.example.invalid"
+        }
+      ]
+    }
+  }
+}

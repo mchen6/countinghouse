@@ -70,19 +70,15 @@ function request(io, message, timeoutMs = 30000) {
 }
 
 // [where, flags, mode, module, loaded at boot]
-// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
-// runtime object only through the probe's hand-over, module code's own
-// require.cache holding its own files only)
-let savedLateLoads;
-before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
-after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
-
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 [
-  ['the worker under enforce, net declared', ['--workerThread', '--moduleSandbox', 'enforce'], 'enforce', WITH_NET, true],
-  ['the worker under audit, net declared', ['--workerThread', '--moduleSandbox', 'audit'], 'audit', WITH_NET, true],
+  ['the worker under enforce, net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce'], 'enforce', WITH_NET, true],
+  ['the worker under audit, net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', WITH_NET, true],
   ['single-thread mode', ['--no-workerThread'], 'off', WITH_NET, false],
-  ['the worker under enforce, no net declared', ['--workerThread', '--moduleSandbox', 'enforce'], 'enforce', NO_NET, false],
-  ['the worker under audit, no net declared', ['--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false]
+  ['the worker under enforce, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce'], 'enforce', NO_NET, false],
+  ['the worker under audit, no net declared', ['--testLateLoads', '--workerThread', '--moduleSandbox', 'audit'], 'audit', NO_NET, false]
 ].forEach(([where, flags, mode, MODULE, atBoot]) => {
   const refuses = (mode === 'enforce');
   const declares = (MODULE === WITH_NET);
@@ -145,6 +141,14 @@ after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_
         while (!line.test(io.err) && Date.now() < deadline) await new Promise((res) => setTimeout(res, 50));
         assert.match(io.err, line);
         assert.strictEqual(r.loaded.request, true);
+        // (the library's own requires, in a late load the net reported, are
+        // the runtime's: said once, as that load, never one by one against
+        // the module; #434's review)
+        if (!atBoot) {
+          const said = io.err.split('\n').filter((l) => l.includes(`${name} violation require`));
+          assert.ok(said.some((l) => /postman-request \(a load by the runtime after the lockdown\)/.test(l)), said.join('\n'));
+          assert.ok(said.length <= 2, `the library's own requires said against the module:\n${said.join('\n')}`);
+        }
       });
     }
 

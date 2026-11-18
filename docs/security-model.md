@@ -239,7 +239,9 @@ any module code). Stops:
   Under `enforce` it takes only a string request and never makes a main
   module; it, `Module._resolveFilename`, `Module.prototype.load` and the
   extension handlers are locked, and the extensions table takes no new
-  extension. Under `audit` each replacement is reported. The other routes
+  extension. Under `audit` each replacement is reported and never takes
+effect, as Node hands each of them the runtime's own modules; the
+extensions table takes no new extension in either mode. The other routes
   into what the runtime loads are closed by #194: the runtime loads nothing
   after the lockdown (its PR 1), and at the lockdown its modules are sealed
   away (its PR 2): every `require.cache` entry of a file outside the
@@ -249,14 +251,21 @@ any module code). Stops:
   `util.inspect`, which reads past any view, names no runtime file; each
   runtime `Module`'s parent and children are emptied and there is no main
   module; the loader's other statics are locked in both modes
-  (`_pathCache` an empty view that keeps nothing planted in it, the
+  (`_pathCache` a view that lists nothing and keeps only the module's
+  own files, the
   resolver's helpers, `Module.prototype.require` and `_compile`,
   `Module.prototype`, and the extensions table, which takes no new key);
   a load with one of the runtime's own Modules as its parent is refused
   under `enforce` and said in both modes (the net); and after the lockdown
-  a load with no parent is module code's, and no parent's resolution is
-  granted countinghouse's code roots, so what exists in the runtime's tree
-  is no answer module code gets (test/sandbox/68);
+  every resolution is module code's, and none is granted countinghouse's
+  code roots. Under `enforce` what exists in the runtime's tree is then no
+  answer module code gets through `require`, `require.resolve` or the
+  loader's helpers (a parent outside the module's root is refused before
+  Node reads anything for it); `import()` through Node's ES module
+  resolver can still tell whether such a path exists, which is closed in a
+  later change. Under `audit` a require of one is reported, and the
+  loader's helpers called directly answer truthfully, unreported, as every
+  lookup does under `audit` (test/sandbox/68);
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker. Of `process.report`'s

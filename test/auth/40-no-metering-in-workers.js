@@ -17,13 +17,9 @@ const PORT   = testPort(9650);
 const VICTIM = `m6-victim-${process.pid}`;
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'metering-forge');
 
-// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
-// runtime object only through the probe's hand-over, module code's own
-// require.cache holding its own files only)
-let savedLateLoads;
-before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
-after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
-
+// (each start with the test's late-load probe, --testLateLoads: since
+// #194's PR 2 its fixtures reach a runtime object only through the
+// probe's hand-over, module code's own require.cache holding its own files)
 describe('auth 40: a module worker holds no metering provider (M6)', function() {
   this.timeout(90000);
   let server = null;
@@ -40,7 +36,7 @@ describe('auth 40: a module worker holds no metering provider (M6)', function() 
   });
 
   it('CHUtil.ci.recordCall(key, t, -100) from module code is refused and the balance does not move', async () => {
-    server = await startServer(PORT, ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread']);
+    server = await startServer(PORT, ['--testLateLoads', '--debug', '--debugKey', KEY, '--authoringTools', '--workerThread']);
     const load = await mcpCall(PORT, KEY, 'countinghouse_load_module', {path: FIXTURE, name: 'metering-forge', version: '1.0.0'});
     assert.strictEqual(load.structuredContent && load.structuredContent.loaded, true, JSON.stringify(load));
     const r = await mcpCall(PORT, KEY, 'metering_forge_forgeservice_credit', {key: VICTIM});

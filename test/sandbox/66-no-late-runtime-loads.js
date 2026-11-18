@@ -4,7 +4,7 @@
 // made where module code could stand between it and Node's loader: a
 // planted require.cache entry, a poisoned relative-resolve key, a replaced
 // handler all find no runtime load to take. Recorded by a test-only probe
-// the main thread turns on (CH_TEST_LATE_LOADS=1, lib/lean-worker.js): every
+// the main thread turns on (--testLateLoads, lib/lean-worker.js): every
 // _load and _resolveFilename with a runtime parent, and every createRequire
 // and getBuiltinModule with a runtime caller, after the lockdown. Each step
 // asserts what it reached, so a step that never reaches its path fails; and
@@ -60,11 +60,9 @@ const waitFor = async (server, re) => {
 
 describe('sandbox 66: no runtime load after the lockdown', function() {
   this.timeout(120000);
-  let saved;
   let home;
   let policy;
   before(() => {
-    saved = process.env.CH_TEST_LATE_LOADS;
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-66-'));
     // the operator approves the probe's declared net: under enforce
     // postman-request is then warmed, and a request reaches it
@@ -72,20 +70,19 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     fs.writeFileSync(policy, JSON.stringify({modules: {'late-load-probe': {approve: 'as-declared'}}}));
   });
   after(() => {
-    if (saved === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = saved;
     fs.rmSync(home, {recursive: true, force: true});
   });
-  const args = (mode, extra = []) => ['--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', mode,
+  // (each start with the test's probe, --testLateLoads, but the normal one)
+  const args = (mode, extra = []) => ['--testLateLoads', '--debug', '--debugKey', KEY, '--authoringTools', '--workerThread', '--moduleSandbox', mode,
     '--modulePolicy', policy, '--maxOutputBytes', '262144', ...extra, '--loadModule', PROBE];
 
   ['enforce', 'audit'].forEach((mode, i) => describe(mode, () => {
     let server = null;
     const port = testPort(9775 + i);
     before(async () => {
-      process.env.CH_TEST_LATE_LOADS = '1';
       server = await startServer(port, args(mode));
     });
-    after(() => { stopServer(server); delete process.env.CH_TEST_LATE_LOADS; });
+    after(() => { stopServer(server); });
     const late = () => server.output.split('\n').filter((l) => l.includes('late runtime '));
 
     // a module validated in a worker of its own, after that worker's lockdown
@@ -156,7 +153,6 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
   // (this start has no policy): every request that gets past its options is
   // refused for its host under enforce, and reported under audit.
   ['enforce', 'audit'].forEach((mode, i) => it(`${mode}: CHUtil.request's options as handed on; a module file's parent is the module's anchor`, async () => {
-    delete process.env.CH_TEST_LATE_LOADS;
     const port = testPort(9775 + i);
     const server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE]);
     try {
@@ -192,9 +188,9 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
   // is only loaded here: it takes the broadcast, with nothing loaded late.
   it('live options: a worker takes a tightened setting with nothing loaded late', async () => {
     const file = path.join(home, 'settings.json');
-    const io = startStdio(['--workerThread', '--moduleSandbox', 'enforce', '--modulePolicy', policy, '--store', 'local',
+    const io = startStdio(['--testLateLoads', '--workerThread', '--moduleSandbox', 'enforce', '--modulePolicy', policy, '--store', 'local',
       '--storePath', path.join(home, 'store'), '--modulePath', path.join(home, 'modules'), '--moduleDataPath', path.join(home, 'module_data'),
-      '--settingsFile', file, '--loadModule', PROBE], {env: {CH_TEST_LATE_LOADS: '1'}});
+      '--settingsFile', file, '--loadModule', PROBE]);
     try {
       await io.request({...INITIALIZE, id: 1}, 30000);
       io.notify({jsonrpc: '2.0', method: 'notifications/initialized'});
@@ -258,14 +254,13 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     assert.deepStrictEqual(out, {maxOutputBytes: 4096, requestTimeout: 1000, locale: 'en-US'});
   });
 
-  // without CH_TEST_LATE_LOADS the probe is never installed: its control
+  // without --testLateLoads the probe is never installed: its control
   // records nothing
   // (and module code has no runtime Module to make one with: the probe's
   // hand-over is the test's alone, #194's PR 2)
   it('a normal start has no probe: its control has no runtime Module, and records nothing', async () => {
-    delete process.env.CH_TEST_LATE_LOADS;
     const port = testPort(9775);
-    const server = await startServer(port, args('enforce'));
+    const server = await startServer(port, args('enforce').filter((a) => a !== '--testLateLoads'));
     try {
       const r = await mcpCall(port, KEY, TOOL, {step: 'control'});
       assert.strictEqual(detail(r), 'no runtime Module', JSON.stringify(r).slice(0, 800));
