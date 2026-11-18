@@ -517,6 +517,11 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.deepStrictEqual(calls.map((x) => x[0]), ['exited'], 'any other failure: the supervisor\'s retry');
     });
 
+    it('a call\'s package needs the device manager: without one nothing is resolved', () => {
+      const reread_ = require('../../lib/settings-reread');
+      assert.strictEqual(reread_.calleeOf('region-part/partService.run', null), null);
+    });
+
     it('a notice is keyed by the friendlyName the module\'s own api.json gives, before its devices register', async () => {
       const mm = manager();
       mm.pinnedFriendlyNames = {w: 'weather'};
