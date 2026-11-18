@@ -522,6 +522,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.strictEqual(reread_.calleeOf('region-part/partService.run', null), null);
     });
 
+    it('a part still spawning (no device registered) is found by its pinned device IDs', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const callAddress = require('../../lib/call-address');
+      const dm = {deviceMap: {}, moduleOfDevice: () => null};
+      const mm = {pinnedDeviceIDs: {'@acme/region-part': new Set([callAddress.deviceIDForName('region-part')])}};
+      assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm, mm), '@acme/region-part');
+    });
+
     it('a notice is keyed by the friendlyName the module\'s own api.json gives, before its devices register', async () => {
       const mm = manager();
       mm.pinnedFriendlyNames = {w: 'weather'};
