@@ -611,8 +611,9 @@ repository, a page size. Declare them in `package.json`, beside `calls` and
 > Module settings run only with worker threads (the default). In
 > single-thread mode (`--no-workerThread`) a module that declares settings is
 > not loaded (`SETTINGS_NEED_WORKER_THREADS`: "<package> declares settings,
-> which run only with worker threads (--workerThread)"), and a reload to a
-> version that declares them is refused, the loaded version serving on. A
+> which run only with worker threads (--workerThread); this version was not
+> loaded"), and a reload to a version that declares them is refused, the
+> loaded version serving on. A
 > module that declares none loads in either mode.
 
 ```json
