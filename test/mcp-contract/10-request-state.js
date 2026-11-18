@@ -2,7 +2,7 @@
 // MCP completeness M12 (docs/superpowers/specs/2026-11-15-mcp-completeness-design.md,
 // section 8), server-free: requestState, which a client carries from an
 // input_required answer to its retry (2026-07-28's MRTR). It is the
-// client's to send, so the attacker's to write: `v1.<payload>.<mac>`, the
+// client's to send, so the attacker's to write: `v2.<sealed payload>.<mac>`, the
 // payload a nonce, an expiry, the pending question's key, the round and
 // the earlier rounds' answers; the MAC binds it to the caller, the
 // session, the method, the tool and the call's arguments. Single use is
@@ -26,12 +26,13 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
   const binding = (over = {}) => Object.assign({caller: 'u_AbCdEfGhIjKlMnOpQrStUv', session: '', method: 'tools/call', tool: 'ch_pack_service_act',
     arguments: {name: 'report.txt', n: 1, deep: {b: [1, 2], a: null}}}, over);
   const content = (over = {}) => Object.assign({question: QUESTION, round: 1, callRound: 1, answers: {}}, over);
-  const payloadOf = (state) => JSON.parse(Buffer.from(state.split('.')[1], 'base64url').toString('utf8'));
+  // (the payload is sealed, F2-4: read and written here with the module's own seal)
+  const payloadOf = (state) => rs.openPayload(key, state.split('.')[1]);
   // a state under the right key whose payload is anything: what only the
   // key's holder could make (a later version, or a bug), still checked
   const forged = (payload, b = binding()) => {
-    const p = Buffer.from(typeof(payload) === 'string' ? payload : JSON.stringify(payload), 'utf8').toString('base64url');
-    return `v1.${p}.${rs.macOf(key, [rs.LABEL, p, b.caller, b.session, b.method, b.tool, rs.argumentsHash(b.arguments)])}`;
+    const p = rs.sealPayload(key, payload);
+    return `v2.${p}.${rs.macOf(key, [rs.LABEL, p, b.caller, b.session, b.method, b.tool, rs.argumentsHash(b.arguments)])}`;
   };
   const refused = (state, b = binding(), at = now) => {
     const v = rs.verify(key, state, b, {now: at});
@@ -42,9 +43,38 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
   };
 
   describe('a state', () => {
-    it('is v1.<payload>.<mac>: a 16-byte nonce, an expiry 5 minutes out, the question, its round, the call\'s round, the earlier answers', () => {
+    // F2-4 (the Fable pass over asks): the payload is sealed, not just MACed: a client reads nothing of which
+    // question is pending or who asked it (an unlisted part's name, device, service and action)
+    it('reads as nothing to its client: the question, its asker and the earlier answers are not in it', () => {
+      const state = rs.mint(key, content({answers: {[QUESTION]: {approve: 'the answer'}}}), binding(), {now});
+      const body = Buffer.from(state.split('.')[1], 'base64url');
+      for (const secret of [QUESTION, 'the answer']) assert.ok(!body.toString('latin1').includes(secret), `${secret} in the clear`);
+      assert.throws(() => JSON.parse(body.toString('utf8')), 'no JSON to be read');
+    });
+
+    it('its length says nothing of the question\'s key: two keys of different lengths, the same answers, make states of one length', () => {
+      const short = rs.mint(key, content({question: 'q'}), binding(), {now});
+      const long = rs.mint(key, content({question: 'q'.repeat(900)}), binding(), {now});
+      assert.strictEqual(short.length, long.length);
+    });
+
+    it('the largest state it can be asked for (a 1024-character key, 8 KiB of answers) is made within the 16 KiB', () => {
+      const answers = {x: 'a'.repeat(rs.MAX_ANSWERS_BYTES - 12)};
+      assert.ok(Buffer.byteLength(JSON.stringify(answers)) <= rs.MAX_ANSWERS_BYTES);
+      const state = rs.mint(key, content({question: 'q'.repeat(1024), answers}), binding(), {now});
+      assert.ok(state.length <= rs.MAX_STATE_BYTES, String(state.length));
+      assert.strictEqual(rs.verify(key, state, binding(), {now}).ok, true);
+    });
+
+    it('a v1 state (its payload in the clear), even under a right MAC, is refused', () => {
+      const clear = Buffer.from(JSON.stringify({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, c: 1, a: {}}), 'utf8').toString('base64url');
+      const b = binding();
+      refused(`v1.${clear}.${rs.macOf(key, [rs.LABEL, clear, b.caller, b.session, b.method, b.tool, rs.argumentsHash(b.arguments)])}`);
+    });
+
+    it('is v2.<sealed payload>.<mac>: a 16-byte nonce, an expiry 5 minutes out, the question, its round, the call\'s round, the earlier answers', () => {
       const state = rs.mint(key, content({round: 2, callRound: 5, answers: {[QUESTION]: {approve: true}}}), binding(), {now});
-      assert.match(state, /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
+      assert.match(state, /^v2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
       const p = payloadOf(state);
       assert.deepStrictEqual(Object.keys(p).sort(), ['a', 'c', 'e', 'n', 'q', 'r']);
       assert.match(p.n, /^[A-Za-z0-9_-]{22}$/);
@@ -161,8 +191,9 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       const state = rs.mint(key, content(), binding(), {now});
       const [v, p, m] = state.split('.');
       const flip = (s, i) => s.slice(0, i) + (s[i] === 'A' ? 'B' : 'A') + s.slice(i + 1);
-      const other = Buffer.from(JSON.stringify(Object.assign(payloadOf(state), {r: 2})), 'utf8').toString('base64url');
-      for (const bad of [`v2.${p}.${m}`, `${p}.${m}`, `${v}.${p}`, `${v}.${p}.${m}.x`, `${v}.${flip(p, 5)}.${m}`, `${v}.${p}.${flip(m, 7)}`, `${v}.${other}.${m}`,
+      const other = rs.sealPayload(key, Object.assign(payloadOf(state), {r: 2}));
+      // (v1, the payload in the clear, is refused: F2-4)
+      for (const bad of [`v1.${p}.${m}`, `${p}.${m}`, `${v}.${p}`, `${v}.${p}.${m}.x`, `${v}.${flip(p, 5)}.${m}`, `${v}.${p}.${flip(m, 7)}`, `${v}.${other}.${m}`,
         `${v}.${p}.${m.slice(0, 42)}`, `${v}.${p}.${m}=`, ` ${state}`, `${state}\n`, `${v}.${p}+.${m}`, '', 'v1..', null, undefined, 7, {}, [state]]) {
         refused(bad);
       }
@@ -174,7 +205,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
     });
 
     it('a state over 16 KiB is refused before any work, and none is made', () => {
-      const big = `v1.${'A'.repeat(17 * 1024)}.${'A'.repeat(43)}`;
+      const big = `v2.${'A'.repeat(17 * 1024)}.${'A'.repeat(43)}`;
       refused(big);
       // one over the bound under a right MAC (only the key's holder could
       // make it) is refused for its size all the same
@@ -207,7 +238,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
         assert.throws(() => rs.mint(key, content(), binding(bad), {now}), /request-state/, Object.keys(bad)[0]);
       }
       for (const good of [{caller: 'c'.repeat(256)}, {session: 's'.repeat(256)}, {method: 'm'.repeat(128)}, {tool: 't'.repeat(512)}]) {
-        assert.match(rs.mint(key, content(), binding(good), {now}), /^v1\./, Object.keys(good)[0]);
+        assert.match(rs.mint(key, content(), binding(good), {now}), /^v2\./, Object.keys(good)[0]);
       }
     });
 
@@ -347,7 +378,7 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
 
     it('a state made by one process verifies in another that shares the secret, and in none that does not', () => {
       const made = inChild(`out({state: rs.mint(rs.key(), {question: 'q', round: 1, callRound: 1, answers: {}}, ${JSON.stringify(B)})});`);
-      assert.match(made.state, /^v1\./);
+      assert.match(made.state, /^v2\./);
       const check = `out(rs.verify(rs.key(), ${JSON.stringify(made.state)}, ${JSON.stringify(B)}));`;
       assert.strictEqual(inChild(check).ok, true, 'after a restart, or on another server of the same deployment');
       assert.strictEqual(inChild(check, {secret: crypto.randomBytes(32).toString('hex')}).ok, false);
