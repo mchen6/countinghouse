@@ -90,6 +90,11 @@ moduleValidator.validateModule(target, (err, result) => {
     process.exit(result.ok === true ? 0 : 1);
   }
 
+  // each declared setting, and how a user's change to it is made
+  // (lib/module-settings.js confirmRule)
+  const RULE = {'on request': 'changed in conversation on request', confirm: 'changed in conversation only with the user\'s own confirmation (at a terminal until a client is tested to show the form)',
+    'terminal only': 'changed at a terminal only (a part\'s settings are never named to a client)'};
+  const printSettings = () => (result.settings || []).forEach((s) => console.log(`  setting ${s.name} (${s.type}): ${RULE[s.rule]}`));
   // M3 (#413 section 6.1): each remote in its expanded form, and what it
   // means, whichever form the author wrote.
   const printRemotes = () => (result.remotes || []).forEach((r) => {
@@ -99,6 +104,7 @@ moduleValidator.validateModule(target, (err, result) => {
 
   if (result.ok === true) {
     console.log(`ok: ${result.module} -- no problems found`);
+    printSettings();
     printRemotes();
     (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
     process.exit(0);
@@ -109,6 +115,7 @@ moduleValidator.validateModule(target, (err, result) => {
     console.log(`  [${p.stage}] ${p.message}`);
     if (p.fix != null) console.log(`      fix: ${p.fix}`);
   });
+  printSettings();
   printRemotes();
   (result.warnings || []).forEach((w) => console.log(`  warning [${w.stage}] ${w.message}`));
   process.exit(1);

@@ -185,6 +185,34 @@ describe('composition 22: declarations pinned before the module runs, and every 
     assert.strictEqual(added(B, 'adopted').length, 0, lines.join('\n'));
   });
 
+  it('a validation\'s copy of another directory, found by package name, keeps the loaded file\'s settings declaration (module settings)', () => {
+    const p = pins();
+    const other = path.join(base, 'other');
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, 'package.json'), JSON.stringify({name: 'm', countinghouse: {calls: [A], settings: {apiUrl: {type: 'string', format: 'url'}}}}));
+    p.forValidation(other);
+    write([A], {countinghouse: {calls: [A], settings: {units: {type: 'enum', values: ['metric']}}}});
+    assert.deepStrictEqual(p.wouldPin(mod, 'm').countinghouse.settings, {units: {type: 'enum', values: ['metric']}});
+    const pinned = p.pin('m', mod, true, p.plan('m', mod, true));
+    assert.deepStrictEqual(pinned.countinghouse.settings, {units: {type: 'enum', values: ['metric']}});
+  });
+
+  it('a supervised restart keeps the settings declaration too; one changed on disk is logged, not adopted (module settings, section 4.1)', () => {
+    const p = pins();
+    const settings = (s) => ({countinghouse: {calls: [A], settings: s}});
+    write([A], settings({share: {type: 'boolean', default: false, confirm: true}}));
+    p.pin('m', mod, true);
+    write([A], settings({share: {type: 'boolean', default: true}}));   // drops confirm, flips the default
+    const kept = p.pin('m', mod, false);
+    assert.deepStrictEqual(kept.countinghouse.settings, {share: {type: 'boolean', default: false, confirm: true}});
+    assert.strictEqual(lines.filter((l) => /settings declaration changed since its last pin/.test(l) && l.includes('(not adopted')).length, 1, lines.join('\n'));
+    assert.ok(lines.every((l) => !l.includes('"default":true')), 'the declaration itself is not logged');
+    // an operator's reload adopts it, and says so
+    lines = [];
+    assert.deepStrictEqual(p.pin('m', mod, true).countinghouse.settings, {share: {type: 'boolean', default: true}});
+    assert.strictEqual(lines.filter((l) => /settings declaration changed since its last pin/.test(l) && l.includes('(adopted')).length, 1, lines.join('\n'));
+  });
+
   it('an operator\'s reload adopts the file and logs each call added since the previous pin', () => {
     const p = pins();
     write([A]);
