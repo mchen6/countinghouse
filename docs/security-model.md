@@ -231,7 +231,25 @@ any module code). Stops:
   later hook can run ahead of the boundary;
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
-  `process.loadEnvFile` goes through the file broker;
+  `process.loadEnvFile` goes through the file broker. Of `process.report`'s
+  settings, `compact`, `excludeNetwork` and `excludeEnv` are the worker's
+  own values, which a module may read and set (a boolean, as Node checks)
+  and which never reach the process's (the worker's real `excludeEnv` and
+  `excludeNetwork` are on from its start, so a report it writes under
+  `audit` holds no environment; such a report is in the process's
+  `compact`, not the module's); every other one (`directory`, `filename`,
+  `signal`, the `reportOn*` triggers, and any a later Node adds) is locked;
+- `process.report.getReport()`, in every mode: Node builds a report from the
+  process, not the worker, so it would hold the server's own environment and
+  command line (its database and Redis passwords, its debug key, any token
+  in its environment) whatever env the worker was given. A module is served
+  only what an allowlist keeps: of the header, the runtime's versions, word
+  size, arch, platform, glibc and OS name; the JavaScript heap, resource use
+  and limits; and of the shared objects only libc's and the dynamic loader's
+  names, which native-addon loaders (detect-libc) read to pick a binary. The
+  environment, command line, working directory, host, network, OS release,
+  version, machine and CPUs, the libuv handles, worker reports, both stacks,
+  and any field a later Node adds are left out;
 - adopting a descriptor (`net.Socket({fd})` or `net.Socket(fd)`,
   `net.connect({fd})` and `net.createConnection({fd})`, which an `http`
   request given an `fd` reaches through the agent (`https` goes through
