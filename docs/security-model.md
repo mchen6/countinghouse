@@ -669,20 +669,24 @@ per process, and again when the file changes.
 ```
 
 - `{"fixed": <value>}` applies that value whatever `settings.json` says. A
-  value the module's declaration rejects refuses the module's load, with the
-  ceiling's reason.
-- `{"confirm": true}` makes a change in conversation need the user's
-  confirmation.
-- `{"conversation": false}` allows a change at the terminal only.
-- `"conversation": false` directly under `moduleSettings` makes every module
+  value the module's declaration rejects, or a setting it doesn't declare (a
+  typo, or a version that renamed it), refuses the module's load, naming the
+  entry.
+- `{"confirm": true}` and `{"conversation": false}` are rules for a change
+  in conversation. They bind once the settings tool changes module settings
+  (its `module.*` names; until then no conversation can change one): the
+  first needs the user's confirmation, the second allows the terminal only.
+  `"conversation": false` directly under `moduleSettings` makes every module
   setting terminal-only.
 
 Any other shape fails closed, as any key a reader doesn't know does: an
 older runtime or `ch-local` never reads this key as no restriction. Where
 the ceiling binds (the single-identity profile with a settings file), it is
-read again at each load of a module that declares settings, and at each
-`reread`. A ceiling that cannot be trusted refuses such a load; a
-supervised restart keeps the values the module ran with.
+read again at each load of a module that declares settings and at each
+`reread`, and watched while the runtime has a control channel: a change
+re-reads every module's settings, so a fixed value binds without `ch-local`.
+A ceiling that cannot be trusted refuses such a load; a supervised restart
+keeps the values the module ran with.
 
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
@@ -1266,9 +1270,12 @@ directory of each module of its closure:
   a `fixed` value its declaration rejects, or a ceiling that cannot be
   trusted) keeps **all** of its old values; the others apply, each with a
   new version its next call carries. The reply is `{applied, refused:
-  [{name, code}]}`; each refusal is a notice to the module's sessions and,
-  for a value, a `not applied` history line, never the value. A value
-  that already was not applied, unchanged, holds nothing back. A setting
+  [{name, code}]}`; each refusal is a notice to the sessions that have the
+  module in view (a part is said as "a part of" its top-level module, and
+  the ceiling's file problem goes to the operator's log only) and, for a
+  value, a `not applied` history line, never the value (the ceiling's, when
+  its fixed value is what refused). A value that already was not applied,
+  unchanged, holds nothing back, and one refused is said once. A setting
   change never unloads a module: one left with a required setting unset
   stays loaded, and its calls answer `SETTING_REQUIRED`.
 
