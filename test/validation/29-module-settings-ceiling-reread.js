@@ -564,6 +564,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       await rr(mm);
       const wm = proxy('w');
       wm.settings = spawned;
+      mm.modules.w = wm;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm);
       assert.deepStrictEqual(Object.assign({}, wm.settings.values), {units: 'metric', n: 9});
       assert.strictEqual(mm.lastSettings.get('w'), wm.settings, 'the restart\'s copy too');
@@ -571,12 +572,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       const fresh = wm.settings;
       const wm2 = proxy('w');
       wm2.settings = fresh;
+      mm.modules.w = wm2;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm2);
       assert.strictEqual(wm2.settings, fresh);
       // a new version (another declaration): made from its own package.json, never the old state's
       const W2 = pkgOf('w', {units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}, extra: {type: 'boolean', default: true}});
       const wm3 = proxy('w');
       wm3.settings = ms.stateFor('w', W2, {operator: true, net: []});
+      mm.modules.w = wm3;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm3);
       assert.deepStrictEqual(Object.keys(wm3.settings.settings).sort(), ['extra', 'units']);
       assert.strictEqual(wm3.settings.made.pkg, W2);
@@ -584,8 +587,30 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       write({'module.w.units': 'kelvin', 'module.w.n': 4, 'module.r.region': 'eu'});
       const wm4 = proxy('w');
       wm4.settings = fresh;
+      mm.modules.w = wm4;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm4);
       assert.deepStrictEqual(Object.assign({}, wm4.settings.values), {units: 'metric', n: 9}, 'kept whole, as reread keeps it');
+    });
+
+    it('a worker registering with a state made under the settings file and ceiling as they are takes it as it is (no second read)', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const mmLib = require('../../lib/module-manager');
+      const mm = manager();
+      const made = reread_.next('w', {pkg: W, net: []}, {load: true}).state;
+      const wm = proxy('w');
+      wm.settings = made;
+      mm.modules.w = wm;
+      const real = reread_.next;
+      let called = 0;
+      reread_.next = (...a) => { called += 1; return real(...a); };
+      try {
+        mmLib.settleSettings(mm, 'w', wm);
+        assert.strictEqual(called, 0, 'unchanged: not made again');
+        write({'module.w.units': 'metric', 'module.r.region': 'eu'});
+        mmLib.settleSettings(mm, 'w', wm);
+        assert.strictEqual(called, 1, 'the file changed: made again');
+        assert.strictEqual(wm.settings.values.units, 'metric');
+      } finally { reread_.next = real; }
     });
 
     it('next: a load (no previous) is stateFor\'s; a restart under a ceiling refusal refuses (ceilingRefuses); a running module keeps its state', () => {
