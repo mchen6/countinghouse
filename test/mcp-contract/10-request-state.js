@@ -52,10 +52,17 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       assert.throws(() => JSON.parse(body.toString('utf8')), 'no JSON to be read');
     });
 
-    it('its length says nothing of the question\'s key: two keys of different lengths, the same answers, make states of one length', () => {
-      const short = rs.mint(key, content({question: 'q'}), binding(), {now});
-      const long = rs.mint(key, content({question: 'q'.repeat(900)}), binding(), {now});
-      assert.strictEqual(short.length, long.length);
+    it('its length says nothing of the question\'s key: keys of any length or escaping, the same answers, make states of one length', () => {
+      const lengths = ['q', 'q'.repeat(900), '\u4e2d'.repeat(600), '"\\'.repeat(250), '\u0001'.repeat(300)].map((question) => {
+        assert.ok(Buffer.byteLength(JSON.stringify(question)) <= 2048, 'within the encoded bound');
+        return rs.mint(key, content({question}), binding(), {now}).length;
+      });
+      assert.deepStrictEqual(new Set(lengths).size, 1, JSON.stringify(lengths));
+    });
+
+    it('a question\'s key whose JSON passes 2 KiB is no state of ours: none is made, none verifies', () => {
+      assert.throws(() => rs.mint(key, content({question: '\u0001'.repeat(400)}), binding(), {now}), /request-state/);
+      refused(forged({n: 'A'.repeat(22), e: now + MIN, q: '\u0001'.repeat(400), r: 1, c: 1, a: {}}));
     });
 
     it('the largest state it can be asked for (a 1024-character key, 8 KiB of answers) is made within the 16 KiB', () => {
@@ -70,6 +77,15 @@ describe('mcp-contract 10: requestState, the shared helper (MCP completeness M12
       const clear = Buffer.from(JSON.stringify({n: 'A'.repeat(22), e: now + MIN, q: QUESTION, r: 1, c: 1, a: {}}), 'utf8').toString('base64url');
       const b = binding();
       refused(`v1.${clear}.${rs.macOf(key, [rs.LABEL, clear, b.caller, b.session, b.method, b.tool, rs.argumentsHash(b.arguments)])}`);
+      // and a v1 state under its own (/1) label, relabelled v2: the MAC refuses it, before anything is opened
+      const relabelled = `v2.${clear}.${rs.macOf(key, ['countinghouse-request-state/1', clear, b.caller, b.session, b.method, b.tool, rs.argumentsHash(b.arguments)])}`;
+      refused(relabelled);
+      assert.strictEqual(rs.verify(key, relabelled, b, {now}).why, 'mac', 'by the MAC, not the seal');
+    });
+
+    it('a version to come (v3) is no state of ours', () => {
+      const state = rs.mint(key, content(), binding(), {now});
+      refused(`v3.${state.slice(3)}`);
     });
 
     it('is v2.<sealed payload>.<mac>: a 16-byte nonce, an expiry 5 minutes out, the question, its round, the call\'s round, the earlier answers', () => {
