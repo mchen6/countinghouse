@@ -19,6 +19,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9740–9749 | C |
 | 9750–9754 | A: lean worker step 3 |
 | 9755–9759 | C (2026-11-17) |
+| 9762–9769 | A: M3 credentials (2026-11-18) |
 | 9770–9779 | C (2026-11-17) |
 | 9790–9799 | B (2026-11-14) |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
@@ -106,8 +107,8 @@ one) as well as the ports it binds.
 | `test/mcp-contract/19-cancel-e2e.js` | 9587–9588 |
 | `test/mcp-contract/21-list-pages.js` | 9592 |
 | `test/mcp-contract/27-tasks-modern.js` | 9637, 9639, 9660 |
+| `test/mcp-contract/34-declared-text-cleaned.js` | 9755 |
 | `test/mcp-contract/28-task-ask.js` | 9690–9692 |
-| `test/mcp-contract/35-modern-schema-conformance.js` | 9756 (a Redis URL nothing answers on, as stdio 27's) |
 | `test/mcp-contract/36-sdk-feature-conformance.js` | (a free port, as 03) |
 | `test/mcp-contract/capture-error-shape.js` | 9658–9659 |
 | `test/mcp-contract/capture-tools-list.js` | 9530 |
@@ -136,6 +137,9 @@ one) as well as the ports it binds.
 | `test/remote/06-listing.js` | 9722–9723 |
 | `test/remote/07-counting.js` | 9728–9729 |
 | `test/remote/12-cancel-abort.js` | 9589 |
+| `test/remote/13-by-module.js` | 9762–9763 |
+| `test/remote/14-credential-env.js` | 9764–9765 |
+| `test/remote/15-pinned-remote.js` | 9766–9768 |
 | `test/module-loading/21-module-layout.js` | 9740–9741 |
 | `test/module-loading/33-registry-opt-in.js` | 9594 |
 | `test/module-loading/34-icon-reload-single-thread.js` | 9600 |
@@ -147,7 +151,7 @@ one) as well as the ports it binds.
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
-| `test/sandbox/05-lockdown.js` | 9608–9610 |
+| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9772 |
 | `test/sandbox/07-restart.js` | 9611–9614 |
 | `test/sandbox/08-limits.js` | 9613 |
 | `test/sandbox/09-hardened.js` | 9614 |
@@ -172,9 +176,9 @@ one) as well as the ports it binds.
 | `test/fixtures/server-left-behind/failing.js` (run by `test/validation/16-no-server-left.js`) | 9791 |
 | `test/sandbox/54-per-call-values.js` | 9792 |
 | `test/sandbox/57-session-caps.js` | none (a session socket in its home) |
-| `test/sandbox/58-settings-denied.js` | 9794, 9795 |
 | `test/sandbox/59-protected-paths-denied.js` | 9796, 9797, 9798 |
 | `test/sandbox/60-audit-writes.js` | 9799 (audit, enforce and off, one after another) |
+| `test/sandbox/63-unlisted-part-restarting.js` | 9793 |
 | `test/sandbox/32-job-late-completion.js` | 9643 |
 | `test/sandbox/33-operator-actions-in-order.js` | 9644–9645 |
 | `test/sandbox/34-always-denied.js` | 9680–9682 |
@@ -186,6 +190,7 @@ one) as well as the ports it binds.
 | `test/sandbox/49-peer-hops-validated.js` | 9749 (after 41's, 42's and 48's servers have stopped, as 42) |
 | `test/sandbox/43-lean-worker-files.js` | 9750 |
 | `test/sandbox/48-lean-lockdown.js` | 9751 |
+| `test/sandbox/66-no-late-runtime-loads.js` | 9775–9776 |
 | `test/single-thread/01-facade.js` | 9636 |
 | `test/single-thread/02-identity.js` | 9636 |
 | `test/single-thread/03-resolve.js` | 9727 |

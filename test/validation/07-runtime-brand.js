@@ -163,11 +163,12 @@ describe('validation 07: the review of #45', () => {
   });
 
   it('ctx.serviceClient issues the runtime refusals it hands the module', async () => {
-    const path = require('path');
-    const utilFile = path.resolve(__dirname, '../../lib/countinghouse-util.js');
-    const saved = require.cache[utilFile];
-    require.cache[utilFile] = {id: utilFile, filename: utilFile, loaded: true,
-      exports: {createServiceClient: (o, cb) => cb(new CountinghouseError('SERVICE_NOT_FOUND', o.serviceID))}};
+    // (the implementation handler-ctx holds, stubbed in place: a require.cache
+    // entry put there now is never read, the worker hardening's point; on this
+    // main thread nothing fixes its exports)
+    const impl = require('../../lib/countinghouse-util');
+    const saved = impl.createServiceClient;
+    impl.createServiceClient = (o, cb) => cb(new CountinghouseError('SERVICE_NOT_FOUND', o.serviceID));
     try {
       const {buildCtx} = require('../../lib/handler-ctx');
       // a bound module with its verdict in (R2-1 Task 5: no `as`; the hop
@@ -179,8 +180,7 @@ describe('validation 07: the review of #45', () => {
       assert.strictEqual(a.err.code, 'SERVICE_NOT_FOUND');
       assert.strictEqual(a.err.origin, 'runtime');
     } finally {
-      if (saved != null) require.cache[utilFile] = saved;
-      else delete require.cache[utilFile];
+      impl.createServiceClient = saved;
     }
   });
 });

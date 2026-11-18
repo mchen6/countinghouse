@@ -3,7 +3,8 @@
 // install never uses, and the default --dbUrl with its password. The line is
 // getOptionsForLog(): --dbUrl only under --authProvider couchdb, and no
 // credential in any URL. The settings read nowhere (--wetty,
-// --centralPortalUrl, --verifyModule, --apiMonitor) are gone altogether.
+// --centralPortalUrl, --verifyModule, --apiMonitor) are gone altogether, as is
+// --logStream, which changed nothing (both of the logger's branches were one).
 // Server-free, except one spawned stdio start that checks the line itself.
 const assert = require('assert');
 const path = require('path');
@@ -17,8 +18,34 @@ describe('validation 13: the start line\'s options', () => {
   it('leaves out --dbUrl where nothing reads it, and has none of the retired settings', () => {
     cli.setOptions({workerThread: false});
     const o = cli.getOptionsForLog();
-    for (const k of ['wetty', 'centralPortalUrl', 'verifyModule', 'apiMonitor', 'dbUrl']) assert.ok(!(k in o), k);
+    for (const k of ['wetty', 'centralPortalUrl', 'verifyModule', 'apiMonitor', 'logStream', 'dbUrl']) assert.ok(!(k in o), k);
     assert.strictEqual(o.workerThread, false, 'the rest is there');
+  });
+
+  it('takes --logStream as no option at all (it changed nothing), and no boolean flag of that name', () => {
+    cli.setOptions({workerThread: false, logStream: true});
+    assert.ok(!('logStream' in cli), 'not an option');
+    assert.ok(!('logStream' in cli.getOptions()), 'not passed to a worker');
+    assert.ok(!cli.BOOLEAN_FLAGS.includes('logStream'));
+  });
+
+  // The settings tool is served only in the single-identity profile, with
+  // --settingsFile; a size cap's hint names it only then (the review of the
+  // --settingsFile refusal): never on --settingsTool, nor outside the profile.
+  it('settingsTool on the main thread: only a --settingsFile in the single-identity profile', () => {
+    const file = '/nowhere/settings.json';
+    cli.setOptions({workerThread: false, store: 'local', stdio: true, settingsFile: file});
+    assert.strictEqual(cli.settingsTool, true, 'the profile, with the file');
+    cli.setOptions({workerThread: false, store: 'local', stdio: true, settingsFile: file, authConfigPath: '/nowhere/auth.json'});
+    assert.strictEqual(cli.settingsTool, false, 'an auth file: not the profile');
+    cli.setOptions({workerThread: false, settingsFile: file});
+    assert.strictEqual(cli.settingsTool, false, 'a hosted start');
+    cli.setOptions({workerThread: false, settingsTool: true});
+    assert.strictEqual(cli.settingsTool, false, '--settingsTool alone, hosted');
+    cli.setOptions({workerThread: false, store: 'local', stdio: true, settingsTool: true});
+    assert.strictEqual(cli.settingsTool, false, '--settingsTool alone, in the profile: no file, no tool');
+    cli.setOptions({workerThread: false, settingsFile: true});
+    assert.strictEqual(cli.settingsFileInvalid, true, 'a bare --settingsFile');
   });
 
   it('keeps --dbUrl under couchdb, without credentials', () => {

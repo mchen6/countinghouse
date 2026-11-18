@@ -106,7 +106,7 @@ describe('usage: the review fixes of #59', () => {
   it('an HTTP invoke-action caller\'s usageCall never reaches the invoke args', (done) => {
     const options = require('../../lib/cli-options');
     options.setOptions({redisUrl: 'redis://127.0.0.1:9749'});
-    require('../../lib/logger').createLogger(false);
+    require('../../lib/logger').createLogger();
     const invokeAction = require('../../lib/routes/invoke-action');
     const seen = [];
     const cdif = {

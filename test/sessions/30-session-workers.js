@@ -12,7 +12,7 @@ const A = 'a'.repeat(32);
 const B = 'b'.repeat(32);
 const C = 'c'.repeat(32);
 
-function harness({max = 2, delay = 0} = {}) {
+function harness({max = 2, delay = 0, live = () => true} = {}) {
   let clock = 1000;
   let nextId = 1;
   const spawned = [];
@@ -34,7 +34,8 @@ function harness({max = 2, delay = 0} = {}) {
     busy: (wm) => busySet.has(wm),
     announce: (name, sid, text) => told.push({name, sid, text}),
     max: () => max,
-    now: () => clock
+    now: () => clock,
+    live
   });
   const get = (name, sid) => new Promise((resolve) => sw.get(name, sid, (err, wm) => resolve({err, wm})));
   return {sw, get, spawned, ended, told, busySet, pendingSpawns, tick: (ms) => { clock += ms; }};
@@ -193,9 +194,61 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
     for (let i = 0; i < 3; i++) (await h.get('m', A)).wm.emit('exit');
     await h.get('m', B);
     await h.sw.stopSession(A);
-    assert.ifError((await h.get('m', A)).err, 'a session that comes back (a new one) is not suspended');
+    h.sw.sessionClosed(A);   // (its close, as lib/sessions.js tells the pool)
+    assert.ifError((await h.get('m', A)).err, 'its exits forgotten: no suspension held for it');
     await h.sw.stopSession(B);
     assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.sid), [A]);
+  });
+
+  // the reviewer's round 5: the rule doesn't rest on listener order. From
+  // stopSession on, none is spawned for the session, though it is still open
+  // (its own close not run yet); its close clears the mark
+  it('stopSession marks the session at once: get refuses it while it is still open, and a spawn under way is not kept; its close clears it', async () => {
+    const h = harness({max: 4, delay: 'manual'});
+    const pending = h.get('m', A);
+    await tick();
+    const stopped = h.sw.stopSession(A);
+    assert.strictEqual((await h.get('m', A)).err.code, 'DEVICE_NOT_FOUND', 'refused at once, live(sid) still true');
+    h.pendingSpawns.shift()();
+    const late = await pending;
+    assert.ok(late.err != null, 'the spawn under way is given up');
+    await stopped;
+    assert.strictEqual((await h.get('m', A)).err.code, 'DEVICE_NOT_FOUND', 'still refused after the stop, while open (live): no reuse');
+    h.sw.sessionClosed(A);
+    const again = h.get('m', A);
+    await tick();
+    h.pendingSpawns.shift()();
+    assert.ifError((await again).err, 'cleared by its close');
+  });
+
+  it('a stop whose session has already closed clears its own mark (no close is coming)', async () => {
+    const open = new Set([A]);
+    const h = harness({max: 4, live: (sid) => open.has(sid)});
+    await h.get('m', A);
+    const stopped = h.sw.stopSession(A);
+    open.delete(A);
+    await stopped;
+    open.add(A);   // (a test-only reuse: shows the mark is gone)
+    assert.ifError((await h.get('m', A)).err);
+  });
+
+  // the security pass of 11-17, the reviewer's ruling: a liveness check, no
+  // set of ended sessions to bound
+  it('a session that has ended gets no worker (a device not hosted), and a spawn under way when it ends is not wanted', async () => {
+    const open = new Set([A, B]);
+    const h = harness({max: 4, delay: 'manual', live: (sid) => open.has(sid)});
+    const pending = h.get('m', A);
+    await tick();
+    open.delete(A);
+    h.pendingSpawns.shift()();
+    const late = await pending;
+    assert.ok(late.err != null || h.ended.length === 1, 'A\'s spawn under way is not kept');
+    const refused = await h.get('m', A);
+    assert.strictEqual(refused.err.code, 'DEVICE_NOT_FOUND');
+    const b = h.get('m', B);
+    await tick();
+    h.pendingSpawns.shift()();
+    assert.ifError((await b).err, 'B spawns on');
   });
 });
 
@@ -206,7 +259,10 @@ describe('sessions 30: a session\'s packs and its per-session workers', () => {
   const settings = require('../../lib/session-settings');
   const sessionPacks = require('../../lib/session-packs');
   const ModuleManager = require('../../lib/module-manager');
-  before(() => require('../../lib/logger').createLogger(false));
+  before(() => require('../../lib/logger').createLogger());
+  // the packs and the shared mode configured here end with this file: the
+  // next file in the same process starts from the defaults
+  after(() => { settings.resetForTests(); sessionPacks.resetForTests(); });
   beforeEach(() => {
     settings.resetForTests();
     sessionPacks.resetForTests();
@@ -281,5 +337,81 @@ describe('sessions 30: an uninstall sees every session worker of the module', ()
     assert.strictEqual(settled, false, 'B\'s broker still settling');
     settleB();
     await waiting;
+  });
+});
+
+// The security pass of 11-17: what counts as a session worker's work in
+// flight (lib/worker-message.js inFlight, read by the pool's busy)
+describe('sessions 30: a request past its deadline is no longer in flight', () => {
+  const WorkerMessage = require('../../lib/worker-message');
+  const EventEmitter = require('events');
+  const real = (post) => {
+    const worker = new EventEmitter();
+    worker.postMessage = post || (() => {});
+    return new WorkerMessage(worker);
+  };
+  // a request queued as sendCounted queues one: its deadline with it
+  const queue = (w, deadline, cb = () => {}) => w.sendMessageToWorker({category: 'parent', command: 'x'}, cb, undefined, deadline);
+
+  it('a request with no deadline (a load, a job run with no timeout) is always in flight', () => {
+    const w = real();
+    queue(w, null);
+    assert.strictEqual(w.inFlight(1e12, 5000), true);
+  });
+
+  it('a call is in flight until its deadline and the margin have passed; then not', () => {
+    const w = real();
+    assert.strictEqual(w.inFlight(0, 5000), false, 'nothing queued');
+    queue(w, 10000);
+    assert.strictEqual(w.inFlight(9000, 5000), true, 'before its deadline');
+    assert.strictEqual(w.inFlight(15000, 5000), true, 'within the margin');
+    assert.strictEqual(w.inFlight(15001, 5000), false, 'past it');
+    queue(w, 20000);
+    assert.strictEqual(w.inFlight(15001, 5000), true, 'another still in flight');
+  });
+
+  // the review of #416: the deadline rides with its queued request, and no
+  // request is answered twice
+  it('a reply takes its request, deadline and all; the worker\'s end takes the rest', () => {
+    const w = real();
+    const answers = [];
+    queue(w, 1000, (err, data) => answers.push([err && err.code, data]));
+    queue(w, null, (err) => answers.push([err && err.code]));
+    w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'});
+    assert.deepStrictEqual(Object.keys(w.msgQueue), ['1']);
+    assert.strictEqual(w.inFlight(1e12, 5000), true, 'the one with no deadline is left');
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    assert.strictEqual(w.inFlight(0, 5000), false);
+    assert.deepStrictEqual(answers, [[null, 'ok'], ['DEVICE_NOT_RESPONDING']]);
+  });
+
+  it('a post that throws (no transfer list) leaves nothing queued: never in flight for ever, never answered by the worker\'s end', () => {
+    const w = real(() => { throw Object.assign(new Error('could not be cloned'), {name: 'DataCloneError'}); });
+    let answered = 0;
+    assert.throws(() => queue(w, null, () => { answered += 1; }), /could not be cloned/);
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    assert.strictEqual(w.inFlight(Date.now(), 5000), false);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.strictEqual(answered, 0);
+  });
+
+  it('a callback queued again with no deadline is in flight: an earlier deadline it was queued with is never read for it', () => {
+    const w = real();
+    const cb = () => {};
+    queue(w, 1000, cb);
+    w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'});
+    queue(w, null, cb);
+    assert.strictEqual(w.inFlight(1e12, 5000), true);
+  });
+
+  it('a reply whose callback throws is taken off the queue first: the worker\'s end never answers it again', () => {
+    const w = real();
+    let calls = 0;
+    queue(w, 1000, () => { calls += 1; throw new Error('the caller\'s own'); });
+    assert.throws(() => w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'}), /the caller's own/);
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.strictEqual(calls, 1, 'answered once');
   });
 });

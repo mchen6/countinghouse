@@ -62,6 +62,22 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
   });
   const ask = (taskId, opts = {}) => made.add(taskId) && taskAsks.asked(taskId, opts.state || asking(), {owner: opts.owner || 'owner-1', session: opts.session === undefined ? SESSION : opts.session, ofAsker});
 
+  // F2-5: capabilities are per request in 2026-07-28: a waiting task's form goes only to a poll that declared form
+  it('tasks/get hands a waiting task\'s form only to a request that declared form elicitation (F2-5)', async () => {
+    const t = id();
+    await ask(t);
+    const gateway = require('../../lib/mcp/gateway');
+    const record = {state: 'completed', job: {id: t, timestamp: now - 1000, finishedOn: now - 500, data: {era: 'modern', asks: true, asking: 1}}};
+    const without = await gateway.modernTaskView(record, null, {session: SESSION}, {form: false});
+    assert.strictEqual(without.status, 'input_required');
+    assert.match(without.statusMessage, /form elicitation declared/, 'it says what the poll lacks');
+    assert.deepStrictEqual(without.inputRequests, {}, 'no form for a poll that cannot show one (the schema\'s map, empty)');
+    const unsaid = await gateway.modernTaskView(record, null, {session: SESSION});
+    assert.deepStrictEqual(unsaid.inputRequests, {}, 'and none when nothing is said (fails closed)');
+    const withForm = await gateway.modernTaskView(record, null, {session: SESSION}, {form: true});
+    assert.deepStrictEqual(withForm.inputRequests, {q1: {method: 'elicitation/create', params: {mode: 'form', message: 'm: Do it?', requestedSchema: SCHEMA}}});
+  });
+
   it('the pass that asks: the record holds the form under q1, the session\'s hash and never its id; the task reads input_required', async () => {
     const t = id();
     const r = await ask(t);
@@ -122,6 +138,34 @@ describe('questions 08: a task\'s question, held on the server (M22)', function(
     assert.strictEqual(await taskAsks.answer(t, {q1: {action: 'decline'}}, {session: SESSION, ofAsker}), 'rerun');
     assert.strictEqual((await taskAsks.get(t)).answers[KEY], null);
     await taskAsks.remove(t);
+  });
+
+  // the bounds a task's question is held within, by value (M18's pins, the
+  // security model's table): the caps, the wait, and the answers' bytes
+  it('the bounds, by value: 64 of an owner\'s waiting tasks, 10,000 in all, an hour\'s wait, 8 KiB of answers', () => {
+    assert.deepStrictEqual([taskAsks.MAX_PER_OWNER, taskAsks.MAX_TOTAL, taskAsks.WAIT_MS], [64, 10000, 60 * 60 * 1000]);
+    // the bound the record enforces, and the call's request state's, one value
+    assert.deepStrictEqual([taskAsks.MAX_ANSWERS_BYTES, require('../../lib/request-state').MAX_ANSWERS_BYTES], [8 * 1024, 8 * 1024]);
+  });
+
+  it('answers of 8 KiB run the task again; a byte more is no answer: the same question under a new key, a round on', async () => {
+    // the settled answers as the record keeps them, {<question key>: content}
+    const sized = (n) => {
+      const content = {yes: true, pad: ''};
+      content.pad = 'x'.repeat(n - Buffer.byteLength(JSON.stringify({[KEY]: content}), 'utf8'));
+      assert.strictEqual(Buffer.byteLength(JSON.stringify({[KEY]: content}), 'utf8'), n);
+      return content;
+    };
+    const over = id();
+    await ask(over);
+    assert.strictEqual(await taskAsks.answer(over, {q1: {action: 'accept', content: sized(8 * 1024 + 1)}}, {session: SESSION, ofAsker}), 'asked');
+    const r = await taskAsks.get(over);
+    assert.deepStrictEqual([r.pending.reqKey, r.pending.round, r.answers], ['q2', 2, {}]);
+    const within = id();
+    await ask(within);
+    assert.strictEqual(await taskAsks.answer(within, {q1: {action: 'accept', content: sized(8 * 1024)}}, {session: SESSION, ofAsker}), 'rerun');
+    // the answers kept are exactly the bound
+    assert.strictEqual(Buffer.byteLength(JSON.stringify((await taskAsks.get(within)).answers), 'utf8'), 8 * 1024);
   });
 
   it('content its schema refuses: the same question under a new key, a round on; after the third, unavailable and run again', async () => {

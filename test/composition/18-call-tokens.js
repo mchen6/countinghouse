@@ -436,7 +436,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
   const cli = require('../../lib/cli-options');
   const CHUtil = require('../../lib/countinghouse-util');
   const LOG = require('../../lib/logger');
-  require('../../lib/logger').createLogger(false);
+  require('../../lib/logger').createLogger();
   const tokens = () => require('../../lib/call-tokens');
   const ENTRY = (workerId) => ({billingKey: `alice-key-${hex()}`, identityKey: `forge-internal-${hex()}`, module: 'token-forge', workerId: workerId, deviceID: 'd-callee'});
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1316,7 +1316,7 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       wmMain.worker = {postMessage: (m) => posted.push(m)};
       wmMain.messageRate = 1;
       wmMain.rateTokens = 0;
-      wmMain.rateRefillAt = Date.now() + 60000;   // no refill during the test
+      wmMain.rateRefillAt = require('perf_hooks').performance.now() + 60000;   // no refill during the test (the bucket's own, monotonic clock)
       wmMain.on('peer-bill-request', (m) => emitted.push(m.data.token));
       wmMain.unbilledTokens = new Set(['live']);
       wmMain.onWorkerMessage({id: 1, category: 'child', command: 'peer-bill-request', data: {token: 'forgotten'}});
@@ -1779,7 +1779,8 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       const replies = [];
       const caller = {workerId: 61, sendActionInvokeReplyToChild: (m) => replies.push(m)};
       const token = tokens().issue(Object.assign(ENTRY(61), {deviceID: 'd-early'}));
-      DeviceManager.prototype.sendInvokeActionMessageToWorker.call({deviceMap: {}}, 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
+      // the real prototype: M4a's hop wait asks replacingInPlace, false with no module manager
+      DeviceManager.prototype.sendInvokeActionMessageToWorker.call(Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {}}), 'k', 'k', 'd2', 'svc', 'act', {}, 'm1', caller, token);
       assert.strictEqual(replies[0].errCode, 'CTX_CALL_NOT_READY', JSON.stringify(replies));
     });
   });

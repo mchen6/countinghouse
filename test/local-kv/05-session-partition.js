@@ -108,7 +108,9 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
       assert.deepStrictEqual(kv.keysWithPrefix('').sort(), ['m:mod:k', `${ns.sessionPrefixFor('mod', B)}k`, `${ns.sessionPrefixFor('mod2', A)}k`].sort());
       assert.deepStrictEqual(await partition.remove(data, kv, 'mod', A), {keys: 0, dirs: false}, 'idempotent');
       await partition.remove(data, kv, 'mod', B);
-      assert.ok(!fs.existsSync(path.join(data, 'mod', 'sessions')), 'sessions/ goes once empty');
+      // an empty sessions/ stays: a new session's ensure may be making its
+      // partition under it at any time (the start's sweep runs after listen)
+      assert.ok(fs.existsSync(path.join(data, 'mod', 'sessions')), 'sessions/ kept');
       assert.ok(fs.existsSync(path.join(data, 'mod')), 'the module\'s own directory stays');
     });
 
@@ -225,6 +227,33 @@ describe('local-kv 05: a per-session module\'s partitions (R1)', () => {
   });
 
   describe('on Redis (a stand-in)', () => {
+    it('any stops at the first partition: a directory before any key, a key page with no full scan', async () => {
+      const data = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-kv-part-any-'));
+      try {
+        const keys = [];
+        for (let i = 0; i < 20; i++) keys.push(`m:mod:k${i}`);
+        keys.push(`${ns.sessionPrefixFor('mod', A)}k`);
+        const r = fakeRedis(keys);
+        let scans = 0;
+        const realScan = r.scan;
+        r.scan = (...args) => { scans += 1; return realScan.apply(r, args); };
+        assert.strictEqual(await partition.any(data, r), true, 'a key only');
+        assert.strictEqual(await partition.any(data, fakeRedis(['m:mod:k'])), false, 'none');
+        fs.mkdirSync(path.join(moduleData.dirsFor(data, 'mod').root, 'sessions', B), {recursive: true});
+        scans = 0;
+        assert.strictEqual(await partition.any(data, r), true);
+        assert.strictEqual(scans, 0, 'a partition directory found: the store not listed');
+        fs.mkdirSync(path.join(moduleData.dirsFor(data, 'other').root, 'sessions', 'old'), {recursive: true});
+        fs.rmSync(path.join(moduleData.dirsFor(data, 'mod').root, 'sessions', B), {recursive: true});
+        assert.strictEqual(await partition.any(data, fakeRedis([])), false, 'a stray name is no partition');
+        const seen = [];
+        await ns.keysUnder(fakeRedis([`${ns.sessionPrefixFor('mod', A)}1`, `${ns.sessionPrefixFor('mod', A)}2`]), 'ms:', (k) => { seen.push(k); return true; });
+        assert.strictEqual(seen.length, 1, 'onKey true stops the listing');
+      } finally {
+        fs.rmSync(data, {recursive: true, force: true});
+      }
+    });
+
     it('keysUnder pages through SCAN, and list and remove use it', async () => {
       const keys = [];
       for (let i = 0; i < 9; i++) keys.push(`${ns.sessionPrefixFor('mod', A)}k${i}`);

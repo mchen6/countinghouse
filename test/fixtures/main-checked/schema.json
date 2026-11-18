@@ -177,7 +177,8 @@
               "garbage",
               "invalid",
               "deep",
-              "huge"
+              "huge",
+              "replace"
             ]
           },
           "n": {
@@ -194,6 +195,12 @@
         "properties": {
           "ok": {
             "const": true
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "pad": {
+            "type": "string"
           }
         },
         "required": [

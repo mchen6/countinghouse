@@ -135,7 +135,7 @@ describe('auth 32: a syntax error at startup is logged without the file\'s conte
       const script = `
         require(${JSON.stringify(path.join(lib, 'cli-options'))}).setOptions({workerThread: false});
         const LOG = require(${JSON.stringify(path.join(lib, 'logger'))});
-        LOG.createLogger(false);
+        LOG.createLogger();
         const lines = [];
         LOG.E = (e) => { lines.push(String(e && e.message ? e.message : e)); return e; };
         const P = require(${JSON.stringify(path.join(lib, 'auth', 'file-provider'))});

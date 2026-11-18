@@ -1,4 +1,4 @@
-// CHUtil's HTTP helper, on first use (test/sandbox/40 and 09): whether its
+// CHUtil's HTTP helper (test/sandbox/40 and 09): whether its
 // library is in this worker yet, and one call through it.
 const loaded = () => ({
   request: Object.keys(require.cache).some((k) => /[\\/]node_modules[\\/]postman-request[\\/]/.test(k))

@@ -29,7 +29,7 @@ const options = require('../../lib/cli-options');
 // set again before this file's tests: a folder run requires every file first
 const OPTIONS = {redisUrl: redisUrlFor(), authConfigPath: AUTH, listPageSize: 10};
 options.setOptions(OPTIONS);
-require('../../lib/logger').createLogger(false);
+require('../../lib/logger').createLogger();
 const gateway = require('../../lib/mcp/gateway');
 const moduleSpec = require('../../lib/module-spec');
 const callAddress = require('../../lib/call-address');

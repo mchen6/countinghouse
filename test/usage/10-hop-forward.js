@@ -24,7 +24,7 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   let DeviceManager, usage, CountinghouseError;
   before(() => {
     require(path.join(LIB, 'cli-options')).setOptions({redisUrl: 'redis://127.0.0.1:9749', workerThread: true});
-    require(path.join(LIB, 'logger')).createLogger(false);
+    require(path.join(LIB, 'logger')).createLogger();
     ({CountinghouseError} = require(path.join(LIB, 'countinghouse-error')));
     savedAuth = require.cache[authPath];
     require.cache[authPath] = {id: authPath, filename: authPath, loaded: true,
@@ -54,7 +54,11 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const replies = [];
     const callee = {workerId: 2, sendInvokeActionMessage: (m, cb) => sent.push({m, cb})};
     const caller = {workerId: 1, sendActionInvokeReplyToChild: (m) => replies.push(m), bindings: DECLARES_D2};
-    return {sent, replies, callee, caller, dm: {deviceMap: {d2: callee}}};
+    // a hop asks the manager for its callee's worker (R1 Task 5: workerFor)
+    // the real prototype: the hop asks replacingInPlace (M4a), false with no
+    // module manager
+    const dm = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {d2: callee}});
+    return {sent, replies, callee, caller, dm};
   }
   // R2-1 Task 4: the calling module (device d1) declared svc/act on d2, as a
   // hop's target must be declared; the call's token is for d1
@@ -73,7 +77,8 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
   const hopInput = require('../../lib/hop-input');
   const asSent = (args) => hopInput.encode(args).args;
   const forward = (w, args) => DeviceManager.prototype.sendInvokeActionMessageToWorker.call(w.dm, 'k', 'k', 'd2', 'svc', 'act', asSent(args), 'm1', w.caller, tokenFor(w.caller.workerId));
-  const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return hopInput.decodeArgs(rest); };
+  // (the decoded args have no prototype, by design: compared by their fields)
+  const forwarded = (w) => { const {token, ...rest} = w.sent[0].m.args; assert.strictEqual(typeof(token), 'string', 'the callee got no token of its own'); return {...hopInput.decodeArgs(rest)}; };
   const begin = () => { const c = usage().beginCall({pack: 'p', module: 'p', tool: 't', caller: 'u_a'}); begun.push(c); return c; };
 
   it('the gateway\'s call is granted to the worker invokeAction sends it to', () => {
@@ -192,7 +197,8 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const CHUtil = require(path.join(LIB, 'countinghouse-util'));
     const ci = CHUtil.ci;
     const seen = [];
-    CHUtil.ci = {invokeDeviceAction: (d, s, a, args) => { seen.push(args); finish(); }};
+    // (the callee's args have no prototype, by design: compared by their fields)
+    CHUtil.ci = {invokeDeviceAction: (d, s, a, args) => { seen.push({...args}); finish(); }};
     const ch = new MessageChannel();
     peerRestore = () => { CHUtil.ci = ci; ch.port1.close(); };
     // since lean worker step 4 (the review of #202) the match answers with
