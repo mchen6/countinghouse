@@ -93,6 +93,10 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       dm.packageOfModule = DeviceManager.prototype.packageOfModule.bind(dm);
       assert.strictEqual(dm.moduleOfDevice(idOf('ps')), '@acme/ps');
       assert.ok(require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/ps', {live: true})));
+      // no session worker of it either: not live, its pin does not answer
+      dm.moduleManager.lifecycle.liveUnder = () => null;
+      assert.strictEqual(dm.moduleOfDevice(idOf('ps')), null);
+      assert.ok(!require('../../lib/module-settings').declaresSettings(dm.packageOfModule('@acme/ps', {live: true})));
     });
 
     it('a module that declares settings, with no state here: refused SETTING_NOT_READY, never run unchecked', () => {

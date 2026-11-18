@@ -50,9 +50,7 @@ describe('validation 28: a peer match to a module whose required setting is unse
   // a peer hop's error as the callee posts it (lib/peer-worker.js): its fields and data, as bytes
   const errorBytesOf = (code, message) => require('../../lib/serialized-result').serialize({fields: {errMsg: message, errCode: code}, data: null});
   const toAB = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
-  // `flagged`: what a callee's worker once said of its own error (no longer
-  // read: the main thread decodes every error)
-  function billWith(code, message, flagged = (code === 'SETTING_REQUIRED' || code === 'SETTING_NOT_READY')) {
+  function billWith(code, message) {
     const PeerChannelBroker = require('../../lib/peer-channel-broker');
     const decl = ms.parseDeclaration({name: 'callee', countinghouse: {settings: {region: {type: 'string'}, units: {type: 'enum', values: ['a'], default: 'a'}}}}).settings;
     const callee = Object.assign(Object.create(require('../../lib/worker-message').prototype), {workerId: 86, hostModuleName: 'callee',
@@ -64,7 +62,7 @@ describe('validation 28: a peer match to a module whose required setting is unse
       calleeName: 'callee', actionName: 'act', limits: null, at: Date.now(), deadline: Date.now() + 60000});
     b.unbilledPerChannel.set('ch', 1);
     const bytes = errorBytesOf(code, message);
-    b.handleBillRequest({token: 'tok', channel: 'ch', invokeId: 1, served: false, settingClaim: flagged, errorBytes: (bytes instanceof ArrayBuffer) ? bytes : toAB(bytes)}, 'm2', callee);
+    b.handleBillRequest({token: 'tok', channel: 'ch', invokeId: 1, served: false, errorBytes: (bytes instanceof ArrayBuffer) ? bytes : toAB(bytes)}, 'm2', callee);
     return results;
   }
 
@@ -88,9 +86,9 @@ describe('validation 28: a peer match to a module whose required setting is unse
 
   it('a settings claim is checked whatever the callee\'s worker says of it: decoded on the main thread, never by its flag', () => {
     // no flag, a claim for a setting not declared: a module fault all the same
-    const results = billWith('SETTING_REQUIRED', 'nope', false);
+    const results = billWith('SETTING_REQUIRED', 'nope');
     assert.strictEqual(results[0].errCode, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(results[0]));
-    const forged = billWith('SETTING_NOT_READY', 'not ready', false);
+    const forged = billWith('SETTING_NOT_READY', 'not ready');
     assert.strictEqual(forged[0].errCode, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(forged[0]));
   });
 
