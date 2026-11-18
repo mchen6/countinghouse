@@ -230,32 +230,22 @@ any module code). Stops:
   the module's directory); `module.registerHooks`/`register` are locked so no
   later hook can run ahead of the boundary; and `Module._load`, which module
   code reaches as `module.constructor._load`, forwards only its request,
-  parent and isMain, locked, so its internal fourth argument (which skips
-  the resolve hooks, or hands over a resolution or source) never skips
-  them. Nor does it hand Node the caller's parent: Node's relative-resolve
-  cache, answered before any hook, is keyed by the parent's directory, so a
-  parent module code forged (or one whose fields it changes mid-load) could
-  record its own file under countinghouse's lib/ key for the runtime's later
-  require of the same name. Node gets a frozen stand-in built from the
-  parent's filename alone (read once, absolute), so the key, the URL the
-  hooks see and the resolution all come from one string; a required file's
-  `module.parent` is then a data-only stand-in named for the requiring
-  file, and the requiring file's `module.children` is not updated. Node's path
-  cache, keyed the same way, reads as empty. Under `audit`, replacing
-  `Module._load`, `Module._resolveFilename`, `Module.prototype.load` or the
-  extension handlers is reported, and under `enforce` they are locked, the
-  extensions table takes no new extension, and the lockdown doesn't start
-  on a Node line where it can't find how Node stores a parent's URL. **Until
-  #194's next step (no lazy runtime load after the lockdown), other routes
-  into what the runtime loads later are one assignment away for module
-  code:** a planted `require.cache` entry or `Module._cache` replaced;
-  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced;
-  an accessor on `Module.prototype` for Node's internal URL symbol; and,
-  under `audit` even with the file broker, `_findPath` and `_stat`. #194's
-  later steps close them (the runtime loads nothing after the lockdown;
-  the cache moved out of reach; every loader static locked). (What a forged parent with a countinghouse
-  filename may load, and the other routes into Node's loader, are #194's:
-  see its design.)
+  parent and isMain, so its internal fourth argument (which skips the
+  resolve hooks, or hands over a resolution or source) never skips them.
+  Under `enforce` it takes only a string request and never makes a main
+  module; it, `Module._resolveFilename`, `Module.prototype.load` and the
+  extension handlers are locked, and the extensions table takes no new
+  extension. Under `audit` each replacement is reported. **Until #194's
+  next step (no lazy runtime load after the lockdown), other routes into
+  what the runtime loads later are one assignment away for module code:**
+  a planted `require.cache` entry or `Module._cache` replaced; Node's
+  relative-resolve cache poisoned through a parent module code forges (its
+  path a countinghouse directory, its filename the module's own);
+  `Module.prototype.require`, `_compile` or `Module.wrapper` replaced; an
+  accessor on `Module.prototype` for Node's internal URL symbol; and, under
+  `audit` even with the file broker, `_findPath` and `_stat`. #194's later
+  steps close them (the runtime loads nothing after the lockdown; the cache
+  moved out of reach; every loader static locked);
 - other routes to files: `module.enableCompileCache`, `process.report`'s
   file output and `process.setSourceMapsEnabled` are locked;
   `process.loadEnvFile` goes through the file broker;

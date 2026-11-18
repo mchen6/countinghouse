@@ -147,7 +147,7 @@ one) as well as the ports it binds.
 | `test/sandbox/01-modes.js` | 9605 |
 | `test/sandbox/02-permissions.js` | 9606 |
 | `test/sandbox/04-load-time.js` | 9607 |
-| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9774 |
+| `test/sandbox/05-lockdown.js` | 9608–9610, 9771–9772 |
 | `test/sandbox/07-restart.js` | 9611–9614 |
 | `test/sandbox/08-limits.js` | 9613 |
 | `test/sandbox/09-hardened.js` | 9614 |

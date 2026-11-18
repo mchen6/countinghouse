@@ -32,121 +32,14 @@ const ATTEMPTS = {
   loadSkipHooks:    () => module.constructor._load('node:child_process', null, false, {shouldSkipModuleHooks: true}),
   // (worker_threads: a target of its own, so its report is told apart)
   loadResolved:     () => module.constructor._load('worker_threads', null, false, {resolved: {filename: 'worker_threads', url: 'node:worker_threads', format: 'builtin'}}),
-  // #406's second review: Node's relative-resolve cache is keyed by the
-  // parent's path, answered before any hook. A parent with countinghouse's
-  // lib/ as its path and the module's own file as its filename records the
-  // module's decoy lib/bind-address.js under the lib's key; the runtime's
-  // first getHostIp then requires './bind-address' from lib/ and gets it.
-  poisonRelative:   () => {
-    const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
-    if (key == null) throw new Error('no countinghouse-util in the cache');
-    const path = require('path');
-    const forged = {id: 'forged', path: path.dirname(key), filename: path.join(__dirname, '..', '..', 'lib', 'decoy.js'), paths: [], children: []};
-    module.constructor._load('./bind-address', forged, false);
-    if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
-  },
-  // a forged parent of every kind the reviews of #406 found: none of them
-  // may record the module's decoy under lib/'s key (the shadow parent
-  // takes only its filename); a request that is no string, isMain and a
-  // filename that throws are refused
+  // B1's own checks (#406): a request that is no string, and isMain
   forgeParent:      (arg) => {
-    const path = require('path');
     const M = module.constructor;
-    const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
-    const libDir = path.dirname(key);
-    // (a directory of its own per variant, with its own decoy: no variant is
-    // answered from the cache entry another's load made)
-    const ownDir = path.join(__dirname, '..', '..', 'lib', 'v', String(arg));
-    const agreeing = (dir) => Object.assign(new M(path.join(dir, 'decoy.js'), null), {filename: path.join(dir, 'decoy.js'), paths: M._nodeModulePaths(dir)});
-    const variants = {
-      // the key's directory is lib/, the resolution's the module's own
-      dirname: () => Object.assign(agreeing(ownDir), {path: libDir}),
-      paths: () => Object.assign(agreeing(ownDir), {paths: []}),
-      noId: () => Object.assign(agreeing(ownDir), {id: ''}),
-      plainObject: () => Object.assign({}, agreeing(ownDir)),
-      // agrees when checked, then Node's own read of id moves path to lib/
-      idGetter: () => {
-        const p = agreeing(ownDir);
-        Object.defineProperty(p, 'id', {configurable: true, get() { this.path = libDir; return 'x'; }});
-        return p;
-      },
-      // (its own throw, in words of its own: blocked only if the wrapper refuses)
-      filenameThrows: () => Object.defineProperty({}, 'filename', {get() { throw new Error('the module\'s own throw'); }})
-    };
-    if (arg === 'builtinModule') return M._load('module', Object.assign(agreeing(ownDir), {path: libDir}), false);
-    if (arg === 'relativeFilename') return M._load('./bind-address', {filename: 'decoy.js'}, false);
-    // a relative filename that leads to the module's decoy, with lib/ as the
-    // path Node would key on (the medium review of 243abf5d)
-    if (arg === 'relativeWithPath') {
-      return M._load('./bind-address', {path: libDir, filename: path.relative(process.cwd(), path.join(ownDir, 'decoy.js')), paths: []}, false);
-    }
-    if (arg === 'nonObject') return M._load('./bind-address', 5, false);
-    // a primitive parent whose prototype carries lib/ as the path Node keys
-    // on, and the module's decoy as its filename (the medium review of
-    // 0fd4a67b)
-    if (arg === 'primitiveProto') {
-      const fields = {path: libDir, id: 'x', filename: path.join(ownDir, 'decoy.js'), paths: []};
-      for (const k of Object.keys(fields)) Object.defineProperty(Number.prototype, k, {configurable: true, value: fields[k]});
-      try { return M._load('./bind-address', 5, false); } finally { for (const k of Object.keys(fields)) delete Number.prototype[k]; }
-    }
-    // a filename that throws on the wrapper's read only, then names the decoy
-    if (arg === 'filenameThrowsOnce') {
-      let n = 0;
-      return M._load('./bind-address', {path: libDir, paths: [], id: 'x', get filename() { if (n++ === 0) throw new Error('once'); return path.join(ownDir, 'decoy.js'); }}, false);
-    }
-    // Node's path cache, keyed by the request and the directory it is looked
-    // up in: an entry for the runtime's first './bind-address' from lib/
-    if (arg === 'pathCache') {
-      M._pathCache[`./bind-address\u0000${libDir}`] = path.join(__dirname, '..', '..', 'lib', 'v', 'dirname', 'bind-address.js');
-      return undefined;
-    }
-    const decoy = (got) => {
-      if (got == null || typeof(got.hostIp) !== 'function' || got.hostIp() !== 'POISONED') throw Object.assign(new Error('the decoy did not load'), {code: 'NOT_LOADED'});
-    };
-    // no parent: passed through as given, and loads
-    if (arg === 'nullParent' || arg === 'undefinedParent') {
-      return decoy(M._load(path.join(__dirname, '..', '..', 'lib', 'v', 'dirname', 'bind-address.js'), arg === 'nullParent' ? null : undefined, false));
-    }
-    if (arg === 'objectRequest') {
-      const p = agreeing(ownDir);
-      return M._load({toString() { p.path = libDir; return './bind-address'; }}, p, false);
-    }
-    if (arg === 'isMain') return M._load(path.join(ownDir, 'bind-address.js'), null, true);
-    // each loads its own decoy (from its own directory, under its own key)
-    return decoy(M._load('./bind-address', variants[arg](), false));
+    if (arg === 'objectRequest') return M._load({toString() { return './attempt'; }}, module, false);
+    if (arg === 'isMain') return M._load(__filename, null, true);
+    throw new Error(`unknown variant ${arg}`);
   },
   createRequireOwn: () => require('module').createRequire(__filename)('./attempt'),
-  // nothing of the caller's is touched for linkage: an own parent accessor
-  // on the runtime's child and a children accessor on the runtime's Module
-  // are each set while the runtime requires through it; neither may run
-  linkageSpy:       () => {
-    const key = Object.keys(require.cache).find((k) => /[\\/]lib[\\/]countinghouse-util\.js$/.test(k));
-    const runtime = require.cache[key];
-    const seen = [];
-    const kids = runtime.children;
-    Object.defineProperty(runtime, 'children', {configurable: true, get() { seen.push('children'); return kids; }, set() { seen.push('children='); }});
-    const kid = require.cache[require('path').join(require('path').dirname(key), 'bind-address.js')];
-    if (kid != null) Object.defineProperty(kid, 'parent', {configurable: true, get() { seen.push('parent'); return undefined; }, set() { seen.push('parent='); }});
-    try {
-      CHUtil.getHostIp();
-    } finally {
-      Object.defineProperty(runtime, 'children', {value: kids, writable: true, enumerable: true, configurable: true});
-      if (kid != null) delete kid.parent;
-    }
-    if (seen.length > 0) throw Object.assign(new Error(`linkage ran module code: ${seen.join(', ')}`), {code: 'SEEN'});
-  },
-  // and none emulated (#406): the module's own require gives its child a
-  // data-only stand-in for a parent, named for this file (so "am I main" is
-  // still no), and leaves this module's own children as they were
-  linkageNone:      () => {
-    const before = module.children.length;
-    const kid = require('../../lib/kid');
-    const child = require.cache[require.resolve('../../lib/kid')];
-    const p = kid.parentAtLoad;
-    const ok = child != null && kid.mainAtLoad === false && p != null && p !== module && p.filename === module.filename &&
-      Array.isArray(p.children) && child.parent === p && module.children.length === before;
-    if (!ok) throw Object.assign(new Error('linked'), {code: 'LINKED'});
-  },
   // under audit an assignment of load on one Module is that Module's own
   instanceLoad:     () => {
     const M = module.constructor;
@@ -156,9 +49,6 @@ const ATTEMPTS = {
     one.load = mine;
     if (M.prototype.load !== before) throw Object.assign(new Error('worker-wide'), {code: 'WORKER_WIDE'});
     if (Object.hasOwn(one, 'load') && one.load === mine) throw Object.assign(new Error('own'), {code: 'OWN'});
-  },
-  hostIpClean:      () => {
-    if (CHUtil.getHostIp() === 'POISONED') throw Object.assign(new Error('poisoned'), {code: 'POISONED'});
   },
   // each loader property #406 holds: whether a replacement takes (put back
   // at once where it does, under audit, where it is reported)
