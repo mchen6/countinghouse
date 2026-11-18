@@ -80,6 +80,7 @@ describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity pro
       dm.deviceOwners = new Map(Object.entries(dm.deviceMap).map(([id, d]) => [id, d.packageInfo.name]));
       // the device manager's own answer of a device's module, in the map or out of it
       dm.moduleOfDevice = require('../../lib/device-manager').prototype.moduleOfDevice;
+      dm.packageOfModule = require('../../lib/device-manager').prototype.packageOfModule;
       dm.moduleManager.modules = {};
       for (const id of gone) {
         const {packageInfo} = dm.deviceMap[id];
