@@ -138,6 +138,57 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
     });
   });
 
+  describe('the high review\'s cases', () => {
+    it('a task run refused SETTING_REQUIRED is never retried', () => {
+      assert.strictEqual(require('../../lib/job-control-common').notRetried('SETTING_REQUIRED'), true);
+    });
+
+    it('its setting names ride the stored failure, and tasks/result reads them back', () => {
+      const common = require('../../lib/job-control-common');
+      const err = CountinghouseError.withFields('SETTING_REQUIRED', {module: 'm', settings: 'region', hint: 'h', missingSettings: ['region']});
+      const stored = common.failureText(err, null);
+      assert.ok(stored.startsWith('SETTING_REQUIRED: m needs a setting'));
+      assert.ok(stored.endsWith(`${common.MISSING_SETTINGS}region`), JSON.stringify(stored));
+    });
+
+    it('a send with no args attaches no values, so records no version', () => {
+      const dmLib = require('../../lib/device-manager');
+      const wm = Object.create(WorkerMessage.prototype);
+      wm.moduleSpec = null;
+      wm.sendInvokeActionMessage = () => {};
+      const st = stateWith({u: {type: 'string', default: 'x'}}, {}, 77);
+      dmLib.sendCounted(wm, {deviceID: 'd', serviceID: 's', actionName: 'a', args: null, settingsState: st}, () => {}, null, null, {deviceMap: {}});
+      assert.ok(gate.toCarry(wm, st).values != null, 'not recorded: the values go with the next call');
+      const sentArgs = {input: {}};
+      dmLib.sendCounted(wm, {deviceID: 'd', serviceID: 's', actionName: 'a', args: sentArgs, settingsState: st}, () => {}, null, null, {deviceMap: {}});
+      assert.ok(sentArgs.settings != null && sentArgs.settings.values != null, 'attached');
+      assert.deepStrictEqual(gate.toCarry(wm, st), {v: 77}, 'recorded once attached and posted');
+    });
+
+    it('a declared graph past the walk\'s cap is refused, never checked in part', () => {
+      const chain = {};
+      for (let i = 0; i < 300; i++) chain[`n${i}`] = {calls: i < 299 ? [`n${i + 1}`] : []};
+      const dm = dmWith(chain);
+      require('../../lib/tool-generation').bump();
+      const err = gate.requiredRefusal(dm, dm.idOf('n0'), true);
+      assert.ok(err != null && err.code === 'MODULE_COMPOSITION_INVALID' && /cannot all be checked/.test(err.message), String(err && err.message));
+    });
+
+    it('the reach is kept until the tool set changes: a new binding is walked after the next bump', () => {
+      const dm = dmWith({'top': {calls: []}, 'part': {state: stateWith({r: {type: 'string', required: true}})}});
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(gate.requiredRefusal(dm, dm.idOf('top'), true), null);
+      dm.deviceMap[dm.idOf('top')].bindings[dm.idOf('top')].targets.add(`${dm.idOf('part')}|urn:x:serviceID:s|act`);
+      assert.strictEqual(gate.requiredRefusal(dm, dm.idOf('top'), true), null, 'kept: the same generation');
+      require('../../lib/tool-generation').bump();
+      assert.ok(gate.requiredRefusal(dm, dm.idOf('top'), true) != null, 'walked again after the bump');
+    });
+
+    it('both rings are the one constant\'s', () => {
+      assert.strictEqual(gate.KEPT, require('../../lib/settings-ring').KEPT);
+    });
+  });
+
   describe('ctx.settingRequired\'s claim', () => {
     const claim = (name) => { const e = new CountinghouseError('SETTING_REQUIRED'); e.message = name; return e; };
     const dm = dmWith({

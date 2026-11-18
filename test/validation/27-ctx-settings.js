@@ -31,6 +31,10 @@ describe('validation 27: ctx.settings and ctx.settingRequired', () => {
     assert.strictEqual(ctxWith({v: 101}).settings, first);
   });
 
+  it('the ring is the shared constant\'s (lib/settings-ring.js: four)', () => {
+    assert.strictEqual(require('../../lib/settings-ring').KEPT, 4);
+  });
+
   it('the last four versions are kept: a fifth pushes the oldest out', () => {
     for (const v of [201, 202, 203, 204]) ctxWith({v, values: {n: v}});
     assert.strictEqual(ctxWith({v: 201}).settings.n, 201);
