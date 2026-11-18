@@ -802,8 +802,8 @@ is no private compile path. So:
   - the live-options file;
   - bind-address;
   - the patch's built-ins;
-  - postman-request (always under audit; under enforce when the module
-    declares `net`);
+  - postman-request, when the module declares `net`, in both modes
+    (revised by Revision 6's item 11: no longer always under audit);
   - the validator closure (on `validateOnly`);
   - each re-require, hoisted;
   - `reachesLib`'s lookup (below).
@@ -839,15 +839,18 @@ after the lockdown, then resolves: the planted path is never used.
 ### The rest of the review (accepted)
 
 1. The three runtime loads of module files (lean-dispatcher.js:36,
-   countinghouse-util.js:90, module-validator.js:31) get a null parent.
+   countinghouse-util.js:90, module-validator.js:31) get a null parent
+   (revised by Revision 6's item 8: the module's own anchor).
    Every runtime `Module` gets `parent` undefined and empty `children`. The
    test checks `module.parent` at all three sites.
 2. The cache Proxy (A) has every trap: `get`, `set`, `has`, `deleteProperty`,
    `ownKeys`, `getOwnPropertyDescriptor`, `defineProperty` (which wrote
    through), `getPrototypeOf`, `setPrototypeOf`, `isExtensible` and
    `preventExtensions`. Each is tested.
-3. Under audit, postman-request is always preloaded (audit allows a request
-   enforce would refuse, so it's always reachable there).
+3. ~~Under audit, postman-request is always preloaded (audit allows a request
+   enforce would refuse, so it's always reachable there).~~ Revised by
+   Revision 6's item 11: preloaded only when the module declares `net`, in
+   both modes.
 4. A genuine-parent out-of-root load is refused under audit too: audit's
    private cache (Revision 4, A) holds only module-root files, and there is
    no out-of-root runtime load to serve under B2.
@@ -876,8 +879,9 @@ after the lockdown, then resolves: the planted path is never used.
 - `module.parent` at the three runtime-load sites.
 - An all-strict pin: every file under `lib/` starts with `'use strict'`
   (no sloppy runtime frame).
-- A request with no `net` under audit: allowed and reported, through the
-  preloaded postman-request.
+- A request with no `net` under audit: allowed, and reported as a `net`
+  report; postman-request loads then, after the lockdown (Revision 6's
+  item 11).
 
 ### PRs and estimate, revised
 
@@ -978,10 +982,13 @@ parent passed from module code is refused by the net.
      (client-text).
    - sshpk's ssh-private.js:70/191 lazily requires bcrypt-pbkdf on the first
      encrypted OpenSSH key, reached through the allowed `httpSignature`
-     request option. **Ruling: the `httpSignature` option is refused in
-     release 1, in both modes** (an audit-only failure in the middle of a
-     request would be worse), documented in the module-authoring guide and
-     security-model.md, instead of preloading bcrypt-pbkdf.
+     request option. ~~Ruling: the `httpSignature` option is refused in
+     release 1, in both modes.~~ **Revised (#425's review): bcrypt-pbkdf is
+     preloaded with postman-request** (along postman-request ->
+     http-signature -> sshpk), so sshpk's require on an encrypted key is a
+     hit in Node's cache whatever route the option takes (a prototype, a
+     second argument, the Request's own `.httpSignature()`); the refusal is
+     dropped, and nothing changes for a module.
 4. **The "no runtime resolution" test** records `_load`,
    `_resolveFilename`, `createRequire` and `getBuiltinModule` (a runtime
    parent or caller, after the lockdown, while each late path runs). Also:
@@ -1004,14 +1011,31 @@ parent passed from module code is refused by the net.
    module root's host `node_modules` paths (F4-1's fix 2 resolves a module
    request with a host parent). `grant.resolving` drops the code roots for
    non-module parents (identity.js around 403).
-8. **A null parent** gives `module.parent === null` (Node's own value).
-   The three runtime loads of module files assert `null`, consistently.
+8. ~~A null parent gives `module.parent === null`.~~ **Revised (#425's
+   review): a module-side anchor.** A null parent makes
+   `if (!module.parent) main()` (the CLI idiom) run a module's entry-point
+   code inside the worker on every load. The three runtime loads of module
+   files have the module's own anchor as parent instead: one `Module` per
+   module root, made on its first load, its file inside the root
+   (`/app/.countinghouse-entry`, no file on disk). Its `require` is the
+   module's own, so it hands module code nothing new. A test loads a
+   handler and a `loadFile` file that throw when `!module.parent`, and
+   checks that the parent's filename is inside the module root.
 9. **F4-1's not-found** names only the request (PR 0 already throws its
    own error, with no require stack and no host parent). A test asserts the
    message and `requireStack`.
 10. **#406's comment** now says every load it makes runs the hooks, apart
     from what Node answers from its own caches; blocking 2's check covers
     the one that mattered.
+11. **Revision 5's item 3 is revised: postman-request is preloaded only
+    when the module declares `net`, under audit and enforce alike.**
+    Preloading it on every audit worker costs about 240 files at boot (PR
+    1's measure on sandbox 43). A no-net module's request under audit loads
+    it after the lockdown instead. Audit isn't a boundary: the request
+    itself is reported (a `net` report naming its target), and it carries
+    only the module's own options, so the late load exposes nothing the
+    module didn't already hold. Under enforce a no-net request is refused
+    before the load.
 
 ### Audit under S, and what S names (the fourth review's rulings)
 
@@ -1041,9 +1065,10 @@ parent passed from module code is refused by the net.
     PR 1 makes it unnecessary.
 0. F4-1, with identity tagging lib-reaching not-founds, the own-data
    parent, and item 9's test. About 0.5 d.
-1. The must-preload list (Revision 5's, plus item 3), `httpSignature`
-   refused under enforce, null parents at the three sites, and item 4's
-   static pin. About 2 d.
+1. The must-preload list (Revision 5's, plus item 3; postman-request on
+   `net` only, item 11), bcrypt-pbkdf with it (item 3, revised), the
+   module's anchor as parent at the three sites (item 8, revised), and item
+   4's static pin. About 2 d.
 2. P: the cache entries moved and the property locked (no Proxy); `load`
    serving only the `Map` by path arithmetic; C; S with `_pathCache` as
    the empty Proxy; the genuine set, added to #406's wrapper and checked

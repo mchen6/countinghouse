@@ -409,7 +409,7 @@ directories, is another path and is not refused. A module cannot make one
 `enforce` a module whose `/data` or `/tmp` holds one does not start); the
 limit is a link that an operator, or other software on the machine, left
 where a module may read. A pack loaded in place may come with a credentials
-file of its own, read when the pack is loaded (`lib/packs-in-place.js`):
+file of its own, read when the pack is loaded (`lib/modules-in-place.js`):
 that file is no option of the runtime's, so it is not a protected path by
 itself; ch-local writes it under `run/` in its home, which is protected as
 a whole. The one exception is the module's own `/app`, `/data` and `/tmp`, by
@@ -1195,6 +1195,48 @@ These events are **not recorded in this release**:
 - how far a cancelled call had run (only its time and bytes);
 - a list cursor refused.
 
+### Modules loaded in place, by module (ch-local's control channel)
+
+ch-local loads, reloads and unloads modules while the runtime serves
+(`lib/modules-in-place.js`; #413 section 7). In the module form a message
+names a top-level module by its package name and gives `dirs`, the
+directory of each module of its closure:
+
+- **Only the module store.** Every directory a message gives, and every
+  `--loadModule` and `--partDir` directory of a start given `--modulesRoot`,
+  must lie inside `--modulesRoot` by real path, with no link leading out
+  anywhere in it, and hold the package its key names. A module calls its
+  parts only among the directories given: there is no `node_modules`
+  search, so a package planted in `~/node_modules`, or beside a module, with
+  a part's friendly name is never loaded as that part (`PART_MISSING`).
+- **Hidden while it changes.** What a load newly brings in is in no list
+  and reached by no call, hop, direct peer channel or job run until every
+  module of it is up; what an unload takes away is hidden from its start.
+  A module whose unload fails (still in the module map) stays hidden until
+  the runtime ends, and a load whose closure holds it is refused
+  (`lib/module-visibility.js`).
+- **The ceiling by module.** A trusted ceiling's `modules` list must name
+  every module of a closure, parts included (`SETTING_FORBIDDEN_BY_CEILING`
+  for one it leaves out). A ceiling that still lists `packs` and no
+  `modules` refuses every module-form load (fail closed).
+- **Credentials by repetition only.** A load's `credentials` may only
+  repeat a binding the start's `--remoteCredentials` file fixed (the same
+  slot for the same module, origin and variable): a message can never bind
+  a key anew.
+- **A module the runtime gives up on.** On a runtime with a control
+  channel, a module the supervisor would suspend (three exits within ten
+  minutes, or a restart the sandbox refuses) has every unit that holds it
+  unloaded by the runtime itself, on the channel's own chain; only once
+  nothing of it is left is ch-local told `module-stopped`, so ch-local and
+  the runtime never disagree about what is loaded. A top-level module the
+  start refused is told the same way, with `when: "start"`. Without a
+  control channel a suspended module stays suspended and listed until
+  `POST /restart-module`.
+
+The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
+is still taken until it is removed, never mixed with the module form in one
+message.
+
 ### Modules that keep state per session
 
 On the shared runtime, a module that declares
@@ -1289,15 +1331,38 @@ and the short list of what the in-process sandbox cannot give.
   still use modules countinghouse loaded before the lockdown, and read
   countinghouse's own code files. `CHUtil` and everything else loaded before
   lockdown stay part of the review checklist for every change to
-  `lib/countinghouse-util.js`. postman-request, behind `CHUtil.request` and
-  a remote service client, loads on its first use instead
-  (`lib/lazy-require.js`), after module code has run, so a module can plant
-  `require.cache` entries for it in its own worker first. That reaches only calls made in that worker, which carry the
-  keys the module itself passes; the library is loaded once and kept, so
-  nothing planted after its first use is read. Everything a call's token
-  goes through is loaded at a worker's boot instead, and its exports and
-  classes' prototypes are fixed there (above), so what module code reaches
-  this way it can read, not change.
+  `lib/countinghouse-util.js`. Nothing of the runtime's own loads or
+  resolves after the lockdown (#194's PR 1): what it used to load on first
+  use (the worker logger, redis-api, bind-address, the live options, the
+  file broker's built-ins, the validator's files in a validation worker) is
+  loaded at a worker's boot, so a `require.cache` entry or a relative
+  resolution module code plants has no runtime load to reach.
+  test/sandbox/66 records every runtime `_load`, `_resolveFilename`,
+  `createRequire` and `getBuiltinModule` after the lockdown on each of
+  those paths, and test/sandbox/67 pins the boot closure, dependencies
+  included, against a `require` inside a function. postman-request, behind
+  `CHUtil.request` and a remote service client, is loaded at set-options,
+  before the lockdown, when the module declares `net`, in both modes. A
+  module with no `net` under `enforce` has every request refused before
+  the library is reached. Under `audit` such a request is allowed and
+  reported, and postman-request then loads after the lockdown, so a module
+  can plant `require.cache` entries for it first: audit isn't a boundary,
+  and the request carries only the options the module itself passes, so
+  the late load exposes nothing it didn't already hold (preloading it on
+  every audit worker would cost about 240 files at each boot).
+  bcrypt-pbkdf, which sshpk requires on the first encrypted OpenSSH key
+  (the `httpSignature` option), is warmed with postman-request, so that
+  require is a hit in Node's cache however the option arrives. The options
+  are put together as postman-request does (a second options argument
+  included): enforce hands on only their checked own keys, with no
+  prototype; audit hands on postman-request's own copy (own and inherited
+  keys, each read once) and reports over that same copy. A module file the
+  runtime loads (a handler, `CHUtil.loadFile`) has the module's own anchor
+  as parent, a `Module` whose file is inside the module root, never a
+  runtime `Module` (and never null, which would read as a main module).
+  Everything a call's token goes through is loaded at a worker's boot, and
+  its exports and classes' prototypes are fixed there (above), so what
+  module code reaches this way it can read, not change.
 - **A module can obtain a peer port transferred into its worker.** Node
   writes the array of ports a message transferred natively, index by index,
   before any JavaScript runs, so a setter module code puts on an index of

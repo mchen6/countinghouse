@@ -55,7 +55,10 @@ describe('usage: the main thread grants and checks usage call ids where calls ar
     const callee = {workerId: 2, sendInvokeActionMessage: (m, cb) => sent.push({m, cb})};
     const caller = {workerId: 1, sendActionInvokeReplyToChild: (m) => replies.push(m), bindings: DECLARES_D2};
     // a hop asks the manager for its callee's worker (R1 Task 5: workerFor)
-    return {sent, replies, callee, caller, dm: {deviceMap: {d2: callee}, workerFor: DeviceManager.prototype.workerFor}};
+    // the real prototype: the hop asks replacingInPlace (M4a), false with no
+    // module manager
+    const dm = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {d2: callee}});
+    return {sent, replies, callee, caller, dm};
   }
   // R2-1 Task 4: the calling module (device d1) declared svc/act on d2, as a
   // hop's target must be declared; the call's token is for d1
