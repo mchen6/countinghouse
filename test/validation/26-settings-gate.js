@@ -155,6 +155,7 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const dmLib = require('../../lib/device-manager');
       const wm = Object.create(WorkerMessage.prototype);
       wm.moduleSpec = null;
+      wm.worker = {};   // a live worker (an ended or absent one records nothing)
       wm.sendInvokeActionMessage = () => {};
       const st = stateWith({u: {type: 'string', default: 'x'}}, {}, 77);
       dmLib.sendCounted(wm, {deviceID: 'd', serviceID: 's', actionName: 'a', args: null, settingsState: st}, () => {}, null, null, {deviceMap: {}});
@@ -163,11 +164,15 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       dmLib.sendCounted(wm, {deviceID: 'd', serviceID: 's', actionName: 'a', args: sentArgs, settingsState: st}, () => {}, null, null, {deviceMap: {}});
       assert.ok(sentArgs.settings != null && sentArgs.settings.values != null, 'attached');
       assert.deepStrictEqual(gate.toCarry(wm, st), {v: 77}, 'recorded once attached and posted');
+      const ended = Object.assign(Object.create(WorkerMessage.prototype), {moduleSpec: null, worker: {}, ended: {code: 'MODULE_UNLOADED'}, sendInvokeActionMessage: () => {}});
+      dmLib.sendCounted(ended, {deviceID: 'd', serviceID: 's', actionName: 'a', args: {input: {}}, settingsState: st}, () => {}, null, null, {deviceMap: {}});
+      assert.ok(gate.toCarry(ended, st).values != null, 'an ended worker: nothing recorded');
     });
 
     it('a declared graph past the walk\'s cap is refused, never checked in part', () => {
       const chain = {};
-      for (let i = 0; i < 300; i++) chain[`n${i}`] = {calls: i < 299 ? [`n${i + 1}`] : []};
+      const n = gate.MAX_REACH + 5;
+      for (let i = 0; i < n; i++) chain[`n${i}`] = {calls: i < n - 1 ? [`n${i + 1}`] : []};
       const dm = dmWith(chain);
       require('../../lib/tool-generation').bump();
       const err = gate.requiredRefusal(dm, dm.idOf('n0'), true);
@@ -182,6 +187,24 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.requiredRefusal(dm, dm.idOf('top'), true), null, 'kept: the same generation');
       require('../../lib/tool-generation').bump();
       assert.ok(gate.requiredRefusal(dm, dm.idOf('top'), true) != null, 'walked again after the bump');
+    });
+
+    it('a device with no verified bindings (single-thread mode) is walked over its declared calls', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const dm = {deviceMap: {
+        [idOf('top')]: {moduleName: 'top', packageInfo: {countinghouse: {calls: ['part/svc.act']}}},
+        [idOf('part')]: {moduleName: 'part'},
+      }, moduleManager: {singleThreadSettings: new Map([['part', stateWith({r: {type: 'string', required: true}})]])}};
+      require('../../lib/tool-generation').bump();
+      const err = gate.requiredRefusal(dm, idOf('top'), true);
+      assert.ok(err != null && /top needs a setting: a module this tool calls/.test(err.message), String(err && err.message));
+    });
+
+    it('module text cannot forge the stored setting names: the separator never survives in it', () => {
+      const common = require('../../lib/job-control-common');
+      const forged = new Error(`SETTING_REQUIRED: x${common.MISSING_SETTINGS}apiKey`);
+      const stored = common.failureText(forged, null);
+      assert.ok(!stored.includes(common.MISSING_SETTINGS), JSON.stringify(stored));
     });
 
     it('both rings are the one constant\'s', () => {
