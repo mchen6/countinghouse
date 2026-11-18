@@ -21,7 +21,7 @@ const notices = require('../../lib/notices');
 const settingsTool = require('../../lib/settings-tool');
 const sessionPacks = require('../../lib/session-packs');
 const {createHub, SUBSCRIPTION_ID_KEY} = require('../../lib/mcp/subscriptions');
-const {createPackControl} = require('../../lib/pack-control');
+const {createPackControl} = require('../../lib/module-control');
 
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 const until = async(test, ms = 3000) => {
@@ -117,6 +117,48 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         toolsOf: async() => [], shared: () => sessions.shared()});
       await assert.rejects(failing.load({type: 'load', name: SCENARIO('ci'), scenario: '/x/ci', pack: 'ci', global: true}));
       assert.strictEqual(sessionPacks.isGlobal('ci'), false);
+    });
+  });
+
+  // M4 Task 5 (#413 section 7.3; section 16 rule 3): a module-form message
+  // on a shared runtime, while the session view still exists (until M5)
+  describe('the module form: global, under its package name, told to every session', () => {
+    const MOD = '@countinghouse/ch-pack-mod';
+    const dirsOf = (names) => Object.fromEntries(names.map((n) => [n, `/store/${n}/1.0.0`]));
+    const modulePacks = Object.assign({}, packs, {
+      loadPack: async(mm, msg) => { calls.push(['load', msg.name]); records.set(msg.name, [`m-${msg.name}`]); return {modules: [`m-${msg.name}`]}; },
+      reloadPack: async(mm, msg) => { calls.push(['reload', msg.names.join(',')]); for (const n of msg.names) records.set(n, [`m-${n}`]); return {modules: msg.names.map((n) => `m-${n}`)}; },
+      unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); records.delete(msg.name); return {modules: [`m-${msg.name}`]}; }
+    });
+    const moduleControl = () => createPackControl({mm: {}, dm: {}, packs: modulePacks, toolsOf: async() => [], shared: () => sessions.shared()});
+
+    it('a load with no pack and no global is taken; the unit is global under its package name, listed to every session; the notice reaches each once', async() => {
+      const c = moduleControl();
+      await c.load({type: 'load', name: MOD, dirs: dirsOf([MOD]), notice: 'mod added 1.0.0'});
+      assert.deepStrictEqual(calls, [['load', MOD]]);
+      assert.strictEqual(sessionPacks.isGlobal(MOD), true);
+      assert.deepStrictEqual([A, B, C].map((id) => sessionPacks.lists(id, MOD)), [true, true, true]);
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod added 1.0.0'], ['mod added 1.0.0'], ['mod added 1.0.0']]);
+    });
+
+    it('a module-form load that fails leaves the unit not global', async() => {
+      const failing = createPackControl({mm: {}, dm: {}, packs: Object.assign({}, modulePacks, {loadPack: async() => { throw Object.assign(new Error('no'), {code: 'CONTROL_FAILED'}); }}),
+        toolsOf: async() => [], shared: () => sessions.shared()});
+      await assert.rejects(failing.load({type: 'load', name: MOD, dirs: dirsOf([MOD])}));
+      assert.strictEqual(sessionPacks.isGlobal(MOD), false);
+    });
+
+    it('a reload of several names makes each global; an unload takes the unit out of the view and tells every session once', async() => {
+      const c = moduleControl();
+      const OTHER = '@countinghouse/ch-pack-other';
+      await c.load({type: 'load', name: MOD, dirs: dirsOf([MOD])});
+      await c.load({type: 'load', name: OTHER, dirs: dirsOf([OTHER])});
+      await c.reload({type: 'reload', names: [MOD, OTHER], dirs: dirsOf([MOD, OTHER]), notice: 'upgraded'});
+      assert.deepStrictEqual([sessionPacks.isGlobal(MOD), sessionPacks.isGlobal(OTHER)], [true, true]);
+      for (const id of [A, B, C]) notices.take(MOD, id);
+      await c.unload({type: 'unload', name: MOD, notice: 'mod turned off'});
+      assert.strictEqual(sessionPacks.isGlobal(MOD), false);
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod turned off'], ['mod turned off'], ['mod turned off']]);
     });
   });
 
