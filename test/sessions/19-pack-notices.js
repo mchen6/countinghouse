@@ -215,7 +215,8 @@ describe('sessions 19: ch-local\'s pack messages: who a load is for, and who is 
         packsInPlace: new Map([['@countinghouse/ch-pack-docs', {scenario: '/y', pack: 'docs', modules: new Map([['@countinghouse/ch-pack-docs', {version: '2.0.0'}]]), tools: new Set(), prompts: new Set()}]]),
         supervisor: {errorForDevice: (d) => (d === 'd-restarting' ? {code: 'MODULE_RESTARTING', module: 'm-ci'} : null)},
         endedStateForDevice: (d) => (d === 'd-ended' ? {code: 'MODULE_UNLOADED', name: 'm-ci'} : null)};
-      const dm = {deviceMap: {'d-ci': {hostModuleName: 'm-ci'}, 'd-docs': {hostModuleName: '@countinghouse/ch-pack-docs'}}};
+      const dm = Object.assign(Object.create(require('../../lib/device-manager').prototype),
+        {moduleManager: mm, deviceMap: {'d-ci': {hostModuleName: 'm-ci'}, 'd-docs': {hostModuleName: '@countinghouse/ch-pack-docs'}}});
       let gone = false;
       RouteManager.prototype.configureSessionPacks.call({moduleManager: mm, cdifInterface: {deviceManager: dm}}, {daemonGone: () => gone});
       assert.strictEqual(sessionPacks.isGlobal('docs'), true, 'a start pack is global');

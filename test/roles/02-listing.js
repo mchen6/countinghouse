@@ -78,6 +78,8 @@ describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity pro
       const supervisor = new ModuleSupervisor({setTimer: () => ({}), clearTimer: () => {}, restart: () => {}});
       // every device ID registered, as DeviceManager registerFromSpec keeps them
       dm.deviceOwners = new Map(Object.entries(dm.deviceMap).map(([id, d]) => [id, d.packageInfo.name]));
+      // the device manager's own answer of a device's module, in the map or out of it
+      dm.moduleOfDevice = require('../../lib/device-manager').prototype.moduleOfDevice;
       dm.moduleManager.modules = {};
       for (const id of gone) {
         const {packageInfo} = dm.deviceMap[id];
@@ -121,11 +123,14 @@ describe('listing: roles, bare names, MODULE_NOT_LISTED, the single-identity pro
       const mm = ci.deviceManager.moduleManager;
       for (const name of ['@countinghouse/ch-step-a', 'plain']) mm.supervisor.track(name, {modulePath: `/m/${name}`, version: '1.0.0'});
       // the new workers are up (the module manager's map), their devices not registered yet
-      mm.modules['@countinghouse/ch-step-a'] = {hostPackageInfo: {name: '@countinghouse/ch-step-a', countinghouse: {role: 'part'}}};
-      mm.modules.plain = {hostPackageInfo: {name: 'plain'}};
+      mm.modules['@countinghouse/ch-step-a'] = {hostModulePath: '/m/@countinghouse/ch-step-a', hostPackageInfo: {name: '@countinghouse/ch-step-a', countinghouse: {role: 'part'}}};
+      mm.modules.plain = {hostModulePath: '/m/plain', hostPackageInfo: {name: 'plain'}};
       assert.deepStrictEqual([toolRegistry.listingOf(ci, 'd2'), toolRegistry.listingOf(ci, 'd4')], [{role: 'part', listed: false}, {role: null, listed: true}]);
-      // a new worker with no pin is its name alone, as its devices will register: never the old worker's role
-      mm.modules['@countinghouse/ch-step-a'] = {hostPackageInfo: null};
+      // a new worker with no pin: the package.json the supervisor kept, so its role holds until its devices register
+      mm.modules['@countinghouse/ch-step-a'] = {hostModulePath: '/m/@countinghouse/ch-step-a', hostPackageInfo: null};
+      assert.deepStrictEqual(toolRegistry.listingOf(ci, 'd2'), {role: 'part', listed: false});
+      // and with nothing kept either (a first worker): as its devices will register, its name alone
+      mm.supervisor.clear('@countinghouse/ch-step-a');
       assert.deepStrictEqual(toolRegistry.listingOf(ci, 'd2'), {role: null, listed: false}, 'unlisted by name');
     });
 
