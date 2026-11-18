@@ -357,4 +357,50 @@ describe('sessions 30: a request past its deadline is no longer in flight', () =
     assert.strictEqual(inFlight(wm({1: f, 2: f}, {1: 10000, 2: 20000}), 15001), true, 'another still in flight');
     assert.strictEqual(inFlight(wm({}, {1: 10000}), 0), false, 'nothing queued');
   });
+
+  // the review of the rebased fix: a deadline never outlives its request, and
+  // no request is answered twice
+  const EventEmitter = require('events');
+  const real = (post) => {
+    const worker = new EventEmitter();
+    worker.postMessage = post || (() => {});
+    return new WorkerMessage(worker);
+  };
+  const deadlineAt = (w, id, ms) => { w.requestDeadlines[id] = ms; };
+
+  it('a reply clears its request and its deadline; the worker\'s end clears the rest', () => {
+    const w = real();
+    const answers = [];
+    w.sendMessageToWorker({category: 'parent', command: 'x'}, (err, data) => answers.push([err && err.code, data]));
+    w.sendMessageToWorker({category: 'parent', command: 'y'}, (err) => answers.push([err && err.code]));
+    deadlineAt(w, 0, 1000);
+    deadlineAt(w, 1, 2000);
+    w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'});
+    assert.deepStrictEqual(Object.keys(w.msgQueue), ['1']);
+    assert.deepStrictEqual(Object.keys(w.requestDeadlines), ['1']);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.deepStrictEqual([Object.keys(w.msgQueue), Object.keys(w.requestDeadlines)], [[], []]);
+    assert.deepStrictEqual(answers, [[null, 'ok'], ['DEVICE_NOT_RESPONDING']]);
+  });
+
+  it('a post that throws (no transfer list) leaves nothing queued: never in flight for ever, never answered by the worker\'s end', () => {
+    const w = real(() => { throw Object.assign(new Error('could not be cloned'), {name: 'DataCloneError'}); });
+    let answered = 0;
+    assert.throws(() => w.sendMessageToWorker({category: 'parent', command: 'x'}, () => { answered += 1; }), /could not be cloned/);
+    assert.deepStrictEqual(Object.keys(w.msgQueue), []);
+    assert.strictEqual(w.inFlight(Date.now(), 5000), false);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.strictEqual(answered, 0);
+  });
+
+  it('a reply whose callback throws is taken off the queue first: the worker\'s end never answers it again', () => {
+    const w = real();
+    let calls = 0;
+    w.sendMessageToWorker({category: 'parent', command: 'x'}, () => { calls += 1; throw new Error('the caller\'s own'); });
+    deadlineAt(w, 0, 1000);
+    assert.throws(() => w.onWorkerMessage({id: 0, category: 'reply', data: 'ok'}), /the caller's own/);
+    assert.deepStrictEqual([Object.keys(w.msgQueue), Object.keys(w.requestDeadlines)], [[], []]);
+    w.endWith('DEVICE_NOT_RESPONDING', 'm', 'ended');
+    assert.strictEqual(calls, 1, 'answered once');
+  });
 });
