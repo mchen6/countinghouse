@@ -135,6 +135,16 @@ describe('validation 25: module settings, the declaration and its values', () =>
       accepted({a: {type: 'boolean', title: 'Uni​ts', description: 'x‮y'}});
     });
 
+    it('a field or setting name\'s control and bidi characters never reach a problem\'s position or message', () => {
+      const p = problemsOf(JSON.parse('{"a\\u009bb": {"type": "boolean"}, "ok": {"type": "boolean", "x\\u202e\\u0007y": 1}}'));
+      assert.ok(p.length >= 2, JSON.stringify(p));
+      for (const x of p) assert.ok(!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(x.at + x.message), JSON.stringify(x));
+    });
+
+    it('an empty-string default on a string with a format is accepted: unset', () => {
+      accepted({a: {type: 'string', format: 'repo', default: ''}});
+    });
+
     it('an unknown field is refused, naming it', () => {
       refusedAt({a: {type: 'boolean', secret: true}}, 'countinghouse.settings.a.secret');
     });

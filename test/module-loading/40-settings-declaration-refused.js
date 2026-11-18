@@ -81,6 +81,49 @@ describe('module-loading 40: an invalid settings declaration is refused at load'
     }
   });
 
+  it('the dry run checks against the policy-narrowed net, as the spawn does: refused before anything is unloaded', async () => {
+    const m = moduleWith({api: {type: 'string', format: 'hostname', required: true}});
+    const pkgFile = path.join(m.dir, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
+    pkg.countinghouse.permissions = {net: [{host: '*.acme.io'}]};
+    fs.writeFileSync(pkgFile, JSON.stringify(pkg));
+    const policy = path.join(path.dirname(m.dir), `${path.basename(m.dir)}-policy.json`);
+    fs.writeFileSync(policy, JSON.stringify({modules: {[m.name]: {net: [{host: 'api.acme.io'}]}}}));
+    const ms = path.join(path.dirname(m.dir), `${path.basename(m.dir)}-ms.json`);
+    fs.writeFileSync(ms, JSON.stringify({[m.name]: {api: 'other.acme.io'}}));   // inside the declared net, outside the narrowed one
+    const was = {moduleSettings: options.moduleSettings, settingsFile: options.settingsFile, modulePolicy: options.modulePolicy, moduleSandbox: options.moduleSandbox};
+    Object.assign(options, {moduleSettings: ms, settingsFile: null, modulePolicy: policy, moduleSandbox: 'audit'});
+    try {
+      const {err, spawned} = await load(m);
+      assert.ok(err != null && /api/.test(err.message) && /unset in --moduleSettings/.test(err.message), String(err && err.message));
+      assert.strictEqual(spawned, false);
+    } finally {
+      Object.assign(options, was);
+      for (const f of [policy, ms]) fs.rmSync(f, {force: true});
+    }
+  });
+
+  it('a spawn refused for its settings leaves the pin and the validation\'s copy as they were', async () => {
+    const m = moduleWith({region: {type: 'string', required: true}});
+    const ms = path.join(path.dirname(m.dir), `${path.basename(m.dir)}-ms2.json`);
+    fs.writeFileSync(ms, JSON.stringify({[m.name]: {}}));
+    const was = {moduleSettings: options.moduleSettings, settingsFile: options.settingsFile, workerThread: options.workerThread, moduleDataPath: options.moduleDataPath};
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-ml40-data-'));
+    dirs.push(dataDir);
+    Object.assign(options, {moduleSettings: ms, settingsFile: null, workerThread: true, moduleDataPath: dataDir});
+    try {
+      const mm = new ModuleManager();
+      mm.manifestPins.forValidation(m.dir);
+      const err = await new Promise((resolve) => mm.spawnModuleWorker(m.dir, m.name, m.version, (e) => resolve(e), () => true, true));
+      assert.ok(err != null && /region/.test(err.message), String(err && err.message));
+      assert.strictEqual(mm.manifestPins.pinnedOf(m.name), undefined, 'not pinned');
+      assert.ok(mm.manifestPins.wouldPin(m.dir, m.name) != null, 'the validation\'s copy still there');
+    } finally {
+      Object.assign(options, was);
+      fs.rmSync(ms, {force: true});
+    }
+  });
+
   it('a good declaration loads as before', async () => {
     const m = moduleWith({units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}});
     const {err, spawned} = await load(m);

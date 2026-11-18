@@ -143,9 +143,32 @@ describe('module-loading 41: the values a module\'s worker runs with', () => {
     fs.writeFileSync(options.settingsFile, '{broken');
     lines = [];
     const kept = state('w4', pkgOf('w4'), {operator: false, last});
-    assert.strictEqual(kept, last);
+    assert.strictEqual(kept.refused, null);
+    assert.deepStrictEqual(Object.assign({}, kept.values), Object.assign({}, last.values));
     assert.ok(lines.some((l) => /keeps the values it ran with/.test(l)), lines.join('\n'));
     assert.ok(state('w4', pkgOf('w4'), {operator: true, last}).refused != null);
+  });
+
+  it('a restart keeping its last values checks them against the net granted now: one outside it is unset', () => {
+    settingsFile({'module.w6.api': 'api.example.org'});
+    const decl = {api: {type: 'string', format: 'hostname'}};
+    const last = state('w6', pkgOf('w6', decl), {net: [{host: 'api.example.org', ports: null}]});
+    assert.strictEqual(last.values.api, 'api.example.org');
+    fs.writeFileSync(options.settingsFile, '{broken');
+    const kept = state('w6', pkgOf('w6', decl), {operator: false, last, net: []});
+    assert.strictEqual(kept.refused, null);
+    assert.strictEqual('api' in kept.values, false, 'outside the net granted now: unset');
+  });
+
+  it('an undeclared stored key is said cleaned and cut to 64, in the log and the history', () => {
+    const key = `bad\n${'x'.repeat(100)}`;
+    settingsFile({[`module.w7.${key}`]: 1});
+    state('w7', pkgOf('w7'));
+    const said = lines.filter((l) => /not applied/.test(l));
+    assert.strictEqual(said.length, 1);
+    assert.ok(!said[0].includes('\n') && !said[0].includes('x'.repeat(65)), said[0]);
+    const h = history().find((x) => x.setting.startsWith('module.w7.'));
+    assert.ok(!h.setting.includes('\n') && h.setting.length <= 'module.w7.'.length + 65, h.setting);
   });
 
   it('the settings file is read as the settings tool reads it: another version is refused', () => {

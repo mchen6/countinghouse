@@ -342,7 +342,7 @@ if (options.modulePolicy != null) {
 // start rather than refusing every module. ch-local's settings are its
 // --settingsFile's: one source or the other.
 if (options.moduleSettingsInvalid === true) {
-  console.error('--moduleSettings needs a path (--moduleSettings <file>)');
+  console.error('--moduleSettings needs one path (--moduleSettings <file>, given once)');
   process.exit(2);
 }
 if (options.moduleSettings != null) {
