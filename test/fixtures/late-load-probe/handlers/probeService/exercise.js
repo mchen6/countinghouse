@@ -3,6 +3,9 @@
 // test/sandbox/66). Each step only has to reach the path; what it returns
 // doesn't matter.
 const fs = require('fs');
+// the CLI idiom (#425's review): a file the runtime loads must not read as a
+// main module, or its entry-point code would run in the worker on every load
+if (!module.parent) throw new Error('late-load-probe: loaded as a main module');
 
 const STEPS = {
   // CHUtil.request: postman-request, loaded on its first use
@@ -23,21 +26,17 @@ const STEPS = {
   // a bare name of a file in countinghouse's lib/: the lockdown's refusal
   // judges it (reachesLib), by names listed at boot, resolving nothing
   libName: async () => { try { require('cli-options'); } catch (e) { /* refused, or not found */ } },
-  // the httpSignature option: refused in both modes (an encrypted OpenSSH key
-  // would make sshpk load bcrypt-pbkdf on first use), however it is put: as
-  // the only extra option, behind another refused one, on the prototype, and
-  // behind a getter that reads undefined on its first read. Each attempt's
-  // outcome: 'refused: <what>' (the sandbox's, naming what it refused), or
-  // the request's own error.
+  // CHUtil.request's options as the lockdown hands them on (#425's review):
+  // httpSignature is an ordinary option (bcrypt-pbkdf, which sshpk loads on
+  // an encrypted key, is preloaded with postman-request); an option on the
+  // prototype is what audit reports, as postman-request would read it. Each
+  // attempt's outcome: 'refused: <what>' (the sandbox's, naming what it
+  // refused), or the request's own end.
   httpSignature: async () => {
-    const sig = {keyId: 'k', key: 'not-a-key'};
     const base = () => ({url: 'http://late-load.example.invalid/', timeout: 1000});
-    let reads = 0;
     const forms = {
-      plain: () => Object.assign(base(), {httpSignature: sig}),
-      behindProxy: () => Object.assign(base(), {proxy: 'http://late-load.example.invalid/', httpSignature: sig}),
-      onPrototype: () => Object.assign(Object.create({httpSignature: sig}), base()),
-      getter: () => Object.defineProperty(base(), 'httpSignature', {enumerable: true, get: () => (reads++ === 0 ? undefined : sig)})
+      signed: () => Object.assign(base(), {httpSignature: {keyId: 'k', key: 'not-a-key'}}),
+      inheritedProxy: () => Object.assign(Object.create({proxy: 'http://late-load.example.invalid:1/'}), base())
     };
     const outcomes = {};
     for (const [name, make] of Object.entries(forms)) {
@@ -48,8 +47,9 @@ const STEPS = {
     }
     return {outcomes};
   },
-  // revision 6, item 8: the runtime's loads of module files pass no parent
-  // (this handler, by the dispatcher; a file by CHUtil.loadFile)
+  // the runtime's loads of module files (this handler, by the dispatcher; a
+  // file by CHUtil.loadFile): their parent is the module's own anchor, a
+  // Module whose file is inside the module root (#425's review)
   parents: async () => ({handler: module.parent, loaded: CHUtil.loadFile(`${__dirname}/../../lib/parent-probe.js`).parent}),
   // module code's own createRequire and getBuiltinModule, through the
   // lockdown's wrappers: the module's, not the runtime's (the probe tells them
@@ -75,7 +75,10 @@ module.exports = async (input) => {
   const step = STEPS[input.step];
   if (step == null) return {output: {step: input.step, done: false}};
   const result = await step();
-  if (input.step === 'parents') return {output: {step: input.step, done: true, handlerParent: String(result.handler), loadedParent: String(result.loaded)}};
+  if (input.step === 'parents') {
+    const of = (m) => (m == null ? String(m) : String(m.filename));
+    return {output: {step: input.step, done: true, handlerParent: of(result.handler), loadedParent: of(result.loaded)}};
+  }
   if (input.step === 'httpSignature') return {output: {step: input.step, done: true, outcomes: JSON.stringify(result.outcomes)}};
   return {output: {step: input.step, done: true}};
 };

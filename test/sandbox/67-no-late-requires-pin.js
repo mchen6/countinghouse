@@ -23,6 +23,8 @@ const ENTRIES = [path.join(ROOT, 'lib', 'lean-worker.js'), path.join(ROOT, 'lib'
 
 // [file relative to ROOT (a regex), the request (a regex), why]
 const MAIN = 'the main thread\'s branch: never runs in a worker';
+// an entry's 4th: what it loads can run in a worker, so it is followed
+const FOLLOW = 'follow';
 const REVIEWED = [
   // set-options and boot, before the lockdown
   [/^lib\/lean-worker\.js$/, /^\.\/fs-broker\/(identity|patch)$/, 'boot and set-options: before the lockdown'],
@@ -30,8 +32,8 @@ const REVIEWED = [
   [/^lib\/fs-broker\/identity\.js$/, /^(fs|\.\/roots)$/, 'the main thread\'s code roots, and insideHostFor at load'],
   [/^lib\/fs-broker\/identity\.js$/, /^os$/, 'install: at set-options, before the lockdown'],
   [/^lib\/fs-broker\/patch\.js$/, /^\.\/roots$/, 'install: at boot'],
-  [/^lib\/lean-worker\.js$/, /^postman-request$/, 'warm, at set-options before the lockdown, for a module that declares net'],
-  [/^lib\/lean-worker\.js$/, /^\.\/declarations$/, 'warm, at boot in a validation worker (validateOnly)'],
+  [/^lib\/lean-worker\.js$/, /^postman-request$/, 'warm, at set-options before the lockdown, for a module that declares net', FOLLOW],
+  [/^lib\/lean-worker\.js$/, /^\.\/declarations$/, 'warm, at boot in a validation worker (validateOnly)', FOLLOW],
   [/^lib\/module-lockdown\.js$/, /^(crypto|dgram|http|http2|net|tls|tty|util)$/, 'install (set-options, before module code) and the handle probes at load'],
   // postman-request on first use: a module that declares net has it from
   // set-options; with no net, enforce refuses every request in the
@@ -54,16 +56,26 @@ const REVIEWED = [
   [/^lib\/redis-api\.js$/, /^(\.\/redis-namespace|\.\/store)$/, 'single-thread mode and the main thread\'s client'],
   [/^lib\/service-client\.js$/, /^\.\/user-auth$/, MAIN],
   [/^lib\/session\.js$/, /^\.\/countinghouse-util$/, 'recordMeteredCall: a worker returns before (thread-info)'],
-  [/^lib\/store\.js$/, /./, 'the store is made on the main thread; a worker reaches it over its channel'],
+  [/^lib\/store\.js$/, /^(\.\/countinghouse-error|crypto|\.\/job-control|\.\/job-control-local|\.\/local-kv|\.\/logger|\.\/metering\/local-provider|\.\/metering\/redis-provider|path|redis|\.\/redis-resilient|\.\/store\/blobs|\.\/store\/json-file)$/,
+    'the store is made on the main thread; a worker reaches it over its channel'],
   [/^lib\/worker-message\.js$/, /^(\.\/logger|\.\/worker-output)$/, 'the main thread\'s end of a worker'],
   // dependencies: code that runs at the library's own load
-  [/^node_modules\/stream-length\/node_modules\/bluebird\/js\/main\/promise\.js$/, /./, 'bluebird\'s setup function, run once at its load'],
+  [/^node_modules\/stream-length\/node_modules\/bluebird\/js\/main\/promise\.js$/, /^\.\/(async|bind|captured_trace|catch_filter|context|debuggability|direct_resolve|errors|finally|join|method|progress|promise_array|promise_resolver|synchronous_inspection|thenables|util)\.js$/,
+    'bluebird\'s setup function (the file\'s module.exports), called once by bluebird.js at its load'],
   [/^node_modules\/debug\/src\/node\.js$/, /^(fs|net)$/, 'createWritableStdioStream: at its load'],
   [/^node_modules\/socks-proxy-agent\/node_modules\/debug\/src\/common\.js$/, /^ms$/, 'setup(): at its load'],
   [/^node_modules\/tweetnacl\/nacl-fast\.js$/, /^crypto$/, 'an IIFE at its load'],
+  [/^node_modules\/json-schema-ref-parser\/node_modules\/es6-promise\/dist\/es6-promise\.js$/, /^vertx$/,
+    'attemptVertx (as r): only where Node\'s process.nextTick is missing; Node picks it at load'],
+  // lazy-require's holder: the one load each lazy(name) makes, a finding of
+  // its own above unless warmed at a worker's boot
+  [/^lib\/lazy-require\.js$/, /^<dynamic>$/, 'the holder\'s first use: each lazy(name) is checked above (warmed, or reviewed)'],
+  // set-options, before the lockdown: bcrypt-pbkdf along sshpk's chain
+  [/^lib\/lean-worker\.js$/, /^(<dynamic>|http-signature|sshpk|bcrypt-pbkdf)$/, 'warmSshpkBcrypt: set-options, before the lockdown, with postman-request'],
   // dependencies: what a worker never reaches, or reaches harmlessly
   [/^node_modules\/uuid-1345\/index\.js$/, /^macaddress$/, 'v1 uuids only: a worker makes v5 (lib/call-address.js)'],
-  [/^node_modules\/sshpk\/lib\/formats\/ssh-private\.js$/, /^bcrypt-pbkdf$/, 'an encrypted OpenSSH key, reached only through the httpSignature request option, refused (lib/module-lockdown.js)'],
+  [/^node_modules\/sshpk\/lib\/formats\/ssh-private\.js$/, /^bcrypt-pbkdf$/,
+    'an encrypted OpenSSH key (httpSignature): bcrypt-pbkdf is warmed with postman-request at set-options (lib/lean-worker.js warmSshpkBcrypt), so this is a hit in Node\'s cache', FOLLOW],
   [/^node_modules\/@postman\/tough-cookie\/lib\/utilHelper\.js$/, /^util$/,
     'a module\'s own cookie jar (MemoryCookieStore): what it gets is only used to inspect that jar']
 ];
@@ -87,18 +99,66 @@ const callOf = (node, name) => node.type === 'CallExpression' && node.arguments.
 // worker) or inside a function warms nothing for the other workers, so a
 // lazy() of its name is a finding, and so is that warm itself (below)
 let WARMED = null;
-// every require('x') / import('x') with a literal, and whether it sits in a
-// function; and every lazy('x') (lib/lazy-require.js), a load on first use
-// unless warmed
+// a createRequire(...) call (module.createRequire, or one destructured)
+const isCreateRequire = (node) => node != null && node.type === 'CallExpression' &&
+  ((node.callee.type === 'Identifier' && node.callee.name === 'createRequire') ||
+   (node.callee.type === 'MemberExpression' && node.callee.property.name === 'createRequire'));
+// a request as written: a string literal or a template with no expression;
+// anything else is '<dynamic>' (a finding wherever it is inside a function)
+const literalOf = (arg) => {
+  if (arg == null) return '<dynamic>';
+  if (arg.type === 'Literal' && typeof(arg.value) === 'string') return arg.value;
+  if (arg.type === 'TemplateLiteral' && arg.expressions.length === 0) return arg.quasis[0].value.cooked;
+  return '<dynamic>';
+};
+const each = (node, fn) => {
+  if (node == null || typeof(node.type) !== 'string') return;
+  fn(node);
+  for (const key of Object.keys(node)) {
+    const v = node[key];
+    if (Array.isArray(v)) v.forEach((c) => each(c, fn));
+    else if (v != null && typeof(v) === 'object' && typeof(v.type) === 'string') each(v, fn);
+  }
+};
+// Every way a file can load something: require('x'), a name bound to
+// require (const r = require) or to what createRequire returns,
+// createRequire(...)('x'), module.require('x'), process.getBuiltinModule('x')
+// and import('x'), with whether it sits in a function; and every lazy('x')
+// (lib/lazy-require.js), a load on first use unless warmed, and every warm
+// that is not an unconditional top-level statement. kind: 'require' (a
+// plain require, followed when at load) or what else it is.
 function requiresOf(ast) {
   const out = [];
   const topWarms = topLevelWarms(ast);
+  const loaders = new Set(['require']);
+  for (let round = 0; round < 3; round++) {
+    each(ast, (node) => {
+      const bind = (id, init) => {
+        if (id == null || id.type !== 'Identifier' || init == null) return;
+        if ((init.type === 'Identifier' && loaders.has(init.name)) || isCreateRequire(init)) loaders.add(id.name);
+      };
+      if (node.type === 'VariableDeclarator') bind(node.id, node.init);
+      if (node.type === 'AssignmentExpression') bind(node.left, node.right);
+    });
+  }
   const visit = (node, inFunction) => {
     if (node == null || typeof(node.type) !== 'string') return;
     const here = inFunction || FUNCTIONS.has(node.type);
-    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'require' &&
-        node.arguments.length === 1 && node.arguments[0].type === 'Literal' && typeof(node.arguments[0].value) === 'string') {
-      out.push({request: node.arguments[0].value, inFunction});
+    if (node.type === 'CallExpression') {
+      const c = node.callee;
+      let kind = null;
+      if (c.type === 'Identifier' && loaders.has(c.name)) kind = c.name === 'require' ? 'require' : `require (as ${c.name})`;
+      else if (c.type === 'MemberExpression' && c.object.type === 'Identifier' && c.object.name === 'module' && c.property.name === 'require') kind = 'module.require';
+      else if (c.type === 'MemberExpression' && c.object.type === 'Identifier' && c.object.name === 'process' && c.property.name === 'getBuiltinModule') kind = 'getBuiltinModule';
+      else if (isCreateRequire(c)) kind = 'createRequire()';
+      // a resolution on its own is a runtime resolve too (_resolveFilename)
+      else if (c.type === 'MemberExpression' && c.object.type === 'Identifier' && loaders.has(c.object.name) && c.property.name === 'resolve') kind = 'require.resolve';
+      if (kind != null) {
+        const request = literalOf(node.arguments[0]);
+        // at load, only a plain literal require is followed; the rest run
+        // at load too, before any lockdown
+        if (inFunction ? true : (kind === 'require' && request !== '<dynamic>')) out.push({request, inFunction, kind});
+      }
     }
     if (callOf(node, 'lazy') && !WARMED.has(node.arguments[0].value)) {
       out.push({request: node.arguments[0].value, inFunction: true, kind: 'lazy'});
@@ -106,8 +166,8 @@ function requiresOf(ast) {
     if (callOf(node, 'warm') && !topWarms.has(node)) {
       out.push({request: node.arguments[0].value, inFunction: true, kind: 'warm'});
     }
-    if (node.type === 'ImportExpression' && node.source.type === 'Literal' && typeof(node.source.value) === 'string') {
-      out.push({request: node.source.value, inFunction});
+    if (node.type === 'ImportExpression') {
+      out.push({request: literalOf(node.source), inFunction: true, kind: 'import'});
     }
     for (const key of Object.keys(node)) {
       if (key === 'parent') continue;
@@ -143,8 +203,11 @@ describe('sandbox 67: no require inside a function in a worker\'s boot closure (
         if (Module.isBuiltin(r.request) && !r.inFunction) continue;
         if (r.inFunction) {
           const rel = path.relative(ROOT, file);
-          if (!REVIEWED.some(([f, q]) => f.test(rel) && q.test(r.request))) findings.push(`${rel}: ${r.kind || 'require'}('${r.request}')`);
-          continue;
+          const reviewed = REVIEWED.find(([f, q]) => f.test(rel) && q.test(r.request));
+          if (reviewed == null) findings.push(`${rel}: ${r.kind}('${r.request}')`);
+          // a reviewed load that can run in a worker (warmed, say) is
+          // followed: what it loads is in the closure too
+          if (reviewed == null || reviewed[3] !== FOLLOW || r.request === '<dynamic>' || Module.isBuiltin(r.request)) continue;
         }
         let target = null;
         try { target = require.resolve(r.request, {paths: [path.dirname(file)]}); } catch (e) { continue; }

@@ -54,9 +54,10 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     });
   }));
 
-  // revision 6, item 3: refused in both modes; item 8: the runtime's loads
-  // of module files (the dispatcher's, CHUtil.loadFile's) pass no parent
-  ['enforce', 'audit'].forEach((mode, i) => it(`${mode}: the httpSignature request option is refused; a module file's parent is null`, async () => {
+  // the runtime's loads of module files (the dispatcher's, CHUtil.loadFile's)
+  // have the module's own anchor as parent, and the fixture's files carry the
+  // CLI idiom (`if (!module.parent) throw`), so they load at all only with one
+  ['enforce', 'audit'].forEach((mode, i) => it(`${mode}: CHUtil.request's options as handed on; a module file's parent is the module's anchor`, async () => {
     delete process.env.CH_TEST_LATE_LOADS;
     const port = testPort(9775 + i);
     const server = await startServer(port, ['--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE]);
@@ -65,22 +66,21 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       assert.strictEqual(r.isError, false, JSON.stringify(r).slice(0, 800));
       const outcomes = JSON.parse(r.structuredContent.outcomes);
       if (mode === 'audit') {
-        // audit hands on postman-request's own copy: the option is found
-        // however it is put
-        assert.deepStrictEqual(outcomes, {plain: 'refused: httpSignature', behindProxy: 'refused: httpSignature',
-          onPrototype: 'refused: httpSignature', getter: 'refused: httpSignature'});
+        // nothing refused; an inherited proxy is reported, as sent
+        for (const form of ['signed', 'inheritedProxy']) assert.ok(!/^refused/.test(outcomes[form]), `${form}: ${outcomes[form]}`);
+        const deadline = Date.now() + 5000;
+        while (!/late-load-probe violation net proxy/.test(server.output) && Date.now() < deadline) await new Promise((res) => setTimeout(res, 50));
+        assert.match(server.output, /late-load-probe violation net proxy/);
       } else {
-        // enforce hands on only its checked own keys, each read once: the
-        // option is refused as the only extra one, refused with the other,
-        // and otherwise never reaches postman-request. (This start approves
-        // no net, so every request that gets past the options is refused
-        // for its host.)
-        assert.deepStrictEqual([outcomes.plain, outcomes.behindProxy], ['refused: httpSignature', 'refused: proxy']);
-        for (const form of ['onPrototype', 'getter']) assert.strictEqual(outcomes[form], 'refused: late-load.example.invalid:80', form);
+        // the options pass (only own keys are handed on); this start
+        // approves no net, so each is refused for its host
+        assert.deepStrictEqual(outcomes, {signed: 'refused: late-load.example.invalid:80', inheritedProxy: 'refused: late-load.example.invalid:80'});
       }
       const p = await mcpCall(port, KEY, TOOL, {step: 'parents'});
       assert.ok(p.structuredContent != null, JSON.stringify(p).slice(0, 800));
-      assert.deepStrictEqual([p.structuredContent.handlerParent, p.structuredContent.loadedParent], ['null', 'null']);
+      // the module's own anchor, inside its root (/app, as module code sees it)
+      assert.deepStrictEqual([p.structuredContent.handlerParent, p.structuredContent.loadedParent],
+        ['/app/.countinghouse-entry', '/app/.countinghouse-entry']);
     } finally {
       stopServer(server);
     }

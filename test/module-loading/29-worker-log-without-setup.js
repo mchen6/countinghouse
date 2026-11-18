@@ -47,7 +47,7 @@ describe('module-loading 29: a worker logs without a logger made first', functio
   // as bunyan made it (#194's PR 1 made the worker's logger bunyan-free): an
   // Error first is its message, or the rest when there is a rest; never its
   // stack, which would carry host paths to the main thread's log
-  it('an Error first: msg is the rest, or else its message, never the stack', async () => {
+  it('as bunyan made a record: an Error first (msg the rest or its message, never the stack), a throwing serializer, an array or a Buffer', async () => {
     const records = await new Promise((resolve, reject) => {
       const w = new Worker(`
         const {parentPort} = require('worker_threads');
@@ -58,11 +58,21 @@ describe('module-loading 29: a worker logs without a logger made first', functio
         require(${JSON.stringify(path.join(ROOT, 'lib', 'worker-logger.js'))}).createWorkerLogger();
         LOG.logger.warn(new Error('boom'));
         LOG.logger.warn(new Error('boom'), 'said %s', 'otherwise');
+        // a serializer that throws: the field says so, as bunyan's did, and
+        // the line is sent (#425's review)
+        LOG.E(null);
+        LOG.logger.warn({e: {get message() { throw new Error('getter'); }}}, 'with a bad e');
+        // an array or a Buffer first is all message, as bunyan made it
+        LOG.logger.info(['a', 'b'], 'and more');
+        LOG.logger.info(Buffer.from('hi'), 'tail');
         parentPort.postMessage({records: sent});
       `, {eval: true});
       w.on('message', (m) => { if (m != null && m.records != null) { w.terminate(); resolve(m.records); } });
       w.once('error', reject);
     });
-    assert.deepStrictEqual(records, [{msg: 'boom', e: 'boom'}, {msg: 'said otherwise', e: 'boom'}]);
+    const broke = '(Error in Bunyan log "e" serializer broke field. See stderr for details.)';
+    assert.deepStrictEqual(records, [{msg: 'boom', e: 'boom'}, {msg: 'said otherwise', e: 'boom'},
+      {msg: '', e: broke}, {msg: 'with a bad e', e: broke},
+      {msg: "[ 'a', 'b' ] and more", e: undefined}, {msg: '<Buffer 68 69> tail', e: undefined}]);
   });
 });
