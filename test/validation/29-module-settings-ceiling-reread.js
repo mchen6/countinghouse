@@ -654,8 +654,13 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       fs.writeFileSync(options.settingsFile, '{not json');
       const logged = [];
       const c = () => trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling);
-      await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.code === 'CONTROL_FAILED' && e.fileProblem === true && e.appliedByCeiling === 1);
+      await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.code === 'CONTROL_FAILED' && e.fileProblem === true && e.appliedByCeiling === 1 &&
+        /the operator's ceiling was applied \(1 module changed\)/.test(e.message));
       assert.strictEqual(mm.modules.w.settings.values.units, 'metric', 'the fixed value binds');
+      // never silent: a history line and a notice naming what changed
+      const lines = fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      assert.ok(lines.some((h) => h.setting === 'module.w' && h.change === 'applied by the operator\'s ceiling: units'), JSON.stringify(lines));
+      assert.ok(notices.take('w').some((t) => /changed by the operator's ceiling: units/.test(t)));
       assert.strictEqual(mm.modules.r.settings.values.region, 'eu', 'nothing else changed');
       await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.appliedByCeiling === 0);
       assert.strictEqual(logged.filter((l) => /cannot be read/.test(l)).length, 1, 'said once');
