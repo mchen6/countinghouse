@@ -434,3 +434,20 @@ describe('mcp-contract 27: a task\'s status mirrors the inline answer, the modul
     mirrors({inlineBody, task: await settled(made.taskId)}, 'MODULE_SUSPENDED');
   });
 });
+
+// M16 D3, defence in depth (the Reviewer on #432): a failed task's
+// statusMessage is a code the runtime's catalogue holds, else "failed",
+// whatever a record's failure says. Server-free: the failed branch of
+// tasks/get's own builder.
+describe('mcp-contract 27: a failed task\'s statusMessage is only ever a catalogued code', () => {
+  const {detailedTask} = require('../../lib/mcp/gateway');
+  const failedTask = (failedReason) => detailedTask({taskId: 't-clamp', record: {state: 'failed', job: {id: 't-clamp', timestamp: Date.now(), failedReason, data: {}}}}, null, null);
+  it('a catalogued code is shown; a code of anyone else\'s choosing, or none, is "failed"', async () => {
+    assert.strictEqual((await failedTask('JOB_TIMEOUT: the job did not finish in time')).statusMessage, 'JOB_TIMEOUT');
+    for (const reason of ['NOT_A_RUNTIME_CODE: a module\'s own words', 'MY_MODULE_SAYS_HELLO: hi', 'no code at all']) {
+      const task = await failedTask(reason);
+      assert.strictEqual(task.status, 'failed', reason);
+      assert.strictEqual(task.statusMessage, 'failed', reason);
+    }
+  });
+});
