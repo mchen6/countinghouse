@@ -115,6 +115,185 @@ describe('M8: the listen hub, resources and prompts', function() {
     });
   });
 
+  // F3-2 and F3-7 (the Fable pass over the MCP surface)
+  describe('the hub\'s bounds', () => {
+    it('one listener whose list can\'t be compared never silences the next one\'s (F3-2)', async() => {
+      // key "bad" lists an item no JSON can carry (a BigInt): its fingerprint threw, and the round with it
+      let tools = {bad: [{name: 'a'}], good: [{name: 'a'}]};
+      const h = createHub({lists: {tools: async(key) => tools[key]}, settleMs: 5});
+      const bad = [];
+      const good = [];
+      h.open({id: 1, appKey: 'bad', filter: {toolsListChanged: true}, write: (m) => bad.push(m), finish: () => {}});
+      h.open({id: 2, appKey: 'good', filter: {toolsListChanged: true}, write: (m) => good.push(m), finish: () => {}});
+      await tick();
+      tools = {bad: [{name: 'a', n: 1n}], good: [{name: 'b'}]};
+      h.changed();
+      assert.ok(await until(() => good.length === 1), 'the next listener is told');
+      assert.deepStrictEqual(bad, [], 'and the one that can\'t be compared is told nothing');
+    });
+
+    it('an item moved within a list says nothing; a changed item says once (fingerprints by item, F3-2)', async() => {
+      let tools = [{name: 'a', x: 'y'.repeat(100000)}, {name: 'b'}];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      tools = [tools[1], tools[0]];
+      h.changed();
+      await tick(60);
+      assert.deepStrictEqual(got, []);
+      tools = [tools[0], {name: 'a', x: 'z'.repeat(100000)}];
+      h.changed();
+      assert.ok(await until(() => got.length === 1));
+    });
+
+    it('an icon\'s data counts by its digest: the same data says nothing, other data says once (F3-2)', async() => {
+      const icon = (fill) => [{src: `data:image/png;base64,${fill.repeat(200000)}`, mimeType: 'image/png'}];
+      let tools = [{name: 'a', icons: icon('A')}];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      tools = [{name: 'a', icons: icon('A')}];
+      h.changed();
+      await tick(60);
+      assert.deepStrictEqual(got, [], 'the same icon, a new string');
+      tools = [{name: 'a', icons: icon('B')}];
+      h.changed();
+      assert.ok(await until(() => got.length === 1), 'another icon');
+    });
+
+    it('an item JSON makes nothing of counts as null, as before: its listener is still told of later changes (F3-2)', async() => {
+      let tools = [{name: 'a'}, undefined];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      tools = [{name: 'b'}, undefined];
+      h.changed();
+      assert.ok(await until(() => got.length === 1));
+    });
+
+    it('an icon carrying the registry\'s digest counts by it, never by its data (F3-2)', async() => {
+      const iconDigests = require('../../lib/mcp/icon-digest');
+      const icon = (data, digest) => { const i = {src: `data:image/png;base64,${data}`, mimeType: 'image/png'}; iconDigests.set(i, digest); return [i]; };
+      let tools = [{name: 'a', icons: icon('AAAA', 'sha256:one')}];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 5});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      tools = [{name: 'a', icons: icon('BBBB', 'sha256:one')}];
+      h.changed();
+      await tick(60);
+      assert.deepStrictEqual(got, [], 'the same digest: no change, whatever the data');
+      tools = [{name: 'a', icons: icon('BBBB', 'sha256:two')}];
+      h.changed();
+      assert.ok(await until(() => got.length === 1));
+    });
+
+    it('a pending settle is never left behind by a round\'s end: changes made while a round runs are settled, then told once (F3-7)', async() => {
+      let tools = [{name: 'a'}];
+      let gate = null;
+      // (a listing returns the list as it was when it was asked for)
+      const h = createHub({lists: {tools: async() => { const now = tools; if (gate != null) await gate; return now; }}, settleMs: 80, maxWaitMs: 1000});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick();
+      // R1 runs (its listing held by the gate)
+      let release;
+      gate = new Promise((r) => { release = r; });
+      tools = [{name: 'b'}];
+      h.changed();
+      await tick(120);
+      // T1 pending while R1 runs, then more changes in a burst
+      tools = [{name: 'c'}];
+      h.changed();
+      await tick(100);
+      h.changed();
+      gate = null;
+      release();
+      await tick(30);
+      // R1 has ended; the follow-up waits its settle, not running at once
+      const atEnd = got.length;
+      await tick(500);
+      assert.ok(atEnd <= 1, `no follow-up round straight off (${atEnd})`);
+      assert.strictEqual(got.length, 2, `R1's change, then the burst's, once (${got.length})`);
+    });
+
+    it('a resource\'s read never makes resources/updated, even named in a changesWith (F3-4)', async() => {
+      const h2 = createHub({lists: {}, settleMs: 5, perSession: () => false,
+        resolveUris: async() => new Map([[U1, {deviceID: 'd', changesWith: ['notes.read', 'notes.save']}]]),
+        isRead: (call) => call.deviceID === 'd' && call.serviceID === 'notes' && call.actionName === 'read'});
+      const got = [];
+      h2.open({id: 1, appKey: 'k', filter: {resourceSubscriptions: [U1]}, write: (m) => got.push(m), finish: () => {}});
+      h2.callSucceeded({appKey: 'k', deviceID: 'd', serviceID: 'notes', actionName: 'read', session: null});
+      await tick(60);
+      assert.deepStrictEqual(got, [], 'the read: nothing');
+      h2.callSucceeded({appKey: 'k', deviceID: 'd', serviceID: 'notes', actionName: 'save', session: null});
+      assert.ok(await until(() => got.length === 1), 'the save: updated');
+    });
+
+    it('the device manager knows a resource\'s read by the device\'s spec now: worker or in-process, retained while it restarts, by full service URN (F3-4)', () => {
+      const DeviceManager = require('../../lib/device-manager');
+      const spec = {device: {friendlyName: 'n', serviceList: {
+        'urn:a:serviceID:notes': {actionList: [{name: 'get', description: 'g', resource: {uriTemplate: 'notes/{id}', name: 'note'}}, {name: 'save', description: 's'}]},
+        'urn:b:serviceID:notes': {actionList: [{name: 'get', description: 'a write that shares the short name'}]}}}};
+      const supervisor = {retainedSpecs: () => ({gone: spec})};
+      const dm = Object.assign(Object.create(DeviceManager.prototype), {moduleManager: {supervisor},
+        deviceMap: {w: {deviceList: {w: spec}}, inproc: {spec}}});
+      for (const id of ['w', 'inproc', 'gone']) {
+        assert.strictEqual(dm.isReadAction(id, 'urn:a:serviceID:notes', 'get'), true, `${id}: the read`);
+        assert.strictEqual(dm.isReadAction(id, 'urn:a:serviceID:notes', 'save'), false, `${id}: a write`);
+        assert.strictEqual(dm.isReadAction(id, 'urn:b:serviceID:notes', 'get'), false, `${id}: another service of the same short name`);
+      }
+      assert.strictEqual(dm.isReadAction('never', 'urn:a:serviceID:notes', 'get'), false);
+      // a spec changed in place, the generation moved: read again
+      spec.device.serviceList['urn:a:serviceID:notes'].actionList[1].resource = {uriTemplate: 'saved/{id}', name: 'saved'};
+      require('../../lib/tool-generation').bump();
+      assert.strictEqual(dm.isReadAction('w', 'urn:a:serviceID:notes', 'save'), true, 'the spec as it is now');
+    });
+
+    it('a round never starts while the last one runs; the one due meanwhile runs after it (F3-7)', async() => {
+      let tools = [{name: 'a'}];
+      let running = 0;
+      let most = 0;
+      let rounds = 0;
+      const h = createHub({lists: {tools: async() => {
+        running += 1; most = Math.max(most, running); rounds += 1;
+        await tick(150);
+        running -= 1;
+        return tools;
+      }}, settleMs: 5, maxWaitMs: 20});
+      const got = [];
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: (m) => got.push(m), finish: () => {}});
+      await tick(200);
+      tools = [{name: 'b'}];
+      for (let i = 0; i < 20; i++) { h.changed(); await tick(25); }
+      await tick(600);
+      assert.strictEqual(most, 1, 'never two rounds listing at once');
+      assert.strictEqual(got.length, 1, 'one change, one notice');
+    });
+
+    it('changes coming faster than the settle postpone the round no further than the max wait (F3-7)', async() => {
+      let tools = [{name: 'a'}];
+      const h = createHub({lists: {tools: async() => tools}, settleMs: 100, maxWaitMs: 300});
+      let start = null;
+      let toldAt = null;
+      // (timed where it is told, not where the loop next looks)
+      h.open({id: 1, appKey: 'k', filter: {toolsListChanged: true}, write: () => { if (toldAt == null) toldAt = Date.now() - start; }, finish: () => {}});
+      await tick();
+      tools = [{name: 'b'}];
+      start = Date.now();
+      // a change every 40 ms for 2 s: each inside the settle of the last
+      while (Date.now() - start < 2000) {
+        h.changed({session: 'flipper'});
+        h.changed();
+        await tick(40);
+      }
+      assert.ok(toldAt != null && toldAt < 1500, `told within the max wait (300 ms), not after the flipping stopped at 2 s (${toldAt} ms)`);
+    });
+  });
+
   describe('resources/updated', () => {
     const called = (appKey, deviceID, serviceID, actionName, session = null) => hub.callSucceeded({appKey, deviceID, serviceID, actionName, session});
     const updated = (id, uri) => ({jsonrpc: '2.0', method: 'notifications/resources/updated', params: {uri, _meta: {[SUBSCRIPTION_ID_KEY]: id}}});
