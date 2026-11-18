@@ -738,19 +738,21 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(lines.some((l) => /re-read \(0 applied/.test(l)), lines.join('\n'));
       listen({state: 'untrusted', file: '/x', problem: 'p'});
       assert.strictEqual(queued.length, 1, 'trust changed: a reread');
-      // the settings file mid-write: said once, tried once more, not again
+      // the settings file mid-write: its stamp watched, read again once it changes
       fs.writeFileSync(options.settingsFile, '{not json');
       await queued.shift()();
       assert.strictEqual(timers.length, 1);
       timers.shift()();
-      await queued.shift()();
-      assert.strictEqual(timers.length, 0, 'tried once more only');
-      assert.strictEqual(lines.filter((l) => /re-read failed/.test(l)).length, 1, 'the same failure, said once');
-      // a later change reads it again
+      assert.strictEqual(queued.length, 0, 'unchanged: not read again');
+      assert.strictEqual(timers.length, 1, 'still watched');
+      assert.ok(!lines.some((l) => /re-read failed/.test(l)), 'reread said it; the watcher says nothing more');
+      // fixed by hand: read again, and the watch stops
       fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {}}));
-      listen(trusted(parsed({moduleSettings: {'w.units': {fixed: 'imperial'}, 'w.n': {fixed: 3}}}).ceiling));
+      timers.shift()();
+      assert.strictEqual(queued.length, 1);
       await queued.shift()();
       assert.ok(/re-read \(/.test(lines[lines.length - 1]), lines.join('\n'));
+      assert.strictEqual(timers.length, 0);
       // a failure that would last (no --settingsFile): said, never retried
       const file = options.settingsFile;
       options.settingsFile = null;
