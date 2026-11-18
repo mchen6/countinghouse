@@ -119,8 +119,21 @@ describe('session-runtime 03: per-session workers (R1 Task 4)', function() {
     // B, before the margin has passed: still busy
     const early = await s.call('B', 'touch');
     assert.ok(/SESSION_WORKERS_BUSY|per-session module workers are busy/.test(JSON.stringify(early)), JSON.stringify(early).slice(0, 600));
-    await tick(Math.max(0, sent + 2000 + 5000 + 500 - Date.now()));
-    assert.deepStrictEqual(outOf(await s.call('B', 'touch')), {file: 1, store: 1, memory: 1}, 'B got a worker');
+    // past the margin, B gets a worker. The server's deadline starts after
+    // the client's send (parse, auth, a store round trip), so B is polled
+    // from the client's earliest moment, bounded 15 s past it, every answer
+    // kept for the failure's message (the review of #416)
+    await tick(Math.max(0, sent + 2000 + 5000 - Date.now()));
+    const seen = [];
+    let gotB = null;
+    const giveUp = sent + 2000 + 5000 + 15000;
+    while (gotB == null && Date.now() < giveUp) {
+      const b = await s.call('B', 'touch');
+      if (/SESSION_WORKERS_BUSY|per-session module workers are busy/.test(JSON.stringify(b))) { seen.push('busy'); await tick(250); continue; }
+      gotB = b;
+    }
+    assert.ok(gotB != null, `B never got a worker in 15 s past the margin: ${seen.length} busy answers`);
+    assert.deepStrictEqual(outOf(gotB), {file: 1, store: 1, memory: 1}, `B got a worker (after ${seen.length} busy answers)`);
     await until(async() => counts(r).ended === 1, 10000);
     assert.deepStrictEqual(counts(r), {up: 2, ended: 1}, 'A\'s worker was evicted for it');
     assert.deepStrictEqual(await answersTo(1500), [], 'no second answer to A\'s call from the eviction');
