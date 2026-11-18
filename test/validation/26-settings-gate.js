@@ -85,6 +85,20 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.requiredRefusal(dm, idOf('m'), true), null);
     });
 
+    it('whether a module declares settings is read once per tool-set generation', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      let reads = 0;
+      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {},
+        packageOfModule: (n) => { reads += 1; return {name: n, countinghouse: {settings: {u: {type: 'string'}}}}; }};
+      require('../../lib/tool-generation').bump();
+      gate.requiredRefusal(dm, idOf('m'), true);
+      gate.requiredRefusal(dm, idOf('m'), true);
+      assert.strictEqual(reads, 1, 'kept within a generation');
+      require('../../lib/tool-generation').bump();
+      gate.requiredRefusal(dm, idOf('m'), true);
+      assert.strictEqual(reads, 2, 'read again after a bump');
+    });
+
     it('not ready is a loaded, serving device\'s only: a declaring part not registered yet (spawning, restarting, suspended) is left to its hop\'s own answer', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       const DeviceManager = require('../../lib/device-manager');
