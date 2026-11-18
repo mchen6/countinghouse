@@ -23,6 +23,24 @@ const STEPS = {
     return outcome(() => { const m = new M(file, h.module); m.load(file); });
   },
   noParent: () => { const h = handle(); return h == null ? 'no handle' : outcome(() => M._load(path.join(path.dirname(h.module.filename), 'settings-tool.js'))); },
+  // item 7: after the seal, what exists in the runtime's tree is no answer:
+  // a runtime lib path, or a package only the runtime has, resolved from a
+  // genuine runtime parent, a forged one, or createRequire on a runtime
+  // file, fails as a missing file does
+  resolveOracle: () => {
+    const h = handle();
+    if (h == null) return 'no handle';
+    const lib = path.dirname(h.module.filename);
+    const code = (fn) => { try { fn(); return 'found'; } catch (e) { return String(e.code); } };
+    const forged = {__proto__: null, id: path.join(lib, 'logger.js'), filename: path.join(lib, 'logger.js'), paths: M._nodeModulePaths(lib)};
+    return [
+      code(() => M._resolveFilename('./no-such-isolation-file.js', h.module)),
+      code(() => M._resolveFilename('./settings-tool.js', h.module)),
+      code(() => M._resolveFilename('json-stringify-safe', h.module)),
+      code(() => M._resolveFilename('json-stringify-safe', forged)),
+      code(() => M.createRequire(path.join(lib, 'logger.js')).resolve('json-stringify-safe'))
+    ].join(' ');
+  },
   // interop, in both modes: the module's own files by every form
   interop: async () => {
     const out = [];
@@ -31,6 +49,50 @@ const STEPS = {
     out.push(require('module').createRequire(__filename)('../../lib/data.json').own);
     out.push(insideRoot(require.resolve('../../lib/data.json')) ? 'resolved' : 'outside');
     return out.join(' ');
+  },
+  // The window (Revision 4, test 4): while the runtime's late paths run (a
+  // log line, a request, redis), every function object module code can
+  // reach from a frame of the runtime's (a getter's .caller and its
+  // .arguments, a thenable's, each CallSite's getFunction()), and a
+  // Module.wrap set first: none yields a loader (a require, Module._load,
+  // or anything with a resolve and a cache)
+  window: async () => {
+    const found = new Set();
+    const loaderLike = (f) => typeof(f) === 'function' && (f === M._load || f === M.prototype.require
+      || (typeof(f.resolve) === 'function' && f.cache != null) || f.name === 'require' || f.name === '_load');
+    const look = (fn) => {
+      try {
+        const c = fn.caller;
+        if (c != null) { found.add(`caller ${c.name}`); if (loaderLike(c)) found.add('LOADER via caller'); }
+        const a = c != null ? c.arguments : null;
+        if (a != null) for (const x of Array.from(a)) if (loaderLike(x)) found.add('LOADER via arguments');
+      } catch (e) { /* strict: none */ }
+      const prepare = Error.prepareStackTrace;
+      try {
+        Error.prepareStackTrace = (e, frames) => frames.map((f) => { try { return f.getFunction(); } catch (x) { return undefined; } });
+        const fns = new Error().stack;
+        if (Array.isArray(fns)) for (const f of fns) if (loaderLike(f)) found.add('LOADER via getFunction');
+      } finally { Error.prepareStackTrace = prepare; }
+    };
+    const leaked = [];
+    const wrapWas = M.wrap;
+    try { M.wrap = (src) => `globalThis.__isolationLeak && globalThis.__isolationLeak(require, module);${wrapWas(src)}`; } catch (e) { /* refused */ }
+    globalThis.__isolationLeak = (req, mod) => { if (mod != null && typeof(mod.filename) === 'string' && !insideRoot(mod.filename)) leaked.push(mod.filename); };
+    const keys = ['isolationWindow', 'then'];
+    for (const key of keys) {
+      Object.defineProperty(Object.prototype, key, {configurable: true, get: function windowGetter() { look(windowGetter); return undefined; }});
+    }
+    try {
+      await new Promise((resolve) => CHUtil.recordUsage('isolation-probe', 'window', 0, () => resolve()));
+      await new Promise((resolve) => { try { CHUtil.request({url: 'http://isolation.example.invalid/', timeout: 500}, () => resolve()); } catch (e) { resolve(); } });
+      await new Promise((resolve) => { try { CHUtil.redis.get('isolation-window', () => resolve()); } catch (e) { resolve(); } });
+    } finally {
+      for (const key of keys) delete Object.prototype[key];
+      try { M.wrap = wrapWas; } catch (e) { /* refused */ }
+      delete globalThis.__isolationLeak;
+    }
+    const loaders = [...found].filter((x) => x.startsWith('LOADER'));
+    return `${loaders.length === 0 ? 'no loader' : loaders.join(' ')}, ${leaked.length === 0 ? 'nothing compiled' : `compiled: ${leaked.length}`}`;
   },
   // BroadcastChannel: gone under enforce, by either route; under audit it
   // stays (a message crosses to the peer module's worker) and is reported

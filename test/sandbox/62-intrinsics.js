@@ -73,6 +73,13 @@ const CROSSED = 'REMOTE_UNDECLARED';
 // lib/port-scope.js rehome, server free: assigned into an object with no
 // prototype (no inherited setter there), a "__proto__" key stays an own key
 // and never becomes the copy's prototype
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 describe('sandbox 62: re-homing a message', () => {
   const {rehome, rehomeMessage} = require('../../lib/port-scope');
   it('copies own data fields into an object with no prototype; "__proto__" round-trips as an own key; a getter is not run', () => {

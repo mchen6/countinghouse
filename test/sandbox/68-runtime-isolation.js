@@ -24,6 +24,7 @@ const EXPECTED = {
   inspect: 'none named, no runtime Module',
   main: 'no require.main, no mainModule',
   statics: 'none replaced',
+  window: 'no loader, nothing compiled',
   pathCache: 'empty'
 };
 
@@ -68,6 +69,15 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'netModuleLoad'});
       if (mode === 'enforce') assert.notStrictEqual(detail(r), 'loaded', JSON.stringify(r).slice(0, 500));
       else assert.strictEqual(detail(r), 'loaded', JSON.stringify(r).slice(0, 500));
+    });
+    // (item 7: under enforce each fails as the missing file does; under audit
+    // each is reported, as every out-of-root resolution is)
+    it(`resolving the runtime's files from a runtime-shaped parent ${mode === 'enforce' ? 'fails as a missing file does' : 'is reported'}`, async () => {
+      const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'resolveOracle'});
+      const codes = detail(r).split(' ');
+      assert.strictEqual(codes[0], 'MODULE_NOT_FOUND', JSON.stringify(r).slice(0, 500));
+      if (mode === 'enforce') assert.deepStrictEqual(codes, Array(5).fill('MODULE_NOT_FOUND'), JSON.stringify(r).slice(0, 500));
+      else assert.ok(await waitFor(server, /violation require [^\n]*(settings-tool|json-stringify-safe)/), server.output.slice(-1500));
     });
     it('interop: the module\'s own files by import(), require(esm), createRequire and require.resolve', async () => {
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'interop'});

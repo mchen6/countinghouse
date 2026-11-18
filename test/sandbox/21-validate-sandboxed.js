@@ -23,6 +23,13 @@ const seenBy = (r) => {
   return {out: out, seen: m != null ? JSON.parse(m[1]) : null, text: text};
 };
 
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 describe('sandbox 21: countinghouse_validate_module in a sandboxed worker', function() {
   this.timeout(120000);
   let server = null;

@@ -54,6 +54,13 @@ const EXPECT = {
   'require.resolve.paths are its own': (c) => c.ok && c.value.length > 0 && c.value.every((p) => (WIN ? /^[A-Z]:\\(app\\|node_modules$)/ : /^\/(app\/|node_modules$)/).test(p))
 };
 
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 describe('stdio 16: a module\'s own files under enforce, as it sees them (#195)', function() {
   this.timeout(120000);
   let home = null;

@@ -37,6 +37,13 @@ const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 // what ctx.call resolves with: the callee's whole reply, {output: ...}
 const expected = (n) => { const text = JSON.stringify({output: {s: 'x'.repeat(n)}}); return {length: text.length, sha256: sha256(text)}; };
 
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 describe('sandbox 42: a hop\'s result crosses as a transferred buffer', function() {
   this.timeout(180000);
   let server = null;

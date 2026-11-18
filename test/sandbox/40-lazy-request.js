@@ -70,6 +70,13 @@ function request(io, message, timeoutMs = 30000) {
 }
 
 // [where, flags, mode, module, loaded at boot]
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 [
   ['the worker under enforce, net declared', ['--workerThread', '--moduleSandbox', 'enforce'], 'enforce', WITH_NET, true],
   ['the worker under audit, net declared', ['--workerThread', '--moduleSandbox', 'audit'], 'audit', WITH_NET, true],

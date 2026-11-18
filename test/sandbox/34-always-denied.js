@@ -69,6 +69,13 @@ function start(port, w, mode, provider, authPath) {
   {env: {COUNTINGHOUSE_API_KEY: SECRET_ENV}});
 }
 
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 describe('sandbox 34: the always-denied set', function() {
   this.timeout(180000);
 

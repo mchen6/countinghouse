@@ -8,19 +8,23 @@
 // 3: its input and output are checked on the main thread), so it finds
 // nothing and says so. On the main thread (single-thread mode) it does
 // nothing: it would turn off the whole server's validation.
+// (the runtime's modules as require.cache held them before the lockdown,
+// from the test's probe: since #194's PR 2 module code's own require.cache
+// holds its own files only, lib/lean-worker.js)
+const runtimeCache = (globalThis[Symbol.for('countinghouse.test.runtime')] || {}).modules || require.cache;
 const path = require('path');
 const state = {takes: 0, tampered: false};
 
 state.tamper = function() {
   if (require('worker_threads').isMainThread) return false;
-  const find = (tail) => Object.keys(require.cache).find((p) => p.endsWith(`${path.sep}lib${path.sep}${tail}`));
+  const find = (tail) => Object.keys(runtimeCache).find((p) => p.endsWith(`${path.sep}lib${path.sep}${tail}`));
   const service = find('service.js');
   const validator = find('validator.js');
   if (service == null || validator == null) return false;
-  require.cache[service].exports.prototype.validateActionCall = function(action, args, isInput, callback) {
+  runtimeCache[service].exports.prototype.validateActionCall = function(action, args, isInput, callback) {
     return callback(null, null);
   };
-  require.cache[validator].exports.validate = function(name, schemaObj, data, callback) {
+  runtimeCache[validator].exports.validate = function(name, schemaObj, data, callback) {
     return callback(null, null);
   };
   state.tampered = true;

@@ -24,6 +24,13 @@ const MODULE = path.join(ROOT, 'test', 'fixtures', 'win-probe');
 const KEY = 'spelled-install-key';
 const WIN = process.platform === 'win32';
 
+// (the test's late-load probe on: since #194's PR 2 its fixtures reach a
+// runtime object only through the probe's hand-over, module code's own
+// require.cache holding its own files only)
+let savedLateLoads;
+before(() => { savedLateLoads = process.env.CH_TEST_LATE_LOADS; process.env.CH_TEST_LATE_LOADS = '1'; });
+after(() => { if (savedLateLoads === undefined) delete process.env.CH_TEST_LATE_LOADS; else process.env.CH_TEST_LATE_LOADS = savedLateLoads; });
+
 describe('stdio 26: an install run by a spelling that isn\'t its real path (#272)', function() {
   this.timeout(180000);
   let base = null;

@@ -182,6 +182,20 @@ you have to do. What the sandbox does and does not protect is in
   string, `isMain` is passed on as given, and a replacement takes effect.
   A dependency that replaces any of them (proxyquire, mock-require, some
   APM agents) needs `--moduleSandbox off` under `enforce`.
+- **Breaking, under the sandbox (`audit` and `enforce`): the runtime's own
+  modules are out of a module's reach.**
+  - `require.cache` (and `module.constructor._cache`, the same object)
+    holds the module's own files only.
+  - There is no main module: `require.main` and `process.mainModule` are
+    `undefined`.
+  - The loader's other statics are locked in both modes: `_pathCache`
+    keeps nothing written to it, `Module.prototype.require` and `_compile`,
+    `Module.prototype` and the resolver's helpers can't be replaced, and the
+    extensions table takes no new extension under `audit` too.
+  - A file of countinghouse's, or a package only it has, resolves as a
+    missing one would.
+  - Under `enforce`, the global `BroadcastChannel` is gone; under `audit`
+    its first use is reported.
 - **Breaking: `ctx.job` is never `null`.** Outside a task it is now
   `{id: null, progress(n), info(cb)}`: `progress(n)`, a number from 0 to 100,
   is the call's own progress, sent to an MCP client that asked for it
