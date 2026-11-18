@@ -71,6 +71,39 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       assert.strictEqual(gate.stateOf({moduleManager: {}}, modulesOwn), null);
     });
 
+    it('a package.json that cannot be read is taken as declaring (not ready), never as none', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const dm = {deviceMap: {[idOf('m')]: {moduleName: 'm'}}, moduleManager: {}, packageOfModule: () => { throw new Error('EIO'); }};
+      require('../../lib/tool-generation').bump();
+      const err = gate.requiredRefusal(dm, idOf('m'), true);
+      assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
+    });
+
+    it('a module\'s own claim is never accepted on a package.json that cannot be read: a module fault', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const top = Object.assign(wmOf(), {hostModuleName: 'top', settings: null,
+        bindings: {[idOf('top')]: {identity: 'k', module: 'top', targets: new Set([`${idOf('part')}|urn:x:serviceID:s|act`])}}});
+      const part = Object.assign(wmOf(), {hostModuleName: 'part', settings: null, bindings: {}});
+      const dm = {deviceMap: {[idOf('top')]: top, [idOf('part')]: part}, moduleManager: {},
+        packageOfModule: (n) => { if (n === 'part') throw new Error('EIO'); return {name: n}; }};
+      require('../../lib/tool-generation').bump();
+      const forged = Object.assign(new (require('../../lib/countinghouse-error').CountinghouseError)('SETTING_NOT_READY'), {message: 'not ready'});
+      assert.strictEqual(gate.claimAnswer(forged, dm, idOf('top'), undefined, true).code, 'DEVICE_INVOKE_EXCEPTION');
+    });
+
+    it('a state that declares settings with no values is not ready; what it carries is never held', () => {
+      const idOf = (n) => callAddress.deviceIDForName(n);
+      const st = Object.assign(stateWith({u: {type: 'string'}}), {values: null});
+      const wm = Object.assign(wmOf(), {hostModuleName: 'm', settings: st, bindings: {}});
+      const dm = {deviceMap: {[idOf('m')]: wm}, moduleManager: {}, packageOfModule: (n) => ({name: n})};
+      require('../../lib/tool-generation').bump();
+      const err = gate.requiredRefusal(dm, idOf('m'), true);
+      assert.ok(err != null && err.code === 'SETTING_NOT_READY', String(err && err.code));
+      const carried = gate.toCarry(wmOf(), st);
+      assert.deepStrictEqual(carried, {v: null});
+      assert.strictEqual(require('../../lib/handler-ctx').settingsHeld({settings: carried}), false);
+    });
+
     it('whether a module declares settings is asked at each call, never kept: an answer that changes is seen at once', () => {
       const idOf = (n) => callAddress.deviceIDForName(n);
       let declared = false;
@@ -164,6 +197,12 @@ describe('validation 26: module settings at a call (lib/settings-gate.js)', () =
       const unnamed = gate.claimAnswer(hop, gone, idOf('top'), undefined, true);
       assert.strictEqual(unnamed.code, 'SETTING_NOT_READY');
       assert.match(unnamed.message, /The settings of this tool are not ready yet/);
+      // the part serving WITH its state now: a claim is the module's fault,
+      // though the part declares settings (nothing is not ready)
+      dm.deviceMap[idOf('part')].settings = stateWith({r: {type: 'string', required: true}}, {r: 'x'});
+      const served = gate.claimAnswer(hop, dm, idOf('top'), undefined, true);
+      assert.strictEqual(served.code, 'DEVICE_INVOKE_EXCEPTION', 'accepted only while a reached module serves with no state');
+      dm.deviceMap[idOf('part')].settings = null;
       // one a module makes up, with no module behind it that declares settings: a module fault
       const forged = gate.claimAnswer(gate.requiredRefusal(dm, idOf('part'), false), dm, idOf('part'), undefined, true);
       assert.strictEqual(forged.code, 'DEVICE_INVOKE_EXCEPTION');
