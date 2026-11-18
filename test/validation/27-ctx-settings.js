@@ -64,6 +64,8 @@ describe('validation 27: ctx.settings and ctx.settingRequired', () => {
     assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 499}}), false, 'never given: not held');
     assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 499, values: {n: 1}}}), true, 'its values with it');
     assert.strictEqual(handlerCtx.settingsHeld({input: {}}), true, 'none carried');
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {values: {n: 1}}}), false, 'values with no version: never held (settingsOf would not read them)');
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 'x', values: {n: 1}}}), false, 'a version that is not a number');
   });
 
   it('ctx.settingRequired: the issued SETTING_REQUIRED claim, the name its message, cut to 64', () => {
