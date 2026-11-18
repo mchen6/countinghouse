@@ -36,6 +36,7 @@ const ALLOWED = [
   'lib/peer-channel.js',
   'lib/handler-map.js',
   'lib/handler-ctx.js',
+  'lib/settings-ring.js',
   // a progress value's one rule (F4-3): a pure check, no requires, taken at boot by handler-ctx and countinghouse-util
   'lib/progress-value.js',
   'lib/chutil-facade.js',

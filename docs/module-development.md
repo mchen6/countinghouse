@@ -58,6 +58,8 @@ name and the fix. A module never half-loads.
 | `ctx.caller` | `{id, isAdmin}` — the caller: `id` is an opaque id (`u_` and 22 characters), the same for that user everywhere on this server, never a key or a user name. For a hop's callee, the identity the hop authorized as (the calling module's binding) |
 | `ctx.device` | `{deviceID, friendlyName}` — this device |
 | `ctx.serviceID`, `ctx.actionName` | the action being served |
+| `ctx.settings` | your module's settings for this call: frozen, no prototype, an unset setting absent ([Module settings](#module-settings)) |
+| `ctx.settingRequired(name)` | return (or throw) it when the call needs a setting the user has not set: the client is told, in the runtime's words, to ask the user for it ([A missing setting](#a-missing-setting)) |
 | `ctx.log(entry)` | device log, already bound to this device |
 | `ctx.serviceClient(opts, cb)` | call another module by deviceID, as `ctx.call` authorizes (no `as`) — see below |
 | `ctx.call(address, input, opts)` | call another module by name — see below |
@@ -648,6 +650,47 @@ The vocabulary is small and closed. It is not JSON Schema.
 - **The declaration is pinned when an operator loads your module**, as
   `calls` is: a module that rewrites its `package.json` and restarts under
   supervision keeps the declaration it was loaded with.
+
+### Reading them: `ctx.settings`
+
+```js
+module.exports = async function forecast(input, ctx) {
+  const units = ctx.settings.units;                       // 'imperial'
+  const repo  = input.repo || ctx.settings.defaultRepo;
+  if (repo == null) return ctx.settingRequired('defaultRepo');
+  // ...
+};
+```
+
+- `ctx.settings` holds the values for this call: the defaults, then the
+  user's (or the operator's) values. It is frozen and has no prototype. An
+  unset setting is absent.
+- A change applies from the next call: a call in flight keeps the values it
+  started with.
+- A task keeps the values of its first run for its life, so an answer to
+  `ctx.ask` is never run under other settings than it was asked under.
+- Every path gets them: a client's call, a call from another module, a
+  task's run, a per-session worker, and a direct peer channel.
+
+### A missing setting
+
+- **Declared `required`.** A call to your module while the setting is unset
+  fails before your handler runs, with `SETTING_REQUIRED`, and is not billed.
+  The check covers every module the call can reach through its declared
+  calls, so a part's missing setting fails the outer call too. The client is
+  told which setting (`_meta["countinghouse/missingSettings"]`) and to ask
+  the user for it; for a part's, only that a module the tool calls needs a
+  setting made at a terminal (a part's settings are never named to a
+  client).
+- **Needed only as a fallback** (most settings are a default for an input,
+  such as `repo`): don't mark it `required`, since a call that names the
+  value itself would then be refused. When neither the input nor the
+  setting gives a value, `return ctx.settingRequired('defaultRepo')`. The
+  runtime answers the same `SETTING_REQUIRED`, in its own words, when the
+  setting is declared by your module and unset in the values the call ran
+  with; any other claim is answered as a fault of your module
+  (`DEVICE_INVOKE_EXCEPTION`). The call ran, so it is metered as a call
+  whose handler returned an error.
 
 `countinghouse-validate` checks the declaration, by position and field, and
 prints how each setting is changed in conversation (on request, or only with
