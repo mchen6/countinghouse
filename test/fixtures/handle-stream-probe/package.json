@@ -1,0 +1,1 @@
+{"name": "handle-stream-probe", "version": "1.0.0", "description": "leaves a file handle's stream while a read is in flight"}

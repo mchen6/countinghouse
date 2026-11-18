@@ -482,6 +482,20 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(r.state.version > ran.version);
     });
 
+    it('a restart never writes a load\'s history lines, its previous state set aside or not', () => {
+      const reread_ = require('../../lib/settings-reread');
+      write({'module.w.units': 'kelvin', 'module.r.region': 'eu'});
+      const file = path.join(dir, 'history.jsonl');
+      const lines = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter((l) => /no longer valid/.test(l)).length : 0);
+      const before = lines();
+      // a previous state of another declaration (a failed reload's): set aside
+      const other = ms.stateFor('w', pkgOf('w', {z: {type: 'boolean', default: true}}), {operator: false});
+      reread_.next('w', {pkg: W, net: []}, {previous: other, ceiling: {state: 'none'}, ceilingRefuses: true});
+      assert.strictEqual(lines(), before, 'a restart wrote none');
+      reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}});
+      assert.strictEqual(lines(), before + 1, 'an operator\'s load writes its line');
+    });
+
     it('a restart the ceiling refuses is suspended at once, with the ceiling\'s reason (no crash loop); another failure is retried', () => {
       const reread_ = require('../../lib/settings-reread');
       const {restartFailed} = require('../../lib/module-manager');
@@ -501,6 +515,29 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       calls.length = 0;
       restartFailed(mm, 'w', record, new Error('a crash'));
       assert.deepStrictEqual(calls.map((x) => x[0]), ['exited'], 'any other failure: the supervisor\'s retry');
+    });
+
+    it('a call\'s package needs the device manager: without one nothing is resolved', () => {
+      const reread_ = require('../../lib/settings-reread');
+      assert.strictEqual(reread_.calleeOf('region-part/partService.run', null), null);
+    });
+
+    it('a part still spawning (no device registered) is found by its pinned device IDs', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const callAddress = require('../../lib/call-address');
+      const dm = {deviceMap: {}, moduleOfDevice: () => null};
+      const mm = {pinnedDevicePackages: new Map([[callAddress.deviceIDForName('region-part'), '@acme/region-part']])};
+      assert.strictEqual(reread_.calleeOf('region-part/partService.run', dm, mm), '@acme/region-part');
+    });
+
+    it('a notice is keyed by the friendlyName the module\'s own api.json gives, before its devices register', async () => {
+      const mm = manager();
+      mm.pinnedFriendlyNames = {w: 'weather'};
+      write({'module.w.units': 'kelvin', 'module.w.n': 3, 'module.r.region': 'eu'});
+      // no device of w registered: an empty device map
+      await rr(mm, {dm: {deviceMap: {}, moduleOfDevice: () => null}});
+      assert.strictEqual(notices.take('weather').filter((t) => /units not applied/.test(t)).length, 1);
+      assert.deepStrictEqual(notices.take('w'), []);
     });
 
     it('single-thread mode\'s in-process devices (no host module) by their package.json; a module of two devices told once on any result', async () => {
@@ -540,6 +577,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       await rr(mm);
       const wm = proxy('w');
       wm.settings = spawned;
+      mm.modules.w = wm;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm);
       assert.deepStrictEqual(Object.assign({}, wm.settings.values), {units: 'metric', n: 9});
       assert.strictEqual(mm.lastSettings.get('w'), wm.settings, 'the restart\'s copy too');
@@ -547,12 +585,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       const fresh = wm.settings;
       const wm2 = proxy('w');
       wm2.settings = fresh;
+      mm.modules.w = wm2;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm2);
       assert.strictEqual(wm2.settings, fresh);
       // a new version (another declaration): made from its own package.json, never the old state's
       const W2 = pkgOf('w', {units: {type: 'enum', values: ['metric', 'imperial'], default: 'metric'}, extra: {type: 'boolean', default: true}});
       const wm3 = proxy('w');
       wm3.settings = ms.stateFor('w', W2, {operator: true, net: []});
+      mm.modules.w = wm3;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm3);
       assert.deepStrictEqual(Object.keys(wm3.settings.settings).sort(), ['extra', 'units']);
       assert.strictEqual(wm3.settings.made.pkg, W2);
@@ -560,8 +600,35 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       write({'module.w.units': 'kelvin', 'module.w.n': 4, 'module.r.region': 'eu'});
       const wm4 = proxy('w');
       wm4.settings = fresh;
+      mm.modules.w = wm4;   // registered first, as the module manager does
       mmLib.settleSettings(mm, 'w', wm4);
       assert.deepStrictEqual(Object.assign({}, wm4.settings.values), {units: 'metric', n: 9}, 'kept whole, as reread keeps it');
+    });
+
+    it('a worker registering with a state made under the settings file and ceiling as they are takes it as it is (no second read)', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const mmLib = require('../../lib/module-manager');
+      const mm = manager();
+      const made = reread_.next('w', {pkg: W, net: []}, {load: true}).state;
+      const wm = proxy('w');
+      wm.settings = made;
+      mm.modules.w = wm;
+      // counted where it reads the file: stateFor
+      const real = ms.stateFor;
+      let called = 0;
+      ms.stateFor = (...a) => { called += 1; return real(...a); };
+      try {
+        mmLib.settleSettings(mm, 'w', wm);
+        assert.strictEqual(called, 0, 'unchanged: not made again');
+        write({'module.w.units': 'metric', 'module.r.region': 'eu'});
+        mmLib.settleSettings(mm, 'w', wm);
+        assert.strictEqual(called, 1, 'the file changed: made again');
+        assert.strictEqual(wm.settings.values.units, 'metric');
+        // the same ceiling read again (a new object, as on Windows): unchanged
+        const before = called;
+        mmLib.settleSettings(mm, 'w', wm);
+        assert.strictEqual(called, before);
+      } finally { ms.stateFor = real; }
     });
 
     it('next: a load (no previous) is stateFor\'s; a restart under a ceiling refusal refuses (ceilingRefuses); a running module keeps its state', () => {
@@ -595,13 +662,82 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       await assert.rejects(reread.reread(manager(), null), (e) => e.code === 'CONTROL_FAILED');
     });
 
+    it('the user\'s file unusable: the operator\'s ceiling binds all the same (its fixed values over the running ones), the problem said once, the request refused', async () => {
+      const mm = manager();
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const logged = [];
+      const c = () => trusted(parsed({moduleSettings: {'w.units': {fixed: 'metric'}}}).ceiling);
+      await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.code === 'CONTROL_FAILED' && e.fileProblem === true && e.appliedByCeiling === 1 &&
+        /the operator's ceiling was applied \(1 module changed\)/.test(e.message));
+      assert.strictEqual(mm.modules.w.settings.values.units, 'metric', 'the fixed value binds');
+      // never silent: a history line and a notice naming what changed
+      const lines = fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      assert.ok(lines.some((h) => h.setting === 'module.w' && h.change === 'applied by the operator\'s ceiling: units'), JSON.stringify(lines));
+      assert.ok(notices.take('w').some((t) => /changed by the operator's ceiling: units/.test(t)));
+      assert.strictEqual(mm.modules.r.settings.values.region, 'eu', 'nothing else changed');
+      await assert.rejects(rr(mm, {ceiling: c, log: (l) => logged.push(l)}), (e) => e.appliedByCeiling === 0);
+      assert.strictEqual(logged.filter((l) => /only the operator's ceiling is applied/.test(l)).length, 1, 'said once');
+      // and each module's: once, named in what was refused
+      assert.strictEqual(logged.filter((l) => /^module settings: w: the settings file cannot be read/.test(l)).length, 1, 'w\'s said once');
+    });
+
+    it('one ceiling rule: any caller of next() with the file unreadable takes the ceiling\'s fixed values (a registration too)', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const r = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: trusted(parsed({moduleSettings: {'w.n': {fixed: 5}}}).ceiling)});
+      assert.ok(r.applied);
+      assert.strictEqual(r.state.values.n, 5, 'the new fixed value binds though the file cannot be read');
+      assert.strictEqual(r.state.values.units, ran.values.units, 'nothing else changed');
+    });
+
+    it('a refusal said while the file is unreadable is cleared by a success, so a later one is said again', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const ran = reread_.next('w', {pkg: W, net: []}, {load: true, ceiling: {state: 'none'}}).state;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const lines = [];
+      const bad = trusted(parsed({moduleSettings: {'w.n': {fixed: 500}}}).ceiling);
+      const a = reread_.next('w', {pkg: W, net: []}, {previous: ran, ceiling: bad, log: (l) => lines.push(l)});
+      const b = reread_.next('w', {pkg: W, net: []}, {previous: a.state, ceiling: bad, log: (l) => lines.push(l)});
+      assert.strictEqual(lines.filter((l) => /does not accept/.test(l)).length, 1, 'said once');
+      const ok = reread_.next('w', {pkg: W, net: []}, {previous: b.state, ceiling: {state: 'none'}, log: (l) => lines.push(l)});
+      reread_.next('w', {pkg: W, net: []}, {previous: ok.state, ceiling: bad, log: (l) => lines.push(l)});
+      assert.strictEqual(lines.filter((l) => /does not accept/.test(l)).length, 2, 'said again after a success');
+    });
+
+    it('a reread refused for its file carries the stamp taken before the read (the watch compares that)', async () => {
+      const mm = manager();
+      fs.writeFileSync(options.settingsFile, '{not json');
+      let stamp = null;
+      await assert.rejects(rr(mm), (e) => { stamp = e.stamp; return e.fileProblem === true; });
+      assert.ok(typeof(stamp) === 'string' && stamp.includes(options.settingsFile), String(stamp));
+    });
+
+    it('a ceiling that cannot be read when a state is made binds as untrusted, never a throw', () => {
+      const reread_ = require('../../lib/settings-reread');
+      const tool = require('../../lib/settings-tool');
+      const saved3 = options.settingsTool;
+      options.settingsTool = true;
+      tool.ceilingForControl(() => { throw Object.assign(new Error('EIO'), {code: 'EIO'}); });
+      try {
+        const ran = ms.stateFor('w', W, {operator: true});
+        let r = null;
+        assert.doesNotThrow(() => { r = reread_.settle({modules: {}}, 'w', ran); });
+        assert.ok(r != null);
+      } finally {
+        options.settingsTool = saved3;
+        tool.ceilingForControl(() => tool.cachedCeiling(() => require('../../lib/settings-ceiling').readCeiling()));
+      }
+    });
+
     it('single-thread mode: the manager\'s own copy', async () => {
       const mm = {modules: {}, singleThreadSettings: new Map(), lastSettings: null};
-      mm.singleThreadSettings.set('w', ms.stateFor('w', W, {operator: true}));
+      // the serving instance's ticket, which its devices read
+      mm.singleThreadSettings.set('w', {state: ms.stateFor('w', W, {operator: true})});
       write({'module.w.units': 'metric'});
       const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
       assert.deepStrictEqual(reply, {applied: 1, refused: []});
-      assert.strictEqual(mm.singleThreadSettings.get('w').values.units, 'metric');
+      assert.strictEqual(mm.singleThreadSettings.get('w').state.values.units, 'metric');
     });
 
     it('refused whole, nothing changed: another "what", or a settings file that cannot be read', async () => {
@@ -663,17 +799,21 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.ok(lines.some((l) => /re-read \(0 applied/.test(l)), lines.join('\n'));
       listen({state: 'untrusted', file: '/x', problem: 'p'});
       assert.strictEqual(queued.length, 1, 'trust changed: a reread');
-      // the settings file mid-write: said once, retried
+      // the settings file mid-write: its stamp watched, read again once it changes
       fs.writeFileSync(options.settingsFile, '{not json');
       await queued.shift()();
       assert.strictEqual(timers.length, 1);
       timers.shift()();
-      await queued.shift()();
-      assert.strictEqual(lines.filter((l) => /re-read failed/.test(l)).length, 1, 'the same failure, said once');
+      assert.strictEqual(queued.length, 0, 'unchanged: not read again');
+      assert.strictEqual(timers.length, 1, 'still watched');
+      assert.ok(!lines.some((l) => /re-read failed/.test(l)), 'reread said it; the watcher says nothing more');
+      // fixed by hand: read again, and the watch stops
       fs.writeFileSync(options.settingsFile, JSON.stringify({version: 1, values: {}}));
       timers.shift()();
+      assert.strictEqual(queued.length, 1);
       await queued.shift()();
       assert.ok(/re-read \(/.test(lines[lines.length - 1]), lines.join('\n'));
+      assert.strictEqual(timers.length, 0);
       // a failure that would last (no --settingsFile): said, never retried
       const file = options.settingsFile;
       options.settingsFile = null;
