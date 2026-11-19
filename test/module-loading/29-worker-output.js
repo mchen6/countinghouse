@@ -29,6 +29,10 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     assert.deepStrictEqual(s.push('tail'), []);
     assert.deepStrictEqual(s.end(), ['tail']);
     assert.strictEqual(lines.cleanField('a\nb\u202ec\x1b'), 'a\nbc', 'a log field keeps \\n');
+    // the gate's subset of the one class (lib/module-text.js): the bidi marks
+    // go too, a tab stays, an emoji sequence stays whole
+    assert.strictEqual(lines.cleanField('a\u200eb\u200fc\u061cd\te'), 'abcd\te');
+    assert.strictEqual(lines.lineOf('\u{1f468}\u200d\u{1f469} \u2764\ufe0f'), '\u{1f468}\u200d\u{1f469} \u2764\ufe0f');
   });
 
   it('a budget: past its limit dropped and counted, said once when the window ends', () => {
@@ -206,6 +210,32 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     const dropped = later.filter((x) => x[1].dropped != null).reduce((n, x) => n + x[1].dropped, 0);
     // the lost line, and the empty lines past the budget, each at what writing it costs
     assert.ok(dropped >= (prefix + 'lost line'.length + 1) + (300000 * (prefix + 1) - limits.STREAM_BUDGET), `${dropped} dropped`);
+  });
+
+  // The cleaning runs on the built-ins lib/module-text.js took at load: a
+  // module that patches them afterwards (every method the rule uses, made to
+  // fail open) still gets no control or bidi character into its own lines
+  // (the Reviewer, the fold after #445).
+  it('worker side: a module patching the built-ins after load gets no control or bidi character into its lines', async () => {
+    const w = new Worker(`
+      const {parentPort} = require('worker_threads');
+      const sent = [];
+      const {installModuleStdio} = require(${JSON.stringify(path.join(LIB, 'worker-stdio'))});
+      installModuleStdio('mod-p', {send: (stream, data) => { if (data.lines) sent.push(...data.lines); return true; }});
+      // the module's own code, after the runtime's load
+      RegExp.prototype.test = function() { return false; };
+      RegExp.prototype.exec = function() { return null; };
+      RegExp.prototype[Symbol.replace] = function(s) { return String(s); };
+      String.prototype.replace = function() { return String(this); };
+      String.prototype.codePointAt = function() { return 0x41; };
+      Set.prototype.has = function() { return true; };
+      Array.from = (x) => x;
+      process.stdout.write('evil\\x1b[2J\\u202e\\u2066\\u200f\\x9b2Jend\\n');
+      setTimeout(() => parentPort.postMessage(sent), 300);`, {eval: true, stdout: true});
+    const got = await new Promise((resolve, reject) => { w.once('message', resolve); w.once('error', reject); });
+    await w.terminate();
+    assert.ok(got.length >= 1 && got.some((l) => /evil/.test(l) && /end/.test(l)), JSON.stringify(got));
+    for (const l of got) assert.doesNotMatch(l, /[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069\u200e\u200f\u061c]/, JSON.stringify(l));
   });
 
   it('worker side: an unfinished line goes as a line before the runtime\'s reply, never held back', async () => {
