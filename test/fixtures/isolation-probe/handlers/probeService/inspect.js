@@ -203,10 +203,15 @@ const STEPS = {
     const direct = (spec) => { try { M._resolveFilename(spec, module); return 'found'; } catch (e) { return String(e.code); } };
     same('directMapped', direct('#sibclimb'), direct('#nosibclimb'));
     // (findPackageJSON of a bare name: the module's own dependency's, found
-    // inside the root; one above it is nothing)
+    // inside the root -- for a subpath too, its root manifest, as plain Node
+    // answers -- from a file or a directory base; one above it is nothing)
     const fpj = M.findPackageJSON;
+    const asDir = require('url').pathToFileURL(`${path.dirname(__filename)}/`).href;
     out.push(typeof(fpj) !== 'function' ||
-      (String(fpj('dep', __filename)).endsWith('/node_modules/dep/package.json') && fpj('sibpkg', __filename) === undefined) ? 'same' : 'findPackageJSON');
+      (String(fpj('dep', __filename)).endsWith('/node_modules/dep/package.json') && String(fpj('dep', asDir)).endsWith('/node_modules/dep/package.json') &&
+       String(fpj('dep/esm/x.mjs', __filename)).endsWith('/node_modules/dep/package.json') && fpj('sibpkg', __filename) === undefined) ? 'same' : `findPackageJSON(${fpj('dep', asDir)} ${fpj('dep/esm/x.mjs', __filename)})`);
+    // (a '#' target is an exact file, as in Node: none with no extension)
+    out.push(direct('#noext') !== 'found' ? 'same' : 'noext');
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
