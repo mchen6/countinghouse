@@ -1314,7 +1314,8 @@ fails if it is removed:
 | A task's question | at most 64 of an owner's tasks waiting, 10,000 in all; a wait of an hour, then `ASK_EXPIRED` | questions 08 |
 | Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
-| Every read, get, completion and task method | the per-key rate limit, before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| Every read, get, completion and task method | the per-key rate limit, once the key resolves and before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| `tools/call` | the per-key rate limit (and `--globalRateLimit`) on the call's run, after its one answer for a tool the caller can't see is decided; the key's resolution and grant read before it are not limited, as no limiter exists for a key that does not resolve (registered after the first release) | auth 15 (a built-in), mcp-contract 37 (a task); auth 54 the order |
 | The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the one written longest ago out first; a failed read never kept | mcp-contract 40, auth 54 |
 
 A module resource read takes its token from the call path, after the
