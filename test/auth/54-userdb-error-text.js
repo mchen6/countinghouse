@@ -120,7 +120,11 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       await ask((cb) => p.listDevices('k', cb));
       assert.match(warned[warned.length - 1], /answers again \(listDevices\): 12 lookups failed meanwhile; 2 with reasons past the first 8, not said/);
       // a reason as text, whatever it is (the high review of #445, 6 and 8)
-      assert.deepStrictEqual([auth.reasonOf('down'), auth.reasonOf({at: 1}), auth.reasonOf(undefined), auth.reasonOf(new Error(''))], ['down', '{"at":1}', '(none)', '(none)']);
+      // a reason is never an object's JSON or a function's source: a driver's
+      // object can carry its credentials (the high review of #448, 6)
+      const driver = {host: 'db', credential: `cred-${process.pid}`, toString() { return this.credential; }};
+      assert.deepStrictEqual([auth.reasonOf('down'), auth.reasonOf(driver), auth.reasonOf(() => 'source'), auth.reasonOf(undefined), auth.reasonOf(new Error(''))],
+        ['down', '(no message)', '(no message)', '(no message)', '(no message)']);
       // another realm's Error keeps its message
       assert.strictEqual(auth.reasonOf(require('vm').runInNewContext('new Error("from a vm")')), 'from a vm');
       // an outage answered within the quiet period, then quiet, is over at

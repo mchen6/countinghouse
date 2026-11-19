@@ -524,9 +524,11 @@ function deniedResolved() {
 
 var denied = deniedResolved();
 identityReady.then(function() { return denied.then(serve); }, function(e) {
-  // (the provider's own reason: lib/auth's guard answers its catalogue
-  // text and keeps the provider's error as the cause)
-  var why = require('./lib/auth').reasonOf((e != null && e.cause !== undefined) ? e.cause : e);
+  // (the provider's own reason, when this is lib/auth's guard answering in
+  // the catalogue's words with the provider's error as its cause; else the
+  // error's own message: the Reviewer's high review of #448, 8)
+  var guarded = e != null && e.code === 'SYSTEM_ERROR_USERDB_NA' && e.cause !== undefined;
+  var why = guarded ? require('./lib/auth').reasonOf(e.cause) : (e && e.message);
   console.error('identity: the id index could not be built from --authProvider ' + options.authProvider + ': ' + why);
   process.exit(2);
 });
