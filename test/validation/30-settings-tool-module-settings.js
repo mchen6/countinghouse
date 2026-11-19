@@ -270,6 +270,18 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       } finally { sessions.askConditions = real; }
     });
 
+    it('a module setting\'s change in a session is every session\'s line, naming no session to readers', async () => {
+      const tool = make();
+      await tool.set('module.@acme/weather-tool.units', 'metric', 'settings tool', {shared: true, session: 'lines-1'});
+      const line = history().find((h) => h.setting === 'module.@acme/weather-tool.units');
+      assert.strictEqual(line.session, 'lines-1');
+      assert.match(line.change, /^all sessions/);
+      // a reader that is not that session (here the runtime's own) sees it
+      const seen = (await tool.get()).history;
+      assert.ok(seen.some((h) => h.setting === 'module.@acme/weather-tool.units' && h.new === 'metric'), JSON.stringify(seen));
+      assert.ok(seen.every((h) => h.session === undefined), 'no session id shown');
+    });
+
     it('a value refused when it is applied (the module reloaded, the ceiling changed): said as not applied, never applies now', async () => {
       let asked = null;
       const tool = make({applyModuleSettings: async (pkg) => { asked = pkg; return {applied: 0, refused: [{name: 'module.@acme/weather-tool.units', code: 'SETTING_INVALID'}]}; }});
