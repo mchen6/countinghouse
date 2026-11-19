@@ -223,6 +223,7 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     out.setSink((stream, line) => written.push([stream, line]));
     const wm = {hostModuleName: 'mod-b'};
     const raw = 'evil\x1b[2J\u202e\u2066\u200f\x9b2J\u2028end\r\nforged: WARN';
+    try {
     out.onOutput(wm, 'stdout', {lines: [raw]});
     out.onOutput(wm, 'stderr', {lines: [raw]});
     assert.strictEqual(written.length, 2, JSON.stringify(written));
@@ -245,7 +246,10 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     assert.ok(strings.some((v) => /evil/.test(v)), JSON.stringify(records));
     // a log field keeps its \n (the log escapes it as JSON): nothing else
     for (const piece of strings) assert.doesNotMatch(piece.replace(/\n/g, ''), DIRTY, JSON.stringify(piece));
-    out.end(wm);
+    } finally {
+      // (its timer ended whatever failed: a folder runs in one process)
+      out.end(wm);
+    }
   });
 
   it('worker side: an unfinished line goes as a line before the runtime\'s reply, never held back', async () => {

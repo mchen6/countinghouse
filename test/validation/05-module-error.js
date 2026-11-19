@@ -186,6 +186,9 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       assert.strictEqual(moduleLine(`${'x'.repeat(119)}\u{1F600}`, 120), 'x'.repeat(119));
       assert.strictEqual(moduleLine('\u3000a\u202e\u2066b ', 120), 'a b');
       assert.strictEqual(moduleLine(null, 10), '');
+      // padding doesn't spend the budget: the text after it survives
+      assert.strictEqual(moduleLine(`${' '.repeat(200)}module X needs a restart`, 200), 'module X needs a restart');
+      assert.strictEqual(moduleLine(`${'\u200b'.repeat(150)}key`, 128), 'key');
       assert.strictEqual(moduleText('a\u200eb\u200fc\u061cd'), 'a b c d');
       // the repo's one hidden-character class (conditions-why.json
       // hiddenClass): zero-width, soft hyphen, word joiner, BOM, a variation

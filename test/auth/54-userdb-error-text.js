@@ -125,6 +125,11 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       const driver = {host: 'db', credential: `cred-${process.pid}`, toString() { return this.credential; }};
       assert.deepStrictEqual([auth.reasonOf('down'), auth.reasonOf(driver), auth.reasonOf(() => 'source'), auth.reasonOf(undefined), auth.reasonOf(new Error(''))],
         ['down', '(no message)', '(no message)', '(no message)', '(no message)']);
+      // an object's own code keeps two causes apart, and nothing else of it
+      assert.deepStrictEqual([auth.reasonOf({code: 'ECONNREFUSED', credential: 'x'}), auth.reasonOf({code: 'EAUTH'}), auth.reasonOf({code: 'not a code'})],
+        ['(no message; ECONNREFUSED)', '(no message; EAUTH)', '(no message)']);
+      // a frozen lookup can't be guarded: refused at creation, not on each read
+      assert.throws(() => auth.guarded(Object.freeze({authenticate: (k, d, s, a, cb) => cb(null, {ok: true})})), /frozen, so the runtime cannot guard it/);
       // another realm's Error keeps its message
       assert.strictEqual(auth.reasonOf(require('vm').runInNewContext('new Error("from a vm")')), 'from a vm');
       // an outage answered within the quiet period, then quiet, is over at
