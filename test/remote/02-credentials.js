@@ -27,12 +27,12 @@ const allowance = (obj) => {
 };
 const ALLOWED = () => allowance({'https://api.githubcopilot.com': ['COUNTINGHOUSE_GITHUB_TOKEN', 'GITHUB_TOKEN']});
 
-// this file's temporary trees, under test/.tmp and removed
-// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
-const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-02']);
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-02'], {base: require('os').tmpdir()});
 
 describe('remote 02: the credential allowance', () => {
-  tmpDirs.hooks();
   it('reads env when allowed for the exact origin', () => {
     const c = resolveCredential(GH, {COUNTINGHOUSE_GITHUB_TOKEN: TOKEN, GITHUB_TOKEN: OTHER}, ALLOWED());
     assert.deepStrictEqual(c, {header: 'Authorization', value: `Bearer ${TOKEN}`, source: 'COUNTINGHOUSE_GITHUB_TOKEN'});
@@ -99,13 +99,13 @@ describe('remote 02: the credential allowance', () => {
     const a = allowance({[`http://127.0.0.1:${testPort(9688)}`]: ['CH_TEST_REMOTE_TOKEN']});
     assert.ok(a.get(`http://127.0.0.1:${testPort(9688)}`).has('CH_TEST_REMOTE_TOKEN'));
   });
+  tmpDirs.hooks();
 });
 
 // M3 (#413 sections 6.4 and 6.5): version 2 binds a credential to one
 // module, through a slot (COUNTINGHOUSE_CREDENTIAL_<n>); the start's file
 // fixes each slot for the life of the runtime.
 describe('remote 02: version 2, by module', () => {
-  tmpDirs.hooks();
   const credentials = require('../../lib/remote/credentials');
   const ORIGIN = 'https://api.githubcopilot.com';
   const SLOT1 = 'COUNTINGHOUSE_CREDENTIAL_1';
@@ -303,10 +303,10 @@ describe('remote 02: version 2, by module', () => {
       credentials.restore(saved);
     }
   });
+  tmpDirs.hooks();
 });
 
 describe('remote 02: the allowance at start', function() {
-  tmpDirs.hooks();
   this.timeout(30000);
   const {spawnSync} = require('child_process');
   const ROOT = path.join(__dirname, '..', '..');
@@ -362,10 +362,10 @@ describe('remote 02: the allowance at start', function() {
       assert.ok(r.stderr.includes(flag), r.stderr);
     }
   });
+  tmpDirs.hooks();
 });
 
 describe('remote 02: countinghouse-validate reads the declaration', () => {
-  tmpDirs.hooks();
   require('../../lib/cli-options').setOptions({workerThread: false});
   const moduleValidator = require('../../lib/module-validator');
   const withRemotes = (remotes) => {
@@ -391,4 +391,5 @@ describe('remote 02: countinghouse-validate reads the declaration', () => {
       credential: {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN', header: 'Authorization', scheme: 'Bearer'}}]));
     assert.deepStrictEqual(problems, []);
   });
+  tmpDirs.hooks();
 });

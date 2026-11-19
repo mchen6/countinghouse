@@ -15,12 +15,12 @@ function run(args, done) {
   });
 }
 
-// this file's temporary trees, under test/.tmp and removed
-// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
-const tmpDirs = require('../helpers/test-tmp').forFile(['ch-validate-cli-']);
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-validate-cli-'], {base: require('os').tmpdir()});
 
 describe('countinghouse-validate CLI', function() {
-  tmpDirs.hooks();
   this.timeout(20000);
 
   it('exits 0 and says so for a clean module', (done) => {
@@ -177,4 +177,5 @@ describe('countinghouse-validate CLI', function() {
       done();
     });
   });
+  tmpDirs.hooks();
 });

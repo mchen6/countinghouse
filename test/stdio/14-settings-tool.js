@@ -16,7 +16,6 @@ const MiB = 1024 * 1024;
 const tmpDirs = require('../helpers/test-tmp').forFile(['ch-settings-']);
 
 describe('stdio 14: countinghouse_settings', () => {
-  tmpDirs.hooks();
   let home;
   let file;
   let tool;
@@ -632,4 +631,5 @@ describe('stdio 14: countinghouse_settings', () => {
     assert.ok(require('../../lib/mcp/tool-name').RESERVED_TOOL_NAMES.includes('countinghouse_settings'));
     assert.strictEqual(callAddress.parseAddress('countinghouse_settings'), null, 'a built-in is no device/service/action address');
   });
+  tmpDirs.hooks();
 });

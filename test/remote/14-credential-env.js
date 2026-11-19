@@ -36,12 +36,12 @@ const policyFile = (entry) => {
   return file;
 };
 
-// this file's temporary trees, under test/.tmp and removed
-// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
-const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-14']);
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-14'], {base: require('os').tmpdir()});
 
 describe('remote 14: a name a credentials allowance reads is never copied to a worker', () => {
-  tmpDirs.hooks();
   const {build} = require('../../lib/module-sandbox-config');
   const SERVER_ENV = {GITHUB_TOKEN: SERVER_TOKEN, [SLOT1]: SLOT_VALUE, PLAIN: 'plain'};
   const READS = new Set(['GITHUB_TOKEN', SLOT1]);
@@ -101,7 +101,7 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
       assert.ok(c.notes.some((n) => n.startsWith('env GITHUB_TOKEN denied: a credentials allowance reads it')), JSON.stringify(c.notes));
     } finally {
       credentials.restore(saved);
-      fs.rmSync(tmp, {recursive: true, force: true});
+      tmpDirs.remove(tmp);
     }
   });
 
@@ -120,13 +120,13 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
       credentials.restore(saved);
     }
   });
+  tmpDirs.hooks();
 });
 
 // The probe end to end: a real worker's environment, under audit and
 // enforce, with a version 1 allowance reading GITHUB_TOKEN and a slot set
 // in the runtime's environment.
 describe('remote 14: a worker\'s environment', function() {
-  tmpDirs.hooks();
   this.timeout(120000);
   const KEY = 'remote-14-key';
   [['audit', testPort(9764)], ['enforce', testPort(9765)]].forEach(([mode, port]) => {
@@ -153,4 +153,5 @@ describe('remote 14: a worker\'s environment', function() {
       });
     });
   });
+  tmpDirs.hooks();
 });

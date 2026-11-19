@@ -46,12 +46,12 @@ const v2file = (modules) => {
 };
 const BOUND = {'remote-bound': {[ORIGIN]: {CH_TEST_REMOTE_TOKEN: SLOT1}}};
 
-// this file's temporary trees, under test/.tmp and removed
-// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
-const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-13']);
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-13'], {base: require('os').tmpdir()});
 
 describe('remote 13: a version 2 binding, at registration', function() {
-  tmpDirs.hooks();
   this.timeout(30000);
   const cli = require('../../lib/cli-options');
   const credentials = require('../../lib/remote/credentials');
@@ -136,10 +136,10 @@ describe('remote 13: a version 2 binding, at registration', function() {
       delete process.env[SLOT1];
     }
   });
+  tmpDirs.hooks();
 });
 
 describe('remote 13: a version 2 binding, end to end', function() {
-  tmpDirs.hooks();
   this.timeout(120000);
   const PORT = testPort(9763);
   let remote = null;
@@ -174,4 +174,5 @@ describe('remote 13: a version 2 binding, end to end', function() {
     assert.ok(!server.output.includes(TOKEN) && !server.output.includes(OTHER));
     assert.ok(server.output.includes(`no credential is bound to remote-copycat for ${ORIGIN}`), server.output.slice(-2000));
   });
+  tmpDirs.hooks();
 });
