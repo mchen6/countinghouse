@@ -214,7 +214,7 @@ describe('sandbox 05: worker lockdown', function() {
     it('vm: no prototype leads to Node\'s native class; a produce-only script is not marked rejected; inherited options are kept', async () => {
       // (vmFreeze last: it freezes the worker's vm.Script for good)
       const from = server.output.length;
-      for (const what of ['vmNative', 'vmProduce', 'vmInherited', 'vmInvalidCache', 'vmAssign', 'vmFreeze']) {
+      for (const what of ['vmNative', 'vmProduce', 'vmInherited', 'vmInvalidCache', 'vmShape', 'vmAssign', 'vmFreeze']) {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
       }
       // (the assignment is said under audit, as the loader's statics' are)

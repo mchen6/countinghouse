@@ -149,7 +149,10 @@ const STEPS = {
     };
     const climb = (name) => `${'../'.repeat(24)}${path.join(root, 'lib', name).replace(/^\//, '')}`;
     const noNameSame = (await noName(climb('node-version.js'), 'node-version.js')) === (await noName(climb('no-such-isolation.js'), 'no-such-isolation.js')) ? 'same' : 'differs';
-    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame}`;
+    // (... and with a ':' in a segment, which is no URL scheme in a relative
+    // name; the review of the second round)
+    const colonSame = (await noName(`./x:y/${climb('node-version.js')}`, 'node-version.js')) === (await noName(`./x:y/${climb('no-such-isolation.js')}`, 'no-such-isolation.js')) ? 'same' : 'differs';
+    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame}`;
   },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a

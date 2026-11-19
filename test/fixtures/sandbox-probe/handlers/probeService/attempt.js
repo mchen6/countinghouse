@@ -100,6 +100,19 @@ const ATTEMPTS = {
       if (code !== 'ERR_INVALID_ARG_TYPE') throw Object.assign(new Error('taken'), {code: `TAKEN_${String(code)}`});
     }
   },
+  // ... the vm module code is handed answers as Node's does: createScript
+  // named and callable with new; options given as a function or an array
+  // refused by Script as Node refuses them (the review of #440's second round)
+  vmShape:          () => {
+    const vm = require('vm');
+    if (vm.createScript.name !== 'createScript') throw Object.assign(new Error('name'), {code: 'NAME'});
+    if (!(new vm.createScript('1;') instanceof vm.Script)) throw Object.assign(new Error('new'), {code: 'NEW'});
+    for (const opts of [function() {}, []]) {
+      let code = null;
+      try { new vm.Script('1;', opts); } catch (e) { code = e.code; }
+      if (code !== 'ERR_INVALID_ARG_TYPE') throw Object.assign(new Error('taken'), {code: `TAKEN_${String(code)}`});
+    }
+  },
   // ... a vm function module code assigns never takes; under audit it is said
   vmAssign:         () => {
     const vm = require('vm');

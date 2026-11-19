@@ -22,6 +22,20 @@ export default async (root) => {
     same(await tried(file('node-version.js').replace(/^file:/, 'FILE:'), 'node-version.js'), await tried(file('no-such-isolation.js').replace(/^file:/, 'FILE:'), 'no-such-isolation.js')),
     same(await tried(` ${file('node-version.js')}`, 'node-version.js'), await tried(` ${file('no-such-isolation.js')}`, 'no-such-isolation.js')),
     // (a '#' import whose bare target Node looks up above the root, PR 3)
-    same(await tried('#p/json-stringify-safe', 'json-stringify-safe'), await tried('#p/no-such-isolation-pkg', 'no-such-isolation-pkg'))
+    same(await tried('#p/json-stringify-safe', 'json-stringify-safe'), await tried('#p/no-such-isolation-pkg', 'no-such-isolation-pkg')),
+    // (an own file named as Node reads a URL: a percent escape decoded, a
+    // query kept, so two queries are two instances; the review of the
+    // second round on #440)
+    await own()
   ].join(' ');
+};
+
+const own = async () => {
+  let escaped;
+  try { escaped = (await import('./import%2Doracle.mjs')).default === undefined ? 'empty' : 'same'; } catch (e) { escaped = `escaped(${e.code})`; }
+  const here = new URL(import.meta.url);
+  const upper = (q) => `FILE:${here.href.slice('file:'.length)}?${q}`;
+  let queried;
+  try { queried = (await import(upper('a'))) !== (await import(upper('b'))) ? 'same' : 'one-instance'; } catch (e) { queried = `queried(${e.code})`; }
+  return `${escaped} ${queried}`;
 };
