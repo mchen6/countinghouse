@@ -142,96 +142,60 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     });
   });
 
-  // #449's high review, round 3, R: one source for the all-sessions notice
-  // of a module turned off: ch-local's unload of it, the text built here
-  // with the callers that went with it and both ways back; ch-local unloads
-  // each caller in a message of its own, in either order, and each is told
-  // once, in that one notice (the medium review of round 3, 1, 2 and 4)
-  describe('an unload of a module turned off tells every session the full text, once', () => {
+  // #449's high review, round 4 (the cut): the settings tool tells only the
+  // asker, so nothing is a duplicate. Every unload is told once, in its own
+  // text, under its own module's key, never held, never silenced. An unload
+  // with reason 'off' (ch-local's, explicit) is told the full off text: the
+  // callers loaded before it and both ways back
+  describe('every unload is told once, under its own key; reason off gives the full off text', () => {
     const MOD = '@countinghouse/ch-pack-mod';
     const CALLER = 'trip-planner';
     const {offNotice} = require('../../lib/settings-tool');
     const units = new Map([[MOD, {form: 'module', pack: moduleKey(MOD)}], [CALLER, {form: 'module', pack: moduleKey(CALLER)}]]);
     let loaded;
-    let off;
     const both = Object.assign({}, packs, {
-      unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); loaded = loaded.filter((t) => t.name !== msg.name); return {modules: [`m-${msg.name}`]}; },
-      loadPack: async(mm, msg) => { calls.push(['load', msg.name]); loaded.push({name: msg.name, modules: [msg.name], tools: []}); return {modules: [`m-${msg.name}`]}; }
+      unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); loaded = loaded.filter((t) => t.name !== msg.name); return {modules: [`m-${msg.name}`]}; }
     });
     const c = (o = {}) => createPackControl(Object.assign({mm: {packsInPlace: units}, dm: {}, packs: both, toolsOf: async() => [], shared: () => sessions.shared(),
-      turnedOff: (name) => off.has(name), loadedTops: () => loaded}, o));
+      settingsServed: () => true, loadedTops: () => loaded}, o));
     const all = (m) => [A, B, C].map((id) => notices.take(m, id));
-    beforeEach(() => {
-      loaded = [{name: MOD, modules: [MOD], tools: []}, {name: CALLER, modules: [CALLER, MOD], tools: []}];
-      off = new Set([MOD]);
+    const each = (t) => [[t], [t], [t]];
+    beforeEach(() => { loaded = [{name: MOD, modules: [MOD], tools: []}, {name: CALLER, modules: [CALLER, MOD], tools: []}]; });
+
+    it('reason off: the full text, naming the callers loaded before it; the caller\'s own unload, in its own words, whichever comes first', async() => {
+      for (const order of [[MOD, CALLER], [CALLER, MOD]]) {
+        loaded = [{name: MOD, modules: [MOD], tools: []}, {name: CALLER, modules: [CALLER, MOD], tools: []}];
+        const control = c();
+        for (const name of order) {
+          await control.unload(name === MOD ? {type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'}
+            : {type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
+        }
+        assert.deepStrictEqual(all(MOD), each(offNotice(MOD, order[0] === MOD ? [CALLER] : [])), order.join(' then '));
+        assert.deepStrictEqual(all(CALLER), each('trip-planner unloaded: it calls ch-pack-mod, which is turned off'), order.join(' then '));
+      }
     });
 
-    it('the module first, then its caller: the module\'s notice names the caller; the caller\'s unload tells nothing more', async() => {
-      const control = c();
-      await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
-      await control.unload({type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
-      const text = offNotice(MOD, [CALLER]);
-      assert.match(text, /trip-planner calls it/);
-      assert.deepStrictEqual(all(MOD), [[text], [text], [text]]);
-      assert.deepStrictEqual(all(CALLER), [[], [], []]);
-    });
-
-    it('the caller first, then the module: the caller\'s unload tells nothing; the module\'s notice names it', async() => {
-      const control = c();
-      await control.unload({type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
-      assert.deepStrictEqual(all(CALLER), [[], [], []]);
-      await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
-      assert.deepStrictEqual(all(MOD), [[offNotice(MOD, [CALLER])], [offNotice(MOD, [CALLER])], [offNotice(MOD, [CALLER])]]);
-    });
-
-    it('the caller first, then the module unloaded for another reason: the caller\'s own notice is said then, never lost', async() => {
-      const control = c();
-      await control.unload({type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
-      await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod removed'});
-      assert.deepStrictEqual(all(MOD), [['ch-pack-mod removed'], ['ch-pack-mod removed'], ['ch-pack-mod removed']]);
-      assert.deepStrictEqual(all(CALLER), [['trip-planner unloaded: it calls ch-pack-mod, which is turned off'], ['trip-planner unloaded: it calls ch-pack-mod, which is turned off'], ['trip-planner unloaded: it calls ch-pack-mod, which is turned off']]);
-    });
-
-    it('a caller of a module turned off that was never loaded on its own: its own notice', async() => {
-      loaded = [{name: CALLER, modules: [CALLER, MOD], tools: []}];
-      await c().unload({type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
-      assert.deepStrictEqual(all(CALLER), [['trip-planner unloaded: it calls ch-pack-mod, which is turned off'], ['trip-planner unloaded: it calls ch-pack-mod, which is turned off'], ['trip-planner unloaded: it calls ch-pack-mod, which is turned off']]);
-    });
-
-    it('turned on and loaded again, then a caller unloaded for another reason: its own notice', async() => {
-      const control = c();
-      await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
-      all(MOD);
-      off.delete(MOD);
-      await control.load({type: 'load', name: MOD, dirs: {[MOD]: `/store/${MOD}/1.0.0`}});
-      all(MOD);
-      await control.unload({type: 'unload', name: CALLER, notice: 'trip-planner removed'});
-      assert.deepStrictEqual(all(CALLER), [['trip-planner removed'], ['trip-planner removed'], ['trip-planner removed']]);
+    it('no reason (today\'s ch-local), another reason, or no settings tool here: the message\'s own words', async() => {
+      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
+      assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
+      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'ceiling'});
+      assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
+      await c({settingsServed: () => false}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
     });
 
     it('many callers: eight named and how many more, the ways back kept whole', async() => {
       loaded = [{name: MOD, modules: [MOD], tools: []}].concat(Array.from({length: 11}, (_, i) => ({name: `caller-${String(i).padStart(2, '0')}-${'x'.repeat(12)}`, modules: [MOD], tools: []})));
-      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
+      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       const [t] = notices.take(MOD, A);
       assert.match(t, /caller-07-x+ and 3 more call it/);
       assert.ok(!/caller-08/.test(t));
       assert.ok(t.endsWith(`\`ch-local settings set enabled.${MOD} on\`.`), t);
     });
 
-    it('stored off but unloaded for another reason (its notice says so): the message\'s words', async() => {
-      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod removed'});
-      assert.deepStrictEqual(all(MOD), [['ch-pack-mod removed'], ['ch-pack-mod removed'], ['ch-pack-mod removed']]);
-    });
-
-    it('not turned off in the settings: the message\'s words, as before', async() => {
-      off.clear();
-      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
-      assert.deepStrictEqual(all(MOD), [['ch-pack-mod turned off'], ['ch-pack-mod turned off'], ['ch-pack-mod turned off']]);
-    });
-
-    it('the settings file unreadable: the message\'s words', async() => {
-      await c({turnedOff: () => { throw new Error('unreadable'); }}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
-      assert.deepStrictEqual(all(MOD), [['ch-pack-mod turned off'], ['ch-pack-mod turned off'], ['ch-pack-mod turned off']]);
+    it('the loaded modules unreadable: the message\'s own words', async() => {
+      await c({loadedTops: () => { throw new Error('no manager'); }}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
     });
   });
 

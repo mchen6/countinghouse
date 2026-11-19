@@ -333,7 +333,7 @@ const out = {
     const slot = 'COUNTINGHOUSE_CREDENTIAL_1';
     const creds = {'@countinghouse/ch-access-example': {'https://api.example.com': {EXAMPLE_TOKEN: slot}}};
     return {
-      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module. A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
+      rule: 'load names one top-level module (name) and reload one or more (names), each by its package name, with dirs: the absolute directory of each module of their closures, by package name, 1 to 64; credentials (optional) is the per-module allowance of the version 2 --remoteCredentials file, each environment name a slot, each package one dirs names. unload names one top-level module; its notice is told once, as given, under that module, unless it carries reason: "off" (the module turned off), when the runtime tells every session its own off text: what went with it and both ways back (any other reason, or none, is the notice as given). A module-form message carries no scenario, pack, global or remoteCredentials. notice: module a package name or null, and text. reread: what is module-settings. module-stopped (the runtime to ch-local, unasked, no id): name, code, when start or restart',
       packagePattern: '^(?:@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$',
       slotPattern: '^COUNTINGHOUSE_CREDENTIAL_[1-9][0-9]{0,3}$',
       accepted: [
@@ -345,6 +345,7 @@ const out = {
         {why: 'a reload of three names over two shared parts', message: {id: 4, type: 'reload', names: ['@t/s1', '@t/s2', '@t/s3'],
           dirs: {'@t/s1': dir('@t/s1', '1.0.0'), '@t/s2': dir('@t/s2', '1.0.0'), '@t/s3': dir('@t/s3', '1.0.0'), '@t/x': dir('@t/x', '2.0.0'), '@t/y': dir('@t/y', '2.0.0')}}},
         {why: 'an unload', message: {id: 5, type: 'unload', name: scenario, notice: 'example turned off'}},
+        {why: 'an unload of a module turned off, said so: the runtime tells every session its full off text', message: {id: 9, type: 'unload', name: scenario, notice: 'example turned off', reason: 'off'}},
         {why: 'a reread of the module settings', message: {id: 6, type: 'reread', what: 'module-settings'}},
         {why: 'a notice about a module', message: {id: 7, type: 'notice', module: scenario, text: 'example upgraded 1.0.0 → 1.1.0'}},
         {why: 'a notice about no module', message: {id: 8, type: 'notice', module: null, text: 'requestTimeout set to 60 s'}},
