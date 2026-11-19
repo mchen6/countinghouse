@@ -2013,7 +2013,7 @@ texts are drafts for the reviewer):
 
 | Code | en | zh |
 |---|---|---|
-| `MODULE_NOT_LISTED` | This tool is not listed here: its module is a part that other modules call, or is turned off | 此工具未列出：它所在的模块是供其他模块调用的组件，或已被关闭 |
+| `MODULE_NOT_LISTED` | This tool is not available to this caller here (#447: true for every reason a listing leaves a module out) | 此工具在此处对该调用方不可用 |
 | `PART_MISSING` | A module this one calls is not installed or not available, so it was not loaded | 此模块调用的某个模块未安装或不可用，因此未加载 |
 | `TOOL_NAME_TAKEN` | A module's tool name is already taken by another tool, so the module was not loaded | 该模块的工具名已被其他工具占用，因此未加载该模块 |
 | `PROMPT_NAME_TAKEN` | A module's prompt name is already taken by another prompt, so the module was not loaded | 该模块的提示名已被其他提示占用，因此未加载该模块 |

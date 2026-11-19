@@ -939,6 +939,13 @@ describe('mcp-contract 34: declared text reaches the client cleaned (M18)', func
       const checked = require('../../lib/declarations').check(JSON.parse(fs.readFileSync(path.join(dir, 'hidden-text', 'api.json'), 'utf8')),
         JSON.parse(fs.readFileSync(path.join(dir, 'hidden-text', 'schema.json'), 'utf8')));
       assert.ok(checked.warnings.some((w) => /sneaky.*is named with a hidden character, so the prompt is not listed/.test(w.message)), JSON.stringify(checked.warnings));
+      // nor shown in get-spec's spec: HTTP never shows what the listing hides
+      // (the reviewer on #447); the module's other prompts stay
+      const listedDevices = (await request(`http://127.0.0.1:${PORT}`).get('/device-list').set('X-CH-Key', KEY)).body;
+      const hiddenText = listedDevices.find((d) => d.device != null && d.device.friendlyName === 'hidden-text');
+      const spec = (await request(`http://127.0.0.1:${PORT}`).get(`/devices/${hiddenText.device.deviceID}/get-spec`).set('X-CH-Key', KEY)).body;
+      const promptNames = (spec && spec.device && Array.isArray(spec.device.promptList) ? spec.device.promptList : []).map((x) => x.name);
+      assert.ok(!promptNames.includes('sneaky') && promptNames.includes('greet'), JSON.stringify(promptNames));
     });
 
     // F3-1: prompts/get's refusal quotes the schema's words (a pattern

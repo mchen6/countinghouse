@@ -564,6 +564,14 @@ says how to write a module for this.
   its `\n` and `\t`, and emoji sequences stay whole. Nothing is refused or
   changed at load. A completion candidate carrying one is left out
   ([security-model.md](security-model.md#declared-text-as-it-reaches-the-client)).
+- **A question's text with a bidi mark is refused at load.** A question's
+  message and its form's text (`title`, `description`, `enum`, `enumNames`,
+  `default`, a property's name) were already refused for a control character,
+  a line or paragraph separator, or a bidi override or isolate. The bidi marks
+  U+200E, U+200F and U+061C are now refused with them, since they reorder
+  what the user reads. Every other invisible character in a question is
+  still cleaned on the way out, as above. `countinghouse-validate` names the
+  text that carries one.
 - **Checked against the official schemas.** The results above are tested
   against the official 2026-07-28 schema and the tasks extension's
   (`test/mcp-contract/35`), and the legacy era's through the official SDK
@@ -599,6 +607,30 @@ says how to write a module for this.
   (`/$defs/...`, another keyword of the document, a part that was left
   out, a character of a string) answers `POINTER_DEREF_ERROR`, as a path
   that names nothing does.
+- **Breaking: `get-spec` and `schema` answer only a module the caller's
+  `tools/list` could show.** A module outside the key's grants (as before,
+  `USER_HAS_NO_DEVICE`), a part that is loaded only because another module
+  calls it, a module that is not a scenario under the single-identity
+  profile, or one that is going on or off at that moment is refused whole
+  with `MODULE_NOT_LISTED`. Within a listed module every usable action is
+  answered, a tool or not, as above. An output declared with any type is
+  shown, as `tools/list` shows it to a client of the current protocol era.
+- **`get-spec`'s declared text is cleaned as the MCP lists show it.** Each
+  action's and resource's `title`, a question's `message` and the
+  device's own short fields (its `manufacturer`, `modelName`...) are one
+  line; a `description`, the device's `modelDescription` and a prompt
+  message's `text` keep their line breaks and tabs; every hidden character
+  becomes a space (as in `tools/list`, `resources/list`, `prompts/list`
+  and a question's dialog), in an embedded device's spec too. A prompt
+  `prompts/list` leaves out (an argument named with a hidden character) is
+  left out of `promptList`. The device's `deviceID` and `friendlyName`, and
+  the spec's structure, are as declared.
+- **Breaking: `/device-list` and `package-info` keep to the same scope.**
+  `/device-list` lists only the modules the caller's `tools/list` could
+  show, each spec as `get-spec` answers it (no unusable action, the text
+  cleaned); with `--debug` too. `package-info` refuses a module outside
+  that scope with `MODULE_NOT_LISTED`. A device no module serves is still
+  `DEVICE_NOT_FOUND` on every route, the single-identity profile included.
 
 ## What operators get
 
