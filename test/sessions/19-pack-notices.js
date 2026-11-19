@@ -187,6 +187,20 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
 
     // (round 5, 2) reason off and the settings holding it off, both: a
     // ceiling's unload or a stale reason never gets the ways back
+    // (round 5, 6) a caller unloaded with the module it went with, explicit:
+    // its own line, with the way back
+    it('reason calls, because the module turned off: the caller\'s line with the way back; otherwise its own words', async() => {
+      const own = 'trip-planner unloaded: it calls ch-pack-mod, which is turned off';
+      await c().unload({type: 'unload', name: CALLER, notice: own, reason: 'calls', because: MOD});
+      assert.deepStrictEqual(all(null), each(`${CALLER} unloaded: it calls ${MOD}, which is turned off for all your sessions (turning ${MOD} on brings it back).`));
+      // the module it names not held off, a because that is no package name,
+      // or none: its own words
+      for (const because of ['other-module', 7, undefined]) {
+        await c().unload({type: 'unload', name: CALLER, notice: own, reason: 'calls', because});
+        assert.deepStrictEqual(all(null), each(own), String(because));
+      }
+    });
+
     it('reason off but the settings do not hold it off (or cannot be read): the message\'s own words', async() => {
       await c({storedOff: () => false}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
