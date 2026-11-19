@@ -105,6 +105,12 @@ describe('auth 54: get-spec and the schema route answer only what the caller\'s 
     assert.strictEqual(res.body.code, 'MODULE_NOT_LISTED', JSON.stringify(res.body));
     const echo = await get(WILDCARD_KEY, `/devices/${idOf('echo')}/package-info`);
     assert.strictEqual(echo.status, 200, JSON.stringify(echo.body));
+    // a device no module serves is DEVICE_NOT_FOUND on every route
+    const nowhere = deviceIDForName('no-such-module');
+    for (const p of [`/devices/${nowhere}/package-info`, `/devices/${nowhere}/get-spec`, `/devices/${nowhere}/schema/`]) {
+      const r = await get(WILDCARD_KEY, p);
+      assert.ok(['DEVICE_NOT_FOUND', 'USER_HAS_NO_DEVICE'].includes(r.body.code), `${p}: ${JSON.stringify(r.body)}`);
+    }
   });
 
   it('the unlisted part is refused MODULE_NOT_LISTED by both routes, even to a key granted every device', async () => {

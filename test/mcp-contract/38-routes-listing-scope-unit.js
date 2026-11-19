@@ -19,15 +19,18 @@ const TOOL = 'aaaaaaaa-0000-5000-8000-000000000002';
 const PART = 'aaaaaaaa-0000-5000-8000-000000000003';
 const RESTARTING = 'aaaaaaaa-0000-5000-8000-000000000004';
 const NOWHERE = 'aaaaaaaa-0000-5000-8000-000000000005';
+const STALE = 'aaaaaaaa-0000-5000-8000-000000000006';
 const device = (name, role) => ({packageInfo: {name, countinghouse: role != null ? {role} : {}}});
 const MODULE_OF = {[SCENARIO]: 'scenario-mod', [TOOL]: 'tool-mod', [PART]: 'part-mod', [RESTARTING]: 'down-part'};
 const PACKAGES = {'down-part': {name: 'down-part', countinghouse: {role: 'part'}}};
 const cdif = {deviceManager: {
   deviceMap: {[SCENARIO]: device('scenario-mod', 'scenario'), [TOOL]: device('tool-mod', null), [PART]: device('part-mod', 'part')},
-  // a part that is restarting: no device in the map, its owner known
-  moduleOfDevice: (id) => (id === RESTARTING ? 'down-part' : null),
+  // a part that is restarting: no device in the map, its ended state kept;
+  // an uninstalled module's device: an owner remembered, nothing held
+  moduleOfDevice: (id) => (id === RESTARTING ? 'down-part' : id === STALE ? 'uninstalled-mod' : null),
   packageOfModule: (name) => PACKAGES[name] || null,
-  moduleManager: {unlisted: new Set(['part-mod', 'down-part'])}
+  moduleManager: {unlisted: new Set(['part-mod', 'down-part']), modules: {},
+    endedStateForDevice: (id) => (id === RESTARTING ? {name: 'down-part'} : null)}
 }};
 
 describe('mcp-contract 38: the routes that show a module answer only the caller\'s listing (unit)', () => {
@@ -52,6 +55,13 @@ describe('mcp-contract 38: the routes that show a module answer only the caller\
     assert.strictEqual(scopeOf(cdif, SCENARIO), 'listed');
     assert.strictEqual(scopeOf(cdif, TOOL), 'unlisted');
     assert.strictEqual(scopeOf(cdif, NOWHERE), 'missing');
+  });
+
+  it('a device whose module is gone is missing, an object\'s own key no device', () => {
+    options.singleIdentity = true;
+    assert.strictEqual(scopeOf(cdif, STALE), 'missing', 'an owner only remembered holds nothing');
+    assert.strictEqual(scopeOf(cdif, 'constructor'), 'missing');
+    assert.strictEqual(scopeOf(cdif, '__proto__'), 'missing');
   });
 
   it('a module hidden while it goes on or off is refused, for everyone, until it is shown', () => {
