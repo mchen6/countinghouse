@@ -108,8 +108,22 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       assert.ok(logged.some((l) => /sync failure/.test(l)), JSON.stringify(logged));
       let reached = false;
       raw.listDevices = () => { reached = true; };
-      assert.throws(() => p.listDevices('k'), (e) => e.code === 'SYSTEM_ERROR_USERDB_NA' && !/couch/.test(e.message));
+      const before = logged.length;
+      assert.throws(() => p.listDevices('k'), TypeError);
       assert.strictEqual(reached, false);
+      assert.strictEqual(logged.length, before, 'a caller\'s bug is no provider outage');
+      // a provider that throws after starting its work is answered once
+      let late = null;
+      raw.authenticate = (k, d, s, a, cb) => { late = cb; throw new Error('thrown after starting'); };
+      let answers = 0;
+      p.authenticate('k', 'd', 's', 'a', () => { answers++; });
+      late(new Error('the late answer'));
+      late(null, {ok: true});
+      assert.strictEqual(answers, 1, 'answered once');
+      // an async provider's rejection is answered, never unhandled
+      raw.authenticate = async () => { throw new Error('async failure at couch.internal.example:5984'); };
+      const rejected = await ask((cb) => p.authenticate('k', 'd', 's', 'a', cb));
+      assert.strictEqual(rejected.err.code, 'SYSTEM_ERROR_USERDB_NA');
       raw.listDevices = (k, cb) => cb(null, {devices: []});
       let calls = 0;
       assert.throws(() => p.listDevices('k', () => { calls++; throw new Error('the caller\'s own'); }), /the caller's own/);
