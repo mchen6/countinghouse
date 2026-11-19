@@ -7,7 +7,7 @@
       "input": {
         "type": "object",
         "properties": {
-          "what": {"type": "string", "enum": ["loaded", "request", "outside", "patchWrap"]},
+          "what": {"type": "string", "enum": ["loaded", "request", "outside", "patchWrap", "requireOutside"]},
           "url": {"type": "string"}
         },
         "required": ["what"]

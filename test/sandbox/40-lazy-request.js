@@ -138,6 +138,10 @@ function request(io, message, timeoutMs = 30000) {
       // localhost is not the declared 127.0.0.1, and needs no lookup beyond the hosts file.
       it(`a CHUtil.request to an undeclared host is reported under audit, and allowed${atBoot ? '' : ' (the library loads then, after the lockdown)'}`, async () => {
         if (wrapFirst) assert.deepStrictEqual(await probe({what: 'patchWrap'}), {patched: true});
+        // (one file outside its root the module requires itself, first:
+        // the late load's sweep leaves it, the review of e0f39de9)
+        const own = (!atBoot && !wrapFirst) ? await probe({what: 'requireOutside'}) : null;
+        if (own != null) assert.strictEqual(own.count, 1, JSON.stringify(own));
         const r = await probe({what: 'request', url: `http://localhost:${server.port}/`});
         assert.notStrictEqual(r.code, 'ERR_ACCESS_DENIED', JSON.stringify(r));
         const line = new RegExp(`${name} violation net localhost`);
@@ -158,7 +162,7 @@ function request(io, message, timeoutMs = 30000) {
           if (wrapFirst) assert.ok(said.length > 2, `a window opened with Module.wrap set:\n${said.join('\n')}`);
           else assert.ok(said.length <= 2, `the library's own requires said against the module:\n${said.join('\n')}`);
           const left = await probe({what: 'outside'});
-          assert.strictEqual(left.count, 0, JSON.stringify(left));
+          assert.deepStrictEqual(left, own != null ? own : {outside: [], count: 0});
         }
       });
     }

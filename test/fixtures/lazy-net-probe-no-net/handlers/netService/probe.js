@@ -20,6 +20,15 @@ const outside = () => Object.keys(require.cache).filter((k) => !/^(\/app\/|[A-Z]
 module.exports = (input) => new Promise((resolve) => {
   if (input.what === 'loaded') return resolve({output: {loaded: loaded()}});
   if (input.what === 'outside') return resolve({output: {outside: outside().slice(0, 5), count: outside().length}});
+  // a file outside its root the module requires itself under audit (one of
+  // the runtime's, as the test's hand-over lists them): a late load the
+  // runtime makes after it leaves it where it is
+  if (input.what === 'requireOutside') {
+    const files = (globalThis[Symbol.for('countinghouse.test.runtime')] || {}).files || [];
+    const file = files.find((f) => /[\\/]lib[\\/]node-version\.js$/.test(f));
+    try { require(file); } catch (e) { return resolve({output: {outside: [String(e.code)], count: -1}}); }
+    return resolve({output: {outside: outside().slice(0, 5), count: outside().length}});
+  }
   // Node's wrapper of a file's source, set by module code before the
   // runtime's late load: the lockdown opens no window for that load then
   if (input.what === 'patchWrap') {
