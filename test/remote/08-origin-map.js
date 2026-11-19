@@ -18,7 +18,6 @@
 // the stand-in itself, under --debug.
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const {spawnSync} = require('child_process');
 const {ROOT} = require('../helpers/sandbox-server');
@@ -40,7 +39,7 @@ const DECLARED = 'https://remote-08.invalid';
 const TOKEN = `ghp_${'B'.repeat(36)}`;
 
 function probe(url) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08-')), 'remote-probe');
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-08-'), 'remote-probe');
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -48,6 +47,11 @@ function probe(url) {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg));
   return dir;
 }
+
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-08'], {base: require('os').tmpdir()});
 
 describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a local stand-in, gated and marked', function() {
   this.timeout(60000);
@@ -134,7 +138,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     before(async () => {
       cli.setOptions({workerThread: false, debug: false});
       useMap(MAP());   // what framework.js does once the gate holds
-      const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08a-')), 'remote-credentials.json');
+      const file = path.join(tmpDirs.mkdtemp('ch-remote-08a-'), 'remote-credentials.json');
       fs.writeFileSync(file, JSON.stringify({[DECLARED]: ['CH_TEST_REMOTE_TOKEN']}));
       credentials.configure(file);
       process.env.CH_TEST_REMOTE_TOKEN = TOKEN;
@@ -255,7 +259,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     it('an unmapped remote is untouched: no mapped field, no stand-in note', async () => {
       cli.setOptions({workerThread: false, debug: true});
       om.deactivateForTests();
-      const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08b-')), 'remote-credentials.json');
+      const file = path.join(tmpDirs.mkdtemp('ch-remote-08b-'), 'remote-credentials.json');
       fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${STAND_IN}`]: ['CH_TEST_REMOTE_TOKEN']}));
       credentials.configure(file);
       await registry.unregister('map-probe');
@@ -319,11 +323,11 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
   describe('the start', () => {
     // The local store keeps no Redis, so no --redisUrl (framework.js refuses both).
     const start = (args, env) => {
-      const store = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08s-'));
+      const store = tmpDirs.mkdtemp('ch-remote-08s-');
       const r = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-stdio.js'), '--workerThread', '--store', 'local', '--storePath', path.join(store, 'store'),
         '--moduleDataPath', path.join(store, 'md'), '--modulePath', path.join(store, 'modules'), ...args],
       {env: {...process.env, ...env}, input: '', encoding: 'utf8', timeout: 20000});
-      fs.rmSync(store, {recursive: true, force: true});
+      tmpDirs.remove(store);
       return r;
     };
     const ENV_OFF = {COUNTINGHOUSE_ACCEPTANCE: ''};
@@ -339,11 +343,11 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     });
     it('a target on the configured Redis endpoint refuses the start, blamed on the option, not a module', async () => {
       // The Redis store (no --store local); the start stops at the option, before any connection.
-      const store = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08r-'));
+      const store = tmpDirs.mkdtemp('ch-remote-08r-');
       const r = spawnSync(process.execPath, [path.join(ROOT, 'bin', 'countinghouse-stdio.js'), '--workerThread', '--redisUrl', `redis://127.0.0.1:${UNMAPPED}`, // run-local: not the shared Redis
         '--moduleDataPath', path.join(store, 'md'), '--modulePath', path.join(store, 'modules'), '--remoteOriginMap', `${GITHUB}=http://127.0.0.1:${UNMAPPED}`],
       {env: {...process.env, COUNTINGHOUSE_ACCEPTANCE: '1'}, input: '', encoding: 'utf8', timeout: 20000});
-      fs.rmSync(store, {recursive: true, force: true});
+      tmpDirs.remove(store);
       assert.strictEqual(r.status, 2, r.stderr.slice(-1500));
       assert.match(r.stderr, /--remoteOriginMap .*the target is refused: it is the Redis endpoint/);
       assert.ok(!/REMOTE_DECLARATION_INVALID/.test(r.stderr));
@@ -355,7 +359,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
     });
     it('under --hardened the mapping is logged once, by the child that serves', async () => {
       const {spawn} = require('child_process');
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-08h-'));
+      const root = tmpDirs.mkdtemp('ch-remote-08h-');
       const child = spawn(process.execPath, [path.join(ROOT, 'framework.js'), '--workerThread', '--hardened', '--bindAddr', '127.0.0.1', '--port', String(HARDENED_PORT),
         '--store', 'local', '--storePath', path.join(root, 'store'), '--moduleDataPath', path.join(root, 'md'), '--modulePath', path.join(root, 'modules'),
         '--authConfigPath', path.join(root, 'auth.json'), '--remoteOriginMap', `${GITHUB}=http://127.0.0.1:9`],
@@ -371,7 +375,7 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
         try { process.kill(-child.pid, 'SIGTERM'); } catch (e) { /* gone */ }
         await new Promise((r) => setTimeout(r, 500));
         try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { /* gone */ }
-        fs.rmSync(root, {recursive: true, force: true});
+        tmpDirs.remove(root);
       }
     });
     it('honoured, it says so loudly at start', async () => {
@@ -381,4 +385,5 @@ describe('remote 08: --remoteOriginMap sends a declared origin\'s calls to a loc
       assert.strictEqual(r.status, 0, r.stderr.slice(-1500));
     });
   });
+  tmpDirs.hooks();
 });

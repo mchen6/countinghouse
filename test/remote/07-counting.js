@@ -6,7 +6,6 @@
 // refused USAGE_CALL_FOREIGN, a finished one goes on and records nothing.
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const wt     = require('worker_threads');
 const {ROOT} = require('../helpers/sandbox-server');
@@ -20,7 +19,7 @@ const KEY = 'remote-counting-key';
 const TOKEN = `ghp_${'A'.repeat(36)}`;
 
 function probeAt(port) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-07-')), 'remote-probe');
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-07-'), 'remote-probe');
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -28,6 +27,11 @@ function probeAt(port) {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg));
   return dir;
 }
+
+// this file's temporary trees, in os.tmpdir() (a module a runtime loads
+// stays outside the runtime's tree) and removed (test/helpers/test-tmp.js
+// forFile); nothing left there
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-07'], {base: require('os').tmpdir()});
 
 describe('remote 07: usage records for remote calls, and the call id across every hop', function() {
   this.timeout(60000);
@@ -41,7 +45,7 @@ describe('remote 07: usage records for remote calls, and the call id across ever
   let u = null;
   before(async () => {
     cli.setOptions({workerThread: false, debug: true});
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-07a-')), 'remote-credentials.json');
+    const file = path.join(tmpDirs.mkdtemp('ch-remote-07a-'), 'remote-credentials.json');
     fs.writeFileSync(file, JSON.stringify({[`http://127.0.0.1:${REMOTE}`]: ['CH_TEST_REMOTE_TOKEN'], [`http://127.0.0.1:${REMOTE + 1}`]: ['CH_TEST_REMOTE_TOKEN']}));
     credentials.configure(file);
     process.env.CH_TEST_REMOTE_TOKEN = TOKEN;
@@ -232,4 +236,5 @@ describe('remote 07: usage records for remote calls, and the call id across ever
       assert.deepStrictEqual(ins(), []);
     });
   });
+  tmpDirs.hooks();
 });
