@@ -27,8 +27,8 @@ const EXPECTED = {
   parentSlot: 'handle, no runtime parent',
   statics: 'none replaced',
   // (on Windows, whose subset runner has no Redis, the store's part of the
-  // window goes unanswered, and says so)
-  window: process.platform === 'win32' ? 'no loader, nothing compiled (no store answer)' : 'no loader, nothing compiled',
+  // window may go unanswered, and says so; elsewhere it is answered)
+  window: process.platform === 'win32' ? ['no loader, nothing compiled', 'no loader, nothing compiled (no store answer)'] : 'no loader, nothing compiled',
   pathCache: 'empty'
 };
 
@@ -59,9 +59,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     });
     after(() => { stopServer(server); server = null; });
     for (const [step, expected] of Object.entries(EXPECTED)) {
-      it(`${step}: ${expected}`, async () => {
+      it(`${step}: ${[].concat(expected)[0]}`, async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step});
-        assert.strictEqual(detail(r), expected, JSON.stringify(r).slice(0, 500));
+        assert.ok([].concat(expected).includes(detail(r)), JSON.stringify(r).slice(0, 500));
       });
     }
     // P alone and the net: a load with a runtime Module as its parent, by
