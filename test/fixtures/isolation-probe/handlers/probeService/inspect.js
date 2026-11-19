@@ -163,6 +163,12 @@ const STEPS = {
     // against a missing one)
     const direct = (name) => { try { M._resolveFilename(path.join(root, 'lib', name), module); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); } };
     const directSame = direct('node-version.js') === direct('no-such-isolation.js') ? 'same' : `direct(${direct('node-version.js')} / ${direct('no-such-isolation.js')})`;
+    // (a directory of its own whose package.json "main" leads outside the
+    // root, to a runtime file against a missing one: by require and by the
+    // direct route, the whole error)
+    const mainOut = (fn, dir) => { try { fn(`../../lib/${dir}`); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(dir).join('DIR'); } };
+    const mainSame = [(r) => require(r), (r) => M._resolveFilename(r, module)]
+      .every((fn) => mainOut(fn, 'main-out-a') === mainOut(fn, 'main-out-b')) ? 'same' : `main(${mainOut((r) => require(r), 'main-out-a')} / ${mainOut((r) => require(r), 'main-out-b')} / ${mainOut((r) => M._resolveFilename(r, module), 'main-out-a')} / ${mainOut((r) => M._resolveFilename(r, module), 'main-out-b')})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;
@@ -187,7 +193,7 @@ const STEPS = {
     const missing = `${await noName('./no-such-isolation.mjs', 'no-such-isolation.mjs')} ${await noName('./a%2Fb.mjs', 'a%2Fb.mjs')}`;
     const hostNamed = (missing.match(/(?<=^|[\s"'(|])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p));
     const virtualOnly = hostNamed.length === 0 ? 'same' : `host(${hostNamed.join(',')})`;
-    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame} ${virtualOnly} ${claimedSame} ${encodedSame} ${colonBare} ${directSame} ${emptySame}`;
+    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame} ${virtualOnly} ${claimedSame} ${encodedSame} ${colonBare} ${directSame} ${mainSame} ${emptySame}`;
   },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a

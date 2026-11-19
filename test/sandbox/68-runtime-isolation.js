@@ -50,6 +50,14 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.rmSync(spaced, {recursive: true, force: true});
     probe = path.join(spaced, 'isolation-probe');
     fs.cpSync(PROBE, probe, {recursive: true});
+    // (two directories of the module's own whose package.json "main" leads
+    // outside its root: to a runtime file, and to a missing one beside it;
+    // the review of the third round on #440)
+    for (const [dir, target] of [['main-out-a', 'node-version.js'], ['main-out-b', 'no-such-isolation.js']]) {
+      fs.mkdirSync(path.join(probe, 'lib', dir));
+      const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
+      fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), JSON.stringify({main}));
+    }
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));
@@ -112,7 +120,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // (F4, #194's PR 3)
       it('import() from an ES module: a runtime file or a runtime-only package against a missing one, the same whole error', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'importOracle'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
