@@ -12,6 +12,10 @@ const RLO = '‮';
 const spec = () => JSON.parse(JSON.stringify({
   device: {
     friendlyName: 'texty',
+    manufacturer: `Acme${ZWSP}`,
+    modelName: `M${RLO}1\n2`,
+    modelDescription: `reads${ZWSP} this\nand that`,
+    deviceList: [{device: {friendlyName: 'inner', modelDescription: `in${RLO}ner`, serviceList: {}}}],
     serviceList: {
       'urn:x:serviceID:s': {
         serviceType: 'urn:x:service:s:1',
@@ -51,7 +55,7 @@ describe('mcp-contract 39: get-spec\'s declared text, as the lists show it (unit
     const out = cleanedSpecText(served);
     assert.strictEqual(JSON.stringify(served), before, 'the served spec untouched');
     assert.notStrictEqual(out, served);
-    const strip = (s) => JSON.parse(JSON.stringify(s, (k, v) => (['title', 'description', 'text', 'message'].includes(k) ? undefined : v)));
+    const strip = (s) => JSON.parse(JSON.stringify(s, (k, v) => (['title', 'description', 'text', 'message', 'manufacturer', 'modelName', 'modelDescription'].includes(k) ? undefined : v)));
     assert.deepStrictEqual(strip(out), strip(served), 'the same structure');
     assert.deepStrictEqual(out.device.serviceList['urn:x:serviceID:s'].actionList[1].resource.uriTemplate, 'texty://x');
   });
@@ -67,6 +71,30 @@ describe('mcp-contract 39: get-spec\'s declared text, as the lists show it (unit
     assert.strictEqual(Object.getPrototypeOf(copy), Object.prototype);
   });
 
+  it('the device\'s own text and an embedded device\'s are cleaned; its identifiers are not', () => {
+    const out = cleanedSpecText(spec());
+    assert.strictEqual(out.device.manufacturer, 'Acme ');
+    assert.strictEqual(out.device.modelName, 'M 1 2');
+    assert.strictEqual(out.device.modelDescription, 'reads  this\nand that');
+    assert.strictEqual(out.device.friendlyName, 'texty');
+    assert.strictEqual(out.device.deviceList[0].device.modelDescription, 'in ner');
+    assert.strictEqual(out.device.deviceList[0].device.friendlyName, 'inner');
+  });
+
+  it('a spec with nothing to clean is handed on as it is, never copied', () => {
+    const clean = {device: {friendlyName: 'c', manufacturer: 'Acme', serviceList: {'urn:x:serviceID:s': {actionList: [{name: 'a', description: 'fine'}]}},
+      promptList: [{name: 'p', description: 'ok', messages: [{role: 'user', text: 'hi'}]}]}};
+    assert.strictEqual(cleanedSpecText(clean), clean);
+  });
+
+  it('a prompt to leave out is left out; the rest stay, cleaned', () => {
+    const s = spec();
+    s.device.promptList.push({name: 'other', description: `o${ZWSP}`});
+    const out = cleanedSpecText(s, {leaveOut: new Set(['p'])});
+    assert.deepStrictEqual(out.device.promptList.map((p) => p.name), ['other']);
+    assert.strictEqual(out.device.promptList[0].description, 'o ');
+  });
+
   it('anything that is not a spec is passed as it is', () => {
     for (const v of [null, undefined, 'x', 1, [], {}, {device: null}]) assert.strictEqual(cleanedSpecText(v), v);
   });
@@ -80,14 +108,17 @@ describe('mcp-contract 39: withoutUnusable\'s copy keeps a "__proto__" key a key
     const s = {device: {serviceList: {'urn:x:serviceID:s': {actionList: [{name: 'hidden'}, {name: 'kept'}]}}}};
     Object.defineProperty(s, '__proto__', {value: {polluted: 1}, enumerable: true, configurable: true, writable: true});
     Object.defineProperty(s.device, '__proto__', {value: {polluted: 2}, enumerable: true, configurable: true, writable: true});
-    const out = verdict.withoutUnusable(s, id);
-    assert.deepStrictEqual(out.device.serviceList['urn:x:serviceID:s'].actionList.map((a) => a.name), ['kept']);
-    for (const o of [out, out.device]) {
-      assert.ok(Object.hasOwn(o, '__proto__'));
-      assert.strictEqual(o.polluted, undefined);
-      assert.strictEqual(Object.getPrototypeOf(o), Object.prototype);
+    try {
+      const out = verdict.withoutUnusable(s, id);
+      assert.deepStrictEqual(out.device.serviceList['urn:x:serviceID:s'].actionList.map((a) => a.name), ['kept']);
+      for (const o of [out, out.device]) {
+        assert.ok(Object.hasOwn(o, '__proto__'));
+        assert.strictEqual(o.polluted, undefined);
+        assert.strictEqual(Object.getPrototypeOf(o), Object.prototype);
+      }
+    } finally {
+      verdict.forget(id);
     }
-    verdict.forget(id);
   });
 });
 
