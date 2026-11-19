@@ -217,6 +217,7 @@ const STEPS = {
     // cut short and climb with, is the one refusal, as a missing one)
     out.push(typeof(fpj) !== 'function' || (fpj('#builtin', __filename) === undefined && fpj('#sibclimb', __filename) === undefined) ? 'same' : 'fpjMapped');
     same('queryName', await tryImport('q?x/index.js'), await tryImport('nosuchq/index.js'));
+    same('tabName', await tryImport('t\tx/index.js'), await tryImport('nosucht/index.js'));
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
