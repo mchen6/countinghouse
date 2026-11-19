@@ -35,7 +35,7 @@ describe('countinghouse-usage', function() {
     assert.match(text.stdout, /estimate \(utf8 bytes \/ 4\)/);
     assert.doesNotMatch(text.stdout, /saved/i);
     const csv = run('--usageDir', dir, '--csv');
-    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,pack,module,calls,server_calls,bytes_in,lines_in,bytes_out,lines_out,tokens_in_est,tokens_out_est');
+    assert.strictEqual(csv.stdout.split('\n')[0], 'caller,tool,server,scenario,module,calls,server_calls,bytes_in,lines_in,bytes_out,lines_out,tokens_in_est,tokens_out_est');
   });
 
   it('--since all --until a day: the window\'s days first, then the period\'s totals with the upper-bound estimate', async () => {

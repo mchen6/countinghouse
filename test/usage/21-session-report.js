@@ -62,7 +62,7 @@ describe('usage 21: the usage report per session (shared runtime B5, Task 1)', (
   const A_NAMES = /alpha|ALPHA_ONLY_CODE/;
 
   it('A\'s report counts A\'s calls only, in memory and in files, and names nothing of B\'s, for every groupBy', async() => {
-    for (const groupBy of ['tool', 'server', 'pack', 'module']) {   // (the day rows, kept-out totals and profiling are in each)
+    for (const groupBy of ['tool', 'server', 'scenario', 'module']) {   // (the day rows, kept-out totals and profiling are in each)
       const out = await run({since: '2026-11-16', groupBy}, {caller: 'u_me', isAdmin: false, session: A});
       const text = JSON.stringify(out);
       assert.ok(!B_NAMES.test(text), `${groupBy}: ${text.slice(0, 600)}`);

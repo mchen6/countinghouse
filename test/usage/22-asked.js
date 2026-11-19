@@ -165,7 +165,7 @@ describe('usage 22: the record of a call that asked (MCP completeness M13)', () 
         u.recordOut(c, {tool: 't', bytes: 0, lines: 0, ms: 40, outcome: 'asked', round});
       }
       const out = require('../../lib/usage/aggregate').aggregate(u.records().map((r) => normalise(r)).filter((r) => r != null).map((r) => Object.assign(r, {process: '1-1'})));
-      assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.packCalls, r.serverCalls]), [['t', 0, 2]]);
+      assert.deepStrictEqual(out.replaced.map((r) => [r.tool, r.scenarioCalls, r.serverCalls]), [['t', 0, 2]]);
     });
 
     it('the report and the CLI\'s aggregate tell an asked pass by one rule', () => {

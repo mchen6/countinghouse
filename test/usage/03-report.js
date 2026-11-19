@@ -48,10 +48,10 @@ describe('countinghouse_usage_report', () => {
     assert.ok(!/alice@|apiKey|"key"|userName/.test(text), 'no user name or key, only opaque ids');
   });
 
-  it('groups by tool, server, pack or module', async () => {
+  it('groups by tool, server, scenario or module', async () => {
     const who = {caller: 'u_alice', isAdmin: false};
     assert.deepStrictEqual((await run({since: '2026-11-11', groupBy: 'server'}, who)).groups.map((g) => [g.server, g.serverCalls]), [['github', 6], ['(no server)', 0]]);
-    assert.ok((await run({since: '2026-11-11', groupBy: 'pack'}, who)).groups.some((g) => g.pack === 'ch-pack-ci-failure-triage'));
+    assert.ok((await run({since: '2026-11-11', groupBy: 'scenario'}, who)).groups.some((g) => g.scenario === 'ch-pack-ci-failure-triage'));
     const modules = (await run({since: '2026-11-11', groupBy: 'module'}, who)).groups.map((g) => g.module);
     assert.ok(modules.includes('ch-access-github') && modules.includes('ch-pack-ci-failure-triage'), modules.join(','));
   });
