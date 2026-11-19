@@ -245,6 +245,65 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       assert.strictEqual(before.w.values.units, 'imperial');
     });
 
+    it('only: the settings tool\'s write rereads the one module whose value changed', async () => {
+      const mm = manager();
+      const r = mm.modules.r.settings;
+      write({'module.w.units': 'metric', 'module.r.region': 'us'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'}), only: 'w'});
+      assert.deepStrictEqual(reply, {applied: 1, refused: []});
+      assert.strictEqual(mm.modules.w.settings.values.units, 'metric');
+      sameRun(mm.modules.r.settings, r, 'r is not reread');
+    });
+
+    it('only, with a settings file that cannot be read: the ceiling goes over that one module alone; a file read again is a whole reread', async () => {
+      const mm = manager();
+      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
+      const r = mm.modules.r.settings;
+      fs.writeFileSync(options.settingsFile, '{not json');
+      const fixed = {state: 'trusted', file: '/c', ceiling: require('../../lib/settings-ceiling').parse(JSON.stringify({version: 1,
+        moduleSettings: {'w.units': {fixed: 'metric'}, 'r.region': {fixed: 'asia'}}})).ceiling};
+      await assert.rejects(reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => fixed, only: 'w'}), (e) => e.fileProblem === true);
+      assert.strictEqual(mm.modules.w.settings.values.units, 'metric');
+      sameRun(mm.modules.r.settings, r, 'r is not touched');
+      const problem = mm.settingsFileProblem;
+      assert.ok(problem != null);
+      // the file put right: a one-module reread finds it read, and rereads
+      // every module (the others ran with the ceiling's values only)
+      write({'module.w.units': 'imperial', 'module.r.region': 'us'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'}), only: 'w'});
+      assert.strictEqual(mm.settingsFileProblem, null, 'the file\'s problem cleared');
+      assert.strictEqual(mm.modules.w.settings.values.units, 'imperial');
+      assert.strictEqual(mm.modules.r.settings.values.region, 'us', 'r reread too');
+      assert.strictEqual(reply.applied, 2);
+    });
+
+    it('applyNow waits its turn on the control channel\'s chain (never beside ch-local\'s reread or a reload)', async () => {
+      const channel = require('../../lib/control-channel');
+      const mm = manager();
+      reread.configure({dm: {moduleManager: mm}});
+      const started = channel.start({}, {on: () => {}, off: () => {}, send: () => {}});
+      try {
+        let release = null;
+        const order = [];
+        channel.enqueue(() => new Promise((res) => { release = () => { order.push('earlier'); res(); }; }));
+        write({'module.w.units': 'metric', 'module.r.region': 'us'});
+        const applying = reread.applyNow('w').then((reply) => { order.push('applyNow'); return reply; });
+        await new Promise((res) => setImmediate(res));
+        assert.deepStrictEqual(order, [], 'not before the earlier operation ends');
+        assert.strictEqual(mm.modules.w.settings.values.units, 'imperial');
+        release();
+        const reply = await applying;
+        assert.deepStrictEqual(order, ['earlier', 'applyNow']);
+        assert.deepStrictEqual(reply, {applied: 1, refused: []});
+        assert.strictEqual(mm.modules.w.settings.values.units, 'metric');
+        assert.strictEqual(mm.modules.r.settings.values.region, 'eu', 'only the changed module');
+      } finally {
+        started.stop();
+        channel.resetForTests();
+        reread.configure({});
+      }
+    });
+
     it('a module whose values did not change keeps its state (no new version)', async () => {
       const mm = manager();
       const w = mm.modules.w.settings;
