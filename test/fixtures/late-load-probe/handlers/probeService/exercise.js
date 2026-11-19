@@ -25,8 +25,13 @@ const STEPS = {
   // CHUtil.request to a declared host: postman-request (preloaded with net)
   request: () => new Promise((resolve) => CHUtil.request({url: URL_DECLARED, timeout: 1000}, (err) => resolve(ended(err)))),
   // CHUtil.redis: redis-api's client, made at boot
+  // (the command issued is the path; a store that never answers, as on a
+  // runner with no Redis, doesn't hold the step past 3 s)
   redis: () => new Promise((resolve) => {
-    try { CHUtil.redis.get('late-load-probe', (err) => resolve(`called: ${ended(err)}`)); } catch (e) { resolve(`threw: ${e.message}`); }
+    const timer = setTimeout(() => resolve('called: no answer in 3 s'), 3000);
+    try {
+      CHUtil.redis.get('late-load-probe', (err) => { clearTimeout(timer); resolve(`called: ${ended(err)}`); });
+    } catch (e) { clearTimeout(timer); resolve(`threw: ${e.message}`); }
   }),
   // getHostIp: bind-address
   hostIp: async () => typeof(CHUtil.getHostIp()),

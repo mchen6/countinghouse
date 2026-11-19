@@ -201,7 +201,12 @@ const STEPS = {
     try {
       await new Promise((resolve) => CHUtil.recordUsage('isolation-probe', 'window', 0, () => resolve()));
       await new Promise((resolve) => { try { CHUtil.request({url: 'http://isolation.example.invalid/', timeout: 500}, () => resolve()); } catch (e) { resolve(); } });
-      await new Promise((resolve) => { try { CHUtil.redis.get('isolation-window', () => resolve()); } catch (e) { resolve(); } });
+      // (bounded: a store that never answers, as on a runner with no Redis,
+      // would hold the step, and the module's wrap with it, past the call)
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 3000);
+        try { CHUtil.redis.get('isolation-window', () => { clearTimeout(timer); resolve(); }); } catch (e) { clearTimeout(timer); resolve(); }
+      });
     } finally {
       for (const key of keys) delete Object.prototype[key];
       try { M.wrap = wrapWas; } catch (e) { /* refused */ }

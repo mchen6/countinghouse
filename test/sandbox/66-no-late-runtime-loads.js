@@ -173,9 +173,12 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       }
       const p = await mcpCall(port, KEY, TOOL, {step: 'parents'});
       assert.ok(p.structuredContent != null, JSON.stringify(p).slice(0, 800));
-      // the module's own anchor, inside its root (/app, as module code sees it)
-      assert.deepStrictEqual([p.structuredContent.handlerParent, p.structuredContent.loadedParent],
-        ['/app/.countinghouse-entry', '/app/.countinghouse-entry']);
+      // the module's own anchor, inside its root (/app, as module code sees
+      // it; on Windows <V>:\app, #195)
+      const anchor = /^(\/app\/|[A-Z]:\\app\\)\.countinghouse-entry$/;
+      assert.ok([p.structuredContent.handlerParent, p.structuredContent.loadedParent].every((f) => anchor.test(f)),
+        JSON.stringify([p.structuredContent.handlerParent, p.structuredContent.loadedParent]));
+      assert.strictEqual(p.structuredContent.handlerParent, p.structuredContent.loadedParent);
     } finally {
       stopServer(server);
     }
