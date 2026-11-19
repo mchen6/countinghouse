@@ -163,13 +163,14 @@ function startOn(port, readyMs) {
 const handedOut = (port) => [...assigned.values()].includes(Number(port));
 
 // Whether the Redis the servers a test starts use answers PING: the
-// explicit signal a step that needs a store takes, never the OS (the
-// Windows subset's runner has none). A Redis the run configured
-// (CH_TEST_REDIS_URL) that doesn't answer is an error, never a quiet skip.
+// signal a step that needs a store takes, never the OS. Only a run that
+// says it has no Redis may go without one: the Windows subset workflow
+// (GITHUB_WORKFLOW, which Actions sets), or CH_TEST_NO_REDIS=1. Anywhere
+// else a Redis that doesn't answer is an error, never a quiet skip.
 // (A Redis needing auth or TLS answers as none: these tests use neither.)
+const NO_REDIS_RUN = process.env.CH_TEST_NO_REDIS === '1' || process.env.GITHUB_WORKFLOW === 'Windows subset';
 const redisAnswers = (timeoutMs = 1500) => new Promise((resolve, reject) => {
-  const configured = redisUrl() != null;
-  const none = (why) => (configured ? reject(new Error(`CH_TEST_REDIS_URL is set but its Redis doesn't answer PING: ${why}`)) : resolve(false));
+  const none = (why) => (NO_REDIS_RUN ? resolve(false) : reject(new Error(`no Redis answers PING (${why}); a run without one says so: CH_TEST_NO_REDIS=1`)));
   let c;
   try {
     const at = redisConnectionFor(0);

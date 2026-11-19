@@ -57,7 +57,7 @@ describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
     assert.strictEqual(fromNamespacedFor(false)('\\\\?\\D:\\x'), '\\\\?\\D:\\x', 'not Windows: unchanged');
     // (a component Win32 would trim in the plain form: no path)
     for (const trimmed of ['\\\\?\\D:\\mods\\.. \\x', '\\\\?\\D:\\mods\\a.\\package.json', '\\\\?\\D:\\mods\\x ', '\\\\?\\UNC\\srv\\share.\\x',
-      '\\\\?\\D:\\mods\\sub\\.. /.. /secret', 'D:\\mods\\m\\.. \\.. \\outside\\f', 'D:/mods/x./y']) {
+      '\\\\?\\D:\\mods\\sub\\.. /.. /secret', 'D:\\mods\\m\\.. \\.. \\outside\\f', 'D:/mods/x./y', '\\\\?\\UNC\\?\\D:\\mods\\x']) {
       assert.strictEqual(f(trimmed), null, trimmed);
     }
     // ('.' and '..' themselves, and a dot inside a name, are paths)
