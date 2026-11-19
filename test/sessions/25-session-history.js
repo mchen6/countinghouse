@@ -23,6 +23,10 @@ const settingsTool = require('../../lib/settings-tool');
 const MiB = 1024 * 1024;
 
 describe('sessions 25: the settings history, per session (shared runtime B5, Task 3)', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const CLIENT = {name: 'claude-code', version: '2.1.323'};

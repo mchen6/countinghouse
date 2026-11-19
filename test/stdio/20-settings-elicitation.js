@@ -23,6 +23,10 @@ const EN = `enabled.${SC}`;
 const ON_TEXT = (v) => `Turn on ${SC} ${v} in countinghouse for all your sessions? It stays on, now and after a restart, until it is turned off.`;
 
 describe('stdio 20: the settings tool asks the user in a dialog, and applies a confirmed change for this start only (part 3 P2)', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   let dir;
   let file;
   let saved;
@@ -256,6 +260,10 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
 });
 
 describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   const MiB2 = 1024 * 1024;
   let dir;
   let file;

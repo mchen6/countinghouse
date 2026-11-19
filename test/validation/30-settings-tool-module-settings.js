@@ -31,6 +31,10 @@ const P = pkgOf('@acme/region-part', {region: {type: 'string'}}, {role: 'part'})
 const trusted = (obj) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: ceilingLib.parse(JSON.stringify(Object.assign({version: 1}, obj))).ceiling});
 
 describe('validation 30: countinghouse_settings and module settings', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   let home;
   let file;
   let saved;

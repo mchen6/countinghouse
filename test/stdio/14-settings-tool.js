@@ -18,6 +18,10 @@ const EN = `enabled.${SC}`;
 const core = (a) => ({name: a.name, old: a.old, new: a.new, applies: a.applies});
 
 describe('stdio 14: countinghouse_settings', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   let home;
   let file;
   let tool;

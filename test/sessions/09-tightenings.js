@@ -25,6 +25,10 @@ const Session = require('../../lib/session');
 const MiB = 1024 * 1024;
 
 describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   const A = 'a'.repeat(32);
   const B = 'b'.repeat(32);
   const C = 'c'.repeat(32);

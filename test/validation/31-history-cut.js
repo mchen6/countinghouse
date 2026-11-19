@@ -19,6 +19,10 @@ const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json
 const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v), 'utf8').digest('hex');
 
 describe('validation 31: a module setting\'s value in the history', () => {
+  // the one manager the settings tool reads what is loaded from (#449's
+  // high review, round 5, 4b/10): none loaded here
+  before(() => settingsTool.setModuleManager({modules: {}}));
+  after(() => settingsTool.setModuleManager(null));
   it('the shared vectors\' historyCut: each case written as the vector says', () => {
     assert.ok(V.cases.length >= 5);
     for (const c of V.cases) {

@@ -40,7 +40,8 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     ceiling: () => ({state: 'none'}),
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
     // weather-tool loaded, and trip-planner, whose closure holds it
-    loadedTops: () => [{name: TOOL, modules: [TOOL], tools: ['weather_tool_forecast_get']}, {name: CALLER, modules: [CALLER, TOOL], tools: ['plan_trip']}]
+    loadedTops: () => [{name: TOOL, modules: [TOOL], tools: ['weather_tool_forecast_get']}, {name: CALLER, modules: [CALLER, TOOL], tools: ['plan_trip']}],
+    loadingTops: () => []
   }, o));
   const refused = async (p, code) => {
     try { await p; } catch (e) { assert.strictEqual(e.code, code, `${e.code}: ${e.message}`); return e; }
@@ -157,6 +158,20 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
         assert.match(t, new RegExp(`${n === 1 ? 'calls' : 'call'} it`));
       }
     }
+  });
+
+  // (round 5, 4b/10) one source: the manager route-manager gives the control
+  // channel, given to the settings tool once; none, a clear error
+  it('the loaded and loading modules come from the one manager given once; with none, a clear error', async () => {
+    const mip = require('../../lib/modules-in-place');
+    try {
+      settingsTool.setModuleManager(null);
+      await assert.rejects(settingsTool.create({file, ceiling: () => ({state: 'none'})}).get(), /no module manager/);
+      const mm = {packsLoading: new Map([['coming-up', {}]]), startupPending: null};
+      settingsTool.setModuleManager(mm);
+      assert.deepStrictEqual(settingsTool.loadingNow(), mip.loadingTops(mm));
+      assert.deepStrictEqual(settingsTool.loadedNow(), mip.loadedTops(mm));
+    } finally { settingsTool.setModuleManager(null); }
   });
 
   it('a part, a module not installed and a name of no grammar are SETTING_UNKNOWN', async () => {
