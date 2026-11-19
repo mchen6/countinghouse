@@ -184,6 +184,21 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
     });
 
+    // (the medium review of round 4, 6) served: the settings tool on and a
+    // settings file to write
+    it('the settings tool served only with --settingsFile: else the message\'s own words', async() => {
+      const options = require('../../lib/cli-options');
+      const saved = {settingsTool: options.settingsTool, settingsFile: options.settingsFile};
+      try {
+        for (const [tool, file, full] of [[true, null, false], [false, '/x/settings.json', false], [true, '/x/settings.json', true]]) {
+          Object.assign(options, {settingsTool: tool, settingsFile: file});
+          loaded = [{name: MOD, modules: [MOD], tools: []}];
+          await c({settingsServed: undefined}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+          assert.deepStrictEqual(all(MOD), each(full ? offNotice(MOD, []) : 'ch-pack-mod turned off'), `${tool} ${file}`);
+        }
+      } finally { Object.assign(options, saved); }
+    });
+
     it('many callers: eight named and how many more, the ways back kept whole', async() => {
       loaded = [{name: MOD, modules: [MOD], tools: []}].concat(Array.from({length: 11}, (_, i) => ({name: `caller-${String(i).padStart(2, '0')}-${'x'.repeat(12)}`, modules: [MOD], tools: []})));
       await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
