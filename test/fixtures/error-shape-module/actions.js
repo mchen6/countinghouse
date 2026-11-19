@@ -31,6 +31,39 @@ module.exports = {
     callbackError: (input, ctx, callback) => callback(ctx.error('SHAPE_REJECTED', 'shape probe'), null),
     throwPlainCoded: async () => { throw Object.assign(new Error('shape probe'), {code: 'SHAPE_REJECTED'}); },
 
+    // A module defines only its own codes (the back-sweep, 11-18): ctx.error
+    // with a code of the runtime's catalogue, and one set on its own error
+    // after, answer the runtime's MODULE_CODE_RESERVED. The wire never shows
+    // the catalogue code.
+    catalogueCode: async (input, ctx) => ctx.error('USER_HAS_NO_DEVICE', 'shape probe'),
+    catalogueCodeSetAfter: async (input, ctx) => {
+      const e = ctx.error('SHAPE_REJECTED', 'shape probe');
+      e.code = 'USER_HAS_NO_DEVICE';
+      return e;
+    },
+    // the same with origin forged too, which single-thread mode once let
+    // through (the medium on the ctx.error PR, 1); and ctx.error with a
+    // catalogue code called back from an asynchronous callback, which a throw
+    // there would have left unanswered (2)
+    catalogueCodeForgedOrigin: async (input, ctx) => {
+      const e = ctx.error('SHAPE_REJECTED', 'shape probe');
+      e.origin = 'runtime';
+      e.code = 'USER_HAS_NO_DEVICE';
+      return e;
+    },
+    catalogueCodeInCallback: (input, ctx, callback) => { setImmediate(() => callback(ctx.error('USER_HAS_NO_DEVICE', 'shape probe'), null)); },
+    // A runtime refusal a module passes on stays the runtime's, in both modes
+    // (the high review of #445, 1: single-thread's remote refusals were not
+    // issued, so they read as the module's): a remote the module never
+    // declared, and arguments that cannot cross to the main thread.
+    remoteUndeclaredPassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {}),
+    remoteArgsInvalidPassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {f: () => 1}),
+    // over the worker channel's cap (--maxOutputBytes, 16 MiB, and its
+    // headroom): worker mode refuses it MESSAGE_TOO_LARGE before it is sent;
+    // single-thread mode sends nothing over a channel and refuses the
+    // undeclared remote
+    remoteTooLargePassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {big: 'x'.repeat(17 * 1024 * 1024)}),
+
     // Not a module's code (§5.1): a system error's code (it has errno and
     // syscall), and Node's own ERR_ namespace. Both are crashes:
     // DEVICE_INVOKE_EXCEPTION.
