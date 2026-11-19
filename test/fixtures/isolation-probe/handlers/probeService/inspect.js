@@ -194,6 +194,17 @@ const STEPS = {
     process.emitWarning(`probe ${__filename}`, 'ProbeWarning');
     process.emitWarning = emitWas;
     if (setHeard !== `probe ${__filename} ProbeWarning`) unlike.push(`setEmit ${setHeard}`);
+    // (Node's ES resolver, on a target it doesn't find, calls process.send
+    // with its host path when WATCH_REPORT_DEPENDENCIES is set: module code
+    // can set the variable, never process.send, so nothing of its own runs
+    // inside Node's step; Fable's pass on #451, F2)
+    let sent = 'not called';
+    const envWas = process.env.WATCH_REPORT_DEPENDENCIES;
+    process.env.WATCH_REPORT_DEPENDENCIES = '1';
+    try { process.send = (m) => { sent = JSON.stringify(m); }; } catch (e) { /* held */ }
+    try { await import('../../lib/no-such-watch-target.mjs'); } catch (e) { /* missing */ }
+    if (envWas === undefined) delete process.env.WATCH_REPORT_DEPENDENCIES; else process.env.WATCH_REPORT_DEPENDENCIES = envWas;
+    if (sent !== 'not called') unlike.push(`sent ${sent}`);
     // (the root itself by require: its own index)
     let rootLoad;
     try { rootLoad = `${require('../..')}`; } catch (e) { rootLoad = `threw ${e.code} ${e.message}`; }

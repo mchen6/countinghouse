@@ -296,6 +296,12 @@ any module code). Stops:
   | `resolve-from`, from `__dirname` | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
   | `import-fresh`, a relative name | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
   | `module-alias`, `addAlias` | no alias (works on Windows) | no alias | no alias | throws |
+  | `process.emitWarning = fn` | works | works | works | works |
+  | `process.emitWarning = null` | throws on the next call | throws on the next call | throws on the next call | warnings off |
+  | `Object.defineProperty(process, 'emitWarning', ...)` | works | works | works | throws |
+  | `Error.stackTraceLimit = n` | works | works | works | works |
+  | `Object.defineProperty(Error, 'stackTraceLimit', ...)`, or on `process.noDeprecation` and its two siblings | works | works | works | throws |
+  | `process.env = {...}`, `process.send = fn` | works | works | works | doesn't take (a TypeError in strict code) |
 
   Why:
   - a module's own directory is virtual (`/app/...`) in every mode,

@@ -8,7 +8,47 @@
 const path = require('path');
 // (a throw is said by its code, or its name: never a message)
 const said = (e) => `threw ${e != null && e.code != null ? String(e.code) : (e != null && e.name != null ? String(e.name) : typeof(e))}`;
+// (what a module's own code does to the process-wide warning and error
+// switches: under enforce some are held, the high review of #451, items 8
+// and 9; each step puts back what it changed where it could)
+const process_ = process;
+const swap = (target, key, fn) => {
+  const was = Object.getOwnPropertyDescriptor(target, key);
+  try { return fn(); } finally { if (was != null && was.configurable) Object.defineProperty(target, key, was); else if (was != null && was.writable) target[key] = was.value; }
+};
 const STEPS = {
+  'emitWarning assigned': () => swap(process_, 'emitWarning', () => {
+    let heard = null;
+    process_.emitWarning = (w) => { heard = String(w); };
+    process_.emitWarning('probe');
+    return heard === 'probe' ? 'works' : `heard ${heard}`;
+  }),
+  'emitWarning = null': () => swap(process_, 'emitWarning', () => {
+    process_.emitWarning = null;
+    try { process_.emitWarning('probe'); return 'warnings off'; } catch (e) { return said(e); }
+  }),
+  'emitWarning redefined': () => swap(process_, 'emitWarning', () => {
+    try { Object.defineProperty(process_, 'emitWarning', {value: () => {}, configurable: true, writable: true}); return 'works'; } catch (e) { return said(e); }
+  }),
+  'Error.stackTraceLimit redefined': () => swap(Error, 'stackTraceLimit', () => {
+    try { Object.defineProperty(Error, 'stackTraceLimit', {value: 5, configurable: true, writable: true}); return 'works'; } catch (e) { return said(e); }
+  }),
+  'Error.stackTraceLimit assigned': () => swap(Error, 'stackTraceLimit', () => {
+    Error.stackTraceLimit = 3;
+    return Error.stackTraceLimit === 3 ? 'works' : 'not set';
+  }),
+  'process.noDeprecation getter': () => swap(process_, 'noDeprecation', () => {
+    try { Object.defineProperty(process_, 'noDeprecation', {get: () => false, configurable: true}); return 'works'; } catch (e) { return said(e); }
+  }),
+  'process.env replaced': () => swap(process_, 'env', () => {
+    const was = process_.env;
+    try { process_.env = Object.assign({}, was); } catch (e) { return said(e); }
+    return process_.env !== was ? 'works' : 'not replaced';
+  }),
+  'process.send set': () => swap(process_, 'send', () => {
+    try { process_.send = () => {}; } catch (e) { return said(e); }
+    return typeof(process_.send) === 'function' ? 'works' : 'not set';
+  }),
   // resolves a request from a directory, through a Module of its own
   'resolve-from': () => {
     const found = require('resolve-from')(__dirname, '../../lib/target');

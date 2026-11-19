@@ -829,6 +829,15 @@ their `/app/...` paths. `process.emitWarning` can still be assigned, and
 what you assign is what a warning reaches, but it can't be redefined with
 `Object.defineProperty`.
 
+Under `enforce` the process-wide switches Node reads while it resolves are
+held. `process.emitWarning` can be assigned a function, or `null` to turn
+your warnings off, but not redefined. `Error.stackTraceLimit`,
+`process.noDeprecation`, `process.throwDeprecation` and
+`process.traceDeprecation` can be assigned but not redefined or deleted.
+`process.env` and `process.send` can't be replaced (the keys of
+`process.env` can still be set): in strict code the assignment throws a
+`TypeError`, and otherwise it doesn't take.
+
 ## Files and paths
 
 Since 8.0.0 a module in worker mode (the default) sees its own file
