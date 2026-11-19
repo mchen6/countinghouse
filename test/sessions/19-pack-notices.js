@@ -142,6 +142,35 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     });
   });
 
+  // #449's high review, 4: one notice per change. A module the settings
+  // tool turned off told every session there (with what went with it and the
+  // undo); ch-local's unload of it that follows tells nothing again
+  describe('an unload after the settings tool told the off', () => {
+    const MOD = '@countinghouse/ch-pack-mod';
+    const mip = require('../../lib/modules-in-place');
+    const units = new Map([[MOD, {form: 'module', pack: moduleKey(MOD)}]]);
+    const unloadOnly = Object.assign({}, packs, {unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); return {modules: [`m-${msg.name}`]}; }});
+    const c = () => createPackControl({mm: {packsInPlace: units}, dm: {}, packs: unloadOnly, toolsOf: async() => [], shared: () => sessions.shared()});
+    afterEach(() => mip.resetToldOffForTests());
+
+    it('tells nobody again, in its words or the plain ones; the next unload tells as before', async() => {
+      mip.markToldOff([MOD]);
+      await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [[], [], []]);
+      await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod turned off'], ['mod turned off'], ['mod turned off']]);
+      mip.markToldOff([MOD]);
+      await c().unload({type: 'unload', name: MOD});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [[], [], []]);
+    });
+
+    it('a mark a minute old is gone: the unload tells', async() => {
+      mip.markToldOff([MOD], Date.now() - 61000);
+      await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod turned off'], ['mod turned off'], ['mod turned off']]);
+    });
+  });
+
   describe('a notice about a pack goes to every open session', () => {
     it('load\'s, reload\'s and a notice message\'s, about a pack, whatever its global: each session gets each once', async() => {
       await load('ci', false, {notice: 'ci added 1.0.0'});

@@ -29,6 +29,7 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   let dir;
   let file;
   let told;
+  let marked;
   let savedLocale;
   const history = () => { try { return fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { return []; } };
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
@@ -42,7 +43,8 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
     // weather-tool loaded, and trip-planner, whose closure holds it
     loadedTops: () => [{name: TOOL, modules: [TOOL], tools: ['weather_tool_forecast_get']}, {name: CALLER, modules: [CALLER, TOOL], tools: ['plan_trip']}],
-    tellEverySession: (module, text) => told.push([module, text])
+    tellEverySession: (module, text) => told.push([module, text]),
+    markToldOff: (modules) => marked.push(modules)
   }, o));
   const refused = async (p, code) => {
     try { await p; } catch (e) { assert.strictEqual(e.code, code, `${e.code}: ${e.message}`); return e; }
@@ -55,6 +57,7 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'pack.ci-failure-triage': false}}));
     record({[SCENARIO]: {version: '0.5.0', role: 'scenario'}, [PART]: {version: '0.2.0', role: 'part'}, [TOOL]: {version: '1.2.0', role: null}, [CALLER]: {version: '2.0.0', role: 'scenario'}});
     told = [];
+    marked = [];
     savedLocale = options.locale;
     options.locale = 'en-US';
     confirm.resetForTests();
@@ -183,6 +186,17 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     // neither record there: nothing installed, so no module to name
     fs.rmSync(path.join(dir, 'packs.json'));
     await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
+  });
+
+  // #449's high review, 4: the settings tool's notice is the one; ch-local's
+  // unload of the module and its callers tells nothing again
+  it('off marks the module and its callers as told, once told; nothing when nothing was written', async () => {
+    await tool().set(`enabled.${TOOL}`, 'off');
+    assert.deepStrictEqual(marked, [[TOOL, CALLER]]);
+    await tool().set(`enabled.${TOOL}`, 'off');
+    assert.deepStrictEqual(marked, [[TOOL, CALLER]], 'already off: nothing told, nothing marked');
+    await tool({tellEverySession: () => { throw new Error('no queue'); }}).set(`enabled.${CALLER}`, 'off');
+    assert.deepStrictEqual(marked, [[TOOL, CALLER]], 'not told: not marked');
   });
 
   it('two requests turning one module off at once: one writes and tells; the other changes nothing and tells no one', async () => {
