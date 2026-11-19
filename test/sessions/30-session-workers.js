@@ -252,42 +252,35 @@ describe('sessions 30: per-session workers (lib/session-workers.js)', () => {
   });
 });
 
-// B3 x R1 (the hook agreed with B): a session's view changing stops that
-// session's workers of the modules it no longer lists; the other session's
-// run on. The stores wired as test/sessions/14 wires them.
-describe('sessions 30: a session\'s packs and its per-session workers', () => {
-  const settings = require('../../lib/session-settings');
-  const sessionPacks = require('../../lib/session-packs');
+// R1 x #413 section 5.5 (M5a: no session has a view of its own): a module
+// beginning to go on or off (lib/module-visibility.js) stops every session's
+// worker of it; another module's workers run on.
+describe('sessions 30: a module going on or off and its per-session workers', () => {
+  const visibility = require('../../lib/module-visibility');
   const ModuleManager = require('../../lib/module-manager');
   before(() => require('../../lib/logger').createLogger());
-  // the packs and the shared mode configured here end with this file: the
-  // next file in the same process starts from the defaults
-  after(() => { settings.resetForTests(); sessionPacks.resetForTests(); });
-  beforeEach(() => {
-    settings.resetForTests();
-    sessionPacks.resetForTests();
-    settings.configure({ceiling: () => ({state: 'trusted', ceiling: {packs: ['p']}}), defaultOf: () => 8 * 1024 * 1024, isLive: () => true, ceilingMemoMs: 0});
-    sessionPacks.configure({
-      records: () => [{pack: 'p', modules: ['m']}], moduleOf: () => 'm',
-      overridesOf: (id) => settings.packOverridesOf(id), onOverrideChange: (fn) => settings.onChange(fn),
-      openSessions: () => [A, B], shared: () => true, allowsOn: settings.packOnAllowed, ceilingNow: settings.ceilingNow, ceilingKey: settings.ceilingKey});
-  });
+  // the visibility set configured here ends with this file: the next file in
+  // the same process starts from the defaults
+  after(() => visibility.resetForTests());
+  beforeEach(() => visibility.resetForTests());
 
-  it('turning off a this-session pack stops that session\'s worker of its module; the other session\'s runs on', async () => {
+  it('a hidden module\'s worker stops for every session; another module\'s run on; shown again, nothing more stops', async () => {
     const h = harness({max: 4});
     const mm = Object.create(ModuleManager.prototype);
     mm.sessionWorkers = h.sw;
-    sessionPacks.onChange((sid) => mm.sessionViewChanged(sid));   // as ModuleManager's constructor wires it
-    for (const id of [A, B]) settings.set(id, 'pack.p', true, {loosening: true, version: '1.0.0'});
-    assert.deepStrictEqual([sessionPacks.listsModule(A, 'm'), sessionPacks.listsModule(B, 'm')], [true, true]);
+    visibility.onChange(() => mm.sessionViewChanged());   // as ModuleManager's constructor wires it
     const a = (await h.get('m', A)).wm;
     const b = (await h.get('m', B)).wm;
-    settings.set(A, 'pack.p', false, {version: '1.0.0'});
-    assert.strictEqual(sessionPacks.listsModule(A, 'm'), false);
-    await new Promise((r) => setImmediate(r));
-    assert.deepStrictEqual(h.ended, [a], 'A\'s worker stopped');
-    assert.deepStrictEqual(h.sw.workersOf('m').map((w) => w.wm), [b], 'B\'s runs on');
-    assert.deepStrictEqual(h.told, [], 'a stop for the view is not a reset notice');
+    const n = (await h.get('n', A)).wm;
+    visibility.hide(['m']);
+    await tick();
+    assert.deepStrictEqual(new Set(h.ended), new Set([a, b]), 'both sessions\' workers of m stopped');
+    assert.deepStrictEqual(h.sw.workersOf('m'), []);
+    assert.deepStrictEqual(h.sw.workersOf('n').map((w) => w.wm), [n], 'n runs on');
+    assert.deepStrictEqual(h.told, [], 'a stop for the listing is not a reset notice');
+    visibility.show(['m']);
+    await tick();
+    assert.strictEqual(h.ended.length, 2);
   });
 });
 

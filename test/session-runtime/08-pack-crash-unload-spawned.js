@@ -7,12 +7,13 @@
 // module with no owner: listed to every session, with no all-sessions
 // confirmation, while the daemon thought the pack was gone.
 //
-// Spawned, as ch-local's daemon runs the runtime: pack `crashy` loaded as no
-// session's (global false), so no session lists it; its module crashes twice
-// on its own (a count in its /data, so a third start would load cleanly); the
-// pack is unloaded inside the supervisor's second backoff (2 s, room for a
-// slow runner); after the restart's time, no session's tools/list holds any
-// of its tools.
+// Spawned, as ch-local's daemon runs the runtime: pack `crashy` loaded (M5a:
+// no session has a view of its own, so once loaded it is every session's;
+// `global` decides nothing); its module crashes twice on its own (a count in
+// its /data, so a third start would load cleanly); the pack is unloaded
+// inside the supervisor's second backoff (2 s, room for a slow runner); after
+// the restart's time, no session's tools/list holds any of its tools, an
+// open session's or a new one's.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -42,7 +43,7 @@ function crashyPack(home) {
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({name: NAME, version: '1.0.0', license: 'Apache-2.0', countinghouse: {role: 'scenario'}}));
   fs.writeFileSync(path.join(dir, 'api.json'), JSON.stringify({device: {friendlyName: 'ch-pack-crashy', manufacturer: 'countinghouse-test', modelDescription: 'crashes once',
     serviceList: {[`urn:countinghouse-test:serviceID:${svc}`]: {actionList: [
-      {name: 'crashy_tool', description: 'a tool of a pack no session has on', input: {schema: `/${svc}/crashy_tool/input`}, output: {schema: `/${svc}/crashy_tool/output`}}
+      {name: 'crashy_tool', description: 'a tool of a pack that crashes', input: {schema: `/${svc}/crashy_tool/input`}, output: {schema: `/${svc}/crashy_tool/output`}}
     ]}}}}));
   fs.writeFileSync(path.join(dir, 'schema.json'), JSON.stringify({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: '#/', type: 'object',
     [svc]: {crashy_tool: {input: {type: 'object'}, output: {type: 'object'}}}}));
@@ -118,10 +119,10 @@ describe('session-runtime 08: a pack turned off while its module restarts after 
     const s = await shim.session(r.socket, secretOf(r));
     if (s.c != null) conns.push(s.c);
     assert.ok(s.welcome != null, JSON.stringify(s.refused));
-    // no session has it on: no session lists it
+    // loaded, it is every session's (M5a); whether it is listed at a given moment depends on its crashes
+    // (a module restarting is listed to no one, F3-5), so nothing is asserted of the listing before the unload
     const loaded = await r.control({type: 'load', name: NAME, scenario: pack.dir, pack: 'crashy', global: false});
     assert.strictEqual(loaded.ok, true, `${JSON.stringify(loaded)}: ${r.err.slice(-1500)}`);
-    assert.ok(!(await toolNames(s.c)).includes('crashy_tool'), 'premise: listed to no session');
     // its worker ends on its own, twice; the supervisor will restart it after its second backoff
     const escaped = NAME.replace(/[/@]/g, (x) => `\\${x}`);
     const exits = () => [...r.err.matchAll(new RegExp(`module sandbox: ${escaped} exited \\(.*\\); restarting in (\\d+) ms`, 'g'))];

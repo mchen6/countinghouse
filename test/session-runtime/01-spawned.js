@@ -171,15 +171,11 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_CONFIRMATION_INVALID', JSON.stringify(r2));
     }
-    // a pack is the session's own since B3 Task 8: on is a loosening (this
-    // client gets no form here), off a tightening; neither writes a file
-    const packOn = await call({action: 'set', name: 'pack.ch-pack-x', value: 'on'});
-    assert.strictEqual(packOn.result._meta['countinghouse/code'], 'SETTING_NEEDS_CONFIRMATION', JSON.stringify(packOn));
-    const packOff = await call({action: 'set', name: 'pack.ch-pack-x', value: 'off'});
-    assert.strictEqual(packOff.result.structuredContent.applies, 'this session', JSON.stringify(packOff));
-    // everything else is the terminal's: any other setting, and its
-    // retries; nothing is written
-    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}]]) {
+    // everything else is the terminal's: any other setting, a pack's on and
+    // off included (never a session's own since M5a), and its retries;
+    // nothing is written
+    for (const [args, extra] of [[{action: 'set', name: 'moduleSandbox', value: 'audit'}, {}], [{action: 'set', name: 'locale', value: 'zh'}, {}],
+      [{action: 'set', name: 'pack.ch-pack-x', value: 'on'}, {}], [{action: 'set', name: 'pack.ch-pack-x', value: 'off'}, {}]]) {
       const r2 = await call(args, extra);
       assert.strictEqual(r2.result.isError, true, JSON.stringify(r2));
       assert.strictEqual(r2.result._meta['countinghouse/code'], 'SETTING_TERMINAL_ONLY_SHARED', `${JSON.stringify(args)}: ${JSON.stringify(r2)}`);
@@ -475,7 +471,7 @@ describe('session-runtime 01: the runtime on --sessionSocket, spawned', function
     r = runtime(home, ['--packsRoot', packs]);
     const secret = await listening(r);
     const a = await shim.session(r.socket, secret);
-    // a shared runtime's load names its pack and whether it is global (B3 Task 6)
+    // a shared runtime's pack-form load names its pack (B3 Task 6); its global decides nothing since M5a
     const reply = await r.control({type: 'load', name: 'ch-pack-two', scenario: dir, pack: 'ch-pack-two', global: true});
     assert.strictEqual(reply.ok, true, `${JSON.stringify(reply)}\n${r.err.slice(-1500)}`);
     assert.ok(Array.isArray(reply.tools) && reply.tools.length === 1, JSON.stringify(reply));

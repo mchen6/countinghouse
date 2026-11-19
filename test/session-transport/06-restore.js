@@ -70,9 +70,11 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}),
       st({overrides: [], locks: ['other'], formsLeft: 3}),
       st({overrides: [ov({name: 'secret'})], locks: [], formsLeft: 3}),
+      // M5a: a pack's on or off is never a session's own: any pack.<n> override is refused, well formed or not
+      st({overrides: [ov({name: 'pack.weather', value: false, version: '1.0.0'})], locks: [], formsLeft: 3}),
+      st({overrides: [ov({name: 'pack.ci-failure-triage', value: true, version: '1.2.3'})], locks: [], formsLeft: 3}),
       st({overrides: [ov({name: 'pack.Bad_Name'})], locks: [], formsLeft: 3}),
       st({overrides: [ov(), ov()], locks: [], formsLeft: 3}),
-      st({overrides: Array.from({length: 65}, (_, i) => ov({name: `pack.p${i}`, value: true, version: '1.0.0'})), locks: [], formsLeft: 3}),
       st({overrides: [ov({value: 0})], locks: [], formsLeft: 3}),
       st({overrides: [ov({value: true})], locks: [], formsLeft: 3}),
       st({overrides: [ov({name: 'pack.one', value: 1, version: '1.0.0'})], locks: [], formsLeft: 3}),
@@ -101,9 +103,9 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     }
   });
 
-  it('takes B2\'s exact shapes: a confirmed cap loosening, a pack turned on, locks and forms left', () => {
+  it('takes B2\'s exact shapes: a confirmed cap loosening, a tightening, locks and forms left', () => {
     const r = createRestore({});
-    const state = {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000}), ov({name: 'pack.ci-failure-triage', value: true, version: '1.2.3'})],
+    const state = {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000}), ov()],
       locks: ['maxOutputBytes', 'pack'], formsLeft: 0};
     assert.deepStrictEqual(r.handle(st(state)), {sessions: 1});
   });

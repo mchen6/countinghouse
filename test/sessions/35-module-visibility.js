@@ -1,13 +1,11 @@
 // M4 Task 1 (module-level configuration, #413 rev 3, section 5.5): the
-// hidden set, lib/module-visibility.js, and its bridge into
-// lib/session-packs.js's own queries, which every reader of a session's
-// view asks (the lists, the call, hop, peer-channel and job paths), so a
-// hidden module is refused everywhere with no reader changed. In-process.
+// hidden set, lib/module-visibility.js, which every reader asks directly
+// since M5a (the lists, the call, hop, peer-channel and job paths: sessions
+// 15 and 17), so a hidden module is refused everywhere. In-process.
 const assert = require('assert');
 
 describe('sessions 35: a module going on or off is hidden', () => {
   const visibility = require('../../lib/module-visibility');
-  const sessionPacks = require('../../lib/session-packs');
   let goneNow = null;
   beforeEach(() => {
     visibility.resetForTests();
@@ -60,21 +58,5 @@ describe('sessions 35: a module going on or off is hidden', () => {
     visibility.resetForTests();
     visibility.hide(['mod-b']);
     assert.deepStrictEqual(told, ['second'], 'reset clears it');
-  });
-
-  describe('the bridge: lib/session-packs.js asks the hidden set', () => {
-    it('outside a shared runtime (no session view): a hidden module is not listed, its device not, and none() is false', () => {
-      visibility.hide(['mod-a']);
-      assert.strictEqual(sessionPacks.none(), false);
-      assert.strictEqual(sessionPacks.listsModule(null, 'mod-a'), false);
-      assert.strictEqual(sessionPacks.listsModule('s1', 'mod-b'), true);
-      assert.strictEqual(sessionPacks.listsDevice(null, 'dev-a'), false);
-      assert.strictEqual(sessionPacks.listsDeviceOfSession(null, 'dev-a'), false);
-      assert.strictEqual(sessionPacks.listsDeviceOfSession('s1', 'dev-b'), true);
-      assert.strictEqual(sessionPacks.listsDeviceFor({}, 'dev-a'), false);
-      visibility.show(['mod-a']);
-      assert.strictEqual(sessionPacks.none(), true);
-      assert.strictEqual(sessionPacks.listsDeviceOfSession(null, 'dev-a'), true);
-    });
   });
 });
