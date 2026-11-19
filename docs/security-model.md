@@ -1518,6 +1518,18 @@ and the short list of what the in-process sandbox cannot give.
   countinghouse's `lib/` by bare name. Under `enforce` `/proc/self/environ`
   is outside the namespace too; under `audit` and `off` a module can still
   read the process's whole environment there, unless `--hardened` is on.
+- **HTTP proxies are not supported in this release.** A remote MCP server
+  is reached with the runtime's own agent, which reads no proxy variable
+  (`lib/remote/fetch.js`). Under `enforce` the lockdown sets `proxy: null`
+  on a module's `CHUtil.request` (`lib/module-lockdown.js`), so its calls
+  go direct whatever it declares. Under `audit` and `off` the request is
+  handed on as the module made it, so a module given a proxy variable it
+  declared (`HTTPS_PROXY`, `NO_PROXY` ...) does go through that proxy. In
+  every mode a declared proxy variable's value is readable by the module,
+  credentials in the URL included: don't approve one. A network that
+  reaches the internet only through an HTTP proxy is not supported yet;
+  proxy support held by the runtime, out of every module's reach, is
+  planned.
 - **`--hardened` limits.** Node's permission model follows symlinks, so a
   symlink inside `--modulePath` that points elsewhere is readable, and write
   access covers all of `--modulePath` and `--moduleDataPath` (including other
