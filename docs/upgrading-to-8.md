@@ -422,7 +422,10 @@ says how to write a module for this.
   `text` for valid UTF-8 `text/*`, else `blob`; anything else is "Resource
   not found". Stored results are never listed in `resources/list`. A
   result whose stored values would pass a store limit is
-  refused `RESULT_STORE_FULL`, with nothing stored. A client on protocol
+  refused `RESULT_STORE_FULL`, with nothing stored. Under `--store redis`,
+  one whose store does not answer within 3 s, or with Redis down, fails
+  `RESULT_STORE_UNAVAILABLE` (retryable), with nothing stored; every other
+  call goes on answering. A client on protocol
   revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
   may not show a link; it can still read the `uri` from the text block.
   `ctx.call` and `invoke-action` are unchanged: their output keeps the base64
