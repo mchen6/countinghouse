@@ -155,6 +155,44 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual((await tool({ceiling: trusted({modules: []})}).set(`enabled.${CALLER}`, 'off')).new, 'off');
   });
 
+  // the medium review of M5b
+  it('ch-local\'s record unreadable: off is still made, on is the terminal\'s', async () => {
+    fs.writeFileSync(path.join(dir, 'modules.json'), '{"modules": ');
+    assert.strictEqual((await tool().set(`enabled.${TOOL}`, 'off')).new, 'off');
+    assert.strictEqual(stored()[`enabled.${TOOL}`], false);
+    await refused(tool().set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    assert.deepStrictEqual((await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')), [], 'no rows to show');
+  });
+
+  it('two requests turning one module off at once: one writes and tells; the other changes nothing and tells no one', async () => {
+    const t = tool();
+    const both = await Promise.all([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${TOOL}`, 'off')]);
+    assert.strictEqual(told.length, 1, JSON.stringify(told));
+    assert.strictEqual(both.filter((r) => r.said != null).length, 1);
+    assert.strictEqual(history().filter((l) => l.setting === `enabled.${TOOL}`).length, 1);
+  });
+
+  it('the budget is checked under the lock: requests at once never pass it together', async () => {
+    const t = tool();
+    for (let i = 0; i < 31; i++) {
+      await t.set(`enabled.${TOOL}`, i % 2 === 0 ? 'off' : 'off');
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
+    }
+    const got = await Promise.allSettled([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${CALLER}`, 'off')]);
+    assert.strictEqual(got.filter((r) => r.status === 'fulfilled').length, 1, JSON.stringify(got.map((r) => r.status)));
+  });
+
+  it('packs.json: a pack\'s scenario stays a top-level module, whatever another pack lists it as; a ~ in a name is a name', async () => {
+    fs.rmSync(path.join(dir, 'modules.json'));
+    fs.writeFileSync(path.join(dir, 'packs.json'), JSON.stringify({packs: {
+      a: {packages: {'@countinghouse/ch-pack-a': '1.0.0'}},
+      b: {packages: {'@countinghouse/ch-pack-b': '1.0.0', '@countinghouse/ch-pack-a': '1.0.0'}}}}));
+    const names = (await tool().get()).settings.filter((r) => r.name.startsWith('enabled.')).map((r) => r.module);
+    assert.deepStrictEqual(names, ['@countinghouse/ch-pack-a', '@countinghouse/ch-pack-b']);
+    record({'tilde~tool': {version: '1.0.0', role: null}});
+    assert.strictEqual((await tool().set('enabled.tilde~tool', 'off')).new, 'off');
+  });
+
   it('a shared runtime\'s session turns a module off for every session: its line names the session with the every-session marker', async () => {
     const sid = 'a'.repeat(32);
     const got = await tool().set(`enabled.${TOOL}`, 'off', 'settings tool', {shared: true, session: sid});
