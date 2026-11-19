@@ -166,15 +166,61 @@ describe('mcp-contract 39: one table of declared text fields', () => {
     assert.deepStrictEqual(specText.cleanedFields('argument', {name: 'a', title: 'no'}), {});
   });
 
-  // the lists clean declared text only through the table: no file clean
-  // its own fields by line() or message() (tool-registry's one use is a
-  // check that a description is more than hidden characters, never output)
-  it('tools/list, prompts/list, resources/list, a question\'s dialog and spec-text call no line() or message() of their own', () => {
-    const allowed = {'lib/mcp/tool-registry.js': 1, 'lib/mcp/prompts.js': 0, 'lib/mcp/resources.js': 0, 'lib/spec-text.js': 0, 'lib/module-questions.js': 0};
-    for (const [file, n] of Object.entries(allowed)) {
-      const src = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
-      const uses = src.match(/\b(clientText|moduleText)\.(line|message)\(/g) || [];
-      assert.strictEqual(uses.length, n, `${file}: ${uses.join(', ')}`);
+  // the lists clean declared text only through the table (the high review
+  // of #457, 2): every file under lib/ that reaches module-text's line() or
+  // message() -- through client-text or module-text, by a name, a lazy
+  // require (clientTextLib()), a destructured line or message, or a require
+  // called in place -- is one of these, with exactly this many uses; any
+  // other caller fails. Each allowed use cleans text that is no declared
+  // field of the table.
+  const ALLOWED = {
+    'lib/client-text.js': null,          // the cleaner's own re-export and its schema walk
+    'lib/spec-text.js': 2,               // the table's two rules
+    'lib/declarations.js': 3,            // the load's warnings (a log, not a list)
+    'lib/mcp/gateway.js': 3,             // a prompt argument's schema errors; a failed task's reason (twice)
+    'lib/mcp/result-content.js': 1,      // a call result's resource link (the module's output)
+    'lib/mcp/tool-registry.js': 1        // a description of hidden characters alone is none
+  };
+  const usesIn = (src) => {
+    const MOD = String.raw`require\(\s*['"][^'"]*(?:client-text|module-text)['"]\s*\)`;
+    let n = 0;
+    for (const m of src.matchAll(new RegExp(String.raw`(?:const|let|var)\s+(\w+)\s*=\s*(?:\w+\(\s*\(\)\s*=>\s*)?${MOD}`, 'g'))) {
+      n += (src.match(new RegExp(String.raw`\b${m[1]}(?:\(\))?\.(?:line|message)\b`, 'g')) || []).length;
     }
+    for (const m of src.matchAll(new RegExp(String.raw`(?:const|let|var)\s*\{([^}]*)\}\s*=\s*${MOD}`, 'g'))) {
+      for (const part of m[1].split(',')) {
+        const [k, v] = part.split(':').map((x) => x.trim());
+        if (k === 'line' || k === 'message') n += (src.match(new RegExp(String.raw`(?<![\w.])${v || k}\b`, 'g')) || []).length - 1;
+      }
+    }
+    n += (src.match(new RegExp(String.raw`${MOD}\.(?:line|message)\b`, 'g')) || []).length;
+    return n;
+  };
+  it('only the files listed reach module-text\'s line() or message(), each as often as listed', () => {
+    const lib = path.join(__dirname, '..', '..', 'lib');
+    const files = [];
+    (function walk(d) {
+      for (const e of fs.readdirSync(d, {withFileTypes: true})) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) walk(p); else if (e.name.endsWith('.js')) files.push(p);
+      }
+    })(lib);
+    const found = {};
+    for (const f of files) {
+      const rel = path.relative(path.join(lib, '..'), f).split(path.sep).join('/');
+      if (rel === 'lib/module-text.js') continue;
+      const n = usesIn(fs.readFileSync(f, 'utf8'));
+      if (n > 0) found[rel] = Object.hasOwn(ALLOWED, rel) && ALLOWED[rel] === null ? null : n;
+    }
+    assert.deepStrictEqual(found, ALLOWED);
+  });
+
+  it('the guard sees every alias', () => {
+    assert.strictEqual(usesIn("const clientText = require('../client-text');\nclientText.line(x); clientText.message(y);"), 2);
+    assert.strictEqual(usesIn("const clientTextLib = requireOnce(() => require('../client-text'));\nclientTextLib().message(x);"), 1);
+    assert.strictEqual(usesIn("const {line, message: m} = require('./module-text');\nline(a); m(b);"), 2);
+    assert.strictEqual(usesIn("require('./client-text').line(a);"), 1);
+    assert.strictEqual(usesIn("const t = require('./module-text');\nconst f = t.message;"), 1, 'a reference, not only a call');
+    assert.strictEqual(usesIn("const t = require('./module-text');\nt.moduleLine(a);"), 0);
   });
 });
