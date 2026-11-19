@@ -197,7 +197,7 @@ describe('sandbox 05: worker lockdown', function() {
     // audit it is reported, and used
     it(`vm code caches: ${mode === 'enforce' ? 'dropped, so the source runs' : 'used, and reported'}, by every route`, async () => {
       const from = server.output.length;
-      for (const route of ['script', 'runInThisContext', 'subclass', 'protoConstructor', 'compileFunction', 'esm:script']) {
+      for (const route of ['script', 'createScript', 'functionOptions', 'runInThisContext', 'subclass', 'protoConstructor', 'compileFunction', 'esm:script', 'esm:createScript']) {
         const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'vmCache', arg: route}));
         const ran = route === 'compileFunction' && mode === 'enforce' ? 'NO_CACHE' : (mode === 'enforce' ? 'SOURCE' : 'CACHE');
         assert.deepStrictEqual(r, {outcome: 'allowed', code: ran}, route);
@@ -218,7 +218,7 @@ describe('sandbox 05: worker lockdown', function() {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
       }
       // (the assignment is said under audit, as the loader's statics' are)
-      if (mode === 'audit') await waitFor(() => server.output.slice(from).includes('violation require vm.runInThisContext replaced'), 20000, 'the vm assignment line');
+      if (mode === 'audit') await waitFor(() => server.output.slice(from).includes('violation vm vm.runInThisContext replaced'), 20000, 'the vm assignment line');
     });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});

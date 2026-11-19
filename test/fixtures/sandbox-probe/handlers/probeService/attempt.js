@@ -32,6 +32,19 @@ function vmRan(run) {
 const scriptCache = (vm) => new vm.Script(VM_CACHED, {filename: 'ch-probe-vm.js'}).createCachedData();
 const VM_ROUTES = {
   script: (vm) => vmRan(() => new vm.Script(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  // (vm.createScript, which makes Node's own Script; the second round on #440)
+  createScript: (vm) => vmRan(() => vm.createScript(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
+  // (options given as a function, which runInNewContext reads too)
+  functionOptions: (vm) => {
+    const ctx = {};
+    const cached = 'this.__chVm = 1;;';
+    const source = 'this.__chVm = 2;;';
+    const opts = function() {};
+    opts.filename = 'ch-probe-vm-ctx.js';
+    opts.cachedData = new vm.Script(cached, {filename: 'ch-probe-vm-ctx.js'}).createCachedData();
+    vm.runInNewContext(source, ctx, opts);
+    throw Object.assign(new Error('ran'), {code: ctx.__chVm === 1 ? 'CACHE' : (ctx.__chVm === 2 ? 'SOURCE' : `OTHER_${ctx.__chVm}`)});
+  },
   runInThisContext: (vm) => vmRan(() => vm.runInThisContext(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)})),
   subclass: (vm) => vmRan(() => new (class extends vm.Script {})(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
   protoConstructor: (vm) => vmRan(() => new vm.Script.prototype.constructor(VM_SOURCE, {filename: 'ch-probe-vm.js', cachedData: scriptCache(vm)}).runInThisContext()),
@@ -169,7 +182,7 @@ const ATTEMPTS = {
   vmCache: async (arg) => {
     const esm = arg.startsWith('esm:');
     const vm = esm ? await import('node:vm') : require('vm');
-    VM_ROUTES[esm ? arg.slice(4) : arg](esm ? {Script: vm.Script, runInThisContext: vm.runInThisContext, compileFunction: vm.compileFunction} : vm);
+    VM_ROUTES[esm ? arg.slice(4) : arg](esm ? {Script: vm.Script, createScript: vm.createScript, runInThisContext: vm.runInThisContext, compileFunction: vm.compileFunction} : vm);
   },
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),

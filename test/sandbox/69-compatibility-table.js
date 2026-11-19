@@ -72,6 +72,12 @@ function copyClosure(names, moduleDir) {
     }
     fs.cpSync(src, dest, {recursive: true, dereference: true});
     const pkg = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8'));
+    // (a library the table names is the version the repo pins exactly: the
+    // table measures that one; the second round on #440)
+    if (under === moduleDir && names.includes(name)) {
+      const pinned = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).devDependencies[name];
+      assert.strictEqual(pkg.version, pinned, `${name} is ${pkg.version}, the repo pins ${pinned}`);
+    }
     for (const dep of Object.keys(pkg.dependencies || {})) queue.push({name: dep, from: src, under: dest});
   }
 }

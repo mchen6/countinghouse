@@ -102,6 +102,9 @@ const STEPS = {
       try { M._resolveFilename('#nope', {filename, paths: []}); said = 'found'; } catch (e) { said = `${e.code}|${e.message}`; }
       out.push(/^MODULE_NOT_FOUND\|Cannot find module '#nope' \(countinghouse module sandbox\)$/.test(said) ? 'same' : `answered(${said.slice(0, 160)})`);
     }
+    // (a '#' name through Module._resolveFilename called directly: the one
+    // refusal the hook gives; the second round on #440)
+    out.push(same(() => M._resolveFilename('#p/json-stringify-safe', module), () => M._resolveFilename('#p/no-such-isolation-pkg', module), 'json-stringify-safe'));
     // (a refused require keeps a requireStack, of virtual names only: code
     // reading it doesn't break; the high review of #440)
     let stack;
@@ -135,7 +138,18 @@ const STEPS = {
       } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); }
     };
     const vmSame = (await viaVm('json-stringify-safe', 'json-stringify-safe')) === (await viaVm('no-such-isolation-pkg', 'no-such-isolation-pkg')) ? 'same' : 'differs';
-    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame}`;
+    // (a vm script with no filename: a relative name climbing from the
+    // working directory, /app, to a runtime file, against a missing one; the
+    // second round on #440)
+    const noName = async (rel, name) => {
+      try {
+        await vm.runInThisContext(`import(${JSON.stringify(rel)})`, {importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
+        return 'found';
+      } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); }
+    };
+    const climb = (name) => `${'../'.repeat(24)}${path.join(root, 'lib', name).replace(/^\//, '')}`;
+    const noNameSame = (await noName(climb('node-version.js'), 'node-version.js')) === (await noName(climb('no-such-isolation.js'), 'no-such-isolation.js')) ? 'same' : 'differs';
+    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame}`;
   },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a

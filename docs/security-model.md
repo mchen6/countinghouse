@@ -250,8 +250,9 @@ any module code). Stops:
   anything held is reported under `audit`. What `audit` can't see, though
   it is refused all the same: an assignment to `Module.prototype` (a
   function's own `prototype`, which can't be made an accessor), the
-  `delete` operator on a held property, and a redefinition through another
-  realm's `Object.defineProperty` (one a `vm` context gives). Nor, with
+  `delete` operator on a held property, a redefinition through another
+  realm's `Object.defineProperty` (one a `vm` context gives), and one made
+  through a Proxy that module code wraps around a held object. Nor, with
   Node's `--experimental-vm-modules` (a development-only flag, which a
   worker inherits), does `audit` cover `vm`'s module classes: under
   `enforce` they are deleted from module code's `vm`, while under `audit`

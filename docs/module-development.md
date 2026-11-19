@@ -774,8 +774,8 @@ answer, whatever Node's resolver would have said:
 - a `require` gets `MODULE_NOT_FOUND`, an `import` `ERR_MODULE_NOT_FOUND`;
 - the message is "Cannot find module '<name>' (countinghouse module
   sandbox)";
-- a `require`'s error has a `requireStack` naming your own file by its
-  `/app/...` path.
+- a `require`'s error has a `requireStack` of `/app/...` names only (your
+  own file where the refusal knows it), never a host path.
 
 Node looks a bare name up in the `node_modules` above your module too, so
 any other answer would tell your code what exists outside it. The cost is
