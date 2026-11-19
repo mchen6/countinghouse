@@ -371,7 +371,7 @@ const out = {
   // countinghouse's restore.js, ch-local's session-table.js and B2's export,
   // which all read these cases
   restoreRows: {
-    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, enabled, module (every enabled.<module> is the one kind enabled, every module.<package>.<setting> the one kind module; pack is no kind since M5b, and a lock or an unanswered form of it refuses the restore); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
+    rule: 'a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool\'s bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack\'s or a module\'s on/off is never a session\'s own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, enabled, module (every enabled.<module> is the one kind enabled, every module.<package>.<setting> the one kind module; the kind pack, from a runtime before M5b, is taken as enabled in locks, unanswered and declines, deduped, a kind both locked and unanswered after it staying locked, and said once (mapped); a row whose locks or unanswered name a kind this runtime has none of, of a kind\'s shape (a letter, then letters and digits, at most 64), is dropped alone when nothing else in it refuses, its session not restored and not in reset, and a decline of such a kind is dropped alone (rowDropped); anything else in a kind\'s place refuses the restore); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: "restore", sessions, declines, reset}: reset lists the sessions (each a row\'s) that lost loosenings in a handoff, to be told so',
     accepted: [
       {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}},
       {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['maxOutputBytes', 'requestTimeout']}},
@@ -389,11 +389,32 @@ const out = {
         taken: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['requestTimeout'], formsLeft: 2},
         packs: ['weather']}
     ],
+    // #449's high review, 2: a table from a runtime before M5b; the kind
+    // pack is enabled now, per row (taken: the state as taken)
+    mapped: [
+      {why: 'a lock of the kind pack: locked enabled, the session\'s cap override kept',
+        row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['pack', 'requestTimeout'], formsLeft: 2}},
+        taken: {overrides: [{name: 'maxOutputBytes', value: 2097152, loosening: false, over: null, version: null}], locks: ['enabled', 'requestTimeout'], formsLeft: 2}},
+      {why: 'the kinds pack and enabled both locked: enabled once',
+        row: {session: 'b'.repeat(32), resume: 'e'.repeat(64), state: {overrides: [], locks: ['enabled', 'pack'], formsLeft: 3}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 3}},
+      {why: 'an unanswered form of the kind pack: unanswered enabled',
+        row: {session: 'c'.repeat(32), resume: 'd'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['pack', 'module']}},
+        taken: {overrides: [], locks: [], formsLeft: 2, unanswered: ['enabled', 'module']}},
+      {why: 'pack unanswered and enabled locked: the lock stays, nothing unanswered of it',
+        row: {session: 'd'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['pack']}},
+        taken: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: []}}
+    ],
+    // a row naming a kind this runtime has none of is dropped alone (kinds:
+    // the ones it named)
+    rowDropped: [
+      {why: 'a lock of a kind this runtime has none of', row: {session: 'e'.repeat(32), resume: '1'.repeat(64), state: {overrides: [], locks: ['locale'], formsLeft: 3}}, kinds: ['locale']},
+      {why: 'an unanswered form of a kind this runtime has none of', row: {session: 'f'.repeat(32), resume: '2'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale']}}, kinds: ['locale']}
+    ],
     refused: [
       // each with the reason it must be refused for: a substring of restore.js's message
       {why: 'unanswered that is no list', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: 'enabled'}}},
       {why: 'an unanswered kind twice', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 1, unanswered: ['enabled', 'enabled']}}},
-      {why: 'an unanswered kind that is none', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['locale']}}},
       {why: 'a kind both locked and unanswered', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['enabled']}}},
       {why: 'an unanswered form with no form spent', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, unanswered: ['enabled']}}},
       {why: 'a key beside unanswered', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: [], nonce: 'x'}}},
@@ -404,9 +425,10 @@ const out = {
       {why: 'an extra state key', reason: 'not exactly {overrides, locks, formsLeft}', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3, nonce: 'x'}}},
       {why: 'formsLeft 4', reason: 'formsLeft', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 4}}},
       {why: 'a lock twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['enabled', 'enabled'], formsLeft: 3}}},
-      // M5b: pack is no kind any more
-      {why: 'a lock of the kind pack, which is none since M5b', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack'], formsLeft: 3}}},
-      {why: 'an unanswered form of the kind pack, which is none since M5b', reason: 'unanswered', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['pack']}}},
+      // the kind pack is mapped, so the sent list is checked as sent
+      {why: 'a lock of the kind pack twice', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['pack', 'pack'], formsLeft: 3}}},
+      {why: 'a lock that is not a kind\'s shape', reason: 'locks', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['other-kind'], formsLeft: 3}}},
+      {why: 'a row of an unknown kind that refuses for another reason', reason: 'formsLeft', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [], locks: ['locale'], formsLeft: 4}}},
       {why: 'a pack override not of the old shape (no version)', reason: 'names no cap', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'pack.weather', value: false, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'a cap loosening with no over', reason: 'over does not fit', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'maxOutputBytes', value: 16777216, loosening: true, over: null, version: null}], locks: [], formsLeft: 3}}},
       {why: 'an unknown override name', reason: 'names no cap', row: {session: 'a'.repeat(32), resume: 'f'.repeat(64), state: {overrides: [{name: 'secret', value: 1, loosening: false, over: null, version: null}], locks: [], formsLeft: 3}}},

@@ -22,7 +22,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
-    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: []}], 'resume included: the runtime splits it from B\'s state');
+    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: [], kindsMapped: 0, rowsDropped: [], declinesDropped: 0}], 'resume included: the runtime splits it from B\'s state');
     assert.strictEqual(r.done(), true);
   });
 
@@ -68,7 +68,8 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       st({overrides: [], locks: [], formsLeft: 4}),
       st({overrides: [], locks: [], formsLeft: 1.5}),
       st({overrides: [], locks: ['enabled', 'enabled'], formsLeft: 3}),
-      st({overrides: [], locks: ['other'], formsLeft: 3}),
+      st({overrides: [], locks: [7], formsLeft: 3}),
+      st({overrides: [], locks: ['other-kind'], formsLeft: 3}),
       st({overrides: [ov({name: 'secret'})], locks: [], formsLeft: 3}),
       // M5a: a pack's on or off is never a session's own. A pack.<n> override
       // not of the old shape refuses (a well-formed one is dropped: below)
@@ -84,7 +85,8 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       st({overrides: [ov({name: 'pack.one', value: true, version: null})], locks: [], formsLeft: 3}),
       st({overrides: [ov({name: 'pack.one', value: true, version: '1.0.0 && x'})], locks: [], formsLeft: 3}),
       st({overrides: [ov({mac: 'x'})], locks: [], formsLeft: 3}),
-      plan({declines: [{kind: 'other', at: 1}]}),
+      plan({declines: [{kind: 7, at: 1}]}),
+      plan({declines: [{kind: 'other kind', at: 1}]}),
       // the resume hash (N3): exactly 64 lowercase hex, always present
       plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3}}]}),
       plan({sessions: [{session: ID, resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}]}),
@@ -155,6 +157,84 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       try { createRestore({}).handle(plan({sessions: [c.row], reset: []})); } catch (e) { assert.strictEqual(e.code, 'CONTROL_BAD_RESTORE', c.why); message = e.message; }
       assert.ok(message != null, `${c.why}: refused`);
       assert.ok(typeof(c.reason) === 'string' && message.includes(c.reason), `${c.why}: for its own reason (${c.reason}), not "${message}"`);
+    }
+  });
+
+  // #449's high review, 2: a table written under a runtime before M5b holds
+  // the kind pack; it is the kind enabled now, per row, so the session's
+  // tightenings stay, and the runtime says so once
+  it('the kind pack is taken as enabled, per row and per decline, deduped, and said once', () => {
+    const got = [];
+    const said = [];
+    const r = createRestore({importTable: (t) => got.push(t), log: (m) => said.push(m)});
+    const B = 'b'.repeat(32);
+    const C = 'c'.repeat(32);
+    const rows = [
+      {session: ID, resume: HASH, state: {overrides: [ov()], locks: ['pack', 'maxOutputBytes'], formsLeft: 2}},
+      // pack and enabled both locked: one enabled
+      {session: B, resume: 'b'.repeat(64), state: {overrides: [], locks: ['enabled', 'pack'], formsLeft: 3}},
+      // pack unanswered and enabled locked: the lock wins
+      {session: C, resume: 'c'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['pack', 'requestTimeout']}}
+    ];
+    const declines = [{kind: 'pack', at: 1700000000000}, {kind: 'module', at: 1700000000001}];
+    assert.deepStrictEqual(r.handle(plan({sessions: rows, declines, reset: [B]})), {sessions: 3});
+    const t = got[0];
+    assert.deepStrictEqual(t.sessions.map((x) => x.state), [
+      {overrides: [ov()], locks: ['enabled', 'maxOutputBytes'], formsLeft: 2},
+      {overrides: [], locks: ['enabled'], formsLeft: 3},
+      {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['requestTimeout']}
+    ]);
+    assert.deepStrictEqual(t.declines, [{kind: 'enabled', at: 1700000000000}, {kind: 'module', at: 1700000000001}]);
+    assert.strictEqual(t.kindsMapped, 4, 'three rows and one decline');
+    assert.deepStrictEqual(t.reset, [B]);
+    assert.strictEqual(said.length, 1, 'said once');
+    assert.ok(/pack/.test(said[0]) && /enabled/.test(said[0]) && /\b4\b/.test(said[0]), said[0]);
+    // nothing to say when nothing was mapped
+    const quiet = [];
+    createRestore({log: (m) => quiet.push(m)}).handle(plan());
+    assert.deepStrictEqual(quiet, []);
+    // what the daemon sent is checked as sent: pack twice is a lock twice
+    assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}))), 'CONTROL_BAD_RESTORE');
+  });
+
+  it('a row with an unknown kind is dropped alone, and a decline of one; every other row is taken', () => {
+    const got = [];
+    const said = [];
+    const r = createRestore({importTable: (t) => got.push(t), log: (m) => said.push(m)});
+    const B = 'b'.repeat(32);
+    const unknown = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov()], locks: ['locale'], formsLeft: 3}};
+    const unanswered = {session: 'c'.repeat(32), resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['theme']}};
+    const good = plan().sessions[0];
+    const declines = [{kind: 'locale', at: 1}, {kind: 'enabled', at: 2}];
+    assert.deepStrictEqual(r.handle(plan({sessions: [unknown, good, unanswered], declines, reset: [B, ID]})), {sessions: 1});
+    assert.deepStrictEqual(got[0].sessions, [good]);
+    assert.deepStrictEqual(got[0].rowsDropped, [{session: B, kinds: ['locale']}, {session: 'c'.repeat(32), kinds: ['theme']}]);
+    assert.deepStrictEqual(got[0].declines, [{kind: 'enabled', at: 2}]);
+    assert.strictEqual(got[0].declinesDropped, 1);
+    assert.deepStrictEqual(got[0].reset, [ID], 'reset names only the rows taken');
+    assert.strictEqual(said.length, 1, 'said once');
+    assert.ok(/locale/.test(said[0]) && /theme/.test(said[0]), said[0]);
+    // a dropped row still counts for the table's own checks: its id twice, or
+    // its resume hash shared, refuses the restore
+    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [unknown, Object.assign({}, good, {session: B})], reset: []}))), 'CONTROL_BAD_RESTORE');
+    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [unknown, Object.assign({}, good, {resume: 'b'.repeat(64)})], reset: []}))), 'CONTROL_BAD_RESTORE');
+    // and any other problem in that row still refuses the whole restore
+    assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['locale'], formsLeft: 4}))), 'CONTROL_BAD_RESTORE');
+  });
+
+  it('the shared vectors\' mapped and rowDropped rows', () => {
+    const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
+    assert.ok(V.mapped.length >= 3 && V.rowDropped.length >= 2);
+    for (const c of V.mapped) {
+      const seen = [];
+      createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
+      assert.deepStrictEqual(seen[0].sessions[0].state, c.taken, c.why);
+    }
+    for (const c of V.rowDropped) {
+      const seen = [];
+      createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
+      assert.deepStrictEqual(seen[0].sessions, [], c.why);
+      assert.deepStrictEqual(seen[0].rowsDropped, [{session: c.row.session, kinds: c.kinds}], c.why);
     }
   });
 

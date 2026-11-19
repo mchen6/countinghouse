@@ -1359,7 +1359,7 @@
     ]
   },
   "restoreRows": {
-    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack's or a module's on/off is never a session's own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, enabled, module (every enabled.<module> is the one kind enabled, every module.<package>.<setting> the one kind module; pack is no kind since M5b, and a lock or an unanswered form of it refuses the restore); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
+    "rule": "a row is exactly {session, resume, state}: session 32 lowercase hex, resume 64 lowercase hex (SHA-256 of the resume token), state exactly {overrides, locks, formsLeft}, or those and unanswered (the distinct kinds the session has left one form unanswered of: none of them locked, and only with a form spent, formsLeft under 3); overrides at most 2 (one per cap), one per name, each exactly {name, value, loosening, over, version}: a cap has an integer value within the settings tool's bounds (maxOutputBytes 1048576 to 268435456, requestTimeout 5000 to 120000), version null, and over a positive integer when loosening is true, else null; nothing else is overridden (a pack's or a module's on/off is never a session's own: a well-formed pack.<n> override from before M5a, with a boolean value, over null and a semver version, is dropped from its row, the rest of the row taken and its session told once; any other pack.<n> override refuses the restore); locks distinct kinds of maxOutputBytes, requestTimeout, enabled, module (every enabled.<module> is the one kind enabled, every module.<package>.<setting> the one kind module; the kind pack, from a runtime before M5b, is taken as enabled in locks, unanswered and declines, deduped, a kind both locked and unanswered after it staying locked, and said once (mapped); a row whose locks or unanswered name a kind this runtime has none of, of a kind's shape (a letter, then letters and digits, at most 64), is dropped alone when nothing else in it refuses, its session not restored and not in reset, and a decline of such a kind is dropped alone (rowDropped); anything else in a kind's place refuses the restore); formsLeft an integer 0 to 3; at most 64 KiB as JSON. The restore message is exactly {id, type: \"restore\", sessions, declines, reset}: reset lists the sessions (each a row's) that lost loosenings in a handoff, to be told so",
     "accepted": [
       {
         "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1495,6 +1495,156 @@
         ]
       }
     ],
+    "mapped": [
+      {
+        "why": "a lock of the kind pack: locked enabled, the session's cap override kept",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [
+              {
+                "name": "maxOutputBytes",
+                "value": 2097152,
+                "loosening": false,
+                "over": null,
+                "version": null
+              }
+            ],
+            "locks": [
+              "pack",
+              "requestTimeout"
+            ],
+            "formsLeft": 2
+          }
+        },
+        "taken": {
+          "overrides": [
+            {
+              "name": "maxOutputBytes",
+              "value": 2097152,
+              "loosening": false,
+              "over": null,
+              "version": null
+            }
+          ],
+          "locks": [
+            "enabled",
+            "requestTimeout"
+          ],
+          "formsLeft": 2
+        }
+      },
+      {
+        "why": "the kinds pack and enabled both locked: enabled once",
+        "row": {
+          "session": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resume": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "state": {
+            "overrides": [],
+            "locks": [
+              "enabled",
+              "pack"
+            ],
+            "formsLeft": 3
+          }
+        },
+        "taken": {
+          "overrides": [],
+          "locks": [
+            "enabled"
+          ],
+          "formsLeft": 3
+        }
+      },
+      {
+        "why": "an unanswered form of the kind pack: unanswered enabled",
+        "row": {
+          "session": "cccccccccccccccccccccccccccccccc",
+          "resume": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 2,
+            "unanswered": [
+              "pack",
+              "module"
+            ]
+          }
+        },
+        "taken": {
+          "overrides": [],
+          "locks": [],
+          "formsLeft": 2,
+          "unanswered": [
+            "enabled",
+            "module"
+          ]
+        }
+      },
+      {
+        "why": "pack unanswered and enabled locked: the lock stays, nothing unanswered of it",
+        "row": {
+          "session": "dddddddddddddddddddddddddddddddd",
+          "resume": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "state": {
+            "overrides": [],
+            "locks": [
+              "enabled"
+            ],
+            "formsLeft": 1,
+            "unanswered": [
+              "pack"
+            ]
+          }
+        },
+        "taken": {
+          "overrides": [],
+          "locks": [
+            "enabled"
+          ],
+          "formsLeft": 1,
+          "unanswered": []
+        }
+      }
+    ],
+    "rowDropped": [
+      {
+        "why": "a lock of a kind this runtime has none of",
+        "row": {
+          "session": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "resume": "1111111111111111111111111111111111111111111111111111111111111111",
+          "state": {
+            "overrides": [],
+            "locks": [
+              "locale"
+            ],
+            "formsLeft": 3
+          }
+        },
+        "kinds": [
+          "locale"
+        ]
+      },
+      {
+        "why": "an unanswered form of a kind this runtime has none of",
+        "row": {
+          "session": "ffffffffffffffffffffffffffffffff",
+          "resume": "2222222222222222222222222222222222222222222222222222222222222222",
+          "state": {
+            "overrides": [],
+            "locks": [],
+            "formsLeft": 2,
+            "unanswered": [
+              "locale"
+            ]
+          }
+        },
+        "kinds": [
+          "locale"
+        ]
+      }
+    ],
     "refused": [
       {
         "why": "unanswered that is no list",
@@ -1523,22 +1673,6 @@
             "unanswered": [
               "enabled",
               "enabled"
-            ]
-          }
-        }
-      },
-      {
-        "why": "an unanswered kind that is none",
-        "reason": "unanswered",
-        "row": {
-          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-          "state": {
-            "overrides": [],
-            "locks": [],
-            "formsLeft": 2,
-            "unanswered": [
-              "locale"
             ]
           }
         }
@@ -1688,7 +1822,7 @@
         }
       },
       {
-        "why": "a lock of the kind pack, which is none since M5b",
+        "why": "a lock of the kind pack twice",
         "reason": "locks",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1696,6 +1830,7 @@
           "state": {
             "overrides": [],
             "locks": [
+              "pack",
               "pack"
             ],
             "formsLeft": 3
@@ -1703,18 +1838,32 @@
         }
       },
       {
-        "why": "an unanswered form of the kind pack, which is none since M5b",
-        "reason": "unanswered",
+        "why": "a lock that is not a kind's shape",
+        "reason": "locks",
         "row": {
           "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           "state": {
             "overrides": [],
-            "locks": [],
-            "formsLeft": 2,
-            "unanswered": [
-              "pack"
-            ]
+            "locks": [
+              "other-kind"
+            ],
+            "formsLeft": 3
+          }
+        }
+      },
+      {
+        "why": "a row of an unknown kind that refuses for another reason",
+        "reason": "formsLeft",
+        "row": {
+          "session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resume": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "state": {
+            "overrides": [],
+            "locks": [
+              "locale"
+            ],
+            "formsLeft": 4
           }
         }
       },
