@@ -71,6 +71,8 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'package.json'), JSON.stringify({name: 'dep'}));
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'index.js'), 'module.exports = "dep";\n');
     fs.writeFileSync(path.join(probe, 'lib', 'bare-target.mjs'), 'export default "own";\n');
+    // (a file module in node_modules, as CommonJS finds one)
+    fs.writeFileSync(path.join(probe, 'node_modules', 'filedep.js'), 'module.exports = "file";\n');
     const probePkg = JSON.parse(fs.readFileSync(path.join(probe, 'package.json'), 'utf8'));
     probePkg.imports = Object.assign({}, probePkg.imports, {'#sibclimb': 'sibpkg/../../isolation-probe/lib/bare-target.mjs',
       '#nosibclimb': 'nosuchsib/../../isolation-probe/lib/bare-target.mjs',

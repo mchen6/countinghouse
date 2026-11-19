@@ -180,7 +180,8 @@ const STEPS = {
     // the array's next entry)
     out.push((await tryImport('#emptyArr')) !== 'found' && (await tryImport('#badFirst')) === 'found' ? 'same' : 'targets');
     // (and the module's own dependency still loads, by name and by subpath)
-    out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' ? 'same' : 'ownDep');
+    out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
+      tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
     return out.join(' ');
   },
   importOracle: async () => {
