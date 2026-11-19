@@ -34,6 +34,14 @@
       "output": {
         "type": "object"
       }
+    },
+    "callByName": {
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      }
     }
   }
 }

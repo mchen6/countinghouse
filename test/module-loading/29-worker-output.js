@@ -29,6 +29,10 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     assert.deepStrictEqual(s.push('tail'), []);
     assert.deepStrictEqual(s.end(), ['tail']);
     assert.strictEqual(lines.cleanField('a\nb\u202ec\x1b'), 'a\nbc', 'a log field keeps \\n');
+    // the gate's subset of the one class (lib/module-text.js): the bidi marks
+    // go too, a tab stays, an emoji sequence stays whole
+    assert.strictEqual(lines.cleanField('a\u200eb\u200fc\u061cd\te'), 'abcd\te');
+    assert.strictEqual(lines.lineOf('\u{1f468}\u200d\u{1f469} \u2764\ufe0f'), '\u{1f468}\u200d\u{1f469} \u2764\ufe0f');
   });
 
   it('a budget: past its limit dropped and counted, said once when the window ends', () => {
@@ -206,6 +210,46 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     const dropped = later.filter((x) => x[1].dropped != null).reduce((n, x) => n + x[1].dropped, 0);
     // the lost line, and the empty lines past the budget, each at what writing it costs
     assert.ok(dropped >= (prefix + 'lost line'.length + 1) + (300000 * (prefix + 1) - limits.STREAM_BUDGET), `${dropped} dropped`);
+  });
+
+  // The boundary no module can patch: the main thread cleans every line and
+  // log field a worker sends, again, whatever the worker did (a module can
+  // patch its own worker's built-ins and skip lineOf). A worker's message
+  // straight to onOutput and onLog, full of controls and bidi characters,
+  // reaches the operator's log clean (the Reviewer's high review of #448).
+  it('main thread: a worker\'s lines and log fields that skipped its own cleaning are cleaned again before the log', () => {
+    const DIRTY = /[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069\u200e\u200f\u061c]/;
+    const written = [];
+    out.setSink((stream, line) => written.push([stream, line]));
+    const wm = {hostModuleName: 'mod-b'};
+    const raw = 'evil\x1b[2J\u202e\u2066\u200f\x9b2J\u2028end\r\nforged: WARN';
+    try {
+    out.onOutput(wm, 'stdout', {lines: [raw]});
+    out.onOutput(wm, 'stderr', {lines: [raw]});
+    assert.strictEqual(written.length, 2, JSON.stringify(written));
+    for (const [, line] of written) {
+      assert.doesNotMatch(line, DIRTY, JSON.stringify(line));
+      assert.match(line, /^mod-b: evil\[2J2Jendforged: WARN$/, JSON.stringify(line));
+    }
+    const saved = {logger: LOG.logger};
+    const records = [];
+    const keep = (level) => (rec, msg) => records.push({level, rec, msg});
+    LOG.logger = {info: keep('info'), warn: keep('warn'), error: keep('error'), fatal: keep('fatal')};
+    try {
+      out.onLog(wm, {level: 30, msg: raw, module: 'someone-else'});
+      out.onLog(wm, {level: 50, msg: raw, e: raw});
+    } finally {
+      LOG.logger = saved.logger;
+    }
+    assert.strictEqual(records.length, 2, JSON.stringify(records));
+    const strings = records.flatMap((r) => [r.msg].concat(Object.values(r.rec || {})).filter((v) => typeof v === 'string'));
+    assert.ok(strings.some((v) => /evil/.test(v)), JSON.stringify(records));
+    // a log field keeps its \n (the log escapes it as JSON): nothing else
+    for (const piece of strings) assert.doesNotMatch(piece.replace(/\n/g, ''), DIRTY, JSON.stringify(piece));
+    } finally {
+      // (its timer ended whatever failed: a folder runs in one process)
+      out.end(wm);
+    }
   });
 
   it('worker side: an unfinished line goes as a line before the runtime\'s reply, never held back', async () => {
