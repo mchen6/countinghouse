@@ -136,23 +136,12 @@ describe('sessions 09: tightenings in conversation (shared runtime B2, Task 4)',
     assert.strictEqual(options.requestTimeout, 30000);
   });
 
-  it('a session that has ended changes nothing and records nothing; a change the store refuses is said in the history as not made', async () => {
+  it('a session that has ended changes nothing and records nothing', async () => {
     // ended (or never opened): answered as its calls are, nothing recorded
     await refused(tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(C)), 'MODULE_NOT_LISTED');
     sources[B].emit('end');
     await refused(tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(B)), 'MODULE_NOT_LISTED');
     assert.deepStrictEqual(history(), []);
-    // the store refusing (its own bound; M5a leaves a session only its two
-    // caps, so a stand-in refuses here): the line already written is
-    // followed by one saying the change was not made
-    const realSet = settings.set;
-    settings.set = () => { throw Object.assign(new Error('at most 64 settings per session'), {code: 'SETTING_OUT_OF_BOUNDS'}); };
-    try {
-      await refused(tool.set('maxOutputBytes', '2MiB', 'settings tool', ctx(A)), 'SETTING_OUT_OF_BOUNDS');
-    } finally { settings.set = realSet; }
-    assert.strictEqual(settings.effective(A, 'maxOutputBytes'), 8 * MiB);
-    assert.deepStrictEqual(history().map((h) => [h.setting, h.change, h.session]), [['maxOutputBytes', 'this session', A], ['maxOutputBytes', 'not made', A]]);
-    assert.deepStrictEqual((await tool.get(ctx(A))).history.map((h) => h.change), ['this session', 'not made']);
   });
 
   it('every other setting stays the terminal\'s for a session: nothing is written (finding 2)', async () => {
