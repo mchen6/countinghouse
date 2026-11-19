@@ -73,6 +73,14 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
     }
     fs.writeFileSync(path.join(probe, 'lib', 'main-out-g.js'), 'module.exports = "sibling";\n');
+    // (the root itself: an index.js of its own, and a file beside the root,
+    // outside it, that Node would try first with an extension; and a
+    // directory whose "main" is the root)
+    fs.writeFileSync(path.join(probe, 'index.js'), 'module.exports = "root";\n');
+    fs.writeFileSync(path.join(spaced, 'isolation-probe.js'), 'module.exports = "beside";\n');
+    fs.mkdirSync(path.join(probe, 'lib', 'main-root'));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-root', 'package.json'), JSON.stringify({main: '../..'}));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-root', 'index.js'), 'module.exports = 1;\n');
     // (and one that loads: a package.json whose only outside "main" is
     // nested, not the package's; one JSON.parse can't read, a UTF-8 BOM's
     // say, never loads: the module's tree check refuses it)

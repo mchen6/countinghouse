@@ -169,12 +169,15 @@ const STEPS = {
     const mainOut = (fn, dir) => { try { fn(`../../lib/${dir}`); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(dir).join('DIR'); } };
     const routes = [(r) => require(r), (r) => M._resolveFilename(r, module)];
     const answers = [];
-    for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d', 'main-out-e', 'main-out-f', 'main-out-g']) answers.push(mainOut(fn, dir));
+    for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d', 'main-out-e', 'main-out-f', 'main-out-g', 'main-root']) answers.push(mainOut(fn, dir));
+    // (the root itself: its own index, never the file beside it)
+    let rootLoad;
+    try { rootLoad = `${require('../..')} ${M._resolveFilename('../..', module).replace(/\\/g, '/').replace(/^[A-Z]:/, '')}`; } catch (e) { rootLoad = `threw ${e.code} ${e.message}`; }
     // (and an own package with only a nested outside "main" loads)
     const loads = [];
     for (const dir of ['main-in-nested']) { try { loads.push(require(`../../lib/${dir}`)); } catch (e) { loads.push(`threw ${e.code}`); } }
-    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested'
-      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')})`;
+    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" && loads.join(' ') === 'nested' && rootLoad === 'root /app/index.js'
+      ? 'same' : `main(${answers.join(' / ')} / ${loads.join(' ')} / ${rootLoad})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;
