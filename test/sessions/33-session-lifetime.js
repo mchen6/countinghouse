@@ -621,17 +621,18 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
 
     it('a module whose spawn has begun is known to the overlap judgement before its load is confirmed (the high review of #452)', () => {
-      const mine = {};
-      const spawning = new Map([['b', {path: path.join(env.dataRoot, 'mods', 'b'), token: mine}]]);
-      const mgr = {modules: {}, spawningModules: spawning};
-      const known = ModuleManager.prototype.knownModuleRoots.call(mgr);
-      assert.deepStrictEqual(known, [{name: 'b', root: path.join(env.dataRoot, 'mods', 'b')}]);
-      // (retired only by its own spawn, or by an unload at its own path)
-      ModuleManager.prototype.retireSpawning.call(mgr, 'b', {token: {}});
-      ModuleManager.prototype.retireSpawning.call(mgr, 'b', {path: '/elsewhere.invalid'});
-      assert.strictEqual(spawning.has('b'), true);
-      ModuleManager.prototype.retireSpawning.call(mgr, 'b', {token: mine});
-      assert.strictEqual(spawning.has('b'), false);
+      const mgr = {modules: {}, spawningModules: new Map()};
+      const first = {};
+      const second = {};
+      ModuleManager.prototype.addSpawning.call(mgr, 'b', first, path.join(env.dataRoot, 'mods', 'b-1'));
+      ModuleManager.prototype.addSpawning.call(mgr, 'b', second, path.join(env.dataRoot, 'mods', 'b-2'));
+      const roots = () => ModuleManager.prototype.knownModuleRoots.call(mgr).map((k) => k.root);
+      assert.deepStrictEqual(roots(), [path.join(env.dataRoot, 'mods', 'b-1'), path.join(env.dataRoot, 'mods', 'b-2')]);
+      // (each spawn retires its own only: the other stays known)
+      ModuleManager.prototype.retireSpawning.call(mgr, 'b', second);
+      assert.deepStrictEqual(roots(), [path.join(env.dataRoot, 'mods', 'b-1')]);
+      ModuleManager.prototype.retireSpawning.call(mgr, 'b', first);
+      assert.deepStrictEqual(roots(), []);
     });
 
     it('a respawn empties its /tmp: what it held leaves its share and the total; a name in /data keeps those bytes counted', async () => {
