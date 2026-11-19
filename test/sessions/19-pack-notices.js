@@ -170,9 +170,19 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
           await control.unload(name === MOD ? {type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'}
             : {type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
         }
-        assert.deepStrictEqual(all(MOD), each(offNotice(MOD, order[0] === MOD ? [CALLER] : [])), order.join(' then '));
-        assert.deepStrictEqual(all(CALLER), each('trip-planner unloaded: it calls ch-pack-mod, which is turned off'), order.join(' then '));
+        // each once, in the order told, on the next result of any tool
+        const own = 'trip-planner unloaded: it calls ch-pack-mod, which is turned off';
+        const want = order[0] === MOD ? [offNotice(MOD, [CALLER]), own] : [own, offNotice(MOD, [])];
+        assert.deepStrictEqual(all(null), [want, want, want], order.join(' then '));
       }
+    });
+
+    // (round 5, 1) the module's tools are gone: its notice goes on the next
+    // result of any tool, never filed under the module unloaded
+    it('an unload\'s notice reaches a session that only calls another tool, and is not left under the module', async() => {
+      await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take('some-other-module', id)), each(offNotice(MOD, [CALLER])));
+      assert.deepStrictEqual(all(MOD), [[], [], []], 'nothing left for a later turn-on to deliver');
     });
 
     it('no reason (today\'s ch-local), another reason, or no settings tool here: the message\'s own words', async() => {
