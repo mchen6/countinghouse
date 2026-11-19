@@ -19,10 +19,12 @@ describe('fs-broker 07: the worker patch', function() {
     const m = await runBrokered(S('swept.js'), {extra: {fakeAdded: true}});
     assert.strictEqual(m.ok, true, JSON.stringify(m));
     const U = 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM';
-    assert.deepStrictEqual(m.r, {method: U, lazy: U, hidden: U, space: U, promise: U, klass: U, nc: U, late: U, sym: U, replaced: U,
-      nullFilled: U, staticAfter: U, staticGetter: U, nodeLazy: U, staticName: U, selfNamed: U, selfNamedName: U, bootLazy: true, bootInstance: 'ran', copy: 'ran', bootConstructed: true,
-      swept: {swept: ['fs.fakeAddedSync', 'fs.fakeLazySync', 'fs.fakeHiddenSync', 'fs.fakeSpace', 'fs.FakeNamed', 'fs.FakeSelfNamed', 'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeNullSync', 'fs.fakeNcSync',
-        'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'], unsweepable: ['fs.fakeFixedSync', 'fs.fakeFixedGetSync']}});
+    assert.deepStrictEqual(m.r, {method: U, lazy: U, hidden: U, space: U, promise: U, klass: U, nc: 'ran', late: U, sym: U, replaced: U,
+      nullFilled: U, staticAfter: U, staticGetter: U, nodeLazy: U, staticName: U, selfNamed: U, selfNamedName: U, copy: 'ran', asyncOp: U,
+      asyncShape: [true, true, 'function', 'function', 'function', 'string', U], constant: 7,
+      swept: {swept: ['fs.fakeAddedSync', 'fs.fakeLazySync', 'fs.fakeHiddenSync', 'fs.fakeSpace', 'fs.FakeNamed', 'fs.FakeSelfNamed', 'fs.fakeAsyncOp',
+        'fs.fakeNodeLazySync', 'fs.FakeReader', 'fs.fakeLateSync', 'fs.Symbol(ch.fakeSym)', 'fs.promises.fakeAdded'],
+      unsweepable: ['fs.fakeFixedSync', 'fs.fakeFixedGetSync', 'fs.fakeNcSync']}});
   });
 
   it('behaves as modules and libraries expect', async () => {

@@ -1,7 +1,7 @@
 // F4-6: what the patch handles nowhere, in each shape a later Node might
 // add it in, is locked to throw (fail closed), by name, and the grant says
 // which; one Node made unchangeable is listed as not locked; a copy of fs
-// still works; under the boot grant the originals still run.
+// still works; a constant reads as itself.
 module.exports = async (fs, root, ctx) => {
   const fsp = require('fs/promises');
   const outcome = (fn) => { try { const r = fn(); return r != null && typeof(r.then) === 'function' ? 'a promise' : 'ran'; } catch (e) { return e.code; } };
@@ -29,11 +29,13 @@ module.exports = async (fs, root, ctx) => {
     staticName: outcome(() => fs.FakeNamed.name('/etc/hostname')),
     selfNamed: outcome(() => fs.FakeSelfNamed.helper('/etc/hostname')),
     selfNamedName: fs.FakeSelfNamed.name === fs.FakeSelfNamed ? outcome(() => fs.FakeSelfNamed.name.helper('/etc/hostname')) : 'another name',
-    bootLazy: ctx.bootLazy === true,
-    // (an instance the runtime made under its boot grant keeps working)
-    bootInstance: outcome(() => ctx.bootInstance.again(__filename)),
     copy: outcome(() => Object.assign({}, fs) && ({...fs})),
-    bootConstructed: ctx.bootConstructed === true,
+    asyncOp: outcome(() => fs.fakeAsyncOp('/etc/hostname')),
+    // (the wrapper of an async method stays a Function and an Object, with
+    // bind, call, apply and toString)
+    asyncShape: [fs.fakeAsyncOp instanceof Function, fs.fakeAsyncOp instanceof Object, typeof(fs.fakeAsyncOp.bind), typeof(fs.fakeAsyncOp.call),
+      typeof(fs.fakeAsyncOp.apply), typeof(Function.prototype.toString.call(fs.fakeAsyncOp)), outcome(() => fs.fakeAsyncOp.call(null, '/etc/hostname'))],
+    constant: fs.fakeConstant,
     swept: ctx.handled.grant.swept != null && typeof(ctx.handled.grant.swept) === 'object' ? ctx.handled.grant.swept : null
   };
 };

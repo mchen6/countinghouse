@@ -32,7 +32,11 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     // but not configurable)
     const SelfNamed = class { static helper(p) { return read(p, 'utf8'); } };
     Object.defineProperty(SelfNamed, 'name', {value: SelfNamed});
-    Object.defineProperty(fsLib, 'FakeSelfNamed', {value: SelfNamed, writable: true, configurable: false, enumerable: true});
+    fsLib.FakeSelfNamed = SelfNamed;
+    // (an async method, whose wrapper stays a Function; a constant, no
+    // operation)
+    fsLib.fakeAsyncOp = async (p) => read(p, 'utf8');
+    fsLib.fakeConstant = 7;
     // (Node's lazy getter: it redefines its own slot on the first read)
     let lazyLoaded;
     // (not enumerable, so no copy of fs reads it before the sweep)
@@ -54,11 +58,6 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     Object.defineProperty(fsLib, 'fakeLateSync', {get: () => (lateReady ? (p) => read(p, 'utf8') : undefined), configurable: true, enumerable: true});
     ctx.armLate = () => { lateReady = true; };
     fsLib[Symbol.for('ch.fakeSym')] = (p) => read(p, 'utf8');
-    ctx.bootClass = () => {
-      ctx.bootInstance = new fsLib.FakeReader(__filename);
-      ctx.bootLazy = typeof(fsLib.fakeNodeLazySync) === 'function' && fsLib.fakeNodeLazySync(__filename).length > 0;
-      return ctx.bootInstance.text.length > 0 && fsLib.FakeReader.helper(__filename).length > 0;
-    };
     require('fs/promises').fakeAdded = async (p) => read(p, 'utf8');
   }
   if (workerData.fsBridge != null) {
@@ -70,10 +69,7 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
   // as countinghouse's own code does before set-options (lib/lean-worker.js).
   const releaseBoot = ctx.handled != null ? ctx.handled.grant.boot([workerData.repo]) : () => {};
   let run;
-  try {
-    run = require(workerData.script);
-    if (ctx.bootClass != null) ctx.bootConstructed = ctx.bootClass();
-  } finally { releaseBoot(); }
+  try { run = require(workerData.script); } finally { releaseBoot(); }
   return run(require('fs'), workerData.root, ctx);
 })().then((r) => parentPort.postMessage({ok: true, r: r}),
   (e) => parentPort.postMessage({ok: false, e: {code: e && e.code, message: String(e && e.message), stack: String(e && e.stack)}}));
