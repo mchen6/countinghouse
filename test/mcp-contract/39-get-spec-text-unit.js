@@ -171,36 +171,49 @@ describe('mcp-contract 39: one table of declared text fields', () => {
   });
 
   // the lists clean declared text only through the table (the high review
-  // of #457, 2): every file under lib/ that reaches module-text's line() or
-  // message() -- through client-text or module-text, by a name, a lazy
-  // require (clientTextLib()), a destructured line or message, or a require
-  // called in place -- is one of these, with exactly this many uses; any
-  // other caller fails. Each allowed use cleans text that is no declared
+  // of #457, 2, and its medium): every use under lib/ of module-text's
+  // line() or message() -- through client-text or module-text, by a name,
+  // an alias of one, a lazy require (wrapped or a bare arrow), a
+  // destructured line or message, or a require called in place; a reference
+  // counts, not only a call -- is one of these call sites, each named by
+  // how it begins, each once; any other use fails. None cleans a declared
   // field of the table.
   const ALLOWED = {
     'lib/client-text.js': null,          // the cleaner's own re-export and its schema walk
-    'lib/spec-text.js': 2,               // the table's two rules
-    'lib/declarations.js': 3,            // the load's warnings (a log, not a list)
-    'lib/mcp/gateway.js': 3,             // a prompt argument's schema errors; a failed task's reason (twice)
-    'lib/mcp/result-content.js': 1,      // a call result's resource link (the module's output)
-    'lib/mcp/tool-registry.js': 1        // a description of hidden characters alone is none
+    'lib/spec-text.js': ['line, message: moduleText.message', 'message})'],   // the table's two rules
+    'lib/declarations.js': [             // the load's warnings and its own checks (a log, not a list)
+      'line(where)', 'line(a.slice(0, 80))', 'line(action.description).trim() !== ', 'line(t))'],
+    'lib/mcp/gateway.js': [              // a prompt argument's schema errors; a failed task's reason (twice)
+      'line(declaredText(`${e.instancePath ', 'line(declaredText(job.failedReason))', 'line(declaredText(codeMatch != null '],
+    'lib/mcp/result-content.js': ['message(e.description)} : {})'],   // a call result's resource link (the module's output)
+    'lib/mcp/tool-registry.js': ['line(action.description).trim() === ']   // a description of hidden characters alone is none
   };
+  const MOD = String.raw`require\(\s*['"][^'"]*(?:client-text|module-text)['"]\s*\)`;
+  // -> each use, as `line(...` or `message(...` and what follows it
   const usesIn = (src) => {
-    const MOD = String.raw`require\(\s*['"][^'"]*(?:client-text|module-text)['"]\s*\)`;
-    let n = 0;
-    for (const m of src.matchAll(new RegExp(String.raw`(?:const|let|var)\s+(\w+)\s*=\s*(?:\w+\(\s*\(\)\s*=>\s*)?${MOD}`, 'g'))) {
-      n += (src.match(new RegExp(String.raw`\b${m[1]}(?:\(\))?\.(?:line|message)\b`, 'g')) || []).length;
+    const aliases = new Set();
+    for (const m of src.matchAll(new RegExp(String.raw`(?:const|let|var)\s+(\w+)\s*=\s*(?:\w+\(\s*)?(?:\(\)\s*=>\s*)?${MOD}`, 'g'))) aliases.add(m[1]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const m of src.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*(\w+)\s*;/g)) {
+        if (aliases.has(m[2]) && !aliases.has(m[1])) { aliases.add(m[1]); grew = true; }
+      }
+    }
+    const uses = [];
+    for (const a of aliases) {
+      for (const m of src.matchAll(new RegExp(String.raw`\b${a}(?:\(\))?\.(line|message)\b(?=(.{0,40}))`, 'g'))) uses.push(m[1] + m[2]);
     }
     for (const m of src.matchAll(new RegExp(String.raw`(?:const|let|var)\s*\{([^}]*)\}\s*=\s*${MOD}`, 'g'))) {
       for (const part of m[1].split(',')) {
         const [k, v] = part.split(':').map((x) => x.trim());
-        if (k === 'line' || k === 'message') n += (src.match(new RegExp(String.raw`(?<![\w.])${v || k}\b`, 'g')) || []).length - 1;
+        if (k !== 'line' && k !== 'message') continue;
+        for (const c of src.matchAll(new RegExp(String.raw`(?<![\w.])${v || k}\((?=(.{0,40}))`, 'g'))) uses.push(`${k}(${c[1]}`);
       }
     }
-    n += (src.match(new RegExp(String.raw`${MOD}\.(?:line|message)\b`, 'g')) || []).length;
-    return n;
+    for (const m of src.matchAll(new RegExp(String.raw`${MOD}\.(line|message)\b(?=(.{0,40}))`, 'g'))) uses.push(m[1] + m[2]);
+    return uses;
   };
-  it('only the files listed reach module-text\'s line() or message(), each as often as listed', () => {
+  it('only the call sites listed reach module-text\'s line() or message(), each once', () => {
     const lib = path.join(__dirname, '..', '..', 'lib');
     const files = [];
     (function walk(d) {
@@ -213,18 +226,30 @@ describe('mcp-contract 39: one table of declared text fields', () => {
     for (const f of files) {
       const rel = path.relative(path.join(lib, '..'), f).split(path.sep).join('/');
       if (rel === 'lib/module-text.js') continue;
-      const n = usesIn(fs.readFileSync(f, 'utf8'));
-      if (n > 0) found[rel] = Object.hasOwn(ALLOWED, rel) && ALLOWED[rel] === null ? null : n;
+      const uses = usesIn(fs.readFileSync(f, 'utf8'));
+      if (uses.length === 0) continue;
+      if (Object.hasOwn(ALLOWED, rel) && ALLOWED[rel] === null) { found[rel] = null; continue; }
+      // each use matched to an allowed call site, each site once
+      const left = [...(ALLOWED[rel] || [])];
+      found[rel] = uses.map((u) => {
+        const at = left.findIndex((site) => u.startsWith(site));
+        return at === -1 ? `NOT ALLOWED: ${u}` : left.splice(at, 1)[0];
+      });
     }
-    assert.deepStrictEqual(found, ALLOWED);
+    const sorted = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v == null ? v : [...v].sort()]));
+    assert.deepStrictEqual(sorted(found), sorted(ALLOWED));
   });
 
   it('the guard sees every alias', () => {
-    assert.strictEqual(usesIn("const clientText = require('../client-text');\nclientText.line(x); clientText.message(y);"), 2);
-    assert.strictEqual(usesIn("const clientTextLib = requireOnce(() => require('../client-text'));\nclientTextLib().message(x);"), 1);
-    assert.strictEqual(usesIn("const {line, message: m} = require('./module-text');\nline(a); m(b);"), 2);
-    assert.strictEqual(usesIn("require('./client-text').line(a);"), 1);
-    assert.strictEqual(usesIn("const t = require('./module-text');\nconst f = t.message;"), 1, 'a reference, not only a call');
-    assert.strictEqual(usesIn("const t = require('./module-text');\nt.moduleLine(a);"), 0);
+    const n = (src) => usesIn(src).length;
+    assert.strictEqual(n("const clientText = require('../client-text');\nclientText.line(x); clientText.message(y);"), 2);
+    assert.strictEqual(n("const clientTextLib = requireOnce(() => require('../client-text'));\nclientTextLib().message(x);"), 1);
+    assert.strictEqual(n("const clientTextLib = () => require('./client-text');\nclientTextLib().line(x);"), 1, 'a bare arrow');
+    assert.strictEqual(n("const clientTextLib = requireOnce(() => require('../client-text'));\nconst ct = clientTextLib;\nct().message(x);"), 1, 'an alias of an alias');
+    assert.strictEqual(n("const {line, message: m} = require('./module-text');\nline(a); m(b);"), 2);
+    assert.strictEqual(n("const {line} = require('./module-text');\n// a line of text\nconst lines = 1;"), 0, 'a word, not a call');
+    assert.strictEqual(n("require('./client-text').line(a);"), 1);
+    assert.strictEqual(n("const t = require('./module-text');\nconst f = t.message;"), 1, 'a reference, not only a call');
+    assert.strictEqual(n("const t = require('./module-text');\nt.moduleLine(a);"), 0);
   });
 });
