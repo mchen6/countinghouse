@@ -282,6 +282,14 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.ok(seen.every((h) => h.session === undefined), 'no session id shown');
     });
 
+    it('each module setting refused at the terminal is its own line (counted per setting, not under the first)', async () => {
+      const tool = make();
+      await refused(tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo'), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      await refused(tool.set('module.@acme/weather-tool.shareStats', 'on'), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      const names = history().map((h) => h.setting);
+      assert.ok(names.includes('module.@acme/weather-tool.defaultRepo') && names.includes('module.@acme/weather-tool.shareStats'), JSON.stringify(history()));
+    });
+
     it('a value refused when it is applied (the module reloaded, the ceiling changed): said as not applied, never applies now', async () => {
       let asked = null;
       const tool = make({applyModuleSettings: async (pkg) => { asked = pkg; return {applied: 0, refused: [{name: 'module.@acme/weather-tool.units', code: 'SETTING_INVALID'}]}; }});
