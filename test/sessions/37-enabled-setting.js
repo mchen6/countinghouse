@@ -323,8 +323,12 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     const e = await refused(t.set('enabled.made-up', 'off'), 'SETTING_RECORD_UNREADABLE');
     assert.match(e.message, /can't be read right now/);
     assert.strictEqual(fs.readFileSync(file, 'utf8'), before, 'nothing written');
-    // a module loaded as a part of a loaded one counts as loaded
-    assert.strictEqual((await tool({loadedTops: () => [{name: CALLER, modules: [CALLER, 'a-part'], tools: []}]}).set('enabled.a-part', 'off')).new, 'off');
+    // (the medium review of round 4, 3 and 5) a part inside a loaded module
+    // has no switch: not taken; one already off is no change, as when the
+    // record is read
+    await refused(tool({loadedTops: () => [{name: CALLER, modules: [CALLER, 'a-part'], tools: []}]}).set('enabled.a-part', 'off'), 'SETTING_RECORD_UNREADABLE');
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {'enabled.gone-now': false, [`enabled.${TOOL}`]: false}}));
+    assert.deepStrictEqual(await tool().set('enabled.gone-now', 'off'), {name: 'enabled.gone-now', old: 'off', new: 'off', applies: 'now'});
     // uncounted: the budget is untouched, so an on (the record readable
     // again) still gets its form
     record({[TOOL]: {version: '1.2.0', role: null}});
