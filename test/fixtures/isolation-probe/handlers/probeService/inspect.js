@@ -154,6 +154,7 @@ const STEPS = {
     // module, from CommonJS reached by import(): each as written)
     out.push((await import('../../lib/needs-sibling.cjs')).default.own);
     out.push(await (await import('../../lib/imports-esm.cjs')).default());
+    out.push(await (await import('../../lib/imports-url.cjs')).default());
     return out.join(' ');
   },
   // The window (Revision 4, test 4): while the runtime's late paths run (a
