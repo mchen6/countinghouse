@@ -87,6 +87,15 @@ const STEPS = {
     }
     const like = (dir) => ({length: 1, 0: dir});
     out.push(same(() => M._findPath('sshpk', like(nm)), () => M._findPath('no-such-isolation-pkg', like(nm))));
+    // a parent named by a virtual name with backslashes (a separator on
+    // Windows once on the host: shaped so on every OS), or naming the root
+    // itself, whose package.json walk would start above it: the sandbox's
+    // own refusal, never Node's answer (the review of #434's round 4, E1/E2)
+    for (const filename of ['/app/x\\..\\..\\..\\f.js', '/app']) {
+      let said;
+      try { M._resolveFilename('#nope', {filename, paths: []}); said = 'found'; } catch (e) { said = `${e.code}|${e.message}`; }
+      out.push(/^MODULE_NOT_FOUND\|Cannot find module '#nope' \(countinghouse module sandbox\)$/.test(said) ? 'same' : `answered(${said.slice(0, 160)})`);
+    }
     // a primitive parent, whose filename Node would read off its prototype
     // (the review of e0f39de9): a number, a string, a boolean
     for (const [proto, prim] of [[Number.prototype, 1], [String.prototype, 'x'], [Boolean.prototype, true]]) {
