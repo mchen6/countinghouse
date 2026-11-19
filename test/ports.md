@@ -62,6 +62,7 @@ one) as well as the ports it binds.
 | `test/auth/42-redis-down-answers.js` | 9652 |
 | `test/auth/44-cache-require-builtins.js` | 9653 |
 | `test/auth/45-retired-device-fields.js` | 9655 |
+| `test/auth/46-redis-down-binary-result.js` | 9667 (its Redis proxy: a free port each run) |
 | `test/auth/53-no-keys-reach-reads.js` | 9757 |
 | `test/benchmark/test001.js` | 9527 |
 | `test/benchmark/test002.js` | 9527 |

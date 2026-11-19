@@ -15,7 +15,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisAnswers} = require('../helpers/test-env');
+
+// (whether the servers this test starts have a Redis that answers: the
+// Windows subset's runner has none, so a step that needs one is skipped
+// there, saying so)
+let noStore = false;
 const {startStdio, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 
 const KEY = 'aabbcc';
@@ -28,7 +33,9 @@ const STEPS = [
   // the declared host, approved by the policy: past the sandbox, into
   // postman-request (a .invalid name ends in its own error)
   ['request', (d) => /^error: /.test(d)],
-  ['redis', (d) => /^called: /.test(d)],
+  // (skipped only when the test found no Redis to start the server with;
+  // with one, a command that never answers fails it)
+  ['redis', (d) => (noStore ? d === 'skipped: no store' : /^called: /.test(d))],
   ['hostIp', (d) => d === 'string'],
   ['loadFile', (d) => d === 'loaded'],
   // a lib/ file and a node_modules file of countinghouse's: refused
@@ -62,7 +69,8 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
   this.timeout(120000);
   let home;
   let policy;
-  before(() => {
+  before(async () => {
+    noStore = !(await redisAnswers());
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-66-'));
     // the operator approves the probe's declared net: under enforce
     // postman-request is then warmed, and a request reaches it
@@ -94,7 +102,7 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     });
     for (const [step, reached] of STEPS) {
       it(`${step}: reaches its path, and nothing of the runtime's is loaded or resolved`, async () => {
-        const r = await mcpCall(port, KEY, TOOL, {step});
+        const r = await mcpCall(port, KEY, TOOL, {step, noStore});
         await settle();
         assert.ok(reached(detail(r), r, server.output, mode), `${step}: ${JSON.stringify(r).slice(0, 800)}`);
         assert.deepStrictEqual(late(), [], late().join('\n'));
@@ -173,9 +181,12 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
       }
       const p = await mcpCall(port, KEY, TOOL, {step: 'parents'});
       assert.ok(p.structuredContent != null, JSON.stringify(p).slice(0, 800));
-      // the module's own anchor, inside its root (/app, as module code sees it)
-      assert.deepStrictEqual([p.structuredContent.handlerParent, p.structuredContent.loadedParent],
-        ['/app/.countinghouse-entry', '/app/.countinghouse-entry']);
+      // the module's own anchor, inside its root (/app, as module code sees
+      // it; on Windows <V>:\app, #195)
+      const anchor = process.platform === 'win32' ? /^[A-Z]:\\app\\\.countinghouse-entry$/ : /^\/app\/\.countinghouse-entry$/;
+      assert.ok([p.structuredContent.handlerParent, p.structuredContent.loadedParent].every((f) => anchor.test(f)),
+        JSON.stringify([p.structuredContent.handlerParent, p.structuredContent.loadedParent]));
+      assert.strictEqual(p.structuredContent.handlerParent, p.structuredContent.loadedParent);
     } finally {
       stopServer(server);
     }
