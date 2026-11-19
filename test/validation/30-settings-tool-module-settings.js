@@ -69,9 +69,11 @@ describe('validation 30: countinghouse_settings and module settings', () => {
   });
   afterEach(() => { sessions.resetForTests(); fs.rmSync(home, {recursive: true, force: true}); });
   // a shared runtime with these sessions open (as sessions 21 opens them):
-  // id -> the session, whose 'end' closes it
+  // id -> the session, whose 'end' closes it. One registry for the file
+  // (attach registers its listeners once per registry; nothing leaks into
+  // the files CI runs after this one in the same process)
+  const reg = new EventEmitter();
   const openShared = (...ids) => {
-    const reg = new EventEmitter();
     sessions.attach(reg);
     const out = {};
     for (const id of ids) {
@@ -395,6 +397,45 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       const done = await tool.set('module.@acme/weather-tool.units', 'metric');
       assert.strictEqual(asked, '@acme/weather-tool', 'only the module whose value changed');
       assert.deepStrictEqual({applies: done.applies, refused: done.refused}, {applies: 'not applied', refused: 'SETTING_INVALID'});
+    });
+
+    it('a lock that comes while the client\'s conditions are asked is still checked: nothing written', async () => {
+      openShared('late-lock');
+      const real = sessions.askConditions;
+      try {
+        sessions.askConditions = async () => ({status: 'ok', conditions: 'yes'});
+        const tool = make(sharedClient);
+        const ctx = {shared: true, session: 'late-lock'};
+        const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+        // three declined elsewhere while this answer's conditions are asked
+        sessions.askConditions = async () => { for (let i = 0; i < 3; i += 1) confirmLib.userWindow().note('module'); return {status: 'ok', conditions: 'yes'}; };
+        await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+        assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined);
+      } finally { sessions.askConditions = real; }
+    });
+
+    it('a late answer for a session that has ended: MODULE_NOT_LISTED, before its store is made or told', async () => {
+      const tool = make(sharedClient);
+      const before = confirmLib.held();
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: 'x.y', inputResponses: accept}, {shared: true, session: 'never-open'}), 'MODULE_NOT_LISTED');
+      assert.strictEqual(confirmLib.held(), before, 'no store made for it');
+    });
+
+    it('an apply that waits too long on the control channel: written, applied at the next re-read', async () => {
+      const tool = make({applyWaitMs: 50, applyModuleSettings: () => new Promise(() => {})});
+      const done = await tool.set('module.@acme/weather-tool.units', 'metric');
+      assert.strictEqual(done.applies, 'next re-read');
+      assert.strictEqual(stored()['module.@acme/weather-tool.units'], 'metric');
+    });
+
+    it('a change that nothing applied (the module gone meanwhile): written, never applies now', async () => {
+      const tool = make({applyModuleSettings: async () => ({applied: 0, refused: []})});
+      assert.strictEqual((await tool.set('module.@acme/weather-tool.units', 'metric')).applies, 'next re-read');
+    });
+
+    it('another package whose name starts with this one\'s and a dot: its refusal is not this one\'s', async () => {
+      const tool = make({applyModuleSettings: async () => ({applied: 1, refused: [{name: 'module.@acme/weather-tool.x.units', code: 'SETTING_INVALID'}]})});
+      assert.strictEqual((await tool.set('module.@acme/weather-tool.units', 'metric')).applies, 'now');
     });
 
     it('the budget binds the form too: a session past its 32 is not asked', async () => {
