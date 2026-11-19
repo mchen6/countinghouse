@@ -1270,6 +1270,17 @@ and every one is bounded.
   URL.
 - **Prompt text** is declared and reviewed. An argument is substituted
   once, as text, and bounded.
+- **A tool the caller can't see** gets one answer on `tools/call`, decided
+  before anything module-specific, so no probe tells what is installed. No
+  key, or a key the auth layer does not know: its auth refusal, the same
+  for every name. A known key: a name never registered, a tool outside its
+  grants (an unlisted part's too) and one hidden while its module goes on
+  or off all answer `unknown tool: <name>`, byte for byte. A key granted an
+  unlisted part still learns it is not listed. The grant set that chooses
+  the answer is kept per known key (by a SHA-256 digest of the key, never
+  the key) for at most 5 s; authorisation is still `userAuth`'s read on
+  every call, so within those 5 s a revoked grant's tool gets the auth
+  refusal, and a new grant's answers "unknown tool".
 
 **Bounds.** Each is enforced on the main thread, and each has a test that
 fails if it is removed:
@@ -1289,6 +1300,7 @@ fails if it is removed:
 | Progress | 4 a second and 240 per call | mcp-contract 10 (progress) |
 | Cancellation | a request of the caller's own connection or session only; an unknown id ignored; no answer and no error text | mcp-contract 18, 19 |
 | Every read, get, completion and task method | the per-key rate limit, before any lookup | auth 15, mcp-contract 24, 26, 30, 09 |
+| The grant sets `tools/call` is answered by | a known key's only, kept by a digest of the key; at most 5 s old, refreshed by every list's read, all cleared by an auth reload; 1024 keys, the oldest out first; a failed read never kept | mcp-contract 40, auth 54 |
 
 A module resource read takes its token from the call path, after the
 listing lookup that finds its action: a probe of a URI that reads nothing
