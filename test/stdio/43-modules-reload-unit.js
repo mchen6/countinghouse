@@ -471,14 +471,16 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
   });
 
   // and 2: a switch of a module not held by a live worker (replaceDrainThenSwitch's
-  // other branch: its unload, then its load) holds the reload's generation too
-  it('a switch through the unload-then-load branch that an operator unload outranks stands down, and nothing brings the module back', async () => {
-    const {mm, dm, log} = runtime({unloadDuring: {name: '@t/ch-step-p', when: 'unload'}});
+  // other branch: its unload, then its load) holds the reload's generation
+  // too, checked after its unload and after its load (single-thread
+  // loadModuleFromPath takes none: the high review of #442, 3)
+  for (const when of ['unload', 'load']) it(`a switch through the unload-then-load branch that an operator unload during its ${when} outranks stands down`, async () => {
+    const {mm, dm, log} = runtime({unloadDuring: {name: '@t/ch-step-p', when}});
     await loadBoth(mm, dm, '1.0.0');
     // in the map, but no worker of its own (that branch's case)
     mm.modules['@t/ch-step-p'] = {hostModuleName: '@t/ch-step-p', packageInfo: {name: '@t/ch-step-p', version: '1.0.0'}, deviceList: {}};
     log.length = 0;
-    await assert.rejects(reloadTo(mm, dm, '2.0.0'), (e) => /SUPERSEDED/.test(`${e.code} ${e.message}`));
+    await assert.rejects(reloadTo(mm, dm, '2.0.0'), leftToOperator);
     const at = log.indexOf('operator unload @t/ch-step-p');
     assert.ok(at >= 0, log.join('\n'));
     assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
