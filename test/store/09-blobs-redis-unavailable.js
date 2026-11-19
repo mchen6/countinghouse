@@ -205,4 +205,24 @@ describe('store 09: the redis blob store answers with Redis down or hung', funct
     await new Promise((r) => setTimeout(r, 100));
     assert.strictEqual(evals(), 5, JSON.stringify(c.sent));
   });
+
+  // the Reviewer on #443: a rate-limit check Redis cannot answer is decided
+  // by the same limit in memory, never "allowed": a hung Redis is no way to
+  // unlimited calls for a key
+  it('a rate-limit check on a hung Redis is decided by the same limit in memory: the third call in the second is limited', async () => {
+    const hung = await hungRedis();
+    const client = redisResilient.createClient(`redis://127.0.0.1:${hung.port}`, {db: 9}, 50); // run-local: not the shared Redis (a port this test opened)
+    client.on('error', () => {});
+    try {
+      await ready(client);
+      const check = redisResilient.rateLimiter({redis: client, namespace: 'store09', interval: 1000, maxInInterval: 2}, 100);
+      const ask = () => new Promise((resolve) => check('key-1', (err, timeLeft) => resolve({err, timeLeft})));
+      const answers = [await ask(), await ask(), await ask()];
+      assert.deepStrictEqual(answers.map((a) => a.err == null), [true, true, true], JSON.stringify(answers));
+      assert.deepStrictEqual(answers.map((a) => a.timeLeft > 0), [false, false, true], JSON.stringify(answers));
+    } finally {
+      client.quit(() => {});
+      await hung.close();
+    }
+  });
 });
