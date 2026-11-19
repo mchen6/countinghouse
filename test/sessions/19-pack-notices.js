@@ -24,7 +24,6 @@ const notices = require('../../lib/notices');
 const settingsTool = require('../../lib/settings-tool');
 const visibility = require('../../lib/module-visibility');
 const {createModuleControl} = require('../../lib/module-control');
-const {moduleKey} = require('../../lib/modules-in-place');
 
 // What lib/modules-in-place.js asks of a manager for a unit loaded in place:
 // ModuleManager's own methods (these fakes' loads never acknowledge, so a
@@ -79,15 +78,12 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     const MOD = '@countinghouse/ch-pack-mod';
     const dirsOf = (names) => Object.fromEntries(names.map((n) => [n, `/store/${n}/1.0.0`]));
     const modulePacks = Object.assign({}, packs, {
-      // recorded as the runtime records a module-form unit: under its module key
-      loadPack: async(mm, msg) => { calls.push(['load', msg.name]); records.set(moduleKey(msg.name), [`m-${msg.name}`]); if (mm.packsInPlace instanceof Map) mm.packsInPlace.set(msg.name, {form: 'module', pack: moduleKey(msg.name)}); return {modules: [`m-${msg.name}`]}; },
-      reloadPack: async(mm, msg) => { calls.push(['reload', msg.names.join(',')]); for (const n of msg.names) records.set(moduleKey(n), [`m-${n}`]); return {modules: msg.names.map((n) => `m-${n}`)}; },
-      unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); records.delete(moduleKey(msg.name)); return {modules: [`m-${msg.name}`]}; }
+      // recorded under its package name, as the runtime records a unit
+      loadPack: async(mm, msg) => { calls.push(['load', msg.name]); records.set(msg.name, [`m-${msg.name}`]); return {modules: [`m-${msg.name}`]}; },
+      reloadPack: async(mm, msg) => { calls.push(['reload', msg.names.join(',')]); for (const n of msg.names) records.set(n, [`m-${n}`]); return {modules: msg.names.map((n) => `m-${n}`)}; },
+      unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); records.delete(msg.name); return {modules: [`m-${msg.name}`]}; }
     });
-    // the units these loads record, in the module form (module-control asks
-    // the record which form an unload is in)
-    const units = new Map();
-    const moduleControl = () => createModuleControl({mm: {packsInPlace: units}, dm: {}, packs: modulePacks, toolsOf: async() => [], shared: () => sessions.shared()});
+    const moduleControl = () => createModuleControl({mm: {}, dm: {}, packs: modulePacks, toolsOf: async() => [], shared: () => sessions.shared()});
 
     it('a load with no pack and no global is taken; the notice reaches each session once', async() => {
       const c = moduleControl();
@@ -132,12 +128,11 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
     const MOD = '@countinghouse/ch-pack-mod';
     const CALLER = 'trip-planner';
     const {offNotice} = require('../../lib/settings-tool');
-    const units = new Map([[MOD, {form: 'module', pack: moduleKey(MOD)}], [CALLER, {form: 'module', pack: moduleKey(CALLER)}]]);
     let loaded;
     const both = Object.assign({}, packs, {
       unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); loaded = loaded.filter((t) => t.name !== msg.name); return {modules: [`m-${msg.name}`]}; }
     });
-    const c = (o = {}) => createModuleControl(Object.assign({mm: {packsInPlace: units}, dm: {}, packs: both, toolsOf: async() => [], shared: () => sessions.shared(),
+    const c = (o = {}) => createModuleControl(Object.assign({mm: {}, dm: {}, packs: both, toolsOf: async() => [], shared: () => sessions.shared(),
       settingsServed: () => true, storedOff: (name) => name === MOD, loadedTops: () => loaded}, o));
     const all = (m) => [A, B, C].map((id) => notices.take(m, id));
     const each = (t) => [[t], [t], [t]];
@@ -222,7 +217,6 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       const control = c();
       await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       for (let i = 0; i < 25; i++) {
-        units.set(`caller-${i}`, {form: 'module', pack: moduleKey(`caller-${i}`)});
         await control.unload({type: 'unload', name: `caller-${i}`, notice: `caller-${i} unloaded`});
       }
       const got = notices.take('some-other-module', A);
@@ -236,13 +230,11 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       const control = c();
       await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       for (let i = 0; i < 25; i++) {
-        units.set(`caller-${i}`, {form: 'module', pack: moduleKey(`caller-${i}`)});
         await control.unload({type: 'unload', name: `caller-${i}`, notice: `caller-${i} unloaded`, reason: 'calls', because: MOD});
       }
       assert.strictEqual(notices.take('some-other-module', A)[0], offNotice(MOD, [CALLER]));
       // a caller line of long names keeps its way back whole
       const long = `@${'c'.repeat(40)}/${'d'.repeat(120)}`;
-      units.set(long, {form: 'module', pack: moduleKey(long)});
       await control.unload({type: 'unload', name: long, notice: 'x', reason: 'calls', because: MOD});
       assert.ok(notices.take('some-other-module', A).some((t) => t.endsWith('on brings it back).')));
     });
@@ -542,7 +534,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
         const packsInPlace = require('../../lib/modules-in-place');
         const h = crashedPartRuntime();
         await load(h);
-        h.mm.packsLoading.set('@countinghouse/ch-pack-ci', {pack: 'ci', modules: ['@countinghouse/ch-pack-ci']});
+        h.mm.packsLoading.set('@countinghouse/ch-pack-ci', {modules: ['@countinghouse/ch-pack-ci']});
         try {
           await assert.rejects(packsInPlace.unloadPack(h.mm, {type: 'unload', name: TWO}),
             (e) => e.code === 'CONTROL_FAILED' && /serialised/.test(e.message));

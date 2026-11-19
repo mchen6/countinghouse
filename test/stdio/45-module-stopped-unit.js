@@ -132,7 +132,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     await loadPf(mm);
     // a second unit holding the same part, recorded as a start under
     // --modulesRoot records it: no ch-local pack name
-    mm.packsInPlace.set('@t/ch-pack-seeded', {form: 'module', pack: mip.moduleKey('@t/ch-pack-seeded'), modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set(), allowance: null});
+    mm.packsInPlace.set('@t/ch-pack-seeded', {modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set(), allowance: null});
     const told = [];
     const channel = require('../../lib/control-channel');
     const realTell = channel.tell;
@@ -179,17 +179,18 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       return {type: 'load', name, dirs: {[name]: dir}};
     };
 
-    it('medium 1: a module-form unit is under its module key while it loads, never its package name', async () => {
+    it('medium 1: a unit is under its package name while it loads', async () => {
       const mm = runtime();
       const seen = [];
       const load = mm.loadModuleFromPath;
-      mm.loadModuleFromPath = (p, name, version, cb, opts) => { seen.push(...[...(mm.packsLoading || new Map()).values()].map((r) => r.pack)); load(p, name, version, cb, opts); };
+      mm.loadModuleFromPath = (p, name, version, cb, opts) => { seen.push(...(mm.packsLoading || new Map()).keys()); load(p, name, version, cb, opts); };
       await mip.loadPack(mm, moduleForm('ci-failure-triage'), {});
       assert.ok(seen.length > 0);
-      assert.ok(seen.every((k) => k === mip.moduleKey('ci-failure-triage')), JSON.stringify(seen));
+      assert.ok(seen.every((k) => k === 'ci-failure-triage'), JSON.stringify(seen));
     });
 
-    it('medium 3: a names-only reload whose type the message leaves out is checked once, as a reload', async () => {
+    // (its shape is its handler's: lib/module-control.js, #455's high review, 4)
+    it('medium 3: a names-only reload whose type the message leaves out is read as a reload', async () => {
       const mm = runtime();
       await mip.loadPack(mm, moduleForm('@t/ch-pack-r'), {});
       const dirs = {'@t/ch-pack-r': storeDir('@t/ch-pack-r', '1.0.0')};
