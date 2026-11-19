@@ -35,6 +35,11 @@ describe('sandbox 03: tree checks', () => {
     assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: [], brokenLinks: [], manifestLinks: [], outsideMains: []});
   });
 
+  it('a dependency whose package.json is a directory has none, as for Node (the high review of #452)', () => {
+    const d = mk({'package.json': {name: 'm', dependencies: {x: '1'}}, 'node_modules/x/index.js': '', 'node_modules/x/package.json/keep.txt': ''});
+    assert.deepStrictEqual(checkTree(d).problems.filter((p) => /package\.json/.test(p)), []);
+  });
+
   it('reads a package.json past a BOM, as Node does: its dependencies checked too', () => {
     const d = mk({'package.json': {name: 'm', dependencies: {x: '1'}}, 'node_modules/x/index.js': '',
       'node_modules/x/package.json': '\uFEFF{"name": "x", "dependencies": {"y": "1"}}'});
