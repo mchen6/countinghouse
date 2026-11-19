@@ -175,11 +175,17 @@ describe('sandbox 05: worker lockdown', function() {
     // (the review of e0f39de9: audit reports what it stops; under enforce
     // the same is refused)
     it(`what the lockdown holds: an assignment, a defineProperty, a new extension take nothing${mode === 'audit' ? ', and each is reported' : ''}`, async () => {
-      for (const [what, line] of [['holdAssign', 'Module._pathCache replaced (the runtime\'s kept)'], ['holdDefine', '_load redefined (the runtime\'s kept)'],
-        ['holdExtension', 'Module._extensions[.chprobe] added (refused)']]) {
+      // [attempt, its line, said under enforce too]
+      for (const [what, line, both] of [['holdAssign', 'Module._pathCache replaced (the runtime\'s kept)', false],
+        ['holdDefine', '_load redefined (the runtime\'s kept)', false],
+        // (a key that is an object, turned into 'load' once, as the engine does)
+        ['holdDefineKey', 'Module.prototype.load redefined (the runtime\'s kept)', false],
+        ['holdDefineSetter', '_resolveFilename redefined (the runtime\'s kept)', false],
+        ['holdHandler', mode === 'audit' ? 'Module._extensions[\'.js\'] replaced (the runtime\'s kept)' : 'Module._extensions[.js] replaced (refused)', true],
+        ['holdExtension', 'Module._extensions[.chprobe] added (refused)', true]]) {
         const from = server.output.length;
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
-        if (mode === 'audit' || what === 'holdExtension') await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
+        if (mode === 'audit' || both) await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
       }
     });
     it('createRequire\'s own Module still loads', async () => {

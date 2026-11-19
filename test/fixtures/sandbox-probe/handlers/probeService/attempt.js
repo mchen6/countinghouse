@@ -32,6 +32,23 @@ const ATTEMPTS = {
     try { Object.defineProperty(M, '_load', {value: function() {}}); } catch (e) { /* refused */ }
     if (M._load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
   },
+  holdDefineKey:    () => {
+    const P = module.constructor.prototype;
+    const was = P.load;
+    try { Object.defineProperty(P, {toString: () => 'load'}, {value: function() {}}); } catch (e) { /* refused */ }
+    if (P.load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDefineSetter: () => {
+    const M = module.constructor;
+    const was = M._resolveFilename;
+    try { M.__defineSetter__('_resolveFilename', () => {}); } catch (e) { /* refused */ }
+    if (M._resolveFilename !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdHandler:      () => {
+    const was = require.extensions['.js'];
+    try { require.extensions['.js'] = function() {}; } catch (e) { /* refused */ }
+    if (require.extensions['.js'] !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
   holdExtension:    () => {
     try { require.extensions['.chprobe'] = () => {}; } catch (e) { /* refused */ }
     if (require.extensions['.chprobe'] !== undefined) throw Object.assign(new Error('added'), {code: 'ADDED'});
