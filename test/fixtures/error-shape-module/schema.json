@@ -460,6 +460,20 @@
           }
         }
       }
+    },
+    "remoteTooLargePassedOn": {
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      }
     }
   }
 }

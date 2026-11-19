@@ -58,6 +58,11 @@ module.exports = {
     // declared, and arguments that cannot cross to the main thread.
     remoteUndeclaredPassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {}),
     remoteArgsInvalidPassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {f: () => 1}),
+    // over the worker channel's cap (--maxOutputBytes, 16 MiB, and its
+    // headroom): worker mode refuses it MESSAGE_TOO_LARGE before it is sent;
+    // single-thread mode sends nothing over a channel and refuses the
+    // undeclared remote
+    remoteTooLargePassedOn: async (input, ctx) => ctx.call('remote:nowhere/tool', {big: 'x'.repeat(17 * 1024 * 1024)}),
 
     // Not a module's code (§5.1): a system error's code (it has errno and
     // syscall), and Node's own ERR_ namespace. Both are crashes:

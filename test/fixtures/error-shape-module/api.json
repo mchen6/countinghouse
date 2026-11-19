@@ -325,6 +325,16 @@
             "output": {
               "schema": "/shapeService/remoteArgsInvalidPassedOn/output"
             }
+          },
+          {
+            "name": "remoteTooLargePassedOn",
+            "description": "error-shape case remoteTooLargePassedOn",
+            "input": {
+              "schema": "/shapeService/remoteTooLargePassedOn/input"
+            },
+            "output": {
+              "schema": "/shapeService/remoteTooLargePassedOn/output"
+            }
           }
         ]
       }
