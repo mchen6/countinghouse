@@ -13,6 +13,9 @@ const path = require('path');
 const options = require('../../lib/cli-options');
 const historyCut = require('../../lib/history-cut');
 const settingsTool = require('../../lib/settings-tool');
+// the module manager the tool reads what is loaded from (#449's high
+// review, round 6, 8): none loaded here
+const NO_MODULES = {modules: {}};
 const ms = require('../../lib/module-settings');
 const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').historyCut;
 
@@ -63,7 +66,7 @@ describe('validation 31: a module setting\'s value in the history', () => {
       const after = `${'n'.repeat(64)}é`;
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {'module.note-tool.note': before}}));
       let modules = [{name: N.name, version: N.version, part: false, state: ms.stateFor(N.name, N, {operator: false, net: []})}];
-      const tool = settingsTool.create({file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), moduleStates: () => modules,
+      const tool = settingsTool.create({mm: NO_MODULES, file, lockWaitMs: 200, ceiling: () => ({state: 'none'}), moduleStates: () => modules,
         applyModuleSettings: async () => { modules = [{name: N.name, version: N.version, part: false, state: ms.stateFor(N.name, N, {operator: false, net: []})}]; return {applied: 1, refused: []}; },
         mayElicit: async () => ({ok: true, client: {name: 'tested-client', version: '1.0.0'}})});
       const ctx = {session: 'cut-1'};

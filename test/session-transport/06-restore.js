@@ -22,7 +22,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     assert.deepStrictEqual(r.handle(plan()), {sessions: 1});
-    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: []}], 'resume included: the runtime splits it from B\'s state');
+    assert.deepStrictEqual(got, [{sessions: plan().sessions, declines: plan().declines, reset: [], packsDropped: [], kindsMapped: 0, kindsDropped: [], declinesDropped: 0}], 'resume included: the runtime splits it from B\'s state');
     assert.strictEqual(r.done(), true);
   });
 
@@ -57,18 +57,26 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       plan({sessions: Array.from({length: MAX_SESSIONS + 1}, (_, i) => ({session: i.toString(16).padStart(32, '0'), resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}))}),
       plan({declines: [{kind: '', at: 1}]}),
       plan({declines: [{kind: 'x'.repeat(65), at: 1}]}),
-      plan({declines: [{kind: 'pack', at: Infinity}]}),
-      plan({declines: [{kind: 'pack', at: -5}]}),
-      plan({declines: [{kind: 'pack', at: 1.5}]}),
-      plan({declines: [{kind: 'pack', at: 1e300}]}),
-      plan({declines: [{kind: 'pack', at: Date.now() + 31 * 365 * 24 * 3600 * 1000}]}),
-      plan({declines: [{kind: 'pack', at: 1, session: ID}]}),
-      plan({declines: Array.from({length: MAX_DECLINES + 1}, () => ({kind: 'pack', at: 1}))}),
+      plan({declines: [{kind: 'enabled', at: Infinity}]}),
+      plan({declines: [{kind: 'enabled', at: -5}]}),
+      plan({declines: [{kind: 'enabled', at: 1.5}]}),
+      plan({declines: [{kind: 'enabled', at: 1e300}]}),
+      plan({declines: [{kind: 'enabled', at: Date.now() + 31 * 365 * 24 * 3600 * 1000}]}),
+      plan({declines: [{kind: 'enabled', at: 1, session: ID}]}),
+      plan({declines: Array.from({length: MAX_DECLINES + 1}, () => ({kind: 'enabled', at: 1}))}),
+      // a state of no shape at all (#449's high review, round 3, 3: refused,
+      // never a TypeError)
+      plan({sessions: [{session: ID, resume: HASH, state: null}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: []}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: 'x'}]}),
+      st({overrides: [], locks: null, formsLeft: 3}),
+      st({overrides: [], locks: ['pack'], formsLeft: 3, unanswered: null}),
       // B2's exact shapes (#252 rev 2)
       st({overrides: [], locks: [], formsLeft: 4}),
       st({overrides: [], locks: [], formsLeft: 1.5}),
-      st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}),
-      st({overrides: [], locks: ['other'], formsLeft: 3}),
+      st({overrides: [], locks: ['enabled', 'enabled'], formsLeft: 3}),
+      st({overrides: [], locks: [7], formsLeft: 3}),
+      st({overrides: [], locks: ['other-kind'], formsLeft: 3}),
       st({overrides: [ov({name: 'secret'})], locks: [], formsLeft: 3}),
       // M5a: a pack's on or off is never a session's own. A pack.<n> override
       // not of the old shape refuses (a well-formed one is dropped: below)
@@ -84,7 +92,8 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       st({overrides: [ov({name: 'pack.one', value: true, version: null})], locks: [], formsLeft: 3}),
       st({overrides: [ov({name: 'pack.one', value: true, version: '1.0.0 && x'})], locks: [], formsLeft: 3}),
       st({overrides: [ov({mac: 'x'})], locks: [], formsLeft: 3}),
-      plan({declines: [{kind: 'other', at: 1}]}),
+      plan({declines: [{kind: 7, at: 1}]}),
+      plan({declines: [{kind: 'other kind', at: 1}]}),
       // the resume hash (N3): exactly 64 lowercase hex, always present
       plan({sessions: [{session: ID, state: {overrides: [], locks: [], formsLeft: 3}}]}),
       plan({sessions: [{session: ID, resume: 'F'.repeat(64), state: {overrides: [], locks: [], formsLeft: 3}}]}),
@@ -105,7 +114,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
   it('takes B2\'s exact shapes: a confirmed cap loosening, a tightening, locks and forms left', () => {
     const r = createRestore({});
     const state = {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000}), ov()],
-      locks: ['maxOutputBytes', 'pack'], formsLeft: 0};
+      locks: ['maxOutputBytes', 'enabled'], formsLeft: 0};
     assert.deepStrictEqual(r.handle(st(state)), {sessions: 1});
   });
 
@@ -122,10 +131,10 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     const other = {session: 'b'.repeat(32), resume: 'b'.repeat(64), state: {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000})], locks: [], formsLeft: 3}};
-    const stale = {session: ID, resume: HASH, state: {overrides: [ov(), ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.ci-failure-triage', value: true, loosening: true, version: '1.2.3'})], locks: ['pack'], formsLeft: 2}};
+    const stale = {session: ID, resume: HASH, state: {overrides: [ov(), ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.ci-failure-triage', value: true, loosening: true, version: '1.2.3'})], locks: ['enabled'], formsLeft: 2}};
     assert.deepStrictEqual(r.handle(plan({sessions: [stale, other], reset: []})), {sessions: 2});
     assert.strictEqual(got.length, 1);
-    assert.deepStrictEqual(got[0].sessions[0].state, {overrides: [ov()], locks: ['pack'], formsLeft: 2});
+    assert.deepStrictEqual(got[0].sessions[0].state, {overrides: [ov()], locks: ['enabled'], formsLeft: 2});
     assert.deepStrictEqual(got[0].sessions[1], other, 'another session\'s loosening is kept');
     assert.deepStrictEqual(got[0].packsDropped, [{session: ID, names: ['weather', 'ci-failure-triage']}]);
     // what the daemon sent is bounded before anything is dropped: a name
@@ -155,6 +164,95 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       try { createRestore({}).handle(plan({sessions: [c.row], reset: []})); } catch (e) { assert.strictEqual(e.code, 'CONTROL_BAD_RESTORE', c.why); message = e.message; }
       assert.ok(message != null, `${c.why}: refused`);
       assert.ok(typeof(c.reason) === 'string' && message.includes(c.reason), `${c.why}: for its own reason (${c.reason}), not "${message}"`);
+    }
+  });
+
+  // #449's high review, 2: a table written under a runtime before M5b holds
+  // the kind pack; it is the kind enabled now, per row, so the session's
+  // tightenings stay, and the runtime says so once
+  it('the kind pack is taken as enabled, per row and per decline, deduped, and said once', () => {
+    const got = [];
+    const said = [];
+    const r = createRestore({importTable: (t) => got.push(t), log: (m) => said.push(m)});
+    const B = 'b'.repeat(32);
+    const C = 'c'.repeat(32);
+    const rows = [
+      {session: ID, resume: HASH, state: {overrides: [ov()], locks: ['pack', 'maxOutputBytes'], formsLeft: 2}},
+      // pack and enabled both locked: one enabled
+      {session: B, resume: 'b'.repeat(64), state: {overrides: [], locks: ['enabled', 'pack'], formsLeft: 3}},
+      // pack unanswered and enabled locked: the lock wins
+      {session: C, resume: 'c'.repeat(64), state: {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['pack', 'requestTimeout']}}
+    ];
+    const declines = [{kind: 'pack', at: 1700000000000}, {kind: 'module', at: 1700000000001}];
+    assert.deepStrictEqual(r.handle(plan({sessions: rows, declines, reset: [B]})), {sessions: 3});
+    const t = got[0];
+    assert.deepStrictEqual(t.sessions.map((x) => x.state), [
+      {overrides: [ov()], locks: ['enabled', 'maxOutputBytes'], formsLeft: 2},
+      {overrides: [], locks: ['enabled'], formsLeft: 3},
+      {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['requestTimeout']}
+    ]);
+    assert.deepStrictEqual(t.declines, [{kind: 'enabled', at: 1700000000000}, {kind: 'module', at: 1700000000001}]);
+    assert.strictEqual(t.kindsMapped, 4, 'three rows and one decline');
+    assert.deepStrictEqual(t.reset, [B]);
+    assert.strictEqual(said.length, 1, 'said once');
+    assert.ok(/pack/.test(said[0]) && /enabled/.test(said[0]) && /\b4\b/.test(said[0]), said[0]);
+    // nothing to say when nothing was mapped
+    const quiet = [];
+    createRestore({log: (m) => quiet.push(m)}).handle(plan());
+    assert.deepStrictEqual(quiet, []);
+    // what the daemon sent is checked as sent: pack twice is a lock twice
+    assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}))), 'CONTROL_BAD_RESTORE');
+  });
+
+  // #449's high review, round 3, 5: a row naming a kind this runtime has
+  // none of keeps everything else (its known locks, its spent forms: the
+  // session's tightenings); only the unknown kinds go, said once
+  it('a row with an unknown kind keeps the row, less those kinds; a decline of one is dropped; said once', () => {
+    const got = [];
+    const said = [];
+    const r = createRestore({importTable: (t) => got.push(t), log: (m) => said.push(m)});
+    const B = 'b'.repeat(32);
+    const C = 'c'.repeat(32);
+    const unknown = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov()], locks: ['locale', 'maxOutputBytes'], formsLeft: 1}};
+    const unanswered = {session: C, resume: 'c'.repeat(64), state: {overrides: [], locks: [], formsLeft: 2, unanswered: ['theme', 'module']}};
+    const good = plan().sessions[0];
+    const declines = [{kind: 'locale', at: 1}, {kind: 'enabled', at: 2}];
+    assert.deepStrictEqual(r.handle(plan({sessions: [unknown, good, unanswered], declines, reset: [B, ID]})), {sessions: 3});
+    assert.deepStrictEqual(got[0].sessions.map((x) => x.state), [
+      {overrides: [ov()], locks: ['maxOutputBytes'], formsLeft: 1},
+      good.state,
+      {overrides: [], locks: [], formsLeft: 2, unanswered: ['module']}]);
+    assert.deepStrictEqual(got[0].kindsDropped, [{session: B, kinds: ['locale']}, {session: C, kinds: ['theme']}]);
+    assert.deepStrictEqual(got[0].declines, [{kind: 'enabled', at: 2}]);
+    assert.strictEqual(got[0].declinesDropped, 1);
+    assert.deepStrictEqual(got[0].reset, [B, ID], 'every row is taken, so reset as sent');
+    assert.strictEqual(said.length, 1, 'said once');
+    assert.ok(/locale/.test(said[0]) && /theme/.test(said[0]), said[0]);
+    // a stale pack override in such a row: dropped and told, the row kept
+    const both = {session: B, resume: 'b'.repeat(64), state: {overrides: [ov({name: 'pack.weather', value: false, version: '1.0.0'})], locks: ['locale'], formsLeft: 3}};
+    const seen = [];
+    createRestore({importTable: (x) => seen.push(x)}).handle(plan({sessions: [both, good], reset: []}));
+    assert.deepStrictEqual(seen[0].packsDropped, [{session: B, names: ['weather']}]);
+    assert.deepStrictEqual(seen[0].sessions[0].state, {overrides: [], locks: [], formsLeft: 3});
+    // any other problem in that row still refuses the whole restore, as does
+    // an unknown kind twice
+    assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['locale'], formsLeft: 4}))), 'CONTROL_BAD_RESTORE');
+    assert.strictEqual(code(() => createRestore({}).handle(st({overrides: [], locks: ['locale', 'locale'], formsLeft: 3}))), 'CONTROL_BAD_RESTORE');
+  });
+
+  it('the shared vectors\' mapped and kindsDropped rows', () => {
+    const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
+    assert.ok(V.mapped.length >= 3 && V.kindsDropped.length >= 2);
+    for (const c of V.mapped) {
+      const seen = [];
+      createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
+      assert.deepStrictEqual(seen[0].sessions[0].state, c.taken, c.why);
+    }
+    for (const c of V.kindsDropped) {
+      const seen = [];
+      createRestore({importTable: (t) => seen.push(t)}).handle(plan({sessions: [c.row], reset: []}));
+      assert.deepStrictEqual(seen[0].sessions[0].state, c.taken, c.why);
+      assert.deepStrictEqual(seen[0].kindsDropped, [{session: c.row.session, kinds: c.kinds}], c.why);
     }
   });
 

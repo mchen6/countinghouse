@@ -35,7 +35,6 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
   const cli = require('../../lib/cli-options');
   const ModuleManager = require('../../lib/module-manager');
   const mmod = require('../../lib/module-manager');
-  const settingsTool = require('../../lib/settings-tool');
   let mip = null;
   let root = null;
   let packs = null;
@@ -72,20 +71,13 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
   const scenario = () => path.join(packs, 'pf', '1.0.0', 'node_modules', 'ch-pack-pf');
   const loadPf = (mm) => mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario(), pack: 'pf'}, {});
 
-  it('2, 4: the unit\'s own allowance goes, and the settings tool\'s this-start pack', async () => {
+  // (M5b: no settings state follows an unload: a module's on/off is the file's)
+  it('2, 4: the unit\'s own allowance goes', async () => {
     const mm = runtime();
     await loadPf(mm);
     mmod.packRemotes.set('ch-step-x', new Map([['ch-pack-pf', new Map([['https://x.example', new Set(['X'])]])]]));
-    const unloaded = [];
-    const real = settingsTool.packUnloaded;
-    settingsTool.packUnloaded = (n) => unloaded.push(n);
-    try {
-      await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
-    } finally {
-      settingsTool.packUnloaded = real;
-    }
+    await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
     assert.strictEqual(mmod.packRemotes.has('ch-step-x'), false, 'the pack\'s allowance went with it');
-    assert.deepStrictEqual(unloaded, ['ch-pack-pf']);
     assert.strictEqual(mm.packsInPlace.has('ch-pack-pf'), false);
   });
 
@@ -149,14 +141,12 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     const told = [];
     const channel = require('../../lib/control-channel');
     const realTell = channel.tell;
-    const realUnloaded = settingsTool.packUnloaded;
-    channel.tell = (m) => { told.push(m.name); return true; };
-    settingsTool.packUnloaded = (n) => { if (n === 'ch-pack-pf') throw new Error('settings tool failed'); };
+    // one unit's telling fails: the other is still told
+    channel.tell = (m) => { told.push(m.name); if (m.name === 'ch-pack-pf') throw new Error('the channel failed'); return true; };
     try {
       await mip.selfUnload(mm, 'ch-step-x', 'MODULE_SUSPENDED');
     } finally {
       channel.tell = realTell;
-      settingsTool.packUnloaded = realUnloaded;
     }
     assert.deepStrictEqual(told.sort(), ['@t/ch-pack-seeded', 'ch-pack-pf']);
   });
