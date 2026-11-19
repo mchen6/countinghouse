@@ -816,7 +816,10 @@ fallbacks such as `fs-extra`'s `move` work.
 - HTTP/2 `respondWithFile` is not available: read the file with `fs` and
   stream it.
 - A worker's `process.env` holds only the variables you declared (see
-  below), so code that read undeclared variables sees them missing.
+  below), so code that read undeclared variables sees them missing. A
+  `COUNTINGHOUSE_*` variable or a proxy variable (`HTTP_PROXY`,
+  `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY`, `NODE_USE_ENV_PROXY`) is never
+  given; `countinghouse-validate` refuses a declared proxy variable.
 
 **Single-thread mode** (`--no-workerThread`) is for debugging modules and
 has no sandbox. Modules still see `/app`, `/data` and `/tmp` through `fs`,

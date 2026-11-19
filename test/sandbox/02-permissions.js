@@ -235,3 +235,54 @@ describe('sandbox 02: the policy file', function() {
     } finally { stopServer(server); }
   });
 });
+
+// The proxy variables and COUNTINGHOUSE_* are never given to a module,
+// declared or not, by any case (on Windows the environment's names are
+// case-insensitive): granted declarations, a policy's own value, and
+// countinghouse-validate, which refuses a declared proxy name.
+describe('sandbox 02: the always-denied environment names', () => {
+  // (a declaration takes upper-case names only, ENV_NAME; resolveEnv also
+  // compares case-insensitively, for any other way a name could arrive)
+  const DECLARED = ['A', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'ALL_PROXY', 'NODE_USE_ENV_PROXY', 'COUNTINGHOUSE_X'];
+  const serverEnv = Object.fromEntries(DECLARED.map((n) => [n, `value-of-${n}`]));
+
+  it('grant mode (no policy entry) grants the declaration, and still none of the denied names is given', () => {
+    const declared = perms.parseDeclaration(pkg({env: DECLARED})).declared;
+    const r = perms.narrow(declared, null, {}, 'audit');
+    assert.deepStrictEqual(r.envNames, DECLARED, 'granted as declared');
+    assert.deepStrictEqual(perms.resolveEnv(r.envNames, r.envOverrides, serverEnv), {A: 'value-of-A'});
+    assert.deepStrictEqual(perms.deniedEnvNames(DECLARED), DECLARED.slice(1));
+    assert.deepStrictEqual(perms.proxyEnvNames(DECLARED), ['HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'ALL_PROXY', 'NODE_USE_ENV_PROXY']);
+  });
+
+  it('by any case: a mixed-case proxy or COUNTINGHOUSE_ name is denied too (the Windows environment is case-insensitive)', () => {
+    const names = ['https_proxy', 'Http_Proxy', 'countinghouse_api_key', 'B'];
+    assert.deepStrictEqual(perms.resolveEnv(names, {}, Object.fromEntries(names.map((n) => [n, 'v']))), {B: 'v'});
+    assert.deepStrictEqual(perms.deniedEnvNames(names), names.slice(0, 3));
+  });
+
+  it('a policy\'s own value for a denied name is not given either', () => {
+    assert.deepStrictEqual(perms.resolveEnv(['A', 'HTTPS_PROXY'], {HTTPS_PROXY: 'http://policy.example:3128'}, serverEnv), {A: 'value-of-A'});
+  });
+
+  it('countinghouse-validate refuses a declared proxy variable: never given to a module', (done) => {
+    const moduleValidator = require('../../lib/module-validator');
+    const base = fs.mkdtempSync(path.join(os.homedir(), '.ch-proxy-validate-'));
+    const dir = path.join(base, 'deny-probe');
+    fs.cpSync(path.join(__dirname, '..', 'fixtures', 'deny-probe'), dir, {recursive: true});
+    const pkgPath = path.join(dir, 'package.json');
+    const p = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    p.countinghouse.permissions.fs = [];
+    p.countinghouse.permissions.env = ['HTTPS_PROXY'];
+    fs.writeFileSync(pkgPath, JSON.stringify(p, null, 2));
+    moduleValidator.validateModule(dir, (err, result) => {
+      fs.rmSync(base, {recursive: true, force: true});
+      assert.ifError(err);
+      const hit = (result.problems || []).find((x) => x.stage === 'countinghouse.permissions' && /HTTPS_PROXY/.test(x.message));
+      assert.ok(hit != null, JSON.stringify(result));
+      assert.match(hit.message, /this variable is never given to a module/);
+      assert.ok(!(result.warnings || []).some((x) => /HTTPS_PROXY/.test(x.message)), 'refused, not also warned');
+      done();
+    });
+  });
+});

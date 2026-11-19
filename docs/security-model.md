@@ -1515,7 +1515,15 @@ and the short list of what the in-process sandbox cannot give.
   can land in the fresh `/tmp`, or leave the quota count a little off.
 - **The worker's environment holds only approved variables** (in `audit`
   and `enforce`). That includes no `NODE_PATH`, so a module cannot reach
-  countinghouse's `lib/` by bare name. Under `enforce` `/proc/self/environ`
+  countinghouse's `lib/` by bare name. Some names are never given, declared
+  or not, compared without regard to case (the Windows environment ignores
+  case): every `COUNTINGHOUSE_*` variable, and the proxy variables
+  `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY` and
+  `NODE_USE_ENV_PROXY`. A proxy is the user's own egress for the runtime,
+  and its URL can carry credentials; a module's remote calls are the main
+  thread's, so a worker never needs one. `countinghouse-validate` refuses a
+  declared proxy variable, and a load leaves it out and says so, never its
+  value. Under `enforce` `/proc/self/environ`
   is outside the namespace too; under `audit` and `off` a module can still
   read the process's whole environment there, unless `--hardened` is on.
 - **`--hardened` limits.** Node's permission model follows symlinks, so a
