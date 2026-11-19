@@ -144,7 +144,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     let code = null;
     try {
       const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
-        options: {moduleDataPath: path.join(other, 'store'), modulePath: modules}, report: () => {}});
+        options: {moduleDataPath: path.join(other, 'store'), modulePath: modules}, knownRoots: [other], report: () => {}});
       await fsb.bridge.close();
     } catch (e) { code = e.code; }
     assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
@@ -168,7 +168,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const tryWith = async (moduleDataPath) => {
       try {
         const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
-          options: {moduleDataPath, modulePath: modules, localModulePath: [mod, loaded]}, report: () => {}});
+          options: {moduleDataPath, modulePath: modules, localModulePath: [mod, loaded]}, knownRoots: [path.join(modules, '@acme', 'b')], report: () => {}});
         await fsb.bridge.close();
         return null;
       } catch (e) { return e.code; }
@@ -195,7 +195,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const tryWith = async (moduleDataPath) => {
       try {
         const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
-          options: {moduleDataPath, modulePath: modules}, report: () => {}});
+          options: {moduleDataPath, modulePath: modules}, knownRoots: [mod, other], report: () => {}});
         await fsb.bridge.close();
         return null;
       } catch (e) { return e.code; }
@@ -227,7 +227,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const tryWith = async (name, modulePathOwn, moduleDataPath) => {
       try {
         const fsb = await createForWorker({name, mode: 'enforce', modulePath: modulePathOwn, declared: [],
-          options: {moduleDataPath, modulePath: modules}, report: () => {}});
+          options: {moduleDataPath, modulePath: modules}, knownRoots: [path.join(modules, 'tmp'), path.join(modules, 'bar'), path.join(modules, '@acme', 'baz')], report: () => {}});
         await fsb.bridge.close();
         return null;
       } catch (e) { return e.code; }
@@ -269,6 +269,33 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     const again = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
       options: {moduleDataPath: path.join(base, 'data'), modulePath: base}, report: () => {}});
     await again.bridge.close();
+  });
+
+  // (whatever the judgement doesn't know -- a module at a depth and in a
+  // layout nothing lists -- the emptying never deletes package code: kept,
+  // and said; the reviewer's ruling on #452)
+  it('in every mode, the emptying of a /tmp keeps an entry holding package code, at any depth, and says so', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-guard-')));
+    const mod = path.join(base, 'mod');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    for (const mode of ['off', 'audit', 'enforce']) {
+      const tmp = path.join(base, `store-${mode}`, 'm', 'tmp');
+      fs.mkdirSync(path.join(tmp, 'deep', 'node_modules', 'foo'), {recursive: true});
+      fs.writeFileSync(path.join(tmp, 'deep', 'node_modules', 'foo', 'index.js'), 'module.exports = 1;');
+      fs.mkdirSync(path.join(tmp, 'pkg', 'lib'), {recursive: true});
+      fs.writeFileSync(path.join(tmp, 'pkg', 'package.json'), '{"name": "pkg"}');
+      fs.writeFileSync(path.join(tmp, 'scratch.txt'), 'x');
+      const said = [];
+      const fsb = await createForWorker({name: 'm', mode, modulePath: mod, declared: [],
+        options: {moduleDataPath: path.join(base, `store-${mode}`), modulePath: base}, report: (rule, target) => said.push([rule, target])});
+      await fsb.bridge.close();
+      assert.ok(fs.existsSync(path.join(tmp, 'deep', 'node_modules', 'foo', 'index.js')), `${mode}: package code under node_modules emptied`);
+      assert.ok(fs.existsSync(path.join(tmp, 'pkg', 'package.json')), `${mode}: a package emptied`);
+      assert.ok(!fs.existsSync(path.join(tmp, 'scratch.txt')), `${mode}: the rest kept`);
+      assert.deepStrictEqual(said.filter(([rule]) => rule === 'kept').map(([, t]) => path.basename(t.split(':')[0])).sort(), ['deep', 'pkg'], mode);
+    }
   });
 
   // (a --moduleDataPath not made yet, reached through a link above it into
