@@ -157,7 +157,7 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       unloadPack: async(mm, msg) => { calls.push(['unload', msg.name]); loaded = loaded.filter((t) => t.name !== msg.name); return {modules: [`m-${msg.name}`]}; }
     });
     const c = (o = {}) => createPackControl(Object.assign({mm: {packsInPlace: units}, dm: {}, packs: both, toolsOf: async() => [], shared: () => sessions.shared(),
-      settingsServed: () => true, loadedTops: () => loaded}, o));
+      settingsServed: () => true, storedOff: (name) => name === MOD, loadedTops: () => loaded}, o));
     const all = (m) => [A, B, C].map((id) => notices.take(m, id));
     const each = (t) => [[t], [t], [t]];
     beforeEach(() => { loaded = [{name: MOD, modules: [MOD], tools: []}, {name: CALLER, modules: [CALLER, MOD], tools: []}]; });
@@ -183,6 +183,15 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
       assert.deepStrictEqual([A, B, C].map((id) => notices.take('some-other-module', id)), each(offNotice(MOD, [CALLER])));
       assert.deepStrictEqual(all(MOD), [[], [], []], 'nothing left for a later turn-on to deliver');
+    });
+
+    // (round 5, 2) reason off and the settings holding it off, both: a
+    // ceiling's unload or a stale reason never gets the ways back
+    it('reason off but the settings do not hold it off (or cannot be read): the message\'s own words', async() => {
+      await c({storedOff: () => false}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
+      await c({storedOff: () => { throw new Error('unreadable'); }}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
     });
 
     it('no reason (today\'s ch-local), another reason, or no settings tool here: the message\'s own words', async() => {
