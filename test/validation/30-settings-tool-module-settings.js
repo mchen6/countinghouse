@@ -47,12 +47,16 @@ describe('validation 30: countinghouse_settings and module settings', () => {
     return err;
   };
   const make = (extra = {}) => settingsTool.create(Object.assign({file, lockWaitMs: 200, ceiling: () => ceiling,
-    moduleStates: () => modules, applyModuleSettings: async () => { applied += 1; return {applied: 1, refused: []}; }}, extra));
+    moduleStates: () => modules, applyModuleSettings: async (pkg) => { applied += 1; reapply(pkg); return {applied: 1, refused: []}; }}, extra));
+  // what a reread of one module does: its state made again from the file
+  const reapply = (pkg) => {
+    modules = modules.map((m) => (m.name === pkg && m.pkg != null ? Object.assign({}, m, {state: ms.stateFor(m.name, m.pkg, {operator: false, net: []})}) : m));
+  };
   // a client that may show a form (a tested one, its conditions met)
   const formClient = {mayElicit: async () => ({ok: true, client: {name: 'tested-client', version: '1.0.0'}})};
   const loadedWith = (values) => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values}));
-    modules = [{name: W.name, version: W.version, part: false, state: ms.stateFor(W.name, W, {operator: false, net: []})},
+    modules = [{name: W.name, version: W.version, part: false, pkg: W, state: ms.stateFor(W.name, W, {operator: false, net: []})},
       {name: P.name, version: P.version, part: true, state: ms.stateFor(P.name, P, {operator: false, net: []})}];
   };
 
@@ -399,7 +403,20 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       const tool = make({applyModuleSettings: async (pkg) => { asked = pkg; return {applied: 0, refused: [{name: 'module.@acme/weather-tool.units', code: 'SETTING_INVALID'}]}; }});
       const done = await tool.set('module.@acme/weather-tool.units', 'metric');
       assert.strictEqual(asked, '@acme/weather-tool', 'only the module whose value changed');
-      assert.deepStrictEqual({applies: done.applies, refused: done.refused}, {applies: 'not applied', refused: 'SETTING_INVALID'});
+      assert.deepStrictEqual({applies: done.applies, refused: done.refused, kept: done.kept},
+        {applies: 'not applied', refused: {setting: 'module.@acme/weather-tool.units', code: 'SETTING_INVALID'}, kept: undefined});
+    });
+
+    it('another setting of the module refused at the apply: that one named, and the module kept its values', async () => {
+      const tool = make({applyModuleSettings: async () => ({applied: 0, refused: [{name: 'module.@acme/weather-tool.maxResults', code: 'SETTING_INVALID'}]})});
+      const done = await tool.set('module.@acme/weather-tool.units', 'metric');
+      assert.deepStrictEqual({applies: done.applies, refused: done.refused, kept: done.kept},
+        {applies: 'not applied', refused: {setting: 'module.@acme/weather-tool.maxResults', code: 'SETTING_INVALID'}, kept: 'the module kept all of its values'});
+    });
+
+    it('applied first by another reread (this one\'s count 0): what runs decides, so it applies now', async () => {
+      const tool = make({applyModuleSettings: async (pkg) => { reapply(pkg); return {applied: 0, refused: []}; }});
+      assert.strictEqual((await tool.set('module.@acme/weather-tool.units', 'metric')).applies, 'now');
     });
 
     it('a write whose rename fails: the "not made" line is every session\'s, as the change it undoes', async () => {
@@ -448,16 +465,11 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.strictEqual((await tool.set('module.@acme/weather-tool.units', 'metric')).applies, 'next re-read');
     });
 
-    it('another package whose name starts with this one\'s and a dot: its refusal is not this one\'s', async () => {
-      const tool = make({applyModuleSettings: async () => ({applied: 1, refused: [{name: 'module.@acme/weather-tool.x.units', code: 'SETTING_INVALID'}]})});
-      assert.strictEqual((await tool.set('module.@acme/weather-tool.units', 'metric')).applies, 'now');
-    });
-
     it('a flood of module-setting refusals: at most 8 lines a window for a session, the rest one "and N more" line; a new window has room again', async () => {
       const decl = {pick: {type: 'enum', values: ['a', 'b'], default: 'a'}};
       for (let i = 0; i < 11; i += 1) decl[`s${i}`] = {type: 'string'};
       const many = pkgOf('many-tool', decl);
-      modules.push({name: many.name, version: many.version, part: false, state: ms.stateFor(many.name, many, {operator: false, net: []})});
+      modules.push({name: many.name, version: many.version, part: false, pkg: many, state: ms.stateFor(many.name, many, {operator: false, net: []})});
       openShared('flood-1', 'flood-2');
       let now = 1000000;
       const tool = make({clock: () => now});
