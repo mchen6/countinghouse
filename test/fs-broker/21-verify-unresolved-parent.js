@@ -117,7 +117,8 @@ describe('fs-broker 21: an open whose parent was missing at the check is verifie
     };
     proto.stat = async function(o) { return fake(await realStat.call(this, o), o != null && o.bigint === true, X2); };
     try {
-      await assert.rejects(t.broker.handle('open', ['/data/f', 'r']));
+      await assert.rejects(t.broker.handle('open', ['/data/f', 'r']), enoent('/data/f'));
+      assert.ok(t.reports.includes('escape /data/f'), t.reports.join(', '));
       assert.strictEqual(t.broker.fds.size, 0);
     } finally {
       fs.promises.lstat = realLstat;

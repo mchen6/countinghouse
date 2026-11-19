@@ -58,15 +58,18 @@ describe('fs-broker 15: the spawn walk', () => {
 
   // (two different files whose file indexes differ only past 2^53: as a
   // Number they read alike, as Windows' NTFS indexes can; the walk must
-  // tell them apart, or one file's bytes go uncounted)
+  // tell them apart, or one file's bytes go uncounted. Each has a second
+  // name, so the walk keys it by its identity.)
   it('tells two files apart whose inode numbers differ only past Number precision', async () => {
     base = mkdtemp('walk-ino-');
     const data = path.join(base, 'data');
     fs.mkdirSync(data);
     fs.writeFileSync(path.join(data, 'x'), Buffer.alloc(100));
     fs.writeFileSync(path.join(data, 'y'), Buffer.alloc(10));
+    fs.linkSync(path.join(data, 'x'), path.join(data, 'x2'));
+    fs.linkSync(path.join(data, 'y'), path.join(data, 'y2'));
     const real = fs.promises.lstat;
-    const big = {x: (2n ** 60n) + 1n, y: (2n ** 60n) + 2n};
+    const big = {x: (2n ** 60n) + 1n, x2: (2n ** 60n) + 1n, y: (2n ** 60n) + 2n, y2: (2n ** 60n) + 2n};
     fs.promises.lstat = async (p, opts) => {
       const st = await real(p, opts);
       const which = path.basename(String(p));
@@ -75,10 +78,15 @@ describe('fs-broker 15: the spawn walk', () => {
       }
       return st;
     };
-    let r;
-    try { r = await walk.measure([[data, '/data']], {maxListed: 10}); } finally { fs.promises.lstat = real; }
-    assert.strictEqual(r.bytes, 110);
-    assert.strictEqual(r.entries, 2);
+    try {
+      for (const whollyInside of [false, true]) {
+        const r = await walk.measure([[data, '/data']], {maxListed: 10, whollyInside});
+        assert.strictEqual(r.bytes, 110, `whollyInside ${whollyInside}`);
+        assert.strictEqual(r.entries, 4);
+        assert.deepStrictEqual(r.links, []);
+        assert.strictEqual(r.moreLinks, 0);
+      }
+    } finally { fs.promises.lstat = real; }
   });
 
   it('whollyInside counts a file\'s bytes only when all its links are inside the walked tree (review I1)', async () => {
