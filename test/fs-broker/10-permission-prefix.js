@@ -122,6 +122,26 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
         'the module\'s /tmp and its own code overlap -- set --moduleDataPath apart from the module']);
   });
 
+  // (a --moduleDataPath not made yet, reached through a link above it into
+  // the module's own code: refused before anything is made there)
+  it('under enforce, a --moduleDataPath through a link into the module\'s own code refuses before anything is made', async function() {
+    if (process.platform === 'win32') return this.skip();
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-link-')));
+    const mod = path.join(base, 'mod');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.symlinkSync(mod, path.join(base, 'link'));
+    let code = null;
+    try {
+      const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+        options: {moduleDataPath: path.join(base, 'link', 'store'), modulePath: base}, report: () => {}});
+      await fsb.bridge.close();
+    } catch (e) { code = e.code; }
+    assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
+    assert.ok(!fs.existsSync(path.join(mod, 'store')), 'directories were made inside the module\'s own code before the refusal');
+  });
+
   // (and a data directory it can't resolve -- a read denied on the way --
   // refuses, never is compared unresolved)
   it('under enforce, a data directory that can\'t be resolved refuses the spawn', async function() {
