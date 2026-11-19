@@ -55,7 +55,8 @@ describe('validation 31: a module setting\'s value in the history', () => {
       saved = {settingsFile: options.settingsFile};
       options.settingsFile = file;
     });
-    afterEach(() => { Object.assign(options, saved); fs.rmSync(home, {recursive: true, force: true}); });
+    // this file's state ends with it (CI runs a folder in one process)
+    afterEach(() => { settingsTool.resetForTests(); require('../../lib/settings-confirm').resetForTests(); Object.assign(options, saved); fs.rmSync(home, {recursive: true, force: true}); });
 
     it('a confirmed change of a long string: old and new cut, each with the hash of its whole', async () => {
       const before = `${'o'.repeat(66)}`;
@@ -73,9 +74,21 @@ describe('validation 31: a module setting\'s value in the history', () => {
         {old: 'o'.repeat(64), oldSha256: sha(before), new: 'n'.repeat(64), newSha256: sha(after)});
       // the file holds the whole value; the history's hash matches it, as ch-local's outside-edits compares
       assert.strictEqual(sha(JSON.parse(fs.readFileSync(file, 'utf8')).values['module.note-tool.note']), line.newSha256);
-      // get shows the line as written
+      // get shows the line as written, its hash beside the cut value
       const shown = (await tool.get()).history.find((h) => h.setting === 'module.note-tool.note' && h.new !== undefined);
-      assert.strictEqual(shown.new, 'n'.repeat(64));
+      assert.deepStrictEqual({new: shown.new, newSha256: shown.newSha256, old: shown.old, oldSha256: shown.oldSha256},
+        {new: 'n'.repeat(64), newSha256: sha(after), old: 'o'.repeat(64), oldSha256: sha(before)});
+    });
+
+    it('a value not applied (the reread\'s and a load\'s line): kept cut, with the hash of the whole; a key with a pair at its edge is never split', () => {
+      const long = `${'k'.repeat(63)}😀tail`;
+      assert.strictEqual(ms.historyLine('note-tool', 'note', 'not applied', {stored: long}), true);
+      const key = `${'k'.repeat(63)}😀x`;
+      assert.strictEqual(ms.historyLine('note-tool', key, 'not applied', {stored: 7}), true);
+      const [first, second] = lines();
+      assert.deepStrictEqual({kept: first.kept, keptSha256: first.keptSha256}, {kept: `${'k'.repeat(63)}😀`, keptSha256: sha(long)});
+      assert.strictEqual(second.setting, `module.note-tool.${'k'.repeat(63)}😀…`);
+      assert.deepStrictEqual({kept: second.kept, keptSha256: second.keptSha256}, {kept: 7, keptSha256: undefined});
     });
 
     it('a request that expired unanswered: its asked value cut, with the hash of the whole', () => {
