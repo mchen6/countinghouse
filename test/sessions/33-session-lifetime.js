@@ -621,12 +621,16 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
     });
 
     it('a module whose spawn has begun is known to the overlap judgement before its load is confirmed (the high review of #452)', () => {
-      const spawning = new Map([['b', path.join(env.dataRoot, 'mods', 'b')]]);
-      const known = ModuleManager.prototype.knownModuleRoots.call({modules: {}, spawningModules: spawning});
+      const mine = {};
+      const spawning = new Map([['b', {path: path.join(env.dataRoot, 'mods', 'b'), token: mine}]]);
+      const mgr = {modules: {}, spawningModules: spawning};
+      const known = ModuleManager.prototype.knownModuleRoots.call(mgr);
       assert.deepStrictEqual(known, [{name: 'b', root: path.join(env.dataRoot, 'mods', 'b')}]);
-      // (and retired once its load is confirmed)
-      const confirmed = {modules: {}, spawningModules: spawning, emit: () => {}, unitLoaded: () => {}};
-      ModuleManager.prototype.onModuleLoad.call(confirmed, 'b', {}, '1.0.0');
+      // (retired only by its own spawn, or by an unload at its own path)
+      ModuleManager.prototype.retireSpawning.call(mgr, 'b', {token: {}});
+      ModuleManager.prototype.retireSpawning.call(mgr, 'b', {path: '/elsewhere.invalid'});
+      assert.strictEqual(spawning.has('b'), true);
+      ModuleManager.prototype.retireSpawning.call(mgr, 'b', {token: mine});
       assert.strictEqual(spawning.has('b'), false);
     });
 
