@@ -143,6 +143,29 @@ const STEPS = {
       } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); }
     };
     const vmSame = (await viaVm('json-stringify-safe', 'json-stringify-safe')) === (await viaVm('no-such-isolation-pkg', 'no-such-isolation-pkg')) ? 'same' : 'differs';
+    // (the third round on #440: from that claimed CommonJS parent, a
+    // lowercase file: URL is an import, judged: a runtime file, a missing
+    // one, a runtime directory and an encoded separator give one answer
+    // each, the first three the one refusal)
+    const fileUrl = (rel) => require('url').pathToFileURL(path.join(root, rel)).href;
+    const claimed = [
+      await viaVm(fileUrl('lib/node-version.js'), fileUrl('lib/node-version.js')),
+      await viaVm(fileUrl('lib/no-such-isolation.js'), fileUrl('lib/no-such-isolation.js')),
+      await viaVm(fileUrl('lib'), fileUrl('lib'))
+    ];
+    const claimedSame = claimed.every((c) => c === claimed[0]) && /^ERR_MODULE_NOT_FOUND\|.*countinghouse module sandbox/.test(claimed[0]) ? 'same' : `claimed(${claimed.join(' / ')})`;
+    const encoded = [await viaVm(`${fileUrl('lib')}/a%2Fb.js`, 'a%2Fb.js'), await viaVm(`${fileUrl('lib')}/node-version%2F.js`, 'node-version%2F.js')];
+    const encodedSame = encoded.every((c) => /^ERR_INVALID_MODULE_SPECIFIER\|/.test(c)) && encoded[0].split('|')[0] === encoded[1].split('|')[0] ? 'same' : `encodedClaimed(${encoded.join(' / ')})`;
+    // (a bare name holding a ':' that is no URL, and the empty name: the
+    // one refusal, never Node's walk above the root)
+    const colonBare = (await viaVm('json-stringify-safe/nope.js?a:b', 'json-stringify-safe')) === (await viaVm('no-such-isolation-pkg/nope.js?a:b', 'no-such-isolation-pkg')) ? 'same' : 'colonBare';
+    // (Module._resolveFilename called directly with a runtime file's path,
+    // against a missing one)
+    const direct = (name) => { try { M._resolveFilename(path.join(root, 'lib', name), module); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(name).join('NAME'); } };
+    const directSame = direct('node-version.js') === direct('no-such-isolation.js') ? 'same' : `direct(${direct('node-version.js')} / ${direct('no-such-isolation.js')})`;
+    let empty;
+    try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
+    const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;
     // (a vm script with no filename: a relative name climbing from the
     // working directory, /app, to a runtime file, against a missing one; the
     // second round on #440)
@@ -164,7 +187,7 @@ const STEPS = {
     const missing = `${await noName('./no-such-isolation.mjs', 'no-such-isolation.mjs')} ${await noName('./a%2Fb.mjs', 'a%2Fb.mjs')}`;
     const hostNamed = (missing.match(/(?<=^|[\s"'(|])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p));
     const virtualOnly = hostNamed.length === 0 ? 'same' : `host(${hostNamed.join(',')})`;
-    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame} ${virtualOnly}`;
+    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame} ${virtualOnly} ${claimedSame} ${encodedSame} ${colonBare} ${directSame} ${emptySame}`;
   },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a

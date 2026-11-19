@@ -101,11 +101,11 @@ describe('sandbox 05: worker lockdown', function() {
       it(`blocks ${what} and logs it`, async () => {
         const r = await mcpCall(testPort(9608), KEY, TOOL, arg != null ? {what: what, arg: arg} : {what: what});
         assert.strictEqual(r.isError, false, JSON.stringify(r));
-        // (a path outside is invisible under enforce: the file broker's
-        // _findPath answers it missing, so a load of one finds nothing, and
-        // Node's own not-found is what the module sees; B1's loadSource
-        // compiled its source there before)
-        if (what === 'loadSource') assert.deepStrictEqual(toolOutput(r), {outcome: 'allowed', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
+        // (a path outside is invisible under enforce: a resolution headed
+        // outside the module's root is the one refusal, found or not, the
+        // third round on #440; B1's loadSource compiled its source there
+        // before)
+        if (what === 'loadSource') assert.deepStrictEqual(toolOutput(r), {outcome: 'blocked', code: 'MODULE_NOT_FOUND'}, JSON.stringify(r));
         else assert.strictEqual(toolOutput(r).outcome, 'blocked', `${what}: ${JSON.stringify(r)}`);
         assert.ok(server.output.includes('module sandbox: sandbox-probe violation'), server.output.slice(-2000));
       });
@@ -218,7 +218,11 @@ describe('sandbox 05: worker lockdown', function() {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
       }
       // (the assignment is said under audit, as the loader's statics' are)
-      if (mode === 'audit') await waitFor(() => server.output.slice(from).includes('violation vm vm.runInThisContext replaced'), 20000, 'the vm assignment line');
+      if (mode === 'audit') {
+        await waitFor(() => server.output.slice(from).includes('violation vm vm.runInThisContext replaced'), 20000, 'the vm assignment line');
+        await waitFor(() => server.output.slice(from).includes('violation vm vm.compileFunction redefined'), 20000, 'the vm redefinition line');
+        await waitFor(() => server.output.slice(from).includes('violation vm vm.runInNewContext removed'), 20000, 'the vm delete line');
+      }
     });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
@@ -256,10 +260,9 @@ describe('sandbox 05: worker lockdown', function() {
     it(`loadSource: no source compiled under a countinghouse filename; ${mode === 'enforce' ? 'the path is invisible' : 'the real file, reported'}`, async () => {
       const from = server.output.length;
       const r = toolOutput(await mcpCall(port, KEY, TOOL, {what: 'loadSource', arg: OUTSIDE_FILE}));
-      // (under enforce a path outside is invisible: the file broker's
-      // _findPath answers it missing, and Node's own not-found is what the
-      // module sees)
-      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'allowed', code: 'MODULE_NOT_FOUND'});
+      // (under enforce a path outside is invisible: the one refusal, found
+      // or not, as for any resolution headed outside the root)
+      if (mode === 'enforce') assert.deepStrictEqual(r, {outcome: 'blocked', code: 'MODULE_NOT_FOUND'});
       else {
         assert.deepStrictEqual(r, {outcome: 'allowed', code: null});
         await waitFor(() => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: sandbox-probe violation require') && l.includes('cli-options')),

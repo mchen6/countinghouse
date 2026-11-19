@@ -118,7 +118,11 @@ const ATTEMPTS = {
     const vm = require('vm');
     const was = vm.runInThisContext;
     try { vm.runInThisContext = function() {}; } catch (e) { /* refused */ }
+    // (a redefinition and a delete too: said under vm as the assignment is)
+    try { Object.defineProperty(vm, 'compileFunction', {value: function() {}}); } catch (e) { /* refused */ }
+    try { Reflect.deleteProperty(vm, 'runInNewContext'); } catch (e) { /* refused */ }
     if (vm.runInThisContext !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+    if (typeof(vm.runInNewContext) !== 'function') throw Object.assign(new Error('removed'), {code: 'REMOVED'});
   },
   // ... a script asked only to produce a cache is never marked rejected
   vmProduce:        () => {
