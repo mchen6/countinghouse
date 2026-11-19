@@ -48,7 +48,8 @@ const own = async () => {
       // (a POSIX path, or a Windows one by its drive, never the virtual
       // drive's \app)
       const m = String(e.message);
-      const host = (m.match(/(?<=^|[\s"'(])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p))
+      // (the virtual root's URL form on Windows is /<V>:/app)
+      const host = (m.match(/(?<=^|[\s"'(])(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/([A-Za-z]:\/)?app(\/|$)/.test(p))
         .concat((m.match(/(?<=^|[\s"'(/])[A-Za-z]:[\\/][^\s'"]*/g) || []).filter((p) => !/^[A-Za-z]:[\\/]app([\\/]|$)/i.test(p)));
       return host.length === 0 ? e.code : `host(${host.join(',')})`;
     }
