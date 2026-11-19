@@ -264,15 +264,20 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   // the medium review of the #449 fixes, 1: an off with ch-local's record
   // unreadable names no module known to be installed, so it counts (else any
   // name, without end, each a line and a notice)
-  it('an off while ch-local\'s record cannot be read counts against the budget; past it, the terminal', async () => {
+  // (#449's high review, round 3, 1: counted, but a tightening is never
+  // refused: past the budget it is still made; the ons that follow go to the
+  // terminal)
+  it('an off while ch-local\'s record cannot be read counts against the budget, and is never refused', async () => {
     fs.writeFileSync(path.join(dir, 'modules.json'), '{"modules": ');
     const t = tool();
-    for (let i = 0; i < 32; i++) assert.strictEqual((await t.set(`enabled.made-up-${i}`, 'off')).new, 'off', `${i}`);
-    const e = await refused(t.set('enabled.made-up-32', 'off'), 'SETTING_NEEDS_CONFIRMATION');
-    assert.match(e.message, /ch-local settings set enabled\.made-up-32 off/);
-    // the record readable again: an installed module's off is made, uncounted
+    for (let i = 0; i < 40; i++) assert.strictEqual((await t.set(`enabled.made-up-${i}`, 'off')).new, 'off', `${i}`);
+    assert.strictEqual(history().filter((l) => /^enabled\.made-up-/.test(l.setting) && l.new === false).length, 40, 'each one a line');
+    // the record readable again: an installed module's off is made; an on is
+    // past the budget, so the terminal's
     record({[TOOL]: {version: '1.2.0', role: null}});
     assert.strictEqual((await t.set(`enabled.${TOOL}`, 'off')).new, 'off');
+    await refused(t.set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    assert.match(history().pop().change, /32 changes made/);
   });
 
   it('the budget counts a module turned on, and is checked under the lock: confirmations at once never pass it together', async () => {
