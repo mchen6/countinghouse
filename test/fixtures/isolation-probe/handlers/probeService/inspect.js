@@ -156,8 +156,11 @@ const STEPS = {
       await tryImport('dep/../../../../no-such-climb.mjs');
       tryRequire('dep/../../../../no-such-climb.js');
       tryRequire('dep/x?/../../../../../no-such-climb.js');
+      tryRequire('dep\\..\\..\\..\\..\\no-such-climb.js');
     } finally { delete Object.prototype.WATCH_REPORT_DEPENDENCIES; }
     out.push(ran === 'not run' ? 'same' : 'ranInStep');
+    // (a backslash spelling of a climbing subpath is the one refusal too)
+    out.push(tryRequire('dep\\..\\..\\lib\\bare-target.mjs') === tryRequire('nosuchdep\\..\\..\\lib\\bare-target.mjs') ? 'same' : 'backslash');
     // (a getter on Object.prototype named as the lookup's own fields never
     // runs inside the hook, and changes nothing)
     let protoRan = 'not run';
