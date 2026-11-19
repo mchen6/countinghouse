@@ -438,6 +438,33 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.strictEqual((await tool.set('module.@acme/weather-tool.units', 'metric')).applies, 'now');
     });
 
+    it('a flood of module-setting refusals: at most 8 lines a window for a session, the rest one "and N more" line; a new window has room again', async () => {
+      const decl = {pick: {type: 'enum', values: ['a', 'b'], default: 'a'}};
+      for (let i = 0; i < 11; i += 1) decl[`s${i}`] = {type: 'string'};
+      const many = pkgOf('many-tool', decl);
+      modules.push({name: many.name, version: many.version, part: false, state: ms.stateFor(many.name, many, {operator: false, net: []})});
+      openShared('flood-1', 'flood-2');
+      let now = 1000000;
+      const tool = make({clock: () => now});
+      const ctx = {shared: true, session: 'flood-1'};
+      for (let i = 0; i < 11; i += 1) await refused(tool.set(`module.many-tool.s${i}`, 'x', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      // asked again: counted on its own line's group, never another line
+      await refused(tool.set('module.many-tool.s0', 'y', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      const own = () => history().filter((h) => typeof(h.setting) === 'string' && h.setting.startsWith('module.many-tool.s') && h.asked !== undefined);
+      assert.strictEqual(own().length, 8, JSON.stringify(history()));
+      // a write: the counts are written, the rest as one line
+      await tool.set('module.many-tool.pick', 'b', 'settings tool', ctx);
+      const more = history().filter((h) => h.setting === 'module settings');
+      assert.deepStrictEqual(more.map((h) => [h.change, h.count, h.session]), [['... and 3 more module settings refused', 3, 'flood-1']]);
+      // another session has its own room
+      await refused(tool.set('module.many-tool.s10', 'x', 'settings tool', {shared: true, session: 'flood-2'}), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      assert.ok(history().some((h) => h.setting === 'module.many-tool.s10' && h.session === 'flood-2'));
+      // a new window: room again
+      now += confirmLib.WINDOW_MS + 1;
+      await refused(tool.set('module.many-tool.s9', 'x', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      assert.ok(history().some((h) => h.setting === 'module.many-tool.s9' && h.session === 'flood-1'));
+    });
+
     it('the budget binds the form too: a session past its 32 is not asked', async () => {
       const tool = make(formClient);
       const ctx = {shared: true, session: 'budget-form'};
