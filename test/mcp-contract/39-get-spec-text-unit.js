@@ -16,7 +16,8 @@ const spec = () => JSON.parse(JSON.stringify({
       'urn:x:serviceID:s': {
         serviceType: 'urn:x:service:s:1',
         actionList: [
-          {name: 'tool', title: `A${ZWSP}title\nline`, description: `does${RLO} it\nwell\tok`, input: {schema: '/s/tool/input'}},
+          {name: 'tool', title: `A${ZWSP}title\nline`, description: `does${RLO} it\nwell\tok`, input: {schema: '/s/tool/input'},
+            questions: {confirm: {message: `Proceed${RLO}?\nnow`, schema: '/s/tool/confirm'}}},
           {name: 'res', description: `a${ZWSP}resource`, resource: {uriTemplate: 'texty://x', name: 'r', title: `R${RLO}`, description: `the${ZWSP}\nfile`}},
           {name: 'plain', description: 'nothing hidden'}
         ]
@@ -32,6 +33,8 @@ describe('mcp-contract 39: get-spec\'s declared text, as the lists show it (unit
     const [tool, res, plain] = out.device.serviceList['urn:x:serviceID:s'].actionList;
     assert.strictEqual(tool.title, 'A title line');
     assert.strictEqual(tool.description, 'does  it\nwell\tok');
+    assert.strictEqual(tool.questions.confirm.message, 'Proceed ? now', 'a question\'s message, one line as its dialog');
+    assert.strictEqual(tool.questions.confirm.schema, '/s/tool/confirm');
     assert.strictEqual(res.description, 'a resource');
     assert.strictEqual(res.resource.title, 'R ');
     assert.strictEqual(res.resource.description, 'the \nfile');
@@ -48,7 +51,7 @@ describe('mcp-contract 39: get-spec\'s declared text, as the lists show it (unit
     const out = cleanedSpecText(served);
     assert.strictEqual(JSON.stringify(served), before, 'the served spec untouched');
     assert.notStrictEqual(out, served);
-    const strip = (s) => JSON.parse(JSON.stringify(s, (k, v) => (['title', 'description', 'text'].includes(k) ? undefined : v)));
+    const strip = (s) => JSON.parse(JSON.stringify(s, (k, v) => (['title', 'description', 'text', 'message'].includes(k) ? undefined : v)));
     assert.deepStrictEqual(strip(out), strip(served), 'the same structure');
     assert.deepStrictEqual(out.device.serviceList['urn:x:serviceID:s'].actionList[1].resource.uriTemplate, 'texty://x');
   });
