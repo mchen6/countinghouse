@@ -299,4 +299,35 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
       options.singleIdentity = savedSingle;
     }
   });
+
+  // B-uniform (the reviewer's ruling on #457's probe): every tool a caller
+  // can't see -- outside its grants, an unlisted part outside them, one whose
+  // module is hidden while it goes on or off, a name never registered --
+  // takes the same path to the same answer: the key's grant set read once
+  // (tool-registry grantsForCall), then the unknown tool's, byte for byte.
+  it('a tool the caller can\'t see: one grant read, then the unknown tool\'s answer, whatever the reason', async () => {
+    const real = toolRegistry.grantsForCall;
+    let reads = 0;
+    toolRegistry.grantsForCall = (key, cb) => { reads++; cb(null, new Set(['d3', 'd4'])); };
+    try {
+      const table = toolRegistry.buildToolTargets(ci, {includeUnlisted: true});
+      const nameOf = (d) => Object.keys(table).find((n) => table[n].deviceID === d);
+      visibility.hide(['ch-pack-docs']);
+      const cases = {'outside the grants': nameOf('d1'), 'an unlisted part outside them': nameOf('d2'),
+        'hidden while it goes on or off': nameOf('d3'), 'never registered': 'no_such_tool'};
+      const seen = {};
+      for (const [why, name] of Object.entries(cases)) {
+        assert.ok(typeof(name) === 'string', why);
+        const before = reads;
+        const r = await request(ci, A, 'tools/call', {name, arguments: {}});
+        seen[why] = `${reads - before} ${JSON.stringify(r).split(name).join('<name>')}`;
+      }
+      const want = seen['never registered'];
+      assert.ok(want.startsWith('1 ') && want.includes('unknown tool: <name>'), want);
+      assert.deepStrictEqual(seen, Object.fromEntries(Object.keys(cases).map((k) => [k, want])));
+    } finally {
+      toolRegistry.grantsForCall = real;
+      visibility.show(['ch-pack-docs']);
+    }
+  });
 });
