@@ -189,6 +189,13 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
       options: {moduleDataPath: path.join(base, 'data'), modulePath: base}, report: () => {}});
     await fsb.bridge.close();
     assert.ok(fs.existsSync(path.join(base, 'data', 'm')));
+    // (and a package.json the module itself writes in its /data or /tmp
+    // decides nothing: it spawns again)
+    fs.writeFileSync(path.join(base, 'data', 'm', 'data', 'package.json'), '{"name": "mine"}');
+    fs.writeFileSync(path.join(base, 'data', 'm', 'tmp', 'package.json'), '{"name": "mine"}');
+    const again = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+      options: {moduleDataPath: path.join(base, 'data'), modulePath: base}, report: () => {}});
+    await again.bridge.close();
   });
 
   // (a --moduleDataPath not made yet, reached through a link above it into
