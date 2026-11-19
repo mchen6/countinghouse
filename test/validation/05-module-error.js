@@ -114,6 +114,43 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
   // verify codes Node gives a TLS error. The list is
   // CountinghouseError.isForeignCode, which countinghouse-validate will read
   // too (step 1 (e)).
+  // ctx.error's fourth argument (the Reviewer, after #445): a module says
+  // whose fault an error of its own is, 'caller' or 'module' (the default),
+  // never the runtime's; carried on every copy and across a reply
+  describe('kind: a module\'s error its module says is the caller\'s', () => {
+    it('is kind caller with {kind: \'caller\'}, kind module by default or with anything else', () => {
+      assert.strictEqual(CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', {kind: 'caller'}).kind, 'caller');
+      for (const opts of [undefined, null, {}, {kind: 'module'}, {kind: 'runtime'}, {kind: 'operator'}, 'caller', {kind: ['caller']}]) {
+        assert.strictEqual(CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', opts).kind, 'module', JSON.stringify(opts));
+      }
+    });
+    it('is carried on the runtime\'s copy and across a reply, both ways and over a hop', () => {
+      const e = CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', {row: 7}, 'probe', {kind: 'caller'});
+      const copy = CountinghouseError.answerable(e);
+      assert.deepStrictEqual([copy.code, copy.origin, copy.kind], ['PROBE_BAD_INPUT', 'module', 'caller']);
+      const fields = CountinghouseError.replyFields(copy);
+      assert.strictEqual(fields.errKind, 'caller');
+      const decoded = CountinghouseError.fromReplyFields(fields);
+      assert.deepStrictEqual([decoded.code, decoded.origin, decoded.kind], ['PROBE_BAD_INPUT', 'module', 'caller']);
+      assert.strictEqual(require('../../lib/countinghouse-error').hopError(copy).kind, 'caller');
+      // the default crosses as no errKind at all
+      assert.ok(!('errKind' in CountinghouseError.replyFields(CountinghouseError.moduleOwn('PROBE_BROKEN', 'x'))));
+      // a reply's errKind other than 'caller' is the module's
+      assert.strictEqual(CountinghouseError.fromReplyFields(Object.assign({}, fields, {errKind: 'runtime'})).kind, 'module');
+    });
+    it('a catalogue code is the runtime\'s MODULE_CODE_RESERVED whatever kind its module named', () => {
+      const LOG = require('../../lib/logger');
+      const saved = LOG.W;
+      LOG.W = () => {};
+      try {
+        const out = CountinghouseError.answerable(CountinghouseError.moduleOwn('ARGUMENTS_INVALID', 'x', null, 'probe', {kind: 'caller'}));
+        assert.deepStrictEqual([out.code, out.origin, out.kind], ['MODULE_CODE_RESERVED', 'runtime', 'module']);
+      } finally {
+        LOG.W = saved;
+      }
+    });
+  });
+
   describe('fromModule: a plain Error with a code', () => {
     const plain = (code, extra) => Object.assign(new Error('why'), {code: code}, extra || {});
     it('is the module\'s error when its code looks like one, and not a catalogue code', () => {

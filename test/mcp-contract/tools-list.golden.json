@@ -493,7 +493,7 @@
               "type": "object",
               "properties": {
                 "calls": {
-                  "title": "errors by code: the runtime's codes, TOOL_ERROR, a system error's, MODULE_ERROR (a module's own code), NO_CODE, UNRECORDED (an older record), OTHER (anything else, and past the 32 most frequent)",
+                  "title": "errors by code: the runtime's codes, TOOL_ERROR, a system error's, MODULE_ERROR (a module's own code), CALLER_ERROR (a module's own code for the caller's mistake), NO_CODE, UNRECORDED (an older record), OTHER (anything else, and past the 32 most frequent)",
                   "type": "object",
                   "propertyNames": {
                     "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
@@ -506,7 +506,7 @@
                   "maxProperties": 33
                 },
                 "serverCalls": {
-                  "title": "errors by code: the runtime's codes, TOOL_ERROR, a system error's, MODULE_ERROR (a module's own code), NO_CODE, UNRECORDED (an older record), OTHER (anything else, and past the 32 most frequent)",
+                  "title": "errors by code: the runtime's codes, TOOL_ERROR, a system error's, MODULE_ERROR (a module's own code), CALLER_ERROR (a module's own code for the caller's mistake), NO_CODE, UNRECORDED (an older record), OTHER (anything else, and past the 32 most frequent)",
                   "type": "object",
                   "propertyNames": {
                     "pattern": "^[A-Z][A-Z0-9_]{0,63}$",

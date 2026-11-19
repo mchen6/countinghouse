@@ -168,14 +168,22 @@ session, no user.
 
 ## Failing a call
 
-Return `ctx.error(code, message?, details?)`:
+Return `ctx.error(code, message?, details?, options?)`:
 
 ```js
 module.exports = async (input, ctx) => {
-  if (typeof input.text !== 'string') return ctx.error('INPUT_REJECTED', 'text must be a string');
+  if (typeof input.text !== 'string') return ctx.error('INPUT_REJECTED', 'text must be a string', null, {kind: 'caller'});
   return {output: {text: input.text.toUpperCase()}};
 };
 ```
+
+An error is your module's fault by default. When the caller is at fault
+instead (input your schema could not rule out, a row that doesn't exist),
+pass `{kind: 'caller'}` as the fourth argument: the error's `kind` is then
+`'caller'`, and the usage report counts it as `CALLER_ERROR`, the caller's,
+not `MODULE_ERROR`. Only `'caller'` and `'module'` are taken; anything else
+is ignored, and a module never says an error is the runtime's. The answer
+itself is the same either way.
 
 The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,
