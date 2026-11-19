@@ -57,40 +57,14 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     fs.rmSync(spaced, {recursive: true, force: true});
     probe = path.join(spaced, 'isolation-probe');
     fs.cpSync(PROBE, probe, {recursive: true});
-    // (a fresh own file, for the count of Node's calls into identity's
-    // Module._stat wrapper; the _stat PR)
+    // (The _stat PR: a package.json "main" leading outside the root is
+    // refused at load under enforce, sandbox 03; here, what Node's own walk
+    // does now that it is judged.)
     fs.writeFileSync(path.join(probe, 'lib', 'stat-count.js'), 'module.exports = "counted";\n');
-    // (two directories of the module's own whose package.json "main" leads
-    // outside its root: to a runtime file, and to a missing one beside it;
-    // the review of the third round on #440)
-    // (c and d with an index.js of their own, which Node falls back to when
-    // "main" names nothing)
-    for (const [dir, target, index] of [['main-out-a', 'node-version.js', false], ['main-out-b', 'no-such-isolation.js', false],
-      ['main-out-c', 'node-version.js', true], ['main-out-d', 'no-such-isolation.js', true]]) {
-      fs.mkdirSync(path.join(probe, 'lib', dir));
-      const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
-      fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), JSON.stringify({main}));
-      if (index) fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
-    }
-    // (e and f: the outside "main" written first and a number after it,
-    // which JSON.parse keeps and Node's own reader may not; g: a directory
-    // with an outside "main" beside a file of its name: refused too, the
-    // conservative rule)
-    for (const [dir, target] of [['main-out-e', 'node-version.js'], ['main-out-f', 'no-such-isolation.js'], ['main-out-g', 'node-version.js']]) {
-      fs.mkdirSync(path.join(probe, 'lib', dir));
-      const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
-      fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), `{"main": ${JSON.stringify(main)}, "main": 1}`);
-      fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
-    }
-    fs.writeFileSync(path.join(probe, 'lib', 'main-out-g.js'), 'module.exports = "sibling";\n');
     // (the root itself: an index.js of its own, and a file beside the root,
-    // outside it, that Node would try first with an extension; and a
-    // directory whose "main" is the root)
+    // outside it, that Node would try first with an extension)
     fs.writeFileSync(path.join(probe, 'index.js'), 'module.exports = "root";\n');
     fs.writeFileSync(path.join(spaced, 'isolation-probe.js'), 'module.exports = "beside";\n');
-    fs.mkdirSync(path.join(probe, 'lib', 'main-root'));
-    fs.writeFileSync(path.join(probe, 'lib', 'main-root', 'package.json'), JSON.stringify({main: '../..'}));
-    fs.writeFileSync(path.join(probe, 'lib', 'main-root', 'index.js'), 'module.exports = 1;\n');
     // (and one that loads: a package.json whose only outside "main" is
     // nested, not the package's; one JSON.parse can't read, a UTF-8 BOM's
     // say, never loads: the module's tree check refuses it)
