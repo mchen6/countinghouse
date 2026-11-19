@@ -241,6 +241,13 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     fs.mkdirSync(path.join(store, 'foo'), {recursive: true});
     fs.symlinkSync(path.join(modules, 'bar'), path.join(store, 'foo', 'data'));
     assert.strictEqual(await tryWith('foo', mod, store), 'MODULE_SANDBOX_REFUSED');
+    // (and one at /data into a scope directory, which holds modules but no
+    // package.json of its own)
+    fs.mkdirSync(path.join(modules, '@acme', 'baz'), {recursive: true});
+    fs.writeFileSync(path.join(modules, '@acme', 'baz', 'package.json'), '{"name": "@acme/baz"}');
+    fs.mkdirSync(path.join(store, 'qux'), {recursive: true});
+    fs.symlinkSync(path.join(modules, '@acme'), path.join(store, 'qux', 'data'));
+    assert.strictEqual(await tryWith('qux', mod, store), 'MODULE_SANDBOX_REFUSED');
   });
 
   // (but a --moduleDataPath beside the modules in --modulePath is in no
