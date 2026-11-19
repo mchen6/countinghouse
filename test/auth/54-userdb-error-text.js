@@ -97,6 +97,23 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       assert.deepStrictEqual(logged.slice(1), ['view broken at couch.internal.example:5984', 'another reason']);
       raw.listDevices = (k, cb) => cb(null, {devices: []});
       await ask((cb) => p.listDevices('k', cb));
+      // a provider that throws is answered the catalogue's words, its text in
+      // the log only; a call with no callback is refused, never handed to the
+      // provider; a throw from the caller's own callback is its own (the
+      // final high review of #445, 4)
+      raw.authenticate = () => { throw new Error('sync failure at couch.internal.example:5984'); };
+      const thrown = await ask((cb) => p.authenticate('k', 'd', 's', 'a', cb));
+      assert.strictEqual(thrown.err.code, 'SYSTEM_ERROR_USERDB_NA');
+      assert.ok(!/couch\.internal/.test(thrown.err.message), thrown.err.message);
+      assert.ok(logged.some((l) => /sync failure/.test(l)), JSON.stringify(logged));
+      let reached = false;
+      raw.listDevices = () => { reached = true; };
+      assert.throws(() => p.listDevices('k'), (e) => e.code === 'SYSTEM_ERROR_USERDB_NA' && !/couch/.test(e.message));
+      assert.strictEqual(reached, false);
+      raw.listDevices = (k, cb) => cb(null, {devices: []});
+      let calls = 0;
+      assert.throws(() => p.listDevices('k', () => { calls++; throw new Error('the caller\'s own'); }), /the caller's own/);
+      assert.strictEqual(calls, 1, 'answered once');
     } finally {
       LOG.E = saved.E;
       LOG.W = saved.W;
