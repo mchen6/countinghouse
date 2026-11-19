@@ -176,6 +176,9 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     const line = history().find((l) => l.setting === `enabled.${TOOL}`);
     assert.deepStrictEqual({old: line.old, new: line.new}, {old: true, new: false});
     assert.strictEqual(got.said, `${TOOL} off is written; it turns off for every session as soon as ch-local applies it.`);
+    // (the medium review of round 3, 6) one not loaded: no unload comes, so
+    // none is promised
+    assert.strictEqual((await tool().set(`enabled.${SCENARIO}`, 'off')).said, `${SCENARIO} off is written; it is not loaded now, so nothing else changes.`);
     // the text the unload tells (#449's high review, 7: the two ways back)
     assert.strictEqual(settingsTool.offNotice(TOOL, [CALLER]),
       `${TOOL} is turned off for all your sessions. ${CALLER} calls it, so ${CALLER} is off too. They stay off until ${TOOL} is turned on again: here (you'll be asked to confirm) or at a terminal: \`ch-local settings set enabled.${TOOL} on\`.`);
