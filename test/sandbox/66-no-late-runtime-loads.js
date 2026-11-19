@@ -102,7 +102,7 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
     });
     for (const [step, reached] of STEPS) {
       it(`${step}: reaches its path, and nothing of the runtime's is loaded or resolved`, async () => {
-        const r = await mcpCall(port, KEY, TOOL, {step});
+        const r = await mcpCall(port, KEY, TOOL, {step, noStore});
         await settle();
         assert.ok(reached(detail(r), r, server.output, mode), `${step}: ${JSON.stringify(r).slice(0, 800)}`);
         assert.deepStrictEqual(late(), [], late().join('\n'));

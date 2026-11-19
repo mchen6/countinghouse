@@ -56,9 +56,12 @@ describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
       '\\\\?\\D:package.json', 'D:\\mods\\package.json', '/app/package.json']) assert.strictEqual(f(other), other);
     assert.strictEqual(fromNamespacedFor(false)('\\\\?\\D:\\x'), '\\\\?\\D:\\x', 'not Windows: unchanged');
     // (a component Win32 would trim in the plain form: no path)
-    for (const trimmed of ['\\\\?\\D:\\mods\\.. \\x', '\\\\?\\D:\\mods\\a.\\package.json', '\\\\?\\D:\\mods\\x ', '\\\\?\\UNC\\srv\\share.\\x']) {
+    for (const trimmed of ['\\\\?\\D:\\mods\\.. \\x', '\\\\?\\D:\\mods\\a.\\package.json', '\\\\?\\D:\\mods\\x ', '\\\\?\\UNC\\srv\\share.\\x',
+      '\\\\?\\D:\\mods\\sub\\.. /.. /secret', 'D:\\mods\\m\\.. \\.. \\outside\\f', 'D:/mods/x./y']) {
       assert.strictEqual(f(trimmed), null, trimmed);
     }
+    // ('.' and '..' themselves, and a dot inside a name, are paths)
+    for (const kept of ['D:\\mods\\..\\x', './a/../b', '..', 'D:\\m\\v1.2\\x', 'D:\\m\\.hidden\\x']) assert.strictEqual(f(kept), kept, kept);
   });
 
   it('the broker\'s path form: <V>:\\app is /app, a string or a Buffer; another drive stays a host path', () => {

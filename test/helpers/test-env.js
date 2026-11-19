@@ -162,19 +162,25 @@ function startOn(port, readyMs) {
 // test/helpers/port-guard.js).
 const handedOut = (port) => [...assigned.values()].includes(Number(port));
 
-// Whether the Redis the servers a test starts use answers a connection:
-// the explicit signal a step that needs a store takes, never the OS (the
-// Windows subset's runner has none).
-const redisAnswers = (timeoutMs = 1500) => new Promise((resolve) => {
+// Whether the Redis the servers a test starts use answers PING: the
+// explicit signal a step that needs a store takes, never the OS (the
+// Windows subset's runner has none). A Redis the run configured
+// (CH_TEST_REDIS_URL) that doesn't answer is an error, never a quiet skip.
+// (A Redis needing auth or TLS answers as none: these tests use neither.)
+const redisAnswers = (timeoutMs = 1500) => new Promise((resolve, reject) => {
+  const configured = redisUrl() != null;
+  const none = (why) => (configured ? reject(new Error(`CH_TEST_REDIS_URL is set but its Redis doesn't answer PING: ${why}`)) : resolve(false));
   let c;
   try {
     const at = redisConnectionFor(0);
     c = require('net').connect({host: at.host, port: at.port});
-  } catch (e) { resolve(false); return; }
-  const done = (ok) => { clearTimeout(timer); c.destroy(); resolve(ok); };
-  const timer = setTimeout(() => done(false), timeoutMs);
-  c.once('connect', () => done(true));
-  c.once('error', () => done(false));
+  } catch (e) { none(e.message); return; }
+  let got = '';
+  const done = (ok, why) => { clearTimeout(timer); c.destroy(); if (ok) resolve(true); else none(why); };
+  const timer = setTimeout(() => done(false, 'no answer in time'), timeoutMs);
+  c.once('connect', () => c.write('PING\r\n'));
+  c.on('data', (b) => { got += String(b); if (got.includes('\r\n')) done(got.startsWith('+PONG'), `answered ${JSON.stringify(got.slice(0, 40))}`); });
+  c.once('error', (e) => done(false, e.code || e.message));
 });
 
 module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, redisConnectionFor, redisAnswers, startShell, stopAll, startPrivateRedis};
