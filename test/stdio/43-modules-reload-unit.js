@@ -95,12 +95,14 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
       const branchLoad = how != null && how !== true && how.generation != null;
       if (version === failVersion && name === failName) return setImmediate(() => cb(Object.assign(new Error('no spawn'), {code: 'LOAD_MODULE_FAIL'})));
       log.push(`held ${name}: ${mm.isHeld(name)}`);
+      // (the branch's load: the operator's unload lands before this load puts
+      // the module in the map, so it finds nothing to unload)
+      if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
       const wm = instance(name, version, p);
       mm.modules[name] = wm;
       mm.unitLoaded(name);
       if (switching && unloadsIn(name, 'spawn')) operatorUnload(name);
-      if (branchLoad && unloadsIn(name, 'load')) operatorUnload(name);
-      setImmediate(() => cb(null));
+      setImmediate(() => cb(null, wm));
       // its registration, a little later (its devices from then on)
       const late = switching && unloadDuring != null && unloadDuring.name === name && unloadDuring.when === 'registration';
       if (late) wm.deviceList = {};
@@ -484,5 +486,8 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const at = log.indexOf('operator unload @t/ch-step-p');
     assert.ok(at >= 0, log.join('\n'));
     assert.ok(!log.slice(at + 1).some((l) => /^held @t\/ch-step-p/.test(l)), `no spawn of ch-step-p after the unload:\n${log.join('\n')}`);
+    // nothing of the reload's left serving over the operator's unload (the
+    // medium on #442's high round, 1 and 3)
+    assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
   });
 });
