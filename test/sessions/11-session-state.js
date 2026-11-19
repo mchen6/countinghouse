@@ -360,6 +360,16 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
         'this session\'s settings were restored after a runtime restart']);
       assert.deepStrictEqual(notices.take(null, B), []);
       assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000, 'the rest of the row is taken');
+      // the daemon's row is told right (it still held the pack override), so
+      // the next restart neither drops nor tells it again
+      assert.deepStrictEqual(statesOf(A), [{overrides: [tighten('requestTimeout', 20000)], locks: [], formsLeft: 3}]);
+    });
+
+    it('a session that had more than eight packs of its own is told eight of them and how many more', async () => {
+      const names = Array.from({length: 10}, (_, i) => `p${i}`);
+      sessions.importTable(Object.assign({}, table([row(A)]), {packsDropped: [{session: A, names}]}));
+      await resumed(A);
+      assert.deepStrictEqual(notices.take(null, A), ['tools are turned on and off for all your sessions now: this session\'s own setting for p0, p1, p2, p3, p4, p5, p6, p7 and 2 more was dropped after a runtime restart']);
     });
 
     it('the daemon\'s row is put right: what was not applied is told as the session\'s state now', async () => {

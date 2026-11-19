@@ -128,6 +128,13 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     assert.deepStrictEqual(got[0].sessions[0].state, {overrides: [ov()], locks: ['pack'], formsLeft: 2});
     assert.deepStrictEqual(got[0].sessions[1], other, 'another session\'s loosening is kept');
     assert.deepStrictEqual(got[0].packsDropped, [{session: ID, names: ['weather', 'ci-failure-triage']}]);
+    // what the daemon sent is bounded before anything is dropped: a name
+    // twice, and a state over its size, refuse as before
+    const twice = {session: ID, resume: HASH, state: {overrides: [ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.weather', value: true, version: '1.0.1'})], locks: [], formsLeft: 3}};
+    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [twice], reset: []}))), 'CONTROL_BAD_RESTORE');
+    const big = {session: ID, resume: HASH, state: {overrides: Array.from({length: 600}, (_, i) => ov({name: `pack.p${i}`, value: false, version: `1.0.0-${'x'.repeat(60)}`})), locks: [], formsLeft: 3}};
+    assert.ok(Buffer.byteLength(JSON.stringify(big.state)) > 64 * 1024);
+    assert.strictEqual(code(() => createRestore({}).handle(plan({sessions: [big], reset: []}))), 'CONTROL_BAD_RESTORE');
     // the vectors' dropped rows
     const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').restoreRows;
     for (const c of V.dropped) {
