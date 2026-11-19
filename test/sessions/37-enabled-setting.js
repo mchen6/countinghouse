@@ -114,18 +114,6 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(history().length, n);
   });
 
-  it('off counts against the budget of 32 changes, on a runtime with one session too; past it, the terminal', async () => {
-    const t = tool();
-    for (let i = 0; i < 16; i++) {
-      await t.set(`enabled.${TOOL}`, 'off');
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));   // the terminal turns it back on
-      await t.set(`enabled.${CALLER}`, 'off');
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
-    }
-    const e = await refused(t.set(`enabled.${TOOL}`, 'off'), 'SETTING_NEEDS_CONFIRMATION');
-    assert.match(e.message, /ch-local settings set enabled\.weather-tool off/);
-  });
-
   it('on with no tested client: SETTING_NEEDS_CONFIRMATION with the terminal command', async () => {
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false}}));
     const e = await refused(tool({mayElicit: async () => ({ok: false, why: 'not on the tested-client list'})}).set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
@@ -205,14 +193,40 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(history().filter((l) => l.setting === `enabled.${TOOL}`).length, 1);
   });
 
-  it('the budget is checked under the lock: requests at once never pass it together', async () => {
+  // #449's high review, 6: a tightening never counts against the budget, on
+  // any runtime; only a module turned on does
+  it('an off never counts against the budget: forty in a row are all made, on the runtime and in a session', async () => {
     const t = tool();
-    for (let i = 0; i < 31; i++) {
-      await t.set(`enabled.${TOOL}`, i % 2 === 0 ? 'off' : 'off');
-      fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
+    const sid = 'a'.repeat(32);
+    for (const ctx of [undefined, {shared: true, session: sid}]) {
+      for (let i = 0; i < 40; i++) {
+        fs.writeFileSync(file, JSON.stringify({version: 1, values: {}}));
+        assert.strictEqual((await t.set(`enabled.${TOOL}`, 'off', 'settings tool', ctx)).new, 'off', `${i}`);
+      }
     }
-    const got = await Promise.allSettled([t.set(`enabled.${TOOL}`, 'off'), t.set(`enabled.${CALLER}`, 'off')]);
-    assert.strictEqual(got.filter((r) => r.status === 'fulfilled').length, 1, JSON.stringify(got.map((r) => r.status)));
+  });
+
+  it('the budget counts a module turned on, and is checked under the lock: confirmations at once never pass it together', async () => {
+    const t = tool();
+    const on = async () => {
+      const asked = await t.set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT);
+      return t.confirm(`enabled.${TOOL}`, 'on', {requestState: asked.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT);
+    };
+    for (let i = 0; i < 31; i++) {
+      confirm.resetForTests();   // (three forms a start)
+      fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false}}));
+      assert.strictEqual((await on()).new, 'on', `${i}`);
+    }
+    confirm.resetForTests();
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false, [`enabled.${CALLER}`]: false}}));
+    const a = await t.set(`enabled.${TOOL}`, 'on', 'settings tool', CLIENT);
+    const b = await t.set(`enabled.${CALLER}`, 'on', 'settings tool', CLIENT);
+    const got = await Promise.allSettled([
+      t.confirm(`enabled.${TOOL}`, 'on', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT),
+      t.confirm(`enabled.${CALLER}`, 'on', {requestState: b.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT)]);
+    assert.strictEqual(got.filter((r) => r.status === 'fulfilled').length, 1, JSON.stringify(got.map((r) => r.status === 'fulfilled' ? r.value : r.reason.code)));
+    // and an off is still made past it
+    assert.strictEqual((await t.set(`enabled.${TOOL}`, 'off')).new, 'off');
   });
 
   it('packs.json: a pack\'s scenario stays a top-level module, whatever another pack lists it as; a ~ in a name is a name', async () => {
