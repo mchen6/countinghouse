@@ -170,9 +170,10 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
           await control.unload(name === MOD ? {type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'}
             : {type: 'unload', name: CALLER, notice: 'trip-planner unloaded: it calls ch-pack-mod, which is turned off'});
         }
-        // each once, in the order told, on the next result of any tool
+        // each once, on the next result of any tool: the runtime's own off
+        // text first, in its own lane (round 6, 1)
         const own = 'trip-planner unloaded: it calls ch-pack-mod, which is turned off';
-        const want = order[0] === MOD ? [offNotice(MOD, [CALLER]), own] : [own, offNotice(MOD, [])];
+        const want = order[0] === MOD ? [offNotice(MOD, [CALLER]), own] : [offNotice(MOD, []), own];
         assert.deepStrictEqual(all(null), [want, want, want], order.join(' then '));
       }
     });
@@ -228,6 +229,20 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
         Object.assign(options, saved);
         fs.rmSync(dir, {recursive: true, force: true});
       }
+    });
+
+    // (round 6, 1) a flood of caller unloads never evicts the runtime's own
+    // off text
+    it('25 callers unloaded after it: the off text with its ways back is still delivered', async() => {
+      const control = c();
+      await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      for (let i = 0; i < 25; i++) {
+        units.set(`caller-${i}`, {form: 'module', pack: moduleKey(`caller-${i}`)});
+        await control.unload({type: 'unload', name: `caller-${i}`, notice: `caller-${i} unloaded`});
+      }
+      const got = notices.take('some-other-module', A);
+      assert.strictEqual(got[0], offNotice(MOD, [CALLER]));
+      assert.ok(got.some((t) => /earlier changes not listed here/.test(t)), 'the others counted, never silent');
     });
 
     it('no reason (today\'s ch-local), another reason, or no settings tool here: the message\'s own words', async() => {
