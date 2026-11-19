@@ -97,6 +97,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
+      // (F4, #194's PR 3)
+      it('import() from an ES module: a runtime file or a runtime-only package against a missing one, the same whole error', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'importOracle'});
+        assert.strictEqual(detail(r), 'same same same', JSON.stringify(r).slice(0, 1500));
+      });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
         assert.strictEqual(detail(r), 'same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));

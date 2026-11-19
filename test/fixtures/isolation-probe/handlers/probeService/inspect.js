@@ -108,6 +108,12 @@ const STEPS = {
     }
     return out.join(' ');
   },
+  // F4 (#194's PR 3): an import() from an ES module is no existence oracle
+  importOracle: async () => {
+    const h = handle();
+    if (h == null) return 'no handle';
+    return (await import('../../lib/import-oracle.mjs')).default(path.dirname(path.dirname(h.module.filename)));
+  },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a
   // genuine runtime parent, a forged one, or createRequire on a runtime
