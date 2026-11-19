@@ -137,6 +137,11 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.strictEqual(second.nextCursor, undefined);
       assert.strictEqual(new Set([...firstRows, ...secondRows].map((s) => s.name)).size, 90);
       await refused(tool.get({}, {cursor: 'not-a-cursor'}), 'SETTING_CURSOR_INVALID');
+      // checked before the file and the ceiling are read
+      fs.writeFileSync(file, '{not json');
+      let read = 0;
+      await refused(make({ceiling: () => { read += 1; return ceiling; }}).get({}, {cursor: 'not-a-cursor'}), 'SETTING_CURSOR_INVALID');
+      assert.strictEqual(read, 0);
     });
   });
 
