@@ -61,6 +61,11 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     // refused at load under enforce, sandbox 03; here, what Node's own walk
     // does now that it is judged.)
     fs.writeFileSync(path.join(probe, 'lib', 'stat-count.js'), 'module.exports = "counted";\n');
+    // (a directory required once, for the warning Node gives for a "main"
+    // that names nothing)
+    fs.mkdirSync(path.join(probe, 'lib', 'main-warn'));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-warn', 'package.json'), JSON.stringify({main: './no-such-main.js'}));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-warn', 'index.js'), 'module.exports = "warned";\n');
     // (the root itself: an index.js of its own, and a file beside the root,
     // outside it, that Node would try first with an extension)
     fs.writeFileSync(path.join(probe, 'index.js'), 'module.exports = "root";\n');

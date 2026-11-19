@@ -823,6 +823,12 @@ pnpm or workspace layout links packages in: use a flat install (`npm
 install`), or run that module under `audit` or `off`. A link to a file
 (`node_modules/.bin`) is fine.
 
+Under `enforce` Node's warnings about a `"main"` (`DEP0128`, `DEP0151`)
+aren't emitted to your module, and any other warning names your files by
+their `/app/...` paths. `process.emitWarning` can still be assigned, and
+what you assign is what a warning reaches, but it can't be redefined with
+`Object.defineProperty`.
+
 ## Files and paths
 
 Since 8.0.0 a module in worker mode (the default) sees its own file

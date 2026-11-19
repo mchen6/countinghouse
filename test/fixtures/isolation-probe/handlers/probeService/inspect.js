@@ -173,6 +173,27 @@ const STEPS = {
     // the root, which Node tries with each extension first)
     const byApp = loadOf('/app');
     if (byApp !== 'root') unlike.push(`app ${byApp}`);
+    // (a warning Node emits on its walk -- an invalid "main" inside the
+    // root, naming nothing -- is not emitted to module code at all; any
+    // other names no host path)
+    const heard = [];
+    const listen = (w) => heard.push(String(w && w.message));
+    process.on('warning', listen);
+    const warnLoad = loadOf('../../lib/main-warn');
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    process.removeListener('warning', listen);
+    const warnedHost = heard.join(' ').match(/(?<=^|[\s"'(])(?:file:\/\/)?\/[^\s'"]+/g) || [];
+    const hostInWarning = warnedHost.filter((p) => !/^(file:\/\/)?\/([A-Za-z]:\/)?app(\/|$)/.test(p));
+    if (hostInWarning.length > 0 || warnLoad !== 'warned' || heard.some((m) => /main/i.test(m))) unlike.push(`warning ${warnLoad} ${heard.length} ${hostInWarning.join(',')}`);
+    // (and module code may still set process.emitWarning: its own call
+    // reaches what it set at once, with the arguments it gave)
+    const emitWas = process.emitWarning;
+    let setHeard = null;
+    try { process.emitWarning = function(w, type) { setHeard = `${w} ${type}`; }; } catch (e) { setHeard = `threw ${e.name}`; }
+    process.emitWarning(`probe ${__filename}`, 'ProbeWarning');
+    process.emitWarning = emitWas;
+    if (setHeard !== `probe ${__filename} ProbeWarning`) unlike.push(`setEmit ${setHeard}`);
     // (the root itself by require: its own index)
     let rootLoad;
     try { rootLoad = `${require('../..')}`; } catch (e) { rootLoad = `threw ${e.code} ${e.message}`; }
