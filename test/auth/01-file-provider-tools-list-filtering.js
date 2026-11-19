@@ -1,3 +1,4 @@
+const assert  = require('assert');
 const fs      = require('fs');
 const exec    = require('child_process').exec;
 const waitForReady = require('../helpers/wait-for-ready');
@@ -16,7 +17,7 @@ const url = `http://127.0.0.1:${PORT}`;
 // its consumers -- HTTP invoke-action's userAuth gate, /device-list (now
 // via AuthProvider.listDevices instead of a raw CouchDB view), and MCP
 // tools/list's new per-apiKey filtering (lib/mcp/tool-registry.js's
-// filterTargetsByAuth) -- which previously always listed every loaded
+// grantedDevices and callerSees) -- which previously always listed every loaded
 // device's tools regardless of caller identity.
 const AUTH_CONFIG_PATH = '/tmp/countinghouse-test-auth-01.json';
 
@@ -167,17 +168,27 @@ describe('auth 01: FileAuthProvider drives HTTP invoke-action, /device-list, and
     });
   });
 
-  it('MCP tools/call: denies a tool filtered out of tools/list, not just hidden from it', (done) => {
-    request(url).post('/mcp')
-    .set('Content-Type', 'application/json')
-    .set('X-CH-Key', SCOPED_KEY)
-    .send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'transform_demo_transformservice_uppercase', arguments: {text: 'hi'}}})
-    .expect(200, (err, res) => {
-      if (err) return done(err);
-      if (res.body.error == null) {
-        return done(new Error(`expected tools/call to deny scoped key calling transform-demo, got: ${JSON.stringify(res.body)}`));
-      }
-      return done();
+  // The tool lookup on tools/call checks no grants (tool-registry callerSees
+  // with none: #447's high review, 6); a key's grants on this path are
+  // userAuth's, on the device the tool names, plain and task-augmented both
+  // (lib/mcp/gateway.js callTool and createTaskForToolCall). Pinned to that
+  // refusal exactly, so a refactor of the lookup can't drop it.
+  const {CountinghouseError} = require('../../lib/countinghouse-error');
+  const NO_DEVICE = new CountinghouseError('USER_HAS_NO_DEVICE').message;
+  for (const [label, extra] of [['plain', {}], ['task-augmented', {task: {ttl: 60000}}]]) {
+    it(`MCP tools/call (${label}): a tool outside the key's grants is refused by userAuth (USER_HAS_NO_DEVICE), not run`, (done) => {
+      request(url).post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('X-CH-Key', SCOPED_KEY)
+      .send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: Object.assign({name: 'transform_demo_transformservice_uppercase', arguments: {text: 'hi'}}, extra)})
+      .expect(200, (err, res) => {
+        if (err) return done(err);
+        try {
+          assert.strictEqual(res.body.result, undefined, JSON.stringify(res.body));
+          assert.deepStrictEqual({code: res.body.error.code, message: res.body.error.message}, {code: -32603, message: NO_DEVICE});
+        } catch (e) { return done(e); }
+        return done();
+      });
     });
-  });
+  }
 });

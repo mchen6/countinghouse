@@ -109,11 +109,20 @@ unauthorized caller couldn't *invoke* a tool it didn't own (the `userAuth`
 row above still denied that at `tools/call` time), but it could always
 *see* it, with a schema that silently degraded to a default/unresolved
 shape for a device it couldn't access rather than being omitted. Fixed
-2026-08-09, alongside the AuthProvider refactor: `buildToolList` now
-calls `filterTargetsByAuth`, which asks the configured `AuthProvider`'s
-`listDevices(apiKey, ...)` for the caller's authorized device set (a `'*'`
-entry means every currently-loaded device) and drops any tool whose
-`deviceID` isn't in it, before schema resolution ever runs. The static
+2026-08-09, alongside the AuthProvider refactor: `tools/list` asks the
+configured `AuthProvider`'s `listDevices(apiKey, ...)` for the caller's
+authorized device set (`grantedDevices`; a `'*'` entry means every
+currently-loaded device) and drops any tool whose `deviceID` isn't in it,
+before schema resolution ever runs. Since 8.0 that is one predicate
+(`listedFor` in the same file) shared by `tools/list`, `prompts/list`,
+`resources/list` and the HTTP routes that show a module
+(`lib/listing-scope.js`). The `tools/call` lookup asks only its
+visibility half (`callerSees` with no grants): on that path the key's
+grants are `userAuth`'s, on the device the tool names, so a tool outside
+them never runs. Its answer is not yet one: an unlisted or unusable
+target answers MODULE_NOT_LISTED before `userAuth` is asked, any other the
+`userAuth` refusal, and neither is "unknown tool" (one answer for every
+tool a caller can't see is a separate change). The static
 platform tool (`countinghouse_check_balance`) isn't device-derived and is
 always listed, same as before. Under `--debug` mode this filtering is
 skipped entirely, matching every other entry path's "no per-device
