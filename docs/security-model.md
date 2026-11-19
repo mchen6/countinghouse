@@ -682,6 +682,40 @@ the file toward its start value. A lower value than what runs that may not
 be written applies to this start only, and is recorded as that. It is read once
 per process, and again when the file changes.
 
+`moduleSettings` binds the settings modules declare, per
+`"<package>.<setting>"` (the last dot splits them):
+
+```json
+"moduleSettings": {
+  "@acme/weather-tool.shareStats": {"fixed": false},
+  "@acme/weather-tool.units": {"confirm": true},
+  "@acme/repo-helper.defaultRepo": {"conversation": false}
+}
+```
+
+- `{"fixed": <value>}` applies that value whatever `settings.json` says. A
+  value the module's declaration rejects, or a setting it doesn't declare (a
+  typo, or a version that renamed it), refuses the module's load, naming the
+  entry.
+- `{"confirm": true}` and `{"conversation": false}` are rules for a change
+  in conversation. They bind once the settings tool changes module settings
+  (its `module.*` names; until then no conversation can change one): the
+  first needs the user's confirmation, the second allows the terminal only.
+  `"conversation": false` directly under `moduleSettings` makes every module
+  setting terminal-only.
+
+Any other shape fails closed, as any key a reader doesn't know does: an
+older runtime or `ch-local` never reads this key as no restriction. Where
+the ceiling binds (the single-identity profile with a settings file), it is
+read again at each load of a module that declares settings and at each
+`reread`, and watched while the runtime has a control channel: a change
+re-reads every module's settings, so a fixed value binds without `ch-local`.
+A ceiling that cannot be trusted refuses such a load; a supervised restart
+keeps the values the module ran with. A supervised restart the ceiling's
+`fixed` refuses (a value the module rejects, or a setting it doesn't
+declare) is suspended at once with the ceiling's reason, not retried: the
+next load, once the ceiling is updated, proceeds.
+
 It is trusted only when an ordinary user cannot have written it: on Linux and
 macOS the file is not a symbolic link, and it and every directory up to `/`
 (by real path) are owned by root and not writable by group or others; on
@@ -1136,6 +1170,22 @@ it and frees its slot, so a client that never reads holds nothing of a
 key's notices. The runtime's own reads of a listener's lists never spend
 its rate limit.
 
+A 2026-07-28 client that declares the tasks extension can name its tasks on
+a listen (`notifications.taskIds`, at most 64). Each id is agreed only if
+`tasks/get` would answer it for that caller right then: the same lookup, by
+key and, on a shared runtime, by session. Any other id is left out of the
+acknowledgement without an error. That covers another caller's task, an
+unknown id, a malformed id, a legacy task and an expired one, and they
+can't be told apart, so a listen can't be used to learn that another
+tenant's task exists. A change is announced by its id alone. Every
+`notifications/tasks` is built by that same lookup again when it is sent,
+with the caller's key resolved again, and it is the task exactly as
+`tasks/get` would answer it. A task the caller can no longer read (its job
+gone, its session ended, its key revoked or no longer an admin's) is dropped
+silently. A working task's notices are coalesced to at most one a second
+per listener and task, a flood of changes costs one lookup at a time, and a
+closed listen frees its timers.
+
 ### What the MCP layer serves, and its bounds (MCP completeness)
 
 The 2026-07-28 surfaces (stored results, module resources, prompts,
@@ -1179,7 +1229,7 @@ fails if it is removed:
 | A result's binary values | at most 16; inline up to `--inlineContentBytes` (1 MiB), linked past it | validation 18, mcp-contract 15 and 03, store 08 |
 | The result store | per owner 128 MiB under Redis, 256 MiB under the local store (`--resourceQuotaBytes`) and 1024 items; `--resourceStoreBytes` in all; `--resourceRetention` | store 07, 08 |
 | A resource URI | at most 2048 bytes; at most 8 variables | mcp-contract 25, module-authoring 06 |
-| A listen | 64 URIs; 8 listens per key, 2 per session, 512 in all; an HTTP listen closed past 1 MiB unread | stdio 32, mcp-contract 09 |
+| A listen | 64 URIs and 64 task ids; 8 listens per key, 2 per session, 512 in all; an HTTP listen closed past 1 MiB unread; a working task's notices at most one a second | stdio 32, mcp-contract 09, 37 |
 | Completion | 100 values of at most 256 characters; a completion action answers within 2 s or is cancelled; the per-key rate limit | mcp-contract 30, stdio 33 |
 | A prompt's answer | at most 64 KiB, measured before it is built and again as sent | mcp-contract 24 |
 | A question | a dialog of 1000 characters; 8 form properties; 8 rounds per call, 3 per question; a `requestState` of at most 16 KiB; answers of at most 8 KiB | questions 01, 05, module-authoring 06, mcp-contract 10 |
@@ -1257,6 +1307,21 @@ directory of each module of its closure:
   start refused is told the same way, with `when: "start"`. Without a
   control channel a suspended module stays suspended and listed until
   `POST /restart-module`.
+- **Settings re-read, never an unload.** `{type: "reread", what:
+  "module-settings"}` reads the `module.*` values of `--settingsFile` again,
+  under the ceiling as it is now, for every loaded module that declares
+  settings (`lib/settings-reread.js`). A module with any value refused (or
+  a `fixed` value its declaration rejects, or a ceiling that cannot be
+  trusted) keeps **all** of its old values; the others apply, each with a
+  new version its next call carries. The reply is `{applied, refused:
+  [{name, code}]}`; each refusal is a notice to the sessions that have the
+  module in view (a part is said as "a part of" its top-level module, and
+  the ceiling's file problem goes to the operator's log only) and, for a
+  value, a `not applied` history line, never the value (the ceiling's, when
+  its fixed value is what refused). A value that already was not applied,
+  unchanged, holds nothing back, and one refused is said once. A setting
+  change never unloads a module: one left with a required setting unset
+  stays loaded, and its calls answer `SETTING_REQUIRED`.
 
 The pack form (`scenario`, `pack`, `global`, a pack's own credentials file)
 is still taken until it is removed, never mixed with the module form in one
@@ -1538,7 +1603,11 @@ and the short list of what the in-process sandbox cannot give.
   modules is kept from them there: a call's `Session`, including the
   shared runtime's session id on it, its call tokens and every other main-
   thread state are in reach. It is for debugging modules
-  ([differences](module-development.md)).
+  ([differences](module-development.md)). Module settings run only with
+  worker threads: there a module that declares settings is refused at its
+  load and at a reload (`SETTINGS_NEED_WORKER_THREADS`), so no settings
+  state, and no ceiling's fixed value, ever has to be kept in the main
+  thread a module shares.
 - **No OS-level isolation.** `worker_threads` share the same process, same
   OS user and same network stack as the main thread. Outside `--hardened`
   the main thread can open any file the OS user can.
