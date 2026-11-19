@@ -115,6 +115,10 @@ describe('auth 46: with Redis down a call whose result has a binary value answer
     // found": the URI still holds (the medium on the blob-store PR, 1)
     const read = await readResource(storedUri);
     assert.ok(read.error != null && read.error.code === -32603 && read.error.data != null && read.error.data.code === 'RESULT_STORE_UNAVAILABLE', JSON.stringify(read).slice(0, 400));
+    // in a read's own words: never "try the call again", which re-runs and
+    // re-charges the tool (the high review of #443, 5)
+    assert.deepStrictEqual(read.error.data, {code: 'RESULT_STORE_UNAVAILABLE', kind: 'runtime', retryable: true, operation: 'read'});
+    assert.match(read.error.message, /can't be read right now; try reading it again/);
   });
 
   it('stores again once Redis is back (the client reconnected)', async () => {

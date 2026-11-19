@@ -427,9 +427,11 @@ says how to write a module for this.
   value), or with Redis down, fails `RESULT_STORE_UNAVAILABLE` (retryable),
   and anything it may have written is removed once Redis answers again;
   every other call goes on answering. A `resources/read` then answers
-  -32603 with `data.code` `RESULT_STORE_UNAVAILABLE` (the URI still holds),
-  and a task tries its result's store again for about a minute before it
-  records that refusal. A client on protocol
+  -32603, "the stored value can't be read right now; try reading it
+  again", with `data` `{code: "RESULT_STORE_UNAVAILABLE", kind, retryable,
+  operation: "read"}` (the URI still holds), and a task tries its result's
+  store again for a few seconds before it records that refusal. A client
+  on protocol
   revision 2025-03-26 or 2024-11-05, which have no `resource_link` block,
   may not show a link; it can still read the `uri` from the text block.
   `ctx.call` and `invoke-action` are unchanged: their output keeps the base64
