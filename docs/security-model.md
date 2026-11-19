@@ -1282,10 +1282,10 @@ and every one is bounded.
   once, as text, and bounded.
 - **A tool the caller can't see** gets one answer on `tools/call`, decided
   before anything module-specific, so no probe tells what is installed. No
-  key, or a key the auth layer does not know: its auth refusal, the same
-  for every module tool's name and every name never registered (the
-  runtime's own `countinghouse_*` tools, whose names are public, answer as
-  they did). A known key: a name never registered, a tool outside its
+  key, or a key the auth layer does not know: its auth refusal, decided
+  first, the same for every name -- a module's tool, an unlisted part's,
+  one never registered, and the runtime's own `countinghouse_*` tools,
+  enabled or not. A known key: a name never registered, a tool outside its
   grants (an unlisted part's too) and one hidden while its module goes on
   or off all answer `unknown tool: <name>`, byte for byte. A key granted an
   unlisted part still learns it is not listed. The grant set that chooses
