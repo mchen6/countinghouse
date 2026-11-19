@@ -293,14 +293,16 @@ any module code). Stops:
   | `source-map-support`, `install()` | works | works | works | works |
   | `source-map-support`, `install({hookRequire: true})` | works | works | no hook (reported) | throws |
   | `require-in-the-middle`, a `Hook` | works | works | throws | no hook |
-  | `resolve-from`, from `__dirname` | fails | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
-  | `import-fresh`, a relative name | fails | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
-  | `module-alias`, `addAlias` | no alias | no alias | no alias | throws |
+  | `resolve-from`, from `__dirname` | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
+  | `import-fresh`, a relative name | fails (works on Windows) | fails (works below Node 24.15) | fails (works below Node 24.15) | throws |
+  | `module-alias`, `addAlias` | no alias (works on Windows) | no alias | no alias | throws |
 
   Why:
   - a module's own directory is virtual (`/app/...`) in every mode,
     single-thread included, and these three hand a path made from it to
-    Node's resolver, which reads it as the host's own `/app`;
+    Node's resolver, which reads it as the host's own `/app`; on Windows
+    in single-thread mode it is `<V>:\app\...`, on a drive no host path is
+    on, and they work;
   - in a worker a module's requires are resolved by the file broker with
     Node's own resolver, so `module-alias`'s replaced `_resolveFilename` is
     never asked;

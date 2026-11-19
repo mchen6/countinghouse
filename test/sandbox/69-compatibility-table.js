@@ -36,13 +36,17 @@ const LIBRARIES = ['resolve-from', 'import-fresh', 'source-map-support', 'module
 // Module._resolveFilename through the file broker's hook, which maps the
 // module's virtual parent: there resolve-from and import-fresh work in a
 // worker under off and audit)
+// (on Windows, in single-thread mode, the module's own directory is
+// <V>:\app\..., a drive no host path is on, and these three work: measured
+// on the Windows subset, #195)
 const SHIM = require('../../lib/node-version').NEEDS_RESOLVE_SHIM;
+const WIN = process.platform === 'win32';
 const TABLE = [
-  ['resolve-from', 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
-  ['import-fresh', 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
+  ['resolve-from', WIN ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
+  ['import-fresh', WIN ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', SHIM ? 'works' : 'threw MODULE_NOT_FOUND', 'threw TypeError'],
   ['source-map-support', 'works', 'works', 'works', 'works'],
   ['source-map-support hookRequire', 'works', 'works', 'no hook', 'threw TypeError'],
-  ['module-alias', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
+  ['module-alias', WIN ? 'works' : 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'no alias (threw MODULE_NOT_FOUND)', 'threw TypeError'],
   ['require-in-the-middle', 'works', 'works', 'threw TypeError', 'no hook']
 ];
 // [the column's name, its start flags]
