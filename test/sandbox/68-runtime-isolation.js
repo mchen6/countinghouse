@@ -64,8 +64,8 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     }
     // (e and f: the outside "main" written first and a number after it,
     // which JSON.parse keeps and Node's own reader may not; g: a directory
-    // with an outside "main" beside a file of its name, which Node takes
-    // first and loads)
+    // with an outside "main" beside a file of its name: refused too, the
+    // conservative rule)
     for (const [dir, target] of [['main-out-e', 'node-version.js'], ['main-out-f', 'no-such-isolation.js'], ['main-out-g', 'node-version.js']]) {
       fs.mkdirSync(path.join(probe, 'lib', dir));
       const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
@@ -73,6 +73,13 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
     }
     fs.writeFileSync(path.join(probe, 'lib', 'main-out-g.js'), 'module.exports = "sibling";\n');
+    // (and one that loads: a package.json whose only outside "main" is
+    // nested, not the package's; one JSON.parse can't read, a UTF-8 BOM's
+    // say, never loads: the module's tree check refuses it)
+    fs.mkdirSync(path.join(probe, 'lib', 'main-in-nested'));
+    const nestedOut = path.relative(path.join(probe, 'lib', 'main-in-nested'), path.join(ROOT, 'lib')).split(path.sep).join('/');
+    fs.writeFileSync(path.join(probe, 'lib', 'main-in-nested', 'package.json'), JSON.stringify({main: './index.js', config: {main: nestedOut}}));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-in-nested', 'index.js'), 'module.exports = "nested";\n');
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));

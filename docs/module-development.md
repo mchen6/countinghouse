@@ -786,6 +786,12 @@ that doesn't list the subpath (`ERR_PACKAGE_PATH_NOT_EXPORTED`) or a broken
 falls back on `MODULE_NOT_FOUND` for an optional dependency works as
 before.
 
+A directory of your own whose `package.json` `"main"` leads outside your
+module's root reads as not found under `enforce`, by any name that reaches
+it, even where a file of the same name sits beside it: where it led
+would otherwise tell your code whether a host file exists. Keep `"main"`
+inside your module.
+
 ## Files and paths
 
 Since 8.0.0 a module in worker mode (the default) sees its own file
