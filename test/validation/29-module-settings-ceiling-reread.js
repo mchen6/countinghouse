@@ -255,7 +255,7 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       sameRun(mm.modules.r.settings, r, 'r is not reread');
     });
 
-    it('only, with a settings file that cannot be read: the ceiling goes over that one module alone; the file\'s problem stays said', async () => {
+    it('only, with a settings file that cannot be read: the ceiling goes over that one module alone; a file read again is a whole reread', async () => {
       const mm = manager();
       await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
       const r = mm.modules.r.settings;
@@ -267,11 +267,14 @@ describe('validation 29: the ceiling\'s moduleSettings and reread', () => {
       sameRun(mm.modules.r.settings, r, 'r is not touched');
       const problem = mm.settingsFileProblem;
       assert.ok(problem != null);
-      write({'module.w.units': 'imperial', 'module.r.region': 'eu'});
-      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'}), only: 'w'});
-      assert.strictEqual(mm.settingsFileProblem, problem, 'a reread of one module has not read the file for the others');
-      await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'})});
-      assert.strictEqual(mm.settingsFileProblem, null);
+      // the file put right: a one-module reread finds it read, and rereads
+      // every module (the others ran with the ceiling's values only)
+      write({'module.w.units': 'imperial', 'module.r.region': 'us'});
+      const reply = await reread.reread(mm, {type: 'reread', what: 'module-settings'}, {ceiling: () => ({state: 'none'}), only: 'w'});
+      assert.strictEqual(mm.settingsFileProblem, null, 'the file\'s problem cleared');
+      assert.strictEqual(mm.modules.w.settings.values.units, 'imperial');
+      assert.strictEqual(mm.modules.r.settings.values.region, 'us', 'r reread too');
+      assert.strictEqual(reply.applied, 2);
     });
 
     it('applyNow waits its turn on the control channel\'s chain (never beside ch-local\'s reread or a reload)', async () => {
