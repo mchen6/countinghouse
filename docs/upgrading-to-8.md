@@ -599,6 +599,19 @@ says how to write a module for this.
   (`/$defs/...`, another keyword of the document, a part that was left
   out, a character of a string) answers `POINTER_DEREF_ERROR`, as a path
   that names nothing does.
+- **Breaking: `get-spec` and `schema` answer only a module the caller's
+  `tools/list` could show.** A module outside the key's grants (as before,
+  `USER_HAS_NO_DEVICE`), a part that is loaded only because another module
+  calls it, a module that is not a scenario under the single-identity
+  profile, or one that is going on or off at that moment is refused whole
+  with `MODULE_NOT_LISTED`. Within a listed module every usable action is
+  answered, a tool or not, as above. An output declared with any type is
+  shown, as `tools/list` shows it to a client of the current protocol era.
+- **`get-spec`'s declared text is cleaned as the MCP lists show it.** Each
+  action's and resource's `title` is one line, a `description` and a
+  prompt message's `text` keep their line breaks and tabs, and every
+  hidden character becomes a space (as in `tools/list`, `resources/list`
+  and `prompts/list`). Nothing else in the spec changes.
 
 ## What operators get
 
