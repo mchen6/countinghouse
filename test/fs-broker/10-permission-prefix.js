@@ -101,4 +101,26 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
     assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the module\'s own file was emptied before the refusal');
   });
+
+  // (and a data directory it can't resolve -- a read denied on the way --
+  // refuses, never is compared unresolved)
+  it('under enforce, a data directory that can\'t be resolved refuses the spawn', async function() {
+    if (process.platform === 'win32' || process.getuid() === 0) return this.skip();
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-unres-')));
+    const mod = path.join(base, 'mod');
+    const store = path.join(base, 'store');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.mkdirSync(path.join(store, 'm'), {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.chmodSync(store, 0o000);
+    let err = null;
+    try {
+      const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+        options: {moduleDataPath: store, modulePath: base}, report: () => {}});
+      await fsb.bridge.close();
+    } catch (e) { err = e; } finally { fs.chmodSync(store, 0o700); }
+    assert.strictEqual(err && err.code, 'MODULE_SANDBOX_REFUSED', String(err && err.message));
+    assert.match(err.message, /cannot resolve the module's data directory/);
+  });
 });

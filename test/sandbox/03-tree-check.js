@@ -190,9 +190,13 @@ describe('sandbox 03: tree checks', () => {
       refused(mk({'package.json': {name: 'm'}, 'node_modules/q/package.j\u017Fon': {name: 'q', main: '../../../outside.js'}}), 'node_modules/q/package.j\u017Fon');
       refused(mk({'package.json': {name: 'm'}, 'node_modules/r/pack\u200Dage.json': {name: 'r', main: '../../../outside.js'}}), 'node_modules/r/pack\u200Dage.json');
     });
-    it('judges the very file matched, a case variant\'s, and reports it by its own name', () => {
+    it('judges the very file matched, a case variant\'s, and reports it by its own name where Node would open it', () => {
       const d = mk({'package.json': {name: 'm'}, 'node_modules/p/PACKAGE.JSON': '{not json'});
-      assert.match(checkTree(d).problems.join('\n'), /node_modules[\\/]p[\\/]PACKAGE\.JSON cannot be parsed/);
+      const said = checkTree(d).problems.join('\n');
+      if (process.platform === 'darwin' || process.platform === 'win32') assert.match(said, /node_modules[\\/]p[\\/]PACKAGE\.JSON cannot be parsed/);
+      else assert.doesNotMatch(said, /PACKAGE\.JSON/);
+      const e = mk({'package.json': {name: 'm'}, 'node_modules/p/package.json': '{not json'});
+      assert.match(checkTree(e).problems.join('\n'), /node_modules[\\/]p[\\/]package\.json cannot be parsed/);
     });
     it('passes a "main" inside, and a nested key that is no package\'s "main"', () => {
       const d = mk({'package.json': {name: 'm', main: './lib/index.js'}, 'lib/index.js': '', 'lib/y/package.json': {main: './index.js', config: {main: '../../../outside.js'}}});
