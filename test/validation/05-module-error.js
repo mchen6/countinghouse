@@ -180,6 +180,11 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       assert.strictEqual(moduleText('a\nb\u0007c\u2028d\u202ee\u2069f'), 'a b c d e f');
       assert.strictEqual(moduleText('abcdef', 3), 'abc');
       assert.strictEqual(moduleText('a\u200eb\u200fc\u061cd'), 'a b c d');
+      // the repo's one hidden-character class (conditions-why.json
+      // hiddenClass): zero-width, soft hyphen, word joiner, BOM, a variation
+      // selector, a tag character, a lone surrogate (the final high review of
+      // #445, 1)
+      assert.strictEqual(moduleText('a\u200bb\u00adc\u2060d\ufeffe\ufe0ff\u{e0041}g\ud800h'), 'a b c d e f g h');
       assert.strictEqual(moduleText('ab\ud83d\ude00', 3), 'ab', 'no half of a pair at the cut');
       assert.strictEqual(require('../../lib/schema-safety').declaredText('x\u2067y'), 'x y');
     });
