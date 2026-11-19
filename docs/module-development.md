@@ -830,7 +830,11 @@ fallbacks such as `fs-extra`'s `move` work.
 - HTTP/2 `respondWithFile` is not available: read the file with `fs` and
   stream it.
 - A worker's `process.env` holds only the variables you declared (see
-  below), so code that read undeclared variables sees them missing.
+  below), so code that read undeclared variables sees them missing. Don't
+  declare a proxy variable (`HTTPS_PROXY`, `NO_PROXY` ...): under `enforce`
+  `CHUtil.request` never goes through a proxy (the lockdown sets
+  `proxy: null`), and in every mode the declaration lets your module read
+  the operator's proxy URL, which may hold credentials.
 
 **Single-thread mode** (`--no-workerThread`) is for debugging modules and
 has no sandbox. Modules still see `/app`, `/data` and `/tmp` through `fs`,
