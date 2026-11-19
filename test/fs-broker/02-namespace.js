@@ -101,6 +101,9 @@ describe('fs-broker 02: namespace', () => {
     const a = await prepared(Object.assign({}, CFG, {mode: 'audit', declared, protectedPaths: []}));
     assert.deepStrictEqual(a.refused.filter((r) => /module's own code/.test(r.reason)), []);
     assert.deepStrictEqual(a.ownCodeWritable, ['/srv/modules/weather/lib', '/srv/modules']);
+    // (off decides nothing: kept, unsaid)
+    const o = await prepared(Object.assign({}, CFG, {mode: 'off', declared, protectedPaths: []}));
+    assert.deepStrictEqual(o.refused.filter((r) => /module's own code/.test(r.reason)), []);
     // (and a caller that gives no mode fails closed: refused; the high
     // review of #452)
     const none = Object.assign({}, CFG, {declared, protectedPaths: []});

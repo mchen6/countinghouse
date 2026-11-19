@@ -122,6 +122,29 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
         'the module\'s /tmp and its own code overlap -- set --moduleDataPath apart from the module']);
   });
 
+  // (another module's code: a /data or /tmp over any module root is the
+  // same overlap; the high review of #452)
+  it('under enforce, a /tmp inside another module\'s code refuses the spawn first: nothing there is emptied', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-other-')));
+    const modules = path.join(base, 'modules');
+    const mod = path.join(modules, 'm');
+    const other = path.join(modules, 'other');
+    const tmpInside = path.join(other, 'store', 'm', 'tmp');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.mkdirSync(tmpInside, {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.writeFileSync(path.join(tmpInside, 'keep.js'), 'module.exports = 1;');
+    let code = null;
+    try {
+      const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+        options: {moduleDataPath: path.join(other, 'store'), modulePath: modules}, report: () => {}});
+      await fsb.bridge.close();
+    } catch (e) { code = e.code; }
+    assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
+    assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the other module\'s file was emptied');
+  });
+
   // (a --moduleDataPath not made yet, reached through a link above it into
   // the module's own code: refused before anything is made there)
   it('under enforce, a --moduleDataPath through a link into the module\'s own code refuses before anything is made', async function() {

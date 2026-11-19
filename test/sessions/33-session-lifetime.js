@@ -620,6 +620,18 @@ describe('sessions 33: a per-session module\'s partitions over the session\'s li
       assert.strictEqual(quota().bytes, before + 1000, 'another quota\'s view: nothing given back here');
     });
 
+    it('a /tmp kept (it overlaps module code) is never emptied, and its share is still given back (the high review of #452)', async () => {
+      await make(A);
+      await make(B);
+      await spawn(B);
+      const view = await spawn(A);
+      write(view, tmp(A, 't'), 2500);
+      const before = quota().bytes;
+      await mm.emptySessionTmp('ps', A, path.join(env.dataRoot, 'ps', 'sessions', A, 'tmp'), view, {keep: true});
+      assert.ok(fs.existsSync(tmp(A, 't')), 'emptied');
+      assert.strictEqual(quota().bytes, before - 2500, 'its share given back');
+    });
+
     it('a respawn empties its /tmp: what it held leaves its share and the total; a name in /data keeps those bytes counted', async () => {
       await make(A);
       await make(B);

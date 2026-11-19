@@ -115,14 +115,18 @@ describe('sandbox 09: --hardened', function() {
   // not made yet either: the overlap check never resolves above the grant
   // root; the high review of #452)
   it('a first spawn under a --moduleDataPath not made yet', async () => {
-    const store = path.join(root, 'fresh', 'nested', 'store');
+    // (beside --modulePath, never in it: every module root is code)
+    const storeBase = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-hardened-store-'));
+    const store = path.join(storeBase, 'fresh', 'nested', 'store');
     server = await startServer(testPort(9614), ['--debug', '--debugKey', KEY, '--workerThread', '--hardened', '--moduleSandbox', 'enforce',
       '--modulePath', root, '--moduleDataPath', store, '--loadModule', path.join(root, 'sandbox-probe')]);
     // (the module ran: the broker answers the host file as missing)
     const r = await mcpCall(testPort(9614), KEY, 'sandbox_probe_probeservice_attempt', {what: 'read', arg: '/proc/self/environ'});
     assert.strictEqual(r.isError, false, `${JSON.stringify(r)} ${server.output.slice(-2000)}`);
     assert.strictEqual(toolOutput(r).code, 'ENOENT', JSON.stringify(r));
-    assert.ok(fs.existsSync(path.join(store, 'sandbox-probe')), server.output.slice(-2000));
+    try {
+      assert.ok(fs.existsSync(path.join(store, 'sandbox-probe')), server.output.slice(-2000));
+    } finally { stopServer(server); server = null; fs.rmSync(storeBase, {recursive: true, force: true}); }
   });
 
   it('refuses a module outside --modulePath', async () => {
