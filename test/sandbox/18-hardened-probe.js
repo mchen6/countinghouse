@@ -25,6 +25,12 @@ describe('sandbox 18: --hardened grant probe', function() {
       assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\x\\ch', '--allow-fs-read=C:\\x\\ch\\node_modules\\a', '--allow-fs-read=C:\\x\\ch_data']),
         [['C:\\x\\ch', 'C:\\x\\ch_data']]);
     }
+    // Windows compares without case (the back-sweep, 11-18): a case-only
+    // difference is still the layout, and a directory inside is still nested
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=C:\\X\\ch', '--allow-fs-read=c:\\x\\ch_data', '--allow-fs-read=c:\\x\\CH\\lib'], 'win32'),
+      [['C:\\X\\ch', 'c:\\x\\ch_data']]);
+    // elsewhere case is part of the name
+    assert.deepStrictEqual(hardened.grantOverlaps(['--allow-fs-read=/X/ch', '--allow-fs-read=/x/ch_data'], 'linux'), []);
   });
 
   it('allows grants with distinct names, on every Node', () => {
