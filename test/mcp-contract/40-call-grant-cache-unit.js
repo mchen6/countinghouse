@@ -17,18 +17,25 @@
 // - at most 1024 keys (GRANT_CACHE_MAX), the oldest out first.
 const assert = require('assert');
 const options = require('../../lib/cli-options');
-options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
-require('../../lib/logger').createLogger();
-const registry = require('../../lib/mcp/tool-registry');
 
 describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', () => {
+  // (set in before() and put back in after(): nothing at load; the registry
+  // required once Redis points at port 1, where nothing listens)
+  let registry;
+  let savedOptions;
+  before(() => {
+    savedOptions = {redisUrl: options.redisUrl, debug: options.debug};
+    options.setOptions({redisUrl: 'redis://127.0.0.1:1'});
+    require('../../lib/logger').createLogger();
+    registry = require('../../lib/mcp/tool-registry');
+  });
+  after(() => { options.setOptions(savedOptions); });
   let t;
   let reads;
   let ids;
   let grants;
   let knownKeys;
   let held;      // a provider read held back by a test, or null
-  const savedDebug = options.debug;
   const UNKNOWN = Object.assign(new Error('Unknown user'), {code: 'SYSTEM_ERROR_UNKNOWN_USER'});
   const identify = (key, cb) => { ids.push(key); setImmediate(cb, knownKeys.has(key) ? null : UNKNOWN); };
   const call = (key) => new Promise((resolve, reject) => registry.grantsForCall(key, identify, (err, g) => (err ? reject(err) : resolve(g))));
@@ -47,7 +54,7 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
       if (held === 'hold') held = answer; else setImmediate(answer);
     }});
   });
-  afterEach(() => { options.debug = savedDebug; registry.resetGrantsForTests(); });
+  afterEach(() => { options.debug = savedOptions.debug; registry.resetGrantsForTests(); });
 
   it('a call resolves the key and reads its grants once, then answers from the set until it is 5 s old', async () => {
     assert.deepStrictEqual([...await call('key-a')], ['d1']);
@@ -86,10 +93,9 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
     assert.deepStrictEqual(registry.grantKeysForTests(), []);
   });
 
-  it('no key and an unknown key: the auth refusal, every time, nothing kept, no grants read', async () => {
+  it('no key and an unknown key: the auth refusal, every time, nothing kept', async () => {
     for (const key of [null, 'not-a-key', 'not-a-key']) await assert.rejects(call(key), (e) => e === UNKNOWN);
     assert.deepStrictEqual(ids, [null, 'not-a-key', 'not-a-key']);
-    assert.deepStrictEqual(reads, []);
     assert.deepStrictEqual(registry.grantKeysForTests(), []);
   });
 
@@ -130,20 +136,46 @@ describe('mcp-contract 40: the grant set a tools/call is answered by (unit)', ()
     assert.deepStrictEqual(registry.grantKeysForTests(), []);
   });
 
-  it('a key a call resolved before: resolved again and its grants read side by side; a key never resolved: one read at a time', async () => {
+  it('one path: the key resolved and its grants read side by side, whatever the key, then kept once', async () => {
     const order = [];
     const slowIdentify = (key, cb) => { order.push(`identify ${key}`); setImmediate(() => { order.push(`identified ${key}`); cb(knownKeys.has(key) ? null : UNKNOWN); }); };
     registry.resetGrantsForTests({now: () => t, read: (key, cb) => { order.push(`read ${key}`); setImmediate(cb, null, {devices: grants[key] || []}); }});
     const callWith = (key) => new Promise((resolve, reject) => registry.grantsForCall(key, slowIdentify, (err, g) => (err ? reject(err) : resolve(g))));
     await callWith('key-a');
-    assert.deepStrictEqual(order, ['identify key-a', 'identified key-a', 'read key-a'], 'never resolved: the grants after');
+    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'both begun before either answers');
     order.length = 0;
     t += registry.GRANT_TTL_MS;
     await callWith('key-a');
-    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'lapsed: both begun before either answers');
+    assert.deepStrictEqual(order.slice(0, 2).sort(), ['identify key-a', 'read key-a'], 'lapsed: both again, side by side');
     order.length = 0;
     await assert.rejects(callWith('never-seen'), (e) => e === UNKNOWN);
-    assert.deepStrictEqual(order, ['identify never-seen', 'identified never-seen'], 'an unknown key costs one read');
+    assert.deepStrictEqual(registry.grantKeysForTests().length, 1, 'the unknown key is not kept');
+  });
+
+  it('a call\'s resolution renews that the key is known even when a later list read kept the set (#458\'s high review, 4)', async () => {
+    await call('key-a');
+    t += registry.GRANT_TTL_MS;
+    // the call's read held back; a list's read, begun after it, lands first
+    const answers = [];
+    registry.resetGrantsForTests({now: () => t, read: (key, cb) => answers.push(cb)});
+    knownKeys.add('key-a');
+    const first = call('key-a');
+    while (answers.length < 1) await new Promise((res) => setImmediate(res));
+    answers[0](null, {devices: ['d1']});
+    await first;
+    t += registry.GRANT_TTL_MS;
+    const lapsed = call('key-a');
+    while (answers.length < 2) await new Promise((res) => setImmediate(res));
+    t += 1;
+    const listed = list('key-a');
+    while (answers.length < 3) await new Promise((res) => setImmediate(res));
+    answers[2](null, {devices: ['d1']});
+    await listed;
+    answers[1](null, {devices: ['d1']});
+    await lapsed;
+    ids.length = 0;
+    await call('key-a');
+    assert.deepStrictEqual(ids, [], 'known from the call\'s resolution: not resolved again');
   });
 
   it('of two reads in flight, the older answer never overwrites the newer', async () => {
