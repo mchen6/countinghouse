@@ -80,4 +80,25 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
       await fsb.bridge.close();
     }
   });
+
+  // The high review of #451: under enforce a module's /data or /tmp that
+  // overlaps its own code refuses the spawn, and that is judged before
+  // anything is made or emptied there, so the module's files survive.
+  it('under enforce, a /tmp inside the module\'s own code refuses the spawn first: nothing there is emptied', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-own-')));
+    const mod = path.join(base, 'mod');
+    const tmpInside = path.join(mod, 'store', 'm', 'tmp');
+    fs.mkdirSync(tmpInside, {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.writeFileSync(path.join(tmpInside, 'keep.js'), 'module.exports = 1;');
+    let code = null;
+    try {
+      const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+        options: {moduleDataPath: path.join(mod, 'store'), modulePath: base}, report: () => {}});
+      await fsb.bridge.close();
+    } catch (e) { code = e.code; }
+    assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
+    assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the module\'s own file was emptied before the refusal');
+  });
 });
