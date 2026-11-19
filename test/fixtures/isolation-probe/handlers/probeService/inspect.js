@@ -150,6 +150,10 @@ const STEPS = {
     out.push((await import('../../lib/needs-module.cjs')).default.createRequire);
     // (and one importing it: named exports of the same form)
     out.push(await (await import('../../lib/imports-module.cjs')).default());
+    // (a require of a sibling with no extension, and an import of an ES
+    // module, from CommonJS reached by import(): each as written)
+    out.push((await import('../../lib/needs-sibling.cjs')).default.own);
+    out.push(await (await import('../../lib/imports-esm.cjs')).default());
     return out.join(' ');
   },
   // The window (Revision 4, test 4): while the runtime's late paths run (a

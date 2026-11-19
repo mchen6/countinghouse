@@ -126,7 +126,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     });
     it('interop: the module\'s own files by import(), require(esm), createRequire and require.resolve', async () => {
       const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'interop'});
-      assert.strictEqual(detail(r), 'cjs esm json resolved function function function', JSON.stringify(r).slice(0, 500));
+      assert.strictEqual(detail(r), 'cjs esm json resolved function function function sibling esm', JSON.stringify(r).slice(0, 500));
     });
     it(`BroadcastChannel: ${mode === 'enforce' ? 'gone by either route' : 'a message crosses to another module\'s worker, and is reported'}`, async () => {
       const listening = mcpCall(testPort(9759), KEY, 'isolation_peer_peerservice_listen', {});
