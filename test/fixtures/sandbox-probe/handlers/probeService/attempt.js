@@ -76,6 +76,24 @@ const ATTEMPTS = {
     void new vm.SourceTextModule('export default 1;');
     throw Object.assign(new Error('present'), {code: 'PRESENT'});
   },
+  // ... an invalid cache value is Node's to refuse, as it would (the high
+  // review of #440: present means not undefined, and only a valid one is
+  // dropped)
+  vmInvalidCache:   () => {
+    const vm = require('vm');
+    for (const opts of [{cachedData: null}, {cachedData: 0}, {produceCachedData: 0}]) {
+      let code = null;
+      try { new vm.Script('1;', Object.assign({filename: 'ch-probe-invalid.js'}, opts)); } catch (e) { code = e.code; }
+      if (code !== 'ERR_INVALID_ARG_TYPE') throw Object.assign(new Error('taken'), {code: `TAKEN_${String(code)}`});
+    }
+  },
+  // ... a vm function module code assigns never takes; under audit it is said
+  vmAssign:         () => {
+    const vm = require('vm');
+    const was = vm.runInThisContext;
+    try { vm.runInThisContext = function() {}; } catch (e) { /* refused */ }
+    if (vm.runInThisContext !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
   // ... a script asked only to produce a cache is never marked rejected
   vmProduce:        () => {
     const s = new (require('vm').Script)('1;', {filename: 'ch-probe-produce.js', produceCachedData: true});

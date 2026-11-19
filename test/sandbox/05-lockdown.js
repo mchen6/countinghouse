@@ -213,9 +213,12 @@ describe('sandbox 05: worker lockdown', function() {
     });
     it('vm: no prototype leads to Node\'s native class; a produce-only script is not marked rejected; inherited options are kept', async () => {
       // (vmFreeze last: it freezes the worker's vm.Script for good)
-      for (const what of ['vmNative', 'vmProduce', 'vmInherited', 'vmFreeze']) {
+      const from = server.output.length;
+      for (const what of ['vmNative', 'vmProduce', 'vmInherited', 'vmInvalidCache', 'vmAssign', 'vmFreeze']) {
         assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
       }
+      // (the assignment is said under audit, as the loader's statics' are)
+      if (mode === 'audit') await waitFor(() => server.output.slice(from).includes('violation require vm.runInThisContext replaced'), 20000, 'the vm assignment line');
     });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
