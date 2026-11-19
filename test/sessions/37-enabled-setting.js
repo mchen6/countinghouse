@@ -32,7 +32,10 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
   let savedLocale;
   const history = () => { try { return fs.readFileSync(path.join(dir, 'history.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { return []; } };
   const stored = () => JSON.parse(fs.readFileSync(file, 'utf8')).values;
-  const record = (modules) => fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({modules}));
+  // ch-local's record: by default each module that is no part is a pack of
+  // its own (so its scenario: top-level), and a part is in no pack
+  const ownPacks = (modules) => Object.fromEntries(Object.entries(modules).filter(([, m]) => m.role !== 'part').map(([pkg, m], i) => [`p${i}`, {modules: {[pkg]: m.version}}]));
+  const record = (modules, packs = ownPacks(modules)) => fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({modules, packs}));
   const tool = (o = {}) => settingsTool.create(Object.assign({
     file,
     ceiling: () => ({state: 'none'}),
@@ -71,6 +74,21 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
       loaded: true, version: '1.2.0', tools: ['weather_tool_forecast_get']});
     assert.strictEqual(rows.find((r) => r.module === SCENARIO).loaded, false);
     assert.ok(!got.settings.some((r) => r.name.startsWith('pack.')), 'no pack row');
+  });
+
+  // #449's high review, 1: ch-local's rule, one vector for both repos
+  it('the top-level modules are ch-local\'s: each pack\'s scenario (the vectors\' topLevelModules)', () => {
+    const V = require('../../docs/superpowers/specs/shared-runtime-wire/vectors.json').topLevelModules;
+    assert.ok(V.cases.length >= 8);
+    for (const c of V.cases) assert.deepStrictEqual([...settingsTool.topLevelModules(c.record)].sort(), c.topLevel, c.why);
+  });
+
+  it('a module of role null in no pack, or a part, has no row and is SETTING_UNKNOWN', async () => {
+    fs.writeFileSync(path.join(dir, 'modules.json'), JSON.stringify({modules: {[SCENARIO]: {version: '0.5.0', role: 'scenario'}, [TOOL]: {version: '1.2.0', role: null}},
+      packs: {'ci-failure-triage': {modules: {[SCENARIO]: '0.5.0'}}}}));
+    const rows = (await tool().get()).settings.filter((r) => r.name.startsWith('enabled.'));
+    assert.deepStrictEqual(rows.map((r) => r.module), [SCENARIO]);
+    await refused(tool().set(`enabled.${TOOL}`, 'off'), 'SETTING_UNKNOWN');
   });
 
   it('a part, a module not installed and a name of no grammar are SETTING_UNKNOWN', async () => {

@@ -46,7 +46,10 @@ describe('stdio 14: countinghouse_settings', () => {
     file = path.join(home, 'settings.json');
     // ch-local's record beside it: the installed top-level modules a
     // module's on/off names (M5b: enabled.<module>; no setting is a pack's)
-    fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({modules: Object.fromEntries([SC, 'a', 'b', 'made-up', 'other'].map((m) => [m, {version: '1.0.0', role: 'scenario'}]))}));
+    // (each the scenario of a pack of its own: ch-local's top-level rule)
+    const tops = [SC, 'a', 'b', 'made-up', 'other'];
+    fs.writeFileSync(path.join(home, 'modules.json'), JSON.stringify({modules: Object.fromEntries(tops.map((m) => [m, {version: '1.0.0', role: 'scenario'}])),
+      packs: Object.fromEntries(tops.map((m, i) => [`p${i}`, {modules: {[m]: '1.0.0'}}]))}));
     tool = settingsTool.create({file, lockWaitMs: 200});
     // the runtime on its defaults at each case's start, whatever the case
     // before (or a file run before this one, #285) left: a cap's value is

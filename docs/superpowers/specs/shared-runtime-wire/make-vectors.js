@@ -440,6 +440,30 @@ const out = {
   // A module setting's value in the history (#413 rev 3 section 4.2): one
   // shape for the runtime's lines and ch-local's (lib/history-cut.js, and
   // ch-local's settings history and outside-edits check)
+  // The top-level modules of ch-local's record (modules.json): the ones a
+  // module's on/off (enabled.<module>) is for. One rule for countinghouse's
+  // settings tool (lib/settings-tool.js topLevelModules) and ch-local's
+  // lib/module-roles.js topLevel with lib/packs.js packScenario (#449's high
+  // review, 1). topLevel is sorted.
+  topLevelModules: (() => {
+    const S = '@countinghouse/ch-pack-example';
+    const P = '@countinghouse/ch-step-example';
+    const T = 'weather-tool';
+    return {
+      rule: 'a module is top-level when it is the scenario of a pack in packs: of that pack\'s modules (in their order), the first that modules gives role "scenario", else the pack\'s first module; and only when modules holds it. Every other module in modules is a part, whatever its role, and has no enabled.<module>',
+      cases: [
+        {why: 'a pack\'s scenario and its part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[S]: '1.0.0', [P]: '0.2.0'}}}}, topLevel: [S]},
+        {why: 'the scenario listed after its part', record: {modules: {[P]: {version: '0.2.0', role: 'part'}, [S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {[P]: '0.2.0', [S]: '1.0.0'}}}}, topLevel: [S]},
+        {why: 'a pack with no module of role scenario: its first module', record: {modules: {[T]: {version: '1.2.0', role: null}, [P]: {version: '0.2.0', role: null}}, packs: {weather: {modules: {[T]: '1.2.0', [P]: '0.2.0'}}}}, topLevel: [T]},
+        {why: 'a module of role null in no pack is a part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: null}}, packs: {example: {modules: {[S]: '1.0.0'}}}}, topLevel: [S]},
+        {why: 'a module of role scenario in no pack is a part', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: 'scenario'}}, packs: {example: {modules: {[S]: '1.0.0'}}}}, topLevel: [S]},
+        {why: 'a pack\'s scenario that modules does not hold: none', record: {modules: {[P]: {version: '0.2.0', role: 'part'}}, packs: {example: {modules: {[S]: '1.0.0', [P]: '0.2.0'}}}}, topLevel: []},
+        {why: 'a scenario of one pack that another lists too: top-level once', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}, [T]: {version: '1.2.0', role: 'scenario'}}, packs: {example: {modules: {[S]: '1.0.0'}}, weather: {modules: {[T]: '1.2.0', [S]: '1.0.0'}}}}, topLevel: [S, T].sort()},
+        {why: 'two of role scenario in one pack: the first', record: {modules: {[T]: {version: '1.2.0', role: 'scenario'}, [S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {[T]: '1.2.0', [S]: '1.0.0'}}}}, topLevel: [T]},
+        {why: 'a pack with no modules', record: {modules: {[S]: {version: '1.0.0', role: 'scenario'}}, packs: {example: {modules: {}}}}, topLevel: []}
+      ]
+    };
+  })(),
   historyCut: (() => {
     const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v), 'utf8').digest('hex');
     const of = (why, value) => {

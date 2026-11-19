@@ -191,7 +191,8 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
       const r = await tool().set(EN, 'on', 'settings tool', CLIENT);
       assert.strictEqual(r.inputRequired.inputRequests.approve.params.message, ON_TEXT('0.5.0'));
       confirmModule.resetForTests();
-      fs.writeFileSync(modulesJson, JSON.stringify({v: 2, modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0-rc.1', role: 'scenario'}}}));
+      fs.writeFileSync(modulesJson, JSON.stringify({v: 2, packs: {'ci-failure-triage': {modules: {'@countinghouse/ch-pack-ci-failure-triage': '0.5.0-rc.1'}}},
+        modules: {'@countinghouse/ch-pack-ci-failure-triage': {version: '0.5.0-rc.1', role: 'scenario'}}}));
       await refused(tool().set(EN, 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
       confirmModule.resetForTests();
       fs.rmSync(modulesJson);
@@ -248,7 +249,7 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
       assert.ok(history().some((h) => h.setting === 'requestTimeout' && h.change === 'not confirmed (client conditions unknown)'));
       control.resetForTests();   // no channel at all
       fs.writeFileSync(file, JSON.stringify({version: 1, values: {'enabled.x': false}}));
-      fs.writeFileSync(path.join(path.dirname(file), 'modules.json'), JSON.stringify({modules: {x: {version: '1.0.0', role: 'scenario'}}}));
+      fs.writeFileSync(path.join(path.dirname(file), 'modules.json'), JSON.stringify({modules: {x: {version: '1.0.0', role: 'scenario'}}, packs: {x: {modules: {x: '1.0.0'}}}}));
       await refused(prod().set('enabled.x', 'on', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
     });
   });

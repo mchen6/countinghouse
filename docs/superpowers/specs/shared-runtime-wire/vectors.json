@@ -2002,6 +2002,234 @@
       }
     ]
   },
+  "topLevelModules": {
+    "rule": "a module is top-level when it is the scenario of a pack in packs: of that pack's modules (in their order), the first that modules gives role \"scenario\", else the pack's first module; and only when modules holds it. Every other module in modules is a part, whatever its role, and has no enabled.<module>",
+    "cases": [
+      {
+        "why": "a pack's scenario and its part",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            },
+            "@countinghouse/ch-step-example": {
+              "version": "0.2.0",
+              "role": "part"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "@countinghouse/ch-pack-example": "1.0.0",
+                "@countinghouse/ch-step-example": "0.2.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "@countinghouse/ch-pack-example"
+        ]
+      },
+      {
+        "why": "the scenario listed after its part",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-step-example": {
+              "version": "0.2.0",
+              "role": "part"
+            },
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "@countinghouse/ch-step-example": "0.2.0",
+                "@countinghouse/ch-pack-example": "1.0.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "@countinghouse/ch-pack-example"
+        ]
+      },
+      {
+        "why": "a pack with no module of role scenario: its first module",
+        "record": {
+          "modules": {
+            "weather-tool": {
+              "version": "1.2.0",
+              "role": null
+            },
+            "@countinghouse/ch-step-example": {
+              "version": "0.2.0",
+              "role": null
+            }
+          },
+          "packs": {
+            "weather": {
+              "modules": {
+                "weather-tool": "1.2.0",
+                "@countinghouse/ch-step-example": "0.2.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "weather-tool"
+        ]
+      },
+      {
+        "why": "a module of role null in no pack is a part",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            },
+            "weather-tool": {
+              "version": "1.2.0",
+              "role": null
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "@countinghouse/ch-pack-example": "1.0.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "@countinghouse/ch-pack-example"
+        ]
+      },
+      {
+        "why": "a module of role scenario in no pack is a part",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            },
+            "weather-tool": {
+              "version": "1.2.0",
+              "role": "scenario"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "@countinghouse/ch-pack-example": "1.0.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "@countinghouse/ch-pack-example"
+        ]
+      },
+      {
+        "why": "a pack's scenario that modules does not hold: none",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-step-example": {
+              "version": "0.2.0",
+              "role": "part"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "@countinghouse/ch-pack-example": "1.0.0",
+                "@countinghouse/ch-step-example": "0.2.0"
+              }
+            }
+          }
+        },
+        "topLevel": []
+      },
+      {
+        "why": "a scenario of one pack that another lists too: top-level once",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            },
+            "weather-tool": {
+              "version": "1.2.0",
+              "role": "scenario"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "@countinghouse/ch-pack-example": "1.0.0"
+              }
+            },
+            "weather": {
+              "modules": {
+                "weather-tool": "1.2.0",
+                "@countinghouse/ch-pack-example": "1.0.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "@countinghouse/ch-pack-example",
+          "weather-tool"
+        ]
+      },
+      {
+        "why": "two of role scenario in one pack: the first",
+        "record": {
+          "modules": {
+            "weather-tool": {
+              "version": "1.2.0",
+              "role": "scenario"
+            },
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {
+                "weather-tool": "1.2.0",
+                "@countinghouse/ch-pack-example": "1.0.0"
+              }
+            }
+          }
+        },
+        "topLevel": [
+          "weather-tool"
+        ]
+      },
+      {
+        "why": "a pack with no modules",
+        "record": {
+          "modules": {
+            "@countinghouse/ch-pack-example": {
+              "version": "1.0.0",
+              "role": "scenario"
+            }
+          },
+          "packs": {
+            "example": {
+              "modules": {}
+            }
+          }
+        },
+        "topLevel": []
+      }
+    ]
+  },
   "historyCut": {
     "rule": "fields old, new, asked and kept of a module.* history line: a string of more than 64 code points is written as its first 64 code points, with <field>Sha256 beside it, the lowercase hex SHA-256 of the UTF-8 of JSON.stringify(the WHOLE value); any other value, and a string of 64 code points or fewer, is written whole with no Sha256 field. A reader compares a recorded <field>Sha256 with the SHA-256 of JSON.stringify(the value it holds)",
     "cases": [
