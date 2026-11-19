@@ -208,6 +208,28 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
     });
 
+    // (the medium review of round 5, 7) the stored value read as it is: an
+    // unrelated value the settings would refuse does not hide the off
+    it('the settings file read as stored: enabled.<m> false beside a value the settings refuse still gives the off text', async() => {
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      const options = require('../../lib/cli-options');
+      const saved = {settingsTool: options.settingsTool, settingsFile: options.settingsFile};
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-s19-'));
+      try {
+        const file = path.join(dir, 'settings.json');
+        fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${MOD}`]: false, maxOutputBytes: 'not a size'}}));
+        Object.assign(options, {settingsTool: true, settingsFile: file});
+        loaded = [{name: MOD, modules: [MOD], tools: []}];
+        await c({settingsServed: undefined, storedOff: undefined}).unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+        assert.deepStrictEqual(all(MOD), each(offNotice(MOD, [])));
+      } finally {
+        Object.assign(options, saved);
+        fs.rmSync(dir, {recursive: true, force: true});
+      }
+    });
+
     it('no reason (today\'s ch-local), another reason, or no settings tool here: the message\'s own words', async() => {
       await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
       assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
