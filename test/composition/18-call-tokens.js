@@ -1217,16 +1217,27 @@ describe('composition 18: the token store and the peer path\'s checks (unit)', f
       bill(replyTo('m90').token, 'b90');
       await sleep(50);
       assert.strictEqual(broker.openInvokesTo(callee), 0);
-      // a channel request to a module being replaced: denied, nothing held
+      // a channel request to a module being replaced: denied, nothing held.
+      // The broker asks whether the callee is being replaced only after the
+      // access check (#442: before it, a caller without access learnt the
+      // device is hosted), so the request's identity is one the auth
+      // provider accepts here.
       const denied = [];
       const requester = {workerId: 18, sendPeerChannelDenyToChild: (m) => denied.push(m), bindings: caller.bindings};
+      const provider = require('../../lib/auth').getAuthProvider();
+      const savedAuthenticate = provider.authenticate;
+      provider.authenticate = (appKey, deviceID, serviceID, actionName, cb) => cb(null, {ok: true, userName: 'drain-probe', isAdmin: false});
       callee.replacing = true;
-      const before = [broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size];
-      broker.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(18))}, requester);
-      await sleep(20);
-      assert.deepStrictEqual(denied.map((m) => m.errCode), ['MODULE_RELOADING']);
-      assert.deepStrictEqual([broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size], before);
-      callee.replacing = false;
+      try {
+        const before = [broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size];
+        broker.handleRequest({targetDeviceID: 'd-callee', appKey: 'k', token: tokens().issue(ENTRY(18))}, requester);
+        await sleep(20);
+        assert.deepStrictEqual(denied.map((m) => m.errCode), ['MODULE_RELOADING']);
+        assert.deepStrictEqual([broker.announcedBytes, broker.announcedByWorker.size, broker.announced.size], before);
+      } finally {
+        provider.authenticate = savedAuthenticate;
+        callee.replacing = false;
+      }
     });
 
     // Round 3 (3, 4): an invoke's id is an integer in range, on the
