@@ -489,7 +489,22 @@ describe('store 04: a waiter is not starved (#150)', function() {
     }
   });
 
-  it('two processes hammering one key both finish, every operation within LOCK_WAIT_MS', async () => {
+  // Fairness, measured against the other process's holds, never the wall
+  // clock: a loaded runner stalls both processes alike (CI took 13 s for a
+  // 3 s hammer, and an update that succeeded took 2697 ms with the yield
+  // working), so a wall-clock bound measured the runner. A starved waiter
+  // instead sees the hammer take the lock again and again while it waits.
+  // The hammer logs when each of its holds begins; the waiter logs when
+  // each update asked and when it got the lock (inside fn, so its write's
+  // fsync is not counted). Within LOCK_WAIT_MS of its request -- the span
+  // its announcement asks the others to yield for -- at most 10 holds begin
+  // while it waits. A fair wait sees the holds of one retry interval: when
+  // the hammer's own announcement (made while the waiter held the lock) is
+  // still fresh, the waiter yields to it and takes the lock at its next
+  // retry, 10 ms on, after up to 4 of the hammer's 2 ms holds (seen
+  // locally). With the yield disabled an update waited through 177 and 190.
+  it('two processes hammering one key both finish, and a waiter waits through at most 10 of the other\'s holds', async () => {
+    const {LOCK_WAIT_MS} = require(MOD);
     const dir = tmpStore();
     const file = path.join(dir, 'm.json');
     const run = (script) => new Promise((resolve, reject) => {
@@ -501,34 +516,37 @@ describe('store 04: a waiter is not starved (#150)', function() {
       p.stderr.on('data', (c) => { err += c; });
       p.on('exit', (code) => (code === 0 ? resolve(out) : reject(new Error(err || `exit ${code}`))));
     });
-    // takes the lock again at once, each time holding it about 2 ms
+    // takes the lock again at once, each time holding it about 2 ms, and
+    // logs when each hold begins
     const hammer = run(`
       const end = Date.now() + 3000;
-      let n = 0;
+      const holds = [];
       while (Date.now() < end) {
-        withStoreLock(${JSON.stringify(dir)}, () => { const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } n++; });
+        withStoreLock(${JSON.stringify(dir)}, () => { holds.push(Date.now()); const t = Date.now() + 2; while (Date.now() < t) { /* hold */ } });
       }
-      process.stdout.write(String(n));
+      process.stdout.write(JSON.stringify(holds));
     `);
-    // counts one key with update(), timing each
+    // counts one key with update(), logging when each asked and got the lock
     const waiter = run(`
       const f = openJsonFile(${JSON.stringify(file)});
-      let n = 0, worst = 0;
+      const waits = [];
       const next = () => {
-        const t = Date.now();
-        f.update('n', (v) => (v || 0) + 1, (err) => {
+        const asked = Date.now();
+        let got = null;
+        f.update('n', (v) => { got = Date.now(); return (v || 0) + 1; }, (err) => {
           if (err) { process.stderr.write(err.message); process.exit(1); }
-          worst = Math.max(worst, Date.now() - t);
-          if (++n < 40) return next();
+          waits.push({asked, got});
+          if (waits.length < 40) return next();
           f.close();
-          process.stdout.write(String(worst));
+          process.stdout.write(JSON.stringify(waits));
         });
       };
       setTimeout(next, 100);
     `);
-    const [hammered, worst] = await Promise.all([hammer, waiter]);
-    assert.ok(Number(hammered) > 0, 'the hammer never took the lock');
-    assert.ok(Number(worst) < 2000, `an update waited ${worst} ms`);
+    const [holds, waits] = (await Promise.all([hammer, waiter])).map((out) => JSON.parse(out));
+    assert.ok(holds.length > 0, 'the hammer never took the lock');
+    const during = waits.map((w) => holds.filter((h) => h > w.asked && h < Math.min(w.got, w.asked + LOCK_WAIT_MS)).length);
+    assert.ok(Math.max(...during) <= 10, `an update waited through ${Math.max(...during)} of the other process's holds (${JSON.stringify(during)})`);
     assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, 40);
   });
 });
