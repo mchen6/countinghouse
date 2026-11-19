@@ -55,6 +55,10 @@ describe('fs-broker 26: a module\'s virtual drive on Windows (#195)', () => {
     for (const other of ['\\\\?\\Volume{0f0e}\\pkgs\\package.json', '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume2\\package.json',
       '\\\\?\\D:package.json', 'D:\\mods\\package.json', '/app/package.json']) assert.strictEqual(f(other), other);
     assert.strictEqual(fromNamespacedFor(false)('\\\\?\\D:\\x'), '\\\\?\\D:\\x', 'not Windows: unchanged');
+    // (a component Win32 would trim in the plain form: no path)
+    for (const trimmed of ['\\\\?\\D:\\mods\\.. \\x', '\\\\?\\D:\\mods\\a.\\package.json', '\\\\?\\D:\\mods\\x ', '\\\\?\\UNC\\srv\\share.\\x']) {
+      assert.strictEqual(f(trimmed), null, trimmed);
+    }
   });
 
   it('the broker\'s path form: <V>:\\app is /app, a string or a Buffer; another drive stays a host path', () => {

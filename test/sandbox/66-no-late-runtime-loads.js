@@ -15,7 +15,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
-const {testPort} = require('../helpers/test-env');
+const {testPort, redisAnswers} = require('../helpers/test-env');
+
+// (whether the servers this test starts have a Redis that answers: the
+// Windows subset's runner has none, so a step that needs one is skipped
+// there, saying so)
+let noStore = false;
 const {startStdio, withoutRedisNoise, INITIALIZE} = require('../helpers/stdio-client');
 
 const KEY = 'aabbcc';
@@ -28,9 +33,9 @@ const STEPS = [
   // the declared host, approved by the policy: past the sandbox, into
   // postman-request (a .invalid name ends in its own error)
   ['request', (d) => /^error: /.test(d)],
-  // (no answer is taken only on Windows, whose subset runner has no Redis:
-  // elsewhere a command that never answers fails it)
-  ['redis', (d) => /^called: /.test(d) && (process.platform === 'win32' || !/no store answer/.test(d))],
+  // (skipped only when the test found no Redis to start the server with;
+  // with one, a command that never answers fails it)
+  ['redis', (d) => (noStore ? d === 'skipped: no store' : /^called: /.test(d))],
   ['hostIp', (d) => d === 'string'],
   ['loadFile', (d) => d === 'loaded'],
   // a lib/ file and a node_modules file of countinghouse's: refused
@@ -64,7 +69,8 @@ describe('sandbox 66: no runtime load after the lockdown', function() {
   this.timeout(120000);
   let home;
   let policy;
-  before(() => {
+  before(async () => {
+    noStore = !(await redisAnswers());
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-66-'));
     // the operator approves the probe's declared net: under enforce
     // postman-request is then warmed, and a request reaches it

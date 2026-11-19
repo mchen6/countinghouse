@@ -162,4 +162,19 @@ function startOn(port, readyMs) {
 // test/helpers/port-guard.js).
 const handedOut = (port) => [...assigned.values()].includes(Number(port));
 
-module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, redisConnectionFor, startShell, stopAll, startPrivateRedis};
+// Whether the Redis the servers a test starts use answers a connection:
+// the explicit signal a step that needs a store takes, never the OS (the
+// Windows subset's runner has none).
+const redisAnswers = (timeoutMs = 1500) => new Promise((resolve) => {
+  let c;
+  try {
+    const at = redisConnectionFor(0);
+    c = require('net').connect({host: at.host, port: at.port});
+  } catch (e) { resolve(false); return; }
+  const done = (ok) => { clearTimeout(timer); c.destroy(); resolve(ok); };
+  const timer = setTimeout(() => done(false), timeoutMs);
+  c.once('connect', () => done(true));
+  c.once('error', () => done(false));
+});
+
+module.exports = {testPort, handedOut, redisFlag, redisArgs, redisArgsFor, redisUrlFor, redisConnectionFor, redisAnswers, startShell, stopAll, startPrivateRedis};

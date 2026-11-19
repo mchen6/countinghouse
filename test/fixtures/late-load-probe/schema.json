@@ -9,7 +9,7 @@
         "properties": {
           "step": {
             "type": "string"
-          }
+          }, "noStore": {"type": "boolean"}
         },
         "required": [
           "step"
