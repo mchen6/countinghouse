@@ -46,15 +46,14 @@ describe('sessions 36: no session view (M5a)', () => {
     open(A, B);
     viewWouldHide();
     const registry = require('../../lib/mcp/tool-registry');
-    for (const s of [A, B, null]) {
-      assert.strictEqual(registry.sessionLists(s, {deviceID: 'dev-b'}), true, `listed to ${s}`);
-      assert.deepStrictEqual(Object.keys(registry.filterTargetsBySession({t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, s)), ['t1', 't2']);
-    }
+    // (the one predicate takes no session: there is no view to choose,
+    // #447's high review, 6)
+    assert.strictEqual(registry.callerSees(null, 'dev-b'), true);
+    assert.deepStrictEqual(Object.keys(registry.forCaller({t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, null)), ['t1', 't2']);
     visibility.hide(['mod-a']);
-    for (const s of [A, B, null]) {
-      assert.strictEqual(registry.sessionLists(s, {deviceID: 'dev-a'}), false, `hidden from ${s}`);
-      assert.deepStrictEqual(Object.keys(registry.filterTargetsBySession({t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, s)), ['t2']);
-    }
+    assert.strictEqual(registry.callerSees(null, 'dev-a'), false, 'hidden from everyone');
+    assert.deepStrictEqual(Object.keys(registry.forCaller({t1: {deviceID: 'dev-a'}, t2: {deviceID: 'dev-b'}}, null)), ['t2']);
+    for (const old of ['sessionLists', 'filterTargetsBySession', 'filterTargetsByAuth']) assert.strictEqual(registry[old], undefined, old);
   });
 
   it('a session\'s override names the two caps only: pack.* is SETTING_UNKNOWN; the pack API is gone', () => {

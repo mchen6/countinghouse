@@ -229,13 +229,13 @@ describe('sessions 15: a module going on or off is in no session\'s lists (B3 Ta
 
   it('the global tool table is untouched: the same frozen object, and the filter hands it back while nothing is hidden', () => {
     const before = toolRegistry.buildToolTargets(ci);
-    assert.strictEqual(toolRegistry.filterTargetsBySession(before, B), before, 'none(): the table itself');
+    assert.strictEqual(toolRegistry.forCaller(before, null), before, 'none(): the table itself');
     hideCi();
-    const view = toolRegistry.filterTargetsBySession(before, B);
+    const view = toolRegistry.forCaller(before, null);
     assert.strictEqual(view === before, false, 'a copy while a module is hidden');
     assert.ok(!Object.keys(view).includes('ci_failure_triage'));
     assert.strictEqual(toolRegistry.buildToolTargets(ci), before);
     visibility.show(['ch-pack-x', 'ch-step-a']);
-    assert.strictEqual(toolRegistry.filterTargetsBySession(before, B), before, 'none() again: the table itself');
+    assert.strictEqual(toolRegistry.forCaller(before, null), before, 'none() again: the table itself');
   });
 });
