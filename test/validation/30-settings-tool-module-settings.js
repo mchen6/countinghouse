@@ -10,6 +10,7 @@
 // conversation: false, untrusted); a hint never carries a value; a part's
 // name, an undeclared one or a module not loaded is SETTING_UNKNOWN.
 const assert = require('assert');
+const {EventEmitter} = require('events');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -17,6 +18,8 @@ const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
 const ms = require('../../lib/module-settings');
 const ceilingLib = require('../../lib/settings-ceiling');
+const sessions = require('../../lib/sessions');
+const confirmLib = require('../../lib/settings-confirm');
 
 const pkgOf = (name, settings, extra = {}) => ({name, version: '1.2.0', countinghouse: Object.assign({settings}, extra)});
 const W = pkgOf('@acme/weather-tool', {
@@ -64,7 +67,22 @@ describe('validation 30: countinghouse_settings and module settings', () => {
     ceiling = {state: 'none'};
     loadedWith({'module.@acme/weather-tool.units': 'imperial', 'other.kept': 1});
   });
-  afterEach(() => fs.rmSync(home, {recursive: true, force: true}));
+  afterEach(() => { sessions.resetForTests(); fs.rmSync(home, {recursive: true, force: true}); });
+  // a shared runtime with these sessions open (as sessions 21 opens them):
+  // id -> the session, whose 'end' closes it
+  const openShared = (...ids) => {
+    const reg = new EventEmitter();
+    sessions.attach(reg);
+    const out = {};
+    for (const id of ids) {
+      const s = new EventEmitter();
+      Object.assign(s, {id, client: {status: 'ok', conditions: 'yes', repo: null}, notify: () => {}});
+      reg.emit('session', s);
+      out[id] = s;
+    }
+    return out;
+  };
+  const sharedClient = {sessionClient: () => ({ok: true, client: {name: 'tested-client', version: '1.0.0'}})};
 
   describe('get', () => {
     it('each declared setting of a loaded top-level module: its value, default, what is allowed, the module\'s own words, and how it changes; never a part\'s', async () => {
@@ -257,7 +275,8 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       const real = sessions.askConditions;
       sessions.askConditions = async () => ({status: 'ok', conditions: 'yes'});
       try {
-        const tool = make({sessionClient: () => ({ok: true, client: {name: 'tested-client', version: '1.0.0'}})});
+        openShared('shared-form-1', 'shared-form-2');
+        const tool = make(sharedClient);
         const s1 = {shared: true, session: 'shared-form-1'};
         const s2 = {shared: true, session: 'shared-form-2'};
         const asked = await tool.set('module.@acme/weather-tool.shareStats', 'on', 'settings tool', s1);
@@ -269,6 +288,81 @@ describe('validation 30: countinghouse_settings and module settings', () => {
         assert.ok(history().filter((h) => h.setting && h.setting.startsWith('module.')).every((h) => h.session != null), 'every line names its session');
       } finally { sessions.askConditions = real; }
     });
+
+    // (the reviewer's high review of #436)
+    const withConditions = async (fn) => {
+      const real = sessions.askConditions;
+      sessions.askConditions = async () => ({status: 'ok', conditions: 'yes'});
+      try { return await fn(); } finally { sessions.askConditions = real; }
+    };
+
+    it('a yes after the user\'s window locked module settings (three declined elsewhere) writes nothing', () => withConditions(async () => {
+      openShared('win-1');
+      const tool = make(sharedClient);
+      const ctx = {shared: true, session: 'win-1'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      for (let i = 0; i < 3; i += 1) confirmLib.userWindow().note('module');
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined);
+      assert.ok(history().some((h) => /too many declined or unanswered forms of module settings/.test(h.change)), JSON.stringify(history()));
+      assert.strictEqual(applied, 0);
+    }));
+
+    it('a session that ended while its client was asked: MODULE_NOT_LISTED, nothing written, counted or kept', () => withConditions(async () => {
+      const open = openShared('gone-1', 'gone-2');
+      let ending = null;
+      const tool = make({sessionClient: (ctx) => {
+        if (ending === ctx.session) open[ctx.session].emit('end', 'closed');
+        return {ok: true, client: {name: 'tested-client', version: '1.0.0'}};
+      }});
+      // the form: the session ends while its conditions are asked
+      ending = 'gone-1';
+      await refused(tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', {shared: true, session: 'gone-1'}), 'MODULE_NOT_LISTED');
+      // the answer: the session ends while its conditions are asked again
+      ending = null;
+      const ctx = {shared: true, session: 'gone-2'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      ending = 'gone-2';
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'MODULE_NOT_LISTED');
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined);
+      assert.strictEqual(applied, 0);
+      const lines = fs.existsSync(path.join(home, 'history.jsonl')) ? history() : [];
+      assert.ok(!lines.some((h) => h.change === 'all sessions (a module setting)'), 'nothing written');
+    }));
+
+    it('a re-check that refuses still uses the form up and is recorded; a decline locks even when a re-check would refuse', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'verify-1'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      ceiling = trusted({moduleSettings: {'@acme/weather-tool.defaultRepo': {fixed: 'acme/fixed'}}});
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_FIXED_BY_CEILING');
+      assert.ok(history().some((h) => h.setting === 'module.@acme/weather-tool.defaultRepo' && /SETTING_FIXED_BY_CEILING/.test(h.change)), JSON.stringify(history()));
+      ceiling = {state: 'none'};
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_CONFIRMATION_USED');
+      // a decline, the ceiling refusing meanwhile: still a decline, still locked
+      const again = await tool.set('module.@acme/weather-tool.shareStats', 'on', 'settings tool', {session: 'verify-2'});
+      ceiling = trusted({moduleSettings: {'@acme/weather-tool.shareStats': {fixed: false}}});
+      const done = await tool.confirm('module.@acme/weather-tool.shareStats', 'on', {requestState: again.inputRequired.requestState, inputResponses: decline}, {session: 'verify-2'});
+      assert.strictEqual(done.applies, 'declined');
+      ceiling = {state: 'none'};
+      await refused(tool.set('module.@acme/weather-tool.maxResults', '7', 'settings tool', {session: 'verify-2'}).then(() => tool.set('module.@acme/weather-tool.defaultRepo', 'acme/x', 'settings tool', {session: 'verify-2'})), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+    });
+
+    it('a shared session\'s form whose time ran out: one expired line, not two', () => withConditions(async () => {
+      openShared('exp-1');
+      const tool = make(sharedClient);
+      const ctx = {shared: true, session: 'exp-1'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      const store = confirmLib.confirmations('exp-1');
+      const realNow = store.now;
+      store.now = () => realNow.call(store) + confirmLib.TTL_MS + 1000;
+      try {
+        await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_CONFIRMATION_EXPIRED');
+      } finally { store.now = realNow; }
+      // the session's next call says what its store queued: still one line
+      await tool.set('module.@acme/weather-tool.shareStats', 'on', 'settings tool', ctx);
+      assert.strictEqual(history().filter((h) => h.change === 'expired').length, 1, JSON.stringify(history()));
+    }));
 
     it('a module setting\'s change in a session is every session\'s line, naming no session to readers', async () => {
       const tool = make();
