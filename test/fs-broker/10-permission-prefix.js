@@ -300,6 +300,32 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     assert.ok(said.some(([rule, t]) => rule === 'overlap' && /a's data overlap/.test(t)), JSON.stringify(said));
   });
 
+  // (and a known module's /data where it really is: an operator's link
+  // there, its target the known module's too)
+  it('a module whose own code is at the target of a known module\'s linked /data: refused under enforce', async function() {
+    if (process.platform === 'win32') return this.skip();
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-linked-')));
+    const store = path.join(base, 'store');
+    const kdata = path.join(base, 'kdata');
+    const k = path.join(base, 'k');
+    fs.mkdirSync(path.join(store, 'k'), {recursive: true});
+    fs.mkdirSync(kdata, {recursive: true});
+    fs.symlinkSync(kdata, path.join(store, 'k', 'data'));
+    fs.mkdirSync(k, {recursive: true});
+    fs.writeFileSync(path.join(k, 'package.json'), '{"name": "k"}');
+    const mm = path.join(kdata, 'm');
+    fs.mkdirSync(mm, {recursive: true});
+    fs.writeFileSync(path.join(mm, 'package.json'), '{"name": "m"}');
+    let code = null;
+    try {
+      const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mm, declared: [], options: {moduleDataPath: store, modulePath: base},
+        knownModules: [{name: 'k', root: k}], report: () => {}});
+      await fsb.bridge.close();
+    } catch (e) { code = e.code; }
+    assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
+  });
+
   // (a --moduleDataPath not made yet, reached through a link above it into
   // the module's own code: refused before anything is made there)
   it('under enforce, a --moduleDataPath through a link into the module\'s own code refuses before anything is made', async function() {
