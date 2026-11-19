@@ -144,9 +144,11 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
         assert.ok(/weather-probe called ctx\.error with USER_HAS_NO_DEVICE/.test(mine[0]), mine[0]);
         assert.ok(!/[\u0000-\u001f]/.test(mine[0]), JSON.stringify(mine[0]));
         assert.ok(warned.some((w) => /other-probe/.test(w)), 'another module: its own line');
-        // at the boundary: once, as MODULE_CODE_RESERVED with its details
+        // at the boundary: once, as MODULE_CODE_RESERVED, with no details (no
+        // answer of a runtime-origin error carries them: the second high
+        // review of #445, 6)
         const answered = CountinghouseError.answerable(e);
-        assert.deepStrictEqual([answered.code, answered.origin, answered.details], ['MODULE_CODE_RESERVED', 'runtime', {n: 1}]);
+        assert.deepStrictEqual([answered.code, answered.origin, answered.details], ['MODULE_CODE_RESERVED', 'runtime', undefined]);
         assert.strictEqual(warned.filter((w) => /weather-probe/.test(w)).length, 1, 'not warned again at the boundary');
       } finally {
         LOG.W = saved;
@@ -156,6 +158,28 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       const e = CountinghouseError.fromModule(plain('DEVICE_OFFLINE'));
       assert.deepStrictEqual([e.code, e.origin, e.kind], ['MODULE_CODE_RESERVED', 'runtime', 'module']);
       assert.match(e.message, /runtime's own code DEVICE_OFFLINE/);
+    });
+    it('names the module on every conversion path, and its text carries no control or bidi character', () => {
+      const LOG = require('../../lib/logger');
+      const saved = LOG.W;
+      const warned = [];
+      LOG.W = (w) => warned.push(String(w));
+      try {
+        // (the second high review of #445, R3 and R1)
+        CountinghouseError.fromModule(Object.assign(new Error('a\u202eb\u2066c\nd'), {code: 'MODULE_RELOADING'}), {module: 'named-probe'});
+        const line = warned.find((w) => /named-probe/.test(w) && /MODULE_RELOADING/.test(w));
+        assert.ok(line != null, JSON.stringify(warned));
+        assert.ok(/^named-probe answered with MODULE_RELOADING/.test(line), line);
+        assert.ok(!/[\u0000-\u001f\u202a-\u202e\u2066-\u2069]/.test(line), JSON.stringify(line));
+      } finally {
+        LOG.W = saved;
+      }
+    });
+    it('the one module-text rule: control, separator and bidi characters become spaces', () => {
+      const {moduleText} = require('../../lib/module-text');
+      assert.strictEqual(moduleText('a\nb\u0007c\u2028d\u202ee\u2069f'), 'a b c d e f');
+      assert.strictEqual(moduleText('abcdef', 3), 'abc');
+      assert.strictEqual(require('../../lib/schema-safety').declaredText('x\u2067y'), 'x y');
     });
     it('is not, for a system error, a Node error, or a code that does not look like one', () => {
       const cases = [plain('EACCES', {errno: -13}), plain('ENOENT', {syscall: 'open'}), plain('ERR_INVALID_ARG_TYPE'),
@@ -222,7 +246,7 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       // a catalogue code the module named: the runtime's MODULE_CODE_RESERVED
       // naming it, with the module's details (the back-sweep, 11-18)
       const named = hopError(CountinghouseError.module('DEVICE_NOT_FOUND', 'no row 7', {row: 7}));
-      assert.deepStrictEqual([named.code, named.origin, named.details], ['MODULE_CODE_RESERVED', 'runtime', {row: 7}]);
+      assert.deepStrictEqual([named.code, named.origin, named.details], ['MODULE_CODE_RESERVED', 'runtime', undefined]);
       assert.match(named.message, /runtime's own code DEVICE_NOT_FOUND/);
       // a callee's plain error with a made-up code is still not passed off as typed
       const plain = Object.assign(new Error('made up'), {code: 'MADE_UP'});

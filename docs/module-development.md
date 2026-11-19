@@ -181,11 +181,13 @@ The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,
 `REPO_TOO_LARGE`, …). Give your codes your module's own prefix, its short
 name (`WEATHER_RATE_LIMITED`, not `RATE_LIMITED`), so they never collide
-with the runtime's catalogue, now or in a later release. The runtime's codes (its error catalogue) are the
-runtime's, and a module never raises them: `ctx.error` with one returns
-the runtime's `MODULE_CODE_RESERVED` instead (the log says why, once per
-code), and so does an error whose code is set to one afterwards.
-`MODULE_CODE_RESERVED` is the runtime's (`origin: 'runtime'`, kind
+with the runtime's catalogue, now or in a later release. The runtime's
+codes (its error catalogue) are the runtime's, and a module never answers
+with them. `ctx.error` with one still returns your module's error, but
+where your handler's answer leaves it the runtime answers the runtime's
+`MODULE_CODE_RESERVED` instead, and so it does for an error whose code is
+set to one afterwards. The log says why, once per module and code, naming
+your module. `MODULE_CODE_RESERVED` is the runtime's (`origin: 'runtime'`, kind
 `module`): it says a module broke this rule. A setting your module cannot do without is
 `ctx.settingRequired(name)`, never `ctx.error('SETTING_REQUIRED')`. The caller gets your code and
 the message `CODE: message`, in worker and single-thread mode alike. So
