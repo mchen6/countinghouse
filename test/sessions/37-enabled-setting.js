@@ -329,10 +329,12 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     const {loadingTops} = require('../../lib/modules-in-place');
     assert.deepStrictEqual(loadingTops({packsLoading: new Map([['in-place', {}]]), startupPending: new Set(['at-start', 'in-place'])}).sort(), ['at-start', 'in-place']);
     assert.deepStrictEqual(loadingTops({}), []);
-    // (the medium review of round 4, 3 and 5) a part inside a loaded module
-    // has no switch: not taken; one already off is no change, as when the
-    // record is read
-    await refused(tool({loadedTops: () => [{name: CALLER, modules: [CALLER, 'a-part'], tools: []}]}).set('enabled.a-part', 'off'), 'SETTING_RECORD_UNREADABLE');
+    // (round 5, 3) a module loaded only inside a loaded caller's closure is
+    // taken too, the same condition the answer's callers use: with the
+    // record unreadable a top-level one cannot be told from a part, and the
+    // off is the safety act
+    assert.strictEqual((await tool({loadedTops: () => [{name: CALLER, modules: [CALLER, 'inside-only'], tools: []}]}).set('enabled.inside-only', 'off')).new, 'off');
+    // one already off is no change, as when the record is read
     fs.writeFileSync(file, JSON.stringify({version: 1, values: {'enabled.gone-now': false, [`enabled.${TOOL}`]: false}}));
     assert.deepStrictEqual(await tool().set('enabled.gone-now', 'off'), {name: 'enabled.gone-now', old: 'off', new: 'off', applies: 'now'});
     // uncounted: the budget is untouched, so an on (the record readable
