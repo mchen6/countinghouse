@@ -130,7 +130,7 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
     }
   });
 
-  // the back-sweep (the Reviewer, 11-19): confinement decides on the
+  // the back-sweep (the Reviewer, 11-18): confinement decides on the
   // kernel's real path (#10). Node's JS realpath resolves this chain to the
   // module's own directory at every step; a POSIX kernel walks one level up
   // per link, so the fifth is --modulesRoot's parent. Windows normalises

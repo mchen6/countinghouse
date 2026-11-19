@@ -1,4 +1,4 @@
-// #9 under the lean worker (the back-sweep's group 3, 11-19), server-free: a
+// #9 under the lean worker (the back-sweep's group 3, 11-18), server-free: a
 // restarted worker that ends after its load acknowledgement but before its
 // devices are registered keeps the devices the supervisor kept from the
 // exit before. Its tools stay listed and its device answers the
