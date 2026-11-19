@@ -167,8 +167,10 @@ const STEPS = {
     // root, to a runtime file against a missing one: by require and by the
     // direct route, the whole error)
     const mainOut = (fn, dir) => { try { fn(`../../lib/${dir}`); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(dir).join('DIR'); } };
-    const mainSame = [(r) => require(r), (r) => M._resolveFilename(r, module)]
-      .every((fn) => mainOut(fn, 'main-out-a') === mainOut(fn, 'main-out-b')) ? 'same' : `main(${mainOut((r) => require(r), 'main-out-a')} / ${mainOut((r) => require(r), 'main-out-b')} / ${mainOut((r) => M._resolveFilename(r, module), 'main-out-a')} / ${mainOut((r) => M._resolveFilename(r, module), 'main-out-b')})`;
+    const routes = [(r) => require(r), (r) => M._resolveFilename(r, module)];
+    const answers = [];
+    for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d']) answers.push(mainOut(fn, dir));
+    const mainSame = answers.every((a) => a === answers[0]) && answers[0] === "MODULE_NOT_FOUND|Cannot find module '../../lib/DIR'" ? 'same' : `main(${answers.join(' / ')})`;
     let empty;
     try { await import(''); empty = 'found'; } catch (e) { empty = `${e.code}|${e.message}`; }
     const emptySame = /^ERR_MODULE_NOT_FOUND\|Cannot find module '' \(countinghouse module sandbox\)$/.test(empty) ? 'same' : `empty(${empty})`;

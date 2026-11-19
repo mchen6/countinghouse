@@ -53,10 +53,14 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
     // (two directories of the module's own whose package.json "main" leads
     // outside its root: to a runtime file, and to a missing one beside it;
     // the review of the third round on #440)
-    for (const [dir, target] of [['main-out-a', 'node-version.js'], ['main-out-b', 'no-such-isolation.js']]) {
+    // (c and d with an index.js of their own, which Node falls back to when
+    // "main" names nothing)
+    for (const [dir, target, index] of [['main-out-a', 'node-version.js', false], ['main-out-b', 'no-such-isolation.js', false],
+      ['main-out-c', 'node-version.js', true], ['main-out-d', 'no-such-isolation.js', true]]) {
       fs.mkdirSync(path.join(probe, 'lib', dir));
       const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
       fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), JSON.stringify({main}));
+      if (index) fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
     }
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
