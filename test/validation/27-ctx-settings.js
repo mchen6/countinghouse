@@ -43,10 +43,8 @@ describe('validation 27: ctx.settings and ctx.settingRequired', () => {
     assert.strictEqual(ctxWith({v: 205}).settings.n, 205);
   });
 
-  it('single-thread mode\'s {values}: those values, frozen', () => {
-    const s = ctxWith({values: {units: 'metric'}}).settings;
-    assert.strictEqual(s.units, 'metric');
-    assert.ok(Object.isFrozen(s));
+  it('{values} with no version (single-thread mode\'s, before module settings ran only with worker threads) is not taken', () => {
+    assert.deepStrictEqual(Object.keys(ctxWith({values: {units: 'metric'}}).settings), []);
   });
 
   it('only own data fields are read: an inherited or accessor field is not', () => {
@@ -66,6 +64,8 @@ describe('validation 27: ctx.settings and ctx.settingRequired', () => {
     assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 499}}), false, 'never given: not held');
     assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 499, values: {n: 1}}}), true, 'its values with it');
     assert.strictEqual(handlerCtx.settingsHeld({input: {}}), true, 'none carried');
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {values: {n: 1}}}), false, 'values with no version: never held (settingsOf would not read them)');
+    assert.strictEqual(handlerCtx.settingsHeld({settings: {v: 'x', values: {n: 1}}}), false, 'a version that is not a number');
   });
 
   it('ctx.settingRequired: the issued SETTING_REQUIRED claim, the name its message, cut to 64', () => {
