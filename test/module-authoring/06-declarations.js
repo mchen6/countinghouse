@@ -929,3 +929,25 @@ describe('module-authoring 06: the declarations a module may make (MCP completen
     });
   });
 });
+
+describe('module-authoring 06: an icon read is checked by its exact inode', () => {
+  // (a file swapped between the lstat and the open for one whose inode
+  // number differs only past 2^53, as a Windows file index can: as Numbers
+  // they compare alike)
+  it('an icon file swapped for one whose inode number collides as a Number is refused as changed', () => {
+    const root = require('../helpers/test-tmp').mkdtemp('ma06-ino-');
+    fs.writeFileSync(path.join(root, 'icon.png'), Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'));
+    const realL = fs.lstatSync;
+    const realF = fs.fstatSync;
+    const fake = (st, big, x) => { Object.defineProperty(st, 'ino', {value: big ? x : Number(x), configurable: true}); return st; };
+    fs.lstatSync = function(p, o) { const st = realL.call(this, p, o); return String(p).endsWith('icon.png') ? fake(st, o != null && o.bigint === true, (2n ** 60n) + 1n) : st; };
+    fs.fstatSync = function(fd, o) { return fake(realF.call(this, fd, o), o != null && o.bigint === true, (2n ** 60n) + 2n); };
+    let r;
+    try { r = require('../../lib/declared-icons').read(root, 'icon.png'); } finally {
+      fs.lstatSync = realL;
+      fs.fstatSync = realF;
+      require('../helpers/test-tmp').remove(root);
+    }
+    assert.strictEqual(r.problem, 'changed while it was read');
+  });
+});

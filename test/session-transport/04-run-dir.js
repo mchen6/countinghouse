@@ -42,6 +42,23 @@ describe('session-transport 04: the run directory (#248 review)', function() {
     assert.strictEqual(runDir.sameIdentity(daemon, before), false);
   });
 
+  // (two directories whose inode numbers differ only past 2^53, as a
+  // Windows file index can: as Numbers they read alike)
+  it('identity: a directory swapped for one whose inode number collides as a Number is caught', () => {
+    const real = fs.lstatSync;
+    let ino = (2n ** 60n) + 1n;
+    fs.lstatSync = function(p, o) {
+      const st = real.call(this, p, o);
+      if (p === daemon) Object.defineProperty(st, 'ino', {value: o != null && o.bigint === true ? ino : Number(ino), configurable: true});
+      return st;
+    };
+    try {
+      const before = runDir.identityOf(daemon);
+      ino = (2n ** 60n) + 2n;
+      assert.strictEqual(runDir.sameIdentity(daemon, before), false);
+    } finally { fs.lstatSync = real; }
+  });
+
   it('a secret that cannot be written leaves no temporary file behind', () => {
     fs.mkdirSync(path.join(daemon, 'secret'));   // the rename over it fails
     assert.throws(() => runDir.writeSecret(daemon));
