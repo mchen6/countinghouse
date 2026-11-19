@@ -349,6 +349,19 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.deepStrictEqual(notices.take(null, B), []);
     });
 
+    // #438's high review, 2: a stale pack override is dropped by restore.js
+    // (one session's, never the table's fault); that session is told once
+    it('a session whose own pack override restore.js dropped is told once at its resume; another is not', async () => {
+      const t = table([row(A, {overrides: [tighten('requestTimeout', 20000)]}), row(B)]);
+      sessions.importTable(Object.assign({}, t, {packsDropped: [{session: A, names: ['weather']}]}));
+      await resumed(A);
+      await resumed(B);
+      assert.deepStrictEqual(notices.take(null, A), ['tools are turned on and off for all your sessions now: this session\'s own setting for weather was dropped after a runtime restart',
+        'this session\'s settings were restored after a runtime restart']);
+      assert.deepStrictEqual(notices.take(null, B), []);
+      assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000, 'the rest of the row is taken');
+    });
+
     it('the daemon\'s row is put right: what was not applied is told as the session\'s state now', async () => {
       sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB), tighten('requestTimeout', 20000)]}), row(B, {overrides: [tighten('requestTimeout', 20000)]})]));
       await resumed(A, {status: 'ok', conditions: 'no', repo: null});
