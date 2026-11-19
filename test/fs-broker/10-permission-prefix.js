@@ -177,6 +177,38 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     assert.strictEqual(await tryWith(path.join(modules, '@acme', 'b')), 'MODULE_SANDBOX_REFUSED');
   });
 
+  // (a --moduleDataPath above the modules folder is no overlap; a link
+  // under --moduleDataPath into another module's code, or above a root not
+  // made yet into one, is: the review of 039d4888)
+  it('under enforce, a --moduleDataPath holding the modules folder spawns; a link into another module, under or above it, refuses', async function() {
+    if (process.platform === 'win32') return this.skip();
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-links-')));
+    const modules = path.join(base, 'modules');
+    const mod = path.join(modules, 'm');
+    const other = path.join(modules, 'other');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.mkdirSync(path.join(other, 'state'), {recursive: true});
+    fs.mkdirSync(path.join(other, 'sub'), {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.writeFileSync(path.join(other, 'package.json'), '{"name": "other"}');
+    const tryWith = async (moduleDataPath) => {
+      try {
+        const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+          options: {moduleDataPath, modulePath: modules}, report: () => {}});
+        await fsb.bridge.close();
+        return null;
+      } catch (e) { return e.code; }
+    };
+    assert.strictEqual(await tryWith(base), null);
+    fs.mkdirSync(path.join(base, 'data'));
+    fs.symlinkSync(path.join(other, 'state'), path.join(base, 'data', 'm'));
+    assert.strictEqual(await tryWith(path.join(base, 'data')), 'MODULE_SANDBOX_REFUSED');
+    fs.symlinkSync(path.join(other, 'sub'), path.join(modules, 'link'));
+    assert.strictEqual(await tryWith(path.join(modules, 'link', 'store')), 'MODULE_SANDBOX_REFUSED');
+    assert.ok(!fs.existsSync(path.join(other, 'sub', 'store')), 'made inside the other module first');
+  });
+
   // (but a --moduleDataPath beside the modules in --modulePath is in no
   // module's code: it spawns)
   it('under enforce, a --moduleDataPath beside the modules in --modulePath spawns', async () => {
