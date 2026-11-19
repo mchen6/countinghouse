@@ -249,6 +249,23 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       assert.ok(got.some((t) => /earlier changes not listed here/.test(t)), 'the others counted, never silent');
     });
 
+    // (the medium review of round 6, 1) the callers' own 'calls' lines, 21
+    // and more, never evict the off text either
+    it('25 callers unloaded with reason calls after it: the off text is still delivered', async() => {
+      const control = c();
+      await control.unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off', reason: 'off'});
+      for (let i = 0; i < 25; i++) {
+        units.set(`caller-${i}`, {form: 'module', pack: moduleKey(`caller-${i}`)});
+        await control.unload({type: 'unload', name: `caller-${i}`, notice: `caller-${i} unloaded`, reason: 'calls', because: MOD});
+      }
+      assert.strictEqual(notices.take('some-other-module', A)[0], offNotice(MOD, [CALLER]));
+      // a caller line of long names keeps its way back whole
+      const long = `@${'c'.repeat(40)}/${'d'.repeat(120)}`;
+      units.set(long, {form: 'module', pack: moduleKey(long)});
+      await control.unload({type: 'unload', name: long, notice: 'x', reason: 'calls', because: MOD});
+      assert.ok(notices.take('some-other-module', A).some((t) => t.endsWith('on brings it back).')));
+    });
+
     it('no reason (today\'s ch-local), another reason, or no settings tool here: the message\'s own words', async() => {
       await c().unload({type: 'unload', name: MOD, notice: 'ch-pack-mod turned off'});
       assert.deepStrictEqual(all(MOD), each('ch-pack-mod turned off'));
