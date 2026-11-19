@@ -490,4 +490,18 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     // medium on #442's high round, 1 and 3)
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'it stays unloaded');
   });
+
+  // the medium on #442's high round, 5: the pack form's reload says it too
+  it('a pack-form reload whose switch an operator unload outranks is CONTROL_PACK_UNCERTAIN, and its record refuses a reload after', async () => {
+    const {mm, dm, log} = runtime({unloadDuring: {name: 'ch-pack-pf', when: 'drain'}});
+    const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
+    await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
+    log.length = 0;
+    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm),
+      (e) => e.code === 'CONTROL_PACK_UNCERTAIN' && /ch-pack-pf was left to a later operator action/.test(e.message));
+    assert.ok(log.includes('operator unload ch-pack-pf'), log.join('\n'));
+    assert.strictEqual(mm.modules['ch-pack-pf'], undefined, 'it stays unloaded');
+    await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm),
+      (e) => e.code === 'CONTROL_MODULE_UNCERTAIN' && /left to a later operator action; restart your client/.test(e.message));
+  });
 });
