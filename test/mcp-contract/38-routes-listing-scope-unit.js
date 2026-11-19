@@ -4,10 +4,11 @@
 // tools/list could not list is refused whole, MODULE_NOT_LISTED. That is a
 // module outside the key's grants, an unlisted part, a non-scenario module
 // under the single-identity profile, or one hidden while it goes on or off
-// (module-visibility, global since M5a). Within a listed module, which
+// (module-visibility, global since M5a); outside the key's grants, the routes'
+// userAuth refuses it first (USER_HAS_NO_DEVICE, auth 54). Within a listed module, which
 // actions are answered stays the load's verdict (#400), tool or not.
 const assert = require('assert');
-const {listedFor} = require('../../lib/listing-scope');
+const {listedNow} = require('../../lib/listing-scope');
 const visibility = require('../../lib/module-visibility');
 const options = require('../../lib/cli-options');
 
@@ -20,10 +21,8 @@ const cdif = {deviceManager: {
   moduleManager: {unlisted: new Set(['part-mod'])}
 }};
 const MODULE_OF = {[SCENARIO]: 'scenario-mod', [TOOL]: 'tool-mod', [PART]: 'part-mod'};
-// the keys' grants as tool-registry grantedDevices answers them (null: all)
-const GRANTS = {all: null, toolOnly: new Set([TOOL]), none: new Set()};
-const grantedDevices = (key, cb) => cb(null, Object.hasOwn(GRANTS, key) ? GRANTS[key] : new Set());
-const listed = (key, id) => new Promise((resolve, reject) => listedFor(cdif, key, id, (err, ok) => (err ? reject(err) : resolve(ok)), {grantedDevices}));
+// (a key's grants are the routes' userAuth, USER_HAS_NO_DEVICE: auth 54)
+const listed = (key, id) => listedNow(cdif, id);
 
 describe('mcp-contract 38: the spec and schema routes answer only the caller\'s listing (unit)', () => {
   const savedSingle = options.singleIdentity;
@@ -31,14 +30,9 @@ describe('mcp-contract 38: the spec and schema routes answer only the caller\'s 
   afterEach(() => { visibility.show(['scenario-mod', 'tool-mod', 'part-mod']); options.singleIdentity = savedSingle; });
   after(() => visibility.configure({moduleOf: () => null, isGone: () => true, changed: () => {}}));
 
-  it('a listed module the key is granted is answered', async () => {
+  it('a listed module is answered', async () => {
     assert.strictEqual(await listed('all', TOOL), true);
-    assert.strictEqual(await listed('toolOnly', TOOL), true);
-  });
-
-  it('a module outside the key\'s grants is refused', async () => {
-    assert.strictEqual(await listed('toolOnly', SCENARIO), false);
-    assert.strictEqual(await listed('none', TOOL), false);
+    assert.strictEqual(await listed('all', SCENARIO), true);
   });
 
   it('an unlisted part is refused, whatever the key', async () => {
@@ -57,12 +51,6 @@ describe('mcp-contract 38: the spec and schema routes answer only the caller\'s 
     assert.strictEqual(await listed('all', SCENARIO), true, 'only the hidden module');
     visibility.show(['tool-mod']);
     assert.strictEqual(await listed('all', TOOL), true);
-  });
-
-  it('a grants lookup that fails is passed on, never taken as granted', async () => {
-    const failing = (key, cb) => cb(Object.assign(new Error('provider down'), {code: 'AUTH_PROVIDER_FAILED'}));
-    await assert.rejects(new Promise((resolve, reject) => listedFor(cdif, 'all', TOOL, (err, ok) => (err ? reject(err) : resolve(ok)), {grantedDevices: failing})),
-      (err) => err.code === 'AUTH_PROVIDER_FAILED');
   });
 });
 
