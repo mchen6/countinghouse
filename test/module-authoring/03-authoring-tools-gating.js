@@ -269,15 +269,17 @@ describe('authoring tools: present with --authoringTools', function() {
   // identity does not even resolve (no key at all -- and --debugKey is set,
   // so a missing key fails doUserAuth's debug branch too, exactly like it
   // would fail AuthProvider.authenticate under real auth) must get the
-  // same unknown-tool response an unregistered name gets, not a distinct
-  // auth-failure result -- otherwise the response shape is a second oracle
-  // for reserved names, one gate past the flag check.
-  it('an anonymous caller gets the same unknown-tool response as an unregistered name', (done) => {
+  // same response an unregistered name gets -- since #458, the caller's auth
+  // refusal, for every name it can't use -- not a distinct one: otherwise
+  // the response shape is a second oracle for reserved names, one gate past
+  // the flag check.
+  it('an anonymous caller gets the same response as for an unregistered name: the auth refusal', (done) => {
     toolsCall(PORT, null, 5, 'countinghouse_validate_module', {path: '.'}, (err, anonBody) => {
       assert.ifError(err);
       toolsCall(PORT, null, 5, CONTROL_NAME, {}, (err, controlBody) => {
         assert.ifError(err);
         assert.ok(anonBody.error != null, 'an unresolvable caller must get a JSON-RPC error, not a result');
+        assert.strictEqual(anonBody.error.code, -32603, JSON.stringify(anonBody));
         assert.ok(sameEnvelope(anonBody, 'countinghouse_validate_module', controlBody, CONTROL_NAME),
           'anonymous-caller response differs from the unknown-tool control beyond the name:\n' +
           `  anon: ${JSON.stringify(anonBody)}\n  control: ${JSON.stringify(controlBody)}`);

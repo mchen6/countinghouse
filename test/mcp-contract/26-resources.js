@@ -258,6 +258,42 @@ describe('mcp-contract 26: module resources (M7)', function() {
     assert.strictEqual(registered, null, 'unregistered at its end');
   });
 
+  // #458's high review, 1: a tools/call registers its cancellation before
+  // it reads the caller's grants (tool-registry grantsForCall), so a cancel
+  // or a closed POST while they are read runs nothing and bills nothing
+  it('a tools/call cancelled while the caller\'s grants are read neither runs nor bills, and is not answered', async () => {
+    invoked.length = 0;
+    billed.length = 0;
+    require('../../lib/mcp/tool-registry').forgetGrants();
+    let registered = null;
+    const opts = {cancellable: (fn) => { registered = fn; return () => { registered = null; }; }};
+    // the key's resolution takes a moment, as a real provider's does
+    let inWindow = null;
+    const authenticate = provider.authenticate;
+    provider.authenticate = (...args) => {
+      const cb = args.pop();
+      return authenticate(...args, (...answer) => { inWindow = setImmediate(() => cb(...answer)); });
+    };
+    let got;
+    try {
+      const req = {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'notes_svc_save', arguments: {}}};
+      got = new Promise((resolve) => gateway.handle(req, ci, KEY_A, (err, r, info) => resolve({r, info}), opts));
+      for (let w = 0; inWindow == null && w < 200; w++) await new Promise((res) => setImmediate(res));
+      assert.ok(inWindow != null, 'the key\'s resolution is in flight');
+      assert.strictEqual(typeof(registered), 'function', 'registered before the grants are read');
+      registered();
+    } finally {
+      provider.authenticate = authenticate;
+    }
+    const {r, info} = await got;
+    assert.strictEqual(r, null, JSON.stringify(r));
+    assert.deepStrictEqual(info, {cancelled: true});
+    await new Promise((res) => setTimeout(res, 100));
+    assert.deepStrictEqual(invoked, [], 'not run');
+    assert.deepStrictEqual(billed, [], 'not billed');
+    assert.strictEqual(registered, null, 'unregistered at its end');
+  });
+
   it('the output\'s shape: a string as text (the schema\'s media type, else the declared one), a binary string as a blob, anything else as JSON', async () => {
     assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/csv/x.csv')).result.contents, [{uri: 'countinghouse://m/notes/csv/x.csv', mimeType: 'text/csv', text: 'a,b'}]);
     assert.deepStrictEqual((await read(KEY_A, 'countinghouse://m/notes/cover/1')).result.contents, [{uri: 'countinghouse://m/notes/cover/1', mimeType: 'image/png', blob: PNG64}]);
