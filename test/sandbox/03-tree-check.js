@@ -132,6 +132,12 @@ describe('sandbox 03: tree checks', () => {
       fs.symlinkSync('../../cfg/foo.json', path.join(d, 'node_modules', 'foo', 'package.json'));
       assert.match(String(refusalOf(d, 'enforce')), /m holds a linked package\.json at node_modules[\\/]foo[\\/]package\.json; not allowed under --moduleSandbox enforce/);
     });
+    it('a package.json linked to one that can\'t be parsed: said, its dependencies unchecked otherwise (the high review of #452)', function() {
+      if (process.platform === 'win32') return this.skip();
+      const d = mk({'package.json': {name: 'm', dependencies: {foo: '1'}}, 'node_modules/foo/index.js': '', 'real/foo.json': '{not json'});
+      fs.symlinkSync(path.join('..', '..', 'real', 'foo.json'), path.join(d, 'node_modules', 'foo', 'package.json'));
+      assert.match(checkTree(d).problems.join('\n'), /node_modules[\\/]foo[\\/]package\.json cannot be parsed/);
+    });
     it('a package.json linked outside: that problem alone, said once', function() {
       if (process.platform === 'win32') return this.skip();
       const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-tree-out-'));
