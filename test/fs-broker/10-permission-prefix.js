@@ -134,6 +134,7 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     fs.mkdirSync(mod, {recursive: true});
     fs.mkdirSync(tmpInside, {recursive: true});
     fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    fs.writeFileSync(path.join(other, 'package.json'), '{"name": "other"}');
     fs.writeFileSync(path.join(tmpInside, 'keep.js'), 'module.exports = 1;');
     let code = null;
     try {
@@ -143,6 +144,20 @@ describe('fs-broker 10: permission grants that share a prefix', function() {
     } catch (e) { code = e.code; }
     assert.strictEqual(code, 'MODULE_SANDBOX_REFUSED');
     assert.ok(fs.existsSync(path.join(tmpInside, 'keep.js')), 'the other module\'s file was emptied');
+  });
+
+  // (but a --moduleDataPath beside the modules in --modulePath is in no
+  // module's code: it spawns)
+  it('under enforce, a --moduleDataPath beside the modules in --modulePath spawns', async () => {
+    const {createForWorker} = require('../../lib/fs-broker');
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-fsb10-beside-')));
+    const mod = path.join(base, 'm');
+    fs.mkdirSync(mod, {recursive: true});
+    fs.writeFileSync(path.join(mod, 'package.json'), '{"name": "m"}');
+    const fsb = await createForWorker({name: 'm', mode: 'enforce', modulePath: mod, declared: [],
+      options: {moduleDataPath: path.join(base, 'data'), modulePath: base}, report: () => {}});
+    await fsb.bridge.close();
+    assert.ok(fs.existsSync(path.join(base, 'data', 'm')));
   });
 
   // (a --moduleDataPath not made yet, reached through a link above it into
