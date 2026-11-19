@@ -164,6 +164,15 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
       assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [[], [], []]);
     });
 
+    it('a load takes the mark: the next unload tells (the medium review of the #449 fixes, 4)', async() => {
+      const loadToo = Object.assign({}, unloadOnly, {loadPack: async(mm, msg) => { calls.push(['load', msg.name]); return {modules: [`m-${msg.name}`]}; }});
+      const lc = createPackControl({mm: {packsInPlace: units}, dm: {}, packs: loadToo, toolsOf: async() => [], shared: () => sessions.shared()});
+      mip.markToldOff([MOD]);
+      await lc.load({type: 'load', name: MOD, dirs: {[MOD]: `/store/${MOD}/1.0.0`}});
+      await lc.unload({type: 'unload', name: MOD, notice: 'mod removed'});
+      assert.deepStrictEqual([A, B, C].map((id) => notices.take(MOD, id)), [['mod removed'], ['mod removed'], ['mod removed']]);
+    });
+
     it('a mark a minute old is gone: the unload tells', async() => {
       mip.markToldOff([MOD], Date.now() - 61000);
       await c().unload({type: 'unload', name: MOD, notice: 'mod turned off'});
