@@ -107,7 +107,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
 
     it('a latched session\'s locks are the three kinds, as ordinary locks (N1)', () => {
       sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null});
-      assert.deepStrictEqual(sessionState.exportOf(A).locks, ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(sessionState.exportOf(A).locks, ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
     });
 
     // (M5a: the overrides a session may hold are the two caps)
@@ -132,10 +132,10 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.strictEqual(a.verify(form.requestState, {name: 'maxOutputBytes', next: 32 * MiB, session: A}).ok, true);
       settings.set(A, 'maxOutputBytes', 32 * MiB, {loosening: true, over: 16 * MiB});
       assert.deepStrictEqual(statesOf(A).pop().overrides.map((o) => [o.name, o.value, o.loosening]), [['requestTimeout', 20000, false], ['maxOutputBytes', 32 * MiB, true]]);
-      a.decline('pack.one');
+      a.decline('enabled.one');
       assert.deepStrictEqual(statesOf(A).pop(), {
         overrides: [{name: 'requestTimeout', value: 20000, loosening: false, over: null, version: null}, {name: 'maxOutputBytes', value: 32 * MiB, loosening: true, over: 16 * MiB, version: null}],
-        locks: ['pack'], formsLeft: 2});
+        locks: ['enabled'], formsLeft: 2});
       // every message is exactly {type, session, state}, the state exactly its three keys, or those and
       // unanswered while a form was open
       for (const m of told) {
@@ -207,7 +207,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       a.stage(change(A, {next: 64 * MiB}));   // the second left for a third: the kind locks
       assert.deepStrictEqual(statesOf(A).pop(), {overrides: [], locks: ['maxOutputBytes'], formsLeft: 1});
       sources[B].emit('client', {status: 'ok', conditions: 'no', repo: null});
-      assert.deepStrictEqual(statesOf(B).pop().locks, ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(statesOf(B).pop().locks, ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
     });
 
     it('a default lowered at a terminal drops a session\'s looser value, and that is told (dropLooser)', () => {
@@ -221,8 +221,8 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     it('a change that changes nothing tells nothing again', () => {
       settings.set(A, 'requestTimeout', 20000);
       settings.set(A, 'requestTimeout', 20000);
-      confirm.confirmations(A).decline('pack.one');
-      confirm.confirmations(A).decline('pack.two');
+      confirm.confirmations(A).decline('enabled.one');
+      confirm.confirmations(A).decline('enabled.two');
       assert.strictEqual(statesOf(A).length, 2, 'one for the value, one for the lock');
     });
 
@@ -275,14 +275,14 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     const resumed = async (id, conditions) => { openSession(id, conditions); await sessionState.whenApplied(id); };
 
     it('a row waits for its session: nothing applies until the shim resumes it, and then it does', async () => {
-      assert.deepStrictEqual(sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['pack'], formsLeft: 1})])), {sessions: 1});
+      assert.deepStrictEqual(sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 1})])), {sessions: 1});
       assert.strictEqual(sessionState.pending(), 1);
       assert.strictEqual(confirm.held(), 0, 'no store for a session that is not there');
       await resumed(A);
       assert.strictEqual(sessionState.pending(), 0);
       assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000);
-      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [tighten('requestTimeout', 20000)], locks: ['pack'], formsLeft: 1});
-      assert.strictEqual(confirm.confirmations(A).declined('pack.any'), true);
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 1});
+      assert.strictEqual(confirm.confirmations(A).declined('enabled.any'), true);
       assert.strictEqual(confirm.confirmations(A).formsLeft(), 1);
       // told once, in its next result
       assert.deepStrictEqual(notices.take(null, A), ['this session\'s settings were restored after a runtime restart']);
@@ -322,7 +322,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       assert.strictEqual(settings.effective(B, 'requestTimeout'), 20000);
       assert.deepStrictEqual(notices.take(null, B), ['your this-session loosening of maxOutputBytes was reset after a runtime restart',
         'this session\'s settings were restored after a runtime restart'], 'not "ask again": it is latched');
-      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
       // C: the default was lowered under what it was confirmed over
       options.requestTimeout = 20000;
       await resumed(C);
@@ -375,7 +375,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     it('the daemon\'s row is put right: what was not applied is told as the session\'s state now', async () => {
       sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB), tighten('requestTimeout', 20000)]}), row(B, {overrides: [tighten('requestTimeout', 20000)]})]));
       await resumed(A, {status: 'ok', conditions: 'no', repo: null});
-      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'module', 'pack', 'requestTimeout'], formsLeft: 3});
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled', 'maxOutputBytes', 'module', 'requestTimeout'], formsLeft: 3});
       // a row applied whole is the daemon's row already: nothing is told again
       await resumed(B);
       assert.deepStrictEqual(statesOf(B), []);
@@ -405,7 +405,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       const real = createRegistry({tell: () => {}, reconnectWindowMs: 60});
       sessions.attach(real);
       real._restore([{session: A, resume: sha('rt_a')}, {session: B, resume: sha('rt_b')}]);
-      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['pack'], formsLeft: 2}), row(B, {overrides: [tighten('requestTimeout', 10000)]})]));
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 2}), row(B, {overrides: [tighten('requestTimeout', 10000)]})]));
       assert.strictEqual(sessionState.pending(), 2);
       // A's shim resumes it and its client frame settles it
       const back = real._resume('rt_a');
@@ -416,7 +416,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       real._announce(back);
       await sessionState.whenApplied(A);
       assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000);
-      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [tighten('requestTimeout', 20000)], locks: ['pack'], formsLeft: 2});
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 2});
       // B's never does
       await new Promise((r) => setTimeout(r, 150));
       assert.strictEqual(real._count(), 1, 'the registry has forgotten B');
@@ -438,7 +438,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
         {session: B, state: {overrides: [{name: 'locale', value: 'zh', loosening: false, over: null, version: null}], locks: [], formsLeft: 3}},
         {session: B, state: {overrides: [loosen('maxOutputBytes', 32 * MiB, null)], locks: [], formsLeft: 3}},
         {session: B, state: {overrides: [tighten('maxOutputBytes', 1)], locks: [], formsLeft: 3}},
-        {session: B, state: {overrides: [], locks: ['pack', 'pack'], formsLeft: 3}},
+        {session: B, state: {overrides: [], locks: ['enabled', 'enabled'], formsLeft: 3}},
         {session: B, state: {overrides: [], locks: ['locale'], formsLeft: 3}},
         {session: B, state: {overrides: [], locks: [], formsLeft: 4}},
         {session: B, state: {overrides: [], locks: [], formsLeft: 1.5}},
@@ -509,7 +509,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
       reg.emit('session', b);
       await sessionState.whenApplied(B);
       assert.strictEqual(settings.effective(B, 'requestTimeout'), 30000);
-      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(B).locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
     });
 
     // the reviewer's high review of #300, (1)
@@ -539,7 +539,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     // the reviewer's high review of #300, (2)
     it('a latch that falls while a loosening waits is seen on a session whose every kind was locked already', async () => {
       // every kind locked by the user's own declines before the restart; its client could still be asked
-      sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 1})]));
+      sessions.importTable(table([row(A, {overrides: [loosen('maxOutputBytes', 32 * MiB, 16 * MiB)], locks: ['maxOutputBytes', 'enabled', 'requestTimeout'], formsLeft: 1})]));
       // its client answers yes, then says no in a frame of its own while the validators grow
       const a = new EventEmitter();
       Object.assign(a, {id: A, client: {status: 'ok', conditions: 'yes', repo: null}, connected: true, notify() {}, record() {}, forget() {},
@@ -555,17 +555,17 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
 
     it('a session latched at its settle (its client says no) keeps what it tightened across a second restart: the daemon is told its state as it stands', async () => {
       // the row of a session whose client always said no, and whose user tightened a cap
-      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 2})]));
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'enabled', 'requestTimeout'], formsLeft: 2})]));
       await resumed(A, {status: 'ok', conditions: 'no', repo: null});
       assert.strictEqual(settings.effective(A, 'requestTimeout'), 20000);
-      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['maxOutputBytes', 'module', 'pack', 'requestTimeout'], formsLeft: 2},
+      assert.deepStrictEqual(statesOf(A).pop(), {overrides: [tighten('requestTimeout', 20000)], locks: ['enabled', 'maxOutputBytes', 'module', 'requestTimeout'], formsLeft: 2},
         'the last thing told is the whole state, not the latch alone');
     });
 
     it('while a row is applied nothing half-way is told: one state, at the end, when it differs from the row', async () => {
-      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000), loosen('maxOutputBytes', 32 * MiB, 16 * MiB)], locks: ['pack'], formsLeft: 2})]));
+      sessions.importTable(table([row(A, {overrides: [tighten('requestTimeout', 20000), loosen('maxOutputBytes', 32 * MiB, 16 * MiB)], locks: ['enabled'], formsLeft: 2})]));
       await resumed(A, {status: 'ok', conditions: null, repo: null});   // no answer worth a yes: the loosening is reset
-      assert.deepStrictEqual(statesOf(A), [{overrides: [tighten('requestTimeout', 20000)], locks: ['pack'], formsLeft: 2}]);
+      assert.deepStrictEqual(statesOf(A), [{overrides: [tighten('requestTimeout', 20000)], locks: ['enabled'], formsLeft: 2}]);
     });
 
     it('what is restored is recorded in the history as that, and a session is told only what is true of it', async () => {
@@ -579,7 +579,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
         sessions.importTable(table([
           row(A, {overrides: [tighten('requestTimeout', 20000), loosen('maxOutputBytes', 32 * MiB, 16 * MiB)]}),
           // only restrictions: nothing of its settings was restored
-          row(B, {locks: ['pack'], formsLeft: 1}),
+          row(B, {locks: ['enabled'], formsLeft: 1}),
           // a loosening reset in a session that can ask no more
           row(C, {overrides: [loosen('requestTimeout', 60000, 30000)], formsLeft: 0})]));
         await resumed(A);
@@ -621,25 +621,25 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     });
 
     it('a restored unanswered kind never undoes a lock', async () => {
-      sessions.importTable(table([row(A, {locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes']})]));
+      sessions.importTable(table([row(A, {locks: ['enabled'], formsLeft: 1, unanswered: ['maxOutputBytes']})]));
       await resumed(A);
-      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: ['pack'], formsLeft: 1, unanswered: ['maxOutputBytes']});
+      assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: ['enabled'], formsLeft: 1, unanswered: ['maxOutputBytes']});
     });
 
     // /code-review of #308, 5 and 6: a state says one thing of a kind, and what it says of its forms adds up
     it('a kind both locked and unanswered, and an unanswered form with no form spent, are no state: the row is dropped', async () => {
       const base = {overrides: [], locks: [], formsLeft: 2};
-      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {locks: ['pack'], unanswered: ['pack']})), null, 'locked is not also unanswered');
-      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {formsLeft: 3, unanswered: ['pack']})), null, 'a form left unanswered was a form spent');
-      sessions.importTable(table([row(A, {locks: ['pack'], formsLeft: 1, unanswered: ['pack']}), row(B, {formsLeft: 2, unanswered: ['pack']})]));
+      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {locks: ['enabled'], unanswered: ['enabled']})), null, 'locked is not also unanswered');
+      assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {formsLeft: 3, unanswered: ['enabled']})), null, 'a form left unanswered was a form spent');
+      sessions.importTable(table([row(A, {locks: ['enabled'], formsLeft: 1, unanswered: ['enabled']}), row(B, {formsLeft: 2, unanswered: ['enabled']})]));
       await resumed(A);
       await resumed(B);
       assert.deepStrictEqual(sessionState.exportOf(A), {overrides: [], locks: [], formsLeft: 3}, 'dropped: a new session');
-      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: [], formsLeft: 2, unanswered: ['pack']});
+      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: [], formsLeft: 2, unanswered: ['enabled']});
       // and the store itself: restoring a kind as both leaves it locked, and listed once, as that
       const c = confirm.confirmations(B);
       c.restore({locks: ['requestTimeout'], formsLeft: 1, unanswered: ['requestTimeout']});
-      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: ['requestTimeout'], formsLeft: 1, unanswered: ['pack']});
+      assert.deepStrictEqual(sessionState.exportOf(B), {overrides: [], locks: ['requestTimeout'], formsLeft: 1, unanswered: ['enabled']});
     });
 
     it('the shared vectors\' restoreRows: B2 takes each accepted state and refuses each refused one\'s, as restore.js and the daemon do', () => {
@@ -653,10 +653,10 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
 
     it('a state\'s unanswered is distinct known kinds, three at most, or not there at all', () => {
       const base = {overrides: [], locks: [], formsLeft: 2};
-      for (const ok of [undefined, [], ['pack'], ['maxOutputBytes', 'pack', 'requestTimeout']]) {
+      for (const ok of [undefined, [], ['enabled'], ['maxOutputBytes', 'enabled', 'requestTimeout']]) {
         assert.strictEqual(sessionState.stateProblem(ok === undefined ? base : Object.assign({}, base, {unanswered: ok})), null, JSON.stringify(ok));
       }
-      for (const bad of ['pack', ['pack', 'pack'], ['other'], [7], null, {pack: 1}, ['maxOutputBytes', 'pack', 'requestTimeout', 'pack']]) {
+      for (const bad of ['enabled', ['enabled', 'enabled'], ['other'], [7], null, {pack: 1}, ['maxOutputBytes', 'enabled', 'requestTimeout', 'enabled']]) {
         assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {unanswered: bad})), null, JSON.stringify(bad));
       }
       assert.notStrictEqual(sessionState.stateProblem(Object.assign({}, base, {unanswered: [], nonce: 'x'})), null, 'no other key beside it');
@@ -667,7 +667,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
         confirm.resetForTests();
         sessionState.resetForTests();
         assert.deepStrictEqual(sessions.importTable(no), {sessions: 0}, JSON.stringify(no));
-        for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().locked(kind), true, `${kind}: ${JSON.stringify(no)}`);
+        for (const kind of ['maxOutputBytes', 'requestTimeout', 'enabled']) assert.strictEqual(confirm.userWindow().locked(kind), true, `${kind}: ${JSON.stringify(no)}`);
         assert.deepStrictEqual(sessions.importTable(table([row(A)])), {sessions: 0});
       }
     });
@@ -675,7 +675,7 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
     // the reviewer's two sides of "no restore locks the forms"
     it('an empty table (a daemon\'s first start of a runtime) locks nothing: a form may be shown at once', async () => {
       assert.deepStrictEqual(sessions.importTable(table([])), {sessions: 0});
-      for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().locked(kind), false, kind);
+      for (const kind of ['maxOutputBytes', 'requestTimeout', 'enabled']) assert.strictEqual(confirm.userWindow().locked(kind), false, kind);
       await resumed(A);
       assert.ok(confirm.confirmations(A).stage(change(A)) != null);
     });
@@ -689,8 +689,8 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
 
     it('a decline up to a minute ahead of this clock is taken (C\'s restore allows it): it counts as now', () => {
       const now = Date.now();
-      sessions.importTable(table([], {declines: [{kind: 'pack', at: now + 30 * 1000}, {kind: 'pack', at: now - 1000}, {kind: 'pack', at: now - 2000}]}));
-      assert.strictEqual(confirm.userWindow().locked('pack'), true, 'three within the window');
+      sessions.importTable(table([], {declines: [{kind: 'enabled', at: now + 30 * 1000}, {kind: 'enabled', at: now - 1000}, {kind: 'enabled', at: now - 2000}]}));
+      assert.strictEqual(confirm.userWindow().locked('enabled'), true, 'three within the window');
       assert.strictEqual(confirm.userWindow().locked('maxOutputBytes'), false, 'and the list was not thrown away');
     });
 
@@ -705,20 +705,20 @@ describe('sessions 11: a session\'s state across a runtime restart (shared runti
 
     it('a list of declines that fails, or that is longer than the window can hold, locks every kind: what cannot be shown was declined is taken as declined (N2)', () => {
       const now = Date.now();
-      const lists = [[{kind: 'locale', at: now}], [{kind: 'pack', at: now + 3600 * 1000}], [{kind: 'pack', at: now, session: A}], 'x', null,
+      const lists = [[{kind: 'locale', at: now}], [{kind: 'enabled', at: now + 3600 * 1000}], [{kind: 'enabled', at: now, session: A}], 'x', null,
         // C's restore lets up to 1024 through; the window takes 64
-        Array.from({length: 65}, () => ({kind: 'pack', at: now - 1000}))];
+        Array.from({length: 65}, () => ({kind: 'enabled', at: now - 1000}))];
       for (const declines of lists) {
         confirm.resetForTests();
         sessionState.resetForTests();
         sessions.importTable(table([], {declines}));
-        for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().locked(kind), true, `${kind}: ${JSON.stringify(declines).slice(0, 60)}`);
+        for (const kind of ['maxOutputBytes', 'requestTimeout', 'enabled']) assert.strictEqual(confirm.userWindow().locked(kind), true, `${kind}: ${JSON.stringify(declines).slice(0, 60)}`);
       }
     });
 
     it('no table at all (the daemon\'s restore never came): every kind is locked for 30 minutes, and no later table is taken', () => {
       sessionState.noRestore();
-      for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().locked(kind), true, kind);
+      for (const kind of ['maxOutputBytes', 'requestTimeout', 'enabled']) assert.strictEqual(confirm.userWindow().locked(kind), true, kind);
       assert.deepStrictEqual(sessions.importTable(table([row(A)])), {sessions: 0});
       assert.strictEqual(sessionState.pending(), 0);
     });

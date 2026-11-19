@@ -121,7 +121,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(w.locked('maxOutputBytes'), true, 'three');
       assert.strictEqual(confirm.confirmations(D).stage(change(D)), null, 'a session that never declined gets none');
       assert.ok(confirm.confirmations(D).stage(change(D, {name: 'requestTimeout', old: 30000, next: 60000})) != null, 'another kind');
-      assert.strictEqual(w.locked('pack'), false);
+      assert.strictEqual(w.locked('enabled'), false);
       advance(29 * MIN);
       assert.strictEqual(w.locked('maxOutputBytes'), true);
       advance(2 * MIN);
@@ -140,21 +140,21 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       const w = confirm.userWindow();
       const wall = WALL0;
       assert.strictEqual(w.load([{kind: 'maxOutputBytes', at: wall - 5 * MIN}, {kind: 'maxOutputBytes', at: wall - 40 * MIN}, {kind: 'requestTimeout', at: wall - MIN},
-        {kind: 'pack', at: wall - 20 * MIN}, {kind: 'pack', at: wall - 10 * MIN}, {kind: 'pack', at: wall - 4 * MIN}]), true);
+        {kind: 'enabled', at: wall - 20 * MIN}, {kind: 'enabled', at: wall - 10 * MIN}, {kind: 'enabled', at: wall - 4 * MIN}]), true);
       assert.strictEqual(w.count('maxOutputBytes'), 1, 'the one inside the 30 minutes');
       assert.strictEqual(w.count('requestTimeout'), 1);
       assert.strictEqual(w.locked('maxOutputBytes'), false);
-      assert.strictEqual(w.locked('pack'), true);
+      assert.strictEqual(w.locked('enabled'), true);
       assert.deepStrictEqual(told, [], 'the daemon has them already');
       // one more decline of the first kind, here, and one in B: three within the window
       confirm.confirmations(A).decline('maxOutputBytes');
       confirm.confirmations(B).decline('maxOutputBytes');
       assert.strictEqual(w.locked('maxOutputBytes'), true);
-      // the pack lock runs 30 minutes from its third, which was 4 minutes ago
+      // the enabled lock runs 30 minutes from its third, which was 4 minutes ago
       advance(25 * MIN);
-      assert.strictEqual(w.locked('pack'), true);
+      assert.strictEqual(w.locked('enabled'), true);
       advance(2 * MIN);
-      assert.strictEqual(w.locked('pack'), false);
+      assert.strictEqual(w.locked('enabled'), false);
     });
 
     it('a lock still running is rebuilt: it runs 30 minutes from its third event, so events up to 60 minutes old count for it', () => {
@@ -164,13 +164,13 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
         // three, but never within one 30 minutes: no lock
         {kind: 'requestTimeout', at: WALL0 - 50 * MIN}, {kind: 'requestTimeout', at: WALL0 - 19 * MIN}, {kind: 'requestTimeout', at: WALL0 - 2 * MIN},
         // locked 61 minutes ago: over
-        {kind: 'pack', at: WALL0 - 65 * MIN}, {kind: 'pack', at: WALL0 - 63 * MIN}, {kind: 'pack', at: WALL0 - 61 * MIN}]), true);
+        {kind: 'enabled', at: WALL0 - 65 * MIN}, {kind: 'enabled', at: WALL0 - 63 * MIN}, {kind: 'enabled', at: WALL0 - 61 * MIN}]), true);
       assert.strictEqual(w.locked('maxOutputBytes'), true);
       assert.strictEqual(w.count('maxOutputBytes'), 2, 'the two still inside the 30 minutes');
       assert.strictEqual(confirm.confirmations(A).stage(change(A)), null);
       assert.strictEqual(w.locked('requestTimeout'), false);
       assert.strictEqual(w.count('requestTimeout'), 2);
-      assert.strictEqual(w.locked('pack'), false);
+      assert.strictEqual(w.locked('enabled'), false);
       advance(19 * MIN);
       assert.strictEqual(w.locked('maxOutputBytes'), true);
       advance(2 * MIN);
@@ -180,15 +180,15 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
 
     it('a list that is not exactly kinds and past times is dropped whole, and every kind is locked for 30 minutes (as when no list came: lockAll)', () => {
       const wall = WALL0;
-      const good = {kind: 'pack', at: wall - MIN};
-      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'pack', at: wall + 61 * 1000}], [good, {kind: 'pack', at: 1.5}], [good, {kind: 'pack', at: -1}],
-        [good, {kind: 'pack', at: wall, session: A}], [good, null], Array.from({length: 65}, () => good)];
+      const good = {kind: 'enabled', at: wall - MIN};
+      const bad = [null, 'x', {}, [good, {kind: 'locale', at: wall}], [good, {kind: 'enabled', at: wall + 61 * 1000}], [good, {kind: 'enabled', at: 1.5}], [good, {kind: 'enabled', at: -1}],
+        [good, {kind: 'enabled', at: wall, session: A}], [good, null], Array.from({length: 65}, () => good)];
       for (const list of bad) {
         confirm.resetForTests();
         confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
         const w = confirm.userWindow();
         assert.strictEqual(w.load(list), false, JSON.stringify(list).slice(0, 80));
-        for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) {
+        for (const kind of ['maxOutputBytes', 'requestTimeout', 'enabled']) {
           assert.strictEqual(w.locked(kind), true, kind);
           assert.strictEqual(w.count(kind), 0, 'nothing of the list is kept');
         }
@@ -198,14 +198,14 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // a time up to a minute ahead of this clock is taken, as the daemon's restore allows it, and counts as now
       confirm.resetForTests();
       confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
-      assert.strictEqual(confirm.userWindow().load([good, {kind: 'pack', at: wall + 59 * 1000}]), true);
-      assert.strictEqual(confirm.userWindow().count('pack'), 2);
+      assert.strictEqual(confirm.userWindow().load([good, {kind: 'enabled', at: wall + 59 * 1000}]), true);
+      assert.strictEqual(confirm.userWindow().count('enabled'), 2);
       // 64 is the most a list holds, and an empty one is a fresh start
       confirm.resetForTests();
       confirm.configure({now: () => clock, wall: () => WALL0 + (clock - 1000000), timer: () => null, clearTimer: () => {}, tell: (m) => told.push(m)});
-      assert.strictEqual(confirm.userWindow().load(Array.from({length: 64}, () => ({kind: 'pack', at: wall - 31 * MIN}))), true);
+      assert.strictEqual(confirm.userWindow().load(Array.from({length: 64}, () => ({kind: 'enabled', at: wall - 31 * MIN}))), true);
       assert.strictEqual(confirm.userWindow().load([]), true);
-      assert.strictEqual(confirm.userWindow().locked('pack'), false);
+      assert.strictEqual(confirm.userWindow().locked('enabled'), false);
       // the safety net's own call (Task 6: no restore within 3 s)
       confirm.userWindow().lockAll();
       assert.strictEqual(confirm.userWindow().locked('requestTimeout'), true);
@@ -213,12 +213,12 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       assert.strictEqual(confirm.userWindow().locked('requestTimeout'), false);
     });
 
-    it('every pack is one kind', () => {
-      confirm.confirmations(A).decline('pack.one');
-      confirm.confirmations(B).decline('pack.two');
-      confirm.confirmations(C).decline('pack.three');
-      assert.strictEqual(confirm.userWindow().locked('pack'), true);
-      assert.strictEqual(confirm.confirmations(D).stage(change(D, {name: 'pack.four', old: false, next: true, version: '1.0.0'})), null);
+    it('every module\'s on/off is one kind', () => {
+      confirm.confirmations(A).decline('enabled.one');
+      confirm.confirmations(B).decline('enabled.two');
+      confirm.confirmations(C).decline('enabled.three');
+      assert.strictEqual(confirm.userWindow().locked('enabled'), true);
+      assert.strictEqual(confirm.confirmations(D).stage(change(D, {name: 'enabled.four', old: false, next: true, version: '1.0.0'})), null);
     });
 
     it('a form pending anywhere counts toward the three: with two declines and a form up in B, a third session gets none (review focus 3)', () => {
@@ -318,10 +318,10 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     });
 
     it('each decline and each expiry is told to the daemon, with its kind and a time (Task 6\'s message)', () => {
-      confirm.confirmations(A).decline('pack.one');
+      confirm.confirmations(A).decline('enabled.one');
       confirm.confirmations(B).stage(change(B));
       advance(confirm.TTL_MS + 5);
-      assert.deepStrictEqual(told.map((m) => [m.type, m.kind, Number.isInteger(m.at) && m.at > 0]), [['decline', 'pack', true], ['decline', 'maxOutputBytes', true]]);
+      assert.deepStrictEqual(told.map((m) => [m.type, m.kind, Number.isInteger(m.at) && m.at > 0]), [['decline', 'enabled', true], ['decline', 'maxOutputBytes', true]]);
       assert.ok(told.every((m) => Object.keys(m).sort().join() === 'at,kind,type'), 'nothing else: no session, no value');
     });
 
@@ -337,13 +337,13 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     it('locks all three kinds for the session\'s life, as ordinary decline locks; no other session, and nothing in the window', () => {
       confirm.latch(A);
       const a = confirm.confirmations(A);
-      for (const name of ['maxOutputBytes', 'requestTimeout', 'pack.any']) assert.strictEqual(a.declined(name), true, name);
+      for (const name of ['maxOutputBytes', 'requestTimeout', 'enabled.any']) assert.strictEqual(a.declined(name), true, name);
       assert.strictEqual(a.stage(change(A)), null);
       assert.strictEqual(confirm.confirmations(B).declined('maxOutputBytes'), false);
-      for (const kind of ['maxOutputBytes', 'requestTimeout', 'pack']) assert.strictEqual(confirm.userWindow().count(kind), 0, kind);
+      for (const kind of ['maxOutputBytes', 'requestTimeout', 'enabled']) assert.strictEqual(confirm.userWindow().count(kind), 0, kind);
       assert.deepStrictEqual(told, [], 'it is not a decline of the user\'s');
       // the locks, as a session's export carries them (Task 6)
-      assert.deepStrictEqual(a.locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(a.locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
     });
 
     it('a form pending when the latch falls is gone, uncounted', () => {
@@ -555,7 +555,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
     // decline or a latch before the restart), so its refusal claims neither. A fresh "no" re-latches with its why.
     it('a lock restored across a restart is told neutrally, never "declined"; a fresh "no" then gives the latch\'s text with its why', async () => {
       const t0 = tool();
-      confirm.confirmations(A).restore({locks: ['maxOutputBytes', 'pack', 'requestTimeout'], formsLeft: 3});
+      confirm.confirmations(A).restore({locks: ['maxOutputBytes', 'enabled', 'requestTimeout'], formsLeft: 3});
       const restored = await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_LOCKED_THIS_SESSION');
       assert.doesNotMatch(restored.message, /declined|configuration/);
       assert.match(restored.message, /ch-local settings set requestTimeout 60s/);
@@ -577,7 +577,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       await refused(t0.set('maxOutputBytes', '16MiB', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(confirm.confirmations(A).formsLeft(), 3, 'no form was ever shown');
       assert.deepStrictEqual(history().filter((h) => h.session === A).map((h) => h.change), ['not confirmed (locked in this session)', 'not confirmed (locked in this session)']);
-      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
       // a client frame that says no at the session's start, or at a reattach, latches too
       const s = openSession('f'.repeat(32), {status: 'ok', conditions: 'no', repo: null});
       assert.strictEqual(confirm.confirmations(s.id).declined('maxOutputBytes'), true);
@@ -591,7 +591,7 @@ describe('sessions 10: confirmations per session, a window per user (shared runt
       // as C1's registry announces each frame; the session's own copy is then overwritten
       sources[A].emit('client', {status: 'ok', conditions: 'no', repo: null});
       sources[A].emit('client', {status: 'ok', conditions: 'yes', repo: null});
-      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['maxOutputBytes', 'module', 'pack', 'requestTimeout']);
+      assert.deepStrictEqual(confirm.confirmations(A).locks(), ['enabled', 'maxOutputBytes', 'module', 'requestTimeout']);
       const before = asked.length;
       await refused(t0.set('requestTimeout', '60s', 'settings tool', ctx(A)), 'SETTING_CLIENT_NOT_CONFIRMED');
       assert.strictEqual(asked.length, before, 'a latched session\'s shim is not asked');

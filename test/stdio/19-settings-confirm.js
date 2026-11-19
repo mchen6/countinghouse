@@ -97,13 +97,13 @@ describe('stdio 19: staging a confirmation: the nonce, the HMAC, single use (par
     assert.strictEqual(c.verify(second.requestState, Object.assign({}, retry, {next: 32 * MiB})).ok, true);
   });
 
-  it('a decline locks that setting\'s kind, and only that one, for the start; any pack locks every pack', () => {
+  it('a decline locks that setting\'s kind, and only that one, for the start; any module\'s on/off locks every one', () => {
     assert.strictEqual(c.declined('maxOutputBytes'), false);
     c.decline('maxOutputBytes');
     assert.strictEqual(c.declined('maxOutputBytes'), true);
     assert.strictEqual(c.declined('requestTimeout'), false);
-    c.decline('pack.ci-failure-triage');
-    assert.strictEqual(c.declined('pack.other'), true, 'a decline on any pack locks packs');
+    c.decline('enabled.ci-failure-triage');
+    assert.strictEqual(c.declined('enabled.other'), true, 'a decline on any module\'s on/off locks them all');
     assert.strictEqual(new Confirmations({now}).declined('maxOutputBytes'), false, 'a new start forgets it');
   });
 

@@ -57,17 +57,17 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       plan({sessions: Array.from({length: MAX_SESSIONS + 1}, (_, i) => ({session: i.toString(16).padStart(32, '0'), resume: HASH, state: {overrides: [], locks: [], formsLeft: 3}}))}),
       plan({declines: [{kind: '', at: 1}]}),
       plan({declines: [{kind: 'x'.repeat(65), at: 1}]}),
-      plan({declines: [{kind: 'pack', at: Infinity}]}),
-      plan({declines: [{kind: 'pack', at: -5}]}),
-      plan({declines: [{kind: 'pack', at: 1.5}]}),
-      plan({declines: [{kind: 'pack', at: 1e300}]}),
-      plan({declines: [{kind: 'pack', at: Date.now() + 31 * 365 * 24 * 3600 * 1000}]}),
-      plan({declines: [{kind: 'pack', at: 1, session: ID}]}),
-      plan({declines: Array.from({length: MAX_DECLINES + 1}, () => ({kind: 'pack', at: 1}))}),
+      plan({declines: [{kind: 'enabled', at: Infinity}]}),
+      plan({declines: [{kind: 'enabled', at: -5}]}),
+      plan({declines: [{kind: 'enabled', at: 1.5}]}),
+      plan({declines: [{kind: 'enabled', at: 1e300}]}),
+      plan({declines: [{kind: 'enabled', at: Date.now() + 31 * 365 * 24 * 3600 * 1000}]}),
+      plan({declines: [{kind: 'enabled', at: 1, session: ID}]}),
+      plan({declines: Array.from({length: MAX_DECLINES + 1}, () => ({kind: 'enabled', at: 1}))}),
       // B2's exact shapes (#252 rev 2)
       st({overrides: [], locks: [], formsLeft: 4}),
       st({overrides: [], locks: [], formsLeft: 1.5}),
-      st({overrides: [], locks: ['pack', 'pack'], formsLeft: 3}),
+      st({overrides: [], locks: ['enabled', 'enabled'], formsLeft: 3}),
       st({overrides: [], locks: ['other'], formsLeft: 3}),
       st({overrides: [ov({name: 'secret'})], locks: [], formsLeft: 3}),
       // M5a: a pack's on or off is never a session's own. A pack.<n> override
@@ -105,7 +105,7 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
   it('takes B2\'s exact shapes: a confirmed cap loosening, a tightening, locks and forms left', () => {
     const r = createRestore({});
     const state = {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000}), ov()],
-      locks: ['maxOutputBytes', 'pack'], formsLeft: 0};
+      locks: ['maxOutputBytes', 'enabled'], formsLeft: 0};
     assert.deepStrictEqual(r.handle(st(state)), {sessions: 1});
   });
 
@@ -122,10 +122,10 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
     const got = [];
     const r = createRestore({importTable: (t) => got.push(t)});
     const other = {session: 'b'.repeat(32), resume: 'b'.repeat(64), state: {overrides: [ov({name: 'requestTimeout', value: 120000, loosening: true, over: 30000})], locks: [], formsLeft: 3}};
-    const stale = {session: ID, resume: HASH, state: {overrides: [ov(), ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.ci-failure-triage', value: true, loosening: true, version: '1.2.3'})], locks: ['pack'], formsLeft: 2}};
+    const stale = {session: ID, resume: HASH, state: {overrides: [ov(), ov({name: 'pack.weather', value: false, version: '1.0.0'}), ov({name: 'pack.ci-failure-triage', value: true, loosening: true, version: '1.2.3'})], locks: ['enabled'], formsLeft: 2}};
     assert.deepStrictEqual(r.handle(plan({sessions: [stale, other], reset: []})), {sessions: 2});
     assert.strictEqual(got.length, 1);
-    assert.deepStrictEqual(got[0].sessions[0].state, {overrides: [ov()], locks: ['pack'], formsLeft: 2});
+    assert.deepStrictEqual(got[0].sessions[0].state, {overrides: [ov()], locks: ['enabled'], formsLeft: 2});
     assert.deepStrictEqual(got[0].sessions[1], other, 'another session\'s loosening is kept');
     assert.deepStrictEqual(got[0].packsDropped, [{session: ID, names: ['weather', 'ci-failure-triage']}]);
     // what the daemon sent is bounded before anything is dropped: a name
