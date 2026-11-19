@@ -105,6 +105,11 @@ const STEPS = {
     // (a '#' name through Module._resolveFilename called directly: the one
     // refusal the hook gives; the second round on #440)
     out.push(same(() => M._resolveFilename('#p/json-stringify-safe', module), () => M._resolveFilename('#p/no-such-isolation-pkg', module), 'json-stringify-safe'));
+    // (... and a bare name refused there has a requireStack of virtual
+    // names, as the hook's has)
+    let directStack;
+    try { M._resolveFilename('no-such-isolation-pkg', module); directStack = 'found'; } catch (e) { directStack = e.requireStack; }
+    out.push(Array.isArray(directStack) && directStack.length > 0 && directStack.every((f) => /^(\/app\/|[A-Z]:\\app\\)/.test(f)) ? 'same' : `directStack(${JSON.stringify(directStack)})`);
     // (a refused require keeps a requireStack, of virtual names only: code
     // reading it doesn't break; the high review of #440)
     let stack;
@@ -152,7 +157,12 @@ const STEPS = {
     // (... and with a ':' in a segment, which is no URL scheme in a relative
     // name; the review of the second round)
     const colonSame = (await noName(`./x:y/${climb('node-version.js')}`, 'node-version.js')) === (await noName(`./x:y/${climb('no-such-isolation.js')}`, 'no-such-isolation.js')) ? 'same' : 'differs';
-    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame}`;
+    // (... and a missing one's error names no host path: every path in it
+    // is a virtual one)
+    const missing = await noName('./no-such-isolation.mjs', 'no-such-isolation.mjs');
+    const hostNamed = (missing.match(/(?:file:\/\/)?\/[^\s'"]+/g) || []).filter((p) => !/^(file:\/\/)?\/app(\/|$)/.test(p));
+    const virtualOnly = hostNamed.length === 0 ? 'same' : `host(${hostNamed.join(',')})`;
+    return `${await (await import('../../lib/import-oracle.mjs')).default(root)} ${await require('../../lib/import-url-oracle.cjs')(root)} ${vmSame} ${noNameSame} ${colonSame} ${virtualOnly}`;
   },
   // item 7: after the seal, what exists in the runtime's tree is no answer:
   // a runtime lib path, or a package only the runtime has, resolved from a

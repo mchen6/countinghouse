@@ -37,5 +37,8 @@ const own = async () => {
   const upper = (q) => `FILE:${here.href.slice('file:'.length)}?${q}`;
   let queried;
   try { queried = (await import(upper('a'))) !== (await import(upper('b'))) ? 'same' : 'one-instance'; } catch (e) { queried = `queried(${e.code})`; }
-  return `${escaped} ${queried}`;
+  // (by an absolute path too, which Node's ES resolver reads as a URL path)
+  let absolute;
+  try { absolute = (await import(`${here.pathname}?c`)) !== (await import(`${here.pathname}?d`)) ? 'same' : 'one-instance'; } catch (e) { absolute = `absolute(${e.code})`; }
+  return `${escaped} ${queried} ${absolute}`;
 };
