@@ -284,7 +284,7 @@ describe('stdio 39: a reloading device keeps its tool listed', () => {
     assert.strictEqual(call('packageOfModule', dmOf({}, mm), NAME).countinghouse.role, 'scenario');
     // never to the module's new worker, pinned or not yet (the high review of #435's medium round, 6)
     const fresh = Object.assign({}, mm, {modules: {[NAME]: {hostModulePath: '/x'}}});
-    assert.notStrictEqual(call('packageOfModule', dmOf({}, fresh), NAME), pkg);
+    assert.deepStrictEqual(call('packageOfModule', dmOf({}, fresh), NAME), {name: NAME, countinghouse: undefined});
     // and its #400 decision stays while it is kept
     assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-b'), true);
     assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-other'), false);
@@ -327,6 +327,26 @@ describe('stdio 39: a reloading device keeps its tool listed', () => {
     assert.strictEqual(mm.endedDevices['d-restart'].code, 'MODULE_RESTARTING', 'a restart is the supervisor\'s');
     assert.strictEqual(mm.settleHeld.size, 0);
     assert.deepStrictEqual(specs(dmOf({}, mm)), {}, 'nothing listed');
+  });
+  it('the cap holds at a mark too, and a record marked again is the newest', () => {
+    const mm = {endedDevices: {}, emit: () => {}};
+    const ids = Array.from({length: 4096}, (_, i) => `u-${i}`);
+    ModuleManager.prototype.markEndedDevices.call(mm, ids, '@t/many', 'MODULE_UNLOADED');
+    ModuleManager.prototype.markEndedDevices.call(mm, ['u-0'], '@t/many', 'MODULE_UNLOADED');
+    ModuleManager.prototype.markEndedDevices.call(mm, ['x'], '@t/x', 'MODULE_UNLOADED');
+    assert.strictEqual(Object.keys(mm.endedDevices).length, 4096);
+    assert.ok(mm.endedDevices['u-0'] != null, 'marked again: not the oldest');
+    assert.strictEqual(mm.endedDevices['u-1'], undefined, 'the oldest went at the mark');
+  });
+  it('a settle by code leaves the other code\'s records; a record with no module path keeps no package stub', () => {
+    const mm = {endedDevices: {}, emit: () => {}};
+    ModuleManager.prototype.markEndedDevices.call(mm, ['r'], NAME, 'MODULE_RELOADING', {specs: {r: spec('r', 1)}, packageInfo: pkg});
+    ModuleManager.prototype.markEndedDevices.call(mm, ['s'], NAME, 'MODULE_RESTARTING');
+    ModuleManager.prototype.settleEndedDevices.call(mm, NAME, {only: 'MODULE_RESTARTING'});
+    assert.strictEqual(mm.endedDevices.s.code, 'MODULE_UNLOADED');
+    assert.strictEqual(mm.endedDevices.r.code, 'MODULE_RELOADING', 'a reload\'s unload leaves what it kept');
+    assert.strictEqual(ModuleManager.keptOf({deviceList: {}}, NAME).packageInfo, null);
+    assert.deepStrictEqual(ModuleManager.keptOf({deviceList: {}, hostModulePath: '/x'}, NAME).packageInfo, {name: NAME, countinghouse: undefined});
   });
   it('settled records are capped, the oldest dropped first; the index never walks them', () => {
     const mm = {supervisor: null, modules: {}, endedDevices: {}, emit: () => {}};
