@@ -169,8 +169,8 @@ describe('mcp-contract 39: one table of declared text fields', () => {
   // the lists clean declared text only through the table: no file clean
   // its own fields by line() or message() (tool-registry's one use is a
   // check that a description is more than hidden characters, never output)
-  it('tools/list, prompts/list, resources/list and spec-text call no line() or message() of their own', () => {
-    const allowed = {'lib/mcp/tool-registry.js': 1, 'lib/mcp/prompts.js': 0, 'lib/mcp/resources.js': 0, 'lib/spec-text.js': 0};
+  it('tools/list, prompts/list, resources/list, a question\'s dialog and spec-text call no line() or message() of their own', () => {
+    const allowed = {'lib/mcp/tool-registry.js': 1, 'lib/mcp/prompts.js': 0, 'lib/mcp/resources.js': 0, 'lib/spec-text.js': 0, 'lib/module-questions.js': 0};
     for (const [file, n] of Object.entries(allowed)) {
       const src = fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
       const uses = src.match(/\b(clientText|moduleText)\.(line|message)\(/g) || [];
