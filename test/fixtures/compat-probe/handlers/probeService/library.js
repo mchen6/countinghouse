@@ -14,7 +14,13 @@ const said = (e) => `threw ${e != null && e.code != null ? String(e.code) : (e !
 const process_ = process;
 const swap = (target, key, fn) => {
   const was = Object.getOwnPropertyDescriptor(target, key);
-  try { return fn(); } finally { if (was != null && was.configurable) Object.defineProperty(target, key, was); else if (was != null && was.writable) target[key] = was.value; }
+  const value = target[key];
+  try { return fn(); } finally {
+    // (redefined where it can be; otherwise assigned back -- the held
+    // emitWarning's setter takes its own wrapper, restoring Node's)
+    if (was != null && was.configurable) Object.defineProperty(target, key, was);
+    else { try { target[key] = value; } catch (e) { /* fixed */ } }
+  }
 };
 const STEPS = {
   'emitWarning assigned': () => swap(process_, 'emitWarning', () => {
