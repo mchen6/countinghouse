@@ -287,17 +287,16 @@ describe('remote 02: version 2, by module', () => {
       assert.throws(() => credentials.checkEntry('b', {'https://api.b.example': {PATH: SLOT2}}), /PATH is not a credential/);
     });
 
-    it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2), no pack\'s version 1 names', () => {
-      assert.deepStrictEqual([...credentials.namesReadFrom([])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
-      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
+    it('the names denied to workers under version 2: the slots and every variable name the file binds (#422 high review, 2)', () => {
+      assert.deepStrictEqual([...credentials.namesReadFrom()].sort(), ['B_KEY', SLOT1, SLOT2, 'GITHUB_TOKEN']);
     });
   });
 
-  it('the names an allowance reads from: under version 1, the start\'s variables and each extra (a pack\'s) allowance\'s', () => {
+  it('the names an allowance reads from: under version 1, the start\'s variables', () => {
     const saved = credentials.snapshot();
     try {
       credentials.configure(v2file(JSON.stringify({[ORIGIN]: ['GITHUB_TOKEN']})));
-      assert.deepStrictEqual([...credentials.namesReadFrom([new Map([['https://x.example', new Set(['X_KEY'])]])])].sort(), ['GITHUB_TOKEN', 'X_KEY']);
+      assert.deepStrictEqual([...credentials.namesReadFrom()].sort(), ['GITHUB_TOKEN']);
     } finally {
       credentials.restore(saved);
     }
