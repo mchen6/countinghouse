@@ -71,6 +71,10 @@ const authFor = (granted) => JSON.stringify({
       it('the identity granted the device is told why it is missing: MODULE_UNLOADED', async () => {
         assert.strictEqual(toolErrorCode(await probe(DEVICE)), 'MODULE_UNLOADED');
         assert.strictEqual((await observe(DEVICE)).code, 'MODULE_UNLOADED');
+        // and by its name, ctx.call's queryDeviceSpec path: the refusal is the
+        // runtime's on every route (the medium on the fold after #445, 2)
+        const byName = await mcpCall(variant.port, ADMIN, 'hop_prober_probeservice_callbyname', {});
+        assert.strictEqual(toolErrorCode(byName), 'MODULE_UNLOADED', JSON.stringify(byName));
       });
 
       it('a device never hosted is refused as undeclared, the same as a present device not declared (#148)', async () => {
