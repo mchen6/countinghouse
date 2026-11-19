@@ -25,6 +25,16 @@
             "output": {
               "schema": "/probeService/observe/output"
             }
+          },
+          {
+            "name": "callByName",
+            "description": "Calls worker-end's ping by its name with ctx.call, and fails with whatever the call answered.",
+            "input": {
+              "schema": "/probeService/callByName/input"
+            },
+            "output": {
+              "schema": "/probeService/callByName/output"
+            }
           }
         ]
       }

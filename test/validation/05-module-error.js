@@ -179,6 +179,16 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       const {moduleText} = require('../../lib/module-text');
       assert.strictEqual(moduleText('a\nb\u0007c\u2028d\u202ee\u2069f'), 'a b c d e f');
       assert.strictEqual(moduleText('abcdef', 3), 'abc');
+      // moduleLine, a notice's and a refused ask's line: marks spaced, runs
+      // made one, every whitespace trimmed, cut without half a pair
+      const {moduleLine} = require('../../lib/module-text');
+      assert.strictEqual(moduleLine('\n not\u200f  confirmed\u00a0', 120), 'not confirmed');
+      assert.strictEqual(moduleLine(`${'x'.repeat(119)}\u{1F600}`, 120), 'x'.repeat(119));
+      assert.strictEqual(moduleLine('\u3000a\u202e\u2066b ', 120), 'a b');
+      assert.strictEqual(moduleLine(null, 10), '');
+      // padding doesn't spend the budget: the text after it survives
+      assert.strictEqual(moduleLine(`${' '.repeat(200)}module X needs a restart`, 200), 'module X needs a restart');
+      assert.strictEqual(moduleLine(`${'\u200b'.repeat(150)}key`, 128), 'key');
       assert.strictEqual(moduleText('a\u200eb\u200fc\u061cd'), 'a b c d');
       // the repo's one hidden-character class (conditions-why.json
       // hiddenClass): zero-width, soft hyphen, word joiner, BOM, a variation
@@ -188,6 +198,14 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       // client-text's rule exactly: an emoji sequence, a joiner within a
       // word (Persian's ZWNJ) and an RGI flag stay whole (the medium on the
       // final round, 1)
+      // the declarations gate's subset is inside the one class
+      const {hiddenClass} = require('../../lib/conditions-why.json');
+      const CLASS = new RegExp(`^[${hiddenClass}]$`, 'u');
+      const SUBSET = new RegExp(`^${require('../../lib/module-text').CONTROL_OR_BIDI_SOURCE}$`, 'u');
+      for (let cp = 0; cp <= 0x2100; cp++) {
+        const c = String.fromCodePoint(cp);
+        if (SUBSET.test(c)) assert.ok(CLASS.test(c), `U+${cp.toString(16)} is in the gate but not the class`);
+      }
       for (const whole of ['\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645', '\u2764\ufe0f', '\u{1f468}\u200d\u{1f469}\u200d\u{1f467}', '\u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}']) {
         assert.strictEqual(moduleText(whole), whole, JSON.stringify(whole));
       }

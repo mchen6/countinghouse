@@ -330,6 +330,13 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
     assert.ok(line.change.length <= 120 && !/[\u0000\n]/.test(line.change), line.change);
   });
 
+  it('history: an outside reason by the one module-text rule: a bidi override, isolate, mark or zero-width character a space, runs made one', async () => {
+    const t = tool({mayElicit: async () => ({ok: false, why: 'hook\u202e  present\u2066\u200f\u200bnow'})});
+    await refused(t.set('requestTimeout', '61s', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
+    const line = history().find((h) => h.setting === 'requestTimeout');
+    assert.strictEqual(line.change, 'not confirmed (hook present now)', JSON.stringify(line));
+  });
+
   it('a retry with no answer gets the same form back, spending no other', async () => {
     const t = tool();
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
