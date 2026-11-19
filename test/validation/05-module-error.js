@@ -179,6 +179,8 @@ describe('validation 05: a module\'s error (ctx.error, logger-design §5.1)', ()
       const {moduleText} = require('../../lib/module-text');
       assert.strictEqual(moduleText('a\nb\u0007c\u2028d\u202ee\u2069f'), 'a b c d e f');
       assert.strictEqual(moduleText('abcdef', 3), 'abc');
+      assert.strictEqual(moduleText('a\u200eb\u200fc\u061cd'), 'a b c d');
+      assert.strictEqual(moduleText('ab\ud83d\ude00', 3), 'ab', 'no half of a pair at the cut');
       assert.strictEqual(require('../../lib/schema-safety').declaredText('x\u2067y'), 'x y');
     });
     it('is not, for a system error, a Node error, or a code that does not look like one', () => {
