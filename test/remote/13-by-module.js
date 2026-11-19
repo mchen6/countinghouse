@@ -7,7 +7,6 @@
 // file otherwise). Version 1 is unchanged (remote 02, 05).
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -25,7 +24,7 @@ const SLOT1 = 'COUNTINGHOUSE_CREDENTIAL_1';
 // A copy of the remote probe under another package name, its remote on this
 // file's stand-in, declaring `variable`.
 function probe(name, variable, url) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-13-')), name);
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-13-'), name);
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'remote-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -41,13 +40,18 @@ function probe(name, variable, url) {
   return dir;
 }
 const v2file = (modules) => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-13f-')), 'remote-credentials.json');
+  const file = path.join(tmpDirs.mkdtemp('ch-remote-13f-'), 'remote-credentials.json');
   fs.writeFileSync(file, JSON.stringify({version: 2, modules: modules}));
   return file;
 };
 const BOUND = {'remote-bound': {[ORIGIN]: {CH_TEST_REMOTE_TOKEN: SLOT1}}};
 
+// this file's temporary trees, under test/.tmp and removed
+// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-13']);
+
 describe('remote 13: a version 2 binding, at registration', function() {
+  tmpDirs.hooks();
   this.timeout(30000);
   const cli = require('../../lib/cli-options');
   const credentials = require('../../lib/remote/credentials');
@@ -135,6 +139,7 @@ describe('remote 13: a version 2 binding, at registration', function() {
 });
 
 describe('remote 13: a version 2 binding, end to end', function() {
+  tmpDirs.hooks();
   this.timeout(120000);
   const PORT = testPort(9763);
   let remote = null;

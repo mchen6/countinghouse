@@ -9,7 +9,6 @@
 // COUNTINGHOUSE_* name stays denied whatever the policy says.
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const {ROOT, startServer, stopServer, mcpCall} = require('../helpers/sandbox-server');
 const {testPort} = require('../helpers/test-env');
@@ -23,7 +22,7 @@ const SLOT_VALUE = `ghp_${'F'.repeat(36)}`;
 
 // The deny probe, declaring `env` and nothing on the file system.
 function probe(env) {
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14-')), NAME);
+  const dir = path.join(tmpDirs.mkdtemp('ch-remote-14-'), NAME);
   fs.cpSync(path.join(ROOT, 'test', 'fixtures', 'deny-probe'), dir, {recursive: true});
   const pkgPath = path.join(dir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
@@ -32,12 +31,17 @@ function probe(env) {
   return dir;
 }
 const policyFile = (entry) => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14p-')), 'policy.json');
+  const file = path.join(tmpDirs.mkdtemp('ch-remote-14p-'), 'policy.json');
   fs.writeFileSync(file, JSON.stringify({modules: {[NAME]: entry}}));
   return file;
 };
 
+// this file's temporary trees, under test/.tmp and removed
+// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-14']);
+
 describe('remote 14: a name a credentials allowance reads is never copied to a worker', () => {
+  tmpDirs.hooks();
   const {build} = require('../../lib/module-sandbox-config');
   const SERVER_ENV = {GITHUB_TOKEN: SERVER_TOKEN, [SLOT1]: SLOT_VALUE, PLAIN: 'plain'};
   const READS = new Set(['GITHUB_TOKEN', SLOT1]);
@@ -86,7 +90,7 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
   it('under version 2, a variable name the file binds is denied too, though the value is read from a slot', () => {
     const credentials = require('../../lib/remote/credentials');
     const saved = credentials.snapshot();
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14b-'));
+    const tmp = tmpDirs.mkdtemp('ch-remote-14b-');
     const file = path.join(tmp, 'allow.json');
     fs.writeFileSync(file, JSON.stringify({version: 2, modules: {'some-module': {'https://api.githubcopilot.com': {GITHUB_TOKEN: SLOT1}}}}));
     try {
@@ -105,7 +109,7 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
     const credentials = require('../../lib/remote/credentials');
     const mmod = require('../../lib/module-manager');
     const saved = credentials.snapshot();
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14a-')), 'allow.json');
+    const file = path.join(tmpDirs.mkdtemp('ch-remote-14a-'), 'allow.json');
     fs.writeFileSync(file, JSON.stringify({'https://api.githubcopilot.com': ['GITHUB_TOKEN']}));
     try {
       credentials.configure(file);
@@ -122,15 +126,16 @@ describe('remote 14: a name a credentials allowance reads is never copied to a w
 // enforce, with a version 1 allowance reading GITHUB_TOKEN and a slot set
 // in the runtime's environment.
 describe('remote 14: a worker\'s environment', function() {
+  tmpDirs.hooks();
   this.timeout(120000);
   const KEY = 'remote-14-key';
   [['audit', testPort(9764)], ['enforce', testPort(9765)]].forEach(([mode, port]) => {
     describe(mode, () => {
       let server = null;
       before(async () => {
-        const allow = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14s-')), 'allow.json');
+        const allow = path.join(tmpDirs.mkdtemp('ch-remote-14s-'), 'allow.json');
         fs.writeFileSync(allow, JSON.stringify({'https://api.githubcopilot.com': ['GITHUB_TOKEN']}));
-        const store = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-14d-'));
+        const store = tmpDirs.mkdtemp('ch-remote-14d-');
         server = await startServer(port, ['--workerThread', '--debug', '--debugKey', KEY, '--moduleDataPath', store,
           '--moduleSandbox', mode, '--modulePolicy', policyFile({approve: 'as-declared'}), '--remoteCredentials', allow,
           '--loadModule', probe(['GITHUB_TOKEN', SLOT1])], {env: {GITHUB_TOKEN: SERVER_TOKEN, [SLOT1]: SLOT_VALUE}});

@@ -4,7 +4,6 @@
 // settings.lock, and the history appended first.
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const options = require('../../lib/cli-options');
 const settingsTool = require('../../lib/settings-tool');
@@ -12,7 +11,12 @@ const settingsTool = require('../../lib/settings-tool');
 const MiB = 1024 * 1024;
 
 
+// this file's temporary trees, under test/.tmp and removed
+// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-settings-']);
+
 describe('stdio 14: countinghouse_settings', () => {
+  tmpDirs.hooks();
   let home;
   let file;
   let tool;
@@ -30,7 +34,7 @@ describe('stdio 14: countinghouse_settings', () => {
   before(() => { saved = {locale: options.locale, requestTimeout: options.requestTimeout, maxOutputBytes: options.maxOutputBytes}; });
   after(() => Object.assign(options, saved));
   beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-settings-'));
+    home = tmpDirs.mkdtemp('ch-settings-');
     file = path.join(home, 'settings.json');
     tool = settingsTool.create({file, lockWaitMs: 200});
     // the runtime on its defaults at each case's start, whatever the case

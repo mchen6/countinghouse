@@ -15,7 +15,12 @@ function run(args, done) {
   });
 }
 
+// this file's temporary trees, under test/.tmp and removed
+// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-validate-cli-']);
+
 describe('countinghouse-validate CLI', function() {
+  tmpDirs.hooks();
   this.timeout(20000);
 
   it('exits 0 and says so for a clean module', (done) => {
@@ -38,8 +43,7 @@ describe('countinghouse-validate CLI', function() {
   // means, whichever form the author wrote; asserted byte for byte.
   const withRemote = (remote) => {
     const fs = require('fs');
-    const os = require('os');
-    const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-validate-cli-')), 'm');
+    const dir = path.join(tmpDirs.mkdtemp('ch-validate-cli-'), 'm');
     fs.cpSync(path.join(FIXTURES, 'handler-map-convention'), dir, {recursive: true});
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
     pkg.countinghouse = Object.assign({}, pkg.countinghouse, {remotes: [remote]});

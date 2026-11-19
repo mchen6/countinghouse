@@ -4,7 +4,6 @@
 // the allowance names it for the declared URL's exact origin.
 const assert = require('assert');
 const fs     = require('fs');
-const os     = require('os');
 const path   = require('path');
 const {parseRemotes} = require('../../lib/remote/declaration');
 const {loadAllowance, resolveCredential} = require('../../lib/remote/credentials');
@@ -22,13 +21,18 @@ const remoteFor = (url, credential) => {
 };
 const GH = remoteFor('https://api.githubcopilot.com/mcp/', {env: 'COUNTINGHOUSE_GITHUB_TOKEN', fallbackEnv: 'GITHUB_TOKEN'});
 const allowance = (obj) => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02-')), 'remote-credentials.json');
+  const file = path.join(tmpDirs.mkdtemp('ch-remote-02-'), 'remote-credentials.json');
   fs.writeFileSync(file, typeof(obj) === 'string' ? obj : JSON.stringify(obj));
   return loadAllowance(file);
 };
 const ALLOWED = () => allowance({'https://api.githubcopilot.com': ['COUNTINGHOUSE_GITHUB_TOKEN', 'GITHUB_TOKEN']});
 
+// this file's temporary trees, under test/.tmp and removed
+// (test/helpers/test-tmp.js forFile); nothing left in os.tmpdir()
+const tmpDirs = require('../helpers/test-tmp').forFile(['ch-remote-02']);
+
 describe('remote 02: the credential allowance', () => {
+  tmpDirs.hooks();
   it('reads env when allowed for the exact origin', () => {
     const c = resolveCredential(GH, {COUNTINGHOUSE_GITHUB_TOKEN: TOKEN, GITHUB_TOKEN: OTHER}, ALLOWED());
     assert.deepStrictEqual(c, {header: 'Authorization', value: `Bearer ${TOKEN}`, source: 'COUNTINGHOUSE_GITHUB_TOKEN'});
@@ -101,12 +105,13 @@ describe('remote 02: the credential allowance', () => {
 // module, through a slot (COUNTINGHOUSE_CREDENTIAL_<n>); the start's file
 // fixes each slot for the life of the runtime.
 describe('remote 02: version 2, by module', () => {
+  tmpDirs.hooks();
   const credentials = require('../../lib/remote/credentials');
   const ORIGIN = 'https://api.githubcopilot.com';
   const SLOT1 = 'COUNTINGHOUSE_CREDENTIAL_1';
   const SLOT2 = 'COUNTINGHOUSE_CREDENTIAL_2';
   const v2file = (modules) => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02b-')), 'remote-credentials.json');
+    const file = path.join(tmpDirs.mkdtemp('ch-remote-02b-'), 'remote-credentials.json');
     fs.writeFileSync(file, typeof(modules) === 'string' ? modules : JSON.stringify({version: 2, modules: modules}));
     return file;
   };
@@ -301,6 +306,7 @@ describe('remote 02: version 2, by module', () => {
 });
 
 describe('remote 02: the allowance at start', function() {
+  tmpDirs.hooks();
   this.timeout(30000);
   const {spawnSync} = require('child_process');
   const ROOT = path.join(__dirname, '..', '..');
@@ -308,7 +314,7 @@ describe('remote 02: the allowance at start', function() {
     {cwd: ROOT, encoding: 'utf8', timeout: 20000});
 
   it('a malformed --remoteCredentials file stops the start, naming the file', () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02-')), 'bad.json');
+    const file = path.join(tmpDirs.mkdtemp('ch-remote-02-'), 'bad.json');
     fs.writeFileSync(file, JSON.stringify({'https://example.com/mcp': ['A']}));
     const r = start(['--remoteCredentials', file]);
     assert.strictEqual(r.status, 2, r.stderr);
@@ -317,7 +323,7 @@ describe('remote 02: the allowance at start', function() {
 
   it('a version 2 file whose environment name is not a slot stops the start (M3)', () => {
     for (const name of ['COUNTINGHOUSE_IDENTITY_SECRET', 'PATH', 'COUNTINGHOUSE_CREDENTIAL_0']) {
-      const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02-')), 'v2.json');
+      const file = path.join(tmpDirs.mkdtemp('ch-remote-02-'), 'v2.json');
       fs.writeFileSync(file, JSON.stringify({version: 2, modules: {m: {'https://api.githubcopilot.com': {GITHUB_TOKEN: name}}}}));
       const r = start(['--remoteCredentials', file]);
       assert.strictEqual(r.status, 2, `${name}: ${r.stderr}`);
@@ -331,7 +337,7 @@ describe('remote 02: the allowance at start', function() {
   });
 
   it('an all-digit file path is a path, not a number (code review)', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02n-'));
+    const dir = tmpDirs.mkdtemp('ch-remote-02n-');
     fs.writeFileSync(path.join(dir, '123'), JSON.stringify({'https://example.com/mcp': ['A']}));
     const r = spawnSync(process.execPath, [path.join(ROOT, 'framework.js'), '--no-workerThread', '--debug', '--port', String(testPort(9689)), '--remoteCredentials', '123'],
       {cwd: dir, encoding: 'utf8', timeout: 20000});
@@ -359,10 +365,11 @@ describe('remote 02: the allowance at start', function() {
 });
 
 describe('remote 02: countinghouse-validate reads the declaration', () => {
+  tmpDirs.hooks();
   require('../../lib/cli-options').setOptions({workerThread: false});
   const moduleValidator = require('../../lib/module-validator');
   const withRemotes = (remotes) => {
-    const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ch-remote-02v-')), 'm');
+    const dir = path.join(tmpDirs.mkdtemp('ch-remote-02v-'), 'm');
     fs.cpSync(path.join(__dirname, '..', 'fixtures', 'compose-caller'), dir, {recursive: true});
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
     pkg.countinghouse = Object.assign({}, pkg.countinghouse, {remotes: remotes});
