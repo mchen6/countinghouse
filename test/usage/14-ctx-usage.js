@@ -26,7 +26,7 @@ describe('usage 14: ctx.usage(), the current call\'s counts so far', () => {
 
   describe('the recorder', () => {
     it('sums the call\'s server calls so far, by server, with the bytes/4 token estimate, and nothing else', () => {
-      const call = u.beginCall({pack: 'p', module: 'scenario', tool: 't', caller: 'u_secret'});
+      const call = u.beginCall({scenario: 'p', module: 'scenario', tool: 't', caller: 'u_secret'});
       assert.deepStrictEqual(u.soFar(call), {calls: 0, linesIn: 0, bytesIn: 0, tokensInEst: 0, servers: {}, sentence: 'no server was called'});
       recordIn(call, 'github', 4000, 120);
       recordIn(call, 'github', 1001, 3);

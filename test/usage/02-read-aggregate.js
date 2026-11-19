@@ -92,6 +92,14 @@ test('csv has one row per tool with the fixed header', () => {
     '"a,""b""",t,1,0,0,0,4,1,0,1');
 });
 
+// M6 (#413 rev 3 section 13.1): a record names its scenario; one written
+// before says pack, and is read the same
+test('a record\'s scenario and an older record\'s pack are read alike', () => {
+  const rec = (field, call) => ({t: '2026-11-11T00:00:00Z', call, process: '1-1', [field]: 'ch-pack-x', tool: 't', server: null, bytesIn: 0, linesIn: 0, bytesOut: 4, linesOut: 1, ms: 1, outcome: 'ok'});
+  const agg = aggregate([rec('scenario', 1), rec('pack', 2)]);
+  assert.deepStrictEqual(agg.byTool.map((t) => [t.pack, t.tool, t.calls]), [['ch-pack-x', 't', 2]]);
+});
+
 test('text output states what pack calls stood for, per pack, tool, server and process, and never says saved', () => {
   const text = formatText(aggregate(readUsage(home, {since: '2026-11-10'})));
   assert.match(text, /^3 pack calls stood for 5 server calls; 4 tool calls in all, from 3 launcher process\(es\)\.$/m);

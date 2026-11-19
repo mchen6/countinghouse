@@ -52,7 +52,7 @@ describe('countinghouse-usage', function() {
   it('the shell\'s report lists every group: the 500-row bound is the tool\'s', async () => {
     const {createUsage} = require('../../lib/usage');
     const u = createUsage({usageDir: null, pid: 3, startMs: 1, now: () => Date.parse('2026-11-13T10:00:00Z')});
-    for (let i = 0; i < 510; i++) u.recordOut(u.beginCall({pack: 'p', tool: `t${i}`, caller: 'u_a'}), {tool: `t${i}`, bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
+    for (let i = 0; i < 510; i++) u.recordOut(u.beginCall({scenario: 'p', tool: `t${i}`, caller: 'u_a'}), {tool: `t${i}`, bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
     const who = {caller: null, isAdmin: true};
     assert.strictEqual((await usageReport({}, who, {usage: u, usageDir: null})).groups.length, 500);
     const all = (await usageReport({}, who, {usage: u, usageDir: null, maxGroups: Infinity}));

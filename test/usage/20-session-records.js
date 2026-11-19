@@ -21,9 +21,9 @@ const B = 'b'.repeat(32);
 describe('usage 20: the session on usage records and jobs (shared runtime B1, Task 3)', () => {
   it('records of calls from two sessions carry their own ids; one from no session has no field; nothing else about the session', () => {
     const u = createUsage({usageDir: null, pid: 1, startMs: 1});
-    const ca = u.beginCall({pack: null, module: 'm', tool: 't', caller: 'c1', session: A});
-    const cb = u.beginCall({pack: null, module: 'm', tool: 't', caller: 'c1', session: B});
-    const cn = u.beginCall({pack: null, module: 'm', tool: 't', caller: 'c1'});
+    const ca = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'c1', session: A});
+    const cb = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'c1', session: B});
+    const cn = u.beginCall({scenario: null, module: 'm', tool: 't', caller: 'c1'});
     u.recordIn(ca, {server: 's', tool: 'x', bytes: 1, lines: 1, ms: 1, outcome: 'ok', credential: null});
     for (const c of [ca, cb, cn]) u.recordOut(c, {tool: 't', bytes: 1, lines: 1, ms: 1, outcome: 'ok'});
     const recs = u.records();

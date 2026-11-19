@@ -26,7 +26,7 @@ function recorder() {
   // One tools/call: its server calls, then its result (out: null for none).
   u.call = ({at, caller = 'u_a', tool = 'triage', pack = 'ch-pack-x', ins = [], out = {}}) => {
     t = Date.parse(at);
-    const c = u.beginCall({pack, tool, caller});
+    const c = u.beginCall({scenario: pack, tool, caller});
     for (const i of ins) {
       u.recordIn(c, {server: i.server || 'github', module: 'ch-access-github', tool: 'get_logs', bytes: i.bytes || 0, lines: 1, ms: i.ms === undefined ? 1 : i.ms,
         outcome: i.outcome || 'ok', credential: 'GITHUB_TOKEN', mapped: i.mapped === true});
@@ -270,10 +270,10 @@ describe('countinghouse_usage_report, Part A', () => {
     it('an error result\'s Out record carries its code; a success carries none', async () => {
       let t = Date.parse('2026-11-13T10:00:00Z');
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => t++});
-      const bad = u.beginCall({pack: 'p', tool: 'x', caller: 'u_a'});
+      const bad = u.beginCall({scenario: 'p', tool: 'x', caller: 'u_a'});
       finishToolCall({usage: u, call: bad, result: {isError: true, content: [{type: 'text', text: 'no'}], _meta: {'countinghouse/code': 'ARGUMENTS_INVALID'}},
         role: 'scenario', tool: 'x', startedMs: t, now: () => t});
-      const good = u.beginCall({pack: 'p', tool: 'x', caller: 'u_a'});
+      const good = u.beginCall({scenario: 'p', tool: 'x', caller: 'u_a'});
       finishToolCall({usage: u, call: good, result: {isError: false, content: [{type: 'text', text: 'ok'}]}, role: 'scenario', tool: 'x', startedMs: t, now: () => t});
       const outs = u.records().filter((r) => r.server == null);
       assert.deepStrictEqual(outs.map((r) => [r.outcome, r.code]), [['error', 'ARGUMENTS_INVALID'], ['ok', undefined]]);
@@ -282,7 +282,7 @@ describe('countinghouse_usage_report, Part A', () => {
     it('a code that is not one (free text) is recorded as OTHER, never the text', async () => {
       let t = 0;
       const u = createUsage({usageDir: null, pid: 1, startMs: 1, now: () => t++});
-      const c = u.beginCall({pack: 'p', tool: 'x', caller: 'u_a'});
+      const c = u.beginCall({scenario: 'p', tool: 'x', caller: 'u_a'});
       finishToolCall({usage: u, call: c, result: {isError: true, content: [], _meta: {'countinghouse/code': 'secret text from somewhere'}}, role: 'scenario', tool: 'x', startedMs: 0, now: () => t});
       assert.strictEqual(u.records().find((r) => r.server == null).code, 'OTHER');
     });

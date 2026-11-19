@@ -22,7 +22,7 @@ describe('countinghouse_usage_report', () => {
   function live() {
     let t = NOW - 1000;
     const u = createUsage({usageDir: null, pid: 7, startMs: NOW - 5000, now: () => t++});
-    const call = u.beginCall({pack: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_alice'});
+    const call = u.beginCall({scenario: 'ch-pack-ci-failure-triage', tool: 'ci_failure_triage', caller: 'u_alice'});
     u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'actions_list', bytes: 100, lines: 10, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     u.recordIn(call, {server: 'github', module: 'ch-access-github', tool: 'get_job_logs', bytes: 300, lines: 30, ms: 1, outcome: 'ok', credential: 'GITHUB_TOKEN'});
     u.recordOut(call, {tool: 'ci_failure_triage', bytes: 40, lines: 4, ms: 9, outcome: 'ok'});
