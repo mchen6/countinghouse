@@ -98,20 +98,25 @@ jobs:
           OPEN_SESSIONS: ${{ inputs.open_sessions }}
           OPEN_CALLS: ${{ inputs.open_calls }}
           RUN: ${{ matrix.run }}
+        # (the job fails with the gate: its exit, the highest of the modes
+        # run; both modes still run, and the results still upload: the
+        # maintainer, 11-19)
         run: |
           set +e
           case "$MODES" in closed|open|closed,open|open,closed) ;; *) echo "modes must be closed, open or closed,open"; exit 2 ;; esac
           shim=ch-local/shim/target/release/ch-shim
+          rc=0
           case ",$MODES," in *,closed,*)
             node perf/latency-gate/gate.js --shim "$shim" --mode closed \
               --sessions "$CLOSED_SESSIONS" --rounds "$CLOSED_ROUNDS" --calls "$CLOSED_CALLS" --json gate-closed.json
-            echo "closed: gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)" ;;
+            c=$?; echo "closed: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed)"; [ "$c" -gt "$rc" ] && rc=$c ;;
           esac
           case ",$MODES," in *,open,*)
             node perf/latency-gate/gate.js --shim "$shim" --mode open \
               --sessions "$OPEN_SESSIONS" --rounds 1 --calls "$OPEN_CALLS" --seed "$RUN" --json gate-open.json
-            echo "open: gate exit $? (0 PASS, 1 FAIL, 2 the harness failed)" ;;
+            c=$?; echo "open: gate exit $c (0 PASS, 1 FAIL, 2 the harness failed)"; [ "$c" -gt "$rc" ] && rc=$c ;;
           esac
+          exit "$rc"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
