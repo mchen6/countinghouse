@@ -37,19 +37,7 @@ function pack(home, scenario, tools) {
   return writeModule(path.join(home, 'packs', scenario, '1.0.0', 'node_modules', scenario), {name: scenario, role: 'scenario', service: 'packService', actions});
 }
 
-// the module form's dirs for a top-level module laid out as ch-local laid
-// out a pack: every module beside it, by its package name (M6)
-const dirsOf = (top) => {
-  let nm = require('path').dirname(top);
-  // (a scoped package: its scope's parent holds the others)
-  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
-  const out = {};
-  for (const n of require('fs').readdirSync(nm)) {
-    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
-    else out[n] = require('path').join(nm, n);
-  }
-  return out;
-};
+const {dirsOf} = require('../helpers/module-dirs');
 
 describe('stdio 28: a change past the first page is still announced (M1)', function() {
   this.timeout(120000);

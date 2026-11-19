@@ -19,12 +19,7 @@ const {startStdio, INITIALIZE} = require('../helpers/stdio-client');
 const {toolOutput} = require('../helpers/tool-result');
 
 const SVC = (s) => `urn:countinghouse-test:serviceID:${s}`;
-// the module form's dirs for a scenario laid out as ch-local laid out a
-// pack: every module beside it, by its package name (M6)
-const dirsOf = (scenario) => {
-  const nm = path.dirname(scenario);
-  return Object.fromEntries(fs.readdirSync(nm).map((n) => [n, path.join(nm, n)]));
-};
+const {dirsOf} = require('../helpers/module-dirs');
 
 // A module on disk: package.json, api.json, schema.json, one handler per
 // action (source given).

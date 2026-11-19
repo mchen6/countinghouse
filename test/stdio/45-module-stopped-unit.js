@@ -132,7 +132,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
     await loadPf(mm);
     // a second unit holding the same part, recorded as a start under
     // --modulesRoot records it: no ch-local pack name
-    mm.packsInPlace.set('@t/ch-pack-seeded', {modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set(), allowance: null});
+    mm.packsInPlace.set('@t/ch-pack-seeded', {modules: new Map([['ch-step-x', {path: '/x', version: '1.0.0', listed: false}]]), tools: new Set(), prompts: new Set()});
     const told = [];
     const channel = require('../../lib/control-channel');
     const realTell = channel.tell;

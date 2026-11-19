@@ -184,7 +184,7 @@ describe('stdio 38: modules in place, server-free (M4 Task 2)', () => {
   });
 
   describe('the ceiling, by each module\'s package name (section 8)', () => {
-    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({packs: null}, ceiling)});
+    const trusted = (ceiling) => ({state: 'trusted', file: '/etc/countinghouse/ceiling.json', ceiling: Object.assign({}, ceiling)});
     const names = ['@t/ch-pack-a', '@t/ch-step-s'];
 
     it('none, or a trusted one with no list: allowed', () => {

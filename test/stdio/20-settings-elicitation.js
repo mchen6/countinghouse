@@ -155,9 +155,9 @@ describe('stdio 20: the settings tool asks the user in a dialog, and applies a c
   });
 
   it('the ceiling: conversation off, or the value above it, sends no form', async () => {
-    const off = tool({ceiling: () => ({state: 'trusted', file: 'x', ceiling: {forbid: [], packs: null, conversation: false}})});
+    const off = tool({ceiling: () => ({state: 'trusted', file: 'x', ceiling: {forbid: [], conversation: false}})});
     await refused(off.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT), 'SETTING_NEEDS_CONFIRMATION');
-    const low = tool({ceiling: () => ({state: 'trusted', file: 'x', ceiling: {maxOutputBytes: 24 * MiB, forbid: [], packs: null, conversation: true}})});
+    const low = tool({ceiling: () => ({state: 'trusted', file: 'x', ceiling: {maxOutputBytes: 24 * MiB, forbid: [], conversation: true}})});
     await refused(low.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT), 'SETTING_ABOVE_CEILING');
   });
 
@@ -314,7 +314,7 @@ describe('stdio 20b: the review of Tasks 1-3 (part 3 P2)', () => {
 
   it('accepting re-checks conversation off and the decline lock, as set does', async () => {
     let conversation = true;
-    const t = tool({ceiling: () => ({state: 'trusted', file: 'x', ceiling: {forbid: [], packs: null, conversation}})});
+    const t = tool({ceiling: () => ({state: 'trusted', file: 'x', ceiling: {forbid: [], conversation}})});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     conversation = false;
     await refused(t.confirm('maxOutputBytes', '32MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_NEEDS_CONFIRMATION');
@@ -500,7 +500,7 @@ describe('stdio 20d: #213\'s nits (part 3 P2, Task 4)', () => {
   const withCeiling = (ceiling) => settingsTool.create({mm: NO_MODULES, file, ceiling,
     mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}),
     applyChange: async (st) => { options[st.name] = st.next; }});
-  const trusted = (o = {}) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, o)});
+  const trusted = (o = {}) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: []}, o)});
 
   it('the lock reads the ceiling from the cache only: a miss, or a ceiling changed since, refuses with its line', async () => {
     const calls = [];
@@ -581,7 +581,7 @@ describe('stdio 20e: Task 4\'s review (part 3 P2)', () => {
 
   it('a ceiling changed while the user was asked says so, not that the setting changed', async () => {
     let current = {state: 'none'};
-    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: [], packs: null}} : current),
+    const t = settingsTool.create({mm: NO_MODULES, file, ceiling: (o) => (o && o.cacheOnly ? {state: 'trusted', file: 'c', ceiling: {forbid: []}} : current),
       mayElicit: async () => ({ok: true, client: {name: 'claude-code', version: '2.1.323'}}), applyChange: async () => {}});
     const a = await t.set('maxOutputBytes', '32MiB', 'settings tool', CLIENT);
     const e = await refused(t.confirm('maxOutputBytes', '32MiB', {requestState: a.inputRequired.requestState, inputResponses: ACCEPT}, CLIENT), 'SETTING_CEILING_CHANGED_MEANWHILE');
@@ -734,7 +734,7 @@ describe('stdio 20i: Task 5\'s review (part 3 P2)', () => {
   });
   afterEach(() => { Object.assign(options, saved); settingsTool.resetForTests(); });
   const base = (o = {}) => Object.assign({pool: null, modules: () => ({}), ask: async () => ({ok: true})}, o);
-  const trusted = (c) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: [], packs: null}, c)});
+  const trusted = (c) => ({state: 'trusted', file: 'c', ceiling: Object.assign({forbid: []}, c)});
 
   it('the ceiling is checked again once the resize resolves: one lowered meanwhile wins, nothing set', async () => {
     let c = trusted({maxOutputBytes: 256 * M});

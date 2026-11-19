@@ -85,19 +85,7 @@ async function listen(c, rd) {
 }
 const changesFor = (rd, id) => rd.notes.filter((n) => n.method === 'notifications/tools/list_changed' && n.params._meta[SUB] === id).length;
 
-// the module form's dirs for a top-level module laid out as ch-local laid
-// out a pack: every module beside it, by its package name (M6)
-const dirsOf = (top) => {
-  let nm = require('path').dirname(top);
-  // (a scoped package: its scope's parent holds the others)
-  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
-  const out = {};
-  for (const n of require('fs').readdirSync(nm)) {
-    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
-    else out[n] = require('path').join(nm, n);
-  }
-  return out;
-};
+const {dirsOf} = require('../helpers/module-dirs');
 
 describe('session-runtime 02: discover and listen per session, spawned', function() {
   this.timeout(120000);

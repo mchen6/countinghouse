@@ -80,19 +80,7 @@ function two(home, opts = {}) {
   return dir;
 }
 
-// the module form's dirs for a top-level module laid out as ch-local laid
-// out a pack: every module beside it, by its package name (M6)
-const dirsOf = (top) => {
-  let nm = require('path').dirname(top);
-  // (a scoped package: its scope's parent holds the others)
-  if (require('path').basename(nm).startsWith('@')) nm = require('path').dirname(nm);
-  const out = {};
-  for (const n of require('fs').readdirSync(nm)) {
-    if (n.startsWith('@')) for (const m of require('fs').readdirSync(require('path').join(nm, n))) out[`${n}/${m}`] = require('path').join(nm, n, m);
-    else out[n] = require('path').join(nm, n);
-  }
-  return out;
-};
+const {dirsOf} = require('../helpers/module-dirs');
 
 describe('session-runtime 13: two per-session modules, three sessions (R1)', function() {
   this.timeout(240000);
