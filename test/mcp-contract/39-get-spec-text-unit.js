@@ -71,3 +71,23 @@ describe('mcp-contract 39: get-spec\'s declared text, as the lists show it (unit
     for (const v of [null, undefined, 'x', 1, [], {}, {device: null}]) assert.strictEqual(cleanedSpecText(v), v);
   });
 });
+
+describe('mcp-contract 39: withoutUnusable\'s copy keeps a "__proto__" key a key', () => {
+  const verdict = require('../../lib/hidden-text-verdict');
+  it('the spec and its device are copied by defining keys, never by assigning them', () => {
+    const id = 'aaaaaaaa-0000-5000-8000-0000000000aa';
+    verdict.set(id, [['urn:x:serviceID:s', 'hidden']]);
+    const s = {device: {serviceList: {'urn:x:serviceID:s': {actionList: [{name: 'hidden'}, {name: 'kept'}]}}}};
+    Object.defineProperty(s, '__proto__', {value: {polluted: 1}, enumerable: true, configurable: true, writable: true});
+    Object.defineProperty(s.device, '__proto__', {value: {polluted: 2}, enumerable: true, configurable: true, writable: true});
+    const out = verdict.withoutUnusable(s, id);
+    assert.deepStrictEqual(out.device.serviceList['urn:x:serviceID:s'].actionList.map((a) => a.name), ['kept']);
+    for (const o of [out, out.device]) {
+      assert.ok(Object.hasOwn(o, '__proto__'));
+      assert.strictEqual(o.polluted, undefined);
+      assert.strictEqual(Object.getPrototypeOf(o), Object.prototype);
+    }
+    verdict.forget(id);
+  });
+});
+
