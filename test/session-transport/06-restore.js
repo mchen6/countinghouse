@@ -64,6 +64,13 @@ describe('session-transport 06: ch-local daemon\'s restore (#255 review)', () =>
       plan({declines: [{kind: 'enabled', at: Date.now() + 31 * 365 * 24 * 3600 * 1000}]}),
       plan({declines: [{kind: 'enabled', at: 1, session: ID}]}),
       plan({declines: Array.from({length: MAX_DECLINES + 1}, () => ({kind: 'enabled', at: 1}))}),
+      // a state of no shape at all (#449's high review, round 3, 3: refused,
+      // never a TypeError)
+      plan({sessions: [{session: ID, resume: HASH, state: null}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: []}]}),
+      plan({sessions: [{session: ID, resume: HASH, state: 'x'}]}),
+      st({overrides: [], locks: null, formsLeft: 3}),
+      st({overrides: [], locks: ['pack'], formsLeft: 3, unanswered: null}),
       // B2's exact shapes (#252 rev 2)
       st({overrides: [], locks: [], formsLeft: 4}),
       st({overrides: [], locks: [], formsLeft: 1.5}),
