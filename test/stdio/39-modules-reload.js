@@ -277,11 +277,14 @@ describe('stdio 39: a reloading device keeps its tool listed', () => {
     ModuleManager.prototype.markEndedDevices.call(mm, ['d-a', 'd-b'], NAME, 'MODULE_RELOADING', {specs: {'d-a': spec('a', 1), 'd-b': spec('b', 1)}, packageInfo: pkg});
     assert.deepStrictEqual(Object.keys(specs(dmOf({}, mm))).sort(), ['d-a', 'd-b'], 'both kept');
     // d-a back (its record cleared, as on deviceonline); d-b still reloading
-    delete mm.endedDevices['d-a'];
+    ModuleManager.prototype.clearEndedDevice.call(mm, 'd-a');
     const back = specs(dmOf({'d-a': {spec: spec('a', 2), moduleName: NAME}}, mm));
     assert.deepStrictEqual(back, {'d-a': spec('a', 2), 'd-b': spec('b', 1)}, 'per device: the one still reloading stays listed');
     // its package.json answers while the module is out of the map: a scenario stays one
     assert.strictEqual(call('packageOfModule', dmOf({}, mm), NAME).countinghouse.role, 'scenario');
+    // never to the module's new worker, pinned or not yet (the high review of #435's medium round, 6)
+    const fresh = Object.assign({}, mm, {modules: {[NAME]: {hostModulePath: '/x'}}});
+    assert.notStrictEqual(call('packageOfModule', dmOf({}, fresh), NAME), pkg);
     // and its #400 decision stays while it is kept
     assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-b'), true);
     assert.strictEqual(call('keepsDecision', dmOf({}, mm), 'd-other'), false);
@@ -310,30 +313,30 @@ describe('stdio 39: a reloading device keeps its tool listed', () => {
     assert.deepStrictEqual(mm.endedDevices['d-s'], {code: 'MODULE_RELOADING', name: NAME});
     assert.deepStrictEqual(specs(dmOf({}, mm)), {}, 'not listed');
   });
-  it('a unit\'s switch holds its records unsettled through a rollback; the unit\'s end settles a module that never came back', () => {
+  it('a unit\'s switch holds its records unsettled through a rollback; the unit\'s end settles what never registered again, whatever the module\'s state', () => {
     const {unitDone} = require('../../lib/modules-in-place');
-    const settled = [];
-    const mm = {modules: {'@t/back': {}}, settleHeld: new Set(['@t/gone', '@t/back']), settleEndedDevices: (n) => settled.push(n), releaseDiscovery: () => {}};
+    const mm = {modules: {'@t/back': {}}, endedDevices: {}, settleHeld: new Set(['@t/gone', '@t/back']), releaseDiscovery: () => {}, emit: () => {}};
+    // gone: its reload and its rollback failed; back: present, one device never registered again, one restarting meanwhile
+    ModuleManager.prototype.markEndedDevices.call(mm, ['d-gone'], '@t/gone', 'MODULE_RELOADING', {specs: {'d-gone': spec('g', 1)}, packageInfo: pkg});
+    ModuleManager.prototype.markEndedDevices.call(mm, ['d-stuck'], '@t/back', 'MODULE_RELOADING', {specs: {'d-stuck': spec('s', 1)}, packageInfo: pkg});
+    ModuleManager.prototype.markEndedDevices.call(mm, ['d-restart'], '@t/back', 'MODULE_RESTARTING');
+    mm.settleEndedDevices = ModuleManager.prototype.settleEndedDevices;
     unitDone(mm, null, {names: new Set(['@t/gone', '@t/back'])});
-    assert.deepStrictEqual(settled, ['@t/gone'], 'only the one not back');
+    assert.strictEqual(mm.endedDevices['d-gone'].code, 'MODULE_UNLOADED');
+    assert.strictEqual(mm.endedDevices['d-stuck'].code, 'MODULE_UNLOADED', 'present but never registered: settled too');
+    assert.strictEqual(mm.endedDevices['d-restart'].code, 'MODULE_RESTARTING', 'a restart is the supervisor\'s');
     assert.strictEqual(mm.settleHeld.size, 0);
+    assert.deepStrictEqual(specs(dmOf({}, mm)), {}, 'nothing listed');
   });
-  it('an in-process reload\'s purge marks each device reloading, with its own package.json', () => {
-    // (the purge logs each device: a logger, as sessions 15 sets one)
-    require('../../lib/logger').createLogger();
-    const instance = {};
-    const device = {module: instance, moduleName: NAME, spec: spec('ip', 1), packageInfo: pkg};
-    const mm = {supervisor: null, modules: {}, endedDevices: {}, markEndedDevices: ModuleManager.prototype.markEndedDevices};
-    const dm = Object.assign(Object.create(DeviceManager.prototype), {deviceMap: {'d-ip': device}, moduleManager: mm, emit: () => {}, peerChannelBroker: null});
-    const options = require('../../lib/cli-options');
-    const saved = options.workerThread;
-    options.workerThread = false;
-    try {
-      DeviceManager.prototype.onPurgeDevice.call(dm, instance, ModuleManager.RELOAD_IN_MAIN_THREAD, () => {});
-    } finally {
-      options.workerThread = saved;
-    }
-    assert.deepStrictEqual(mm.endedDevices['d-ip'], {code: 'MODULE_RELOADING', name: NAME, spec: spec('ip', 1), packageInfo: pkg});
-    assert.strictEqual(dm.deviceMap['d-ip'], undefined);
+  it('settled records are capped, the oldest dropped first; the index never walks them', () => {
+    const mm = {supervisor: null, modules: {}, endedDevices: {}, emit: () => {}};
+    const ids = Array.from({length: 4100}, (_, i) => `d-${i}`);
+    ModuleManager.prototype.markEndedDevices.call(mm, ids, '@t/many', 'MODULE_RELOADING', {specs: Object.fromEntries(ids.map((id) => [id, spec(id, 1)])), packageInfo: pkg});
+    ModuleManager.prototype.settleEndedDevices.call(mm, '@t/many');
+    ModuleManager.prototype.markEndedDevices.call(mm, ['d-new'], '@t/other', 'MODULE_RELOADING', {specs: {'d-new': spec('n', 1)}, packageInfo: pkg});
+    ModuleManager.prototype.settleEndedDevices.call(mm, '@t/other');
+    assert.ok(Object.keys(mm.endedDevices).length <= 4096, String(Object.keys(mm.endedDevices).length));
+    assert.strictEqual(mm.endedDevices['d-0'], undefined, 'the oldest went first');
+    assert.strictEqual(mm.endedDevices['d-new'].code, 'MODULE_UNLOADED', 'the one just settled stays');
   });
 });
