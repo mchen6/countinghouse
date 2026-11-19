@@ -64,6 +64,33 @@ describe('jobs-local 01: the local job runner (LM1 B5)', function() {
     runner.close();
   });
 
+  // The hook's error is the one the call answered with, as the BullMQ
+  // runner hands it, so the usage record keeps its code (and a module's
+  // kind); the job's stored failure is its text (it was that text's plain
+  // Error, so every failed task on this runner was recorded NO_CODE).
+  it('a failed run hands the completion hook the error the call answered with, its code kept; the job keeps the failure text', async () => {
+    const answered = Object.assign(new Error('no such row'), {code: 'PROBE_BAD_INPUT'});
+    const {runner} = runnerWith((i, cb) => setImmediate(cb, answered, null));
+    const seen = [];
+    runner.setCompletionHook((jobData, results, meta) => { seen.push(meta.error); });
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'f'}, 'dev', 'svc', 'act', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
+    assert.ok(await until(async () => seen.length === 1));
+    assert.ok(seen[0] === answered, 'the very error the call answered with');
+    assert.strictEqual(seen[0].code, 'PROBE_BAD_INPUT');
+    assert.match((await state(runner, r.id)).job.failedReason, /no such row/);
+    runner.close();
+  });
+
+  it('a module\'s caller-kind error is not retried: the same input fails the same way', async () => {
+    const {CountinghouseError} = require('../../lib/countinghouse-error');
+    const {runner, ci} = runnerWith((i, cb) => setImmediate(cb, CountinghouseError.moduleOwn('PROBE_BAD_INPUT', 'no row', null, 'probe', {kind: 'caller'}), null));
+    const {r} = await call(runner, 'addJob', INTERNAL, {name: 'k', attempts: 4}, 'dev', 'svc', 'act', {});
+    assert.ok(await until(async () => (await state(runner, r.id)).state === 'failed'));
+    assert.strictEqual(ci.calls.length, 1, 'run once');
+    runner.close();
+  });
+
   it('records progress', async () => {
     const ref = {};
     const {runner} = runnerWith((i, cb, c, jobID) => { ref.runner.updateJobProgress(jobID, 50); setTimeout(cb, 50, null, {}); });
