@@ -35,6 +35,12 @@ describe('sandbox 03: tree checks', () => {
     assert.deepStrictEqual(checkTree(d), {problems: [], warnings: [], dirLinks: [], brokenLinks: [], manifestLinks: [], outsideMains: []});
   });
 
+  it('reads a package.json past a BOM, as Node does: its dependencies checked too', () => {
+    const d = mk({'package.json': {name: 'm', dependencies: {x: '1'}}, 'node_modules/x/index.js': '',
+      'node_modules/x/package.json': '\uFEFF{"name": "x", "dependencies": {"y": "1"}}'});
+    assert.match(checkTree(d).problems.join('\n'), /dependency "y" \(needed by .*x.*\) is not installed inside the module/);
+  });
+
   it('reports a dependency that is not installed inside the module', () => {
     const d = mk({'package.json': {name: 'm', dependencies: {lodash: '4'}}});
     const r = checkTree(d);
