@@ -180,7 +180,11 @@ module.exports = async (input, ctx) => {
 The code is your module's own: an `UPPER_SNAKE_CASE` name for what went
 wrong (`INPUT_REJECTED` for input your schema can't rule out,
 `REPO_TOO_LARGE`, …). The runtime's codes (its error catalogue) are the
-runtime's, and a module never raises them. The caller gets your code and
+runtime's, and a module never raises them: `ctx.error` with one throws a
+`TypeError` naming the rule (your handler then fails as a crash, and the
+log says why), and an error whose code is set to one afterwards answers
+`MODULE_CODE_RESERVED`. A setting your module cannot do without is
+`ctx.settingRequired(name)`, never `ctx.error('SETTING_REQUIRED')`. The caller gets your code and
 the message `CODE: message`, in worker and single-thread mode alike. So
 does a module that calls yours with `ctx.call`: it gets your error whole
 (code, message and details, as a copy: never your `cause` or your object),
@@ -188,8 +192,8 @@ in either mode.
 
 When you call another module, its rejection's `origin` says whose error it
 is: `'runtime'` for the runtime's (`MODULE_RELOADING`, `PEER_GONE`, a
-`CTX_CALL_…` refusal), `'module'` for the callee's own. A callee is free to
-name its code anything, a catalogue name included, so check
+`CTX_CALL_…` refusal), `'module'` for the callee's own. A callee cannot answer
+with a catalogue code (it is refused, as above), but check
 `err.origin === 'runtime'` before acting on a runtime code (retrying on
 `MODULE_RELOADING`, say), not the code alone.
 
@@ -197,8 +201,8 @@ Under `--moduleSandbox enforce`, `origin` can be trusted: only an error
 the runtime itself issued is `'runtime'`. However a
 module builds its error (setting `origin` on it, or constructing one
 through its constructor), it answers as the module's own,
-`origin: 'module'`, with no runtime meaning for a code that spells a
-catalogue name. A runtime error you were given (a callee's
+`origin: 'module'`, and one whose code spells a catalogue name answers
+`MODULE_CODE_RESERVED`. A runtime error you were given (a callee's
 `MODULE_RELOADING`, a `CTX_CALL_…` refusal, a `ctx.serviceClient`
 refusal) and pass on stays the runtime's, with the code it was issued
 with and the message it reached you with (in worker mode a runtime

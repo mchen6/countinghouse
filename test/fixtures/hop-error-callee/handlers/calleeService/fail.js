@@ -1,5 +1,5 @@
 // The module's own error, returned: a code that is also a catalogue name
-// (still the module's), or one of its own. The other kinds try to pass a
+// (refused by ctx.error itself: the handler's crash), or one of its own. The other kinds try to pass a
 // catalogue code off as the runtime's (d2b): by setting `origin`, by
 // building the error through its constructor, or by first replacing the
 // class's statics (which the sandbox freezes); and one passes on a runtime
@@ -26,7 +26,10 @@ module.exports = async (input, ctx) => {
     // module sandbox it is not there (the high review of #45).
     const file = Object.keys(require.cache).find((p) => p.endsWith('countinghouse-error.js'));
     const exported = (file != null) ? require.cache[file].exports : null;
-    const e = ctx.error('MODULE_RELOADING', 'forged');
+    // (its own code, then a catalogue one set on it: ctx.error refuses the
+    // catalogue's at the call)
+    const e = ctx.error('X_FORGED', 'forged');
+    e.code = 'MODULE_RELOADING';
     return (exported != null && typeof(exported.issue) === 'function') ? exported.issue(e) : e;
   }
   if (input.kind === 'prototypeAccessor') {

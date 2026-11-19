@@ -39,6 +39,10 @@ const OUTCOMES = [
   // the old module-visible globals, which are gone
   {name: 'module error thrown sync', action: 'throwErrorSync', args: {}},
   {name: 'plain error with a module code', action: 'throwPlainCoded', args: {}},
+  // a module's error with a code of the runtime's catalogue (the back-sweep,
+  // 11-18): refused at ctx.error, or MODULE_CODE_RESERVED when set after
+  {name: 'module error with a catalogue code', action: 'catalogueCode', args: {}},
+  {name: 'module error with a catalogue code set after', action: 'catalogueCodeSetAfter', args: {}},
   {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
   {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
   {name: 'plain error with a network code', action: 'throwNetworkCoded', args: {}},

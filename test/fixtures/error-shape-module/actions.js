@@ -31,6 +31,18 @@ module.exports = {
     callbackError: (input, ctx, callback) => callback(ctx.error('SHAPE_REJECTED', 'shape probe'), null),
     throwPlainCoded: async () => { throw Object.assign(new Error('shape probe'), {code: 'SHAPE_REJECTED'}); },
 
+    // A module defines only its own codes (the back-sweep, 11-18): ctx.error
+    // with a code of the runtime's catalogue is refused at the call (a
+    // TypeError: the handler's crash, DEVICE_INVOKE_EXCEPTION); and one set
+    // on its own error after is MODULE_CODE_RESERVED where it enters the
+    // runtime. Either way the wire never shows the catalogue code.
+    catalogueCode: async (input, ctx) => ctx.error('USER_HAS_NO_DEVICE', 'shape probe'),
+    catalogueCodeSetAfter: async (input, ctx) => {
+      const e = ctx.error('SHAPE_REJECTED', 'shape probe');
+      e.code = 'USER_HAS_NO_DEVICE';
+      return e;
+    },
+
     // Not a module's code (§5.1): a system error's code (it has errno and
     // syscall), and Node's own ERR_ namespace. Both are crashes:
     // DEVICE_INVOKE_EXCEPTION.

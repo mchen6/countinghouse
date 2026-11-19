@@ -8,11 +8,12 @@
 // (test/fixtures/hop-error-caller) reports the rejection as data. Its auth file,
 // 17-auth.json, gives the caller's inner hops an identity (runsModules).
 //
-// - A code that is also a catalogue name stays the module's (origin module,
-//   its own message), so a callee can't pass it off as a runtime error in
-//   one mode and not another. Before, worker mode's reply envelopes carried
-//   only errMsg/errCode, so the caller rebuilt a plain Error that hopError
-//   turned into a runtime-origin CountinghouseError.
+// - A module defines only its own codes (the logger spec, section 12, 1; the
+//   back-sweep, 11-18): ctx.error refuses a code of the runtime's catalogue
+//   (a TypeError, so the handler's crash, in the runtime's words), and one
+//   set on its error after is MODULE_CODE_RESERVED where the error enters
+//   the runtime, so a callee can't pass a catalogue code off, as the
+//   runtime's or as its own, in any mode.
 // - A code of the module's own crosses whole too (review of #37: hopError
 //   passes a module-origin error through, since its origin already says it
 //   is not the runtime's).
@@ -79,14 +80,15 @@ MODES.forEach((mode) => {
       server.kill('SIGTERM');
     });
 
-    it('a catalogue-named code stays the module\'s: origin, message and details', (done) => {
+    it('ctx.error refuses a catalogue code: the callee\'s handler crashes, answered in the runtime\'s words', (done) => {
       probe(mode.port, 'catalogue', (err, out) => {
         if (err) return done(err);
         observed.catalogue[mode.label] = out;
-        assert.deepStrictEqual(out, {
-          name: 'CountinghouseError', code: 'DEVICE_NOT_FOUND', message: 'DEVICE_NOT_FOUND: no row 7',
-          origin: 'module', kind: 'module', details: {row: 7}
-        });
+        assert.strictEqual(out.code, 'DEVICE_INVOKE_EXCEPTION', JSON.stringify(out));
+        assert.strictEqual(out.origin, 'runtime', JSON.stringify(out));
+        // (never the catalogue code as the module's: single-thread mode's
+        // crash message names the rule, which is for the author)
+        assert.notStrictEqual(out.code, 'DEVICE_NOT_FOUND');
         done();
       });
     });
@@ -106,15 +108,16 @@ MODES.forEach((mode) => {
     // d2b: a module cannot pass a catalogue code off as the runtime's. Only
     // an error the runtime itself issued keeps origin 'runtime' (a private
     // brand per thread); any other is the module's, whatever its code or
-    // `.origin` says.
+    // `.origin` says, and one whose code is a catalogue code is
+    // MODULE_CODE_RESERVED, naming that code (the back-sweep, 11-18).
     for (const kind of ['forgedOrigin', 'forgedConstructor'].concat(mode.args.includes('--no-workerThread') ? [] : ['patchedStatics'])) {
-      it(`a callee's catalogue code is the module's however it is built (${kind})`, (done) => {
+      it(`a callee's catalogue code is refused however it is built (${kind}): MODULE_CODE_RESERVED`, (done) => {
         probe(mode.port, kind, (err, out) => {
           if (err) return done(err);
           observed[kind] = observed[kind] || {};
           observed[kind][mode.label] = out;
-          assert.strictEqual(out.code, 'MODULE_RELOADING', JSON.stringify(out));
-          assert.strictEqual(out.origin, 'module', JSON.stringify(out));
+          assert.strictEqual(out.code, 'MODULE_CODE_RESERVED', JSON.stringify(out));
+          assert.match(String(out.message), /runtime's own code MODULE_RELOADING/);
           assert.strictEqual(out.kind, 'module', JSON.stringify(out));
           done();
         });
@@ -140,8 +143,8 @@ MODES.forEach((mode) => {
       it('a module finds no issue() in require.cache to brand its own error with', (done) => {
         probe(mode.port, 'requireCacheIssue', (err, out) => {
           if (err) return done(err);
-          assert.strictEqual(out.code, 'MODULE_RELOADING', JSON.stringify(out));
-          assert.strictEqual(out.origin, 'module', JSON.stringify(out));
+          assert.strictEqual(out.code, 'MODULE_CODE_RESERVED', JSON.stringify(out));
+          assert.match(String(out.message), /runtime's own code MODULE_RELOADING/);
           done();
         });
       });
@@ -165,7 +168,9 @@ describe('composition 17: every mode answers alike', () => {
       // A runtime refusal's message keeps its detail in single-thread mode
       // only (the documented mode difference, ledgered E3); its code, origin
       // and kind are alike.
-      const pick = (o) => ((kind === 'passThrough' && o != null) ? {code: o.code, origin: o.origin, kind: o.kind} : o);
+      // (the catalogue probe is the callee's crash: its message, like a
+      // runtime refusal's, is the mode's own)
+      const pick = (o) => (((kind === 'passThrough' || kind === 'catalogue') && o != null) ? {code: o.code, origin: o.origin, kind: o.kind} : o);
       const seen = MODES.map((m) => pick(observed[kind][m.label]));
       assert.ok(seen.every((o) => o !== undefined), `every mode ran the ${kind} probe`);
       seen.forEach((o) => assert.deepStrictEqual(o, seen[0], `${kind}: ${JSON.stringify(seen)}`));

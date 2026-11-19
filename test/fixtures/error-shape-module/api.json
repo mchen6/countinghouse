@@ -265,6 +265,26 @@
             "output": {
               "schema": "/shapeService/globalsProbe/output"
             }
+          },
+          {
+            "name": "catalogueCode",
+            "description": "error-shape case catalogueCode",
+            "input": {
+              "schema": "/shapeService/catalogueCode/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCode/output"
+            }
+          },
+          {
+            "name": "catalogueCodeSetAfter",
+            "description": "error-shape case catalogueCodeSetAfter",
+            "input": {
+              "schema": "/shapeService/catalogueCodeSetAfter/input"
+            },
+            "output": {
+              "schema": "/shapeService/catalogueCodeSetAfter/output"
+            }
           }
         ]
       }
