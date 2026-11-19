@@ -22,6 +22,17 @@ function answer(invoke) {
   });
 }
 
+// A catalogue code a module put on its error (the back-sweep, 11-18): the
+// runtime's MODULE_CODE_RESERVED, naming it; kind module, 500, no retry
+function assertReserved(err, code) {
+  assert.strictEqual(err.code, 'MODULE_CODE_RESERVED');
+  assert.ok(String(err.message).includes(`runtime's own code ${code}`), err.message);
+  assert.strictEqual(err.origin, 'runtime');
+  assert.strictEqual(err.kind, 'module');
+  assert.strictEqual(err.retryable, false);
+  assert.strictEqual(err.httpStatus, 500);
+}
+
 function assertModuleSemantics(err) {
   assert.strictEqual(err.origin, 'module');
   assert.strictEqual(err.kind, 'module');
@@ -37,20 +48,24 @@ describe('validation 07: only the runtime issues runtime errors (d2b)', () => {
     assert.ok(!Object.values(CountinghouseError).includes(issue));
   });
 
-  it('a module error given a runtime origin and a catalogue code is the module\'s', async () => {
+  it('a module error given a runtime origin and a catalogue code is never the runtime\'s: MODULE_CODE_RESERVED', async () => {
     const a = await answer(() => {
       const e = CountinghouseError.module('X_FORGED', 'm');
       e.origin = 'runtime';
       e.code = 'MODULE_RELOADING';
       return e;
     });
-    assert.strictEqual(a.err.code, 'MODULE_RELOADING');
-    assertModuleSemantics(a.err);
+    assertReserved(a.err, 'MODULE_RELOADING');
   });
 
-  it('an error built through the constructor with a catalogue code is the module\'s', async () => {
+  it('an error built through the constructor with a catalogue code is never the runtime\'s: MODULE_CODE_RESERVED', async () => {
     const a = await answer(() => new CountinghouseError('MODULE_RELOADING'));
-    assert.strictEqual(a.err.code, 'MODULE_RELOADING');
+    assertReserved(a.err, 'MODULE_RELOADING');
+  });
+
+  it('an error built through the constructor with a code of the module\'s own is the module\'s', async () => {
+    const a = await answer(() => new CountinghouseError('SHAPE_GONE'));
+    assert.strictEqual(a.err.code, 'SHAPE_GONE');
     assertModuleSemantics(a.err);
   });
 
@@ -83,7 +98,7 @@ describe('validation 07: only the runtime issues runtime errors (d2b)', () => {
 });
 
 describe('validation 07: the debug API log line names a module code as the module\'s answer (d2b)', () => {
-  it('writes "the module\'s answer" for a module-origin catalogue code, "the runtime\'s" for an issued one', () => {
+  it('writes "the module\'s answer" for a module-origin code, "the runtime\'s" for an issued one', () => {
     // In a child process: lib/session.js opens a Redis client when loaded.
     const {spawnSync} = require('child_process');
     const lib = require('path').resolve(__dirname, '../../lib');
@@ -95,7 +110,9 @@ describe('validation 07: the debug API log line names a module code as the modul
       const Session = require(${JSON.stringify(`${lib}/session`)});
       const lines = [];
       LOG.E = (line) => { lines.push(String(line && line.message != null ? line.message : line)); return line; };
-      const forged = CountinghouseError.answerable(new CountinghouseError('MODULE_RELOADING'));
+      // (a module's own code: a catalogue one would be MODULE_CODE_RESERVED,
+      // the runtime's)
+      const forged = CountinghouseError.answerable(new CountinghouseError('SHAPE_GONE'));
       Session.prototype.logAPICall.call({}, forged, null, null, true);
       Session.prototype.logAPICall.call({}, issue(new CountinghouseError('MODULE_RELOADING')), null, null, true);
       process.stdout.write(JSON.stringify(lines));
@@ -105,7 +122,7 @@ describe('validation 07: the debug API log line names a module code as the modul
     assert.strictEqual(run.status, 0, run.stderr);
     const lines = JSON.parse(run.stdout);
     assert.strictEqual(lines.length, 2, run.stdout);
-    assert.ok(lines[0].includes('MODULE_RELOADING (the module\'s answer)'), lines[0]);
+    assert.ok(lines[0].includes('SHAPE_GONE (the module\'s answer)'), lines[0]);
     assert.ok(lines[1].includes('MODULE_RELOADING (the runtime\'s)'), lines[1]);
   });
 });

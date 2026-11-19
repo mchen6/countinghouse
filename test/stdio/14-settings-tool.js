@@ -18,6 +18,13 @@ const EN = `enabled.${SC}`;
 const core = (a) => ({name: a.name, old: a.old, new: a.new, applies: a.applies});
 
 describe('stdio 14: countinghouse_settings', () => {
+  it('a refused ask\'s reason is one plain line by the one module-text rule: control and bidi characters are spaces, cut at 120', () => {
+    assert.strictEqual(settingsTool.askedReason('not confirmed (a\u202eb\u2067c\n\u0007d)'), 'not confirmed (a b c d)');
+    assert.strictEqual(settingsTool.askedReason('x'.repeat(200)).length, 120);
+    assert.strictEqual(settingsTool.askedReason('a\u200eb\u200fc\u061cd'), 'a b c d');
+    assert.strictEqual(settingsTool.askedReason(`${'x'.repeat(119)}\u{1F600}`), 'x'.repeat(119), 'never half a pair');
+    assert.strictEqual(settingsTool.askedReason('\n not confirmed'), 'not confirmed', 'trimmed: one reason, one group');
+  });
   let home;
   let file;
   let tool;

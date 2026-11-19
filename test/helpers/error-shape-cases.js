@@ -39,6 +39,18 @@ const OUTCOMES = [
   // the old module-visible globals, which are gone
   {name: 'module error thrown sync', action: 'throwErrorSync', args: {}},
   {name: 'plain error with a module code', action: 'throwPlainCoded', args: {}},
+  // a module's error with a code of the runtime's catalogue (the back-sweep,
+  // 11-18): refused at ctx.error, or MODULE_CODE_RESERVED when set after
+  {name: 'module error with a catalogue code', action: 'catalogueCode', args: {}},
+  {name: 'module error with a catalogue code set after', action: 'catalogueCodeSetAfter', args: {}},
+  {name: 'module error with a catalogue code and a forged origin', action: 'catalogueCodeForgedOrigin', args: {}},
+  {name: 'module error with a catalogue code from a callback', action: 'catalogueCodeInCallback', args: {}},
+  // a runtime refusal a module passes on: the runtime's, in both modes
+  {name: 'remote refusal passed on (undeclared)', action: 'remoteUndeclaredPassedOn', args: {}},
+  {name: 'remote refusal passed on (arguments)', action: 'remoteArgsInvalidPassedOn', args: {}},
+  // worker mode: the channel's MESSAGE_TOO_LARGE, issued where the envelope
+  // makes it (the Reviewer's second high review of #445, 4)
+  {name: 'remote refusal passed on (too large)', action: 'remoteTooLargePassedOn', args: {}},
   {name: 'plain error with a system code', action: 'throwSystemCoded', args: {}},
   {name: 'plain error with a Node code', action: 'throwNodeCoded', args: {}},
   {name: 'plain error with a network code', action: 'throwNetworkCoded', args: {}},
