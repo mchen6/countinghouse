@@ -176,7 +176,15 @@ describe('sessions 37: enabled.<module> in the settings tool (M5b)', () => {
     assert.strictEqual(stored()['pack.ci-failure-triage'], false, 'an unknown name is kept');
     const line = history().find((l) => l.setting === `enabled.${TOOL}`);
     assert.deepStrictEqual({old: line.old, new: line.new}, {old: true, new: false});
-    assert.strictEqual(got.said, `${TOOL} off is written; it turns off for every session as soon as ch-local applies it.`);
+    // (#449's high review, round 4, 4: the callers that go with it are said)
+    assert.strictEqual(got.said, `${TOOL} off is written; it turns off for every session as soon as ch-local applies it, and so does ${CALLER}, which calls it.`);
+    // a loaded module no other calls
+    assert.strictEqual((await tool().set(`enabled.${CALLER}`, 'off')).said, `${CALLER} off is written; it turns off for every session as soon as ch-local applies it.`);
+    // not loaded on its own, but called by a loaded one: its callers go
+    const called = await tool({loadedTops: () => [{name: CALLER, modules: [CALLER, SCENARIO], tools: []}]}).set(`enabled.${SCENARIO}`, 'off');
+    assert.strictEqual(called.said, `${SCENARIO} off is written; it turns off for every session as soon as ch-local applies it, and so does ${CALLER}, which calls it.`);
+    // (SCENARIO on again for the next case; TOOL and CALLER stay off)
+    fs.writeFileSync(file, JSON.stringify({version: 1, values: {[`enabled.${TOOL}`]: false, [`enabled.${CALLER}`]: false}}));
     // (the medium review of round 3, 6) one not loaded: no unload comes, so
     // none is promised
     assert.strictEqual((await tool().set(`enabled.${SCENARIO}`, 'off')).said, `${SCENARIO} off is written; it is not loaded now, so nothing else changes.`);
