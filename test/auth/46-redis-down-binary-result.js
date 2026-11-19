@@ -16,16 +16,18 @@ const {testPort, redisUrlFor} = require('../helpers/test-env');
 const {mkdtemp} = require('../helpers/test-tmp');
 
 const PORT       = testPort(9667);
-const PROXY_PORT = 6392;
 const REAL_REDIS = (() => { const u = new URL(redisUrlFor()); return {host: u.hostname, port: Number(u.port) || 6379}; })();
 const CALLER     = `blob-down-${process.pid}`;
 const BINARY     = 'mcp_conformance_shapeservice_binary_out';
 const PLAIN      = 'mcp_conformance_shapeservice_string_out';
 const ANSWER_MS  = 5000;
 
+// (a port of its own each run, kept across down and up: a fixed one would
+// let a leaked client of an earlier run reconnect through it)
 function redisProxy() {
   const sockets = new Set();
   let server = null;
+  let port = 0;
   const track = (s) => { sockets.add(s); s.on('close', () => sockets.delete(s)); s.on('error', () => {}); };
   return {
     up: () => new Promise((resolve, reject) => {
@@ -37,9 +39,10 @@ function redisProxy() {
         upstream.on('close', () => client.destroy());
       });
       server.once('error', reject);
-      server.listen(PROXY_PORT, '127.0.0.1', resolve);
+      server.listen(port, '127.0.0.1', () => { port = server.address().port; resolve(); });
     }),
-    down: () => new Promise((resolve) => { sockets.forEach((s) => s.destroy()); server.close(() => resolve()); })
+    down: () => new Promise((resolve) => { sockets.forEach((s) => s.destroy()); server.close(() => resolve()); }),
+    port: () => port
   };
 }
 
@@ -67,7 +70,7 @@ describe('auth 46: with Redis down a call whose result has a binary value answer
     proxyUp = true;
     // every binary value stored, never inline
     server = await startServer(PORT, ['--workerThread', '--authProvider', 'file', '--authConfigPath', authPath,
-      '--redisUrl', `redis://127.0.0.1:${PROXY_PORT}`, '--store', 'redis', '--inlineContentBytes', '0',
+      '--redisUrl', `redis://127.0.0.1:${proxy.port()}`, '--store', 'redis', '--inlineContentBytes', '0',
       '--loadModule', path.join(ROOT, 'test', 'fixtures', 'mcp-conformance-module')]);
   });
   after(async () => {
