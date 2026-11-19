@@ -51,6 +51,21 @@ const LIB = path.join(__dirname, '..', '..', 'lib', 'fs-broker');
     fsLib.fakeGrow = grow;
     ctx.grow = () => { grow.open = (p) => read(p, 'utf8'); };
     fsLib.fakeMap = new Map([['read', (p) => read(p, 'utf8')]]);
+    // (the shapes the high review of #454's round 3 probed: a generator, an
+    // array iterator and a Map iterator holding host functions, a Map with
+    // a nulled prototype, an unchangeable writable null filled later, a
+    // namespace a module keeps that gains a method later)
+    fsLib.fakeGen = (function*() { yield read('/etc/hostname', 'utf8'); })();
+    fsLib.fakeIter = [(p) => read(p, 'utf8')][Symbol.iterator]();
+    fsLib.fakeMapIter = new Map([['r', (p) => read(p, 'utf8')]]).values();
+    const bare = new Map([['r', (p) => read(p, 'utf8')]]);
+    Object.setPrototypeOf(bare, null);
+    fsLib.fakeBareMap = bare;
+    Object.defineProperty(fsLib, 'fakeNcLater', {value: null, writable: true, configurable: false, enumerable: true});
+    ctx.fillNcLater = () => { fsLib.fakeNcLater = (p) => read(p, 'utf8'); };
+    const ns = {v: 1};
+    fsLib.fakeNs = ns;
+    ctx.growNs = () => { ns.open = (p) => read(p, 'utf8'); };
     // (Node's lazy getter: it redefines its own slot on the first read; not
     // enumerable, so no copy of fs reads it before the sweep)
     let lazyLoaded;
