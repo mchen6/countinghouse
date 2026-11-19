@@ -160,7 +160,13 @@ function request(io, message, timeoutMs = 30000) {
           const said = io.err.split('\n').filter((l) => l.includes(`${name} violation require`));
           assert.ok(said.some((l) => /postman-request \(a load by the runtime after the lockdown\)/.test(l)), said.join('\n'));
           if (wrapFirst) assert.ok(said.length > 2, `a window opened with Module.wrap set:\n${said.join('\n')}`);
-          else assert.ok(said.length <= 2, `the library's own requires said against the module:\n${said.join('\n')}`);
+          // (the window's roots are postman-request's own closure: a dev
+          // tree's hoisted supports-color, which debug requires undeclared,
+          // is outside it and said; a production install has none)
+          else {
+            const own = said.filter((l) => !/violation require (supports-color|has-flag) /.test(l));
+            assert.ok(own.length <= 2, `the library's own requires said against the module:\n${own.join('\n')}`);
+          }
           const left = await probe({what: 'outside'});
           assert.deepStrictEqual(left, own != null ? own : {outside: [], count: 0});
         }
