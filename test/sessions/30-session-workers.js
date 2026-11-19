@@ -264,11 +264,13 @@ describe('sessions 30: a module going on or off and its per-session workers', ()
   after(() => visibility.resetForTests());
   beforeEach(() => visibility.resetForTests());
 
+  // the production wiring: the constructor's keyed listener is what runs
+  // (#438's high review, 3)
+  const built = (h) => { const mm = new ModuleManager(); mm.sessionWorkers = h.sw; return mm; };
+
   it('a hidden module\'s worker stops for every session; another module\'s run on; shown again, nothing more stops', async () => {
     const h = harness({max: 4});
-    const mm = Object.create(ModuleManager.prototype);
-    mm.sessionWorkers = h.sw;
-    visibility.onChange(() => mm.sessionViewChanged());   // as ModuleManager's constructor wires it
+    built(h);
     const a = (await h.get('m', A)).wm;
     const b = (await h.get('m', B)).wm;
     const n = (await h.get('n', A)).wm;
@@ -281,6 +283,25 @@ describe('sessions 30: a module going on or off and its per-session workers', ()
     visibility.show(['m']);
     await tick();
     assert.strictEqual(h.ended.length, 2);
+  });
+
+  it('a manager built before a reset of the set still hears its changes; a later manager\'s listener replaces it', async () => {
+    const h1 = harness({max: 4});
+    built(h1);
+    visibility.resetForTests();
+    const a = (await h1.get('m', A)).wm;
+    visibility.hide(['m']);
+    await tick();
+    assert.deepStrictEqual(h1.ended, [a], 'the earlier manager still hears');
+    visibility.resetForTests();
+    const h2 = harness({max: 4});
+    built(h2);
+    const b = (await h1.get('m', B)).wm;
+    const c = (await h2.get('m', A)).wm;
+    visibility.hide(['m']);
+    await tick();
+    assert.deepStrictEqual(h2.ended, [c], 'the latest manager\'s workers stop');
+    assert.ok(!h1.ended.includes(b), 'the replaced listener is not called');
   });
 });
 
