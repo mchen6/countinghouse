@@ -431,6 +431,19 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       assert.strictEqual(seen.length, 2, 'another reader sees both');
     });
 
+    it('a decline after the module reloaded with another declaration: verified as staged, recorded, and it locks', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'reload-decl'};
+      const asked = await tool.set('module.@acme/weather-tool.shareStats', 'on', 'settings tool', ctx);
+      const W2 = pkgOf('@acme/weather-tool', Object.assign({}, W.countinghouse.settings, {shareStats: {type: 'string'}}));
+      W2.version = '1.3.0';
+      modules[0] = {name: W2.name, version: W2.version, part: false, pkg: W2, state: ms.stateFor(W2.name, W2, {operator: false, net: []})};
+      const done = await tool.confirm('module.@acme/weather-tool.shareStats', 'on', {requestState: asked.inputRequired.requestState, inputResponses: decline}, ctx);
+      assert.strictEqual(done.applies, 'declined');
+      assert.ok(history().some((h) => h.setting === 'module.@acme/weather-tool.shareStats' && h.change === 'declined'), JSON.stringify(history()));
+      await refused(tool.set('module.@acme/weather-tool.defaultRepo', 'acme/x', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+    });
+
     it('a lock that comes while the client\'s conditions are asked is still checked: nothing written', async () => {
       openShared('late-lock');
       const real = sessions.askConditions;
