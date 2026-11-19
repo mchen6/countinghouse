@@ -197,6 +197,16 @@ const STEPS = {
     };
     same('runtimeParent', await fromRuntime('mocha/../../node_modules/.ch-sb-68 probe/isolation-probe/lib/bare-target.mjs'),
       await fromRuntime('nosuchpkg/../../node_modules/.ch-sb-68 probe/isolation-probe/lib/bare-target.mjs'));
+    // (a direct Module._resolveFilename call with a '#' name, which Node
+    // 24.15 and later run no hook for: one answer for a sibling above the
+    // root and a missing one)
+    const direct = (spec) => { try { M._resolveFilename(spec, module); return 'found'; } catch (e) { return String(e.code); } };
+    same('directMapped', direct('#sibclimb'), direct('#nosibclimb'));
+    // (findPackageJSON of a bare name: the module's own dependency's, found
+    // inside the root; one above it is nothing)
+    const fpj = M.findPackageJSON;
+    out.push(typeof(fpj) !== 'function' ||
+      (String(fpj('dep', __filename)).endsWith('/node_modules/dep/package.json') && fpj('sibpkg', __filename) === undefined) ? 'same' : 'findPackageJSON');
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
