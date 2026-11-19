@@ -212,30 +212,40 @@ describe('module-loading 29: a module worker\'s output and log, bounded', () => 
     assert.ok(dropped >= (prefix + 'lost line'.length + 1) + (300000 * (prefix + 1) - limits.STREAM_BUDGET), `${dropped} dropped`);
   });
 
-  // The cleaning runs on the built-ins lib/module-text.js took at load: a
-  // module that patches them afterwards (every method the rule uses, made to
-  // fail open) still gets no control or bidi character into its own lines
-  // (the Reviewer, the fold after #445).
-  it('worker side: a module patching the built-ins after load gets no control or bidi character into its lines', async () => {
-    const w = new Worker(`
-      const {parentPort} = require('worker_threads');
-      const sent = [];
-      const {installModuleStdio} = require(${JSON.stringify(path.join(LIB, 'worker-stdio'))});
-      installModuleStdio('mod-p', {send: (stream, data) => { if (data.lines) sent.push(...data.lines); return true; }});
-      // the module's own code, after the runtime's load
-      RegExp.prototype.test = function() { return false; };
-      RegExp.prototype.exec = function() { return null; };
-      RegExp.prototype[Symbol.replace] = function(s) { return String(s); };
-      String.prototype.replace = function() { return String(this); };
-      String.prototype.codePointAt = function() { return 0x41; };
-      Set.prototype.has = function() { return true; };
-      Array.from = (x) => x;
-      process.stdout.write('evil\\x1b[2J\\u202e\\u2066\\u200f\\x9b2Jend\\n');
-      setTimeout(() => parentPort.postMessage(sent), 300);`, {eval: true, stdout: true});
-    const got = await new Promise((resolve, reject) => { w.once('message', resolve); w.once('error', reject); });
-    await w.terminate();
-    assert.ok(got.length >= 1 && got.some((l) => /evil/.test(l) && /end/.test(l)), JSON.stringify(got));
-    for (const l of got) assert.doesNotMatch(l, /[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069\u200e\u200f\u061c]/, JSON.stringify(l));
+  // The boundary no module can patch: the main thread cleans every line and
+  // log field a worker sends, again, whatever the worker did (a module can
+  // patch its own worker's built-ins and skip lineOf). A worker's message
+  // straight to onOutput and onLog, full of controls and bidi characters,
+  // reaches the operator's log clean (the Reviewer's high review of #448).
+  it('main thread: a worker\'s lines and log fields that skipped its own cleaning are cleaned again before the log', () => {
+    const DIRTY = /[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069\u200e\u200f\u061c]/;
+    const written = [];
+    out.setSink((stream, line) => written.push([stream, line]));
+    const wm = {hostModuleName: 'mod-b'};
+    const raw = 'evil\x1b[2J\u202e\u2066\u200f\x9b2J\u2028end\r\nforged: WARN';
+    out.onOutput(wm, 'stdout', {lines: [raw]});
+    out.onOutput(wm, 'stderr', {lines: [raw]});
+    assert.strictEqual(written.length, 2, JSON.stringify(written));
+    for (const [, line] of written) {
+      assert.doesNotMatch(line, DIRTY, JSON.stringify(line));
+      assert.match(line, /^mod-b: evil\[2J2Jendforged: WARN$/, JSON.stringify(line));
+    }
+    const saved = {logger: LOG.logger};
+    const records = [];
+    const keep = (level) => (rec, msg) => records.push({level, rec, msg});
+    LOG.logger = {info: keep('info'), warn: keep('warn'), error: keep('error'), fatal: keep('fatal')};
+    try {
+      out.onLog(wm, {level: 30, msg: raw, module: 'someone-else'});
+      out.onLog(wm, {level: 50, msg: raw, e: raw});
+    } finally {
+      LOG.logger = saved.logger;
+    }
+    assert.strictEqual(records.length, 2, JSON.stringify(records));
+    const strings = records.flatMap((r) => [r.msg].concat(Object.values(r.rec || {})).filter((v) => typeof v === 'string'));
+    assert.ok(strings.some((v) => /evil/.test(v)), JSON.stringify(records));
+    // a log field keeps its \n (the log escapes it as JSON): nothing else
+    for (const piece of strings) assert.doesNotMatch(piece.replace(/\n/g, ''), DIRTY, JSON.stringify(piece));
+    out.end(wm);
   });
 
   it('worker side: an unfinished line goes as a line before the runtime\'s reply, never held back', async () => {
