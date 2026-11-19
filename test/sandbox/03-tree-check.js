@@ -201,12 +201,19 @@ describe('sandbox 03: tree checks', () => {
       refused(mk({'package.json': {name: 'm'}, 'node_modules/p/PACKAGE.JSON': {name: 'p', main: '../../../outside.js'}}), 'node_modules/p/PACKAGE.JSON');
       refused(mk({'package.json': {name: 'm'}, 'node_modules/q/package.j\u017Fon': {name: 'q', main: '../../../outside.js'}}), 'node_modules/q/package.j\u017Fon');
       refused(mk({'package.json': {name: 'm'}, 'node_modules/r/pack\u200Dage.json': {name: 'r', main: '../../../outside.js'}}), 'node_modules/r/pack\u200Dage.json');
+      // (beyond the BMP, as Linux casefold skips them; and NFKC, as ZFS
+      // compares: Fable's pass on #452, F4)
+      for (const name of ['pack\u{E0041}age.json', 'pack\u{E0001}age.json', 'pack\u{1BCA0}age.json', 'pack\u{1D173}age.json', '\uFF50ackage.json', 'package\uFF0Ejson']) {
+        refused(mk({'package.json': {name: 'm'}, [`node_modules/t/${name}`]: {name: 't', main: '../../../outside.js'}}), `node_modules/t/${name}`);
+      }
     });
-    it('judges the very file matched, a case variant\'s, and reports it by its own name where Node would open it', () => {
+    it('judges the very file matched, a case variant\'s, and refuses one that can\'t be parsed by its own name, on every platform', () => {
       const d = mk({'package.json': {name: 'm'}, 'node_modules/p/PACKAGE.JSON': '{not json'});
-      const said = checkTree(d).problems.join('\n');
-      if (process.platform === 'darwin' || process.platform === 'win32') assert.match(said, /node_modules[\\/]p[\\/]PACKAGE\.JSON cannot be parsed/);
-      else assert.doesNotMatch(said, /PACKAGE\.JSON/);
+      assert.match(checkTree(d).problems.join('\n'), /node_modules[\\/]p[\\/]PACKAGE\.JSON cannot be parsed/);
+      // (Node's own reader takes a "main" past a value JSON.parse rejects;
+      // Fable's pass on #452, F3)
+      const f = mk({'package.json': {name: 'm'}, 'node_modules/f/Package.json': '{"a": ], "main": "../../x"}'});
+      assert.match(checkTree(f).problems.join('\n'), /node_modules[\\/]f[\\/]Package\.json cannot be parsed/);
       // (and its "main" judged whether JSON.parse takes it or not: a BOM, a
       // Linux mount that folds case)
       const b = mk({'package.json': {name: 'm'}, 'node_modules/q/PACKAGE.JSON': '\uFEFF{"name": "q", "main": "../../../outside.js"}'});
