@@ -200,10 +200,13 @@ describe('fs-broker 12: virtual identity', function() {
   // F4-1's review: since fix 2 the lockdown's resolve hook no longer sees a
   // module's CommonJS not-found, so identity says it of a bare name that
   // would reach countinghouse's lib/ (a file, or a directory with an
-  // index): tagged under enforce, reported under audit; any other name is a
-  // plain not-found, reported nowhere
+  // index): tagged under enforce, reported under audit. Any other name is
+  // reported nowhere: under audit a plain not-found, under enforce the same
+  // tagged refusal, as any bare name module code can't resolve gets one
+  // there, so whether a lib/ file of that name exists is no answer (#194's
+  // PR 3)
   ['enforce', 'audit'].forEach((mode) => {
-    it(`${mode}: a bare name of a lib/ file is the sandbox's (${mode === 'enforce' ? 'tagged' : 'reported'}); a lib/ directory with no index is not`, async () => {
+    it(`${mode}: a bare name of a lib/ file is the sandbox's (${mode === 'enforce' ? 'tagged' : 'reported'}); a lib/ directory with no index is ${mode === 'enforce' ? 'tagged too, unreported' : 'not'}`, async () => {
       server = await start(mode, 'route-probe');
       const from = server.output.length;
       const lib = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'libName', target: 'cli-options'}));
@@ -211,8 +214,11 @@ describe('fs-broker 12: virtual identity', function() {
       const reported = () => server.output.slice(from).split('\n').some((l) => l.includes('module sandbox: route-probe violation require cli-options'));
       for (let i = 0; i < 40 && !reported(); i++) await new Promise((r) => setTimeout(r, 50));
       assert.ok(reported(), server.output.slice(-2000));
+      // (under enforce one refusal for any bare name module code can't
+      // resolve, so whether a lib/ file of that name exists is no answer:
+      // #194's PR 3; reported only for the name that reaches lib/)
       const dir = toolOutput(await mcpCall(testPort(9630), 'k', 'route_probe_probeservice_attempt', {what: 'libName', target: 'routes'}));
-      assert.deepStrictEqual(dir, {outcome: 'refused', code: 'PLAIN'});
+      assert.deepStrictEqual(dir, {outcome: 'refused', code: mode === 'enforce' ? 'TAGGED' : 'PLAIN'});
       assert.ok(!server.output.slice(from).includes('violation require routes'), 'a name that reaches nothing was reported');
     });
   });

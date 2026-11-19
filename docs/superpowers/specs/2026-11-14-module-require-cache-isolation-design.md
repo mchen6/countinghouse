@@ -700,7 +700,8 @@ security-model.md's "planned" line becomes the shipped behaviour.
   `runInNewContext`/`runInThisContext`. The original `Script` can't be
   reached through a subclass's prototype (`class X extends vm.Script` gets
   the wrapper; the original's constructor is unreachable). Under audit:
-  `cachedData` is still dropped, so the behaviour is the same and reported.
+  `cachedData` is kept, as given, and reported (as built in #440: audit
+  observes; the reviewer's ruling on its second round).
 - **F4-8**: an exact key allowlist test for a worker's options;
   `deviceConfigPath`, `usageDir` and `sessionSocket` leave the list too.
 - **Boot-moved files go into `fixOwn`.**

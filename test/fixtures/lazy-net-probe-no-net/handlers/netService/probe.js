@@ -37,6 +37,28 @@ module.exports = (input) => new Promise((resolve) => {
     M.wrap = function(script) { globalThis.__chWrapRan = (globalThis.__chWrapRan || 0) + 1; return original(script); };
     return resolve({output: {patched: M.wrap !== original}});
   }
+  // ... a Proxy in Module.wrapper's place, answering Node's own strings
+  if (input.what === 'wrapperProxy') {
+    const M = module.constructor;
+    const original = M.wrapper;
+    M.wrapper = new Proxy(original, {});
+    return resolve({output: {patched: M.wrapper !== original}});
+  }
+  // ... or Module.wrap set from inside the runtime's late load, by a
+  // module.require tracing subscriber, once the library's load has begun
+  if (input.what === 'traceWrap') {
+    const M = module.constructor;
+    const original = M.wrap;
+    let started = false;
+    require('diagnostics_channel').tracingChannel('module.require').subscribe({
+      start(msg) {
+        if (msg != null && msg.id === 'postman-request') { started = true; return; }
+        if (started && M.wrap === original) M.wrap = function(script) { return original(script); };
+      },
+      end() {}, asyncStart() {}, asyncEnd() {}, error() {}
+    });
+    return resolve({output: {patched: true}});
+  }
   return CHUtil.request({url: input.url, timeout: 5000}, (err, res, body) => resolve({output: Object.assign(
     err != null ? failed(err) : {outcome: 'ok', status: res.statusCode, body: String(body)}, {loaded: loaded()})}));
 });

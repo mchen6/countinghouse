@@ -46,13 +46,63 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
   this.timeout(120000);
   let home;
   let policy;
+  // (the probe loaded from a copy whose root holds a space, so a message
+  // quoting it percent-encoded is checked too; under the repo's
+  // node_modules, so a bare name still walks the same node_modules above
+  // it; the review of #440's second round)
+  const spaced = path.join(ROOT, 'node_modules', '.ch-sb-68 probe');
+  let probe;
   before(async () => {
     noStore = !(await redisAnswers());
+    fs.rmSync(spaced, {recursive: true, force: true});
+    probe = path.join(spaced, 'isolation-probe');
+    fs.cpSync(PROBE, probe, {recursive: true});
+    // (two directories of the module's own whose package.json "main" leads
+    // outside its root: to a runtime file, and to a missing one beside it;
+    // the review of the third round on #440)
+    // (c and d with an index.js of their own, which Node falls back to when
+    // "main" names nothing)
+    for (const [dir, target, index] of [['main-out-a', 'node-version.js', false], ['main-out-b', 'no-such-isolation.js', false],
+      ['main-out-c', 'node-version.js', true], ['main-out-d', 'no-such-isolation.js', true]]) {
+      fs.mkdirSync(path.join(probe, 'lib', dir));
+      const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
+      fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), JSON.stringify({main}));
+      if (index) fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
+    }
+    // (e and f: the outside "main" written first and a number after it,
+    // which JSON.parse keeps and Node's own reader may not; g: a directory
+    // with an outside "main" beside a file of its name: refused too, the
+    // conservative rule)
+    for (const [dir, target] of [['main-out-e', 'node-version.js'], ['main-out-f', 'no-such-isolation.js'], ['main-out-g', 'node-version.js']]) {
+      fs.mkdirSync(path.join(probe, 'lib', dir));
+      const main = path.relative(path.join(probe, 'lib', dir), path.join(ROOT, 'lib', target)).split(path.sep).join('/');
+      fs.writeFileSync(path.join(probe, 'lib', dir, 'package.json'), `{"main": ${JSON.stringify(main)}, "main": 1}`);
+      fs.writeFileSync(path.join(probe, 'lib', dir, 'index.js'), 'module.exports = 1;\n');
+    }
+    fs.writeFileSync(path.join(probe, 'lib', 'main-out-g.js'), 'module.exports = "sibling";\n');
+    // (the root itself: an index.js of its own, and a file beside the root,
+    // outside it, that Node would try first with an extension; and a
+    // directory whose "main" is the root)
+    fs.writeFileSync(path.join(probe, 'index.js'), 'module.exports = "root";\n');
+    fs.writeFileSync(path.join(spaced, 'isolation-probe.js'), 'module.exports = "beside";\n');
+    fs.mkdirSync(path.join(probe, 'lib', 'main-root'));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-root', 'package.json'), JSON.stringify({main: '../..'}));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-root', 'index.js'), 'module.exports = 1;\n');
+    // (and one that loads: a package.json whose only outside "main" is
+    // nested, not the package's; one JSON.parse can't read, a UTF-8 BOM's
+    // say, never loads: the module's tree check refuses it)
+    fs.mkdirSync(path.join(probe, 'lib', 'main-in-nested'));
+    const nestedOut = path.relative(path.join(probe, 'lib', 'main-in-nested'), path.join(ROOT, 'lib')).split(path.sep).join('/');
+    fs.writeFileSync(path.join(probe, 'lib', 'main-in-nested', 'package.json'), JSON.stringify({main: './index.js', config: {main: nestedOut}}));
+    fs.writeFileSync(path.join(probe, 'lib', 'main-in-nested', 'index.js'), 'module.exports = "nested";\n');
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-sb-68-'));
     policy = path.join(home, 'policy.json');
     fs.writeFileSync(policy, JSON.stringify({modules: {'isolation-probe': {approve: 'as-declared'}}}));
   });
-  after(() => fs.rmSync(home, {recursive: true, force: true}));
+  after(() => {
+    fs.rmSync(home, {recursive: true, force: true});
+    fs.rmSync(spaced, {recursive: true, force: true});
+  });
   ['enforce', 'audit'].forEach((mode) => describe(mode, () => {
     let server = null;
     before(async () => {
@@ -60,7 +110,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // Module: module code reaches none, A)
       // (its declared net approved: postman-request and sshpk warmed, for
       // the bcrypt-pbkdf case)
-      server = await startServer(testPort(9759), ['--testLateLoads', '--modulePolicy', policy, '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', PROBE, '--loadModule', PEER]);
+      server = await startServer(testPort(9759), ['--testLateLoads', '--modulePolicy', policy, '--debug', '--debugKey', KEY, '--workerThread', '--moduleSandbox', mode, '--loadModule', probe, '--loadModule', PEER]);
     });
     after(() => { stopServer(server); server = null; });
     for (const [step, expected] of Object.entries(EXPECTED)) {
@@ -104,9 +154,14 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       else assert.ok(await waitFor({get output() { return server.output.slice(from); }}, /violation require json-stringify-safe/), server.output.slice(-1500));
     });
     if (mode === 'enforce') {
+      // (F4, #194's PR 3)
+      it('import() from an ES module: a runtime file or a runtime-only package against a missing one, the same whole error', async () => {
+        const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'importOracle'});
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+      });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
     }
     it(`a require made for a runtime file by createRequire is module code's: ${mode === 'enforce' ? 'the reduced module' : 'its watched built-in reported'}`, async () => {
