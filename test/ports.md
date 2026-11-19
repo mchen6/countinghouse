@@ -22,6 +22,7 @@ new port adds its row here in the same PR, so the next allocation is a diff.
 | 9762–9769 | A: M3 credentials (2026-11-18) |
 | 9770–9779 | C (2026-11-17) |
 | 9790–9799 | B (2026-11-14) |
+| 9800–9809 | A: kind caller, usage 24 (2026-11-19) |
 | 10840–10849 | C: run-local with CH_TEST_PORT_BASE=10840, its servers and its private Redis (10849) (2026-11-16) |
 
 ## By file
@@ -237,6 +238,7 @@ one) as well as the ports it binds.
 | `test/unit/test030.js` | 9527 |
 | `test/unit/test031.js` | 9527 |
 | `test/unit/test032.js` | 9527 |
+| `test/usage/24-caller-kind.js` | 9800, 9801, 9802 |
 | `test/validation/02-stray-output-rejected.js` | 9575 |
 | `test/validation/19-output-not-json.js` | 9576 |
 | `test/validation/20-output-not-json-hop.js` | 9577 |
