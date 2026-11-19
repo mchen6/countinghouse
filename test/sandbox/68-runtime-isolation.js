@@ -79,6 +79,9 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'package.json'), JSON.stringify({name: 't\tx'}));
       fs.writeFileSync(path.join(probe, 'node_modules', 't\tx', 'index.js'), 'module.exports = 1;\n');
     }
+    fs.mkdirSync(path.join(probe, 'node_modules', 'dep4'), {recursive: true});
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep4', 'package.json'), JSON.stringify({name: 'dep4', exports: {'./*': './*'}}));
+    fs.writeFileSync(path.join(probe, 'node_modules', 'dep4', 'index.js'), 'module.exports = 4;\n');
     fs.mkdirSync(path.join(probe, 'node_modules', 'dep', 'esm'), {recursive: true});
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'esm', 'package.json'), JSON.stringify({type: 'module'}));
     fs.writeFileSync(path.join(probe, 'node_modules', 'dep', 'esm', 'x.mjs'), 'export default 1;\n');
@@ -191,7 +194,7 @@ describe('sandbox 68: the runtime isolated from module code after the lockdown',
       // (C-bare, Fable's pass on #452, F1 and F2)
       it('a bare name\'s subpath, or a \'#\' mapping to one, never walks above the root: a sibling there and a missing one, one answer; nothing of module code\'s runs in Node\'s step; its own dependency loads', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'bareSubpath'});
-        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
+        assert.strictEqual(detail(r), 'same same same same same same same same same same same same same same same same same same same same same same', JSON.stringify(r).slice(0, 1500));
       });
       it('whether a runtime package is installed is no answer, by the whole error: a forged parent inside it, findPackageJSON\'s base and climbing specifier, _findPath\'s array-like paths, a primitive parent', async () => {
         const r = await mcpCall(testPort(9759), KEY, TOOL, {step: 'parentPackage'});

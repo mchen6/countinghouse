@@ -218,6 +218,10 @@ const STEPS = {
     out.push(typeof(fpj) !== 'function' || (fpj('#builtin', __filename) === undefined && fpj('#sibclimb', __filename) === undefined) ? 'same' : 'fpjMapped');
     same('queryName', await tryImport('q?x/index.js'), await tryImport('nosuchq/index.js'));
     same('tabName', await tryImport('t\tx/index.js'), await tryImport('nosucht/index.js'));
+    // (a subpath whose URL names another path -- a tab the URL parser drops
+    // -- under an "exports" pattern, is refused, never carried by it into a
+    // sibling package; a plain subpath under it loads)
+    out.push((await tryImport('dep4/index.js')) === 'found' && (await tryImport('dep4/.\t./dep/index.js')) !== 'found' ? 'same' : 'exportsSubpath');
     // (and the module's own dependency still loads, by name and by subpath)
     out.push((await tryImport('dep')) === 'found' && (await tryImport('dep/index.js')) === 'found' && tryRequire('dep') === 'found' &&
       tryRequire('filedep') === 'found' ? 'same' : 'ownDep');
