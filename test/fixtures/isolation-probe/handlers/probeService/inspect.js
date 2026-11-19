@@ -167,7 +167,10 @@ const STEPS = {
     // root, to a runtime file against a missing one: by require and by the
     // direct route, the whole error)
     const mainOut = (fn, dir) => { try { fn(`../../lib/${dir}`); return 'found'; } catch (e) { return `${e.code}|${e.message}`.split(dir).join('DIR'); } };
-    const routes = [(r) => require(r), (r) => M._resolveFilename(r, module)];
+    // (and Module._findPath by a lookup path of its own, /app/lib: false
+    // for each, as nothing found)
+    const viaFindPath = (r) => { const f = M._findPath(r.replace('../../lib/', ''), ['/app/lib']); if (f === false) { const e = new Error(`Cannot find module '${r}'`); e.code = 'MODULE_NOT_FOUND'; throw e; } return f; };
+    const routes = [(r) => require(r), (r) => M._resolveFilename(r, module), viaFindPath];
     const answers = [];
     for (const fn of routes) for (const dir of ['main-out-a', 'main-out-b', 'main-out-c', 'main-out-d', 'main-out-e', 'main-out-f', 'main-out-g', 'main-root']) answers.push(mainOut(fn, dir));
     // (the root itself: its own index, never the file beside it)
