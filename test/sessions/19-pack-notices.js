@@ -341,7 +341,11 @@ describe('sessions 19: ch-local\'s pack and module messages: every session is to
 
       // F3-5 with F1-3: the part's spec, kept by its supervisor while it is down, is no tool before its pack goes,
       // and gone with it after; it never comes back
-      it('restarting or suspended, its spec kept: no tool while down, gone with its pack, never respawned (F3-5)', async() => {
+      // (its own timeout: it takes about 1.5 s under a loaded machine, close
+      // to mocha's 2 s default, and failed one run in three at a load
+      // average of about 8; the #449 review)
+      it('restarting or suspended, its spec kept: no tool while down, gone with its pack, never respawned (F3-5)', async function() {
+        this.timeout(5000);
         const packsInPlace = require('../../lib/modules-in-place');
         const toolRegistry = require('../../lib/mcp/tool-registry');
         const DeviceManager = require('../../lib/device-manager');
