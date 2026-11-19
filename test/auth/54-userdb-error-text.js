@@ -19,10 +19,11 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
       const authPath = require.resolve(${JSON.stringify(path.join(LIB, 'auth'))});
       const realAuth = require(authPath);
       let up = false;
-      require.cache[authPath].exports = Object.assign({}, realAuth, {getAuthProvider: () => ({
+      const failing = realAuth.guarded({
         authenticate: (appKey, deviceID, serviceID, actionName, cb) => (up ? cb(null, {ok: true, userName: 'u', isAdmin: false})
           : cb(Object.assign(new Error('connect ECONNREFUSED couch.internal.example:5984'), {code: 'ECONNREFUSED'})))
-      })});
+      });
+      require.cache[authPath].exports = Object.assign({}, realAuth, {getAuthProvider: () => failing});
       const logged = [];
       const LOG = require(${JSON.stringify(path.join(LIB, 'logger'))});
       const warned = [];
@@ -48,5 +49,53 @@ describe('auth 54: the auth provider\'s failure text stays in the log', function
     // how many failed meanwhile (the high review of #445, 6)
     assert.strictEqual(o.logged.length, 1, JSON.stringify(o.logged));
     assert.ok(o.warned.some((w) => /the auth provider answers again \(authenticate\): 2 lookups failed meanwhile/.test(w)), JSON.stringify(o.warned));
+  });
+
+  // The provider wrapped once (the second high review of #445, R2).
+  it('the guard: one kind failing while another answers is said once; recovery only when the provider answers; the base identityForModule is left as it is', async () => {
+    const auth = require(path.join(LIB, 'auth'));
+    const LOG = require(path.join(LIB, 'logger'));
+    const saved = {E: LOG.E, W: LOG.W};
+    const logged = [];
+    const warned = [];
+    LOG.E = (e) => logged.push(String(e && e.message));
+    LOG.W = (w) => warned.push(String(w));
+    try {
+      let listUp = false;
+      let entriesCalls = 0;
+      const raw = {
+        authenticate: (k, d, s, a, cb) => cb(null, {ok: true}),
+        listDevices: (k, cb) => (listUp ? cb(null, {devices: []}) : cb(new Error('view broken at couch.internal.example:5984'))),
+        entries: (cb) => { entriesCalls++; cb(null, []); },
+        identityForModule: auth.AuthProvider.prototype.identityForModule
+      };
+      const p = auth.guarded(raw);
+      const ask = (fn) => new Promise((resolve) => fn((err, v) => resolve({err, v})));
+      for (let i = 0; i < 3; i++) {
+        const listed = await ask((cb) => p.listDevices('k', cb));
+        assert.strictEqual(listed.err.code, 'SYSTEM_ERROR_USERDB_NA');
+        assert.ok(!/couch\.internal/.test(listed.err.message), listed.err.message);
+        const authed = await ask((cb) => p.authenticate('k', 'd', 's', 'a', cb));
+        assert.strictEqual(authed.err, null);
+      }
+      assert.strictEqual(logged.length, 1, JSON.stringify(logged));
+      assert.deepStrictEqual(warned, [], 'no recovery said for a kind that never failed');
+      listUp = true;
+      await ask((cb) => p.listDevices('k', cb));
+      assert.ok(warned.length === 1 && /answers again \(listDevices\): 3 lookups failed meanwhile/.test(warned[0]), JSON.stringify(warned));
+      // the identity lookup: answered from the index, the provider is not
+      // asked, and nothing is said
+      const identity = require(path.join(LIB, 'identity'));
+      await ask((cb) => identity.resolve('nobody', p, cb));
+      await ask((cb) => identity.resolve('nobody', p, cb));
+      assert.ok(entriesCalls <= 1, `entries asked ${entriesCalls} times`);
+      assert.strictEqual(warned.length, 1, JSON.stringify(warned));
+      // device-manager tells an unsupported backend by the base's function
+      assert.strictEqual(p.identityForModule, auth.AuthProvider.prototype.identityForModule);
+      assert.ok(p instanceof Object && Object.getPrototypeOf(p) === Object.getPrototypeOf(raw));
+    } finally {
+      LOG.E = saved.E;
+      LOG.W = saved.W;
+    }
   });
 });
