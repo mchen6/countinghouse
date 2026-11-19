@@ -221,7 +221,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
     const seen = [];
     const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb) => { if (name === 'ch-step-w') seen.push(visibility.isHidden('ch-step-y')); spawn(p, name, version, cb); };
+    mm.loadModuleFromPath = (p, name, version, cb, opts) => { if (name === 'ch-step-w') seen.push(visibility.isHidden('ch-step-y')); spawn(p, name, version, cb, opts); };
     const scenario = (v) => path.join(root, 'packs', 'pf', v, 'node_modules', 'ch-pack-pf');
     await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
     await mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm);
@@ -235,9 +235,9 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     const {mm, dm} = runtime();
     visibility.configure({moduleOf: () => null, isGone: (n) => mm.modules[n] == null});
     const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb) => {
+    mm.loadModuleFromPath = (p, name, version, cb, opts) => {
       if (name === '@t/ch-step-p') { mm.modules[name] = {packageInfo: {name, version}, deviceList: {}}; return setImmediate(() => cb(new Error('registered, then failed'))); }
-      return spawn(p, name, version, cb);
+      return spawn(p, name, version, cb, opts);
     };
     await assert.rejects(loadBoth(mm, dm, '1.0.0'));
     assert.strictEqual(mm.modules['@t/ch-step-p'], undefined, 'rolled back');
@@ -287,7 +287,7 @@ describe('stdio 43: the module form\'s reload on the unit machinery (M4a items 3
     mm.unloadModuleExternal = (name, cb) => { if (name === 'ch-step-y') seen.push(visibility.isHidden(name)); unload(name, cb); };
     await mip.loadPack(mm, {type: 'load', name: 'ch-pack-pf', scenario: scenario('1.0.0')}, dm);
     const spawn = mm.loadModuleFromPath;
-    mm.loadModuleFromPath = (p, name, version, cb) => (name === 'ch-step-w' ? setImmediate(() => cb(new Error('no spawn'))) : spawn(p, name, version, cb));
+    mm.loadModuleFromPath = (p, name, version, cb, opts) => (name === 'ch-step-w' ? setImmediate(() => cb(new Error('no spawn'))) : spawn(p, name, version, cb, opts));
     await assert.rejects(mip.reloadPack(mm, {type: 'reload', name: 'ch-pack-pf', scenario: scenario('2.0.0')}, dm));
     assert.deepStrictEqual(seen, [true], 'hidden when its unload starts');
     visibility.resetForTests();

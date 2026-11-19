@@ -198,7 +198,7 @@ describe('stdio 45: a unit the runtime gives up on, and the start plan (M4b medi
       const mm = runtime();
       const seen = [];
       const load = mm.loadModuleFromPath;
-      mm.loadModuleFromPath = (p, name, version, cb) => { seen.push(...mip.packRecords(mm).map((r) => r.pack)); load(p, name, version, cb); };
+      mm.loadModuleFromPath = (p, name, version, cb, opts) => { seen.push(...mip.packRecords(mm).map((r) => r.pack)); load(p, name, version, cb, opts); };
       await mip.loadPack(mm, moduleForm('ci-failure-triage'), {});
       assert.ok(seen.length > 0);
       assert.ok(seen.every((k) => k === mip.moduleKey('ci-failure-triage')), JSON.stringify(seen));
