@@ -109,6 +109,8 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       const second = await tool.get({}, {cursor: first.nextCursor});
       const secondRows = second.settings.filter((s) => s.name.startsWith('module.'));
       assert.strictEqual(secondRows.length, 26);
+      assert.strictEqual(second.settings.length, 26, 'a later page: the module rows alone');
+      assert.strictEqual(second.history, undefined);
       assert.strictEqual(second.nextCursor, undefined);
       assert.strictEqual(new Set([...firstRows, ...secondRows].map((s) => s.name)).size, 90);
       await refused(tool.get({}, {cursor: 'not-a-cursor'}), 'SETTING_CURSOR_INVALID');
@@ -221,6 +223,53 @@ describe('validation 30: countinghouse_settings and module settings', () => {
       await refused(tool.set('module.@acme/weather-tool.maxResults', '99', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
       // another session's are its own
       await tool.set('module.@acme/weather-tool.maxResults', '98', 'settings tool', {shared: true, session: 'budget-2'});
+    });
+  });
+
+  describe('the form, checked again', () => {
+    const accept = {approve: {action: 'accept', content: {approve: true}}};
+    const decline = {approve: {action: 'decline'}};
+
+    it('a retry with no answer gets the module\'s own form again', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'again-1'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      const again = await tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState}, ctx);
+      assert.match(again.inputRequired.inputRequests.approve.params.message, /setting defaultRepo from "" to "acme\/repo"/);
+    });
+
+    it('an Allow after the ceiling made the setting terminal-only writes nothing', async () => {
+      const tool = make(formClient);
+      const ctx = {session: 'again-2'};
+      const asked = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx);
+      ceiling = trusted({moduleSettings: {conversation: false}});
+      await refused(tool.confirm('module.@acme/weather-tool.defaultRepo', 'acme/repo', {requestState: asked.inputRequired.requestState, inputResponses: accept}, ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+      assert.strictEqual(stored()['module.@acme/weather-tool.defaultRepo'], undefined);
+    });
+
+    it('a shared runtime\'s session: its own store, so a decline locks that session only', async () => {
+      const sessions = require('../../lib/sessions');
+      const real = sessions.askConditions;
+      sessions.askConditions = async () => ({status: 'ok', conditions: 'yes'});
+      try {
+        const tool = make({sessionClient: () => ({ok: true, client: {name: 'tested-client', version: '1.0.0'}})});
+        const s1 = {shared: true, session: 'shared-form-1'};
+        const s2 = {shared: true, session: 'shared-form-2'};
+        const asked = await tool.set('module.@acme/weather-tool.shareStats', 'on', 'settings tool', s1);
+        assert.ok(asked.inputRequired != null, JSON.stringify(asked));
+        await tool.confirm('module.@acme/weather-tool.shareStats', 'on', {requestState: asked.inputRequired.requestState, inputResponses: decline}, s1);
+        await refused(tool.set('module.@acme/weather-tool.defaultRepo', 'acme/x', 'settings tool', s1), 'SETTING_MODULE_NEEDS_CONFIRMATION');
+        const other = await tool.set('module.@acme/weather-tool.defaultRepo', 'acme/x', 'settings tool', s2);
+        assert.ok(other.inputRequired != null, 'another session is asked: its own store');
+        assert.ok(history().filter((h) => h.setting && h.setting.startsWith('module.')).every((h) => h.session != null), 'every line names its session');
+      } finally { sessions.askConditions = real; }
+    });
+
+    it('the budget binds the form too: a session past its 32 is not asked', async () => {
+      const tool = make(formClient);
+      const ctx = {shared: true, session: 'budget-form'};
+      for (let i = 0; i < 32; i += 1) await tool.set('module.@acme/weather-tool.maxResults', String(10 + i), 'settings tool', ctx);
+      await refused(tool.set('module.@acme/weather-tool.defaultRepo', 'acme/repo', 'settings tool', ctx), 'SETTING_MODULE_NEEDS_CONFIRMATION');
     });
   });
 });
