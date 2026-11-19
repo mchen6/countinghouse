@@ -239,9 +239,14 @@ any module code). Stops:
   Under `enforce` it takes only a string request and never makes a main
   module; it, `Module._resolveFilename`, `Module.prototype.load` and the
   extension handlers are locked, and the extensions table takes no new
-  extension. Under `audit` each replacement is reported and never takes
-effect, as Node hands each of them the runtime's own modules; the
-extensions table takes no new extension in either mode. The other routes
+  extension. Under `audit` none of them, and none of the statics locked at
+  the seal, can be replaced either, as Node hands the loader's the
+  runtime's own modules: an assignment is reported and the runtime's value
+  kept, and a redefinition (`Object.defineProperty`,
+  `Object.defineProperties`, `Reflect.defineProperty`) is reported and
+  fails as Node's own would. The extensions table takes no new extension in
+  either mode; a key added, redefined or removed is reported and refused.
+  The other routes
   into what the runtime loads are closed by #194: the runtime loads nothing
   after the lockdown (its PR 1), and at the lockdown its modules are sealed
   away (its PR 2): every `require.cache` entry of a file outside the

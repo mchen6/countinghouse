@@ -18,6 +18,24 @@ function reportChecked(r) {
 }
 
 const ATTEMPTS = {
+  // what the lockdown holds, as a dependency would try to change it (the
+  // review of e0f39de9: under audit each is reported, and none takes)
+  holdAssign:       () => {
+    const M = module.constructor;
+    const was = M._pathCache;
+    try { M._pathCache = {}; } catch (e) { /* refused */ }
+    if (M._pathCache !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdDefine:       () => {
+    const M = module.constructor;
+    const was = M._load;
+    try { Object.defineProperty(M, '_load', {value: function() {}}); } catch (e) { /* refused */ }
+    if (M._load !== was) throw Object.assign(new Error('replaced'), {code: 'REPLACED'});
+  },
+  holdExtension:    () => {
+    try { require.extensions['.chprobe'] = () => {}; } catch (e) { /* refused */ }
+    if (require.extensions['.chprobe'] !== undefined) throw Object.assign(new Error('added'), {code: 'ADDED'});
+  },
   dlopen:           () => process.dlopen({exports: {}}, '/nonexistent/probe.node'),
   binding:          () => process.binding('fs'),
   kill:             () => process.kill(process.pid, 0),

@@ -172,6 +172,16 @@ describe('sandbox 05: worker lockdown', function() {
         await waitFor(() => server.output.slice(from).includes(`(${why})`), 20000, `${arg}'s violation line`);
       }
     });
+    // (the review of e0f39de9: audit reports what it stops; under enforce
+    // the same is refused)
+    it(`what the lockdown holds: an assignment, a defineProperty, a new extension take nothing${mode === 'audit' ? ', and each is reported' : ''}`, async () => {
+      for (const [what, line] of [['holdAssign', 'Module._pathCache replaced (the runtime\'s kept)'], ['holdDefine', '_load redefined (the runtime\'s kept)'],
+        ['holdExtension', 'Module._extensions[.chprobe] added (refused)']]) {
+        const from = server.output.length;
+        assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what})), {outcome: 'allowed', code: null}, what);
+        if (mode === 'audit' || what === 'holdExtension') await waitFor(() => server.output.slice(from).includes(`violation require ${line}`), 20000, `${what}'s line`);
+      }
+    });
     it('createRequire\'s own Module still loads', async () => {
       assert.deepStrictEqual(toolOutput(await mcpCall(port, KEY, TOOL, {what: 'createRequireOwn'})), {outcome: 'allowed', code: null});
     });
